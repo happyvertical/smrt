@@ -15,7 +15,7 @@ import type {
   SmrtCollectionOptions,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { isCrudOperation, ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -1204,9 +1204,8 @@ export class CLIGenerator {
     const methods = await ObjectRegistry.getAllMethods(objectName);
 
     // Check if include list contains any custom method names (indicates strict mode)
-    const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
     const hasCustomMethodsInInclude = included?.some(
-      (item) => !crudOperations.includes(item),
+      (item) => !isCrudOperation(item),
     );
 
     for (const [methodName, methodDef] of methods as Map<
@@ -1215,6 +1214,22 @@ export class CLIGenerator {
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
+        // A method sharing an EMITTED CRUD verb's name is not a custom
+        // action — pushing one would add a second `${lowerName}:${verb}` that
+        // `objectCommands.find` (first match wins) can never reach (#2646).
+        // Conditional on `shouldInclude` because a config like
+        // `include: ['list', 'get']` emits no `create` command, so a public
+        // `create()` collides with nothing and stays a reachable custom
+        // command exactly as before.
+        if (
+          isCrudOperation(methodName) &&
+          shouldInclude(
+            methodName as 'list' | 'get' | 'create' | 'update' | 'delete',
+          )
+        ) {
+          return false;
+        }
+
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
 

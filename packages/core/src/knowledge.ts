@@ -13,7 +13,12 @@ import type {
   DomainKnowledgeSurface,
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
-import { resolveCustomActionMetadata } from './generators/custom-action.js';
+import {
+  CRUD_OPERATIONS,
+  isCrudOperation,
+  isCrudToolAction,
+  resolveCustomActionMetadata,
+} from './generators/custom-action.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -81,7 +86,15 @@ const RELATIONSHIP_FIELD_TYPES = new Set([
   'manyToMany',
 ]);
 
-const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
+/**
+ * The generated CRUD verbs, derived from the generators' own list so both
+ * halves of this projection — which operations are ENUMERATED
+ * (`resolveCrudOperations`) and which method names are RESERVED
+ * (`reservesCrudName`) — move together. Reading one from `CRUD_OPERATIONS` and
+ * the other from a local copy would let a new verb be suppressed as a custom
+ * method while never being added as CRUD, dropping the surface entirely.
+ */
+const STANDARD_OPERATIONS: readonly string[] = CRUD_OPERATIONS;
 
 /**
  * Framework abstract base classes (`SmrtObject`, `SmrtCollection`, ...) carry
@@ -498,6 +511,23 @@ function configuredSurfaces(
   manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
+  // NOTE: the `cli` projection models core's `CLIGenerator`, which reserves a
+  // CRUD verb unconditionally. That is NOT the shipped local CLI:
+  // `@happyvertical/smrt-cli`'s generator reserves one only where the CRUD
+  // command is emitted (each of its commands carries its own handler), so with
+  // `cli: { include: ['list', 'get'] }` a public `create()` is a reachable
+  // `${object}:create` there that this projection does not report.
+  //
+  // A second divergence, from #2651: `resolveCustomMethodNames` filters only
+  // through `reservesCrudName`, never `isFrameworkLifecycleMethod`. So a class
+  // declaring its own `save()` gets a reported `cli` surface that
+  // `CLIGenerator` refuses to run — `assertCommandExposed` throws on it. Also
+  // pre-existing on main, not introduced or widened here.
+  //
+  // Retargeting this projection at the shipped binary, and closing the
+  // lifecycle gap, are tracked on #2664. Both are CONTRACT CHANGES rather than
+  // cleanups: the generators genuinely disagree, so `smrt-knowledge.json`
+  // snapshots move. Predates #2646.
   const collectionClass = isSurfaceCollectionClass(manifest, object);
   const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => {
@@ -652,6 +682,7 @@ function configuredOperations(
   const custom = resolveCustomMethodNames(
     Object.entries(object.methods),
     config,
+    kind,
   );
   // REST additionally refuses a custom action whose receiver cannot exist —
   // a collection class emits only collection-scoped routes, and a model class
@@ -680,18 +711,38 @@ function resolveCrudOperations(config: unknown): string[] {
 function resolveCustomMethodNames(
   methods: Iterable<[string, { isPublic?: boolean }]>,
   config: unknown,
+  kind: 'api' | 'cli' | 'mcp',
 ): string[] {
   const { include, exclude } = includeExcludeConfig(config);
   const excluded = new Set(exclude ?? []);
   const names: string[] = [];
   for (const [name, method] of methods) {
-    if (STANDARD_OPERATIONS.includes(name)) continue;
+    if (reservesCrudName(kind, name)) continue;
     if (!method.isPublic) continue;
     if (excluded.has(name)) continue;
     if (include !== undefined && !include.includes(name)) continue;
     names.push(name);
   }
   return names;
+}
+
+/**
+ * Whether `kind` reserves `name` for its generated CRUD operation, so the
+ * method behind it is not reported as a distinct surface.
+ *
+ * MCP folds case: its tool ids are lowercased whole
+ * (`` `${object}_${method}`.toLowerCase() ``), so a method named `List` lands on
+ * the `${object}_list` identifier the CRUD tool already owns and
+ * `MCPGenerator` emits no separate tool for it (#2646). REST and the CLI keep
+ * the declared casing in their route/command names, so only an exact match is
+ * reserved there.
+ *
+ * Reads the emitters' own predicates rather than re-testing the verb list, and
+ * `STANDARD_OPERATIONS` derives from `CRUD_OPERATIONS`, so a change to the
+ * shared list reaches both halves of this projection together.
+ */
+function reservesCrudName(kind: 'api' | 'cli' | 'mcp', name: string): boolean {
+  return kind === 'mcp' ? isCrudToolAction(name) : isCrudOperation(name);
 }
 
 function includeExcludeConfig(config: unknown): {

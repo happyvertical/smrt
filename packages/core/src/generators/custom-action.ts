@@ -161,9 +161,12 @@ export interface ResolvableMethod {
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
  *   full rationale; do not "simplify" that branch onto this function.
  *
- * `crudActionNames` is supplied by the caller rather than duplicated here:
- * `CLIGenerator` and the SvelteKit generator each already keep their own
- * copy of the five CRUD verb names (`CRUD_OPERATIONS`/`STANDARD_API_ACTIONS`).
+ * `crudActionNames` stays a parameter because the callers do not agree on one
+ * list. `CLIGenerator` now passes {@link CRUD_OPERATIONS}, which #2646 moved
+ * into this module — so for that caller the argument is a round trip and could
+ * be defaulted. The SvelteKit generator still passes its own
+ * `STANDARD_API_ACTIONS` and `vite-plugin/index.ts` an inline literal, so the
+ * parameter cannot be removed until those copies are retired (#2665).
  */
 export function resolveCustomActionNames(
   methods: Iterable<[string, ResolvableMethod]>,
@@ -182,6 +185,83 @@ export function resolveCustomActionNames(
     result.add(name);
   }
   return result;
+}
+
+/**
+ * The CRUD verbs a generated surface emits directly. A method whose name
+ * collides with one of these may not be exposed as a custom action under that
+ * name: the generated operation already claims it, so a second command/tool
+ * would land on a name that is taken.
+ *
+ * This is a NAMESPACE rule, independent of where the method came from — a
+ * class's own `list()` collides exactly as a merged ancestor's does (#2646).
+ *
+ * What a collision means differs by EMITTER, so consult the one you are
+ * changing rather than assuming a single rule. The reservation lives at each
+ * emission site, not here, and several emitters still keep their own inline
+ * verb array — find them with:
+ *
+ *     grep -rn "'update', 'delete'" packages --include='*.ts' | grep -v include:
+ *
+ * (the `include:` filter drops decorator config, which names the same verbs)
+ *
+ * The sites this rule was audited against (#2646), NOT an exhaustive
+ * inventory:
+ *
+ * - `generators/mcp.ts` — unconditional, case-folded. `executeAction` switches
+ *   on the verb parsed out of the tool id, so `${object}_list` runs the
+ *   built-in list whichever branch emitted it: the class's method could never
+ *   run, and emitting one would hand the caller an operation `include` never
+ *   named.
+ * - `generators/cli.ts` (`CLIGenerator`) — unconditional, exact.
+ *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
+ *   action never reaches custom-method resolution, and `listCommands` skips
+ *   those names outright.
+ * - `packages/cli/src/cli-generator.ts`, behind the shipped `smrt` object
+ *   commands — reserves only where the CRUD command is actually emitted. Each
+ *   command it pushes carries its own handler invoking the class's method, so
+ *   with `cli: { include: ['list', 'get'] }` a public `create()` collides with
+ *   nothing and stays a legitimate, reachable `${object}:create`.
+ * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
+ *   `STANDARD_API_ACTIONS` copy.
+ * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — builds a lowercased
+ *   flat tool id like MCP's while reserving on the exact-match API action set,
+ *   so a cased CRUD-named method still collides. Pre-existing, tracked on
+ *   #2648, along with the other own-copy sites the grep above finds
+ *   (`vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
+ *   `vite-plugin/templates/default-ui.ts`).
+ *
+ * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
+ * rather than re-declaring it; the two differ only in case folding, because the
+ * transports namespace differently (see below).
+ */
+export const CRUD_OPERATIONS = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+] as const;
+
+/**
+ * Exact-match test for a case-SENSITIVE surface. The CLI keeps a method's
+ * declared casing in its command name (`${object}:${methodName}`) and resolves
+ * an action by exact match, so `foo:List` is a distinct, callable custom
+ * command that must not be folded into `foo:list`.
+ */
+export function isCrudOperation(name: string): boolean {
+  return (CRUD_OPERATIONS as readonly string[]).includes(name);
+}
+
+/**
+ * Case-FOLDED test for a lowercase tool namespace. MCP tool identifiers are
+ * lowercased whole (`` `${object}_${methodName}`.toLowerCase() ``) for a stable
+ * protocol vocabulary, so a method named `List` lands on the identifier
+ * `object_list` that the generated CRUD tool already owns. The namespace key is
+ * the lowercased name, so the collision test has to be too (#2646).
+ */
+export function isCrudToolAction(name: string): boolean {
+  return isCrudOperation(name.toLowerCase());
 }
 
 export interface CustomActionMetadata {
