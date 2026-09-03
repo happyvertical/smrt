@@ -36,6 +36,7 @@ import {
   type ToolIdType,
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   FieldDefinition,
   FieldUIHints,
@@ -524,6 +525,10 @@ function selectEntriesQualifiedBy(
 
   for (const obj of Object.values(manifest.objects)) {
     if (isCollectionManifestClass(manifest, obj)) continue;
+    // The framework's own abstract base classes are scaffolding, not
+    // resources — never materialize a web collection/tool for them,
+    // regardless of config (#2642).
+    if (isFrameworkBaseClass(obj.className, obj.packageName)) continue;
 
     const exposedActions = resolveApiActionSet(obj);
     if (!qualifies(exposedActions)) continue;
@@ -590,7 +595,13 @@ function resolveStiCollectionOwner(
 export function selectWebMcpToolEntries(
   manifest: SmartObjectManifest,
 ): WebMcpToolEntry[] {
-  const manifestObjects = Object.values(manifest.objects);
+  // The framework's own abstract base classes are scaffolding, not
+  // resources — filtered once here so every loop below (object owners,
+  // custom-action hosts, and the collection-class ownership pass) excludes
+  // them, regardless of config (#2642).
+  const manifestObjects = Object.values(manifest.objects).filter(
+    (obj) => !isFrameworkBaseClass(obj.className, obj.packageName),
+  );
   const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(
       webCollectionObjectRef(manifest, left),

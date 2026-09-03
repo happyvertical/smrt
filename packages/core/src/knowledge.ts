@@ -604,6 +604,14 @@ function manifestObjectPackage(
  * `api`/`mcp` are unaffected: neither generator changed in #2650/#2638, the
  * mcp.ts wiring is separate #2638 scope, and the api-surface fix is a PR
  * #2651 recommendation, not yet implemented.
+ *
+ * This `cli` projection models `CLIGenerator` (`generators/cli.ts`), not the
+ * shipped local CLI transport (`@happyvertical/smrt-cli`'s
+ * `cli-generator.ts`, the `smrt <object>:<action>` binary): that generator
+ * does not gate on `isFrameworkLifecycleMethod()` today, so a locally
+ * overridden lifecycle method the artifact now reports as absent can still
+ * be invoked there. Retargeting this projection at the shipped binary is a
+ * contract change tracked on #2664, not part of this fix.
  */
 function configuredOperations(
   kind: 'api' | 'cli' | 'mcp',

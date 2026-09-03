@@ -18,6 +18,7 @@ import {
   resolveListOffset,
 } from '../query-bounds';
 import { ObjectRegistry } from '../registry';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   ApiCustomRouteConfig,
   RegisteredClass,
@@ -1799,6 +1800,10 @@ export class APIGenerator {
     segment: string,
   ): RegisteredClass | null {
     for (const [key, info] of ObjectRegistry.getAllClasses()) {
+      // The framework's own abstract base classes are scaffolding, not
+      // resources — never resolve a request to one of them, regardless of
+      // config (#2642).
+      if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
       // Primary match: the canonical manifest `collection` segment.
       if (info.collection === segment) {
         return info;

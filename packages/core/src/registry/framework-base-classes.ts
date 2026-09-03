@@ -20,7 +20,11 @@
  * - `../knowledge.ts` (the `.smrt/smrt-knowledge.json` surface projection)
  * - `../generators/mcp.ts` (`MCPGenerator.generateTools()`)
  * - `../generators/cli.ts` (`CLIGenerator.listCommands()`)
+ * - `../generators/rest.ts` (`APIGenerator.findClassByCollectionSegment()`)
  * - `../vite-plugin/sveltekit-generator.ts` (REST route generation)
+ * - `../vite-plugin/sync-apply-route.ts` (`collectSyncApplyTargets()`)
+ * - `../vite-plugin/web-collections.ts` (the `smrt-virt-web` client's
+ *   collection and WebMCP tool selectors)
  * - `@happyvertical/smrt-cli`'s `cli-generator.ts` (the live local `smrt`
  *   binary's object command generation), via core's public export
  *
@@ -39,18 +43,24 @@
  * `@happyvertical/smrt-reports` — the owning package is per-name, not a
  * single blanket package check. A new framework base must be added here AND
  * to the scanner's `FRAMEWORK_BASE_CLASSES`.
+ *
+ * Deliberately NOT exported: only `isFrameworkBaseClass()` below needs to be
+ * public. A `Map` survives TypeScript's `ReadonlyMap` typing only at the
+ * type-check layer — a plain-JS or `as Map` caller could still `.set()`/
+ * `.clear()` an exported instance at runtime and change what the framework
+ * considers a base class. Keeping the map itself module-private closes that
+ * off entirely rather than relying on callers not to do that.
  */
-export const FRAMEWORK_BASE_CLASS_PACKAGES: ReadonlyMap<string, string> =
-  new Map([
-    ['SmrtObject', '@happyvertical/smrt-core'],
-    ['SmrtClass', '@happyvertical/smrt-core'],
-    ['SmrtCollection', '@happyvertical/smrt-core'],
-    ['SmrtJunction', '@happyvertical/smrt-core'],
-    ['SmrtHierarchical', '@happyvertical/smrt-core'],
-    ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
-    ['SmrtReport', '@happyvertical/smrt-reports'],
-    ['SmrtReportCollection', '@happyvertical/smrt-reports'],
-  ]);
+const FRAMEWORK_BASE_CLASS_PACKAGES: ReadonlyMap<string, string> = new Map([
+  ['SmrtObject', '@happyvertical/smrt-core'],
+  ['SmrtClass', '@happyvertical/smrt-core'],
+  ['SmrtCollection', '@happyvertical/smrt-core'],
+  ['SmrtJunction', '@happyvertical/smrt-core'],
+  ['SmrtHierarchical', '@happyvertical/smrt-core'],
+  ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
+  ['SmrtReport', '@happyvertical/smrt-reports'],
+  ['SmrtReportCollection', '@happyvertical/smrt-reports'],
+]);
 
 /**
  * True when `className`/`packageName` identify one of the framework's own
