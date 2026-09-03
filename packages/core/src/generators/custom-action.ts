@@ -165,9 +165,8 @@ export interface ResolvableMethod {
  * list. `CLIGenerator` now passes {@link CRUD_OPERATIONS}, which #2646 moved
  * into this module — so for that caller the argument is a round trip and could
  * be defaulted. The SvelteKit generator still passes its own
- * `STANDARD_API_ACTIONS`, and `vite-plugin/index.ts` an inline literal that
- * additionally reserves `save`, so the parameter cannot be removed until those
- * copies are retired (#2665).
+ * `STANDARD_API_ACTIONS` and `vite-plugin/index.ts` an inline literal, so the
+ * parameter cannot be removed until those copies are retired (#2665).
  */
 export function resolveCustomActionNames(
   methods: Iterable<[string, ResolvableMethod]>,
@@ -229,8 +228,8 @@ export function resolveCustomActionNames(
  *   flat tool id like MCP's while reserving on the exact-match API action set,
  *   so a cased CRUD-named method still collides. Pre-existing, tracked on
  *   #2648, along with the other own-copy sites the grep above finds
- *   (`vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` — which also
- *   reserves `save` — and `vite-plugin/templates/default-ui.ts`).
+ *   (`vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
+ *   `vite-plugin/templates/default-ui.ts`).
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the
