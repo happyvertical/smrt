@@ -158,27 +158,25 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
   });
 
-  it('never reports CRUD for an undecorated SmrtCollection subclass, only its custom REST actions (#2619)', () => {
+  it('never reports CRUD for an undecorated SmrtCollection subclass, but does report its public custom methods on every surface (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const collectionSurfaces = artifact.surfaces.filter(
       (surface) => surface.objectName === '@example/orders:OrderTreeCollection',
     );
 
     // A hand-written `class OrderTreeCollection extends
-    // SmrtCollection<OrderTree>` never registers with ObjectRegistry, so
-    // MCPGenerator/CLIGenerator generate nothing under its own name — only
-    // its collection-scoped custom action reaches a REST route.
-    expect(
-      collectionSurfaces.filter((surface) => surface.kind === 'mcp'),
-    ).toEqual([]);
-    expect(
-      collectionSurfaces.filter((surface) => surface.kind === 'cli'),
-    ).toEqual([]);
-    expect(
-      collectionSurfaces
-        .filter((surface) => surface.kind === 'api')
-        .map((surface) => surface.operation),
-    ).toEqual(['findAbandoned']);
+    // SmrtCollection<OrderTree>` is registered by `loadAllManifests()` just
+    // like any genuine domain class (#2642) — it never gets CRUD verbs
+    // (`list`/`get`/`create`/`update`/`delete` belong to the row model, not
+    // the collection), but its public custom method reaches MCP/CLI too,
+    // not just REST, matching what a real registration produces.
+    for (const kind of ['mcp', 'cli', 'api'] as const) {
+      expect(
+        collectionSurfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation),
+      ).toEqual(['findAbandoned']);
+    }
   });
 
   it('walks the extends chain so a deeper collection subclass is still recognized (#2619)', () => {
@@ -191,30 +189,31 @@ describe('buildDomainKnowledgeManifest', () => {
     // `SpecialOrderTreeCollection extends OrderTreeCollection` carries no
     // `extendsTypeArg` of its own — only its base does. Without walking the
     // extends chain through the manifest, this class would be mistaken for a
-    // row model and gain a synthetic full-CRUD surface it does not have.
-    expect(deepSurfaces.filter((surface) => surface.kind === 'mcp')).toEqual(
-      [],
-    );
-    expect(deepSurfaces.filter((surface) => surface.kind === 'cli')).toEqual(
-      [],
-    );
-    expect(
-      deepSurfaces
-        .filter((surface) => surface.kind === 'api')
-        .map((surface) => surface.operation),
-    ).toEqual(['findEscalated']);
+    // row model and gain a synthetic full-CRUD surface it does not have —
+    // it still reports its one public custom method on every surface kind
+    // (#2642), same as its shallower sibling above.
+    for (const kind of ['mcp', 'cli', 'api'] as const) {
+      expect(
+        deepSurfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation),
+      ).toEqual(['findEscalated']);
+    }
   });
 
-  it('reports no surfaces for a framework base class scanned in its own foundation package (#2619)', () => {
+  it('reports no surfaces for a framework base class scanned in its own foundation package (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
 
     // `@happyvertical/smrt-core:SmrtObject` has `decoratorConfig: {}` — the
-    // same shape as a genuine bare `@smrt()` — but it carries no decorator
-    // of its own and never registers with ObjectRegistry. Without this
-    // exclusion, the "omitted config is full CRUD" rule would fabricate a
-    // synthetic `smrtobjects.list`/`.create`/... surface for it (317 phantom
-    // surfaces were observed across @happyvertical/smrt-core's own
-    // framework base classes before this fix).
+    // same shape as a genuine bare `@smrt()`. #2619 excluded it on the false
+    // premise that it "never registers with ObjectRegistry"; #2642 confirmed
+    // `loadAllManifests()` registers it exactly like any genuine domain
+    // class, and fixed the real root cause — MCPGenerator/CLIGenerator/route
+    // generation now skip the framework's own abstract base classes by class
+    // identity, independent of config. This projection mirrors that same
+    // shared check (`isFrameworkBaseClass`), so it stays truthful rather
+    // than reintroducing the 317 phantom `smrtobjects.list`/`.create`/...
+    // surfaces #2619 originally hid.
     expect(
       artifact.surfaces.filter(
         (surface) =>
@@ -223,7 +222,7 @@ describe('buildDomainKnowledgeManifest', () => {
     ).toEqual([]);
   });
 
-  it('resolves the framework-base exclusion per owning package, not by class name alone (#2619)', () => {
+  it('resolves the framework-base exclusion per owning package, not by class name alone (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
 
     // SmrtReport/SmrtReportCollection live in @happyvertical/smrt-reports,
@@ -860,8 +859,10 @@ function fixtureManifest(): SmartObjectManifest {
       // declares its own framework base classes as real local classes, so
       // the scanner emits a manifest entry for them too — with
       // `decoratorConfig: {}`, indistinguishable in shape from a genuine
-      // bare `@smrt()`. They carry no decorator of their own and never
-      // reach ObjectRegistry (#2619).
+      // bare `@smrt()`. They carry no decorator of their own, but ARE
+      // registered by `loadAllManifests()` like any genuine domain class
+      // (#2642) — excluded from every surface by class identity, not by
+      // registration status.
       '@happyvertical/smrt-core:SmrtObject': {
         className: 'SmrtObject',
         qualifiedName: '@happyvertical/smrt-core:SmrtObject',

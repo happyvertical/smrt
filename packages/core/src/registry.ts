@@ -173,6 +173,14 @@ export {
   isSmrtCollectionExtendsName,
   SMRT_COLLECTION_BASE_NAMES,
 } from './registry/collection-resolution';
+// Re-export the single shared framework-base-class identity check (#2642)
+// so consumers outside this package (e.g. `@happyvertical/smrt-cli`'s live
+// local `smrt` binary generator) can share it instead of hardcoding their
+// own copy. See `./registry/framework-base-classes.ts`.
+export {
+  FRAMEWORK_BASE_CLASS_PACKAGES,
+  isFrameworkBaseClass,
+} from './registry/framework-base-classes';
 // Re-export types for backward compatibility
 export type {
   RelationshipMetadata,

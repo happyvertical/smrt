@@ -14,6 +14,7 @@ import type {
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
 import { resolveCustomActionMetadata } from './generators/custom-action.js';
+import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -82,50 +83,6 @@ const RELATIONSHIP_FIELD_TYPES = new Set([
 ]);
 
 const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
-
-/**
- * Framework abstract base classes (`SmrtObject`, `SmrtCollection`, ...) carry
- * no `@smrt()` decorator of their own, so they never register with
- * `ObjectRegistry` and never get MCP tools, CLI commands, or REST routes
- * under their own name — only their `@smrt()`-decorated subclasses do. The
- * scanner still emits a manifest entry for them (so cross-package `extends`
- * chains can resolve), and — because a foundation package like
- * `@happyvertical/smrt-core` declares them as real local classes rather than
- * an external reference — that entry has `decoratorConfig: {}`,
- * indistinguishable in shape from a genuine bare `@smrt()`. Without this
- * exclusion, #2619's "omitted config is full CRUD" rule reports a synthetic
- * `smrtobjects.list`/`smrtcollections.create`/... surface for every one of
- * them (317 phantom surfaces in `@happyvertical/smrt-core`'s own artifact).
- *
- * Mirrors `FRAMEWORK_BASE_CLASSES` in
- * `packages/scanner/src/inheritance-resolver.ts` — kept as a separate
- * hardcoded list rather than imported (that package is a lower-level AST
- * layer knowledge.ts has no reason to otherwise depend on), matching that
- * set's own documented precedent of "extend the list" over generalizing a
- * flag through the manifest shape.
- *
- * Most of these live in `@happyvertical/smrt-core` itself, but
- * `SmrtReport`/`SmrtReportCollection` are declared in
- * `@happyvertical/smrt-reports` — the owning package is per-name, not a
- * single blanket package check.
- */
-const FRAMEWORK_BASE_CLASS_PACKAGES = new Map([
-  ['SmrtObject', '@happyvertical/smrt-core'],
-  ['SmrtClass', '@happyvertical/smrt-core'],
-  ['SmrtCollection', '@happyvertical/smrt-core'],
-  ['SmrtJunction', '@happyvertical/smrt-core'],
-  ['SmrtHierarchical', '@happyvertical/smrt-core'],
-  ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
-  ['SmrtReport', '@happyvertical/smrt-reports'],
-  ['SmrtReportCollection', '@happyvertical/smrt-reports'],
-]);
-
-function isFrameworkBaseClass(object: SmartObjectDefinition): boolean {
-  return (
-    object.packageName !== undefined &&
-    FRAMEWORK_BASE_CLASS_PACKAGES.get(object.className) === object.packageName
-  );
-}
 
 /**
  * Markdown inline links whose target is a `.md` file — `[label](agents/x.md)`,
@@ -642,12 +599,13 @@ function configuredOperations(
   manifest: SmartObjectManifest,
 ): string[] {
   if (config === false) return [];
-  if (isFrameworkBaseClass(object)) return [];
+  // The framework's own abstract base classes (SmrtObject, SmrtCollection,
+  // ...) are scaffolding, not resources: MCPGenerator/CLIGenerator/route
+  // generation all skip them by class identity now (#2642), independent of
+  // their `decoratorConfig: {}` shape, so this mirrors the same shared
+  // check rather than reporting a synthetic surface for them.
+  if (isFrameworkBaseClass(object.className, object.packageName)) return [];
   const collectionClass = isSurfaceCollectionClass(manifest, object);
-  // Undecorated collection classes never register with ObjectRegistry, so
-  // MCP/CLI expose nothing under their own name; only REST custom actions
-  // reach them.
-  if (collectionClass && kind !== 'api') return [];
   const crud = collectionClass ? [] : resolveCrudOperations(config);
   const custom = resolveCustomMethodNames(
     Object.entries(object.methods),

@@ -14,6 +14,7 @@ import {
   resolveListOffset,
 } from '../query-bounds';
 import { ObjectRegistry } from '../registry';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import {
@@ -363,6 +364,16 @@ export class MCPGenerator {
     for (const [key, classInfo] of registeredClasses) {
       // Issue #951: Use simple name for tool naming, map key for registry lookups
       const simpleName = classInfo.name || key;
+
+      // The framework's own abstract base classes (SmrtObject,
+      // SmrtCollection, ...) are scaffolding every application model
+      // descends from, not resources — they carry no `@smrt()` decorator
+      // and must never get their own `smrtobject_list`/`smrtcollection_*`
+      // tools, regardless of config (#2642).
+      if (isFrameworkBaseClass(simpleName, classInfo.packageName)) {
+        continue;
+      }
+
       const config = ObjectRegistry.getConfig(simpleName);
       const mcpConfig = config.mcp;
 
