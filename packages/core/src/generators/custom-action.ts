@@ -184,6 +184,29 @@ export function resolveCustomActionNames(
   return result;
 }
 
+/**
+ * The CRUD verbs every generated surface emits directly. A method whose name
+ * matches one of these is never a custom action: the verb is already taken by
+ * the generated operation, so exposing the method under it would emit a second
+ * command/tool under a name that is already claimed.
+ *
+ * This is a NAMESPACE rule, independent of where the method came from — a
+ * class's own `list()` collides exactly as a merged ancestor's does (#2646).
+ * Every transport reads this one list.
+ */
+export const CRUD_OPERATIONS = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+] as const;
+
+/** Whether `name` is a generated CRUD verb rather than a custom action. */
+export function isCrudOperation(name: string): boolean {
+  return (CRUD_OPERATIONS as readonly string[]).includes(name);
+}
+
 export interface CustomActionMetadata {
   scope: CustomActionScope;
   /** An item-targeted action requires its target identifier. */

@@ -27,7 +27,9 @@ import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import {
   buildCustomActionInvocationArgs,
+  CRUD_OPERATIONS,
   customActionParameterInputName,
+  isCrudOperation,
   isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
@@ -91,9 +93,6 @@ export interface CLIContext {
    */
   allowCrossTenant?: boolean;
 }
-
-/** Standard CRUD verbs handled directly by the generator. */
-const CRUD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
 
 /**
  * Flags consumed by the CLI itself — never treated as create/update field
@@ -310,7 +309,7 @@ export class CLIGenerator {
       throw new Error(`Command '${action}' is excluded for ${objectName}`);
     }
 
-    const isCrud = CRUD_OPERATIONS.includes(action);
+    const isCrud = isCrudOperation(action);
 
     if (isCrud) {
       // An include list, when present, is the complete allowlist for CRUD too.

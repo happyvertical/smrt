@@ -21,6 +21,7 @@ import {
   type CustomActionFailure,
   type CustomActionMetadata,
   customActionParameterInputName,
+  isCrudOperation,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
@@ -480,9 +481,8 @@ export class MCPGenerator {
       // where `mcp: { include: ['list', 'get'] }` still emitted custom-method
       // tools like `payment_recordpayment` because `include` only gated CRUD
       // verbs (#1540 / #1390).
-      const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
       const customMethodsInInclude =
-        included?.filter((item) => !crudOperations.includes(item)) || [];
+        included?.filter((item) => !isCrudOperation(item)) || [];
       // An include list (even one naming only CRUD verbs) switches custom
       // methods into strict allowlist mode.
       const hasIncludeList = included !== undefined;
@@ -544,6 +544,13 @@ export class MCPGenerator {
       } else {
         // No custom methods in include = show all discovered methods by default
         for (const [methodName, methodDef] of methods) {
+          // A CRUD verb is already emitted above as the standard tool, so a
+          // method sharing its name is not a custom action — generating one
+          // would emit a second tool under a name that is already claimed
+          // (`sortMCPTools` orders the catalog but does not dedupe). Mirrors
+          // the strict branch above and `CLIGenerator.listCommands` (#2646).
+          if (isCrudOperation(methodName)) continue;
+
           // Skip if not public (private/protected methods shouldn't be in MCP)
           if (!methodDef.isPublic) continue;
 
@@ -1844,7 +1851,6 @@ export class MCPGenerator {
     tools: MCPTool[],
   ): Promise<NonNullable<RuntimeOptions['customActions']>> {
     const metadata: NonNullable<RuntimeOptions['customActions']> = {};
-    const crudActions = new Set(['list', 'get', 'create', 'update', 'delete']);
     const classes = ObjectRegistry.getAllClasses();
 
     for (const tool of tools) {
@@ -1852,7 +1858,7 @@ export class MCPGenerator {
       if (separator === -1) continue;
       const objectPrefix = tool.name.slice(0, separator);
       const action = tool.name.slice(separator + 1);
-      if (crudActions.has(action)) continue;
+      if (isCrudOperation(action)) continue;
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
       );
