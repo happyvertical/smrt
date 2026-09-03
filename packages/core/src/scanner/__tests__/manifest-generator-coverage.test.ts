@@ -223,6 +223,47 @@ describe('ManifestGenerator coverage', () => {
       expect(article.methods.publish).toBeDefined();
     });
 
+    it("merges a framework ABSTRACT base's own declared method (SmrtJunction.attach) into its subclass, unlike a universal primitive (SmrtCollection.list)", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          // Both declared inline (no @smrt table of their own), same as how
+          // framework bases are pulled in via cross-package external-manifest
+          // loading in real builds.
+          def('SmrtCollection', {
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: { list: method('list') },
+          }),
+          def('SmrtJunction', {
+            extends: 'SmrtCollection',
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: { attach: method('attach') },
+          }),
+          def('ContentAssetCollection', {
+            extends: 'SmrtJunction',
+            fields: { contentId: { type: 'foreignKey', related: 'Content' } },
+          }),
+        ]),
+      ]);
+
+      const collection = manifest.objects.contentassetcollection;
+      // SmrtJunction.attach/detach/byLeft/byRight/setLinks are the junction
+      // collection's real, intended public API (packages/core/src/junction.ts)
+      // -- the same way SmrtHierarchical.parentId is a real, intended field --
+      // so they must merge into every subclass, matching this PR's #2624
+      // regression fix (a template-sveltekit snapshot caught this when an
+      // earlier revision wrongly excluded all 8 FRAMEWORK_BASE_CLASSES).
+      expect(collection.methods.attach).toBeDefined();
+      // SmrtCollection is one of the 3 universal object/collection
+      // primitives (FRAMEWORK_METHOD_BASE_NAMES) -- its own methods are
+      // never a subclass-specific action.
+      expect(collection.methods.list).toBeUndefined();
+    });
+
     it("merges a concrete decorated ancestor's public methods into a CTI child", () => {
       const gen = new ManifestGenerator();
       const manifest = gen.generateManifest([

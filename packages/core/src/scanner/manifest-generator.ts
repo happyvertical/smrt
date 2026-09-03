@@ -138,19 +138,29 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
  * `SmrtPolymorphicAssociation`, `SmrtReport`, `SmrtReportCollection`) is
  * intentionally NOT folded in here, unlike an earlier version of this fix.
  * Those classes are mixin-style bases whose declared methods ARE the
- * subclass's real, intended public API — `SmrtJunction.attach`/`detach`/
- * `byLeft`/`byRight`/`setLinks` for junction collections,
- * `SmrtHierarchical.getParent`/`getChildren`/`getAncestors`/
- * `getDescendants`/`getHierarchy`/`moveTo` for hierarchical objects — the
- * same way `SmrtHierarchical.parentId` is a real, intended field, which is
- * exactly why `FRAMEWORK_ABSTRACT_BASE_NAMES` fields already merge into
- * every subclass regardless of STI/CTI (see above). Confirmed by
- * `packages/template-sveltekit/__tests__/runtimeProfileParity.test.ts`'s
- * committed snapshot, which asserts a junction collection subclass DOES
- * expose `attach`/`byLeft`/`byRight`/`detach`/`setLinks` as generated
- * surfaces — folding these five into the method exclusion broke that test,
- * which is how this got caught. Keep in sync with the field-merge set's
- * own doc comment; this one governs method merging only.
+ * subclass's real, intended public API — the same way `SmrtHierarchical.
+ * parentId` is a real, intended field, which is exactly why
+ * `FRAMEWORK_ABSTRACT_BASE_NAMES` fields already merge into every subclass
+ * regardless of STI/CTI (see above). Directly confirmed for two of the
+ * five: `SmrtJunction.attach`/`detach`/`byLeft`/`byRight`/`setLinks`
+ * (`packages/core/src/junction.ts`) — a `packages/template-sveltekit/
+ * __tests__/runtimeProfileParity.test.ts` snapshot broke when an earlier
+ * revision of this fix folded all 8 `FRAMEWORK_BASE_CLASSES` in here,
+ * which is how this got caught — and `SmrtHierarchical.getParent`/
+ * `getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`
+ * (`packages/core/src/hierarchical.ts`). `SmrtPolymorphicAssociation`
+ * follows the identical pattern by inspection but has no dedicated
+ * regression test yet. `SmrtReport`/`SmrtReportCollection` are the
+ * least-audited of the five: `SmrtReportCollection` overrides `list`/`get`
+ * (`packages/reports/src/report.ts`), which are also the universal CRUD
+ * operation names — a downstream `class X extends SmrtReportCollection`
+ * with default (non-strict) MCP config could see a generated custom-action
+ * tool collide with the standard `list`/`get` tool name. No in-repo
+ * subclass exercises this today, so it doesn't regress anything this PR
+ * touches, but a future MCP-generator fix should give the non-strict path
+ * the same CRUD-operation skip `CLIGenerator` already has, independent of
+ * this exclusion set. Keep in sync with the field-merge set's own doc
+ * comment; this one governs method merging only.
  */
 const FRAMEWORK_METHOD_BASE_NAMES = new Set([
   'SmrtObject',
