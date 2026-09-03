@@ -93,7 +93,7 @@ feature — they trade off differently and exist for different callers:
 | | Local: `smrt <object>:<action>` | Remote: `smrt-app-cli` |
 | --- | --- | --- |
 | Package | `@happyvertical/smrt-cli` (the `smrt` bin) | `@happyvertical/smrt-app-cli` |
-| Example | `smrt product:list`, `smrt product:get <id>` (unpluralized class name) | `<app> products list`, `<app> products get <id>` (pluralized collection slug) |
+| Example | `smrt product:list`, `smrt product:get <id>` (lowercased class name, verbatim) | `<app> products list`, `<app> products get <id>` (the manifest's `collection` value — the pluralized class name by default, or a custom `tableName` override) |
 | Discovery | In-process: `ObjectRegistry` + the built manifest (`findObjectCommand` → `getObjectCommandsLazy` → `generateObjectCommands`, `packages/cli/src/cli-generator.ts`) | Over HTTP: `GET /api/_resources` against a **running, deployed** application |
 | Data access | Opens a real database connection directly, using `cli.database` from `smrt.config` (`getCollection()` and the custom-method path in `cli-generator.ts`) | Bearer-authed HTTP calls to the app's own API — never touches a database directly |
 | Who runs it, and where | A developer or operator, on a machine with database credentials and the project's manifest built — a repo checkout, a deploy box, a migration runner | Anyone with an account on the deployed app, from any machine — no database access, no repo checkout, no build step |
@@ -183,7 +183,8 @@ interface ResourceListResponseBody {
   user: { authenticated: boolean; id?: string };
   warnings: string[]; // methods that couldn't be exposed as commands, and why
   resources: Array<{
-    slug: string; // first CLI positional, e.g. `products` (pluralized, same as apiPath)
+    slug: string; // first CLI positional, same as apiPath — the manifest's
+    // `collection` value: pluralized class name by default, `tableName` if overridden
     className: string;
     apiPath: string; // URL segment, e.g. `products`
     label: string;
