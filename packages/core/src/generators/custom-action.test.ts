@@ -3,8 +3,10 @@ import type { CustomActionMetadata } from './custom-action.js';
 import {
   buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
+  isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
+  resolveCustomActionNames,
 } from './custom-action.js';
 
 describe('custom action conformance', () => {
@@ -270,5 +272,109 @@ describe('custom action conformance', () => {
       retryable: false,
       correlationId: 'correlation-1',
     });
+  });
+});
+
+describe('framework lifecycle method exclusion (#2638)', () => {
+  it('recognizes the SmrtObject/SmrtClass identity-persistence surface, including an override', () => {
+    // These are the mechanism behind generated CRUD (constructor ->
+    // initialize() -> save()/delete()/loadFromId()), whether inherited or
+    // declared as a local override such as `User.save()`.
+    for (const name of [
+      'save',
+      'initialize',
+      'getSlug',
+      'destroy',
+      'toJSON',
+      'loadFromId',
+      'loadFromSlug',
+      'withTransaction',
+      'markAsPersisted',
+      'getFields',
+    ]) {
+      expect(isFrameworkLifecycleMethod(name)).toBe(true);
+    }
+  });
+
+  it('does not treat AI operations or other SmrtObject/SmrtCollection capabilities as lifecycle methods', () => {
+    // is()/do()/describe() are designed to be overridden with domain-specific
+    // behavior and exposed as a distinct action (see
+    // generated-client-integration.test.ts's ArtCollection.describe(tone)
+    // fixture and cli-commands.spec.ts's describe() custom-action fixture) --
+    // excluding them here would regress real, intentional usage. Relationship
+    // loading, memory, embeddings, AI-usage introspection, and
+    // SmrtCollection's own query surface are excluded for the same reason:
+    // they are distinct capabilities, not "the mechanism behind CRUD".
+    for (const name of [
+      'is',
+      'do',
+      'describe',
+      'loadRelated',
+      'remember',
+      'recall',
+      'generateEmbeddings',
+      'count',
+      'facets',
+      'query',
+      'findOne',
+      'aCustomDomainMethod',
+    ]) {
+      expect(isFrameworkLifecycleMethod(name)).toBe(false);
+    }
+  });
+
+  it('resolves an empty custom-action set for a class that only overrides lifecycle methods', () => {
+    // The #2638 worked example: a class with cli: true (no include list --
+    // the "every public method minus exclude" default resolution) whose only
+    // "custom" methods are its own save()/initialize() overrides.
+    const methods = new Map([
+      ['save', { isPublic: true }],
+      ['initialize', { isPublic: true }],
+      ['hasValidEmail', { isPublic: true }],
+    ]);
+
+    const names = resolveCustomActionNames(methods, undefined, [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+    ]);
+
+    expect(Array.from(names).sort()).toEqual(['hasValidEmail']);
+  });
+
+  it('still honors public/exclude/include filtering alongside the lifecycle exclusion', () => {
+    const methods = new Map([
+      ['save', { isPublic: true }],
+      ['recordLogin', { isPublic: true }],
+      ['internalHelper', { isPublic: false }],
+      ['archive', { isPublic: true }],
+    ]);
+
+    expect(
+      Array.from(
+        resolveCustomActionNames(methods, undefined, ['list', 'get']),
+      ).sort(),
+    ).toEqual(['archive', 'recordLogin']);
+
+    expect(
+      Array.from(
+        resolveCustomActionNames(methods, { exclude: ['archive'] }, [
+          'list',
+          'get',
+        ]),
+      ).sort(),
+    ).toEqual(['recordLogin']);
+
+    expect(
+      Array.from(
+        resolveCustomActionNames(
+          methods,
+          { include: ['list', 'recordLogin'] },
+          ['list', 'get'],
+        ),
+      ).sort(),
+    ).toEqual(['recordLogin']);
   });
 });

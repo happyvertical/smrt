@@ -28,8 +28,10 @@ import type { RegisteredClass } from '../registry/types.js';
 import {
   buildCustomActionInvocationArgs,
   customActionParameterInputName,
+  isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
+  resolveCustomActionNames,
 } from './custom-action.js';
 import { runWithTenantGate } from './tenant-gate.js';
 
@@ -316,6 +318,18 @@ export class CLIGenerator {
         throw new Error(`Command '${action}' is not enabled for ${objectName}`);
       }
       return;
+    }
+
+    // A framework lifecycle method (save/initialize/... — see
+    // FRAMEWORK_LIFECYCLE_METHOD_NAMES) is never a custom action, even when
+    // this class declares its own override: it is the mechanism behind
+    // generated CRUD, not a distinct operation, and listCommands() never
+    // advertises it. Reject it here too so an advertised command and an
+    // invokable one cannot disagree (#2638).
+    if (isFrameworkLifecycleMethod(action)) {
+      throw new Error(
+        `Command '${action}' is a framework lifecycle method, not a custom action, on ${objectName}`,
+      );
     }
 
     // Custom method: must be public, and — when an include list is present — it
@@ -709,11 +723,12 @@ export class CLIGenerator {
       }
 
       const methods = await ObjectRegistry.getAllMethods(objectName);
-      for (const [methodName, methodDef] of methods) {
-        if (CRUD_OPERATIONS.includes(methodName)) continue;
-        if (!methodDef.isPublic) continue;
-        if (excluded.includes(methodName)) continue;
-        if (included !== undefined && !included.includes(methodName)) continue;
+      const customActions = resolveCustomActionNames(
+        methods,
+        { include: included, exclude: excluded },
+        CRUD_OPERATIONS,
+      );
+      for (const methodName of customActions) {
         commands.push(`${lower}:${methodName}`);
       }
     }

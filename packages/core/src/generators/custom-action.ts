@@ -14,6 +14,176 @@ import { convertTypeToJsonSchema } from '../tools/tool-generator.js';
 export type CustomActionScope = 'item' | 'collection';
 export type { ToolEffect } from '../registry/types.js';
 
+/**
+ * Public method names declared directly on `SmrtObject`/`SmrtClass`
+ * (`src/object.ts`, `src/class.ts`) that form the constructor → `initialize()`
+ * → `save()`/`delete()`/`loadFromId()` lifecycle and its immediate supporting
+ * mechanism: identity/persistence bookkeeping, transaction binding, and
+ * serialization. `save()` is what generated `create`/`update` call;
+ * `initialize()` is what `get`/`list` hydration calls; `loadFromId()`/
+ * `loadFromSlug()` are what `get()` calls; `toJSON()`/`toPublicJSON()` are
+ * what every read serializes through. None of these are a subclass-specific
+ * operation, so none is exposed as a generated CLI/MCP custom action --
+ * even when a subclass declares its own override (e.g. `User.save()` at
+ * `packages/users/src/models/User.ts`). An override is still the same
+ * lifecycle operation, not a new one (#2638). `delete` itself is a CRUD verb
+ * `CLIGenerator`/`MCPGenerator` already special-case, so it is not repeated
+ * here.
+ *
+ * Scope is deliberately narrower than "every public method on
+ * SmrtObject/SmrtClass/SmrtCollection":
+ *
+ * - AI operations `is()`/`do()`/`describe()` are declared on `SmrtObject`
+ *   but are explicitly designed to be overridden with domain-specific
+ *   behavior and exposed as a distinct action -- confirmed by existing,
+ *   intentional coverage (`generators/cli-commands.spec.ts`'s
+ *   `describe()` custom-action fixture,
+ *   `vite-plugin/generated-client-integration.test.ts`'s `ArtCollection.
+ *   describe(tone)` with its own declared API route). Excluding them here
+ *   would regress real, working behavior.
+ * - Relationship loading (`loadRelated`/`loadRelatedMany`/`getRelated`/
+ *   `isRelatedLoaded`), memory (`remember`/`recall`/`recallAll`/`forget`/
+ *   `forgetScope`), embeddings (`generateEmbeddings`/`getEmbedding`/
+ *   `hasStaleEmbeddings`/`clearEmbeddings`), and AI-usage introspection
+ *   (`getAiUsageSnapshot`/`resetAiUsage`/`listAiUsage`/`summarizeAiUsage`)
+ *   are generic capabilities a class may legitimately want to trigger or
+ *   report on as a distinct action (e.g. "regenerate this record's
+ *   embeddings"), not "the mechanism behind CRUD" the way `save`/
+ *   `initialize` are. Nothing in the measured #2638 residual touches them,
+ *   so blanket-excluding them is a separate, unevidenced call this fix does
+ *   not make.
+ * - `SmrtCollection`'s own surface (`count`, `facets`, `query`, `findOne`,
+ *   `generateMissingEmbeddings`, ...) is excluded entirely for the same
+ *   reason: the measured residual is 100% item-class overrides (`User`,
+ *   `Invoice`, `Payment`, ...), never a collection-class override, and
+ *   `count`/`facets` read as genuinely distinct query capabilities in
+ *   existing fixtures elsewhere in the repo (e.g.
+ *   `packages/content/src/server/content-list-actions.test.ts`). Extending
+ *   this rule to `SmrtCollection` needs its own review, not a ride-along
+ *   here.
+ *
+ * This can only be a METHOD-NAME list, not a reuse of the existing
+ * class-name sets (`FRAMEWORK_METHOD_BASE_NAMES` in
+ * `scanner/manifest-generator.ts`, the registry's own by-name skip in
+ * `registry/inheritance-resolver.ts`, or the broader 8-class
+ * `FRAMEWORK_BASE_CLASSES` those two modules also cross-reference for the
+ * unrelated schema-field-merge question): those sets answer "is this
+ * ancestor one of the excluded classes", which only ever decides whether to
+ * MERGE an ancestor's methods onto a subclass that does not declare them.
+ * A locally declared override -- the #2638 case -- IS the subclass's own
+ * method; there is no ancestor lookup to skip, because the method that
+ * needs excluding was never inherited in the first place. The same
+ * plumbing-vs-operation judgment #2624 made at the class level has to be
+ * re-expressed as a method-name list to reach the override case too, which
+ * is why this is a fifth name list rather than a reuse of one of the four.
+ *
+ * A static, hand-maintained list (not runtime introspection of the actual
+ * `SmrtObject`/`SmrtClass` prototypes) matches the existing pattern for all
+ * four sibling lists above, and keeps this transport-neutral module usable
+ * from a pure manifest/AST build path (`vite-plugin/sveltekit-generator.ts`)
+ * that has no live class registry to introspect. Re-derive this list from
+ * those two files' own public method signatures if they change.
+ */
+export const FRAMEWORK_LIFECYCLE_METHOD_NAMES: ReadonlySet<string> = new Set([
+  // SmrtClass (src/class.ts) — resource/transaction plumbing.
+  'destroy',
+  'withDatabase',
+  // SmrtObject (src/object.ts) — identity/persistence lifecycle mechanism.
+  'initialize',
+  'loadDataFromDb',
+  'getFields',
+  'toJSON',
+  'toPlainObject',
+  'toPublicJSON',
+  'getId',
+  'getSlug',
+  'getSavedId',
+  'isSaved',
+  'save',
+  'claimRevision',
+  'classifyConstraintError',
+  'loadFromId',
+  'loadFromSlug',
+  'markAsPersisted',
+  'requireInsertOnSave',
+  'withTransaction',
+]);
+
+/**
+ * True when `methodName` is one of the universal `SmrtObject`/`SmrtClass`
+ * lifecycle methods above — the mechanism behind generated CRUD, never a
+ * subclass-specific custom action, even when the subclass declares its own
+ * override.
+ */
+export function isFrameworkLifecycleMethod(methodName: string): boolean {
+  return FRAMEWORK_LIFECYCLE_METHOD_NAMES.has(methodName);
+}
+
+/** Minimal shape `resolveCustomActionNames` needs from a method entry. */
+export interface ResolvableMethod {
+  isPublic: boolean;
+}
+
+/**
+ * Resolve the effective set of custom (non-CRUD) command/tool names exposed
+ * for an object, given its transport config's `include`/`exclude` and its
+ * method map: every public method, minus CRUD verbs, minus framework
+ * lifecycle methods, restricted to `include` when present and always minus
+ * `exclude`. Reused by three callers, so they agree with each other and
+ * with what `listCommands()` advertises:
+ *
+ * - `CLIGenerator.listCommands()` (over the live `ObjectRegistry`).
+ * - `findCliApiCoherenceViolations`'s bare-`cli: true`/`cli: {}` branch
+ *   (over the static manifest, no explicit `include`) -- see
+ *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts`.
+ * - `generateCLIModule()` in `vite-plugin/index.ts`, which generates the
+ *   `smrt:cli` virtual module's static command metadata. It layers one
+ *   additional filter on top of this function's result: a leading `_` on
+ *   the method name, because the manifest's `isPublic` is unreliable there
+ *   (see that call site's own comment) and this function has no other
+ *   signal to exclude an internal-by-convention method.
+ *
+ * NOT the one universal resolution, and deliberately not reused by every
+ * caller that resolves a CLI command set:
+ *
+ * - `CLIGenerator.assertCommandExposed()` does not call this for its custom-
+ *   method branch — it checks `isFrameworkLifecycleMethod()` directly plus
+ *   its own inline public/include/exclude logic, so it can give a distinct
+ *   error message per failure reason (unknown vs. not public vs. not
+ *   enabled vs. lifecycle method) rather than a single boolean membership
+ *   test.
+ * - `findCliApiCoherenceViolations`'s EXPLICIT-`cli.include` branch
+ *   deliberately bypasses this function too: an `include` entry naming a
+ *   typo, a getter, or a private/protected method must still surface as
+ *   "unreachable" at build time (the pre-#2638 behavior), and this function
+ *   can only ever return names that exist in the manifest's `methods` map —
+ *   it would silently drop such an entry instead of flagging it. See
+ *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
+ *   full rationale; do not "simplify" that branch onto this function.
+ *
+ * `crudActionNames` is supplied by the caller rather than duplicated here:
+ * `CLIGenerator` and the SvelteKit generator each already keep their own
+ * copy of the five CRUD verb names (`CRUD_OPERATIONS`/`STANDARD_API_ACTIONS`).
+ */
+export function resolveCustomActionNames(
+  methods: Iterable<[string, ResolvableMethod]>,
+  config: { include?: string[]; exclude?: string[] } | undefined,
+  crudActionNames: readonly string[],
+): Set<string> {
+  const included = config?.include;
+  const excluded = config?.exclude ?? [];
+  const result = new Set<string>();
+  for (const [name, method] of methods) {
+    if (crudActionNames.includes(name)) continue;
+    if (isFrameworkLifecycleMethod(name)) continue;
+    if (!method.isPublic) continue;
+    if (excluded.includes(name)) continue;
+    if (included !== undefined && !included.includes(name)) continue;
+    result.add(name);
+  }
+  return result;
+}
+
 export interface CustomActionMetadata {
   scope: CustomActionScope;
   /** An item-targeted action requires its target identifier. */
