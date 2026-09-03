@@ -922,10 +922,13 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
-   * The hold-back mark keeps the LOWEST sequence a handle has not proven
-   * committed, never the latest. A transaction that appends more than once
-   * must still be held back at its first allocation, or a read on that handle
-   * would serve the very sequences the mark exists to hide.
+   * A transaction that appends more than once must still be held back at its
+   * first allocation. Only that first append can allocate inline — it assigns
+   * the transaction id that makes every later append stage — so what this pins
+   * is that the staged appends which follow do not disturb the mark, and that
+   * the mark is what a read on the same handle is held back to. (The helper
+   * only ever lowers the mark, so two inline allocations could not raise it
+   * either; there is no path that produces two.)
    */
   it('holds back at the first allocation when a transaction appends repeatedly', async () => {
     await expect(
