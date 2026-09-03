@@ -2821,7 +2821,7 @@ describe('SvelteKit Route Generator', () => {
         cli: { include: ['list', 'discover', 'audit'] },
       });
       expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
-        /Praeco\.discover is declared in cli\.include but is not exposed via the api/,
+        /Praeco\.discover is exposed as a CLI command but is not exposed via the api/,
       );
       expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(/audit/);
       expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
@@ -2871,6 +2871,61 @@ describe('SvelteKit Route Generator', () => {
       // CLI command → must not be flagged as unreachable.
       expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
       expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
+    });
+
+    it('inspects a bare `cli: true` class, not only ones with cli.include (#2638)', () => {
+      // Before #2638 this short-circuited on `typeof cliConfig !== 'object'`
+      // and never ran, which is how an unreachable custom command (e.g.
+      // `user:save`) shipped unnoticed for the common `cli: true` form.
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: true,
+      });
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        { className: 'Praeco', unreachable: ['audit', 'discover'] },
+      ]);
+    });
+
+    it('inspects a bare `cli: {}` class the same way as `cli: true` (#2638)', () => {
+      // Before #2638 this short-circuited on an empty/absent cli.include.
+      const manifest = buildManifest({
+        api: { include: ['list', 'get', 'discover'] },
+        cli: {},
+      });
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        { className: 'Praeco', unreachable: ['audit'] },
+      ]);
+    });
+
+    it('does not flag a framework lifecycle method override as unreachable (#2638)', () => {
+      // A cli: true class whose only "custom" method is a lifecycle override
+      // (e.g. User.save()) has an empty effective custom-action set for it --
+      // nothing to be unreachable, unlike a genuine custom method with no API
+      // route. Landing the #2638 policy fix and the lint fix separately would
+      // make this fail: the lint alone would flag `save` as unreachable.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          LifecycleOnly: {
+            className: 'LifecycleOnly',
+            collection: 'lifecycleonlies',
+            fields: {},
+            methods: {
+              save: {
+                name: 'save',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['list', 'get'] },
+              cli: true,
+            },
+          },
+        },
+      };
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
     });
 
     it('keeps config-only collection overrides item-scoped for non-static methods', () => {
