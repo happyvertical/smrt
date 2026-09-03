@@ -922,6 +922,55 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * The hold-back mark keeps the LOWEST sequence a handle has not proven
+   * committed, never the latest. A transaction that appends more than once
+   * must still be held back at its first allocation, or a read on that handle
+   * would serve the very sequences the mark exists to hide.
+   */
+  it('holds back at the first allocation when a transaction appends repeatedly', async () => {
+    await expect(
+      runTransaction(owner, async (tx) => {
+        // First statement allocates inline at 1 and records the mark.
+        expect(
+          await appendChange(tx, {
+            table: FEED_TABLE,
+            rowId: ROW_A,
+            operation: 'update',
+          }),
+        ).toBe(1);
+
+        // Later appends in the same transaction stage instead — the
+        // transaction now has an id — and must not raise the mark.
+        await tx.query(
+          `UPDATE ${ROWS_TABLE} SET status = 'second' WHERE id = $1`,
+          ROW_B,
+        );
+        expect(
+          await appendChange(tx, {
+            table: FEED_TABLE,
+            rowId: ROW_B,
+            operation: 'update',
+          }),
+        ).toBeNull();
+
+        const page = await getChangesSince(tx, { since: 0 });
+        expect(page.changes).toEqual([]);
+        expect(page.cursor).toBe(0);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    // Nothing from that transaction survives, and the feed still starts at 1.
+    expect(
+      await appendChange(setup, {
+        table: FEED_TABLE,
+        rowId: ROW_B,
+        operation: 'create',
+      }),
+    ).toBe(1);
+  }, 120_000);
+
+  /**
    * Foreign-cursor detection has to reason about the committed horizon too. A
    * cursor above everything committed must be told to resync; deciding that
    * against a horizon inflated by this transaction's own uncommitted drain
