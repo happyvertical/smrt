@@ -25,7 +25,7 @@
  * different predicates over one shared verb list.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
@@ -85,10 +85,10 @@ class Issue2646CasedVerb extends SmrtObject {
   }
 }
 
-// A strict `include` naming ONLY a cased CRUD verb. `shouldInclude('list')` is
-// exact-match, so no standard list tool is emitted for this class — the include
-// entry is the only thing that can produce `issue2646casedinclude_list`, and
-// dropping it would leave the class with no list tool at all.
+// A strict `include` naming ONLY a cased CRUD verb. Emitting it would build
+// `issue2646casedinclude_list`, which `executeAction` dispatches on the parsed
+// verb — so it would run the built-in CRUD list, never this class's `List()`,
+// under a name the allowlist does not name exactly. `include` fails closed.
 @smrt({ mcp: { include: ['List'] } })
 class Issue2646CasedInclude extends SmrtObject {
   name = '';
@@ -159,20 +159,42 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     expect(names).toContain('issue2646casedverb_refresh');
   });
 
-  it('keeps a cased include entry that collides with no emitted CRUD tool', async () => {
-    const names = await toolNamesFor('issue2646casedinclude');
+  it('fails closed on a cased include entry, warning instead of leaking CRUD', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const names = await toolNamesFor('issue2646casedinclude');
 
-    // `include: ['List']` does not match the exact-match CRUD gate, so the
-    // include entry is the ONLY source of this tool. It must survive.
-    expect(names).toEqual(['issue2646casedinclude_list']);
+      // The entry cannot become a custom action, and it does not name a CRUD
+      // verb exactly, so `shouldInclude('list')` emits no standard tool either.
+      // Emitting anything here would hand the caller the built-in list under a
+      // name their allowlist never named.
+      expect(names).toEqual([]);
+
+      // The caller cannot otherwise see the entry was dropped, so warn.
+      const messages = warn.mock.calls.map((call) => String(call[0]));
+      expect(
+        messages.some(
+          (message) =>
+            message.includes("'List'") &&
+            message.includes('issue2646casedinclude_list'),
+        ),
+      ).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
-  it('drops a cased include entry that would collide with an emitted CRUD tool', async () => {
-    const names = await toolNamesFor('issue2646casedincludecollision');
+  it('drops a cased include entry that duplicates an exactly-named verb', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const names = await toolNamesFor('issue2646casedincludecollision');
 
-    // `include: ['list', 'List']` emits the standard tool, so the cased entry
-    // is a collision and is dropped — one tool, not two.
-    expect(names).toEqual(['issue2646casedincludecollision_list']);
+      // `include: ['list', 'List']` emits the standard tool for `list`; the
+      // cased entry is dropped, so the catalog holds one tool, not two.
+      expect(names).toEqual(['issue2646casedincludecollision_list']);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('produces no duplicate tool names across the whole registry', async () => {

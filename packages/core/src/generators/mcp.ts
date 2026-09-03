@@ -21,6 +21,7 @@ import {
   type CustomActionFailure,
   type CustomActionMetadata,
   customActionParameterInputName,
+  isCrudOperation,
   isCrudToolAction,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
@@ -45,6 +46,7 @@ import {
   buildToolInputSchema,
   fieldTypeToJsonSchema,
   finalizeMcpJsonSchema,
+  isCrudAction,
   type ToolFieldMeta,
   type ToolJsonSchema,
 } from './tool-schema.js';
@@ -481,17 +483,28 @@ export class MCPGenerator {
       // where `mcp: { include: ['list', 'get'] }` still emitted custom-method
       // tools like `payment_recordpayment` because `include` only gated CRUD
       // verbs (#1540 / #1390).
-      // Drop an include entry only when it would COLLIDE with a CRUD tool that
-      // is actually emitted. `include: ['List']` names no CRUD verb exactly, so
-      // `shouldInclude('list')` is false and no standard tool claims
-      // `${lowerName}_list` — the entry must still produce that tool, exactly as
-      // it did before #2646. Dropping it unconditionally would leave the class
-      // with no list tool at all.
+      // An entry whose name lands on a CRUD verb in the tool namespace is
+      // never a custom method, so it cannot enter `customMethodsInInclude`.
+      // Emitting it would build `${lowerName}_<verb>`, and `executeAction`
+      // dispatches on the parsed verb — the class's own method would never run,
+      // while the client would get the built-in CRUD operation under a name the
+      // allowlist does not name exactly. That is the #1540/#1546 leak in the
+      // CRUD direction, so `include` fails closed here.
+      //
+      // Only an EXACT verb is ordinary config (`shouldInclude` gates it above).
+      // Any other casing is a config error the caller cannot otherwise see, so
+      // warn rather than swallow it — the same courtesy this branch already
+      // extends to an include entry that resolves to no method at all.
       const customMethodsInInclude =
-        included?.filter(
-          (item) =>
-            !(isCrudToolAction(item) && shouldInclude(item.toLowerCase())),
-        ) || [];
+        included?.filter((item) => {
+          if (!isCrudToolAction(item)) return true;
+          if (!isCrudOperation(item)) {
+            console.warn(
+              `Warning: MCP include entry '${item}' for ${objectName} resolves to the reserved CRUD tool '${lowerName}_${item.toLowerCase()}' and was ignored; use '${item.toLowerCase()}' to expose that operation`,
+            );
+          }
+          return false;
+        }) || [];
       // An include list (even one naming only CRUD verbs) switches custom
       // methods into strict allowlist mode.
       const hasIncludeList = included !== undefined;
@@ -766,7 +779,7 @@ export class MCPGenerator {
       required: ['error'],
     };
 
-    if (!isCrudToolAction(action)) {
+    if (!isCrudAction(action)) {
       // Custom action results are deliberately domain-defined and can be any
       // JSON value. MCP structuredContent itself must be object-rooted, so the
       // machine-readable projection carries that value in `data`; legacy text

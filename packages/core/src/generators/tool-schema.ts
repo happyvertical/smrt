@@ -1,5 +1,6 @@
 import {
   buildCustomActionInputSchema,
+  CRUD_OPERATIONS,
   type CustomActionMetadata,
   type ToolEffect,
 } from './custom-action.js';
@@ -156,7 +157,7 @@ export interface ToolFieldMeta {
 export type ToolIdType = 'uuid' | 'text';
 
 /** The CRUD verbs with dedicated input-schema skeletons; anything else is custom. */
-const CRUD_ACTIONS = new Set(['list', 'get', 'create', 'update', 'delete']);
+const CRUD_ACTIONS = new Set<string>(CRUD_OPERATIONS);
 
 export interface ToolRouteDescriptor {
   /** HTTP method emitted for the route. */
