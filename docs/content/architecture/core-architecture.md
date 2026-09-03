@@ -99,16 +99,41 @@ ObjectRegistry.clear()                           // Clear all registrations
 
 4. Generators discover at runtime
    ↓
-   CLIGenerator.generate()
+   CLIGenerator.listCommands() / generateHandler()
    ├─ ObjectRegistry.getAllClasses()
    ├─ For each class:
    │  ├─ ObjectRegistry.getConfig(name)  → Get @smrt() options
    │  ├─ ObjectRegistry.getFields(name)  → Get field definitions
-   │  └─ Generate commands based on config.cli
-   └─ Output CLI entry point
+   │  └─ Resolve commands based on config.cli
+   └─ Commands served directly (no files written to disk)
 ```
 
 ## CLI Architecture: Zero-Config Consumption
+
+> This section documents a design proposal from Issue #211's era. Its core
+> idea — a `smrt` bin that auto-discovers `@smrt()` objects via the registry
+> and exposes per-object commands with no manual wiring — did ship, largely
+> as designed: `packages/cli`'s `smrt` bin has a live `smrt <object>:<action>`
+> CLI (e.g. `smrt product:list`, not the space-separated `smrt products list`
+> shown below) alongside `smrt objects`/`smrt ls` to list what's registered,
+> both auto-discovered from the manifest/`ObjectRegistry`
+> (`findObjectCommand`/`getObjectCommandsLazy`/`generateObjectCommands` in
+> `packages/cli/src/cli-generator.ts`). The literal `smrt mcp --port 3000`
+> (a live server with a port flag) / `smrt generate <type>` router shown
+> below did not ship as such — the real commands are separately named and
+> write files rather than bind a port (`generate-mcp`, aliased `mcp`, writes
+> a runnable MCP server file via `MCPGenerator.generateServer()`;
+> `generate-routes`, aliased `routes`, writes SvelteKit route files;
+> `generate-types`). This local surface opens a real database connection
+> directly (`cli.database` in `smrt.config`)
+> and is meant for a developer/operator machine with that access, which is
+> different from the separate
+> [`@happyvertical/smrt-app-cli`](../app-cli.md): a **distributable**
+> application CLI that discovers commands from a **running, deployed**
+> application over HTTP (`GET /api/_resources`) and needs no database access
+> at all — see [Choosing a transport](../app-cli.md#choosing-a-transport-local-smrt-vs-smrt-app-cli)
+> for how the two relate. The design intent and exact command shapes below
+> are kept for historical context; do not copy the literal syntax.
 
 ### Design Principle
 
@@ -263,19 +288,19 @@ export class BaseGenerator {
 
 **CLIGenerator** (`src/generators/cli.ts`):
 ```typescript
-generateCommands(): CLICommand[] {
-  const commands: CLICommand[] = [];
+async listCommands(): Promise<string[]> {
+  const commands: string[] = [];
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [name, classInfo] of registeredClasses) {
     const config = ObjectRegistry.getConfig(name);
-    if (!config.cli) continue; // Skip if CLI not enabled
+    if (config.cli === false) continue; // Skip if CLI disabled
 
-    const fields = ObjectRegistry.getFields(name);
-    commands.push(...this.generateObjectCommands(name, fields));
+    // Push '<name>:<verb>' for each exposed CRUD verb, then '<name>:<method>'
+    // for each exposed public custom method.
   }
 
-  return commands;
+  return commands.sort();
 }
 ```
 
@@ -724,21 +749,19 @@ The framework provides several consistency guarantees across all generators:
 
 **Test Coverage**:
 ```typescript
-// Integration test ensures consistency
-const product = new Product();
-const config = ObjectRegistry.getConfig('Product');
+// Integration test ensures consistency: all three generators resolve their
+// exposed surface from the SAME @smrt() config for a class.
 
-// API should exclude delete
-const apiGen = new APIGenerator();
-expect(apiGen.shouldInclude('delete', config)).toBe(false);
+// APIGenerator resolves inclusion via the same static helper preflight uses.
+expect(isApiActionEnabledForObject('Product', 'delete')).toBe(false);
 
-// MCP should only include read operations
-const mcpGen = new MCPGenerator();
-expect(mcpGen.shouldInclude('create', config)).toBe(false);
+// CLIGenerator's own surface is queryable directly.
+const commands = await new CLIGenerator().listCommands();
+expect(commands).toContain('product:delete');
 
-// CLI should include everything
-const cliGen = new CLIGenerator();
-expect(cliGen.shouldInclude('delete', config)).toBe(true);
+// MCPGenerator's tool list reflects the same mcp.include/exclude config.
+const tools = await new MCPGenerator().generateTools();
+expect(tools.some((t) => t.name === 'product_create')).toBe(false);
 ```
 
 ### 2. Field Schema Consistency
