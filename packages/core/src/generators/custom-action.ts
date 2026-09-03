@@ -129,12 +129,29 @@ export interface ResolvableMethod {
  * for an object, given its transport config's `include`/`exclude` and its
  * method map: every public method, minus CRUD verbs, minus framework
  * lifecycle methods, restricted to `include` when present and always minus
- * `exclude`. This is the ONE place that resolution happens, reused by
- * `CLIGenerator.listCommands()`/`assertCommandExposed()` (over the live
+ * `exclude`. Reused by `CLIGenerator.listCommands()` (over the live
  * `ObjectRegistry`) and by the build-time `findCliApiCoherenceViolations`
- * lint (over the static manifest) so an advertised command and an invokable
- * one cannot disagree, and a `cli: true`/`cli: {}` class — no `include` —
- * resolves with the identical rule as one that names an explicit `include`.
+ * lint's bare-`cli: true`/`cli: {}` branch (over the static manifest, no
+ * explicit `include`) so those two agree with each other and with what
+ * `listCommands()` advertises.
+ *
+ * NOT the one universal resolution, and deliberately not reused by every
+ * caller that resolves a CLI command set:
+ *
+ * - `CLIGenerator.assertCommandExposed()` does not call this for its custom-
+ *   method branch — it checks `isFrameworkLifecycleMethod()` directly plus
+ *   its own inline public/include/exclude logic, so it can give a distinct
+ *   error message per failure reason (unknown vs. not public vs. not
+ *   enabled vs. lifecycle method) rather than a single boolean membership
+ *   test.
+ * - `findCliApiCoherenceViolations`'s EXPLICIT-`cli.include` branch
+ *   deliberately bypasses this function too: an `include` entry naming a
+ *   typo, a getter, or a private/protected method must still surface as
+ *   "unreachable" at build time (the pre-#2638 behavior), and this function
+ *   can only ever return names that exist in the manifest's `methods` map —
+ *   it would silently drop such an entry instead of flagging it. See
+ *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
+ *   full rationale; do not "simplify" that branch onto this function.
  *
  * `crudActionNames` is supplied by the caller rather than duplicated here:
  * `CLIGenerator` and the SvelteKit generator each already keep their own
