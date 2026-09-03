@@ -155,6 +155,14 @@ export interface SmrtPluginOptions {
      * skips it. `maxSubscribers` caps active streams per process (#1860).
      */
     eventsRoute?: { enabled?: boolean; maxSubscribers?: number };
+    /**
+     * CLI discovery `_resources` route generation (#2663). Enabled by
+     * default, but only ever emitted when `@happyvertical/smrt-users` is
+     * resolvable from the consumer; `{ enabled: false }` opts out even when
+     * it is present. A pre-existing hand-written `_resources` route is
+     * always preserved.
+     */
+    resourcesRoute?: { enabled?: boolean };
   };
   /** Domain-scoped agent/developer knowledge artifact generation. */
   knowledge?: DomainKnowledgeConfig | false;
@@ -367,6 +375,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       kebabRoutes: svelteKit.kebabRoutes ?? false,
       changesRoute: svelteKit.changesRoute,
       eventsRoute: svelteKit.eventsRoute,
+      resourcesRoute: svelteKit.resourcesRoute,
       knowledge: await resolveKnowledgeConfig(rootDir, currentManifest),
     });
   }
@@ -856,6 +865,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
+                  resourcesRoute: svelteKit.resourcesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     projectRoot,
                     manifest,
@@ -902,6 +912,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
+                  resourcesRoute: svelteKit.resourcesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     projectRoot,
                     manifest,
@@ -940,6 +951,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
+                  resourcesRoute: svelteKit.resourcesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     projectRoot,
                     manifest,

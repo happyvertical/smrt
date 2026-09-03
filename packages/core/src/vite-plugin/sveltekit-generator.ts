@@ -33,6 +33,7 @@ import type {
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
 import { generateEventsRoute } from './events-route.js';
+import { generateResourcesRoute } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateSyncApplyRoute } from './sync-apply-route.js';
 import {
@@ -82,6 +83,14 @@ export interface SvelteKitOptions {
     allowedOrigins?: string[];
     allowCredentials?: boolean;
   };
+  /**
+   * CLI discovery `_resources` route generation (#2663). Enabled by default,
+   * but only ever emitted when `@happyvertical/smrt-users` is resolvable
+   * from the consumer (see `resources-route.ts` for the detection
+   * mechanism) — set `enabled: false` to opt out even when it is present. A
+   * pre-existing hand-written `_resources` route is always preserved.
+   */
+  resourcesRoute?: { enabled?: boolean };
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -1370,6 +1379,14 @@ export async function generateSvelteKitRoutes(
   ) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, '_events', '+server.ts'),
+    );
+  }
+
+  // CLI discovery route (#2663) — cleanup rides the sweep above; skipped
+  // when smrt-users isn't resolvable or a hand-written route already exists.
+  if (generateResourcesRoute(projectRoot, options)) {
+    generatedRoutePaths.push(
+      join(projectRoot, options.routesDir, '_resources', '+server.ts'),
     );
   }
 
