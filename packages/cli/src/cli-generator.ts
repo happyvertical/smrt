@@ -1215,6 +1215,12 @@ export class CLIGenerator {
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
+        // A CRUD verb already names a command pushed above, so a method
+        // sharing its name is not a custom action — emitting one would add a
+        // second `${lowerName}:${verb}` that command lookup can never reach
+        // (#2646).
+        if (crudOperations.includes(methodName)) return false;
+
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
 
