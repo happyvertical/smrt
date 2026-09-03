@@ -873,6 +873,15 @@ export async function appendChange(
         engine === 'postgres' ? row.allocated_seq : row.seq,
       );
       settleDrainedSignals(seq);
+      if (engine === 'postgres') {
+        // A direct allocation made as a caller transaction's FIRST statement
+        // is this transaction's uncommitted work, exactly like a drain's, and
+        // a read on the same handle must not serve it or hand back a cursor
+        // above it — a rollback frees that sequence for somebody else. Record
+        // it unconditionally: an autocommit read clears the mark before using
+        // it, because no transaction id remains by then.
+        recordUncommittedDrainMark(db, seq);
+      }
       return seq;
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
@@ -1337,16 +1346,20 @@ export async function getChangesSince(
   const servedHorizon =
     drainMark === undefined ? horizon : Math.min(horizon, drainMark - 1);
 
-  if (horizon === 0) {
-    // No entries at all. A zero cursor is simply "no changes ever"; any
-    // other cursor came from a different database (or a reset feed) and
-    // cannot be served incrementally.
+  if (servedHorizon === 0) {
+    // Nothing committed that this read may serve. A zero cursor is simply "no
+    // changes ever"; any other cursor came from a different database (or a
+    // reset feed) and cannot be served incrementally. Decided on the SERVED
+    // horizon, not the raw one: inside a caller transaction the raw horizon
+    // includes this transaction's own uncommitted rows, and accepting a cursor
+    // against those would wave through a foreign cursor that a rollback then
+    // makes point at somebody else's entry.
     return since === 0
       ? { changes: [], cursor: 0 }
       : { changes: [], cursor: since, resyncRequired: true, resyncCursor: 0 };
   }
 
-  if (since > horizon) {
+  if (since > servedHorizon) {
     // Foreign or reset cursor — ahead of anything this database allocated.
     return {
       changes: [],

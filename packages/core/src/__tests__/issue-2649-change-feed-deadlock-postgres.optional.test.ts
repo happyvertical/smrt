@@ -881,6 +881,83 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * An append made as a transaction's first statement allocates inline (the
+   * documented residual), so that sequence is this transaction's uncommitted
+   * work just as a drain's would be. A read on the same handle must not serve
+   * it: a rollback frees the sequence, another entry claims it, and a poller
+   * resuming from the cursor this read handed back would skip that entry.
+   */
+  it('never serves a direct allocation made inside the caller transaction', async () => {
+    await expect(
+      runTransaction(owner, async (tx) => {
+        // First statement of the transaction: allocates inline.
+        expect(
+          await appendChange(tx, {
+            table: FEED_TABLE,
+            rowId: ROW_A,
+            operation: 'update',
+          }),
+        ).toBe(1);
+
+        const page = await getChangesSince(tx, { since: 0 });
+        expect(page.changes).toEqual([]);
+        expect(page.cursor).toBe(0);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    // The freed sequence goes to the next entry, and a poller starting from
+    // the cursor that read handed back still sees it.
+    expect(
+      await appendChange(setup, {
+        table: FEED_TABLE,
+        rowId: ROW_B,
+        operation: 'create',
+      }),
+    ).toBe(1);
+    const page = await getChangesSince(setup, { since: 0 });
+    expect(page.changes.map((change) => [change.seq, change.rowId])).toEqual([
+      [1, ROW_B],
+    ]);
+  }, 120_000);
+
+  /**
+   * Foreign-cursor detection has to reason about the committed horizon too. A
+   * cursor above everything committed must be told to resync; deciding that
+   * against a horizon inflated by this transaction's own uncommitted drain
+   * would wave it through, and a rollback then leaves it pointing past an
+   * entry it never received.
+   */
+  it('flags a cursor ahead of the committed horizon from inside a transaction', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    await expect(
+      runTransaction(owner, async (tx) => {
+        // Drains as this transaction's first write, so seq 1 exists only here.
+        const page = await getChangesSince(tx, { since: 1 });
+        expect(page.resyncRequired).toBe(true);
+        expect(page.cursor).toBe(1);
+        expect(page.resyncCursor).toBe(0);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    // The staged entry survives and is served normally afterwards.
+    const page = await getChangesSince(setup, { since: 0 });
+    expect(page.changes.map((change) => change.rowId)).toEqual([ROW_A]);
+  }, 120_000);
+
+  /**
    * The hazard a plain `SEQUENCE`/identity allocator would introduce.
    *
    * Sequence values are handed out before commit and never roll back, so a
