@@ -13,7 +13,11 @@ import type {
   DomainKnowledgeSurface,
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
-import { resolveCustomActionMetadata } from './generators/custom-action.js';
+import {
+  isCrudOperation,
+  isCrudToolAction,
+  resolveCustomActionMetadata,
+} from './generators/custom-action.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -498,6 +502,12 @@ function configuredSurfaces(
   manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
+  // NOTE: the `cli` projection models core's `CLIGenerator`, which reserves a
+  // CRUD verb unconditionally. `@happyvertical/smrt-cli`'s generator reserves
+  // one only where the CRUD command is emitted (each of its commands carries
+  // its own handler), so with `cli: { include: ['list', 'get'] }` a public
+  // `create()` is a reachable `${object}:create` there that this projection
+  // does not report. Predates #2646; see #2648.
   const collectionClass = isSurfaceCollectionClass(manifest, object);
   const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => {
@@ -706,10 +716,13 @@ function resolveCustomMethodNames(
  * `MCPGenerator` emits no separate tool for it (#2646). REST and the CLI keep
  * the declared casing in their route/command names, so only an exact match is
  * reserved there.
+ *
+ * Reads the emitters' own predicates rather than re-testing
+ * `STANDARD_OPERATIONS`, so a change to the shared verb list reaches this
+ * projection too.
  */
 function reservesCrudName(kind: 'api' | 'cli' | 'mcp', name: string): boolean {
-  const candidate = kind === 'mcp' ? name.toLowerCase() : name;
-  return STANDARD_OPERATIONS.includes(candidate);
+  return kind === 'mcp' ? isCrudToolAction(name) : isCrudOperation(name);
 }
 
 function includeExcludeConfig(config: unknown): {

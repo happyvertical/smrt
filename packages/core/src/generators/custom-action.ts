@@ -193,15 +193,16 @@ export function resolveCustomActionNames(
  * This is a NAMESPACE rule, independent of where the method came from — a
  * class's own `list()` collides exactly as a merged ancestor's does (#2646).
  *
- * What a collision means differs by EMITTER — there are three, and two of them
- * reserve the verb unconditionally — so consult the one you are changing rather
- * than assuming a single rule:
+ * What a collision means differs by EMITTER, so consult the one you are
+ * changing rather than assuming a single rule. Not every emitter reads this
+ * list yet — the ones that keep their own copy are called out below:
  *
- * - `generators/mcp.ts` reserves unconditionally. `executeAction` switches on
- *   the verb parsed out of the tool id, so `${object}_list` runs the built-in
- *   list whichever branch emitted it — the class's method could never run, and
- *   emitting one would hand the caller an operation `include` never named.
- * - `generators/cli.ts` (`CLIGenerator`) also reserves unconditionally.
+ * - `generators/mcp.ts` reserves unconditionally, case-folded. `executeAction`
+ *   switches on the verb parsed out of the tool id, so `${object}_list` runs
+ *   the built-in list whichever branch emitted it — the class's method could
+ *   never run, and emitting one would hand the caller an operation `include`
+ *   never named.
+ * - `generators/cli.ts` (`CLIGenerator`) reserves unconditionally, exact.
  *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
  *   action never reaches custom-method resolution, and `listCommands` skips
  *   those names outright.
@@ -211,6 +212,12 @@ export function resolveCustomActionNames(
  *   the class's method, so with `cli: { include: ['list', 'get'] }` a public
  *   `create()` collides with nothing and stays a legitimate, reachable
  *   `${object}:create`.
+ * - `vite-plugin/sveltekit-generator.ts` reserves unconditionally, exact, from
+ *   its OWN `STANDARD_API_ACTIONS` copy.
+ * - `vite-plugin/web-collections.ts` + `tool-schema.ts` build a lowercased flat
+ *   tool id like MCP's, but reserve on the exact-match API action set, so a
+ *   cased CRUD-named method still collides there. Pre-existing, tracked on
+ *   #2648.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the

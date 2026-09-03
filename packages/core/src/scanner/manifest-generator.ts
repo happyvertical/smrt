@@ -159,9 +159,9 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
  * #2646 closed that separately and independently of this exclusion set: the
  * MCP generator now refuses to expose a CRUD-named method as a custom action,
  * matching case-folded because its tool ids are lowercased whole. Each emitter
- * reads the same verb list (`CRUD_OPERATIONS` in
- * `generators/custom-action.ts`) but reserves on its own terms — see that
- * docblock. Keep in sync with the field-merge set's own doc comment; this one
+ * reserves on its own terms, and not all of them read the shared
+ * `CRUD_OPERATIONS` list yet — see its docblock in
+ * `generators/custom-action.ts` for the per-emitter rules. Keep in sync with the field-merge set's own doc comment; this one
  * governs method merging only.
  */
 const FRAMEWORK_METHOD_BASE_NAMES = new Set([
