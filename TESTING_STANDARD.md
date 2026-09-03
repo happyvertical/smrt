@@ -509,18 +509,15 @@ describe('error handling', () => {
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { CLIGenerator } from '@happyvertical/smrt-core/codegen';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
 
 describe('CLI generation', () => {
-  it('should generate list command', () => {
-    const generator = new CLIGenerator({
-      className: 'Product',
-      packageName: '@test/package'
-    });
+  it('should expose CRUD commands for a registered class', async () => {
+    // Assumes Product is registered via @smrt() in the test manifest.
+    const generator = new CLIGenerator({ name: 'test-cli' });
 
-    const code = generator.generateCommand('list');
-    expect(code).toContain('list');
-    expect(code).toContain('Product');
+    const commands = await generator.listCommands();
+    expect(commands).toContain('product:list');
   });
 });
 ```
@@ -528,16 +525,18 @@ describe('CLI generation', () => {
 ### Testing API Generation
 
 ```typescript
-describe('API generation', () => {
-  it('should generate REST endpoint', () => {
-    const generator = new APIGenerator({
-      className: 'Product',
-      packageName: '@test/package'
-    });
+import { describe, it, expect } from 'vitest';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 
-    const code = generator.generateEndpoint('list');
-    expect(code).toContain('GET');
-    expect(code).toContain('/products');
+describe('API generation', () => {
+  it('should route GET /products to the registered collection', async () => {
+    const generator = new APIGenerator({ basePath: '/api/v1' });
+    const handler = generator.generateHandler();
+
+    const response = await handler(
+      new Request('http://localhost/api/v1/products'),
+    );
+    expect(response.status).toBe(200);
   });
 });
 ```
