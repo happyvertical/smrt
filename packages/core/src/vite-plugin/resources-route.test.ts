@@ -24,6 +24,15 @@ vi.mock('node:fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+// consumerHasSmrtUsers resolves via node:module's createRequire rather than
+// existsSync (see the module doc — a hardcoded physical path misses
+// workspace-hoisted installs). Mock the require it constructs so each test
+// controls whether resolution succeeds.
+const mockResolve = vi.fn<(specifier: string) => string>();
+vi.mock('node:module', () => ({
+  createRequire: () => ({ resolve: mockResolve }),
+}));
+
 // Import after mocking
 import {
   consumerHasSmrtUsers,
@@ -40,18 +49,36 @@ const baseOptions: SvelteKitOptions = {
   objectsDir: 'src/lib/objects',
 };
 
-const smrtUsersPkgPath = join(
-  projectRoot,
-  'node_modules',
-  '@happyvertical',
-  'smrt-users',
-  'package.json',
-);
+function resolveSmrtUsers(): void {
+  mockResolve.mockImplementation((specifier) => {
+    if (specifier === '@happyvertical/smrt-users/sveltekit') {
+      return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+    }
+    throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+      code: 'MODULE_NOT_FOUND',
+    });
+  });
+}
+
+function doNotResolveSmrtUsers(): void {
+  mockResolve.mockImplementation((specifier) => {
+    throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+      code: 'MODULE_NOT_FOUND',
+    });
+  });
+}
+
 const routeFilePath = join(
   projectRoot,
   'src/routes/api',
   '_resources',
   '+server.ts',
+);
+const routeFilePathJs = join(
+  projectRoot,
+  'src/routes/api',
+  '_resources',
+  '+server.js',
 );
 
 function writtenRouteContent(): string {
@@ -69,15 +96,16 @@ describe('consumerHasSmrtUsers (#2663)', () => {
     vi.clearAllMocks();
   });
 
-  it('is true when node_modules/@happyvertical/smrt-users/package.json exists', () => {
-    vi.mocked(existsSync).mockImplementation(
-      (path) => String(path) === smrtUsersPkgPath,
-    );
+  it('is true when @happyvertical/smrt-users/sveltekit resolves', () => {
+    resolveSmrtUsers();
     expect(consumerHasSmrtUsers(projectRoot)).toBe(true);
+    expect(mockResolve).toHaveBeenCalledWith(
+      '@happyvertical/smrt-users/sveltekit',
+    );
   });
 
-  it('is false when smrt-users is not present in node_modules', () => {
-    vi.mocked(existsSync).mockReturnValue(false);
+  it('is false when smrt-users is not resolvable', () => {
+    doNotResolveSmrtUsers();
     expect(consumerHasSmrtUsers(projectRoot)).toBe(false);
   });
 });
@@ -88,9 +116,8 @@ describe('generateResourcesRoute (#2663)', () => {
   });
 
   it('emits the _resources route when smrt-users is resolvable', () => {
-    vi.mocked(existsSync).mockImplementation(
-      (path) => String(path) === smrtUsersPkgPath,
-    );
+    resolveSmrtUsers();
+    vi.mocked(existsSync).mockReturnValue(false);
 
     const generated = generateResourcesRoute(projectRoot, baseOptions);
 
@@ -116,6 +143,7 @@ describe('generateResourcesRoute (#2663)', () => {
   });
 
   it('does not emit the _resources route when smrt-users is absent', () => {
+    doNotResolveSmrtUsers();
     vi.mocked(existsSync).mockReturnValue(false);
 
     const generated = generateResourcesRoute(projectRoot, baseOptions);
@@ -125,12 +153,27 @@ describe('generateResourcesRoute (#2663)', () => {
     expect(mkdirSync).not.toHaveBeenCalled();
   });
 
-  it('preserves an existing hand-written _resources route instead of overwriting it', () => {
-    // Both the smrt-users package AND a file already at the route path exist.
-    vi.mocked(existsSync).mockImplementation((path) => {
-      const p = String(path);
-      return p === smrtUsersPkgPath || p === routeFilePath;
-    });
+  it('preserves an existing hand-written +server.ts route instead of overwriting it', () => {
+    resolveSmrtUsers();
+    vi.mocked(existsSync).mockImplementation(
+      (path) => String(path) === routeFilePath,
+    );
+
+    const generated = generateResourcesRoute(projectRoot, baseOptions);
+
+    expect(generated).toBe(false);
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('preserves an existing hand-written +server.js route instead of writing +server.ts alongside it', () => {
+    // Regression test: a .ts-only existence check is blind to a
+    // hand-written +server.js, so the generator would previously write
+    // +server.ts next to it and SvelteKit would refuse the route with
+    // "Multiple endpoint files found".
+    resolveSmrtUsers();
+    vi.mocked(existsSync).mockImplementation(
+      (path) => String(path) === routeFilePathJs,
+    );
 
     const generated = generateResourcesRoute(projectRoot, baseOptions);
 
@@ -139,9 +182,8 @@ describe('generateResourcesRoute (#2663)', () => {
   });
 
   it('respects resourcesRoute.enabled === false even when smrt-users is present', () => {
-    vi.mocked(existsSync).mockImplementation(
-      (path) => String(path) === smrtUsersPkgPath,
-    );
+    resolveSmrtUsers();
+    vi.mocked(existsSync).mockReturnValue(false);
 
     const generated = generateResourcesRoute(projectRoot, {
       ...baseOptions,
@@ -153,9 +195,8 @@ describe('generateResourcesRoute (#2663)', () => {
   });
 
   it('threads kebabRoutes into the generated handler options', () => {
-    vi.mocked(existsSync).mockImplementation(
-      (path) => String(path) === smrtUsersPkgPath,
-    );
+    resolveSmrtUsers();
+    vi.mocked(existsSync).mockReturnValue(false);
 
     generateResourcesRoute(projectRoot, { ...baseOptions, kebabRoutes: true });
 

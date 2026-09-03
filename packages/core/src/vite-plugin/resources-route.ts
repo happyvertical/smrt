@@ -32,18 +32,23 @@
  * whether a consumer has taken on `smrt-users`. Objects don't declare an
  * auth dependency; the app does, at the package level.
  *
- * So this route uses a **resolvable-dependency check**: does
- * `node_modules/@happyvertical/smrt-users/package.json` exist under the
- * consumer's `projectRoot`? That is the strongest available signal (stronger
- * than reading `package.json`'s `dependencies` block, which can list a
- * package that was never installed) that the emitted import will actually
- * resolve at build time, and it costs one `existsSync` — no dependency
- * graph walk, no `require.resolve` machinery, no risk of resolving a
- * hoisted transitive copy that happens to be present but isn't what the
- * consumer's own build would see. It also mirrors the pattern the
- * `sveltekit-generator.runtime.test.ts` shims already use to make a real
- * `@happyvertical/smrt-tenancy` resolvable for its esbuild-and-execute
- * assertions.
+ * So this route uses a **resolvable-dependency check**: does the exact
+ * subpath the generated file imports — `@happyvertical/smrt-users/sveltekit`
+ * — resolve from the consumer's `projectRoot`, via a `createRequire` rooted
+ * at the consumer's own `package.json`? That is stronger than reading
+ * `package.json`'s `dependencies` block (which can list a package that was
+ * never installed) and, unlike a single hardcoded
+ * `node_modules/@happyvertical/smrt-users/package.json` path, it uses
+ * Node's real module resolution — so it also finds the package when a
+ * workspace hoists shared dependencies to an ancestor `node_modules` (npm/
+ * yarn workspaces, or pnpm with `node-linker=hoisted`) rather than
+ * installing them directly under the consumer's own `projectRoot`.
+ * Resolving the `/sveltekit` subpath specifically, rather than the
+ * package's bare `package.json`, matters too: `smrt-users`'s `exports` map
+ * does not list `./package.json`, so resolving that path would throw
+ * `ERR_PACKAGE_PATH_NOT_EXPORTED` even when the package is genuinely
+ * installed — resolving the subpath the route actually imports sidesteps
+ * that and checks precisely the thing that must succeed at build time.
  *
  * An explicit `sveltekit: { resourcesRoute: { enabled: false } }` escape
  * hatch is also available, matching `changesRoute`/`eventsRoute`, for a
@@ -76,25 +81,29 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
- * Whether `@happyvertical/smrt-users` is resolvable from the consumer at
+ * Whether `@happyvertical/smrt-users/sveltekit` — the exact subpath the
+ * generated route imports — is resolvable from the consumer at
  * `projectRoot`. See the module doc for why this check (rather than reading
- * `package.json`'s declared `dependencies`) is the chosen signal.
+ * `package.json`'s declared `dependencies`, or checking one hardcoded
+ * physical path) is the chosen signal.
  */
 export function consumerHasSmrtUsers(projectRoot: string): boolean {
-  return existsSync(
-    join(
-      projectRoot,
-      'node_modules',
-      '@happyvertical',
-      'smrt-users',
-      'package.json',
-    ),
-  );
+  try {
+    const consumerRequire = createRequire(
+      pathToFileURL(join(projectRoot, 'package.json')).href,
+    );
+    consumerRequire.resolve('@happyvertical/smrt-users/sveltekit');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -127,10 +136,18 @@ export function generateResourcesRoute(
   // By this point in generation, clearGeneratedRouteFiles has already swept
   // any previously generator-owned copy at this path — anything still here
   // is necessarily hand-written. Preserve it rather than clobbering a
-  // consumer's customized discovery route.
-  if (existsSync(filePath)) {
+  // consumer's customized discovery route. Check every server-module
+  // extension SvelteKit resolves by default (`.js` and `.ts` — see
+  // https://svelte.dev/docs/kit/configuration#moduleExtensions), not only
+  // `.ts`: a hand-written `+server.js` is invisible to a `.ts`-only check,
+  // so the generator would write `+server.ts` alongside it and SvelteKit
+  // would then refuse the route with "Multiple endpoint files found".
+  const existingServerFile = ['+server.ts', '+server.js'].find((name) =>
+    existsSync(join(routeDir, name)),
+  );
+  if (existingServerFile) {
     console.log(
-      '[smrt] Preserving hand-written _resources route (not generator-owned)',
+      `[smrt] Preserving hand-written _resources route (${existingServerFile}, not generator-owned)`,
     );
     return false;
   }
@@ -149,7 +166,7 @@ function generateResourcesRouteTemplate(options: SvelteKitOptions): string {
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 //
-// GET /_resources — CLI discovery endpoint (#2663). Returns the auth-aware
+// GET /api/_resources — CLI discovery endpoint (#2663). Returns the auth-aware
 // list of resources and commands the distributable CLI
 // (@happyvertical/smrt-app-cli) can invoke, derived from ObjectRegistry by
 // createResourceListHandler. Subsumes the route every consumer previously

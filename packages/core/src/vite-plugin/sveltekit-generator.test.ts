@@ -24,6 +24,15 @@ vi.mock('node:fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+// consumerHasSmrtUsers (resources-route.ts, #2663) resolves via
+// node:module's createRequire rather than existsSync — see that module's
+// doc comment. Mock the require it constructs so _resources tests below
+// control whether resolution succeeds.
+const mockSmrtUsersResolve = vi.fn<(specifier: string) => string>();
+vi.mock('node:module', () => ({
+  createRequire: () => ({ resolve: mockSmrtUsersResolve }),
+}));
+
 // Import after mocking
 import {
   findCliApiCoherenceViolations,
@@ -3261,18 +3270,29 @@ describe('SvelteKit Route Generator', () => {
       '_resources',
       '+server.ts',
     );
-    const smrtUsersPkgPath = join(
-      projectRoot,
-      'node_modules',
-      '@happyvertical',
-      'smrt-users',
-      'package.json',
-    );
+
+    function resolveSmrtUsers(): void {
+      mockSmrtUsersResolve.mockImplementation((specifier) => {
+        if (specifier === '@happyvertical/smrt-users/sveltekit') {
+          return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+        }
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      });
+    }
+
+    function doNotResolveSmrtUsers(): void {
+      mockSmrtUsersResolve.mockImplementation((specifier) => {
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      });
+    }
 
     it('generates the _resources route when smrt-users is resolvable', async () => {
-      vi.mocked(existsSync).mockImplementation(
-        (path) => path.toString() === smrtUsersPkgPath,
-      );
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockReturnValue(false);
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
         enabled: true,
@@ -3293,6 +3313,7 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('does not generate the _resources route when smrt-users is not resolvable', async () => {
+      doNotResolveSmrtUsers();
       vi.mocked(existsSync).mockReturnValue(false);
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
@@ -3308,10 +3329,10 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('preserves an existing hand-written _resources route', async () => {
-      vi.mocked(existsSync).mockImplementation((path) => {
-        const p = path.toString();
-        return p === smrtUsersPkgPath || p === resourcesServerPath;
-      });
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockImplementation(
+        (path) => path.toString() === resourcesServerPath,
+      );
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
         enabled: true,
@@ -3326,9 +3347,8 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('skips the _resources route when resourcesRoute.enabled is false, even if smrt-users is resolvable', async () => {
-      vi.mocked(existsSync).mockImplementation(
-        (path) => path.toString() === smrtUsersPkgPath,
-      );
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockReturnValue(false);
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
         enabled: true,
