@@ -198,7 +198,9 @@ export function resolveCustomActionNames(
  * emission site, not here, and several emitters still keep their own inline
  * verb array — find them with:
  *
- *     grep -rn "'list', 'get', 'create', 'update', 'delete'" packages/*_/src
+ *     grep -rn "'update', 'delete'" packages --include='*.ts' | grep -v include:
+ *
+ * (the `include:` filter drops decorator config, which names the same verbs)
  *
  * The sites this rule was audited against (#2646), NOT an exhaustive
  * inventory:
