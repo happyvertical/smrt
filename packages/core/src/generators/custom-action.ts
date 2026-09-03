@@ -218,18 +218,40 @@ export function resolveCustomActionNames(
  *   action never reaches custom-method resolution, and `listCommands` skips
  *   those names outright.
  * - `packages/cli/src/cli-generator.ts`, behind the shipped `smrt` object
- *   commands — reserves only where the CRUD command is actually emitted. Each
- *   command it pushes carries its own handler invoking the class's method, so
- *   with `cli: { include: ['list', 'get'] }` a public `create()` collides with
- *   nothing and stays a legitimate, reachable `${object}:create`.
+ *   commands — reserves only where the CRUD command is actually emitted, and
+ *   reserves the command NAMES AND THEIR ALIASES (`ls`, `show`, `new`, `edit`,
+ *   `rm`), because lookup matches aliases too (#2648). The set is derived from
+ *   the commands actually pushed, so it cannot drift from those aliases. Each
+ *   command carries its own handler invoking the class's method, so with
+ *   `cli: { include: ['list', 'get'] }` neither a public `create()` nor an
+ *   `edit()` collides with anything and both stay reachable.
  * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
  *   `STANDARD_API_ACTIONS` copy.
- * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — builds a lowercased
- *   flat tool id like MCP's while reserving on the exact-match API action set,
- *   so a cased CRUD-named method still collides. Pre-existing, tracked on
- *   #2648, along with the other own-copy sites the grep above finds
- *   (`vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
- *   `vite-plugin/templates/default-ui.ts`).
+ * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — case-folded (ids are
+ *   lowercased whole like MCP's), CONDITIONAL, and scoped PER COLLECTION.
+ *   Applied in both of `selectWebMcpToolEntries`' loops and at the shared
+ *   `buildWebToolDescriptorsForHost` choke point, which the legacy
+ *   per-collection descriptor export also passes through (#2648).
+ *
+ *   Conditional, unlike `generators/mcp.ts`: MCP dispatch parses the verb out
+ *   of the tool id, so `${obj}_list` can only ever run the built-in list, but a
+ *   WebMCP descriptor carries its own `route` from `resolveApiActionRouteConfig`
+ *   — with `api: { include: ['List'] }`, `product_list` dispatches to
+ *   `/products/List` and is the only tool for that id, so reserving it would
+ *   make a custom-action-only model undiscoverable.
+ *
+ *   Per collection, not per host: the id prefix is the OWNER's `className`, so
+ *   every host mapping to one collection shares the namespace. A host-local
+ *   check lets a model that excludes `list` but declares `List()` claim
+ *   `product_list`, after which a sibling's real `list` is dropped by the
+ *   fold-dedupe. The emitted-verb set is the union over the collection's hosts.
+ *
+ *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
+ *   so `/products/List` is genuinely distinct from `/products`.
+ *
+ * Still carrying their own verb copies, tracked on #2665:
+ * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
+ * `vite-plugin/templates/default-ui.ts`.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the
