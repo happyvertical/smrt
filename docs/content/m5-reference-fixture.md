@@ -106,8 +106,8 @@ authenticated REST, namespace, exposure and consent semantics).
   `unwrapListResult()` in `@happyvertical/smrt-web` accepts only a bare array
   or `{ data: [...] }`, so a `*_list` WebMCP call fails on payload shape. The
   gate executes `*_get` instead. This is a real defect in the generated
-  client/route contract and is tracked separately; it is outside the M5
-  ownership boundary.
+  client/route contract, tracked as #2639; it is outside the M5 ownership
+  boundary.
 
 ## Running it locally
 
