@@ -1034,10 +1034,31 @@ async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
   }
   const queued = deferredSignals.get(dbKey);
   if (!queued || queued.length === 0) return;
-  if (!(await drainCommitted(db))) return;
 
+  // Claim the queue synchronously, before the first await. Two drains on the
+  // same database run concurrently, and a claim taken after an await lets both
+  // verify and publish the same entries — duplicate SSE event ids. Whatever
+  // this flush does not publish is put back below.
+  deferredSignals.delete(dbKey);
+  const candidates = queued;
+  let unpublished = candidates;
+  try {
+    if (!(await drainCommitted(db))) return;
+    unpublished = await publishVerifiedSignals(db, candidates);
+  } finally {
+    requeueDeferredSignals(dbKey, unpublished);
+  }
+}
+
+/**
+ * Publish the queued signals whose sequences still carry the row they were
+ * drained for, and return the ones that could not be verified.
+ */
+async function publishVerifiedSignals(
+  db: DatabaseInterface,
+  candidates: ChangeSignal[],
+): Promise<ChangeSignal[]> {
   const p = placeholders(db);
-  const candidates = [...queued];
   const rows = getQueryRows(
     await db.query(
       `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${candidates
@@ -1062,17 +1083,24 @@ async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
     (signal) =>
       committed.get(signal.seq) === identity(signal.table, signal.rowId),
   );
-  if (verified.length === 0) return;
+  if (verified.length === 0) return candidates;
 
-  // Remove before publishing so a concurrent flush cannot publish them twice.
   const publishedSeqs = new Set(verified.map((signal) => signal.seq));
-  const remaining = queued.filter((signal) => !publishedSeqs.has(signal.seq));
-  if (remaining.length === 0) {
-    deferredSignals.delete(dbKey);
-  } else {
-    deferredSignals.set(dbKey, remaining);
-  }
   publishSignals(db, verified);
+  return candidates.filter((signal) => !publishedSeqs.has(signal.seq));
+}
+
+/** Put unpublished signals back, ahead of anything queued meanwhile. */
+function requeueDeferredSignals(dbKey: string, signals: ChangeSignal[]): void {
+  if (signals.length === 0) return;
+  const queuedSince = deferredSignals.get(dbKey) ?? [];
+  const merged = [...signals, ...queuedSince];
+  deferredSignals.set(
+    dbKey,
+    merged.length > MAX_DEFERRED_SIGNALS
+      ? merged.slice(merged.length - MAX_DEFERRED_SIGNALS)
+      : merged,
+  );
 }
 
 /**
