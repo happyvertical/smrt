@@ -481,8 +481,17 @@ export class MCPGenerator {
       // where `mcp: { include: ['list', 'get'] }` still emitted custom-method
       // tools like `payment_recordpayment` because `include` only gated CRUD
       // verbs (#1540 / #1390).
+      // Drop an include entry only when it would COLLIDE with a CRUD tool that
+      // is actually emitted. `include: ['List']` names no CRUD verb exactly, so
+      // `shouldInclude('list')` is false and no standard tool claims
+      // `${lowerName}_list` — the entry must still produce that tool, exactly as
+      // it did before #2646. Dropping it unconditionally would leave the class
+      // with no list tool at all.
       const customMethodsInInclude =
-        included?.filter((item) => !isCrudToolAction(item)) || [];
+        included?.filter(
+          (item) =>
+            !(isCrudToolAction(item) && shouldInclude(item.toLowerCase())),
+        ) || [];
       // An include list (even one naming only CRUD verbs) switches custom
       // methods into strict allowlist mode.
       const hasIncludeList = included !== undefined;

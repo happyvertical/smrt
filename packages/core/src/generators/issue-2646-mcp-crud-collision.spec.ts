@@ -85,6 +85,42 @@ class Issue2646CasedVerb extends SmrtObject {
   }
 }
 
+// A strict `include` naming ONLY a cased CRUD verb. `shouldInclude('list')` is
+// exact-match, so no standard list tool is emitted for this class — the include
+// entry is the only thing that can produce `issue2646casedinclude_list`, and
+// dropping it would leave the class with no list tool at all.
+@smrt({ mcp: { include: ['List'] } })
+class Issue2646CasedInclude extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async List(): Promise<any> {
+    return [];
+  }
+}
+
+// A strict `include` naming a CRUD verb BOTH exactly and in another casing. The
+// standard tool is emitted here, so the cased entry would collide with it.
+@smrt({ mcp: { include: ['list', 'List'] } })
+class Issue2646CasedIncludeCollision extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async List(): Promise<any> {
+    return [];
+  }
+}
+
 /** Tool names emitted for one class, in catalog order. */
 async function toolNamesFor(prefix: string): Promise<string[]> {
   const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
@@ -121,6 +157,22 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     ]);
     // A non-CRUD method keeps its lowercased tool name.
     expect(names).toContain('issue2646casedverb_refresh');
+  });
+
+  it('keeps a cased include entry that collides with no emitted CRUD tool', async () => {
+    const names = await toolNamesFor('issue2646casedinclude');
+
+    // `include: ['List']` does not match the exact-match CRUD gate, so the
+    // include entry is the ONLY source of this tool. It must survive.
+    expect(names).toEqual(['issue2646casedinclude_list']);
+  });
+
+  it('drops a cased include entry that would collide with an emitted CRUD tool', async () => {
+    const names = await toolNamesFor('issue2646casedincludecollision');
+
+    // `include: ['list', 'List']` emits the standard tool, so the cased entry
+    // is a collision and is dropped — one tool, not two.
+    expect(names).toEqual(['issue2646casedincludecollision_list']);
   });
 
   it('produces no duplicate tool names across the whole registry', async () => {
