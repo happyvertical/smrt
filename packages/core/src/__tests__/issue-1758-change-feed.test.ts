@@ -26,6 +26,7 @@ import {
   appendChange,
   bumpChangeFeed,
   CHANGE_FEED_INTERCEPTOR_NAME,
+  CHANGE_FEED_TABLE,
   type ChangeFeedEntry,
   ensureChangeFeedTable,
   getChangesSince,
@@ -572,6 +573,44 @@ describe('change feed spine (issue #1758)', () => {
       expect(second.pruned).toBe(0);
     });
 
+    it('never punches a hole in the middle of the retained run by age', async () => {
+      // `created_at` is stamped by the writer's clock and, since #2649, a
+      // staged entry carries its stage-time stamp into the sequence a later
+      // drain assigns — so an old timestamp can sit at a HIGH sequence. Age
+      // pruning must stay a prefix operation regardless: a mid-range deletion
+      // leaves `MIN(seq)` untouched, so `getChangesSince`'s pruned-cursor proof
+      // (`since < floor - 1`) never fires and a reader below the hole would be
+      // silently, permanently short one committed change.
+      await bumpChangeFeed(db, { table: 'products', rowId: 'fresh-first' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'stale-middle' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'fresh-last' });
+
+      // Backdate only the middle entry, exactly as a drained staged entry (or
+      // a skewed peer clock) would present it.
+      await db.query(
+        `UPDATE ${CHANGE_FEED_TABLE} SET created_at = ? WHERE seq = 2`,
+        new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      );
+
+      const { pruned } = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
+      expect(pruned).toBe(0);
+
+      const page = await getChangesSince(db, { since: 0 });
+      expect(page.changes.map((change) => change.seq)).toEqual([1, 2, 3]);
+      expect(page.resyncRequired).toBeUndefined();
+
+      // The prefix itself still prunes: backdate the run's head as well and the
+      // contiguous stale prefix goes, leaving the retained run contiguous.
+      await db.query(
+        `UPDATE ${CHANGE_FEED_TABLE} SET created_at = ? WHERE seq = 1`,
+        new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      );
+      const second = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
+      expect(second.pruned).toBe(2);
+      const after = await getChangesSince(db, { since: 2 });
+      expect(after.changes.map((change) => change.seq)).toEqual([3]);
+    });
+
     it('never empties a non-empty feed (maxRows: 0 keeps the newest entry)', async () => {
       await bumpChangeFeed(db, { table: 'products', rowId: 'a' });
       await bumpChangeFeed(db, { table: 'products', rowId: 'b' });
@@ -701,7 +740,9 @@ describe('change feed spine (issue #1758)', () => {
             rows: [
               {
                 created_at_type: 'timestamp with time zone',
+                drain_function_name: '_smrt_drain_changes',
                 function_name: '_smrt_append_change',
+                pending_table_name: '_smrt_changes_pending',
                 table_name: '_smrt_changes',
               },
             ],
@@ -784,9 +825,10 @@ describe('change feed spine (issue #1758)', () => {
     });
 
     it('retries a unique SQLSTATE returned by the Postgres append function', async () => {
-      const query = vi
-        .fn()
-        .mockResolvedValueOnce({
+      // The append path drains first (#2649); only the append statements
+      // carry the allocation responses.
+      const appendResults = [
+        {
           rows: [
             {
               allocated_seq: null,
@@ -795,16 +837,15 @@ describe('change feed spine (issue #1758)', () => {
                 'duplicate key value violates unique constraint "_smrt_changes_pkey"',
             },
           ],
-        })
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              allocated_seq: 1,
-              error_code: null,
-              error_message: null,
-            },
-          ],
-        });
+        },
+        {
+          rows: [{ allocated_seq: 1, error_code: null, error_message: null }],
+        },
+      ];
+      const query = vi.fn(async (sql: string) => {
+        if (!String(sql).includes('_smrt_append_change')) return { rows: [] };
+        return appendResults.shift() ?? { rows: [] };
+      });
       const postgresDb = {
         url: 'postgresql://ci.invalid/smrt',
         query,
@@ -816,18 +857,26 @@ describe('change feed spine (issue #1758)', () => {
           rowId: 'product-1',
         }),
       ).resolves.toBe(1);
-      expect(query).toHaveBeenCalledTimes(2);
+      expect(
+        query.mock.calls.filter(([sql]) =>
+          String(sql).includes('_smrt_append_change'),
+        ),
+      ).toHaveLength(2);
     });
 
     it('turns a caught Postgres function SQLSTATE back into a safe append error', async () => {
-      const query = vi.fn().mockResolvedValue({
-        rows: [
-          {
-            allocated_seq: null,
-            error_code: '23514',
-            error_message: 'forced change-feed check failure',
-          },
-        ],
+      const query = vi.fn(async (sql: string) => {
+        // The append path drains first (#2649); that call has nothing to say.
+        if (!String(sql).includes('_smrt_append_change')) return { rows: [] };
+        return {
+          rows: [
+            {
+              allocated_seq: null,
+              error_code: '23514',
+              error_message: 'forced change-feed check failure',
+            },
+          ],
+        };
       });
       const postgresDb = {
         url: 'postgresql://ci.invalid/smrt',
@@ -843,8 +892,10 @@ describe('change feed spine (issue #1758)', () => {
         code: '23514',
         message: 'forced change-feed check failure',
       });
-      expect(query).toHaveBeenCalledOnce();
-      expect(query.mock.calls[0]?.[0]).toContain('_smrt_append_change');
+      const appendCalls = query.mock.calls.filter(([sql]) =>
+        String(sql).includes('_smrt_append_change'),
+      );
+      expect(appendCalls).toHaveLength(1);
     });
   });
 
