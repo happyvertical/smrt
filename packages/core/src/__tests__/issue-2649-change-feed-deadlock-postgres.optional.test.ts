@@ -47,6 +47,21 @@ import { type ChangeSignal, subscribeToChangeSignals } from '../change-signals';
 import { ensureSystemTables } from '../system/bootstrap';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
+
+/**
+ * Every connection this suite opens is pinned to its own PostgreSQL schema.
+ *
+ * The `test:postgres` shard points every `*.optional.test.ts` file at ONE
+ * database and Vitest runs those files in parallel, so `_smrt_changes`, the
+ * append helper and the staging table would otherwise be shared with suites
+ * writing to them concurrently. This suite reasons about exact sequences and
+ * deliberately installs a pre-fix helper that deadlocks — both of which need
+ * the feed to itself, in both directions: a sibling suite must not perturb
+ * these sequences, and it must not be made to run against the pre-fix helper
+ * either. `options=-c search_path=…` applies to every connection in the pool,
+ * so the unqualified names in the framework's own SQL resolve here.
+ */
+const SCHEMA = 'issue_2649_change_feed';
 const ROWS_TABLE = 'issue_2649_rows';
 const FEED_TABLE = 'issue_2649_feed_subject';
 const ROW_A = '44444444-4444-4444-8444-444444444444';
@@ -118,9 +133,10 @@ function isDeadlock(error: unknown): boolean {
 
 async function connect(label: string): Promise<DatabaseInterface> {
   // Distinct dbids → distinct pools → genuinely concurrent connections.
+  const separator = (pgUrl as string).includes('?') ? '&' : '?';
   return (await getDatabase({
     type: 'postgres',
-    url: pgUrl,
+    url: `${pgUrl}${separator}options=-c%20search_path%3D${SCHEMA}`,
     dbid: `smrt-test-2649-${label}-${randomUUID()}`,
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
 }
@@ -166,6 +182,15 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   let observer: DatabaseInterface;
 
   beforeAll(async () => {
+    // The schema has to exist before any pinned connection resolves.
+    const admin = (await getDatabase({
+      type: 'postgres',
+      url: pgUrl,
+      dbid: `smrt-test-2649-admin-${randomUUID()}`,
+    } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+    await admin.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${SCHEMA}`);
+
     setup = await connect('setup');
     crawl = await connect('crawl');
     owner = await connect('owner');
@@ -183,11 +208,9 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await setup?.query(`DROP TABLE IF EXISTS ${ROWS_TABLE} CASCADE`);
-    // Leave the shard with the shipped helper installed.
-    await ensurePostgresChangeFeedAppendFunction(setup, {
-      replaceExisting: true,
-    });
+    // The whole schema goes, helpers and all — nothing this suite installed
+    // (least of all the pre-fix helper) may outlive it on a shared shard.
+    await setup?.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
   });
 
   beforeEach(async () => {
@@ -702,10 +725,12 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
 
   /**
    * A rolled-back drain frees its sequences for somebody else, so its queued
-   * signals must be discarded rather than published against whatever now
-   * occupies them.
+   * signals must never be published against whatever now occupies them. They
+   * are withheld rather than discarded: the queue is shared by every
+   * connection to the database, so "I cannot see it" may simply mean another
+   * connection's transaction is still open.
    */
-  it('discards queued signals whose drain rolled back', async () => {
+  it('never publishes a queued signal against a sequence somebody else took', async () => {
     await runTransaction(crawl, async (tx) => {
       await tx.query(
         `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,

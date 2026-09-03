@@ -840,7 +840,7 @@ export async function appendChange(
   }
 
   // Unreachable: the loop returns a seq or throws on the final attempt. Present
-  // so the function satisfies its `Promise<number>` contract structurally.
+  // so the function satisfies its `Promise<number | null>` contract structurally.
   throw new Error('appendChange exhausted retries without allocating a seq');
 }
 
@@ -1012,9 +1012,18 @@ function queueDeferredSignals(
  * A queued entry's transaction may have rolled back, which returns its row to
  * the staging table and frees its sequence for somebody else. Each queued
  * signal is therefore verified against the committed log before it is
- * published: the sequence must still carry the same table and row. A
- * rolled-back entry fails that check and is dropped here — a later drain
- * re-sequences and re-signals it.
+ * published: the sequence must still carry the same table and row.
+ *
+ * An entry that does not verify is **kept, not dropped**. The queue is keyed
+ * per database, and every connection to that database shares it — so a second
+ * connection can reach this while the transaction that queued the entry is
+ * still open. Its own commit probe says "not in a transaction", but it cannot
+ * see the other connection's uncommitted rows, and discarding on that basis
+ * would strand a signal nobody can ever republish once that transaction
+ * commits. Unverified entries therefore wait for a later flush, bounded only
+ * by {@link MAX_DEFERRED_SIGNALS}, which evicts oldest-first — an entry whose
+ * transaction really did roll back is re-sequenced and re-signalled by a later
+ * drain regardless.
  */
 async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
   let dbKey: string;
@@ -1026,31 +1035,44 @@ async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
   const queued = deferredSignals.get(dbKey);
   if (!queued || queued.length === 0) return;
   if (!(await drainCommitted(db))) return;
-  deferredSignals.delete(dbKey);
 
   const p = placeholders(db);
+  const candidates = [...queued];
   const rows = getQueryRows(
     await db.query(
-      `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${queued
+      `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${candidates
         .map((_, index) => p(index + 1))
         .join(', ')})`,
-      ...queued.map((signal) => signal.seq),
+      ...candidates.map((signal) => signal.seq),
     ),
   );
+  const identity = (table: string, rowId: string | null) =>
+    `${table}\u0000${rowId ?? ''}`;
   const committed = new Map(
     rows.map((row) => [
       toSeqNumber(row.seq),
-      `${String(row.table_name ?? '')}\u0000${row.row_id == null ? '' : String(row.row_id)}`,
+      identity(
+        String(row.table_name ?? ''),
+        row.row_id == null ? null : String(row.row_id),
+      ),
     ]),
   );
-  publishSignals(
-    db,
-    queued.filter(
-      (signal) =>
-        committed.get(signal.seq) ===
-        `${signal.table}\u0000${signal.rowId ?? ''}`,
-    ),
+
+  const verified = candidates.filter(
+    (signal) =>
+      committed.get(signal.seq) === identity(signal.table, signal.rowId),
   );
+  if (verified.length === 0) return;
+
+  // Remove before publishing so a concurrent flush cannot publish them twice.
+  const publishedSeqs = new Set(verified.map((signal) => signal.seq));
+  const remaining = queued.filter((signal) => !publishedSeqs.has(signal.seq));
+  if (remaining.length === 0) {
+    deferredSignals.delete(dbKey);
+  } else {
+    deferredSignals.set(dbKey, remaining);
+  }
+  publishSignals(db, verified);
 }
 
 /**

@@ -463,7 +463,7 @@ BEGIN
         SELECT candidate.pending_id
         FROM _smrt_changes_pending AS candidate
         ORDER BY candidate.pending_id
-        LIMIT GREATEST(p_limit, 1)
+        LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
       )
       RETURNING
         pending.pending_id,
