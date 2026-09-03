@@ -422,12 +422,16 @@ async function drainBeforeAppend(
   lastAppendDrain.set(dbKey, now);
   // Inside a caller transaction the drain helper refuses server-side, so this
   // costs one cheap statement and never sequences anything there. `settle:
-  // false` keeps it to that ONE statement: the caller may own the surrounding
-  // transaction, and any further statement issued here could fail and abort it
-  // behind the feed's own error-swallowing (#2026). The signals come back
-  // undecided; appendChange settles them without spending a statement.
+  // false, maxPasses: 1` keep it to that ONE statement: the caller may own the
+  // surrounding transaction, and any further statement issued here could fail
+  // and abort it behind the feed's own error-swallowing (#2026). The drain
+  // statement itself cannot — the helper catches everything, preflight
+  // included, and returns failures as data — but a write path is no place to
+  // loop over a backlog either; the rest drains on the next append or read.
+  // The signals come back undecided; appendChange settles them without
+  // spending a statement.
   try {
-    return (await drainChangeFeedDetailed(db, { settle: false }))
+    return (await drainChangeFeedDetailed(db, { settle: false, maxPasses: 1 }))
       .unsettledSignals;
   } catch (error) {
     warnDrainFailureOnce(db, error);
@@ -938,7 +942,7 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
  */
 async function drainChangeFeedDetailed(
   db: DatabaseInterface,
-  options: { settle?: boolean } = {},
+  options: { settle?: boolean; maxPasses?: number } = {},
 ): Promise<{
   drained: number;
   firstAllocatedSeq: number | null;
@@ -967,7 +971,8 @@ async function drainChangeFeedDetailed(
   const unsettledSignals: ChangeSignal[] = [];
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
-  for (let pass = 0; pass < MAX_DRAIN_PASSES; pass++) {
+  const maxPasses = Math.max(1, options.maxPasses ?? MAX_DRAIN_PASSES);
+  for (let pass = 0; pass < maxPasses; pass++) {
     const rows = getQueryRows(
       await db.query(
         `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}()`,
