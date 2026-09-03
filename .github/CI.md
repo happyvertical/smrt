@@ -326,11 +326,14 @@ PRs again. Publish Dry Run tests the lever explicitly — without it, a rollback
 would leave packaging unvalidated all the way into `publish.yml`, since
 `on-merge-main.yml` runs test and build but never a pack validation.
 
-`test-suite.yml`'s `m5-reference-gate` runs PostgreSQL in both modes: in
-`affected` mode when the M5 paths filter matches, and unconditionally in
-`full`, which is every merge group. Every other lane in `on-pull-request.yml`
-and `test-suite.yml` is PostgreSQL-free, and the scheduled PostgreSQL suites
-still live only in `postgres-tests.yml`, described below.
+`test-suite.yml`'s `m5-reference-gate` runs PostgreSQL in both modes. It
+carries no paths filter: the gate serves a real generated application, so its
+blast radius is template-sveltekit's whole workspace closure, and a
+hand-maintained list of that closure is a silent-skip generator. It therefore
+runs in `affected` mode as well as in `full`, which is every merge group.
+Every other lane in `on-pull-request.yml` and `test-suite.yml` is
+PostgreSQL-free, and the scheduled PostgreSQL suites still live only in
+`postgres-tests.yml`, described below.
 
 `Required CI` is the sole required repository-validation status. Seven jobs must
 succeed for both PR and merge-group events; Publish Dry Run is required only for
