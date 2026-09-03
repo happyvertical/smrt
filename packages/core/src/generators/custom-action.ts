@@ -227,13 +227,25 @@ export function resolveCustomActionNames(
  *   `edit()` collides with anything and both stay reachable.
  * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
  *   `STANDARD_API_ACTIONS` copy.
- * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — unconditional,
- *   case-folded, because its ids are lowercased whole like MCP's. Applied in
- *   both of `selectWebMcpToolEntries`' loops and at the shared
+ * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — case-folded (ids are
+ *   lowercased whole like MCP's), CONDITIONAL, and scoped PER COLLECTION.
+ *   Applied in both of `selectWebMcpToolEntries`' loops and at the shared
  *   `buildWebToolDescriptorsForHost` choke point, which the legacy
  *   per-collection descriptor export also passes through (#2648).
- *   Unconditional deliberately, matching `generators/mcp.ts` rather than the
- *   CLI, because `runtimeSurfaceParity` compares the MCP and WebMCP catalogs.
+ *
+ *   Conditional, unlike `generators/mcp.ts`: MCP dispatch parses the verb out
+ *   of the tool id, so `${obj}_list` can only ever run the built-in list, but a
+ *   WebMCP descriptor carries its own `route` from `resolveApiActionRouteConfig`
+ *   — with `api: { include: ['List'] }`, `product_list` dispatches to
+ *   `/products/List` and is the only tool for that id, so reserving it would
+ *   make a custom-action-only model undiscoverable.
+ *
+ *   Per collection, not per host: the id prefix is the OWNER's `className`, so
+ *   every host mapping to one collection shares the namespace. A host-local
+ *   check lets a model that excludes `list` but declares `List()` claim
+ *   `product_list`, after which a sibling's real `list` is dropped by the
+ *   fold-dedupe. The emitted-verb set is the union over the collection's hosts.
+ *
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
