@@ -6,6 +6,7 @@
  * is the server's, not the harness's.
  */
 
+import { OPERATIONAL_DIAGNOSTIC_TOOL_NAME } from '../__tests__/support/runtimeSurfaceParity.js';
 import { expect, test } from './fixtures.js';
 import { installModelContext } from './support/modelContext.js';
 
@@ -32,9 +33,12 @@ test('an anonymous context cannot read diagnostics or protected domain data', as
   // The diagnostics component is gated on an authenticated session, so an
   // anonymous page must not even carry the tool.
   const live = await page.evaluate(() => window.__m5ModelContext!.live());
-  expect(
-    live.map((entry) => entry.name),
-  ).not.toContain('smrt.runtime.diagnostics.read');
+  // The canonical name, not a literal: a `not.toContain` on a stale literal
+  // passes vacuously after a rename, which is the one way this negative
+  // assertion could stop testing anything.
+  expect(live.map((entry) => entry.name)).not.toContain(
+    OPERATIONAL_DIAGNOSTIC_TOOL_NAME,
+  );
 });
 
 test('a forged session fails closed at both boundaries and leaks nothing', async ({
@@ -88,7 +92,7 @@ test('a forged session fails closed at both boundaries and leaks nothing', async
   await page.goto('/', { waitUntil: 'networkidle' });
   const live = await page.evaluate(() => window.__m5ModelContext!.live());
   expect(live.map((entry) => entry.name)).not.toContain(
-    'smrt.runtime.diagnostics.read',
+    OPERATIONAL_DIAGNOSTIC_TOOL_NAME,
   );
   const attempt = await page.evaluate(async (rowId) => {
     try {
