@@ -1,4 +1,24 @@
+import { realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { defineConfig } from '@playwright/test';
+
+/**
+ * Playwright's output root, in a test-owned temporary directory outside the
+ * repository. M5 requires every browser profile, database, asset and piece of
+ * generated output to live outside the checkout; an in-repo `outputDir` would
+ * leave browser output in the working tree for later tooling to pick up, and
+ * a `.gitignore` entry is not custody.
+ *
+ * The name is fixed rather than randomized: Playwright re-loads this config in
+ * every worker process, so a `mkdtemp` here would mint one directory per worker
+ * while the workers all wrote to the single value the runner serialized to
+ * them, leaving empty strays behind. Playwright empties this directory at the
+ * start of each run, `globalTeardown` removes it at the end, and specs read it
+ * back as `testInfo.project.outputDir` rather than restating the path.
+ */
+const artifactRoot = join(realpathSync(tmpdir()), 'smrt-m5-artifacts');
 
 /**
  * M5 fresh-browser gate (#2579).
@@ -26,7 +46,9 @@ export default defineConfig({
   reporter: [['list']],
   // Bound the whole gate independently of the CI job timeout.
   globalTimeout: 30 * 60_000,
-  outputDir: './e2e/.artifacts',
+  outputDir: artifactRoot,
+  // Removes that temporary root when the run ends.
+  globalTeardown: './e2e/support/globalTeardown.ts',
   use: {
     // Onboarding carries a single-use bootstrap token in a URL. A trace, a
     // video, or a full-page screenshot would capture it, so all three stay

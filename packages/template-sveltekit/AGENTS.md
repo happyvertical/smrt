@@ -128,6 +128,10 @@ presented as WebMCP execution.
   required profile case is missing rather than merely absent from the log.
 - Tracing, video, and screenshots stay off: onboarding carries a single-use
   bootstrap token in a URL.
+- Nothing the gate generates is written into the checkout. Playwright's
+  `outputDir` is `$TMPDIR/smrt-m5-artifacts`, emptied by
+  `e2e/support/globalTeardown.ts`; `e2e/redaction.spec.ts` reads that path back
+  from `testInfo.project.outputDir` and asserts it is outside the repository.
 - `e2e/` is outside `biome.json`'s include globs, as every package's `e2e/` is,
   so a green `Lint` job says nothing about this tree. `pnpm typecheck` covers
   the `.ts` files (`tsconfig.fixture.json` includes `e2e/**/*.ts`) but NOT

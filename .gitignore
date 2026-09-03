@@ -192,5 +192,4 @@ bin/
 !packages/*/src/commonMain/sqldelight/databases/*.db
 
 # M5 browser gate (#2579): Playwright output root, never committed.
-packages/template-sveltekit/e2e/.artifacts/
 packages/template-sveltekit/m5-gate-summary.json

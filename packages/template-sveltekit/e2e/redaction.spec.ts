@@ -16,10 +16,13 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 
 import { expect, test } from './fixtures.js';
 import { packageRoot } from './support/referenceApp.js';
+
+/** The monorepo checkout root; no gate output may live under it. */
+const repositoryRoot = resolve(packageRoot, '..', '..');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -206,7 +209,14 @@ test('runtime route failures return no server detail', async ({
 test('retained Playwright artifacts pass the redaction corpus', async ({
   referenceApp,
 }) => {
-  const artifactRoot = join(packageRoot, 'e2e', '.artifacts');
+  // Whatever `playwright.config.ts` resolved, not a path restated here: the
+  // scan has to cover the directory Playwright actually writes to.
+  const artifactRoot = test.info().project.outputDir;
+  // M5 requires generated output to stay outside the checkout, and a
+  // `.gitignore` entry is not custody. Assert the location, not just the
+  // contents.
+  expect(artifactRoot.startsWith(`${packageRoot}${sep}`)).toBe(false);
+  expect(artifactRoot.startsWith(`${repositoryRoot}${sep}`)).toBe(false);
   // The harness parses and validates the token once, so no call site can
   // degrade to searching for the literal string "null".
   const token = referenceApp.bootstrapToken;

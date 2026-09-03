@@ -149,7 +149,7 @@ pnpm --filter @happyvertical/smrt-template-sveltekit test:e2e
 | `The reference app exited before becoming ready` | The workspace build is stale | Re-run the `turbo run build` filter above. |
 | `A different server answered on the reserved port` | Port reuse race | Re-run; the harness reserves a fresh ephemeral loopback port each time. |
 | `The served runtime configuration fingerprint does not match the harness expectation` | The right process answered with an unexpected configuration — usually a new provider override or runtime field in the template's `smrt.config.ts` | Not a race; re-running will not help. Update the harness's expectation in `e2e/support/referenceApp.ts` to match the new configuration. |
-| Leftover temporary roots | A run was killed between provisioning and cleanup | `rm -rf "${TMPDIR:-/tmp}"/smrt-m5-*` |
+| Leftover temporary roots | A run was killed between provisioning and cleanup | `rm -rf "${TMPDIR:-/tmp}"/smrt-m5-*` — this covers both the per-run application roots and Playwright's `smrt-m5-artifacts` output root. |
 
 ## The diagnostic allowlist
 
@@ -216,3 +216,7 @@ so a failed navigation cannot echo it into the job log either.
 Databases, export bundles, browser profiles, cookies, bootstrap artifacts,
 and raw traces are never uploaded, and every temporary root is removed when
 its worker finishes. Retention is seven days.
+
+Playwright's own output root lives outside the checkout too, at
+`$TMPDIR/smrt-m5-artifacts`, and the gate's `globalTeardown` empties it when a
+run ends. Nothing the gate generates is written into the repository.
