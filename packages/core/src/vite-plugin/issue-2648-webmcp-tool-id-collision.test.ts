@@ -109,6 +109,42 @@ describe('#2648 WebMCP tool-id collisions', () => {
     expect(toolIds(m)).toContain('product_syncnow');
   });
 
+  it('applies the same reservation on the collection-class path', () => {
+    // `selectWebMcpToolEntries` has TWO loops sharing one `entries` map: one
+    // over model objects, one over collection classes. Guarding only the first
+    // leaves the collision live here — and, worse, makes the two loops key the
+    // map differently, so a camelCase action declared on BOTH a model and its
+    // collection class stops deduping and is emitted twice.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { syncNow: publicMethod('syncNow') },
+      }),
+      obj({
+        className: 'ProductCollection',
+        collection: 'products',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Product',
+        methods: {
+          List: publicMethod('List'),
+          syncNow: publicMethod('syncNow'),
+        },
+      }),
+    );
+
+    const ids = toolIds(m);
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+    // The cased impostor never reaches the catalog from either loop.
+    expect(ids.filter((id) => id === 'product_list')).not.toHaveLength(2);
+    // And the shared camelCase action is still emitted exactly once.
+    expect(ids.filter((id) => id === 'product_syncnow')).toEqual([
+      'product_syncnow',
+    ]);
+  });
+
   it('produces no duplicate tool id for any object in the manifest', () => {
     const m = manifest(
       obj({

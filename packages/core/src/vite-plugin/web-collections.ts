@@ -669,6 +669,14 @@ export function selectWebMcpToolEntries(
       //    CRUD tool. REST keeps both — `/products/List` is a distinct route
       //    from `/products` — so this reservation belongs here, not in
       //    `resolveApiActionSet`.
+      //
+      //    UNCONDITIONAL, by parity with `generators/mcp.ts`: it drops the
+      //    action even when config excluded the CRUD verb that would own the
+      //    id, so `api: { exclude: ['list'] }` plus a public `List()` emits no
+      //    `*_list` browser tool. That keeps the MCP and WebMCP catalogs
+      //    agreeing — `runtimeSurfaceParity` compares them — at the cost of a
+      //    tool whose REST route still exists. The CLI's conditional rule does
+      //    NOT apply here; see the emitter table on `CRUD_OPERATIONS`.
       if (isCrudToolAction(action) && !isCrudOperation(action)) continue;
       // 2. Anything still colliding after that is two custom methods differing
       //    only in case; keep the first so one id yields one descriptor.
@@ -701,7 +709,13 @@ export function selectWebMcpToolEntries(
     for (const action of [
       ...resolveApiActionSet(collectionClass, manifest),
     ].sort(compareText)) {
-      const identity = `${collectionClass.collection}\0${action}`;
+      // Same two guards, same order, as the object loop above — and the same
+      // key shape. Both loops share `entries`, so a case-sensitive key here
+      // would miss the lowercased one written there and insert a second entry
+      // for the same tool id, breaking the ownership rule this loop exists to
+      // enforce (#2648).
+      if (isCrudToolAction(action) && !isCrudOperation(action)) continue;
+      const identity = `${collectionClass.collection}\0${action.toLowerCase()}`;
       const existing = entries.get(identity);
       if (
         existing &&
