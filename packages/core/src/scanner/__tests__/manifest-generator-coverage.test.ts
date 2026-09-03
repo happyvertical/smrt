@@ -599,6 +599,37 @@ describe('ManifestGenerator coverage', () => {
       expect(code).not.toContain('"issue"');
     });
 
+    it('does not link same-simple-name classes from different packages', () => {
+      // Two packages may legally contribute a `Content` to one collection.
+      // Resolving the parent on the simple name alone would make one an
+      // ancestor of the other and hand ownership to the wrong package.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          '@pkg-a:Content': def('Content', {
+            qualifiedName: '@pkg-a:Content' as never,
+            collection: 'contents',
+            fields: { alpha: { type: 'text', required: false } as never },
+          }),
+          '@pkg-b:Content': def('Content', {
+            qualifiedName: '@pkg-b:Content' as never,
+            collection: 'contents',
+            fields: { beta: { type: 'text', required: false } as never },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // Neither is a descendant of the other, so both sit at depth 0 and the
+      // qualified-name tie-break decides deterministically.
+      expect(code).toContain('"alpha"');
+      expect(code).not.toContain('"beta"');
+    });
+
     it('emits an empty array literal when every MCP operation is excluded', () => {
       const gen = new ManifestGenerator();
       const m = baseManifest();

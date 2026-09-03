@@ -2464,38 +2464,61 @@ ${fields}
       });
   }
 
+  /** Stable identity for an MCP owner candidate. */
+  private mcpOwnerKey(obj: SmartObjectDefinition): string {
+    return obj.qualifiedName || obj.className;
+  }
+
   /**
    * Depth of each candidate inside the candidate set's OWN inheritance tree,
-   * keyed by simple class name. A candidate with no candidate ancestor is a
+   * keyed by {@link mcpOwnerKey}. A candidate with no candidate ancestor is a
    * root at depth 0. Ancestors outside the set (framework bases, classes in
    * other collections) do not add depth: only the shared-collection family
    * decides which member is canonical.
+   *
+   * Parents resolve on `extendsQualified` first. Two packages may legally
+   * contribute same-simple-name classes to one collection, so a simple-name
+   * match is used only when it is unambiguous within the candidate set —
+   * otherwise the walk stops rather than linking unrelated classes.
    */
   private inheritanceDepthsWithin(
     candidates: SmartObjectDefinition[],
   ): Map<string, number> {
-    const byName = new Map<string, SmartObjectDefinition>();
+    const byQualified = new Map<string, SmartObjectDefinition>();
+    const bySimpleName = new Map<string, SmartObjectDefinition | null>();
     for (const candidate of candidates) {
-      byName.set(this.simpleClassName(candidate.className), candidate);
+      byQualified.set(this.mcpOwnerKey(candidate), candidate);
+      const simple = this.simpleClassName(candidate.className);
+      // `null` marks an ambiguous simple name; never resolve through it.
+      bySimpleName.set(simple, bySimpleName.has(simple) ? null : candidate);
     }
+
+    const resolveParent = (
+      obj: SmartObjectDefinition,
+    ): SmartObjectDefinition | undefined => {
+      if (obj.extendsQualified) return byQualified.get(obj.extendsQualified);
+      if (!obj.extends) return undefined;
+      return bySimpleName.get(this.simpleClassName(obj.extends)) ?? undefined;
+    };
 
     const depths = new Map<string, number>();
     for (const candidate of candidates) {
-      const name = this.simpleClassName(candidate.className);
+      const key = this.mcpOwnerKey(candidate);
       let depth = 0;
-      let current: string | undefined = candidate.extends;
-      const visited = new Set<string>([name]);
+      let current: SmartObjectDefinition | undefined = candidate;
+      const visited = new Set<string>([key]);
       while (current) {
-        const parentName = this.simpleClassName(current);
-        // Circular or self-referential extends: stop rather than loop.
-        if (visited.has(parentName)) break;
-        visited.add(parentName);
-        const parent = byName.get(parentName);
+        const parent: SmartObjectDefinition | undefined =
+          resolveParent(current);
         if (!parent) break;
+        const parentKey = this.mcpOwnerKey(parent);
+        // Circular or self-referential extends: stop rather than loop.
+        if (visited.has(parentKey)) break;
+        visited.add(parentKey);
         depth += 1;
-        current = parent.extends;
+        current = parent;
       }
-      depths.set(name, depth);
+      depths.set(key, depth);
     }
     return depths;
   }
@@ -2512,16 +2535,15 @@ ${fields}
       return !candidateIsCollection;
     }
 
-    const candidateDepth =
-      depths.get(this.simpleClassName(candidate.className)) ?? 0;
-    const currentDepth =
-      depths.get(this.simpleClassName(current.className)) ?? 0;
+    const candidateKey = this.mcpOwnerKey(candidate);
+    const currentKey = this.mcpOwnerKey(current);
+
+    const candidateDepth = depths.get(candidateKey) ?? 0;
+    const currentDepth = depths.get(currentKey) ?? 0;
     if (candidateDepth !== currentDepth) {
       return candidateDepth < currentDepth;
     }
 
-    const candidateKey = candidate.qualifiedName || candidate.className;
-    const currentKey = current.qualifiedName || current.className;
     return candidateKey < currentKey;
   }
 
