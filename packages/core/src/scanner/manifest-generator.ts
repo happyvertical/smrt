@@ -154,13 +154,13 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
  * least-audited of the five: `SmrtReportCollection` overrides `list`/`get`
  * (`packages/reports/src/report.ts`), which are also the universal CRUD
  * operation names — a downstream `class X extends SmrtReportCollection`
- * with default (non-strict) MCP config could see a generated custom-action
- * tool collide with the standard `list`/`get` tool name. No in-repo
- * subclass exercises this today, so it doesn't regress anything this PR
- * touches, but a future MCP-generator fix should give the non-strict path
- * the same CRUD-operation skip `CLIGenerator` already has, independent of
- * this exclusion set. Keep in sync with the field-merge set's own doc
- * comment; this one governs method merging only.
+ * with default (non-strict) MCP config would have seen a generated
+ * custom-action tool collide with the standard `list`/`get` tool name.
+ * #2646 closed that separately and independently of this exclusion set: the
+ * generators now refuse to expose a CRUD-named method as a custom action at
+ * all, reading one shared verb list (`CRUD_OPERATIONS` in
+ * `generators/custom-action.ts`). Keep in sync with the field-merge set's
+ * own doc comment; this one governs method merging only.
  */
 const FRAMEWORK_METHOD_BASE_NAMES = new Set([
   'SmrtObject',
