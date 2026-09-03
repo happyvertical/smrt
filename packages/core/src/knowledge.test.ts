@@ -81,6 +81,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'LegacyPathOrder',
       'ThrowingRouteOrder',
       'MalformedConfigItem',
+      'LifecycleOverrideOrder',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -156,6 +157,46 @@ describe('buildDomainKnowledgeManifest', () => {
     );
     expect(findByReferenceMcp?.name).toBe('ordertree_findbyreference');
     expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
+  });
+
+  it('excludes a locally overridden framework lifecycle method from the cli surface only (#2657)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const surfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:LifecycleOverrideOrder',
+    );
+
+    // `save` is a framework lifecycle method (the mechanism behind generated
+    // create/update), so CLIGenerator.listCommands()/assertCommandExposed()
+    // refuse to expose or invoke it even when the class declares its own
+    // override -- this projection now mirrors that with the same
+    // isFrameworkLifecycleMethod() check, for cli only.
+    expect(
+      surfaces
+        .filter((surface) => surface.kind === 'cli')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['create', 'delete', 'get', 'list', 'reconcile', 'update']);
+
+    // `api`/`mcp` are unaffected: neither generator gates on
+    // isFrameworkLifecycleMethod() today, so `save` still appears as a
+    // custom-method surface there, exactly like before #2657.
+    for (const kind of ['api', 'mcp'] as const) {
+      expect(
+        surfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation)
+          .sort(),
+      ).toEqual([
+        'create',
+        'delete',
+        'get',
+        'list',
+        'reconcile',
+        'save',
+        'update',
+      ]);
+    }
   });
 
   it('never reports CRUD for an undecorated SmrtCollection subclass, but does report its public custom methods on every surface (#2642)', () => {
@@ -1007,6 +1048,38 @@ function fixtureManifest(): SmartObjectManifest {
           },
         },
         decoratorConfig: { mcp: { include: 'list' as unknown as string[] } },
+      },
+      // A locally overridden framework lifecycle method (mirroring
+      // User.save() at packages/users/src/models/User.ts) must not be
+      // reported as a `cli` custom-action surface, matching
+      // CLIGenerator.listCommands()'s isFrameworkLifecycleMethod() gate
+      // (#2657) -- but `api`/`mcp` are unaffected, since neither generator
+      // changed in #2650/#2638.
+      '@example/orders:LifecycleOverrideOrder': {
+        className: 'LifecycleOverrideOrder',
+        qualifiedName: '@example/orders:LifecycleOverrideOrder',
+        collection: 'lifecycle_override_orders',
+        fields: {},
+        methods: {
+          save: {
+            name: 'save',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<this>',
+            isStatic: false,
+            isPublic: true,
+          },
+          reconcile: {
+            name: 'reconcile',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtObject',
       },
     },
   };

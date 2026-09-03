@@ -13,7 +13,10 @@ import type {
   DomainKnowledgeSurface,
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
-import { resolveCustomActionMetadata } from './generators/custom-action.js';
+import {
+  isFrameworkLifecycleMethod,
+  resolveCustomActionMetadata,
+} from './generators/custom-action.js';
 import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -591,6 +594,16 @@ function manifestObjectPackage(
  * the COMPLETE allowlist for custom methods too; without one, every public
  * method not explicitly excluded is exposed by default. Only `config ===
  * false` closes the surface entirely.
+ *
+ * That parity is no longer exact for `cli`: `CLIGenerator.listCommands()`/
+ * `assertCommandExposed()` additionally refuse a framework lifecycle method
+ * (`save`, `initialize`, ...) even when a class declares its own override —
+ * it is the mechanism behind generated CRUD, not a distinct action (#2638) —
+ * and `resolveCustomMethodNames()` below mirrors that same
+ * `isFrameworkLifecycleMethod()` check for `kind === 'cli'` only (#2657).
+ * `api`/`mcp` are unaffected: neither generator changed in #2650/#2638, the
+ * mcp.ts wiring is separate #2638 scope, and the api-surface fix is a PR
+ * #2651 recommendation, not yet implemented.
  */
 function configuredOperations(
   kind: 'api' | 'cli' | 'mcp',
@@ -610,6 +623,7 @@ function configuredOperations(
   const custom = resolveCustomMethodNames(
     Object.entries(object.methods),
     config,
+    kind,
   );
   // REST additionally refuses a custom action whose receiver cannot exist —
   // a collection class emits only collection-scoped routes, and a model class
@@ -638,12 +652,20 @@ function resolveCrudOperations(config: unknown): string[] {
 function resolveCustomMethodNames(
   methods: Iterable<[string, { isPublic?: boolean }]>,
   config: unknown,
+  kind: 'api' | 'cli' | 'mcp',
 ): string[] {
   const { include, exclude } = includeExcludeConfig(config);
   const excluded = new Set(exclude ?? []);
   const names: string[] = [];
   for (const [name, method] of methods) {
     if (STANDARD_OPERATIONS.includes(name)) continue;
+    // A framework lifecycle method (save/initialize/...) is never a custom
+    // CLI action, even when a class declares its own override — it is the
+    // mechanism behind generated CRUD, not a distinct operation, matching
+    // CLIGenerator's own isFrameworkLifecycleMethod() gate (#2657). `api`
+    // and `mcp` are deliberately left alone — see configuredOperations'
+    // doc comment above.
+    if (kind === 'cli' && isFrameworkLifecycleMethod(name)) continue;
     if (!method.isPublic) continue;
     if (excluded.has(name)) continue;
     if (include !== undefined && !include.includes(name)) continue;
