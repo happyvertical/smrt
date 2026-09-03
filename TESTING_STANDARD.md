@@ -210,7 +210,7 @@ describe('MyObject', () => {
 
   beforeEach(async () => {
     // Creates isolated in-memory SQLite database
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     collection = await MyCollection.create({
       persistence: { type: 'sql', db }
     });
@@ -294,7 +294,7 @@ The `@happyvertical/smrt-vitest` package provides `createIsolatedTestDb()` for c
 import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
 
 beforeEach(async () => {
-  const db = await createIsolatedTestDb();
+  const { db } = await createIsolatedTestDb();
   collection = await MyCollection.create({
     persistence: { type: 'sql', db }
   });
@@ -349,7 +349,7 @@ describe('relationships', () => {
   let bookCollection: BookCollection;
 
   beforeEach(async () => {
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     authorCollection = await AuthorCollection.create({
       persistence: { type: 'sql', db }
     });
@@ -401,7 +401,7 @@ describe('STI polymorphism', () => {
   let eventCollection: EventCollection;
 
   beforeEach(async () => {
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     eventCollection = await EventCollection.create({
       persistence: { type: 'sql', db }
     });
