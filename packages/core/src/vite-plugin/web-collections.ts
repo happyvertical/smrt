@@ -25,6 +25,8 @@
 import { createHash } from 'node:crypto';
 import {
   customActionParameterInputName,
+  isCrudOperation,
+  isCrudToolAction,
   resolveCustomActionMetadata,
 } from '../generators/custom-action.js';
 import {
@@ -656,7 +658,21 @@ export function selectWebMcpToolEntries(
     for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
       compareText,
     )) {
-      const identity = `${owner.collection}\0${action}`;
+      // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
+      // namespace is case-folded even though the API action set that feeds it
+      // is not. Two guards, in order (#2648):
+      //
+      // 1. An action that is not exactly a CRUD verb but folds onto one is a
+      //    custom method wearing the generated tool's id. Drop it rather than
+      //    letting it win: `compareText` sorts `List` BEFORE `list`, so a
+      //    first-wins dedupe alone would keep the impostor and lose the real
+      //    CRUD tool. REST keeps both — `/products/List` is a distinct route
+      //    from `/products` — so this reservation belongs here, not in
+      //    `resolveApiActionSet`.
+      if (isCrudToolAction(action) && !isCrudOperation(action)) continue;
+      // 2. Anything still colliding after that is two custom methods differing
+      //    only in case; keep the first so one id yields one descriptor.
+      const identity = `${owner.collection}\0${action.toLowerCase()}`;
       if (entries.has(identity)) continue;
       entries.set(identity, {
         collection: owner.collection,
