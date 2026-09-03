@@ -405,6 +405,43 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * A read inside a caller transaction drains on that transaction's own
+   * handle, so the rows it sequences are visible only there and vanish if it
+   * rolls back. Serving them would report changes that never committed and
+   * hand back a cursor above sequences a concurrent autocommit appender then
+   * claims for its own entries — a permanently skipped change. The page must
+   * therefore stop below anything the read's own drain allocated.
+   */
+  it('never serves entries its own in-transaction drain just sequenced', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    // A read wrapped in the caller's own transaction, which then rolls back.
+    await expect(
+      runTransaction(owner, async (tx) => {
+        const page = await getChangesSince(tx, { since: 0 });
+        expect(page.changes).toEqual([]);
+        expect(page.cursor).toBe(0);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    // The entry is untouched by that rollback and still arrives exactly once.
+    const page = await getChangesSince(setup, { since: 0 });
+    expect(page.changes.map((change) => change.rowId)).toEqual([ROW_A]);
+    expect(page.changes[0].seq).toBe(1);
+  }, 120_000);
+
+  /**
    * The hazard a plain `SEQUENCE`/identity allocator would introduce.
    *
    * Sequence values are handed out before commit and never roll back, so a

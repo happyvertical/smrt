@@ -26,6 +26,7 @@ import {
   appendChange,
   bumpChangeFeed,
   CHANGE_FEED_INTERCEPTOR_NAME,
+  CHANGE_FEED_TABLE,
   type ChangeFeedEntry,
   ensureChangeFeedTable,
   getChangesSince,
@@ -570,6 +571,44 @@ describe('change feed spine (issue #1758)', () => {
       // A generous window prunes nothing.
       const second = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
       expect(second.pruned).toBe(0);
+    });
+
+    it('never punches a hole in the middle of the retained run by age', async () => {
+      // `created_at` is stamped by the writer's clock and, since #2649, a
+      // staged entry carries its stage-time stamp into the sequence a later
+      // drain assigns — so an old timestamp can sit at a HIGH sequence. Age
+      // pruning must stay a prefix operation regardless: a mid-range deletion
+      // leaves `MIN(seq)` untouched, so `getChangesSince`'s pruned-cursor proof
+      // (`since < floor - 1`) never fires and a reader below the hole would be
+      // silently, permanently short one committed change.
+      await bumpChangeFeed(db, { table: 'products', rowId: 'fresh-first' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'stale-middle' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'fresh-last' });
+
+      // Backdate only the middle entry, exactly as a drained staged entry (or
+      // a skewed peer clock) would present it.
+      await db.query(
+        `UPDATE ${CHANGE_FEED_TABLE} SET created_at = ? WHERE seq = 2`,
+        new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      );
+
+      const { pruned } = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
+      expect(pruned).toBe(0);
+
+      const page = await getChangesSince(db, { since: 0 });
+      expect(page.changes.map((change) => change.seq)).toEqual([1, 2, 3]);
+      expect(page.resyncRequired).toBeUndefined();
+
+      // The prefix itself still prunes: backdate the run's head as well and the
+      // contiguous stale prefix goes, leaving the retained run contiguous.
+      await db.query(
+        `UPDATE ${CHANGE_FEED_TABLE} SET created_at = ? WHERE seq = 1`,
+        new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      );
+      const second = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
+      expect(second.pruned).toBe(2);
+      const after = await getChangesSince(db, { since: 2 });
+      expect(after.changes.map((change) => change.seq)).toEqual([3]);
     });
 
     it('never empties a non-empty feed (maxRows: 0 keeps the newest entry)', async () => {

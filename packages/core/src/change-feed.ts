@@ -717,8 +717,31 @@ export async function appendChange(
  * @returns How many staged entries were sequenced.
  */
 export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
-  if (getEngine(db) !== 'postgres') return 0;
+  return (await drainChangeFeedDetailed(db)).drained;
+}
 
+/**
+ * {@link drainChangeFeed} plus the lowest sequence this call allocated.
+ *
+ * A drain runs on the caller's handle, so when that handle is inside a
+ * caller-managed transaction the rows it just wrote are visible **to this
+ * transaction only** and disappear if it rolls back. A reader that served them
+ * would report entries that never committed and advance its cursor past
+ * sequences a concurrent autocommit appender goes on to claim — a permanently
+ * skipped change. {@link getChangesSince} therefore refuses to serve at or
+ * above `firstAllocatedSeq`: everything below it was committed by somebody
+ * else before this drain started, and the drain's own rows are served by the
+ * next poll, once they are committed for everyone.
+ *
+ * @internal
+ */
+async function drainChangeFeedDetailed(
+  db: DatabaseInterface,
+): Promise<{ drained: number; firstAllocatedSeq: number | null }> {
+  if (getEngine(db) !== 'postgres')
+    return { drained: 0, firstAllocatedSeq: null };
+
+  let firstAllocatedSeq: number | null = null;
   let drained = 0;
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
@@ -743,6 +766,12 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
     }
     const sequenced = rows.filter((row) => row.drained_seq != null);
     drained += sequenced.length;
+    for (const row of sequenced) {
+      const seq = toSeqNumber(row.drained_seq);
+      if (firstAllocatedSeq === null || seq < firstAllocatedSeq) {
+        firstAllocatedSeq = seq;
+      }
+    }
 
     // A drained entry is now committed and cursor-visible, so this is the
     // first moment a live signal for it is honest (the pre-commit signal the
@@ -772,15 +801,24 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
 
     if (sequenced.length === 0) break;
   }
-  return drained;
+  return { drained, firstAllocatedSeq };
 }
 
-/** Drain without ever failing the caller — the read-path and prune policy. */
-async function drainChangeFeedBestEffort(db: DatabaseInterface): Promise<void> {
+/**
+ * Drain without ever failing the caller — the read-path and prune policy.
+ *
+ * @returns The lowest sequence this drain allocated, or `null` when it
+ *   allocated none. See {@link drainChangeFeedDetailed} for why a reader must
+ *   not serve at or above it.
+ */
+async function drainChangeFeedBestEffort(
+  db: DatabaseInterface,
+): Promise<number | null> {
   try {
-    await drainChangeFeed(db);
+    return (await drainChangeFeedDetailed(db)).firstAllocatedSeq;
   } catch (error) {
     warnDrainFailureOnce(db, error);
+    return null;
   }
 }
 
@@ -866,7 +904,14 @@ export async function getChangesSince(
   // (#2649) so this read observes it. Best-effort: on a handle that cannot
   // write, staged entries simply stay invisible until some writer drains —
   // they are durable, never lost, and the horizon below is still a horizon.
-  await drainChangeFeedBestEffort(db);
+  //
+  // A drain writes on THIS handle, so if the caller wrapped this read in its
+  // own transaction the drained rows are visible only here and vanish on a
+  // rollback. Serving them would report changes that never committed and
+  // advance the cursor past sequences a concurrent autocommit appender then
+  // claims for its own entries. Anything this drain allocated is therefore
+  // held back to the next poll.
+  const drainedFromSeq = await drainChangeFeedBestEffort(db);
 
   const p = placeholders(db);
 
@@ -875,13 +920,32 @@ export async function getChangesSince(
   // though it runs as a separate statement. The floor bounds the retained
   // window for pruned-cursor detection; both are computed UNFILTERED so
   // table/tenant filters can neither trigger nor mask a resync signal.
+  // `in_transaction` decides whether the drain above is safe to serve. It is
+  // read in a SEPARATE statement from the drain on purpose: under autocommit
+  // the drain was its own transaction and has already committed, so no id is
+  // assigned here and its rows are committed for everyone. Inside a caller
+  // transaction the id the drain assigned is still live, and those same rows
+  // are this transaction's uncommitted work.
   const boundsRows = getQueryRows(
     await db.query(
-      `SELECT MIN(seq) AS floor, MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`,
+      getEngine(db) === 'postgres'
+        ? `SELECT MIN(seq) AS floor, MAX(seq) AS horizon, pg_current_xact_id_if_assigned() IS NOT NULL AS in_transaction FROM ${CHANGE_FEED_TABLE}`
+        : `SELECT MIN(seq) AS floor, MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`,
     ),
   );
   const floor = toSeqNumber(boundsRows[0]?.floor);
   const horizon = toSeqNumber(boundsRows[0]?.horizon);
+
+  // Everything below the drain's own allocation was committed by another
+  // transaction before this read began; at or above it is this transaction's
+  // uncommitted work (see drainChangeFeedDetailed).
+  const inCallerTransaction =
+    boundsRows[0]?.in_transaction === true ||
+    boundsRows[0]?.in_transaction === 't';
+  const servedHorizon =
+    drainedFromSeq === null || !inCallerTransaction
+      ? horizon
+      : Math.min(horizon, drainedFromSeq - 1);
 
   if (horizon === 0) {
     // No entries at all. A zero cursor is simply "no changes ever"; any
@@ -898,7 +962,7 @@ export async function getChangesSince(
       changes: [],
       cursor: since,
       resyncRequired: true,
-      resyncCursor: horizon,
+      resyncCursor: servedHorizon,
     };
   }
 
@@ -908,11 +972,11 @@ export async function getChangesSince(
       changes: [],
       cursor: since,
       resyncRequired: true,
-      resyncCursor: horizon,
+      resyncCursor: servedHorizon,
     };
   }
 
-  if (horizon === since) {
+  if (servedHorizon <= since) {
     return { changes: [], cursor: since };
   }
 
@@ -924,7 +988,7 @@ export async function getChangesSince(
   conditions.push(`seq > ${next()}`);
   params.push(since);
   conditions.push(`seq <= ${next()}`);
-  params.push(horizon);
+  params.push(servedHorizon);
 
   const tables = options.tables?.filter((table) => table.trim().length > 0);
   if (tables && tables.length > 0) {
@@ -952,7 +1016,7 @@ export async function getChangesSince(
   // everything up to the horizon (matching or filtered out) has been
   // observed, so advance all the way.
   const cursor =
-    changes.length === limit ? changes[changes.length - 1].seq : horizon;
+    changes.length === limit ? changes[changes.length - 1].seq : servedHorizon;
 
   return { changes, cursor };
 }
@@ -1184,16 +1248,46 @@ export async function pruneChangeFeed(
 
   if (maxAgeMs != null) {
     const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+
+    // Prune by age as a PREFIX, not as a predicate. Deleting every row with
+    // `created_at < cutoff` assumes `created_at` and `seq` are co-monotonic;
+    // they are not. `created_at` is stamped by the writer's clock (so two
+    // processes can skew) and, since #2649, a staged entry carries its
+    // stage-time stamp into the sequence the drain assigns later. Either way an
+    // old timestamp can sit at a high sequence, and deleting it would punch a
+    // hole in the MIDDLE of the retained run — which `getChangesSince` cannot
+    // detect: its pruned-cursor proof (`since < floor - 1`) only sees the
+    // floor move, so a reader below that hole is silently, permanently short
+    // one committed change.
+    //
+    // Retaining the whole run from the oldest entry that is still inside the
+    // window keeps deletion oldest-first and the retained sequences contiguous
+    // — the invariant the resync signal rests on. The cost is that a stale
+    // entry sequenced after a fresh one survives until the fresh one ages out.
+    const retainRows = getQueryRows(
+      await db.query(
+        `SELECT MIN(seq) AS first_retained FROM ${CHANGE_FEED_TABLE} WHERE created_at >= ${p(1)}`,
+        cutoff,
+      ),
+    );
+    const firstRetained = toSeqNumber(retainRows[0]?.first_retained);
+    // Nothing is inside the window → everything but the newest entry may go.
+    const ageThrough = Math.min(
+      firstRetained > 0 ? firstRetained - 1 : horizon - 1,
+      horizon - 1,
+    );
     // `seq > prunedThrough` excludes what the row bound already accounted for.
     // Redundant when the rows were really deleted, load-bearing under
     // `dryRun`, where nothing was — without it overlapping entries would be
     // counted by both bounds.
-    pruned += await deleteCounted(
-      db,
-      `created_at < ${p(1)} AND seq < ${p(2)} AND seq > ${p(3)}`,
-      [cutoff, horizon, prunedThrough],
-      dryRun,
-    );
+    if (ageThrough > prunedThrough) {
+      pruned += await deleteCounted(
+        db,
+        `seq <= ${p(1)} AND seq > ${p(2)}`,
+        [ageThrough, prunedThrough],
+        dryRun,
+      );
+    }
   }
 
   return { pruned };
