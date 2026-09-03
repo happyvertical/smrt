@@ -63,7 +63,19 @@ export function databaseUrl(baseUrl, databaseName) {
   return url.toString();
 }
 
-export function databaseEnvironment(testUrl, environment = process.env) {
+/**
+ * @param testUrl the database URL the child should use.
+ * @param environment base environment to extend.
+ * @param managed whether this wrapper created a disposable database that it
+ *   will drop afterwards. Stamped into the child environment as
+ *   `CI_POSTGRES_MANAGED` so a consumer never has to re-derive the decision
+ *   from `CI_POSTGRES_BASE_URL`/`CI_POSTGRES_BASE_URL_FILE` and drift from it.
+ */
+export function databaseEnvironment(
+  testUrl,
+  environment = process.env,
+  managed = false,
+) {
   const url = new URL(testUrl);
   const libpqEnvironment = {
     PGHOST: url.hostname,
@@ -84,6 +96,7 @@ export function databaseEnvironment(testUrl, environment = process.env) {
     TEST_DB_URL: testUrl,
     TEST_DB_ADAPTER: 'postgres',
     SMRT_TEST_POSTGRES_URL: testUrl,
+    CI_POSTGRES_MANAGED: managed ? '1' : '',
     ...libpqEnvironment,
   };
 }
@@ -153,7 +166,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const status = run(command, args, {
-      env: databaseEnvironment(testUrl),
+      env: databaseEnvironment(testUrl, process.env, base.managed),
     });
     return status;
   } finally {

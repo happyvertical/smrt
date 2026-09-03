@@ -12,8 +12,8 @@ self-hosted-runner:
     # Routable since happyvertical/iac#1316: the broker's nodocker-linux-x64
     # pool serves this label from the Patdown metal-nodocker profile (Pods
     # without the dind sidecar). Jobs that never speak to Docker belong here;
-    # the one Docker user (postgres-tests.yml, dormant) stays on the general
-    # lane above.
+    # the Docker users (postgres-tests.yml, dormant; and test-suite.yml's
+    # m5-reference-gate, live since #2579) stay on the general lane above.
     - arc-happyvertical-nodocker
 
 config-variables: null
