@@ -486,8 +486,10 @@ const handler = generator.generateHandler(); // (req: Request) => Promise<Respon
 generator.registerCollection('products', productCollection);
 const { server, url } = generator.createServer();
 
-// Or the startRestServer() convenience wrapper: registers the passed classes,
-// starts a Node http.Server, and resolves a graceful-shutdown function.
+// Or the startRestServer() convenience wrapper: warns for any of the passed
+// classes not already registered by their own @smrt() decorator (it does not
+// register them itself), starts a Node http.Server, and resolves a
+// graceful-shutdown function.
 const shutdown = await startRestServer([Product, Order], { db }, { basePath: '/api/v1' });
 ```
 
