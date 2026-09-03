@@ -397,13 +397,15 @@ function noteStagedAppend(db: DatabaseInterface): void {
   }
 }
 
-async function drainBeforeAppend(db: DatabaseInterface): Promise<void> {
-  if (getEngine(db) !== 'postgres') return;
+async function drainBeforeAppend(
+  db: DatabaseInterface,
+): Promise<ChangeSignal[]> {
+  if (getEngine(db) !== 'postgres') return [];
   let dbKey: string;
   try {
     dbKey = resolveDbCacheKey(db);
   } catch {
-    return;
+    return [];
   }
   const now = Date.now();
   const last = lastAppendDrain.get(dbKey);
@@ -414,7 +416,7 @@ async function drainBeforeAppend(db: DatabaseInterface): Promise<void> {
     last !== undefined &&
     now - last < APPEND_DRAIN_INTERVAL_MS
   ) {
-    return;
+    return [];
   }
   stagedSinceLastDrain.delete(dbKey);
   lastAppendDrain.set(dbKey, now);
@@ -422,12 +424,14 @@ async function drainBeforeAppend(db: DatabaseInterface): Promise<void> {
   // costs one cheap statement and never sequences anything there. `settle:
   // false` keeps it to that ONE statement: the caller may own the surrounding
   // transaction, and any further statement issued here could fail and abort it
-  // behind the feed's own error-swallowing (#2026). Signals from this drain
-  // are queued and published by the next settling drain.
+  // behind the feed's own error-swallowing (#2026). The signals come back
+  // undecided; appendChange settles them without spending a statement.
   try {
-    await drainChangeFeedDetailed(db, { settle: false });
+    return (await drainChangeFeedDetailed(db, { settle: false }))
+      .unsettledSignals;
   } catch (error) {
     warnDrainFailureOnce(db, error);
+    return [];
   }
 }
 
@@ -802,10 +806,33 @@ export async function appendChange(
     new Date().toISOString(),
   ];
 
-  // Sequence and signal anything staged by a committed transaction before
-  // taking a sequence of our own, so signals stay in ascending order and no
-  // staged entry is left unsignalled beneath this one (see drainBeforeAppend).
-  await drainBeforeAppend(db);
+  // Sequence anything staged by a committed transaction before taking a
+  // sequence of our own, so signals stay in ascending order and no staged
+  // entry is left unsignalled beneath this one (see drainBeforeAppend). Their
+  // signals are settled below, once this append tells us whether that drain
+  // committed.
+  const drainedSignals = await drainBeforeAppend(db);
+
+  /**
+   * Settle the pre-append drain's signals from what this append revealed.
+   *
+   * A drain that allocated anything assigned a transaction id, so if this
+   * append then took the DIRECT path — `pg_current_xact_id_if_assigned()` was
+   * still null at its entry — that id is already gone, which can only mean the
+   * drain committed as its own autocommit transaction. Publishing here is
+   * therefore proven safe AND correctly ordered: these sequences are below the
+   * one this append is about to take, and the interceptor publishes that one
+   * only after this call returns. A deferred append proves nothing, so its
+   * signals go to the queue.
+   */
+  const settleDrainedSignals = (appended: number | null): void => {
+    if (drainedSignals.length === 0) return;
+    if (appended === null) {
+      queueDeferredSignals(db, drainedSignals);
+      return;
+    }
+    publishSignals(db, drainedSignals);
+  };
 
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
@@ -831,15 +858,23 @@ export async function appendChange(
       }
       if (engine === 'postgres' && row.allocated_seq == null) {
         noteStagedAppend(db);
+        settleDrainedSignals(null);
         // Staged, not sequenced (#2649): the append ran inside a
         // caller-managed transaction, so it went to `_smrt_changes_pending`
         // and receives its sequence from the next drain after that
         // transaction commits. Durable and ordered, just not numbered yet.
         return null;
       }
-      return toSeqNumber(engine === 'postgres' ? row.allocated_seq : row.seq);
+      const seq = toSeqNumber(
+        engine === 'postgres' ? row.allocated_seq : row.seq,
+      );
+      settleDrainedSignals(seq);
+      return seq;
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+        // Nothing was proven about the drain; hold its signals for a settling
+        // drain rather than dropping or publishing them.
+        queueDeferredSignals(db, drainedSignals);
         throw error;
       }
       // Sequence head contention: another append won the value. Re-running
@@ -904,9 +939,13 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
 async function drainChangeFeedDetailed(
   db: DatabaseInterface,
   options: { settle?: boolean } = {},
-): Promise<{ drained: number; firstAllocatedSeq: number | null }> {
+): Promise<{
+  drained: number;
+  firstAllocatedSeq: number | null;
+  unsettledSignals: ChangeSignal[];
+}> {
   if (getEngine(db) !== 'postgres')
-    return { drained: 0, firstAllocatedSeq: null };
+    return { drained: 0, firstAllocatedSeq: null, unsettledSignals: [] };
 
   // `settle: false` is the write path (see drainBeforeAppend): it issues the
   // drain statement and NOTHING else, because every additional statement run
@@ -925,6 +964,7 @@ async function drainChangeFeedDetailed(
 
   let firstAllocatedSeq: number | null = null;
   let drained = 0;
+  const unsettledSignals: ChangeSignal[] = [];
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
   for (let pass = 0; pass < MAX_DRAIN_PASSES; pass++) {
@@ -976,7 +1016,11 @@ async function drainChangeFeedDetailed(
       seq: toSeqNumber(row.drained_seq),
     }));
     if (signals.length > 0) {
-      if (settle && (await drainCommitted(db))) {
+      if (!settle) {
+        // The write path decides: see appendChange, which can prove these
+        // committed without spending a statement on it.
+        unsettledSignals.push(...signals);
+      } else if (await drainCommitted(db)) {
         publishSignals(db, signals);
       } else {
         queueDeferredSignals(db, signals);
@@ -986,7 +1030,7 @@ async function drainChangeFeedDetailed(
     if (sequenced.length === 0) break;
   }
   recordUncommittedDrainMark(db, firstAllocatedSeq);
-  return { drained, firstAllocatedSeq };
+  return { drained, firstAllocatedSeq, unsettledSignals };
 }
 
 /** Signals a drain produced but could not yet prove committed. */

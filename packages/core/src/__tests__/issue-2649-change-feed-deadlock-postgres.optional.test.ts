@@ -523,7 +523,7 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
    * one is gets skipped for good. Every drained entry must therefore be
    * signalled, ahead of the append that follows it.
    */
-  it('queues a write-path drain signal and publishes it on the next settle', async () => {
+  it('signals every drained entry before the append that outranks it', async () => {
     const seen: ChangeSignal[] = [];
     const unsubscribe = subscribeToChangeSignals(setup, (signal) => {
       seen.push(signal);
@@ -544,11 +544,12 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
       expect(seen).toEqual([]);
 
       // An ordinary autocommit append drains first, so the staged entry is
-      // sequenced at 1 before this append takes 2 — the log keeps its order.
-      // The write path issues that drain and nothing else (the caller may own
-      // the surrounding transaction, and a second statement there could abort
-      // it behind the feed's error-swallowing), so its signal is QUEUED rather
-      // than published here.
+      // sequenced at 1 before this append takes 2. Taking the DIRECT path
+      // proves that drain committed — a drain that allocated anything assigns
+      // a transaction id, and this append saw none — so its signal is
+      // published here, ahead of the seq the interceptor publishes for this
+      // append once the call returns. Ascending, with no gap for a
+      // subscriber's Last-Event-ID to jump.
       expect(
         await appendChange(setup, {
           table: FEED_TABLE,
@@ -556,11 +557,11 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
           operation: 'create',
         }),
       ).toBe(2);
-      expect(seen).toEqual([]);
+      expect(seen.map((signal) => [signal.seq, signal.rowId])).toEqual([
+        [1, ROW_A],
+      ]);
 
-      // A settling drain publishes it. A subscriber therefore sees seq 1 after
-      // seq 2 rather than never: an EventSource stores the last id it received,
-      // so it resumes at 1 and re-receives 2 — a duplicate, never a skip.
+      // Nothing is left queued for a later drain to republish.
       await drainChangeFeed(setup);
       expect(seen.map((signal) => [signal.seq, signal.rowId])).toEqual([
         [1, ROW_A],
