@@ -2426,39 +2426,100 @@ ${fields}
    * differing create/update schemas, and an MCP client that indexes tools by
    * name then resolves an arbitrary one (#2631 review).
    *
-   * The model class wins: `create`/`update` input schemas are derived from
-   * `obj.fields`, and the row shape lives on the model, not on the access
-   * class. Remaining ties are broken lexically on the qualified name so the
-   * emitted surface is deterministic across generation passes.
+   * Owners are ranked, in order:
+   *
+   * 1. The model class beats the collection-access class. `create`/`update`
+   *    input schemas derive from `obj.fields`, and the row shape lives on the
+   *    model, not on the access class.
+   * 2. The shallowest class in the collection's own inheritance tree wins. An
+   *    STI family shares one `collection`, and the base defines the shared row
+   *    contract; a leaf subclass would narrow the emitted schema to one variant
+   *    of a table the tool addresses as a whole.
+   * 3. Remaining ties break lexically on the qualified name, so the emitted
+   *    surface is deterministic across generation passes.
    */
   private selectMCPToolOwners(
     manifest: SmartObjectManifest,
   ): SmartObjectDefinition[] {
-    const byCollection = new Map<string, SmartObjectDefinition>();
+    const candidatesByCollection = new Map<string, SmartObjectDefinition[]>();
 
     for (const obj of Object.values(manifest.objects)) {
       if (obj.decoratorConfig.mcp === false) continue;
-      const existing = byCollection.get(obj.collection);
-      if (!existing || this.preferMCPToolOwner(obj, existing)) {
-        byCollection.set(obj.collection, obj);
-      }
+      const bucket = candidatesByCollection.get(obj.collection);
+      if (bucket) bucket.push(obj);
+      else candidatesByCollection.set(obj.collection, [obj]);
     }
 
-    return [...byCollection.entries()]
+    return [...candidatesByCollection.entries()]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([, obj]) => obj);
+      .map(([, candidates]) => {
+        const depths = this.inheritanceDepthsWithin(candidates);
+        let owner = candidates[0];
+        for (const candidate of candidates.slice(1)) {
+          if (this.preferMCPToolOwner(candidate, owner, depths)) {
+            owner = candidate;
+          }
+        }
+        return owner;
+      });
+  }
+
+  /**
+   * Depth of each candidate inside the candidate set's OWN inheritance tree,
+   * keyed by simple class name. A candidate with no candidate ancestor is a
+   * root at depth 0. Ancestors outside the set (framework bases, classes in
+   * other collections) do not add depth: only the shared-collection family
+   * decides which member is canonical.
+   */
+  private inheritanceDepthsWithin(
+    candidates: SmartObjectDefinition[],
+  ): Map<string, number> {
+    const byName = new Map<string, SmartObjectDefinition>();
+    for (const candidate of candidates) {
+      byName.set(this.simpleClassName(candidate.className), candidate);
+    }
+
+    const depths = new Map<string, number>();
+    for (const candidate of candidates) {
+      const name = this.simpleClassName(candidate.className);
+      let depth = 0;
+      let current: string | undefined = candidate.extends;
+      const visited = new Set<string>([name]);
+      while (current) {
+        const parentName = this.simpleClassName(current);
+        // Circular or self-referential extends: stop rather than loop.
+        if (visited.has(parentName)) break;
+        visited.add(parentName);
+        const parent = byName.get(parentName);
+        if (!parent) break;
+        depth += 1;
+        current = parent.extends;
+      }
+      depths.set(name, depth);
+    }
+    return depths;
   }
 
   /** True when `candidate` is the better canonical MCP owner than `current`. */
   private preferMCPToolOwner(
     candidate: SmartObjectDefinition,
     current: SmartObjectDefinition,
+    depths: Map<string, number>,
   ): boolean {
     const candidateIsCollection = this.isCollectionAccessClass(candidate);
     const currentIsCollection = this.isCollectionAccessClass(current);
     if (candidateIsCollection !== currentIsCollection) {
       return !candidateIsCollection;
     }
+
+    const candidateDepth =
+      depths.get(this.simpleClassName(candidate.className)) ?? 0;
+    const currentDepth =
+      depths.get(this.simpleClassName(current.className)) ?? 0;
+    if (candidateDepth !== currentDepth) {
+      return candidateDepth < currentDepth;
+    }
+
     const candidateKey = candidate.qualifiedName || candidate.className;
     const currentKey = current.qualifiedName || current.className;
     return candidateKey < currentKey;

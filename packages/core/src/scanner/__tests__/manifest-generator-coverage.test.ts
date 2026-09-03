@@ -557,6 +557,48 @@ describe('ManifestGenerator coverage', () => {
       expect(code).toContain('"minimum": 0');
     });
 
+    it('picks the STI base, not an alphabetical leaf, as the MCP owner', () => {
+      // An STI family shares one `collection`; the base defines the shared row
+      // contract a `create_contents` tool addresses. Ranking by name alone
+      // would hand the surface to whichever subclass sorted first and narrow
+      // the emitted schema to one variant of the table.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          'pkg:Article': def('Article', {
+            collection: 'contents',
+            extends: 'Content',
+            fields: {
+              headline: { type: 'text', required: false } as never,
+            },
+          }),
+          'pkg:Content': def('Content', {
+            collection: 'contents',
+            fields: {
+              body: { type: 'text', required: false } as never,
+            },
+          }),
+          'pkg:Zine': def('Zine', {
+            collection: 'contents',
+            extends: 'Article',
+            fields: {
+              issue: { type: 'integer', required: false } as never,
+            },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // The base's field, not the alphabetically-first leaf subclass's.
+      expect(code).toContain('"body"');
+      expect(code).not.toContain('"headline"');
+      expect(code).not.toContain('"issue"');
+    });
+
     it('emits an empty array literal when every MCP operation is excluded', () => {
       const gen = new ManifestGenerator();
       const m = baseManifest();
