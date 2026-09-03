@@ -43,6 +43,7 @@
   "devDependencies": {
     "@happyvertical/smrt-app-runtime": "workspace:*",
     "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-playbooks": "workspace:*",

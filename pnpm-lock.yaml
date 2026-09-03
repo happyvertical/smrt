@@ -2871,6 +2871,9 @@ importers:
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config

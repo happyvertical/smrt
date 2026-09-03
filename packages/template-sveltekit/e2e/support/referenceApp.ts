@@ -27,8 +27,8 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
@@ -38,6 +38,9 @@ import { copyRuntimeProfileReference } from '../../fixtures/runtime-profile-refe
 const here = dirname(fileURLToPath(import.meta.url));
 /** `packages/template-sveltekit` — the workspace package that owns this gate. */
 export const packageRoot = resolve(here, '..', '..');
+
+/** The monorepo checkout root. Redacted out of anything this harness prints. */
+export const repositoryRoot = resolve(packageRoot, '..', '..');
 
 /**
  * Environment the PostgreSQL test wrapper injects for the *vitest* half of the
@@ -134,9 +137,59 @@ export function redactHarnessPaths(
   text: string,
   temporaryRoot: string,
 ): string {
-  return redactBootstrapToken(text)
-    .replaceAll(temporaryRoot, '[temporary-root]')
-    .replaceAll(packageRoot, '[package-root]');
+  return (
+    redactBootstrapToken(text)
+      // Longest roots first: `packageRoot` is inside `repositoryRoot`, so
+      // replacing the shorter one first would leave a half-substituted path.
+      .replaceAll(temporaryRoot, '[temporary-root]')
+      .replaceAll(packageRoot, '[package-root]')
+      .replaceAll(repositoryRoot, '[repository-root]')
+      .replaceAll(homedir(), '[home]')
+      // Credentials first: a database URL can contain an absolute-looking
+      // path, and redacting the whole URL is stricter than redacting its tail.
+      .replaceAll(/\b(postgres(?:ql)?|mysql|mongodb):\/\/\S*/gi, '$1://[redacted]')
+      .replaceAll(/\bBearer\s+[A-Za-z0-9._-]{8,}/g, 'Bearer [redacted]')
+      // A `file:` URL is an absolute path wearing a scheme, and its third
+      // slash would otherwise put the path behind the `/` in the lookbehind
+      // class below. Redact the whole thing here instead.
+      .replaceAll(/\bfile:\/\/\S*/gi, 'file://[path]')
+      // Then any absolute path the named roots above did not cover — any
+      // `/`-rooted path of two or more segments, whatever the root is called,
+      // since a container image can put the checkout anywhere. Matched
+      // wherever it appears rather than only after a delimiter: `path=/var/x`,
+      // a JSON value, and a backtick-quoted path are all normal shapes in the
+      // output this excerpt is cut from, and a prefix-gated pattern misses
+      // every one of them. The lookbehind is what keeps the excerpt readable:
+      // it requires the leading slash to start a token, so relative specifiers
+      // like `dist/migrations/index.js` and `../../packages/core/dist/x.js` —
+      // the bulk of a failing build's output — are left intact. `]` is in the
+      // class for the same reason: the substitutions above leave markers like
+      // `[temporary-root]/app/src/x.js`, and without it this sweep would eat
+      // the relative tail those substitutions exist to preserve. `/` is in it
+      // so `https://host/a/b` keeps its host instead of collapsing to
+      // `https:/[path]`; `file://` is already gone by the time we get here.
+      .replaceAll(/(?<![A-Za-z0-9._@+\]/-])(?:\/[A-Za-z0-9._@+-]+){2,}/g, '[path]')
+  );
+}
+
+/**
+ * Reduce a failed subprocess's output to a bounded, sanitized excerpt.
+ *
+ * The tail alone is not enough: `app:setup` runs the application's own build
+ * first, and that build's warning output is long enough to push the actual
+ * failure — which is what the next reader needs — out of a tail-only window.
+ * Keep both ends and say how much was dropped.
+ */
+export function summarizeFailureOutput(
+  text: string,
+  temporaryRoot: string,
+  budget = 4000,
+): string {
+  const clean = redactHarnessPaths(text, temporaryRoot).trimEnd();
+  if (clean.length <= budget) return clean;
+  const half = Math.floor(budget / 2);
+  const dropped = clean.length - budget;
+  return `${clean.slice(0, half)}\n… ${dropped} characters omitted …\n${clean.slice(-half)}`;
 }
 
 function assertPrivateFile(path: string): void {
@@ -214,6 +267,21 @@ async function provisionReferenceApp(
   if (existsSync(workspaceBin)) {
     symlinkSync(workspaceBin, join(appModules, '.bin'), 'junction');
   }
+  // `app:setup`'s migration step shells out to `pnpm exec smrt db:migrate`.
+  // `pnpm exec` resolves that from the nearest `node_modules/.bin`, and the
+  // copied app deliberately never runs `pnpm install`, so the binary has to
+  // arrive through the link above — which means this package must depend on
+  // `@happyvertical/smrt-cli`. Check it here: without this the command falls
+  // through to whatever `smrt` happens to be on the developer's PATH, which
+  // passes locally and fails on a clean machine with a migration error that
+  // #2635 deliberately redacts down to "the migration step failed".
+  const appCli = join(appModules, '.bin', 'smrt');
+  if (!existsSync(appCli)) {
+    throw new Error(
+      'The reference app has no local `smrt` binary; ' +
+        '`@happyvertical/smrt-cli` must stay a devDependency of this package.',
+    );
+  }
 
   const port = await reserveLoopbackPort();
   // `test:m5` runs under `scripts/run-with-ci-postgres.mjs`, which exports a
@@ -243,6 +311,10 @@ async function provisionReferenceApp(
     // re-entering the monorepo package manager context.
     npm_execpath: '',
     npm_config_workspace: '',
+    // The app's own binaries win over anything the developer has installed
+    // globally, so a local run resolves `smrt` exactly the way a clean CI
+    // runner does instead of silently borrowing a host installation.
+    PATH: `${join(appRoot, 'node_modules', '.bin')}${delimiter}${inheritedEnvironment.PATH ?? ''}`,
   };
 
   const setup = spawnSync(
@@ -257,11 +329,16 @@ async function provisionReferenceApp(
     },
   );
   if (setup.status !== 0) {
+    // The application redacts a migration failure to a fixed sentence, so the
+    // only place the real cause can appear is the output of the commands
+    // `app:setup` shells out to. Print a bounded, sanitized excerpt of both
+    // ends rather than a tail the build output would have swallowed.
     throw new Error(
-      `Reference app setup failed (exit ${setup.status ?? 'signal'}): ${redactHarnessPaths(
-        `${setup.stdout ?? ''}${setup.stderr ?? ''}`,
-        temporaryRoot,
-      ).slice(-2000)}`,
+      `Reference app setup failed (exit ${setup.status ?? 'signal'}).\n` +
+        `--- sanitized app:setup output ---\n${summarizeFailureOutput(
+          `${setup.stdout ?? ''}\n${setup.stderr ?? ''}`,
+          temporaryRoot,
+        )}\n--- end ---`,
     );
   }
 

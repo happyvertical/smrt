@@ -122,6 +122,12 @@ collections, handlers, session, and every registration are the application's
 own. Never add a mocked REST handler, an in-memory database, or DOM automation
 presented as WebMCP execution.
 
+- `@happyvertical/smrt-cli` is a devDependency **because the gate needs it**:
+  the app's `app:setup` migration step shells out to `pnpm exec smrt db:migrate`,
+  and the copied app deliberately never runs `pnpm install`, so `smrt` has to
+  arrive through the linked `node_modules/.bin`. The harness pins the app's own
+  `.bin` ahead of `PATH` and fails with a named error if that binary is missing,
+  so a host-global `smrt` cannot make a local run pass where CI fails.
 - `pnpm test:e2e` runs the browser half.
 - `pnpm test:m5` runs the whole aggregate gate through
   `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
