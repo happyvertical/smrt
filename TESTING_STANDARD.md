@@ -210,7 +210,7 @@ describe('MyObject', () => {
 
   beforeEach(async () => {
     // Creates isolated in-memory SQLite database
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     collection = await MyCollection.create({
       persistence: { type: 'sql', db }
     });
@@ -294,7 +294,7 @@ The `@happyvertical/smrt-vitest` package provides `createIsolatedTestDb()` for c
 import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
 
 beforeEach(async () => {
-  const db = await createIsolatedTestDb();
+  const { db } = await createIsolatedTestDb();
   collection = await MyCollection.create({
     persistence: { type: 'sql', db }
   });
@@ -349,7 +349,7 @@ describe('relationships', () => {
   let bookCollection: BookCollection;
 
   beforeEach(async () => {
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     authorCollection = await AuthorCollection.create({
       persistence: { type: 'sql', db }
     });
@@ -401,7 +401,7 @@ describe('STI polymorphism', () => {
   let eventCollection: EventCollection;
 
   beforeEach(async () => {
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     eventCollection = await EventCollection.create({
       persistence: { type: 'sql', db }
     });
@@ -509,18 +509,15 @@ describe('error handling', () => {
 
 ```typescript
 import { describe, it, expect } from 'vitest';
-import { CLIGenerator } from '@happyvertical/smrt-core/codegen';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
 
 describe('CLI generation', () => {
-  it('should generate list command', () => {
-    const generator = new CLIGenerator({
-      className: 'Product',
-      packageName: '@test/package'
-    });
+  it('should expose CRUD commands for a registered class', async () => {
+    // Assumes Product is registered via @smrt() in the test manifest.
+    const generator = new CLIGenerator({ name: 'test-cli' });
 
-    const code = generator.generateCommand('list');
-    expect(code).toContain('list');
-    expect(code).toContain('Product');
+    const commands = await generator.listCommands();
+    expect(commands).toContain('product:list');
   });
 });
 ```
@@ -528,16 +525,29 @@ describe('CLI generation', () => {
 ### Testing API Generation
 
 ```typescript
+import { describe, it, expect } from 'vitest';
+import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { MyObject, MyCollection } from './my-object.js';
+
 describe('API generation', () => {
-  it('should generate REST endpoint', () => {
-    const generator = new APIGenerator({
-      className: 'Product',
-      packageName: '@test/package'
+  it('should require authentication for a non-public object', async () => {
+    const { db } = await createIsolatedTestDb();
+    const collection = await MyCollection.create({
+      persistence: { type: 'sql', db },
     });
 
-    const code = generator.generateEndpoint('list');
-    expect(code).toContain('GET');
-    expect(code).toContain('/products');
+    const generator = new APIGenerator({ basePath: '/api/v1' });
+    generator.registerCollection('my-objects', collection);
+    const handler = generator.generateHandler();
+
+    // No authMiddleware is configured and MyObject isn't marked
+    // `api: { public }`, so generated routes fail closed (#1540) instead
+    // of serving open.
+    const response = await handler(
+      new Request('http://localhost/api/v1/my-objects'),
+    );
+    expect(response.status).toBe(401);
   });
 });
 ```

@@ -1,8 +1,15 @@
 # Issue #215: Dynamic Class Loading Architecture
 
+> **Historical design document.** This records the problem analysis and
+> design options considered for issue #215. It is not maintained against the
+> current codebase — code samples below may not match today's APIs. For the
+> current CLI architecture, see [`smrt-app-cli`](../app-cli.md) (the
+> distributable application CLI) and the
+> [core architecture guide](./core-architecture.md).
+
 **Issue**: [#215 - SMRT CLI should discover objects from consumer plugin's aggregated manifest](https://github.com/happyvertical/smrt/issues/215)
 
-**Status**: In Development
+**Status**: Historical (design record)
 **Branch**: `feat/issue-215-dynamic-class-loading`
 **Started**: 2025-11-05
 
