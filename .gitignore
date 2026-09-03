@@ -190,3 +190,6 @@ bin/
 # SQLDelight schema snapshots are checked in — they back verifyMigrations
 # (packages/smrt-mobile/AGENTS.md § Schema changes).
 !packages/*/src/commonMain/sqldelight/databases/*.db
+
+# M5 browser gate (#2579): Playwright output root, never committed.
+packages/template-sveltekit/m5-gate-summary.json

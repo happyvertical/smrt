@@ -94,41 +94,31 @@ async generateSummary(): Promise<string> {
 
 ### 4. Code Generation Capabilities
 
-**CLI Generator**
+**CLI Generator** (in-process; no current SMRT consumers — a published app CLI
+uses `@happyvertical/smrt-app-cli` instead)
 ```typescript
-import { CLIGenerator } from '@have/smrt/generators';
+import { CLIGenerator } from '@happyvertical/smrt-core/generators';
 
-const cliGen = new CLIGenerator({
-  collections: [ProductCollection],
-  outputDir: './cli',
-  includeAI: true
-});
-await cliGen.generate();
+const cliGen = new CLIGenerator({ name: 'my-cli' });
+const handler = cliGen.generateHandler();
+await handler(process.argv.slice(2)); // e.g. `product:list`
 ```
 
 **API Generator**
 ```typescript
-import { APIGenerator } from '@have/smrt/generators';
+import { APIGenerator } from '@happyvertical/smrt-core/generators';
 
-const apiGen = new APIGenerator({
-  collections: [ProductCollection],
-  outputDir: './api',
-  includeSwagger: true,
-  middleware: ['auth', 'validation']
-});
-await apiGen.generate();
+const apiGen = new APIGenerator({ basePath: '/api/v1' });
+apiGen.registerCollection('products', productCollection);
+const { server, url } = apiGen.createServer();
 ```
 
 **MCP Server Generator**
 ```typescript
-import { MCPGenerator } from '@have/smrt/generators';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 
-const mcpGen = new MCPGenerator({
-  collections: [ProductCollection],
-  outputDir: './mcp',
-  tools: ['list', 'get', 'create', 'update', 'search']
-});
-await mcpGen.generate();
+const mcpGen = new MCPGenerator({ name: 'my-mcp' });
+const tools = await mcpGen.generateTools();
 ```
 
 ### 5. Cross-Package Integration

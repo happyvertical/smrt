@@ -479,6 +479,142 @@ jobs:
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
 
+  m5-reference-gate:
+    name: M5 Reference Fixture Gate
+    # The aggregate acceptance gate for milestone M5 (#2547, closed by #2579).
+    # One job so the profiles cannot drift apart: file-backed SQLite plus a
+    # fresh-browser WebMCP pass, the PostgreSQL portability/parity cases, and
+    # the managed-cloud configuration snapshot all run here, and
+    # `e2e/support/gate.mjs` fails if any of them is missing rather than
+    # merely absent from the log.
+    needs: build
+    # Deliberately not behind a paths filter. The gate serves a real generated
+    # application, so its blast radius is template-sveltekit's whole workspace
+    # closure — twenty directories whose names do not match their package names
+    # (`@happyvertical/smrt-users` lives in `packages/users`), plus the lockfile
+    # that pins the toolchain it serves the app with. A hand-maintained list of
+    # that closure is a silent-skip generator: two rounds of widening it still
+    # left `packages/scanner` out, and the scanner builds the very inventory
+    # `discovery.spec.ts` compares the browser against. `build` is skipped in
+    # affected mode, so only `full` waits on it.
+    if: >-
+      always() &&
+      (inputs.mode == 'affected' || needs.build.result == 'success')
+    # Needs a service container, so it takes the docker-capable fleet lane
+    # (the same one PostgreSQL Tests uses) rather than the nodocker lane.
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical' }}
+    # Below the 90-minute standard on purpose: the work is bounded (one app
+    # build plus one browser pass), and the gate's own Playwright
+    # `globalTimeout` is 30 minutes, so a run still going at 60 is stuck.
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      # This is the second consumer of the dind lane and the first non-dormant
+      # one, so prove the two things the gate silently assumes about it before
+      # spending a build on them: the libpq client binaries the PostgreSQL
+      # wrapper shells out to, and a reachable service container. Failing here
+      # names the cause; failing inside the wrapper does not.
+      - name: Preflight the PostgreSQL service lane
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          for binary in createdb dropdb psql; do
+            command -v "$binary" >/dev/null || {
+              echo "::error::$binary is missing from this runner image; the" \
+                   "PostgreSQL test wrapper cannot create a disposable database"
+              exit 1
+            }
+          done
+          psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -c 'SELECT 1' >/dev/null
+
+      # The proven browser consumer (`workbench-browser`) runs on the nodocker
+      # pool; this is the first browser job on the dind pool, whose Pod profile
+      # is different. Prove Chromium actually launches here before spending a
+      # full application build on finding out.
+      - name: Preflight the browser lane
+        run: |
+          set -euo pipefail
+          pnpm exec playwright --version
+          node -e "
+            const { chromium } = require('@playwright/test');
+            chromium.launch()
+              .then(async (browser) => {
+                await browser.close();
+                console.log('chromium launches on this runner');
+              })
+              .catch((error) => {
+                console.log('::error::Chromium cannot launch on this runner: ' + error.message);
+                process.exit(1);
+              });
+          "
+
+      # The gate provisions a copy of the generated app that resolves its
+      # dependencies through this package, so those workspace packages must be
+      # built from this commit before the copy is served.
+      - name: Build the reference application closure
+        run: >-
+          pnpm turbo run build
+          --filter='@happyvertical/smrt-template-sveltekit...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the M5 aggregate gate
+        run: pnpm --filter @happyvertical/smrt-template-sveltekit test:m5
+        env:
+          CI_POSTGRES_BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+      # `gate.mjs` writes this file itself and sends every child reporter to
+      # stderr, so the artifact carries case ids and booleans only — never the
+      # assertion text, absolute paths, or stack frames a reporter emits. No
+      # databases, export bundles, browser
+      # profiles, cookies, bootstrap artifacts, or traces: the gate disables
+      # tracing, video and screenshots outright, and its temporary roots are
+      # removed before this step runs.
+      - name: Upload sanitized M5 gate summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m5-gate-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: packages/template-sveltekit/m5-gate-summary.json
+          if-no-files-found: warn
+          retention-days: 7
+
+
   knowledge:
     name: Knowledge Freshness
     needs: build

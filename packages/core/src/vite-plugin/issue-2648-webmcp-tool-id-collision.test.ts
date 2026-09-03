@@ -1,0 +1,249 @@
+/**
+ * Acceptance coverage for issue #2648, part 2 — the WebMCP tool-id namespace.
+ * https://github.com/happyvertical/smrt/issues/2648
+ *
+ * `buildToolDescriptors` names a WebMCP tool `` `${prefix}_${action}`.toLowerCase() ``
+ * — the same whole-string lowercase `MCPGenerator` uses — but the action set
+ * feeding it comes from `resolveApiActionSet`, which reserves CRUD verbs on
+ * EXACT match. So a public `List()` survives alongside the generated `list`,
+ * `selectWebMcpToolEntries` treats them as distinct entries, and both descriptors
+ * land on the id `product_list`.
+ *
+ * Exact matching is correct for REST and is deliberately left alone: `apiPath`
+ * emits `/${collection}/${operation}` with declared casing, so `/products/List`
+ * is a genuinely distinct route from `/products`. The collision exists only in
+ * the flattened lowercased tool namespace, so the reservation belongs at this
+ * emission site — the same conclusion #2646 reached for `MCPGenerator`.
+ */
+
+import { describe, expect, it } from 'vitest';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
+import {
+  buildWebMcpToolDefinitions,
+  buildWebToolDescriptors,
+  selectWebCollectionEntries,
+  selectWebMcpToolEntries,
+} from './web-collections.js';
+
+type ObjInput = Partial<SmartObjectDefinition> & {
+  className: string;
+  collection: string;
+};
+
+function obj(input: ObjInput): SmartObjectDefinition {
+  return {
+    name: input.className.toLowerCase(),
+    qualifiedName:
+      input.qualifiedName ?? `@happyvertical/smrt-core:${input.className}`,
+    filePath: `src/${input.className}.ts`,
+    fields: {},
+    methods: {},
+    decoratorConfig: {},
+    ...input,
+  } as SmartObjectDefinition;
+}
+
+function manifest(...objects: SmartObjectDefinition[]): SmartObjectManifest {
+  return {
+    version: '1.0.0',
+    timestamp: 0,
+    objects: Object.fromEntries(
+      objects.map((o) => [o.qualifiedName ?? o.className, o]),
+    ),
+  } as SmartObjectManifest;
+}
+
+const publicMethod = (
+  name: string,
+): SmartObjectDefinition['methods'][string] => ({
+  name,
+  isPublic: true,
+  isStatic: false,
+  async: true,
+  returnType: 'Promise<void>',
+  parameters: [],
+});
+
+/** Every emitted tool id, in catalog order — the actual `name` on the wire. */
+function toolIds(m: SmartObjectManifest): string[] {
+  return buildWebMcpToolDefinitions(m).map((definition) => definition.name);
+}
+
+/** The selector's own view, for asserting where a duplicate originates. */
+function selectedActions(m: SmartObjectManifest): string[] {
+  return selectWebMcpToolEntries(m).map((entry) => entry.action);
+}
+
+describe('#2648 WebMCP tool-id collisions', () => {
+  it('emits unique ids on the LEGACY per-collection descriptor path too', () => {
+    // `collectionDefinitions[].toolDescriptors` is built from the unfiltered
+    // `entry.actions`, not from the guarded selector. A duplicate id there makes
+    // `validateProspectiveTools` throw `Duplicate WebMCP tool name`, which
+    // aborts registration of EVERY tool on the page — worse than the collision
+    // itself. The canonical path is already covered by the tests below.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: {
+          List: publicMethod('List'),
+          syncNow: publicMethod('syncNow'),
+        },
+      }),
+    );
+
+    const ids = selectWebCollectionEntries(m).flatMap((entry) =>
+      buildWebToolDescriptors(entry).map((d) => d.name),
+    );
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+    expect(ids).toContain('product_syncnow');
+  });
+
+  it('emits one descriptor per tool id when a method shadows a CRUD verb case-insensitively', () => {
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { List: publicMethod('List') },
+      }),
+    );
+
+    const ids = toolIds(m);
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+    // The generated CRUD list tool is what owns the id.
+    expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
+    // And the selector no longer hands two actions to one id.
+    expect(
+      selectedActions(m).filter((a) => a.toLowerCase() === 'list'),
+    ).toEqual(['list']);
+  });
+
+  it('still emits a genuinely custom action alongside CRUD', () => {
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { syncNow: publicMethod('syncNow') },
+      }),
+    );
+
+    expect(toolIds(m)).toContain('product_syncnow');
+  });
+
+  it('applies the same reservation on the collection-class path', () => {
+    // `selectWebMcpToolEntries` has TWO loops sharing one `entries` map: one
+    // over model objects, one over collection classes. Guarding only the first
+    // leaves the collision live here — and, worse, makes the two loops key the
+    // map differently, so a camelCase action declared on BOTH a model and its
+    // collection class stops deduping and is emitted twice.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { syncNow: publicMethod('syncNow') },
+      }),
+      obj({
+        className: 'ProductCollection',
+        collection: 'products',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Product',
+        methods: {
+          List: publicMethod('List'),
+          syncNow: publicMethod('syncNow'),
+        },
+      }),
+    );
+
+    const ids = toolIds(m);
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+    // The cased impostor never reaches the catalog from either loop.
+    expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
+    // And the shared camelCase action is still emitted exactly once.
+    expect(ids.filter((id) => id === 'product_syncnow')).toEqual([
+      'product_syncnow',
+    ]);
+  });
+
+  it('keeps a cased action when no CRUD tool owns the id', () => {
+    // `api: { include: ['List'] }` emits no generated `list`, so `product_list`
+    // is unowned and the custom action is the ONLY tool for it — and unlike an
+    // MCP tool, whose dispatch parses the verb from the id, this descriptor
+    // carries its own route (`/products/List`) and genuinely invokes `List()`.
+    // Reserving here would make a custom-action-only model undiscoverable while
+    // its REST route still answers.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { List: publicMethod('List') },
+        decoratorConfig: { api: { include: ['List'] } },
+      }),
+    );
+
+    const ids = toolIds(m);
+
+    expect(ids).toContain('product_list');
+    expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
+  });
+
+  it('reserves per COLLECTION, not per host, when models share one', () => {
+    // The id namespace is `${collectionClassName}_${action}`, shared by every
+    // host mapping to one collection. A host-local check lets a model that
+    // excludes `list` but declares `List()` claim `product_list`, after which
+    // the sibling's real `list` hits the fold-dedupe and is dropped — the
+    // impostor outranking the verb again, one door over.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { List: publicMethod('List') },
+        decoratorConfig: { api: { exclude: ['list'] } },
+      }),
+      obj({
+        className: 'ProductVariant',
+        collection: 'products',
+        methods: {},
+      }),
+    );
+
+    const definitions = buildWebMcpToolDefinitions(m);
+    const listTools = definitions.filter((d) => d.name === 'product_list');
+
+    // Exactly one, and it must be the GENERATED CRUD list — not `Product.List()`
+    // wearing its id. Asserting the count alone passes either way, which is what
+    // let the host-local version of this guard through review.
+    expect(listTools.map((d) => d.action)).toEqual(['list']);
+
+    const ids = definitions.map((d) => d.name);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  it('produces no duplicate tool id for any object in the manifest', () => {
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: {
+          List: publicMethod('List'),
+          Get: publicMethod('Get'),
+          Delete: publicMethod('Delete'),
+          syncNow: publicMethod('syncNow'),
+        },
+      }),
+    );
+
+    const ids = toolIds(m);
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+  });
+});

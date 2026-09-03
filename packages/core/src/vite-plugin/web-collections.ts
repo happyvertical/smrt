@@ -25,6 +25,8 @@
 import { createHash } from 'node:crypto';
 import {
   customActionParameterInputName,
+  isCrudOperation,
+  isCrudToolAction,
   resolveCustomActionMetadata,
 } from '../generators/custom-action.js';
 import {
@@ -36,6 +38,7 @@ import {
   type ToolIdType,
   type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   FieldDefinition,
   FieldUIHints,
@@ -524,6 +527,10 @@ function selectEntriesQualifiedBy(
 
   for (const obj of Object.values(manifest.objects)) {
     if (isCollectionManifestClass(manifest, obj)) continue;
+    // The framework's own abstract base classes are scaffolding, not
+    // resources — never materialize a web collection/tool for them,
+    // regardless of config (#2642).
+    if (isFrameworkBaseClass(obj.className, obj.packageName)) continue;
 
     const exposedActions = resolveApiActionSet(obj);
     if (!qualifies(exposedActions)) continue;
@@ -590,7 +597,13 @@ function resolveStiCollectionOwner(
 export function selectWebMcpToolEntries(
   manifest: SmartObjectManifest,
 ): WebMcpToolEntry[] {
-  const manifestObjects = Object.values(manifest.objects);
+  // The framework's own abstract base classes are scaffolding, not
+  // resources — filtered once here so every loop below (object owners,
+  // custom-action hosts, and the collection-class ownership pass) excludes
+  // them, regardless of config (#2642).
+  const manifestObjects = Object.values(manifest.objects).filter(
+    (obj) => !isFrameworkBaseClass(obj.className, obj.packageName),
+  );
   const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(
       webCollectionObjectRef(manifest, left),
@@ -639,13 +652,70 @@ export function selectWebMcpToolEntries(
     ),
   ];
 
+  // Which CRUD verbs are actually emitted, keyed by COLLECTION rather than by
+  // host. The tool id namespace is `${collectionClassName}_${action}`, so it is
+  // shared by every host mapping to one collection — an STI base and its
+  // children, or two models declaring the same collection. Asking only "does
+  // THIS host emit `list`?" would let a host that excludes `list` but declares
+  // `List()` claim `product_list`, after which a sibling host's real `list`
+  // hits the fold-dedupe and is dropped. That is the impostor outranking the
+  // verb again, one door over (#2648).
+  const emittedCrudByCollection = new Map<string, Set<string>>();
+  for (const host of [
+    ...objectActionHosts,
+    ...manifestObjects.filter((candidate) =>
+      isCollectionManifestClass(manifest, candidate),
+    ),
+  ]) {
+    const collection = objectOwners.get(host.collection)?.collection;
+    if (!collection) continue;
+    const bucket = emittedCrudByCollection.get(collection) ?? new Set<string>();
+    for (const action of resolveApiActionSet(host, manifest)) {
+      if (isCrudOperation(action)) bucket.add(action);
+    }
+    emittedCrudByCollection.set(collection, bucket);
+  }
+
   for (const actionHost of objectActionHosts) {
     const owner = objectOwners.get(actionHost.collection);
     if (!owner) continue;
+    const emittedCrud =
+      emittedCrudByCollection.get(owner.collection) ?? new Set<string>();
     for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
       compareText,
     )) {
-      const identity = `${owner.collection}\0${action}`;
+      // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
+      // namespace is case-folded even though the API action set that feeds it
+      // is not. Two guards, in order (#2648):
+      //
+      // 1. An action that is not exactly a CRUD verb but folds onto one is a
+      //    custom method wearing the generated tool's id. Drop it rather than
+      //    letting it win: `compareText` sorts `List` BEFORE `list`, so a
+      //    first-wins dedupe alone would keep the impostor and lose the real
+      //    CRUD tool. REST keeps both — `/products/List` is a distinct route
+      //    from `/products` — so this reservation belongs here, not in
+      //    `resolveApiActionSet`.
+      //
+      //    CONDITIONAL on the CRUD verb actually being in this host's action
+      //    set. `generators/mcp.ts` reserves unconditionally because its
+      //    dispatch parses the verb out of the tool id, so `${obj}_list` can
+      //    only ever run the built-in list. A WebMCP descriptor is different:
+      //    a non-CRUD action carries its own `route` from
+      //    `resolveApiActionRouteConfig`, so with `api: { include: ['List'] }`
+      //    the id `product_list` genuinely dispatches to `/products/List` and
+      //    is the ONLY tool for that id. Dropping it there would make a
+      //    custom-action-only model undiscoverable while its REST route still
+      //    answers (#2648).
+      if (
+        isCrudToolAction(action) &&
+        !isCrudOperation(action) &&
+        emittedCrud.has(action.toLowerCase())
+      ) {
+        continue;
+      }
+      // 2. Anything still colliding after that is two custom methods differing
+      //    only in case; keep the first so one id yields one descriptor.
+      const identity = `${owner.collection}\0${action.toLowerCase()}`;
       if (entries.has(identity)) continue;
       entries.set(identity, {
         collection: owner.collection,
@@ -671,10 +741,29 @@ export function selectWebMcpToolEntries(
       objectOwners.get(collectionClass.collection)?.obj ??
       resolveStiCollectionOwner(manifest, itemObject);
 
+    // Same collection-level set as loop 1. A collection class's OWN action set
+    // never contains an exact CRUD verb — `resolveApiActionSet` starts a
+    // collection class at an empty set and skips `STANDARD_API_ACTIONS` names —
+    // so a per-host set here would always be empty and the guard dead.
+    const collectionEmittedCrud =
+      emittedCrudByCollection.get(collectionClass.collection) ??
+      new Set<string>();
     for (const action of [
       ...resolveApiActionSet(collectionClass, manifest),
     ].sort(compareText)) {
-      const identity = `${collectionClass.collection}\0${action}`;
+      // Same two guards, same order and conditionality as the object loop
+      // above — and the same key shape. Both loops share `entries`, so a case-sensitive key here
+      // would miss the lowercased one written there and insert a second entry
+      // for the same tool id, breaking the ownership rule this loop exists to
+      // enforce (#2648).
+      if (
+        isCrudToolAction(action) &&
+        !isCrudOperation(action) &&
+        collectionEmittedCrud.has(action.toLowerCase())
+      ) {
+        continue;
+      }
+      const identity = `${collectionClass.collection}\0${action.toLowerCase()}`;
       const existing = entries.get(identity);
       if (
         existing &&
@@ -972,7 +1061,37 @@ function buildWebToolDescriptorsForHost(input: {
   options: { kebabRoutes?: boolean };
   collectionHost?: boolean;
 }): ToolDescriptor[] {
-  const { owner, actionHost, actions, options, collectionHost = false } = input;
+  const { owner, actionHost, options, collectionHost = false } = input;
+  // Every descriptor id is `${prefix}_${action}` lowercased whole, so this is
+  // the one choke point both emission paths pass through: the canonical
+  // per-entry `buildWebMcpToolDefinition`, and the legacy per-collection
+  // `buildWebToolDescriptors` that fills `collectionDefinitions[].toolDescriptors`.
+  // The canonical path is already filtered by `selectWebMcpToolEntries`, so
+  // this only bites for the legacy one — where an unfiltered `entry.actions`
+  // would emit two `product_list` descriptors and make `validateProspectiveTools`
+  // throw `Duplicate WebMCP tool name`, aborting registration of EVERY tool on
+  // the page rather than just the colliding pair (#2648).
+  //
+  // Same two guards, same order and conditionality as
+  // `selectWebMcpToolEntries`: drop a cased CRUD impostor only when the verb it
+  // shadows is actually in this action set (it must not outrank the real verb,
+  // but it is the only tool for that id when the verb is absent), then
+  // fold-dedupe whatever still collides.
+  const emittedCrudActions = new Set(input.actions.filter(isCrudOperation));
+  const seenToolActions = new Set<string>();
+  const actions = input.actions.filter((action) => {
+    if (
+      isCrudToolAction(action) &&
+      !isCrudOperation(action) &&
+      emittedCrudActions.has(action.toLowerCase())
+    ) {
+      return false;
+    }
+    const folded = action.toLowerCase();
+    if (seenToolActions.has(folded)) return false;
+    seenToolActions.add(folded);
+    return true;
+  });
   const webFields = buildWebFieldDefinitions(owner);
   const fields: ToolFieldMeta[] = Object.entries(webFields).map(
     ([name, def]) => ({

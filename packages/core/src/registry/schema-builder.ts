@@ -33,6 +33,7 @@ import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,
 } from './collection-resolution';
+import { isFrameworkBaseClass } from './framework-base-classes';
 import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
@@ -580,64 +581,6 @@ function sortTableContributors(contributors: TableContributor[]) {
 }
 
 /**
- * The framework's own abstract base classes, keyed by simple class name to
- * their declaring package.
- *
- * These are scaffolding every application model descends from — they carry
- * no `@smrt()` decorator and have no independent existence as a resource.
- * A foundation package like `@happyvertical/smrt-core` declares them as real
- * local classes (there is no other package for them to live in), so
- * `loadAllManifests()` registers them exactly like any genuine domain class
- * when a consumer installs `@happyvertical/smrt-core` — with no decoration
- * or framework-base filter of its own (#2642). Left unfiltered here, each one
- * became its own physical table (`smrt_objects`, `smrt_classes`, ...) with
- * only the universal baseline columns, indistinguishable from a real
- * resource.
- *
- * Mirrors `FRAMEWORK_BASE_CLASSES` in
- * `packages/scanner/src/inheritance-resolver.ts`, `FRAMEWORK_BASE_CLASS_PACKAGES`
- * in `packages/core/src/knowledge.ts`, and `SMRT_COLLECTION_BASE_NAMES` in
- * `./collection-resolution.ts` — kept as a separate hardcoded list rather
- * than imported, matching those lists' own documented precedent (see the
- * comment on `FRAMEWORK_BASE_CLASS_PACKAGES`) of "extend the list" per layer
- * over threading a shared flag through the manifest shape. This module in
- * particular cannot import the scanner copy without crossing a package
- * boundary the registry layer has no other reason to depend on, and the
- * manifest-generator copy lives in a file reserved for concurrent work
- * (#2624/#2638) this fix must not touch.
- *
- * Most of these live in `@happyvertical/smrt-core` itself, but
- * `SmrtReport`/`SmrtReportCollection` are declared in
- * `@happyvertical/smrt-reports` — the owning package is per-name, not a
- * single blanket package check. A new framework base must be added to every
- * one of the lists above.
- */
-const FRAMEWORK_BASE_CLASS_PACKAGES = new Map([
-  ['SmrtObject', '@happyvertical/smrt-core'],
-  ['SmrtClass', '@happyvertical/smrt-core'],
-  ['SmrtCollection', '@happyvertical/smrt-core'],
-  ['SmrtJunction', '@happyvertical/smrt-core'],
-  ['SmrtHierarchical', '@happyvertical/smrt-core'],
-  ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
-  ['SmrtReport', '@happyvertical/smrt-reports'],
-  ['SmrtReportCollection', '@happyvertical/smrt-reports'],
-]);
-
-/**
- * True when `registered` is one of the framework's own abstract base
- * classes rather than a genuine `@smrt()`-decorated resource.
- */
-function isFrameworkBaseClassRegistration(
-  registered: RegisteredClass,
-): boolean {
-  return (
-    registered.packageName !== undefined &&
-    FRAMEWORK_BASE_CLASS_PACKAGES.get(registered.name) ===
-      registered.packageName
-  );
-}
-
-/**
  * Assemble every physical table from the classes that contribute to it.
  *
  * Shared by {@link getAllSchemas} and {@link getAllSchemasAsDefinitions} so
@@ -663,7 +606,7 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
 
     // Framework abstract base classes (SmrtObject, SmrtClass, ...) are
     // scaffolding, not resources — they produce no table (#2642).
-    if (isFrameworkBaseClassRegistration(registered)) {
+    if (isFrameworkBaseClass(registered.name, registered.packageName)) {
       continue;
     }
 

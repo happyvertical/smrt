@@ -16,6 +16,7 @@ import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
+import { resolveCustomActionNames } from '../generators/custom-action.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
@@ -325,19 +326,36 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
    * so an in-flight decorator edit doesn't kill the dev server. Uses the same
    * remediation text as the strict build-time gate (`validateCliIncludeAgainstApi`)
    * so the dev-server message is as actionable as the build failure.
+   *
+   * `findCliApiCoherenceViolations` (#2638) now reports a violation for any
+   * `cli` config shape, including a bare `cli: true`/`cli: {}` default, but
+   * `validateCliIncludeAgainstApi` only THROWS for a class with a non-empty,
+   * explicit `cli.include` (see that function's doc comment for why: the
+   * broader default-surface population is real but unrelated pre-existing
+   * over-exposure this repo hasn't triaged, not a #2638 defect). So this
+   * warning must not unconditionally claim the build will fail — only an
+   * explicit `cli.include` naming the action makes that true today.
    */
   function warnCliApiCoherenceViolations(m: SmartObjectManifest): void {
     if (!validateCliApiCoherence) return;
     const violations = findCliApiCoherenceViolations(m);
     if (violations.length === 0) return;
     for (const { className, unreachable } of violations) {
+      const cliConfig = m.objects[className]?.decoratorConfig?.cli;
+      const isEnforced =
+        typeof cliConfig === 'object' &&
+        Array.isArray(cliConfig.include) &&
+        cliConfig.include.length > 0;
       for (const action of unreachable) {
         console.warn(
-          `[smrt] ${className}.${action} is declared in cli.include but is not ` +
-            `exposed via the api. Build will fail until this is resolved.\n` +
+          `[smrt] ${className}.${action} is exposed as a CLI command but is not ` +
+            `exposed via the api.` +
+            (isEnforced
+              ? ' Build will fail until this is resolved.\n'
+              : ' (Not yet build-blocking for this cli:true/{} class -- see #2638.)\n') +
             `  Either:\n` +
             `    - Add '${action}' to api.include, or\n` +
-            `    - Remove '${action}' from cli.include.\n` +
+            `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
             `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
             `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
             `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
@@ -2367,17 +2385,28 @@ async function generateCLIModule(
       if (shouldInclude('delete'))
         availableCommands.push(`'${commandName}:delete'`);
 
-      // Custom action methods
-      for (const [methodName, _method] of Object.entries(objectDef.methods)) {
-        // Skip private methods and standard CRUD
-        if (
-          methodName.startsWith('_') ||
-          ['list', 'get', 'create', 'update', 'delete', 'save'].includes(
-            methodName,
-          )
-        )
-          continue;
-
+      // Custom action methods. Resolved through the same shared rule
+      // CLIGenerator.listCommands() and the cli↔api coherence lint use
+      // (packages/core/src/generators/custom-action.ts, #2638) so this
+      // generated static metadata can never advertise a command that the
+      // real CLIGenerator refuses to invoke -- framework lifecycle methods
+      // (save, initialize, getSlug, ...) included, not just `save`.
+      //
+      // The pre-#2638 loop this replaced also skipped a leading `_` by
+      // naming convention (scanned manifest methods have no reliable
+      // private/protected signal of their own -- the scanner records
+      // `isPublic: true` unconditionally, see manifest-adapter.ts -- so
+      // `_`-prefix is the only signal generateCLIModule ever had). Keep
+      // that filter here explicitly: resolveCustomActionNames() only gates
+      // on the manifest's (unreliable) isPublic flag, so dropping this
+      // would newly advertise internal-by-convention methods such as
+      // SmrtObject._setLoadedRelationship (final review, #2638).
+      for (const methodName of resolveCustomActionNames(
+        Object.entries(objectDef.methods),
+        { include: included ?? undefined, exclude: excluded },
+        ['list', 'get', 'create', 'update', 'delete'],
+      )) {
+        if (methodName.startsWith('_')) continue;
         if (shouldInclude(methodName)) {
           availableCommands.push(`'${commandName}:${methodName}'`);
         }

@@ -80,7 +80,10 @@ describe('buildDomainKnowledgeManifest', () => {
       'RoutedOrder',
       'LegacyPathOrder',
       'ThrowingRouteOrder',
+      'CasedVerbItem',
+      'CasedIncludeItem',
       'MalformedConfigItem',
+      'LifecycleOverrideOrder',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -158,27 +161,65 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
   });
 
-  it('never reports CRUD for an undecorated SmrtCollection subclass, only its custom REST actions (#2619)', () => {
+  it('excludes a locally overridden framework lifecycle method from the cli surface only (#2657)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const surfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:LifecycleOverrideOrder',
+    );
+
+    // `save` is a framework lifecycle method (the mechanism behind generated
+    // create/update), so CLIGenerator.listCommands()/assertCommandExposed()
+    // refuse to expose or invoke it even when the class declares its own
+    // override -- this projection now mirrors that with the same
+    // isFrameworkLifecycleMethod() check, for cli only.
+    expect(
+      surfaces
+        .filter((surface) => surface.kind === 'cli')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['create', 'delete', 'get', 'list', 'reconcile', 'update']);
+
+    // `api`/`mcp` are unaffected: neither generator gates on
+    // isFrameworkLifecycleMethod() today, so `save` still appears as a
+    // custom-method surface there, exactly like before #2657.
+    for (const kind of ['api', 'mcp'] as const) {
+      expect(
+        surfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation)
+          .sort(),
+      ).toEqual([
+        'create',
+        'delete',
+        'get',
+        'list',
+        'reconcile',
+        'save',
+        'update',
+      ]);
+    }
+  });
+
+  it('never reports CRUD for an undecorated SmrtCollection subclass, but does report its public custom methods on every surface (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const collectionSurfaces = artifact.surfaces.filter(
       (surface) => surface.objectName === '@example/orders:OrderTreeCollection',
     );
 
     // A hand-written `class OrderTreeCollection extends
-    // SmrtCollection<OrderTree>` never registers with ObjectRegistry, so
-    // MCPGenerator/CLIGenerator generate nothing under its own name — only
-    // its collection-scoped custom action reaches a REST route.
-    expect(
-      collectionSurfaces.filter((surface) => surface.kind === 'mcp'),
-    ).toEqual([]);
-    expect(
-      collectionSurfaces.filter((surface) => surface.kind === 'cli'),
-    ).toEqual([]);
-    expect(
-      collectionSurfaces
-        .filter((surface) => surface.kind === 'api')
-        .map((surface) => surface.operation),
-    ).toEqual(['findAbandoned']);
+    // SmrtCollection<OrderTree>` is registered by `loadAllManifests()` just
+    // like any genuine domain class (#2642) — it never gets CRUD verbs
+    // (`list`/`get`/`create`/`update`/`delete` belong to the row model, not
+    // the collection), but its public custom method reaches MCP/CLI too,
+    // not just REST, matching what a real registration produces.
+    for (const kind of ['mcp', 'cli', 'api'] as const) {
+      expect(
+        collectionSurfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation),
+      ).toEqual(['findAbandoned']);
+    }
   });
 
   it('walks the extends chain so a deeper collection subclass is still recognized (#2619)', () => {
@@ -191,30 +232,31 @@ describe('buildDomainKnowledgeManifest', () => {
     // `SpecialOrderTreeCollection extends OrderTreeCollection` carries no
     // `extendsTypeArg` of its own — only its base does. Without walking the
     // extends chain through the manifest, this class would be mistaken for a
-    // row model and gain a synthetic full-CRUD surface it does not have.
-    expect(deepSurfaces.filter((surface) => surface.kind === 'mcp')).toEqual(
-      [],
-    );
-    expect(deepSurfaces.filter((surface) => surface.kind === 'cli')).toEqual(
-      [],
-    );
-    expect(
-      deepSurfaces
-        .filter((surface) => surface.kind === 'api')
-        .map((surface) => surface.operation),
-    ).toEqual(['findEscalated']);
+    // row model and gain a synthetic full-CRUD surface it does not have —
+    // it still reports its one public custom method on every surface kind
+    // (#2642), same as its shallower sibling above.
+    for (const kind of ['mcp', 'cli', 'api'] as const) {
+      expect(
+        deepSurfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation),
+      ).toEqual(['findEscalated']);
+    }
   });
 
-  it('reports no surfaces for a framework base class scanned in its own foundation package (#2619)', () => {
+  it('reports no surfaces for a framework base class scanned in its own foundation package (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
 
     // `@happyvertical/smrt-core:SmrtObject` has `decoratorConfig: {}` — the
-    // same shape as a genuine bare `@smrt()` — but it carries no decorator
-    // of its own and never registers with ObjectRegistry. Without this
-    // exclusion, the "omitted config is full CRUD" rule would fabricate a
-    // synthetic `smrtobjects.list`/`.create`/... surface for it (317 phantom
-    // surfaces were observed across @happyvertical/smrt-core's own
-    // framework base classes before this fix).
+    // same shape as a genuine bare `@smrt()`. #2619 excluded it on the false
+    // premise that it "never registers with ObjectRegistry"; #2642 confirmed
+    // `loadAllManifests()` registers it exactly like any genuine domain
+    // class, and fixed the real root cause — MCPGenerator/CLIGenerator/route
+    // generation now skip the framework's own abstract base classes by class
+    // identity, independent of config. This projection mirrors that same
+    // shared check (`isFrameworkBaseClass`), so it stays truthful rather
+    // than reintroducing the 317 phantom `smrtobjects.list`/`.create`/...
+    // surfaces #2619 originally hid.
     expect(
       artifact.surfaces.filter(
         (surface) =>
@@ -223,7 +265,7 @@ describe('buildDomainKnowledgeManifest', () => {
     ).toEqual([]);
   });
 
-  it('resolves the framework-base exclusion per owning package, not by class name alone (#2619)', () => {
+  it('resolves the framework-base exclusion per owning package, not by class name alone (#2642)', () => {
     const artifact = buildFixtureArtifact(rootDir);
 
     // SmrtReport/SmrtReportCollection live in @happyvertical/smrt-reports,
@@ -274,6 +316,52 @@ describe('buildDomainKnowledgeManifest', () => {
       'list',
       'update',
     ]);
+  });
+
+  it('does not report an MCP surface the CRUD-name reservation suppresses (#2646)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const operations = (objectName: string, kind: 'api' | 'cli' | 'mcp') =>
+      artifact.surfaces
+        .filter(
+          (surface) =>
+            surface.objectName === objectName && surface.kind === kind,
+        )
+        .map((surface) => surface.operation)
+        .sort();
+
+    // MCP lowercases the whole tool id, so `List` lands on the identifier the
+    // CRUD list tool already owns and no separate tool is emitted.
+    expect(operations('@example/orders:CasedVerbItem', 'mcp')).toEqual([
+      'create',
+      'delete',
+      'get',
+      'list',
+      'syncNow',
+      'update',
+    ]);
+
+    // REST and the CLI keep declared casing in their route/command names, so
+    // `List` stays a distinct surface there — the reservation is per-transport.
+    expect(operations('@example/orders:CasedVerbItem', 'cli')).toContain(
+      'List',
+    );
+    expect(operations('@example/orders:CasedVerbItem', 'api')).toContain(
+      'List',
+    );
+  });
+
+  it('reports no MCP surface when a strict include names only a cased verb (#2646)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:CasedIncludeItem' &&
+        surface.kind === 'mcp',
+    );
+
+    // `include: ['List']` selects no CRUD verb (that gate is exact) and the
+    // cased entry fails closed, so the generator emits nothing. Reporting a
+    // `List` surface here would advertise a tool that does not exist.
+    expect(mcpSurfaces.map((surface) => surface.operation)).toEqual([]);
   });
 
   it("reports a custom action's REST route the way the generator emits it (#2619)", () => {
@@ -860,8 +948,10 @@ function fixtureManifest(): SmartObjectManifest {
       // declares its own framework base classes as real local classes, so
       // the scanner emits a manifest entry for them too — with
       // `decoratorConfig: {}`, indistinguishable in shape from a genuine
-      // bare `@smrt()`. They carry no decorator of their own and never
-      // reach ObjectRegistry (#2619).
+      // bare `@smrt()`. They carry no decorator of their own, but ARE
+      // registered by `loadAllManifests()` like any genuine domain class
+      // (#2642) — excluded from every surface by class identity, not by
+      // registration status.
       '@happyvertical/smrt-core:SmrtObject': {
         className: 'SmrtObject',
         qualifiedName: '@happyvertical/smrt-core:SmrtObject',
@@ -990,6 +1080,54 @@ function fixtureManifest(): SmartObjectManifest {
       // never as a truthy value fed straight into `.includes()` — that
       // would either throw (no such method) or, for a string, silently do
       // substring matching instead of array membership (#2619).
+      // #2646: a public method whose name lands on a CRUD verb in the MCP tool
+      // namespace. `MCPGenerator` emits no separate tool for it, so the
+      // knowledge projection must not report one either.
+      '@example/orders:CasedVerbItem': {
+        className: 'CasedVerbItem',
+        qualifiedName: '@example/orders:CasedVerbItem',
+        collection: 'cased_verb_items',
+        fields: {},
+        methods: {
+          List: {
+            name: 'List',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          syncNow: {
+            name: 'syncNow',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+      },
+      // #2646: the same method reached through a strict include naming only the
+      // cased verb. `mcp.include` fails closed on it and `shouldInclude('list')`
+      // is exact, so the generator emits NO tool for this class at all.
+      '@example/orders:CasedIncludeItem': {
+        className: 'CasedIncludeItem',
+        qualifiedName: '@example/orders:CasedIncludeItem',
+        collection: 'cased_include_items',
+        fields: {},
+        methods: {
+          List: {
+            name: 'List',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { include: ['List'] } },
+      },
       '@example/orders:MalformedConfigItem': {
         className: 'MalformedConfigItem',
         qualifiedName: '@example/orders:MalformedConfigItem',
@@ -1006,6 +1144,38 @@ function fixtureManifest(): SmartObjectManifest {
           },
         },
         decoratorConfig: { mcp: { include: 'list' as unknown as string[] } },
+      },
+      // A locally overridden framework lifecycle method (mirroring
+      // User.save() at packages/users/src/models/User.ts) must not be
+      // reported as a `cli` custom-action surface, matching
+      // CLIGenerator.listCommands()'s isFrameworkLifecycleMethod() gate
+      // (#2657) -- but `api`/`mcp` are unaffected, since neither generator
+      // changed in #2650/#2638.
+      '@example/orders:LifecycleOverrideOrder': {
+        className: 'LifecycleOverrideOrder',
+        qualifiedName: '@example/orders:LifecycleOverrideOrder',
+        collection: 'lifecycle_override_orders',
+        fields: {},
+        methods: {
+          save: {
+            name: 'save',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<this>',
+            isStatic: false,
+            isPublic: true,
+          },
+          reconcile: {
+            name: 'reconcile',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtObject',
       },
     },
   };

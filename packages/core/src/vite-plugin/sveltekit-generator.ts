@@ -14,12 +14,16 @@ import {
 import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
-import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import {
+  resolveCustomActionMetadata,
+  resolveCustomActionNames,
+} from '../generators/custom-action.js';
 import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
 } from '../query-bounds.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -1321,6 +1325,12 @@ export async function generateSvelteKitRoutes(
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    // The framework's own abstract base classes (SmrtObject,
+    // SmrtCollection, ...) are scaffolding, not resources — never generate
+    // a route directory for them, regardless of config (#2642).
+    if (isFrameworkBaseClass(objectDef.className, objectDef.packageName)) {
+      continue;
+    }
     if (isCollectionManifestClass(manifest, objectDef)) {
       const collectionRoutePaths = await generateCollectionRoutesForObject(
         projectRoot,
@@ -2307,9 +2317,65 @@ export interface CliApiCoherenceViolation {
 }
 
 /**
- * Inspect a manifest and return classes whose `cli.include` references
- * methods not exposed via the API. Classes that opt out via
- * `cli: { skipApiCheck: true }` are skipped.
+ * Resolve the effective CLI command set for an object, for the cli↔api
+ * coherence lint. Two distinct resolutions, chosen by whether `cli.include`
+ * is spelled out:
+ *
+ * **Explicit `cli.include`** (preserves the lint's exact pre-#2638
+ * algorithm): the literal `include − exclude`, verbatim, whether or not an
+ * entry resolves to a real CRUD verb or a scanned public method. This is
+ * deliberate, not an oversight -- an `include` entry that names a typo, a
+ * getter (never in the manifest's `methods` map), or a private/protected
+ * method (the scanner drops these rather than recording `isPublic: false`,
+ * so nothing else catches it) must still surface as "unreachable" so the
+ * build fails loudly on the config mistake, the same way it always has.
+ * Resolving it instead through `resolveCustomActionNames` -- which only
+ * iterates real scanned methods -- would silently drop such an entry with no
+ * error at all (final review, #2638).
+ *
+ * **Bare `cli: true`/`cli: {}`** (#2638, the new case this lint now
+ * inspects): every public custom method minus exclude, exactly the "every
+ * public method minus exclude" resolution `CLIGenerator.listCommands()`
+ * already applies (via `resolveCustomActionNames`, reused not
+ * reimplemented) -- lifecycle methods excluded, same as everywhere else.
+ * CRUD verbs are NOT checked in this branch: a class that closes its API
+ * entirely (`api: false`) while keeping a default-open, CLI/MCP-only admin
+ * surface (`cli: true`/omitted) is a common, intentional combination (see
+ * `cli.skipApiCheck`'s own "in-process, no HTTP" doc comment); blanket-
+ * checking CRUD reachability for every such class would flag that existing,
+ * legitimate pattern across the whole codebase, not just the #2638 defect
+ * (confirmed by running this against the full monorepo build during
+ * development — it did exactly that).
+ */
+function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
+  const cliConfig = objectDef.decoratorConfig?.cli;
+  if (cliConfig === false) return new Set();
+
+  const included: string[] | undefined =
+    typeof cliConfig === 'object' ? cliConfig.include : undefined;
+  const excluded: string[] =
+    typeof cliConfig === 'object' && Array.isArray(cliConfig.exclude)
+      ? cliConfig.exclude
+      : [];
+
+  if (included) {
+    return new Set(included.filter((cmd) => !excluded.includes(cmd)));
+  }
+
+  return resolveCustomActionNames(
+    Object.entries(objectDef.methods || {}),
+    { include: undefined, exclude: excluded },
+    STANDARD_API_ACTIONS,
+  );
+}
+
+/**
+ * Inspect a manifest and return classes whose effective CLI command set —
+ * `cli.include`/`cli.exclude` when spelled out, or (#2638) the same "every
+ * public method minus exclude" default `cli: true`/`cli: {}` resolves to —
+ * references a command not exposed via the API. Classes that opt out via
+ * `cli: { skipApiCheck: true }` are skipped, and so is a class with
+ * `cli: false` (no CLI surface at all).
  *
  * Throws nothing; returns the violation list so callers can choose to throw
  * or warn.
@@ -2321,25 +2387,16 @@ export function findCliApiCoherenceViolations(
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     const cliConfig = objectDef.decoratorConfig?.cli;
-    if (!cliConfig || typeof cliConfig !== 'object') continue;
-    if (cliConfig.skipApiCheck) continue;
-    if (!cliConfig.include || cliConfig.include.length === 0) continue;
+    if (cliConfig === false) continue;
+    if (typeof cliConfig === 'object' && cliConfig.skipApiCheck) continue;
 
-    // Match generateCLIModule's effective command set: include − exclude.
-    // A command in both lists is not actually registered, so the lint must
-    // not flag it as unreachable.
-    const cliExclude = Array.isArray(cliConfig.exclude)
-      ? cliConfig.exclude
-      : [];
-    const effectiveCliCommands = cliConfig.include.filter(
-      (cmd: string) => !cliExclude.includes(cmd),
-    );
-    if (effectiveCliCommands.length === 0) continue;
+    const effectiveCliCommands = resolveCliActionSet(objectDef);
+    if (effectiveCliCommands.size === 0) continue;
 
     const apiActionSet = resolveApiActionSet(objectDef, manifest);
-    const unreachable = effectiveCliCommands.filter(
-      (action: string) => !apiActionSet.has(action),
-    );
+    const unreachable = [...effectiveCliCommands]
+      .filter((action) => !apiActionSet.has(action))
+      .sort();
 
     if (unreachable.length > 0) {
       violations.push({ className, unreachable });
@@ -2350,24 +2407,56 @@ export function findCliApiCoherenceViolations(
 }
 
 /**
- * Throw if any class in the manifest has `cli.include` methods that aren't
- * reachable via the API. Default build-time gate; opt-out per-class via
- * `cli: { skipApiCheck: true }` (or globally via the vite plugin option
- * `validateCliApiCoherence: false`).
+ * Throw if any class in the manifest has an EXPLICIT `cli.include` command
+ * that isn't reachable via the API. Default build-time gate; opt-out
+ * per-class via `cli: { skipApiCheck: true }` (or globally via the vite
+ * plugin option `validateCliApiCoherence: false`).
+ *
+ * This is deliberately narrower than `findCliApiCoherenceViolations` above.
+ * That function is now fully correct for the broader `cli: true`/`cli: {}`
+ * default surface too (#2638: same "every public method minus exclude"
+ * resolution `listCommands()` uses, so a bare `cli: true` is inspected the
+ * same as an explicit `include`). But `smrtPlugin()`'s default
+ * `validateCliApiCoherence: true` calls this THROWING gate unconditionally
+ * from every consuming package's own build (`configResolved`,
+ * `vite-plugin/index.ts`) -- and a full-monorepo build during #2638
+ * development showed that broader surface has thousands of pre-existing
+ * public getters/business-logic methods (e.g.
+ * `@happyvertical/smrt-ads:AdGroup.hasStarted`,
+ * `@happyvertical/smrt-tags:Tag.getParent`) across ~28 packages that were
+ * never meant to be REST-reachable and have no API route today. That
+ * over-exposure is real, pre-existing, and unrelated to #2638's framework-
+ * lifecycle-method defect -- flipping this gate to enforce it unconditionally
+ * would break every one of those packages' builds today, which is a
+ * repo-wide triage effort (add routes, or an explicit `cli.exclude`/
+ * `skipApiCheck` per owner) this PR did not undertake and is out of its
+ * file boundary. So the gate keeps its pre-#2638 blast radius -- classes
+ * that spell out a non-empty `cli.include` -- while `findCliApiCoherenceViolations`
+ * is complete and available (and covered by its own tests) for the broader
+ * check once that pre-existing surface is triaged.
  */
 export function validateCliIncludeAgainstApi(
   manifest: SmartObjectManifest,
 ): void {
-  const violations = findCliApiCoherenceViolations(manifest);
+  const violations = findCliApiCoherenceViolations(manifest).filter(
+    ({ className }) => {
+      const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
+      return (
+        typeof cliConfig === 'object' &&
+        Array.isArray(cliConfig.include) &&
+        cliConfig.include.length > 0
+      );
+    },
+  );
   if (violations.length === 0) return;
 
   const messages = violations.flatMap(({ className, unreachable }) =>
     unreachable.map(
       (action) =>
-        `[smrt] ${className}.${action} is declared in cli.include but is not exposed via the api.\n` +
+        `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
         `  Either:\n` +
         `    - Add '${action}' to api.include, or\n` +
-        `    - Remove '${action}' from cli.include.\n` +
+        `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
         `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
         `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
         `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,

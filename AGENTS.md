@@ -35,8 +35,9 @@ for package-specific architecture and validation.
 - Domain packages include content/media, commerce, events, places, facts, sites,
   properties, tags, social, marketing, and secrets.
 - Client/tooling packages include `smrt-web`, `smrt-svelte`, `smrt-workbench`,
-  mobile packages, templates, and `smrt-dev-mcp`. The private `bundle-gate`
-  package is the CI consumer bundle reachability/size gate (#1980).
+  `app-cli`, mobile packages, templates, and `smrt-dev-mcp`. The private
+  `bundle-gate` package is the CI consumer bundle reachability/size gate
+  (#1980).
 - Package versions use changesets. Never author one manually; release
   automation generates them on merge.
 

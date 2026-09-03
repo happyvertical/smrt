@@ -42,7 +42,7 @@
  * - {@link canonicalizeJobOutcome} — identifier-free background-job result.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { type Dirent, readFileSync, readdirSync } from 'node:fs';
 import { join, posix, relative, sep } from 'node:path';
 
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
@@ -148,7 +148,10 @@ export interface RuntimeProfileSurfaces {
 }
 
 function walkRouteFiles(root: string, prefix = ''): string[] {
-  let entries: ReturnType<typeof readdirSync>;
+  // `ReturnType<typeof readdirSync>` resolves to the Buffer overload, so
+  // `entry.name` types as a buffer and the `+server.ts` comparison below is
+  // rejected. Name the element type the `withFileTypes` call actually returns.
+  let entries: Dirent[];
   try {
     entries = readdirSync(root, { withFileTypes: true });
   } catch {

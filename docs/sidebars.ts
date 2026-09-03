@@ -8,9 +8,11 @@ const sidebars: SidebarsConfig = {
       label: 'Guides',
       collapsed: false,
       items: [
+        { type: 'doc', id: 'app-cli' },
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },
+        { type: 'doc', id: 'm5-reference-fixture' },
         { type: 'doc', id: 'runtime-profiles' },
         { type: 'doc', id: 'webmcp-integration' },
       ],

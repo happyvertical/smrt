@@ -15,7 +15,11 @@ import type {
   SmrtCollectionOptions,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  isCrudOperation,
+  isFrameworkBaseClass,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -1051,6 +1055,15 @@ export class CLIGenerator {
   ): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
     const lowerName = objectName.toLowerCase();
+
+    // The framework's own abstract base classes (SmrtObject,
+    // SmrtCollection, ...) are scaffolding, not resources — never expose an
+    // `objectname:list`/`:create`/... command for them, regardless of
+    // config (#2642).
+    if (isFrameworkBaseClass(objectName, _classInfo?.packageName)) {
+      return commands;
+    }
+
     const config = ObjectRegistry.getConfig(objectName);
     const cliConfig = config.cli;
 
@@ -1204,9 +1217,17 @@ export class CLIGenerator {
     const methods = await ObjectRegistry.getAllMethods(objectName);
 
     // Check if include list contains any custom method names (indicates strict mode)
-    const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
     const hasCustomMethodsInInclude = included?.some(
-      (item) => !crudOperations.includes(item),
+      (item) => !isCrudOperation(item),
+    );
+
+    // Every name a caller can already type for this object, taken from the
+    // CRUD commands actually pushed above — their names AND their aliases,
+    // because `findObjectCommand` matches both. Derived rather than re-listed
+    // so it cannot drift from the aliases declared at those push sites, and so
+    // a verb excluded by config reserves nothing (#2646, #2648).
+    const reservedCommandNames = new Set(
+      commands.flatMap((command) => [command.name, ...(command.aliases ?? [])]),
     );
 
     for (const [methodName, methodDef] of methods as Map<
@@ -1215,6 +1236,18 @@ export class CLIGenerator {
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
+        // A method sharing an EMITTED CRUD command's name is not a custom
+        // action — pushing one would add a second `${lowerName}:${name}` that
+        // `objectCommands.find` (first match wins) can never reach (#2646),
+        // including via an alias such as `edit` for `update` (#2648).
+        //
+        // The set holds only what was actually pushed, so a verb the config
+        // excluded reserves nothing: with `include: ['list', 'get']` neither
+        // `create()` nor `edit()` collides, and both stay reachable.
+        if (reservedCommandNames.has(`${lowerName}:${methodName}`)) {
+          return false;
+        }
+
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
 

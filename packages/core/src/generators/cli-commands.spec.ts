@@ -69,6 +69,29 @@ class CliCmdWidgetCollection extends SmrtCollection<CliCmdWidget> {
   static readonly _itemClass = CliCmdWidget;
 }
 
+// #2638 fixture: a class that locally overrides a framework lifecycle method
+// exactly like `User.save()` (packages/users/src/models/User.ts) — the
+// override is still the mechanism behind generated CRUD, not a distinct
+// custom action, so it must not become `clicmdlifecyclewidget:save`.
+@smrt({ cli: true })
+class CliCmdLifecycleWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+
+  override async save(options: any = {}): Promise<any> {
+    this.name = this.name.trim();
+    return super.save(options);
+  }
+
+  async hasValidName(): Promise<boolean> {
+    return this.name.length > 0;
+  }
+}
+
+class CliCmdLifecycleWidgetCollection extends SmrtCollection<CliCmdLifecycleWidget> {
+  static readonly _itemClass = CliCmdLifecycleWidget;
+}
+
 function captureLog<T>(
   fn: () => Promise<T>,
 ): Promise<{ result: T; out: string }> {
@@ -86,6 +109,10 @@ function captureLog<T>(
 
 describe('CLI generator parsing + dispatch (#1500)', () => {
   ObjectRegistry.registerCollection('CliCmdWidget', CliCmdWidgetCollection);
+  ObjectRegistry.registerCollection(
+    'CliCmdLifecycleWidget',
+    CliCmdLifecycleWidgetCollection,
+  );
   ObjectRegistry.getMethods('CliCmdWidget').set('tally', {
     name: 'tally',
     async: true,
@@ -398,6 +425,25 @@ describe('CLI generator parsing + dispatch (#1500)', () => {
         gen.run(['clicmdwidget:withDefaults', created.id as string]),
       );
       expect(defaults.out).toContain('"source": "method-default"');
+    });
+  });
+
+  describe('framework lifecycle methods are not custom actions (#2638)', () => {
+    it('does not list a command for a locally overridden lifecycle method', async () => {
+      const gen = new CLIGenerator();
+      const commands = await gen.listCommands();
+      // The class's own genuine custom method is still advertised...
+      expect(commands).toContain('clicmdlifecyclewidget:hasValidName');
+      // ...but its save() override -- the mechanism behind create/update,
+      // not a distinct operation -- is not.
+      expect(commands).not.toContain('clicmdlifecyclewidget:save');
+    });
+
+    it('refuses to invoke a lifecycle-method override as a custom action', async () => {
+      const gen = new CLIGenerator({}, { db });
+      await expect(
+        gen.run(['clicmdlifecyclewidget:save', 'some-id']),
+      ).rejects.toThrow(/framework lifecycle method/i);
     });
   });
 
