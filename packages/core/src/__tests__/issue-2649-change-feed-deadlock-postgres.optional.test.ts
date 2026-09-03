@@ -45,6 +45,7 @@ import {
 } from '../change-feed';
 import { type ChangeSignal, subscribeToChangeSignals } from '../change-signals';
 import { ensureSystemTables } from '../system/bootstrap';
+import { POSTGRES_CHANGE_FEED_HELPER_MARKER } from '../system/schema';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 
@@ -522,7 +523,7 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
    * one is gets skipped for good. Every drained entry must therefore be
    * signalled, ahead of the append that follows it.
    */
-  it('signals every drained entry before the append that outranks it', async () => {
+  it('queues a write-path drain signal and publishes it on the next settle', async () => {
     const seen: ChangeSignal[] = [];
     const unsubscribe = subscribeToChangeSignals(setup, (signal) => {
       seen.push(signal);
@@ -543,10 +544,11 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
       expect(seen).toEqual([]);
 
       // An ordinary autocommit append drains first, so the staged entry is
-      // sequenced AND signalled at seq 1 before this append takes seq 2. The
-      // framework's interceptor publishes seq 2 itself once this returns
-      // (`appendChange` is the primitive beneath it and does not signal), so a
-      // subscriber sees 1 then 2 with no gap for its Last-Event-ID to jump.
+      // sequenced at 1 before this append takes 2 — the log keeps its order.
+      // The write path issues that drain and nothing else (the caller may own
+      // the surrounding transaction, and a second statement there could abort
+      // it behind the feed's error-swallowing), so its signal is QUEUED rather
+      // than published here.
       expect(
         await appendChange(setup, {
           table: FEED_TABLE,
@@ -554,8 +556,15 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
           operation: 'create',
         }),
       ).toBe(2);
-      expect(seen.map((signal) => signal.seq)).toEqual([1]);
-      expect(seen.map((signal) => signal.rowId)).toEqual([ROW_A]);
+      expect(seen).toEqual([]);
+
+      // A settling drain publishes it. A subscriber therefore sees seq 1 after
+      // seq 2 rather than never: an EventSource stores the last id it received,
+      // so it resumes at 1 and re-receives 2 — a duplicate, never a skip.
+      await drainChangeFeed(setup);
+      expect(seen.map((signal) => [signal.seq, signal.rowId])).toEqual([
+        [1, ROW_A],
+      ]);
     } finally {
       unsubscribe();
     }
@@ -829,11 +838,12 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
       await setup.query(
         `SELECT to_regclass('_smrt_changes_pending') AS pending,
                 to_regprocedure('_smrt_drain_changes(integer)') AS drain,
-                (SELECT prosrc LIKE '%smrt-change-feed-helpers:v2%'
+                (SELECT prosrc LIKE '%' || $1 || '%'
                    FROM pg_proc
                   WHERE oid = to_regprocedure(
                     '_smrt_append_change(text,text,text,text,timestamp with time zone)'
                   )) AS current`,
+        POSTGRES_CHANGE_FEED_HELPER_MARKER,
       ),
     );
     expect(before[0]?.pending).toBeTruthy();
@@ -844,11 +854,12 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
 
     const after = rowsOf(
       await setup.query(
-        `SELECT (SELECT prosrc LIKE '%smrt-change-feed-helpers:v2%'
+        `SELECT (SELECT prosrc LIKE '%' || $1 || '%'
                    FROM pg_proc
                   WHERE oid = to_regprocedure(
                     '_smrt_append_change(text,text,text,text,timestamp with time zone)'
                   )) AS current`,
+        POSTGRES_CHANGE_FEED_HELPER_MARKER,
       ),
     );
     expect(after[0]?.current).toBe(true);

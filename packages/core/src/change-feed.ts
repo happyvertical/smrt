@@ -419,8 +419,16 @@ async function drainBeforeAppend(db: DatabaseInterface): Promise<void> {
   stagedSinceLastDrain.delete(dbKey);
   lastAppendDrain.set(dbKey, now);
   // Inside a caller transaction the drain helper refuses server-side, so this
-  // costs one cheap statement and never sequences anything there.
-  await drainChangeFeedBestEffort(db);
+  // costs one cheap statement and never sequences anything there. `settle:
+  // false` keeps it to that ONE statement: the caller may own the surrounding
+  // transaction, and any further statement issued here could fail and abort it
+  // behind the feed's own error-swallowing (#2026). Signals from this drain
+  // are queued and published by the next settling drain.
+  try {
+    await drainChangeFeedDetailed(db, { settle: false });
+  } catch (error) {
+    warnDrainFailureOnce(db, error);
+  }
 }
 
 function recordUncommittedDrainMark(
@@ -895,14 +903,25 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
  */
 async function drainChangeFeedDetailed(
   db: DatabaseInterface,
+  options: { settle?: boolean } = {},
 ): Promise<{ drained: number; firstAllocatedSeq: number | null }> {
   if (getEngine(db) !== 'postgres')
     return { drained: 0, firstAllocatedSeq: null };
 
+  // `settle: false` is the write path (see drainBeforeAppend): it issues the
+  // drain statement and NOTHING else, because every additional statement run
+  // on the caller's handle could fail and abort a caller-owned transaction,
+  // which the feed's failure policy would then swallow — leaving the caller in
+  // PostgreSQL's aborted state (`25P02`), the exact #2026 hazard. The drain
+  // statement itself is safe: the helper catches everything, preflight
+  // included, and returns failures as data. Its signals are queued and settled
+  // later, from a read path that is free to issue extra statements.
+  const settle = options.settle !== false;
+
   // Anything a previous, unproven drain queued is settled first: its
   // transaction has ended by now, and each queued entry is published only if
   // its sequence still holds the row it was drained for.
-  await flushDeferredSignals(db);
+  if (settle) await flushDeferredSignals(db);
 
   let firstAllocatedSeq: number | null = null;
   let drained = 0;
@@ -957,7 +976,7 @@ async function drainChangeFeedDetailed(
       seq: toSeqNumber(row.drained_seq),
     }));
     if (signals.length > 0) {
-      if (await drainCommitted(db)) {
+      if (settle && (await drainCommitted(db))) {
         publishSignals(db, signals);
       } else {
         queueDeferredSignals(db, signals);

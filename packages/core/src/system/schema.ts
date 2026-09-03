@@ -369,7 +369,7 @@ export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_
  * replaced. Bump it whenever either helper's body changes in a way an existing
  * database must pick up.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v2';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v3';
 
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
@@ -426,34 +426,39 @@ DECLARE
   v_error_code TEXT;
   v_error_message TEXT;
 BEGIN
-  IF to_regclass('_smrt_changes_pending') IS NULL THEN
-    RETURN;
-  END IF;
-
-  -- Never sequence from inside a transaction that has already written. Doing
-  -- so would hold freshly allocated sequences uncommitted for the rest of that
-  -- transaction, which is precisely the wait edge #2649 removes — a reader
-  -- calling getChangesSince() inside a long write transaction must not put it
-  -- back. The staged rows keep for the next drain.
-  IF pg_current_xact_id_if_assigned() IS NOT NULL THEN
-    RETURN;
-  END IF;
-
-  -- Cheap common case: nothing staged, so an autocommit append pays one
-  -- index probe rather than a drain.
-  IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
-    RETURN;
-  END IF;
-
-  -- Try, never wait: a drain that waited could become an edge in a cycle.
-  IF NOT pg_try_advisory_xact_lock(
-    hashtext('smrt'),
-    hashtext('change-feed-drain')
-  ) THEN
-    RETURN;
-  END IF;
-
+  -- EVERY statement below sits inside this exception boundary, preflight
+  -- included. The caller may own the surrounding transaction, and an error
+  -- escaping this function would abort it — the #2026 contract. A probe that
+  -- blocks on a table lock until statement_timeout is exactly that: it is not
+  -- the insert, but it aborts the caller just the same.
   BEGIN
+    IF to_regclass('_smrt_changes_pending') IS NULL THEN
+      RETURN;
+    END IF;
+
+    -- Never sequence from inside a transaction that has already written. Doing
+    -- so would hold freshly allocated sequences uncommitted for the rest of
+    -- that transaction, which is precisely the wait edge #2649 removes — a
+    -- reader calling getChangesSince() inside a long write transaction must
+    -- not put it back. The staged rows keep for the next drain.
+    IF pg_current_xact_id_if_assigned() IS NOT NULL THEN
+      RETURN;
+    END IF;
+
+    -- Cheap common case: nothing staged, so an autocommit append pays one
+    -- index probe rather than a drain.
+    IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
+      RETURN;
+    END IF;
+
+    -- Try, never wait: a drain that waited could become an edge in a cycle.
+    IF NOT pg_try_advisory_xact_lock(
+      hashtext('smrt'),
+      hashtext('change-feed-drain')
+    ) THEN
+      RETURN;
+    END IF;
+
     SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
 
     RETURN QUERY
@@ -577,8 +582,19 @@ BEGIN
   -- approximation of "inside BEGIN": a transaction that appends *before* its
   -- first write still allocates inline, but it holds no row locks at that
   -- moment, so nothing that waits on its feed row can also be waited on by it.
-  v_deferred := pg_current_xact_id_if_assigned() IS NOT NULL
-    AND to_regclass('_smrt_changes_pending') IS NOT NULL;
+  -- Preflight inside its own exception boundary for the same reason the drain
+  -- wraps its own: an error here would abort a caller-owned transaction
+  -- (#2026), and a catalog probe is still a statement that can fail.
+  BEGIN
+    v_deferred := pg_current_xact_id_if_assigned() IS NOT NULL
+      AND to_regclass('_smrt_changes_pending') IS NOT NULL;
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT NULL::BIGINT, v_error_code, v_error_message;
+    RETURN;
+  END;
 
   IF v_deferred THEN
     BEGIN
