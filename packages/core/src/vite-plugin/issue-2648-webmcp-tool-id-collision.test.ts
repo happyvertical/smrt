@@ -166,7 +166,7 @@ describe('#2648 WebMCP tool-id collisions', () => {
 
     expect(duplicates).toEqual([]);
     // The cased impostor never reaches the catalog from either loop.
-    expect(ids.filter((id) => id === 'product_list')).not.toHaveLength(2);
+    expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
     // And the shared camelCase action is still emitted exactly once.
     expect(ids.filter((id) => id === 'product_syncnow')).toEqual([
       'product_syncnow',
@@ -193,6 +193,38 @@ describe('#2648 WebMCP tool-id collisions', () => {
 
     expect(ids).toContain('product_list');
     expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
+  });
+
+  it('reserves per COLLECTION, not per host, when models share one', () => {
+    // The id namespace is `${collectionClassName}_${action}`, shared by every
+    // host mapping to one collection. A host-local check lets a model that
+    // excludes `list` but declares `List()` claim `product_list`, after which
+    // the sibling's real `list` hits the fold-dedupe and is dropped — the
+    // impostor outranking the verb again, one door over.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { List: publicMethod('List') },
+        decoratorConfig: { api: { exclude: ['list'] } },
+      }),
+      obj({
+        className: 'ProductVariant',
+        collection: 'products',
+        methods: {},
+      }),
+    );
+
+    const definitions = buildWebMcpToolDefinitions(m);
+    const listTools = definitions.filter((d) => d.name === 'product_list');
+
+    // Exactly one, and it must be the GENERATED CRUD list — not `Product.List()`
+    // wearing its id. Asserting the count alone passes either way, which is what
+    // let the host-local version of this guard through review.
+    expect(listTools.map((d) => d.action)).toEqual(['list']);
+
+    const ids = definitions.map((d) => d.name);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   });
 
   it('produces no duplicate tool id for any object in the manifest', () => {

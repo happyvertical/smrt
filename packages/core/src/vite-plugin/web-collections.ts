@@ -652,14 +652,38 @@ export function selectWebMcpToolEntries(
     ),
   ];
 
+  // Which CRUD verbs are actually emitted, keyed by COLLECTION rather than by
+  // host. The tool id namespace is `${collectionClassName}_${action}`, so it is
+  // shared by every host mapping to one collection — an STI base and its
+  // children, or two models declaring the same collection. Asking only "does
+  // THIS host emit `list`?" would let a host that excludes `list` but declares
+  // `List()` claim `product_list`, after which a sibling host's real `list`
+  // hits the fold-dedupe and is dropped. That is the impostor outranking the
+  // verb again, one door over (#2648).
+  const emittedCrudByCollection = new Map<string, Set<string>>();
+  for (const host of [
+    ...objectActionHosts,
+    ...manifestObjects.filter((candidate) =>
+      isCollectionManifestClass(manifest, candidate),
+    ),
+  ]) {
+    const collection = objectOwners.get(host.collection)?.collection;
+    if (!collection) continue;
+    const bucket = emittedCrudByCollection.get(collection) ?? new Set<string>();
+    for (const action of resolveApiActionSet(host, manifest)) {
+      if (isCrudOperation(action)) bucket.add(action);
+    }
+    emittedCrudByCollection.set(collection, bucket);
+  }
+
   for (const actionHost of objectActionHosts) {
     const owner = objectOwners.get(actionHost.collection);
     if (!owner) continue;
-    const hostActions = resolveApiActionSet(actionHost, manifest);
-    const emittedCrud = new Set(
-      [...hostActions].filter(isCrudOperation).map((verb) => verb),
-    );
-    for (const action of [...hostActions].sort(compareText)) {
+    const emittedCrud =
+      emittedCrudByCollection.get(owner.collection) ?? new Set<string>();
+    for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
+      compareText,
+    )) {
       // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
       // namespace is case-folded even though the API action set that feeds it
       // is not. Two guards, in order (#2648):
@@ -717,11 +741,16 @@ export function selectWebMcpToolEntries(
       objectOwners.get(collectionClass.collection)?.obj ??
       resolveStiCollectionOwner(manifest, itemObject);
 
-    const collectionActions = resolveApiActionSet(collectionClass, manifest);
-    const collectionEmittedCrud = new Set(
-      [...collectionActions].filter(isCrudOperation),
-    );
-    for (const action of [...collectionActions].sort(compareText)) {
+    // Same collection-level set as loop 1. A collection class's OWN action set
+    // never contains an exact CRUD verb — `resolveApiActionSet` starts a
+    // collection class at an empty set and skips `STANDARD_API_ACTIONS` names —
+    // so a per-host set here would always be empty and the guard dead.
+    const collectionEmittedCrud =
+      emittedCrudByCollection.get(collectionClass.collection) ??
+      new Set<string>();
+    for (const action of [
+      ...resolveApiActionSet(collectionClass, manifest),
+    ].sort(compareText)) {
       // Same two guards, same order and conditionality as the object loop
       // above — and the same key shape. Both loops share `entries`, so a case-sensitive key here
       // would miss the lowercased one written there and insert a second entry
