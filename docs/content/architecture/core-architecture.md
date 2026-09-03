@@ -110,16 +110,30 @@ ObjectRegistry.clear()                           // Clear all registrations
 
 ## CLI Architecture: Zero-Config Consumption
 
-> This section documents a design proposal from Issue #211's era. The
-> `npx smrt <object> <action>` / `smrt mcp` / `smrt generate` shape described
-> below was not implemented as written. What actually shipped for a
-> distributable, zero-config application CLI is
-> [`@happyvertical/smrt-app-cli`](../app-cli.md): it discovers commands from a
-> **running** application over HTTP (`GET /api/_resources`) rather than a
-> `smrt` bin that imports and scans local project source. `packages/cli`'s
-> `smrt` bin remains the framework developer/ops CLI (`db:migrate`, `doctor`,
-> etc.), not an auto-discovering object CLI. The design intent below is kept
-> for historical context.
+> This section documents a design proposal from Issue #211's era. Its core
+> idea — a `smrt` bin that auto-discovers `@smrt()` objects via the registry
+> and exposes per-object commands with no manual wiring — did ship, largely
+> as designed: `packages/cli`'s `smrt` bin has a live `smrt <object>:<action>`
+> CLI (e.g. `smrt product:list`, not the space-separated `smrt products list`
+> shown below) alongside `smrt objects`/`smrt ls` to list what's registered,
+> both auto-discovered from the manifest/`ObjectRegistry`
+> (`findObjectCommand`/`getObjectCommandsLazy`/`generateObjectCommands` in
+> `packages/cli/src/cli-generator.ts`). The literal `smrt mcp --port 3000`
+> (a live server with a port flag) / `smrt generate <type>` router shown
+> below did not ship as such — the real commands are separately named and
+> write files rather than bind a port (`generate-mcp`, aliased `mcp`, writes
+> a runnable MCP server file via `MCPGenerator.generateServer()`;
+> `generate-routes`, aliased `routes`, writes SvelteKit route files;
+> `generate-types`). This local surface opens a real database connection
+> directly (`cli.database` in `smrt.config`)
+> and is meant for a developer/operator machine with that access, which is
+> different from the separate
+> [`@happyvertical/smrt-app-cli`](../app-cli.md): a **distributable**
+> application CLI that discovers commands from a **running, deployed**
+> application over HTTP (`GET /api/_resources`) and needs no database access
+> at all — see [Choosing a transport](../app-cli.md#choosing-a-transport-local-smrt-vs-smrt-app-cli)
+> for how the two relate. The design intent and exact command shapes below
+> are kept for historical context; do not copy the literal syntax.
 
 ### Design Principle
 

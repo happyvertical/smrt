@@ -17,11 +17,16 @@ that could run on a laptop that has never seen the app's repository.
 >
 > | Package | What it is | Who runs it |
 > | --- | --- | --- |
-> | [`@happyvertical/smrt-cli`](https://github.com/happyvertical/smrt/tree/main/packages/cli) (`smrt`) | Framework developer/ops CLI — `db:migrate`, `db:diff`, `init`, `export`, `doctor` | Framework contributors and app maintainers, at repo time |
-> | `@happyvertical/smrt-app-cli` (this page) | The branded CLI an application ships to its own users — `<app> <resource> <command>` | End users and operators of a deployed app, at runtime |
-> | `CLIGenerator` (`@happyvertical/smrt-core/generators`) | An in-process, per-object admin CLI builder | Nothing in the SMRT ecosystem currently consumes it — see [Code Generation](./core.md#code-generation) in the core guide |
+> | [`@happyvertical/smrt-cli`](https://github.com/happyvertical/smrt/tree/main/packages/cli) (`smrt`) | Framework developer/ops commands (`db:migrate`, `db:diff`, `init`, `export`, `doctor`) **and** a live, in-process `smrt <object>:<action>` admin CLI, auto-discovered from the manifest — e.g. `smrt product:list` | Framework contributors and app maintainers, on a machine with direct database access |
+> | `@happyvertical/smrt-app-cli` (this page) | The branded CLI an application ships to its own users — `<app> <resource> <command>` | End users and operators of a deployed app, over HTTP, with no database access |
+> | `CLIGenerator` (`@happyvertical/smrt-core/generators`) | An in-process, per-object admin CLI builder — a different implementation of the same idea as `smrt-cli`'s object commands | Nothing in the SMRT ecosystem currently consumes it — see [Code Generation](./core.md#code-generation) in the core guide |
 
-This page covers `smrt-app-cli`. For framework development commands, see the
+`smrt-cli`'s object commands and `smrt-app-cli` are both live, correctly used
+transports for the same underlying idea (run a command against a `@smrt()`
+object) — see [Choosing a transport: local `smrt` vs.
+`smrt-app-cli`](#choosing-a-transport-local-smrt-vs-smrt-app-cli) below. This
+page covers `smrt-app-cli`. For framework development commands and the local
+object CLI, see the
 [`smrt-cli` README](https://github.com/happyvertical/smrt/tree/main/packages/cli/README.md).
 
 ## Quick start
@@ -78,6 +83,40 @@ pnpm dlx --package @happyvertical/smrt-app-cli@X.Y.Z \
 Pin the exact published version in automation. `SMRT_APP_*` variables carry
 only non-secret executable configuration; runtime credentials still flow
 through the normal `${ENV_PREFIX}_TOKEN` / stored-config resolution.
+
+## Choosing a transport: local `smrt` vs. `smrt-app-cli`
+
+SMRT has two live, correctly-used ways to run a command against a `@smrt()`
+object from a terminal. They are not competing implementations of the same
+feature — they trade off differently and exist for different callers:
+
+| | Local: `smrt <object>:<action>` | Remote: `smrt-app-cli` |
+| --- | --- | --- |
+| Package | `@happyvertical/smrt-cli` (the `smrt` bin) | `@happyvertical/smrt-app-cli` |
+| Example | `smrt product:list`, `smrt product:get <id>` (unpluralized class name) | `<app> products list`, `<app> products get <id>` (pluralized collection slug) |
+| Discovery | In-process: `ObjectRegistry` + the built manifest (`findObjectCommand` → `getObjectCommandsLazy` → `generateObjectCommands`, `packages/cli/src/cli-generator.ts`) | Over HTTP: `GET /api/_resources` against a **running, deployed** application |
+| Data access | Opens a real database connection directly, using `cli.database` from `smrt.config` (`getCollection()` and the custom-method path in `cli-generator.ts`) | Bearer-authed HTTP calls to the app's own API — never touches a database directly |
+| Who runs it, and where | A developer or operator, on a machine with database credentials and the project's manifest built — a repo checkout, a deploy box, a migration runner | Anyone with an account on the deployed app, from any machine — no database access, no repo checkout, no build step |
+| Auth | None built in — whoever can run the process has whatever access `cli.database` grants | Device-code login against the app's own auth (`TerminalAuthService`) |
+
+Both read the same `@smrt({ cli })` config (see [below](#from-decorator-config-to-a-distributable-command))
+to decide which commands to expose, so a command's availability is usually
+symmetric — a command visible to one is normally visible to the other. The two
+`cli` config knobs that break that symmetry deliberately, `http: false` and
+`skipApiCheck: true`, exist for the **local** transport specifically — a
+command that is meaningful to run in-process, on a machine with direct
+database access, but that should not be reachable over HTTP by
+`smrt-app-cli` at all (see [below](#from-decorator-config-to-a-distributable-command)
+for the exact mechanics and a real example from `@happyvertical/smrt-jobs`).
+
+If you are building the CLI an application ships to its own users or
+operators — people who authenticate to the app but never touch its database —
+that is `smrt-app-cli`, and the rest of this page is about it. If you are
+scripting against a local checkout or a machine that already has database
+access (CI, a migration box, a developer's laptop), `smrt <object>:<action>`
+is usually the simpler tool; see the
+[`smrt-cli` README](https://github.com/happyvertical/smrt/tree/main/packages/cli/README.md)
+for its full command surface — this page does not re-document it.
 
 ## The login flow (device-code grant)
 
@@ -144,7 +183,7 @@ interface ResourceListResponseBody {
   user: { authenticated: boolean; id?: string };
   warnings: string[]; // methods that couldn't be exposed as commands, and why
   resources: Array<{
-    slug: string; // first CLI positional, e.g. `product`
+    slug: string; // first CLI positional, e.g. `products` (pluralized, same as apiPath)
     className: string;
     apiPath: string; // URL segment, e.g. `products`
     label: string;
@@ -227,14 +266,32 @@ class Product extends SmrtObject { /* ... */ }
 | `{}` (object with no `include`) | Same as `true` — CRUD only |
 | `{ include: [...] }` | Expose exactly these commands (CRUD names and/or custom method names), intersected with what the API exposes |
 | `{ exclude: [...] }` | Drop specific commands from the otherwise-CRUD default or `include` list |
-| `{ skipApiCheck: true }` | Skip the build-time check that every `include` entry is also API-exposed — for CLI commands invoked in-process rather than over HTTP |
-| `{ http: false }` | Keep the command available to in-process/local generators (`CLIGenerator`) but exclude it from `GET /api/_resources`, so `smrt-app-cli` never advertises it |
+| `{ skipApiCheck: true }` | Skip the build-time check that every `include` entry is also API-exposed — for commands meant to run only through the local `smrt <object>:<action>` CLI (`@happyvertical/smrt-cli`), never over HTTP |
+| `{ http: false }` | Keep the command available to the local `smrt <object>:<action>` CLI but exclude it from `GET /api/_resources`, so `smrt-app-cli` never advertises or invokes it over HTTP |
 
 The API intersection exists because `smrt-app-cli` invokes commands over
-HTTP: a method with no matching API route has nothing to call. The in-process
-`CLIGenerator` (see [Code Generation](./core.md#code-generation)) has no such
-requirement — it calls the collection method directly — which is why
-`skipApiCheck` exists for CLI-only, HTTP-less methods.
+HTTP: a method with no matching API route has nothing to call. The local
+`smrt <object>:<action>` CLI (`@happyvertical/smrt-cli`, see [Choosing a
+transport](#choosing-a-transport-local-smrt-vs-smrt-app-cli) above) has no
+such requirement — it opens a database connection directly and calls the
+collection method in-process — which is why `skipApiCheck` exists for
+CLI-only, HTTP-less methods. A real example, `@happyvertical/smrt-jobs`'
+`SmrtJobEvent` (`packages/jobs/src/smrt-job-event.ts`):
+
+```typescript
+@smrt({
+  api: false, // no REST surface at all — reads go through tenant-aware
+              // collection methods, not generated routes
+  cli: { include: ['list', 'get'], http: false, skipApiCheck: true },
+  mcp: false,
+})
+class SmrtJobEvent extends SmrtObject { /* ... */ }
+```
+
+`smrt smrtjobevent:list` works for an operator with database access;
+`skipApiCheck` acknowledges there is no API route to check `include` against
+(there is no API surface at all here), and `http: false` keeps it that way —
+`smrt-app-cli` never sees `smrtjobevent` as a resource.
 
 A command's parameters come straight from the method's JSON Schema. The CLI's
 flag parser (`buildFlagParser` /
@@ -245,10 +302,10 @@ arrays of scalars; anything with a nested object, `oneOf`/`anyOf`/`allOf`, or
 '{"...": "..."}'`) instead of guessing a flag shape.
 
 ```console
-$ acme product list --limit 20 --where '{"status":"active"}'
-$ acme product create --name Widget --price 1999
-$ acme product update prod_123 --name "New name"
-$ acme product delete prod_123
+$ acme products list --limit 20 --where '{"status":"active"}'
+$ acme products create --name Widget --price 1999
+$ acme products update prod_123 --name "New name"
+$ acme products delete prod_123
 ```
 
 Item-scope commands (`scope: 'item'`) take the id as the first positional
