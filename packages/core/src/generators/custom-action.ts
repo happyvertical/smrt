@@ -129,11 +129,19 @@ export interface ResolvableMethod {
  * for an object, given its transport config's `include`/`exclude` and its
  * method map: every public method, minus CRUD verbs, minus framework
  * lifecycle methods, restricted to `include` when present and always minus
- * `exclude`. Reused by `CLIGenerator.listCommands()` (over the live
- * `ObjectRegistry`) and by the build-time `findCliApiCoherenceViolations`
- * lint's bare-`cli: true`/`cli: {}` branch (over the static manifest, no
- * explicit `include`) so those two agree with each other and with what
- * `listCommands()` advertises.
+ * `exclude`. Reused by three callers, so they agree with each other and
+ * with what `listCommands()` advertises:
+ *
+ * - `CLIGenerator.listCommands()` (over the live `ObjectRegistry`).
+ * - `findCliApiCoherenceViolations`'s bare-`cli: true`/`cli: {}` branch
+ *   (over the static manifest, no explicit `include`) -- see
+ *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts`.
+ * - `generateCLIModule()` in `vite-plugin/index.ts`, which generates the
+ *   `smrt:cli` virtual module's static command metadata. It layers one
+ *   additional filter on top of this function's result: a leading `_` on
+ *   the method name, because the manifest's `isPublic` is unreliable there
+ *   (see that call site's own comment) and this function has no other
+ *   signal to exclude an internal-by-convention method.
  *
  * NOT the one universal resolution, and deliberately not reused by every
  * caller that resolves a CLI command set:
