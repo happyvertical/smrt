@@ -116,6 +116,16 @@ export class Widget extends SmrtObject {
   price: number = 0.0;
 
   async refresh(): Promise<void> {}
+
+  // #2638: a locally overridden framework lifecycle method (mirroring
+  // User.save()) must never be emitted as a custom CLI command. Uses
+  // initialize() rather than save() deliberately: generateCLIModule's
+  // pre-#2638 code already hardcoded a 'save' exclusion (leaving every
+  // OTHER lifecycle method, e.g. initialize/getSlug/toJSON, unfiltered), so
+  // 'save' alone would not have caught the regression this test guards.
+  override async initialize(): Promise<this> {
+    return super.initialize();
+  }
 }
 
 @smrt({ cli: { exclude: ['delete'] } })
@@ -197,6 +207,16 @@ export class Gizmo extends SmrtObject {
     expect(code).toContain('widget:list');
     // Gizmo excludes delete -> no gizmo:delete command emitted.
     expect(code).not.toContain('gizmo:delete');
+  });
+
+  it('never emits a locally overridden framework lifecycle method as a custom command (#2638)', async () => {
+    const code = await load('\0smrt:cli');
+    // Widget's genuine custom method is still advertised...
+    expect(code).toContain('widget:refresh');
+    // ...but its initialize() override -- the mechanism behind get/list
+    // hydration, not a distinct operation -- is not, even though `cli: true`
+    // has no include list to filter it out.
+    expect(code).not.toContain('widget:initialize');
   });
 
   it('loads the default UI module source', async () => {
