@@ -1221,25 +1221,30 @@ export class CLIGenerator {
       (item) => !isCrudOperation(item),
     );
 
+    // Every name a caller can already type for this object, taken from the
+    // CRUD commands actually pushed above — their names AND their aliases,
+    // because `findObjectCommand` matches both. Derived rather than re-listed
+    // so it cannot drift from the aliases declared at those push sites, and so
+    // a verb excluded by config reserves nothing (#2646, #2648).
+    const reservedCommandNames = new Set(
+      commands.flatMap((command) => [command.name, ...(command.aliases ?? [])]),
+    );
+
     for (const [methodName, methodDef] of methods as Map<
       string,
       CliMethodDefinition
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
-        // A method sharing an EMITTED CRUD verb's name is not a custom
-        // action — pushing one would add a second `${lowerName}:${verb}` that
-        // `objectCommands.find` (first match wins) can never reach (#2646).
-        // Conditional on `shouldInclude` because a config like
-        // `include: ['list', 'get']` emits no `create` command, so a public
-        // `create()` collides with nothing and stays a reachable custom
-        // command exactly as before.
-        if (
-          isCrudOperation(methodName) &&
-          shouldInclude(
-            methodName as 'list' | 'get' | 'create' | 'update' | 'delete',
-          )
-        ) {
+        // A method sharing an EMITTED CRUD command's name is not a custom
+        // action — pushing one would add a second `${lowerName}:${name}` that
+        // `objectCommands.find` (first match wins) can never reach (#2646),
+        // including via an alias such as `edit` for `update` (#2648).
+        //
+        // The set holds only what was actually pushed, so a verb the config
+        // excluded reserves nothing: with `include: ['list', 'get']` neither
+        // `create()` nor `edit()` collides, and both stay reachable.
+        if (reservedCommandNames.has(`${lowerName}:${methodName}`)) {
           return false;
         }
 
