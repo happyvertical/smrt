@@ -16,6 +16,13 @@
  * such a base's methods mergeable into its subclasses — but the invariant is
  * about the tool NAMESPACE, not method provenance: a class declaring its own
  * domain method called `list` collides the same way.
+ *
+ * The namespace is also CASE-FOLDED. `buildCustomActionTool` lowercases the
+ * whole identifier while the registry keys methods by declared casing, so a
+ * method named `List` lands on `${lowerName}_list` as well and has to be
+ * skipped by the same rule. The CLI namespace is case-SENSITIVE and keeps
+ * `foo:List` as a distinct command, which is why the two transports read
+ * different predicates over one shared verb list.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -56,6 +63,28 @@ class Issue2646CrudNamed extends SmrtObject {
   }
 }
 
+// Same collision reached through casing: `List` is a distinct registry key, but
+// `buildCustomActionTool` lowercases the whole tool identifier, so it resolves
+// to the same `issue2646casedverb_list` the CRUD tool owns.
+@smrt({ mcp: true })
+class Issue2646CasedVerb extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async List(): Promise<any> {
+    return [];
+  }
+
+  async Refresh(): Promise<any> {
+    return { ok: true };
+  }
+}
+
 /** Tool names emitted for one class, in catalog order. */
 async function toolNamesFor(prefix: string): Promise<string[]> {
   const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
@@ -81,6 +110,17 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     const names = await toolNamesFor('issue2646crudnamed');
 
     expect(names).toContain('issue2646crudnamed_syncnow');
+  });
+
+  it('folds case when deciding a method shadows a CRUD verb', async () => {
+    const names = await toolNamesFor('issue2646casedverb');
+
+    // `List` lowercases onto the CRUD tool's identifier, so only one survives.
+    expect(names.filter((name) => name === 'issue2646casedverb_list')).toEqual([
+      'issue2646casedverb_list',
+    ]);
+    // A non-CRUD method keeps its lowercased tool name.
+    expect(names).toContain('issue2646casedverb_refresh');
   });
 
   it('produces no duplicate tool names across the whole registry', async () => {

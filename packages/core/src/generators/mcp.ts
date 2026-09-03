@@ -21,7 +21,7 @@ import {
   type CustomActionFailure,
   type CustomActionMetadata,
   customActionParameterInputName,
-  isCrudOperation,
+  isCrudToolAction,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
@@ -482,7 +482,7 @@ export class MCPGenerator {
       // tools like `payment_recordpayment` because `include` only gated CRUD
       // verbs (#1540 / #1390).
       const customMethodsInInclude =
-        included?.filter((item) => !isCrudOperation(item)) || [];
+        included?.filter((item) => !isCrudToolAction(item)) || [];
       // An include list (even one naming only CRUD verbs) switches custom
       // methods into strict allowlist mode.
       const hasIncludeList = included !== undefined;
@@ -547,9 +547,11 @@ export class MCPGenerator {
           // A CRUD verb is already emitted above as the standard tool, so a
           // method sharing its name is not a custom action — generating one
           // would emit a second tool under a name that is already claimed
-          // (`sortMCPTools` orders the catalog but does not dedupe). Mirrors
-          // the strict branch above and `CLIGenerator.listCommands` (#2646).
-          if (isCrudOperation(methodName)) continue;
+          // (`sortMCPTools` orders the catalog but does not dedupe). Case-folded
+          // because `buildCustomActionTool` lowercases the whole identifier, so
+          // `List` lands on `${lowerName}_list` too. Mirrors the strict branch
+          // above and `CLIGenerator.listCommands` (#2646).
+          if (isCrudToolAction(methodName)) continue;
 
           // Skip if not public (private/protected methods shouldn't be in MCP)
           if (!methodDef.isPublic) continue;
@@ -755,7 +757,7 @@ export class MCPGenerator {
       required: ['error'],
     };
 
-    if (!['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+    if (!isCrudToolAction(action)) {
       // Custom action results are deliberately domain-defined and can be any
       // JSON value. MCP structuredContent itself must be object-rooted, so the
       // machine-readable projection carries that value in `data`; legacy text
@@ -1060,7 +1062,7 @@ export class MCPGenerator {
     if (separator <= 0) return null;
     const objectPrefix = toolName.slice(0, separator);
     const action = toolName.slice(separator + 1);
-    if (['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+    if (isCrudToolAction(action)) {
       return null;
     }
     const classEntry = Array.from(
@@ -1132,7 +1134,7 @@ export class MCPGenerator {
     action: string,
     publicResult: unknown,
   ): Record<string, unknown> {
-    if (!['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+    if (!isCrudToolAction(action)) {
       return { data: publicResult };
     }
     if (
@@ -1858,7 +1860,7 @@ export class MCPGenerator {
       if (separator === -1) continue;
       const objectPrefix = tool.name.slice(0, separator);
       const action = tool.name.slice(separator + 1);
-      if (isCrudOperation(action)) continue;
+      if (isCrudToolAction(action)) continue;
       const matched = Array.from(classes.entries()).find(
         ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
       );

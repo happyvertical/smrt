@@ -185,14 +185,17 @@ export function resolveCustomActionNames(
 }
 
 /**
- * The CRUD verbs every generated surface emits directly. A method whose name
- * matches one of these is never a custom action: the verb is already taken by
- * the generated operation, so exposing the method under it would emit a second
- * command/tool under a name that is already claimed.
+ * The CRUD verbs a generated surface emits directly. A method whose name
+ * collides with one of these is never a custom action: the verb is already
+ * taken by the generated operation, so exposing the method under it emits a
+ * second command/tool under a name that is already claimed.
  *
  * This is a NAMESPACE rule, independent of where the method came from — a
  * class's own `list()` collides exactly as a merged ancestor's does (#2646).
- * Every transport reads this one list.
+ *
+ * Read it through {@link isCrudOperation} or {@link isCrudToolAction} rather
+ * than re-declaring the list; the two predicates differ only in case folding,
+ * because the transports namespace differently (see below).
  */
 export const CRUD_OPERATIONS = [
   'list',
@@ -202,9 +205,25 @@ export const CRUD_OPERATIONS = [
   'delete',
 ] as const;
 
-/** Whether `name` is a generated CRUD verb rather than a custom action. */
+/**
+ * Exact-match test for a case-SENSITIVE surface. The CLI keeps a method's
+ * declared casing in its command name (`${object}:${methodName}`) and resolves
+ * an action by exact match, so `foo:List` is a distinct, callable custom
+ * command that must not be folded into `foo:list`.
+ */
 export function isCrudOperation(name: string): boolean {
   return (CRUD_OPERATIONS as readonly string[]).includes(name);
+}
+
+/**
+ * Case-FOLDED test for a lowercase tool namespace. MCP tool identifiers are
+ * lowercased whole (`` `${object}_${methodName}`.toLowerCase() ``) for a stable
+ * protocol vocabulary, so a method named `List` lands on the identifier
+ * `object_list` that the generated CRUD tool already owns. The namespace key is
+ * the lowercased name, so the collision test has to be too (#2646).
+ */
+export function isCrudToolAction(name: string): boolean {
+  return isCrudOperation(name.toLowerCase());
 }
 
 export interface CustomActionMetadata {
