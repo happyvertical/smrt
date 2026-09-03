@@ -2,7 +2,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface, TransactionHandle } from '@happyvertical/sql';
-import { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
+import {
+  ensurePostgresChangeFeedAppendFunction,
+  ensurePostgresChangeFeedHelpers,
+} from '../change-feed.js';
 import {
   assertPostgresSystemTimestampsCurrent,
   ensureBootstrapSystemTableCompatibility,
@@ -81,6 +84,13 @@ async function bootstrapSystemTables(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<void> {
+  // #2649: the change-feed helpers changed without a change to the portable
+  // system DDL, so a database already stamped with this version would never
+  // reach the install below and would keep the deadlocking append function.
+  // Ordinary model writes do not call ensureChangeFeedTable(), so nothing else
+  // would repair it. One catalog probe when the helpers are already current.
+  await ensurePostgresChangeFeedHelpers(db, typeHint);
+
   if (await isSystemSchemaVersionApplied(db, typeHint)) return;
 
   await ensureBootstrapSystemTableCompatibility(db, typeHint);

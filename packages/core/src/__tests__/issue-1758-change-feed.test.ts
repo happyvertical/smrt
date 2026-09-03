@@ -825,9 +825,10 @@ describe('change feed spine (issue #1758)', () => {
     });
 
     it('retries a unique SQLSTATE returned by the Postgres append function', async () => {
-      const query = vi
-        .fn()
-        .mockResolvedValueOnce({
+      // The append path drains first (#2649); only the append statements
+      // carry the allocation responses.
+      const appendResults = [
+        {
           rows: [
             {
               allocated_seq: null,
@@ -836,16 +837,15 @@ describe('change feed spine (issue #1758)', () => {
                 'duplicate key value violates unique constraint "_smrt_changes_pkey"',
             },
           ],
-        })
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              allocated_seq: 1,
-              error_code: null,
-              error_message: null,
-            },
-          ],
-        });
+        },
+        {
+          rows: [{ allocated_seq: 1, error_code: null, error_message: null }],
+        },
+      ];
+      const query = vi.fn(async (sql: string) => {
+        if (!String(sql).includes('_smrt_append_change')) return { rows: [] };
+        return appendResults.shift() ?? { rows: [] };
+      });
       const postgresDb = {
         url: 'postgresql://ci.invalid/smrt',
         query,
@@ -857,18 +857,26 @@ describe('change feed spine (issue #1758)', () => {
           rowId: 'product-1',
         }),
       ).resolves.toBe(1);
-      expect(query).toHaveBeenCalledTimes(2);
+      expect(
+        query.mock.calls.filter(([sql]) =>
+          String(sql).includes('_smrt_append_change'),
+        ),
+      ).toHaveLength(2);
     });
 
     it('turns a caught Postgres function SQLSTATE back into a safe append error', async () => {
-      const query = vi.fn().mockResolvedValue({
-        rows: [
-          {
-            allocated_seq: null,
-            error_code: '23514',
-            error_message: 'forced change-feed check failure',
-          },
-        ],
+      const query = vi.fn(async (sql: string) => {
+        // The append path drains first (#2649); that call has nothing to say.
+        if (!String(sql).includes('_smrt_append_change')) return { rows: [] };
+        return {
+          rows: [
+            {
+              allocated_seq: null,
+              error_code: '23514',
+              error_message: 'forced change-feed check failure',
+            },
+          ],
+        };
       });
       const postgresDb = {
         url: 'postgresql://ci.invalid/smrt',
@@ -884,8 +892,10 @@ describe('change feed spine (issue #1758)', () => {
         code: '23514',
         message: 'forced change-feed check failure',
       });
-      expect(query).toHaveBeenCalledOnce();
-      expect(query.mock.calls[0]?.[0]).toContain('_smrt_append_change');
+      const appendCalls = query.mock.calls.filter(([sql]) =>
+        String(sql).includes('_smrt_append_change'),
+      );
+      expect(appendCalls).toHaveLength(1);
     });
   });
 

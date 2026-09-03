@@ -603,14 +603,15 @@ BEGIN
 
   -- Autocommit append. The caller's own row write already committed as its own
   -- statement, so this transaction holds no user row locks and allocating the
-  -- head here cannot join a lock cycle. Drain first so anything staged by a
-  -- committed transaction keeps its place ahead of this entry in the log.
-  BEGIN
-    PERFORM * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}();
-  EXCEPTION WHEN OTHERS THEN
-    NULL;
-  END;
-
+  -- head here cannot join a lock cycle.
+  --
+  -- This deliberately does NOT drain: a drain performed here would sequence
+  -- staged entries that the JavaScript caller never sees, so no live SSE
+  -- signal would be published for them while this append's own signal carries
+  -- a HIGHER sequence -- and an EventSource that stores that id as its
+  -- Last-Event-ID resumes above them and never receives them. Draining is
+  -- driven from JavaScript (drainChangeFeed) so every sequenced entry gets
+  -- its signal.
   BEGIN
     INSERT INTO _smrt_changes (
       seq,

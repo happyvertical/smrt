@@ -40,7 +40,11 @@ import {
   ensureChangeFeedTable,
   ensurePostgresChangeFeedAppendFunction,
   getChangesSince,
+  getTableVersion,
+  resetChangeFeedWarnings,
 } from '../change-feed';
+import { type ChangeSignal, subscribeToChangeSignals } from '../change-signals';
+import { ensureSystemTables } from '../system/bootstrap';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const ROWS_TABLE = 'issue_2649_rows';
@@ -199,6 +203,9 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
     await ensurePostgresChangeFeedAppendFunction(setup, {
       replaceExisting: true,
     });
+    // The append path's drain interval is process state; clear it so these
+    // cases do not inherit a neighbour's timestamp.
+    resetChangeFeedWarnings();
   });
 
   /**
@@ -484,6 +491,171 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
 
     const page = await getChangesSince(setup, { since: 0 });
     expect(page.changes.map((change) => change.rowId)).toEqual([ROW_A]);
+  }, 120_000);
+
+  /**
+   * A live `_events` subscriber resumes from the `Last-Event-ID` of the last
+   * signal it saw, so a sequenced entry that is never signalled while a LATER
+   * one is gets skipped for good. Every drained entry must therefore be
+   * signalled, ahead of the append that follows it.
+   */
+  it('signals every drained entry before the append that outranks it', async () => {
+    const seen: ChangeSignal[] = [];
+    const unsubscribe = subscribeToChangeSignals(setup, (signal) => {
+      seen.push(signal);
+    });
+    try {
+      await runTransaction(crawl, async (tx) => {
+        await tx.query(
+          `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+          ROW_A,
+        );
+        await appendChange(tx, {
+          table: FEED_TABLE,
+          rowId: ROW_A,
+          operation: 'update',
+        });
+      });
+      // Staged: durable, but no sequence and therefore no signal yet.
+      expect(seen).toEqual([]);
+
+      // An ordinary autocommit append drains first, so the staged entry is
+      // sequenced AND signalled at seq 1 before this append takes seq 2. The
+      // framework's interceptor publishes seq 2 itself once this returns
+      // (`appendChange` is the primitive beneath it and does not signal), so a
+      // subscriber sees 1 then 2 with no gap for its Last-Event-ID to jump.
+      expect(
+        await appendChange(setup, {
+          table: FEED_TABLE,
+          rowId: ROW_B,
+          operation: 'create',
+        }),
+      ).toBe(2);
+      expect(seen.map((signal) => signal.seq)).toEqual([1]);
+      expect(seen.map((signal) => signal.rowId)).toEqual([ROW_A]);
+    } finally {
+      unsubscribe();
+    }
+  }, 120_000);
+
+  /**
+   * A drain that runs as the first statement of a caller transaction has not
+   * committed. Signalling from there advertises sequences a rollback releases
+   * for a concurrent appender to reuse, so a subscriber would hold a
+   * `Last-Event-ID` naming somebody else's entry.
+   */
+  it('publishes no signal for a drain that has not committed', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    const seen: ChangeSignal[] = [];
+    const unsubscribe = subscribeToChangeSignals(setup, (signal) => {
+      seen.push(signal);
+    });
+    try {
+      await expect(
+        runTransaction(owner, async (tx) => {
+          // First statement of the transaction, so the helper permits the
+          // drain — but it is uncommitted, so nothing may be signalled.
+          await drainChangeFeed(tx);
+          expect(seen).toEqual([]);
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      expect(seen).toEqual([]);
+
+      // The next committed drain is what signals it.
+      await drainChangeFeed(setup);
+      expect(seen.map((signal) => signal.rowId)).toEqual([ROW_A]);
+    } finally {
+      unsubscribe();
+    }
+  }, 120_000);
+
+  /**
+   * The ETag version must never regress. Reading the sequenced maximum and the
+   * staged count in two statements lets a drain land between them, counting the
+   * same entry twice and minting a version a later write re-mints — a false 304
+   * against changed data.
+   */
+  it('keeps the table version monotonic across a drain', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    const staged = await getTableVersion(setup, FEED_TABLE);
+    await drainChangeFeed(setup);
+    const sequenced = await getTableVersion(setup, FEED_TABLE);
+    expect(sequenced).toBeGreaterThanOrEqual(staged);
+    // Draining moves the entry from the staged term to the sequenced one, so
+    // the sum is unchanged rather than double-counted then reduced.
+    expect(sequenced).toBe(staged);
+  }, 120_000);
+
+  /**
+   * A database already stamped with the current system schema version takes
+   * bootstrap's fast return, so nothing else would ever replace the pre-#2649
+   * append helper — ordinary model writes do not call `ensureChangeFeedTable`.
+   * Such a deployment would keep the deadlock after upgrading the package.
+   */
+  it('repairs the helpers on a database already stamped with this schema version', async () => {
+    // Wind the database back to how a pre-#2649 install looks.
+    await setup.query(PRE_FIX_APPEND_FUNCTION);
+    await setup.query('DROP FUNCTION IF EXISTS _smrt_drain_changes(integer)');
+    await setup.query('DROP TABLE IF EXISTS _smrt_changes_pending');
+
+    const before = rowsOf(
+      await setup.query(
+        `SELECT to_regclass('_smrt_changes_pending') AS pending,
+                to_regprocedure('_smrt_drain_changes(integer)') AS drain`,
+      ),
+    );
+    expect(before[0]?.pending).toBeFalsy();
+    expect(before[0]?.drain).toBeFalsy();
+
+    // The version row is already present, so bootstrap takes its fast return.
+    await ensureSystemTables(setup);
+
+    const after = rowsOf(
+      await setup.query(
+        `SELECT to_regclass('_smrt_changes_pending') AS pending,
+                to_regprocedure('_smrt_drain_changes(integer)') AS drain`,
+      ),
+    );
+    expect(after[0]?.pending).toBeTruthy();
+    expect(after[0]?.drain).toBeTruthy();
+
+    // ...and the repaired helper stages instead of allocating inline.
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'repaired' WHERE id = $1`,
+        ROW_A,
+      );
+      expect(
+        await appendChange(tx, {
+          table: FEED_TABLE,
+          rowId: ROW_A,
+          operation: 'update',
+        }),
+      ).toBeNull();
+    });
   }, 120_000);
 
   /**
