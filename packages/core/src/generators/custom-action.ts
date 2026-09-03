@@ -194,30 +194,37 @@ export function resolveCustomActionNames(
  * class's own `list()` collides exactly as a merged ancestor's does (#2646).
  *
  * What a collision means differs by EMITTER, so consult the one you are
- * changing rather than assuming a single rule. Not every emitter reads this
- * list yet — the ones that keep their own copy are called out below:
+ * changing rather than assuming a single rule. The reservation lives at each
+ * emission site, not here, and several emitters still keep their own inline
+ * verb array — find them with:
  *
- * - `generators/mcp.ts` reserves unconditionally, case-folded. `executeAction`
- *   switches on the verb parsed out of the tool id, so `${object}_list` runs
- *   the built-in list whichever branch emitted it — the class's method could
- *   never run, and emitting one would hand the caller an operation `include`
- *   never named.
- * - `generators/cli.ts` (`CLIGenerator`) reserves unconditionally, exact.
+ *     grep -rn "'list', 'get', 'create', 'update', 'delete'" packages/*_/src
+ *
+ * The sites this rule was audited against (#2646), NOT an exhaustive
+ * inventory:
+ *
+ * - `generators/mcp.ts` — unconditional, case-folded. `executeAction` switches
+ *   on the verb parsed out of the tool id, so `${object}_list` runs the
+ *   built-in list whichever branch emitted it: the class's method could never
+ *   run, and emitting one would hand the caller an operation `include` never
+ *   named.
+ * - `generators/cli.ts` (`CLIGenerator`) — unconditional, exact.
  *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
  *   action never reaches custom-method resolution, and `listCommands` skips
  *   those names outright.
- * - `packages/cli/src/cli-generator.ts` — the generator behind the shipped
- *   `smrt` object commands — reserves it only where the CRUD command is
- *   actually emitted. Each command it pushes carries its own handler invoking
- *   the class's method, so with `cli: { include: ['list', 'get'] }` a public
- *   `create()` collides with nothing and stays a legitimate, reachable
- *   `${object}:create`.
- * - `vite-plugin/sveltekit-generator.ts` reserves unconditionally, exact, from
- *   its OWN `STANDARD_API_ACTIONS` copy.
- * - `vite-plugin/web-collections.ts` + `tool-schema.ts` build a lowercased flat
- *   tool id like MCP's, but reserve on the exact-match API action set, so a
- *   cased CRUD-named method still collides there. Pre-existing, tracked on
- *   #2648.
+ * - `packages/cli/src/cli-generator.ts`, behind the shipped `smrt` object
+ *   commands — reserves only where the CRUD command is actually emitted. Each
+ *   command it pushes carries its own handler invoking the class's method, so
+ *   with `cli: { include: ['list', 'get'] }` a public `create()` collides with
+ *   nothing and stays a legitimate, reachable `${object}:create`.
+ * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
+ *   `STANDARD_API_ACTIONS` copy.
+ * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — builds a lowercased
+ *   flat tool id like MCP's while reserving on the exact-match API action set,
+ *   so a cased CRUD-named method still collides. Pre-existing, tracked on
+ *   #2648, along with the other own-copy sites the grep above finds
+ *   (`vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` — which also
+ *   reserves `save` — and `vite-plugin/templates/default-ui.ts`).
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the

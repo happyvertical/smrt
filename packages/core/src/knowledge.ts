@@ -14,6 +14,7 @@ import type {
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
 import {
+  CRUD_OPERATIONS,
   isCrudOperation,
   isCrudToolAction,
   resolveCustomActionMetadata,
@@ -85,7 +86,15 @@ const RELATIONSHIP_FIELD_TYPES = new Set([
   'manyToMany',
 ]);
 
-const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
+/**
+ * The generated CRUD verbs, derived from the generators' own list so both
+ * halves of this projection — which operations are ENUMERATED
+ * (`resolveCrudOperations`) and which method names are RESERVED
+ * (`reservesCrudName`) — move together. Reading one from `CRUD_OPERATIONS` and
+ * the other from a local copy would let a new verb be suppressed as a custom
+ * method while never being added as CRUD, dropping the surface entirely.
+ */
+const STANDARD_OPERATIONS: readonly string[] = CRUD_OPERATIONS;
 
 /**
  * Framework abstract base classes (`SmrtObject`, `SmrtCollection`, ...) carry
@@ -717,9 +726,9 @@ function resolveCustomMethodNames(
  * the declared casing in their route/command names, so only an exact match is
  * reserved there.
  *
- * Reads the emitters' own predicates rather than re-testing
- * `STANDARD_OPERATIONS`, so a change to the shared verb list reaches this
- * projection too.
+ * Reads the emitters' own predicates rather than re-testing the verb list, and
+ * `STANDARD_OPERATIONS` derives from `CRUD_OPERATIONS`, so a change to the
+ * shared list reaches both halves of this projection together.
  */
 function reservesCrudName(kind: 'api' | 'cli' | 'mcp', name: string): boolean {
   return kind === 'mcp' ? isCrudToolAction(name) : isCrudOperation(name);
