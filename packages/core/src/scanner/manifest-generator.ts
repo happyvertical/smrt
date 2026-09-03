@@ -1606,13 +1606,22 @@ export class ManifestGenerator {
         // base's own intended API (e.g. SmrtJunction.attach/detach,
         // SmrtHierarchical.getChildren) merge in, the same way its fields
         // already do.
+        //
+        // Assignment is unconditional (not "first ancestor wins"): the
+        // outer loop walks `inheritanceChain` base-to-child, so a later
+        // (more-derived) ancestor's override must replace an earlier one —
+        // e.g. a middle class that overrides a grandparent method. This
+        // matches the runtime resolver's own `getAllMethods()`, which
+        // walks the same base-to-child order and does a plain `Map.set()`
+        // per ancestor for the identical reason (see its "Child methods
+        // override parent methods (no merging)" comment). The child's own
+        // methods still win over everything via the unconditional
+        // "Add child's own methods" step below.
         if (!FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName)) {
           for (const [methodName, methodDef] of Object.entries(
             ancestor.methods || {},
           )) {
-            if (!mergedMethods[methodName]) {
-              mergedMethods[methodName] = methodDef;
-            }
+            mergedMethods[methodName] = methodDef;
           }
         }
       }

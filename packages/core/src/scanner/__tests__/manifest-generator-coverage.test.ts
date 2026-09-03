@@ -68,12 +68,15 @@ function scan(objects: SmartObjectDefinition[]): ScanResult {
 }
 
 /** Build a minimal valid MethodDefinition; only `name` varies per call. */
-function method(name: string): SmartObjectDefinition['methods'][string] {
+function method(
+  name: string,
+  returnType = 'void',
+): SmartObjectDefinition['methods'][string] {
   return {
     name,
     async: true,
     parameters: [],
-    returnType: 'void',
+    returnType,
     isStatic: false,
     isPublic: true,
   };
@@ -243,6 +246,33 @@ describe('ManifestGenerator coverage', () => {
       // (ObjectRegistry.getAllMethods() already walks this chain), so the
       // manifest must agree and merge it too.
       expect(invoice.methods.approve).toBeDefined();
+    });
+
+    it("lets a middle ancestor's override win over a grandparent method, matching runtime child-over-parent precedence", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          def('GrandParent', {
+            methods: { greet: method('greet', 'string') },
+          }),
+          def('MiddleParent', {
+            extends: 'GrandParent',
+            // Overrides GrandParent's `greet` with a distinguishable
+            // signature -- this is what a real override looks like.
+            methods: { greet: method('greet', 'number') },
+          }),
+          def('Leaf', {
+            extends: 'MiddleParent',
+          }),
+        ]),
+      ]);
+
+      // The runtime resolver (ObjectRegistry.getAllMethods()) walks the
+      // chain base-to-child and does a plain last-write-wins Map.set()
+      // per ancestor, so MiddleParent's override is what Leaf actually
+      // gets at runtime. The static manifest must agree -- NOT retain
+      // GrandParent's original (shadowed) declaration.
+      expect(manifest.objects.leaf.methods.greet.returnType).toBe('number');
     });
   });
 
