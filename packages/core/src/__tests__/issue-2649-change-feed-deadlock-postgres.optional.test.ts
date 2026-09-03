@@ -724,6 +724,46 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * The queue is claimed before the first await precisely so two drains racing
+   * on one database cannot both verify and publish the same entries — the
+   * signal sequence is an SSE event id, and a duplicate id is a duplicate
+   * live event for every subscriber.
+   */
+  it('publishes a queued signal once when two drains race', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    const seen: ChangeSignal[] = [];
+    const unsubscribe = subscribeToChangeSignals(owner, (signal) => {
+      seen.push(signal);
+    });
+    try {
+      // Queue the signal from a drain that cannot prove its commit...
+      await runTransaction(owner, async (tx) => {
+        await drainChangeFeed(tx);
+      });
+      expect(seen).toEqual([]);
+
+      // ...then settle it from two concurrent flushes on the same handle.
+      await Promise.all([drainChangeFeed(owner), drainChangeFeed(owner)]);
+      expect(seen.map((signal) => [signal.seq, signal.rowId])).toEqual([
+        [1, ROW_A],
+      ]);
+    } finally {
+      unsubscribe();
+    }
+  }, 120_000);
+
+  /**
    * A rolled-back drain frees its sequences for somebody else, so its queued
    * signals must never be published against whatever now occupies them. They
    * are withheld rather than discarded: the queue is shared by every
