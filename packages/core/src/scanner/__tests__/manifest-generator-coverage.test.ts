@@ -630,6 +630,48 @@ describe('ManifestGenerator coverage', () => {
       expect(code).not.toContain('"beta"');
     });
 
+    it('refuses to invent ancestry through an ambiguous simple name', () => {
+      // Two packages contribute a `Widget` to one collection, and a third
+      // class extends the bare name `Widget`. Resolving that parent would
+      // link `Gadget` to an arbitrary package's class and rank it at depth 1,
+      // handing ownership to a `Widget`. The ambiguity guard stops the walk
+      // instead, so every candidate sits at depth 0 and the qualified-name
+      // tie-break decides.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          '@pkg-a:Widget': def('Widget', {
+            qualifiedName: '@pkg-a:Widget' as never,
+            collection: 'contents',
+            fields: { alpha: { type: 'text', required: false } as never },
+          }),
+          '@pkg-b:Widget': def('Widget', {
+            qualifiedName: '@pkg-b:Widget' as never,
+            collection: 'contents',
+            fields: { beta: { type: 'text', required: false } as never },
+          }),
+          '@pkg-a:Gadget': def('Gadget', {
+            qualifiedName: '@pkg-a:Gadget' as never,
+            collection: 'contents',
+            extends: 'Widget',
+            fields: { gamma: { type: 'text', required: false } as never },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // '@pkg-a:Gadget' sorts first among three depth-0 candidates. Were the
+      // ambiguous parent resolved, Gadget would be depth 1 and '@pkg-a:Widget'
+      // would own the surface instead.
+      expect(code).toContain('"gamma"');
+      expect(code).not.toContain('"alpha"');
+      expect(code).not.toContain('"beta"');
+    });
+
     it('emits an empty array literal when every MCP operation is excluded', () => {
       const gen = new ManifestGenerator();
       const m = baseManifest();
