@@ -151,6 +151,25 @@ export async function startReferenceApp(): Promise<StartedReferenceApp> {
   // `realpathSync` matters: on macOS `/var` is a symlink, and the app's state
   // custody check rejects symlinked path components outright.
   const temporaryRoot = mkdtempSync(join(realpathSync(tmpdir()), 'smrt-m5-'));
+  try {
+    return await provisionReferenceApp(temporaryRoot);
+  } catch (error) {
+    // Provisioning failed before any caller could receive `stop()`, so this is
+    // the only owner of the temporary root. Remove the copied build, the
+    // file-backed database, and any unconsumed onboarding handoff rather than
+    // leaving them behind after every failed local or CI run.
+    rmSync(temporaryRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/**
+ * The provisioning body itself. Split out so {@link startReferenceApp} owns
+ * exactly one cleanup responsibility: the temporary root it created.
+ */
+async function provisionReferenceApp(
+  temporaryRoot: string,
+): Promise<StartedReferenceApp> {
   const appRoot = join(temporaryRoot, 'app');
   const dataRoot = join(temporaryRoot, 'data');
   const homeRoot = join(temporaryRoot, 'home');
@@ -337,9 +356,17 @@ export async function startReferenceApp(): Promise<StartedReferenceApp> {
     stop,
   );
 
-  const manifest = JSON.parse(
-    readFileSync(join(appRoot, '.smrt', 'manifest.json'), 'utf8'),
-  ) as Record<string, unknown>;
+  // The server is live by now, so `stop()` — not the caller's cleanup — owns
+  // the child process and the temporary root from here on.
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(
+      readFileSync(join(appRoot, '.smrt', 'manifest.json'), 'utf8'),
+    ) as Record<string, unknown>;
+  } catch (error) {
+    await stop();
+    throw error;
+  }
 
   return {
     baseURL,

@@ -160,7 +160,7 @@ const REQUIRED_BROWSER_CASES = [
   },
   {
     id: 'browser-no-self-confirmation',
-    match: /the harness never self-confirms on the user behalf/i,
+    match: /the harness never self-confirms on the user's behalf/i,
   },
   {
     id: 'browser-anonymous-fails-closed',

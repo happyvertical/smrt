@@ -53,7 +53,7 @@ test('keeps non-read effects behind their declared consent boundary', async ({
   }
 });
 
-test('the harness never self-confirms on the user behalf', async ({
+test("the harness never self-confirms on the user's behalf", async ({
   ownerPage,
   referenceApp,
 }) => {

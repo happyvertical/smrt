@@ -74,10 +74,16 @@ test('a full page reload starts from an empty model context', async ({
   expect(before).toBeGreaterThan(0);
 
   await ownerPage.reload({ waitUntil: 'networkidle' });
-  const after = await ownerPage.evaluate(
-    () => window.__m5ModelContext!.registrations().length,
+  const afterRecords = await ownerPage.evaluate(() =>
+    window.__m5ModelContext!.registrations(),
   );
-  // A reload rebuilds the boundary; a leak across documents would show as a
-  // count that kept climbing.
-  expect(after).toBe(before);
+  // The boundary is rebuilt with the document, so its monotonic counter has
+  // to restart. A context carried across the reload would number its first
+  // registration after the pre-reload ones instead of at 1.
+  expect(afterRecords[0]?.sequence).toBe(1);
+  expect(afterRecords.map((entry) => entry.sequence)).toEqual(
+    afterRecords.map((_entry, index) => index + 1),
+  );
+  // A leak across documents would also show as a count that kept climbing.
+  expect(afterRecords.length).toBe(before);
 });
