@@ -119,6 +119,56 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
 ]);
 
 /**
+ * Framework base classes to exclude from the ancestor **method** merge
+ * below (#2624). Unlike fields, methods are never columns, so they never
+ * needed the STI-vs-CTI field-merge rule above — they inherited it only by
+ * sharing the same loop.
+ *
+ * Deliberately NARROWER than `FRAMEWORK_ABSTRACT_BASE_NAMES`: only the
+ * three universal object/collection primitives (`SmrtObject`, `SmrtClass`,
+ * `SmrtCollection`) are internal-only. These are the same three the
+ * runtime resolver's `getAllMethods()`
+ * (`packages/core/src/registry/inheritance-resolver.ts`) explicitly skips
+ * by name, and the same three the field-merge doc comment above excludes
+ * from `FRAMEWORK_ABSTRACT_BASE_NAMES` for the identical reason: their
+ * surface (`save`, `destroy`, `toJSON`, `withTransaction`, ...) is generic
+ * object-lifecycle plumbing, never a subclass-specific action.
+ *
+ * `FRAMEWORK_ABSTRACT_BASE_NAMES` (`SmrtJunction`, `SmrtHierarchical`,
+ * `SmrtPolymorphicAssociation`, `SmrtReport`, `SmrtReportCollection`) is
+ * intentionally NOT folded in here, unlike an earlier version of this fix.
+ * Those classes are mixin-style bases whose declared methods ARE the
+ * subclass's real, intended public API — the same way `SmrtHierarchical.
+ * parentId` is a real, intended field, which is exactly why
+ * `FRAMEWORK_ABSTRACT_BASE_NAMES` fields already merge into every subclass
+ * regardless of STI/CTI (see above). Directly confirmed for two of the
+ * five: `SmrtJunction.attach`/`detach`/`byLeft`/`byRight`/`setLinks`
+ * (`packages/core/src/junction.ts`) — a `packages/template-sveltekit/
+ * __tests__/runtimeProfileParity.test.ts` snapshot broke when an earlier
+ * revision of this fix folded all 8 `FRAMEWORK_BASE_CLASSES` in here,
+ * which is how this got caught — and `SmrtHierarchical.getParent`/
+ * `getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`
+ * (`packages/core/src/hierarchical.ts`). `SmrtPolymorphicAssociation`
+ * follows the identical pattern by inspection but has no dedicated
+ * regression test yet. `SmrtReport`/`SmrtReportCollection` are the
+ * least-audited of the five: `SmrtReportCollection` overrides `list`/`get`
+ * (`packages/reports/src/report.ts`), which are also the universal CRUD
+ * operation names — a downstream `class X extends SmrtReportCollection`
+ * with default (non-strict) MCP config could see a generated custom-action
+ * tool collide with the standard `list`/`get` tool name. No in-repo
+ * subclass exercises this today, so it doesn't regress anything this PR
+ * touches, but a future MCP-generator fix should give the non-strict path
+ * the same CRUD-operation skip `CLIGenerator` already has, independent of
+ * this exclusion set. Keep in sync with the field-merge set's own doc
+ * comment; this one governs method merging only.
+ */
+const FRAMEWORK_METHOD_BASE_NAMES = new Set([
+  'SmrtObject',
+  'SmrtClass',
+  'SmrtCollection',
+]);
+
+/**
  * Infer visibility from file path and explicit config
  *
  * Priority:
@@ -1263,59 +1313,6 @@ export class ManifestGenerator {
   }
 
   /**
-   * Check whether `obj` extends a framework abstract base class anywhere
-   * in its chain.
-   *
-   * Framework abstract bases (`SmrtHierarchical`, `SmrtJunction`, …) have
-   * no table of their own — fields they declare must be merged into every
-   * subclass's manifest, even when the subclass uses CTI. Without this,
-   * a class like `Account extends SmrtHierarchical` would silently lose
-   * `parentId` from its `fields` map and downstream WHERE-clause
-   * validation would reject queries on the inherited column.
-   *
-   * Identified by name against the same hardcoded set the scanner's
-   * `FRAMEWORK_BASE_CLASSES` recognizes (`packages/scanner/src/
-   * inheritance-resolver.ts`). Keep the two lists in sync.
-   */
-  private extendsFrameworkAbstractBase(
-    obj: SmartObjectDefinition,
-    objectsByName: Map<string, SmartObjectDefinition>,
-    manifest: SmartObjectManifest,
-  ): boolean {
-    if (!obj.extends) return false;
-
-    let currentClass: string | undefined = obj.extends;
-    const visited = new Set<string>();
-
-    while (currentClass) {
-      if (visited.has(currentClass)) break;
-      visited.add(currentClass);
-
-      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(currentClass)) {
-        return true;
-      }
-
-      let parentObj = objectsByName.get(currentClass);
-      if (
-        !parentObj &&
-        manifest.smrtDependencies &&
-        manifest.smrtDependencies.length > 0
-      ) {
-        parentObj = this.loadParentFromExternalPackage(
-          currentClass,
-          manifest.smrtDependencies,
-          objectsByName,
-        );
-      }
-      if (!parentObj) break;
-
-      currentClass = parentObj.extends;
-    }
-
-    return false;
-  }
-
-  /**
    * Resolve a class name (simple `Content` or qualified `@pkg:Content`) to
    * the key it is stored under in `manifest.objects`, or `undefined` when the
    * manifest does not carry it. Manifest keys are qualified names; `extends`
@@ -1479,26 +1476,28 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.extends) continue; // No parent, skip
 
-      // Merge inherited fields when ANY of:
-      //   (a) STI is in play — shared table with parent, full chain merges.
-      //   (b) An ancestor in the chain is a framework abstract base class
-      //       (SmrtHierarchical, SmrtJunction, …) — those have no table of
-      //       their own, so structural fields they declare (e.g.
-      //       `SmrtHierarchical.parentId`) must propagate into every CTI
-      //       subclass's manifest, otherwise WHERE-clause validation
-      //       rejects queries against the inherited column.
-      // For plain CTI through a user-defined base with its own table, we
-      // skip merging — each class keeps its own table layout.
+      // Always walk the chain below — fields and methods now have
+      // independent merge rules (#2624):
+      //   FIELDS merge when ANY of:
+      //     (a) STI is in play — shared table with parent, full chain
+      //         merges.
+      //     (b) An ancestor in the chain is a framework abstract base class
+      //         (SmrtHierarchical, SmrtJunction, …) — those have no table of
+      //         their own, so structural fields they declare (e.g.
+      //         `SmrtHierarchical.parentId`) must propagate into every CTI
+      //         subclass's manifest, otherwise WHERE-clause validation
+      //         rejects queries against the inherited column.
+      //     For plain CTI through a user-defined base with its own table,
+      //     field merging is skipped per-ancestor below — each class keeps
+      //     its own table layout.
+      //   METHODS merge from every ancestor except framework base classes,
+      //     independent of STI/CTI — a concrete decorated ancestor's public
+      //     methods are real inherited API regardless of table strategy.
+      //     There is no early exit here for a "plain CTI through a
+      //     user-defined base" class: that is exactly the case whose
+      //     methods previously went unmerged (the under-report half of
+      //     #2624).
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
-      const extendsFrameworkBase = this.extendsFrameworkAbstractBase(
-        obj,
-        objectsByName,
-        manifest,
-      );
-
-      if (!usesSTI && !extendsFrameworkBase) {
-        continue; // Plain CTI through a user-defined base — skip.
-      }
 
       logger.info(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
@@ -1570,41 +1569,68 @@ export class ManifestGenerator {
 
         const ancestorIsFrameworkBase =
           FRAMEWORK_ABSTRACT_BASE_NAMES.has(ancestorName);
-        if (!usesSTI && !ancestorIsFrameworkBase) {
-          continue;
-        }
 
-        // Keep the oldest concrete STI declaration, but let a concrete class
-        // replace a framework abstract default. For example, Event refines
-        // SmrtHierarchical.parentId with its relationship target and an
-        // engine-scoped physical constraint. The local child's own fields are
-        // still applied after this loop.
-        for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
-          const existingOwner = mergedFieldOwners.get(fieldName);
-          const replacesFrameworkDefault =
-            existingOwner !== undefined &&
-            FRAMEWORK_ABSTRACT_BASE_NAMES.has(
-              this.simpleClassName(existingOwner),
-            ) &&
-            !FRAMEWORK_ABSTRACT_BASE_NAMES.has(
-              this.simpleClassName(ancestorName),
-            );
-          if (!existingOwner || replacesFrameworkDefault) {
-            mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
-              ancestorName,
-              fieldName,
-              fieldDef,
-              obj.className,
-            );
-            mergedFieldOwners.set(fieldName, ancestorName);
+        // FIELDS: STI subclasses share one table, so every ancestor's
+        // columns are needed. CTI subclasses pull fields only from framework
+        // abstract bases — a concrete `@smrt()` ancestor has its own table,
+        // so merging its columns here would generate the wrong schema.
+        if (usesSTI || ancestorIsFrameworkBase) {
+          // Keep the oldest concrete STI declaration, but let a concrete
+          // class replace a framework abstract default. For example, Event
+          // refines SmrtHierarchical.parentId with its relationship target
+          // and an engine-scoped physical constraint. The local child's own
+          // fields are still applied after this loop.
+          for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
+            const existingOwner = mergedFieldOwners.get(fieldName);
+            const replacesFrameworkDefault =
+              existingOwner !== undefined &&
+              FRAMEWORK_ABSTRACT_BASE_NAMES.has(
+                this.simpleClassName(existingOwner),
+              ) &&
+              !FRAMEWORK_ABSTRACT_BASE_NAMES.has(
+                this.simpleClassName(ancestorName),
+              );
+            if (!existingOwner || replacesFrameworkDefault) {
+              mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
+                ancestorName,
+                fieldName,
+                fieldDef,
+                obj.className,
+              );
+              mergedFieldOwners.set(fieldName, ancestorName);
+            }
           }
         }
 
-        // Merge methods (child methods override parent methods)
-        for (const [methodName, methodDef] of Object.entries(
-          ancestor.methods || {},
-        )) {
-          if (!mergedMethods[methodName]) {
+        // METHODS (#2624): methods are not columns and never needed the
+        // STI/CTI field rule above — they inherited it only by sharing the
+        // loop. Give them their own rule instead: merge from every ancestor
+        // except the universal object/collection primitives in
+        // FRAMEWORK_METHOD_BASE_NAMES (see its doc comment — deliberately
+        // narrower than FRAMEWORK_ABSTRACT_BASE_NAMES), independent of
+        // `usesSTI`. This both stops STI subclasses from absorbing
+        // `SmrtObject`/`SmrtClass`/`SmrtCollection` internals (over-merge)
+        // and lets CTI subclasses inherit a concrete decorated ancestor's
+        // own public methods (under-merge), matching the runtime resolver's
+        // `getAllMethods()` — while still letting a framework abstract
+        // base's own intended API (e.g. SmrtJunction.attach/detach,
+        // SmrtHierarchical.getChildren) merge in, the same way its fields
+        // already do.
+        //
+        // Assignment is unconditional (not "first ancestor wins"): the
+        // outer loop walks `inheritanceChain` base-to-child, so a later
+        // (more-derived) ancestor's override must replace an earlier one —
+        // e.g. a middle class that overrides a grandparent method. This
+        // matches the runtime resolver's own `getAllMethods()`, which
+        // walks the same base-to-child order and does a plain `Map.set()`
+        // per ancestor for the identical reason (see its "Child methods
+        // override parent methods (no merging)" comment). The child's own
+        // methods still win over everything via the unconditional
+        // "Add child's own methods" step below.
+        if (!FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName)) {
+          for (const [methodName, methodDef] of Object.entries(
+            ancestor.methods || {},
+          )) {
             mergedMethods[methodName] = methodDef;
           }
         }

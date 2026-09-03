@@ -67,6 +67,21 @@ function scan(objects: SmartObjectDefinition[]): ScanResult {
   };
 }
 
+/** Build a minimal valid MethodDefinition; only `name` varies per call. */
+function method(
+  name: string,
+  returnType = 'void',
+): SmartObjectDefinition['methods'][string] {
+  return {
+    name,
+    async: true,
+    parameters: [],
+    returnType,
+    isStatic: false,
+    isPublic: true,
+  };
+}
+
 describe('ManifestGenerator coverage', () => {
   describe('schema generation strategies', () => {
     it('generates a CTI table schema for a plain SmrtObject subclass', () => {
@@ -164,6 +179,141 @@ describe('ManifestGenerator coverage', () => {
       expect(account.fields.parentId.type).toBe('foreignKey');
       expect(account.fields.parentId.related).toBe('Account');
       expect(account.fields.parentId.required).toBe(false);
+    });
+  });
+
+  describe('ancestor method merge (#2624)', () => {
+    it("excludes SmrtObject/SmrtClass methods from an STI child's merged methods", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          // Framework base declared inline (no @smrt table of its own) —
+          // simulates it being pulled in via cross-package external-manifest
+          // loading, the same way #2624 was discovered in real STI classes.
+          def('SmrtObject', {
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: {
+              save: method('save'),
+              toJSON: method('toJSON'),
+            },
+          }),
+          def('Content', {
+            extends: 'SmrtObject',
+            decoratorConfig: { tableStrategy: 'sti' },
+            fields: { title: { type: 'text' } },
+          }),
+          def('Article', {
+            extends: 'Content',
+            fields: { body: { type: 'text' } },
+            methods: { publish: method('publish') },
+          }),
+        ]),
+      ]);
+
+      const article = manifest.objects.article;
+      // STI still needs Content's fields merged (shared table)...
+      expect(article.fields.title).toBeDefined();
+      // ...but SmrtObject's own internal methods must never be treated as
+      // the child's inherited custom actions.
+      expect(article.methods.save).toBeUndefined();
+      expect(article.methods.toJSON).toBeUndefined();
+      // The child's own method is unaffected.
+      expect(article.methods.publish).toBeDefined();
+    });
+
+    it("merges a framework ABSTRACT base's own declared method (SmrtJunction.attach) into its subclass, unlike a universal primitive (SmrtCollection.list)", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          // Both declared inline (no @smrt table of their own), same as how
+          // framework bases are pulled in via cross-package external-manifest
+          // loading in real builds.
+          def('SmrtCollection', {
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: { list: method('list') },
+          }),
+          def('SmrtJunction', {
+            extends: 'SmrtCollection',
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: { attach: method('attach') },
+          }),
+          def('ContentAssetCollection', {
+            extends: 'SmrtJunction',
+            fields: { contentId: { type: 'foreignKey', related: 'Content' } },
+          }),
+        ]),
+      ]);
+
+      const collection = manifest.objects.contentassetcollection;
+      // SmrtJunction.attach/detach/byLeft/byRight/setLinks are the junction
+      // collection's real, intended public API (packages/core/src/junction.ts)
+      // -- the same way SmrtHierarchical.parentId is a real, intended field --
+      // so they must merge into every subclass, matching this PR's #2624
+      // regression fix (a template-sveltekit snapshot caught this when an
+      // earlier revision wrongly excluded all 8 FRAMEWORK_BASE_CLASSES).
+      expect(collection.methods.attach).toBeDefined();
+      // SmrtCollection is one of the 3 universal object/collection
+      // primitives (FRAMEWORK_METHOD_BASE_NAMES) -- its own methods are
+      // never a subclass-specific action.
+      expect(collection.methods.list).toBeUndefined();
+    });
+
+    it("merges a concrete decorated ancestor's public methods into a CTI child", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          def('Contract', {
+            fields: { name: { type: 'text' } },
+            methods: { approve: method('approve') },
+          }),
+          def('Invoice', {
+            extends: 'Contract',
+            fields: { total: { type: 'decimal' } },
+          }),
+        ]),
+      ]);
+
+      const invoice = manifest.objects.invoice;
+      // CTI: Contract's own fields must NOT merge onto Invoice — they have
+      // separate tables.
+      expect(invoice.fields.name).toBeUndefined();
+      // But Contract's public method IS inherited at runtime
+      // (ObjectRegistry.getAllMethods() already walks this chain), so the
+      // manifest must agree and merge it too.
+      expect(invoice.methods.approve).toBeDefined();
+    });
+
+    it("lets a middle ancestor's override win over a grandparent method, matching runtime child-over-parent precedence", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          def('GrandParent', {
+            methods: { greet: method('greet', 'string') },
+          }),
+          def('MiddleParent', {
+            extends: 'GrandParent',
+            // Overrides GrandParent's `greet` with a distinguishable
+            // signature -- this is what a real override looks like.
+            methods: { greet: method('greet', 'number') },
+          }),
+          def('Leaf', {
+            extends: 'MiddleParent',
+          }),
+        ]),
+      ]);
+
+      // The runtime resolver (ObjectRegistry.getAllMethods()) walks the
+      // chain base-to-child and does a plain last-write-wins Map.set()
+      // per ancestor, so MiddleParent's override is what Leaf actually
+      // gets at runtime. The static manifest must agree -- NOT retain
+      // GrandParent's original (shadowed) declaration.
+      expect(manifest.objects.leaf.methods.greet.returnType).toBe('number');
     });
   });
 
@@ -879,10 +1029,10 @@ describe('ManifestGenerator coverage', () => {
 
   // These tests exercise the external-package resolution paths
   // (loadParentFromExternalPackage, the external-STI-base branch of
-  // generateSchemas, createAggregatedManifest's external merge, and the
-  // external loop in extendsFrameworkAbstractBase). They require a real
-  // manifest on disk that loadExternalManifestSync can resolve via package
-  // exports, so each test writes a throwaway node_modules package.
+  // generateSchemas, and createAggregatedManifest's external merge). They
+  // require a real manifest on disk that loadExternalManifestSync can
+  // resolve via package exports, so each test writes a throwaway
+  // node_modules package.
   describe('external SMRT package resolution', () => {
     let dir: string;
     let prev: string;
