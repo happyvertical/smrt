@@ -67,6 +67,18 @@ function scan(objects: SmartObjectDefinition[]): ScanResult {
   };
 }
 
+/** Build a minimal valid MethodDefinition; only `name` varies per call. */
+function method(name: string): SmartObjectDefinition['methods'][string] {
+  return {
+    name,
+    async: true,
+    parameters: [],
+    returnType: 'void',
+    isStatic: false,
+    isPublic: true,
+  };
+}
+
 describe('ManifestGenerator coverage', () => {
   describe('schema generation strategies', () => {
     it('generates a CTI table schema for a plain SmrtObject subclass', () => {
@@ -164,6 +176,73 @@ describe('ManifestGenerator coverage', () => {
       expect(account.fields.parentId.type).toBe('foreignKey');
       expect(account.fields.parentId.related).toBe('Account');
       expect(account.fields.parentId.required).toBe(false);
+    });
+  });
+
+  describe('ancestor method merge (#2624)', () => {
+    it("excludes SmrtObject/SmrtClass methods from an STI child's merged methods", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          // Framework base declared inline (no @smrt table of its own) —
+          // simulates it being pulled in via cross-package external-manifest
+          // loading, the same way #2624 was discovered in real STI classes.
+          def('SmrtObject', {
+            collection: '',
+            decoratorConfig: {},
+            fields: {},
+            methods: {
+              save: method('save'),
+              toJSON: method('toJSON'),
+            },
+          }),
+          def('Content', {
+            extends: 'SmrtObject',
+            decoratorConfig: { tableStrategy: 'sti' },
+            fields: { title: { type: 'text' } },
+          }),
+          def('Article', {
+            extends: 'Content',
+            fields: { body: { type: 'text' } },
+            methods: { publish: method('publish') },
+          }),
+        ]),
+      ]);
+
+      const article = manifest.objects.article;
+      // STI still needs Content's fields merged (shared table)...
+      expect(article.fields.title).toBeDefined();
+      // ...but SmrtObject's own internal methods must never be treated as
+      // the child's inherited custom actions.
+      expect(article.methods.save).toBeUndefined();
+      expect(article.methods.toJSON).toBeUndefined();
+      // The child's own method is unaffected.
+      expect(article.methods.publish).toBeDefined();
+    });
+
+    it("merges a concrete decorated ancestor's public methods into a CTI child", () => {
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest([
+        scan([
+          def('Contract', {
+            fields: { name: { type: 'text' } },
+            methods: { approve: method('approve') },
+          }),
+          def('Invoice', {
+            extends: 'Contract',
+            fields: { total: { type: 'decimal' } },
+          }),
+        ]),
+      ]);
+
+      const invoice = manifest.objects.invoice;
+      // CTI: Contract's own fields must NOT merge onto Invoice — they have
+      // separate tables.
+      expect(invoice.fields.name).toBeUndefined();
+      // But Contract's public method IS inherited at runtime
+      // (ObjectRegistry.getAllMethods() already walks this chain), so the
+      // manifest must agree and merge it too.
+      expect(invoice.methods.approve).toBeDefined();
     });
   });
 
@@ -708,10 +787,10 @@ describe('ManifestGenerator coverage', () => {
 
   // These tests exercise the external-package resolution paths
   // (loadParentFromExternalPackage, the external-STI-base branch of
-  // generateSchemas, createAggregatedManifest's external merge, and the
-  // external loop in extendsFrameworkAbstractBase). They require a real
-  // manifest on disk that loadExternalManifestSync can resolve via package
-  // exports, so each test writes a throwaway node_modules package.
+  // generateSchemas, and createAggregatedManifest's external merge). They
+  // require a real manifest on disk that loadExternalManifestSync can
+  // resolve via package exports, so each test writes a throwaway
+  // node_modules package.
   describe('external SMRT package resolution', () => {
     let dir: string;
     let prev: string;
