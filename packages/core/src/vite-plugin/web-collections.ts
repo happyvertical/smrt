@@ -655,9 +655,11 @@ export function selectWebMcpToolEntries(
   for (const actionHost of objectActionHosts) {
     const owner = objectOwners.get(actionHost.collection);
     if (!owner) continue;
-    for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
-      compareText,
-    )) {
+    const hostActions = resolveApiActionSet(actionHost, manifest);
+    const emittedCrud = new Set(
+      [...hostActions].filter(isCrudOperation).map((verb) => verb),
+    );
+    for (const action of [...hostActions].sort(compareText)) {
       // A browser tool id is lowercased whole (`${prefix}_${action}`), so this
       // namespace is case-folded even though the API action set that feeds it
       // is not. Two guards, in order (#2648):
@@ -670,14 +672,23 @@ export function selectWebMcpToolEntries(
       //    from `/products` — so this reservation belongs here, not in
       //    `resolveApiActionSet`.
       //
-      //    UNCONDITIONAL, by parity with `generators/mcp.ts`: it drops the
-      //    action even when config excluded the CRUD verb that would own the
-      //    id, so `api: { exclude: ['list'] }` plus a public `List()` emits no
-      //    `*_list` browser tool. That keeps the MCP and WebMCP catalogs
-      //    agreeing — `runtimeSurfaceParity` compares them — at the cost of a
-      //    tool whose REST route still exists. The CLI's conditional rule does
-      //    NOT apply here; see the emitter table on `CRUD_OPERATIONS`.
-      if (isCrudToolAction(action) && !isCrudOperation(action)) continue;
+      //    CONDITIONAL on the CRUD verb actually being in this host's action
+      //    set. `generators/mcp.ts` reserves unconditionally because its
+      //    dispatch parses the verb out of the tool id, so `${obj}_list` can
+      //    only ever run the built-in list. A WebMCP descriptor is different:
+      //    a non-CRUD action carries its own `route` from
+      //    `resolveApiActionRouteConfig`, so with `api: { include: ['List'] }`
+      //    the id `product_list` genuinely dispatches to `/products/List` and
+      //    is the ONLY tool for that id. Dropping it there would make a
+      //    custom-action-only model undiscoverable while its REST route still
+      //    answers (#2648).
+      if (
+        isCrudToolAction(action) &&
+        !isCrudOperation(action) &&
+        emittedCrud.has(action.toLowerCase())
+      ) {
+        continue;
+      }
       // 2. Anything still colliding after that is two custom methods differing
       //    only in case; keep the first so one id yields one descriptor.
       const identity = `${owner.collection}\0${action.toLowerCase()}`;
@@ -706,15 +717,23 @@ export function selectWebMcpToolEntries(
       objectOwners.get(collectionClass.collection)?.obj ??
       resolveStiCollectionOwner(manifest, itemObject);
 
-    for (const action of [
-      ...resolveApiActionSet(collectionClass, manifest),
-    ].sort(compareText)) {
-      // Same two guards, same order, as the object loop above — and the same
-      // key shape. Both loops share `entries`, so a case-sensitive key here
+    const collectionActions = resolveApiActionSet(collectionClass, manifest);
+    const collectionEmittedCrud = new Set(
+      [...collectionActions].filter(isCrudOperation),
+    );
+    for (const action of [...collectionActions].sort(compareText)) {
+      // Same two guards, same order and conditionality as the object loop
+      // above — and the same key shape. Both loops share `entries`, so a case-sensitive key here
       // would miss the lowercased one written there and insert a second entry
       // for the same tool id, breaking the ownership rule this loop exists to
       // enforce (#2648).
-      if (isCrudToolAction(action) && !isCrudOperation(action)) continue;
+      if (
+        isCrudToolAction(action) &&
+        !isCrudOperation(action) &&
+        collectionEmittedCrud.has(action.toLowerCase())
+      ) {
+        continue;
+      }
       const identity = `${collectionClass.collection}\0${action.toLowerCase()}`;
       const existing = entries.get(identity);
       if (
@@ -1024,12 +1043,21 @@ function buildWebToolDescriptorsForHost(input: {
   // throw `Duplicate WebMCP tool name`, aborting registration of EVERY tool on
   // the page rather than just the colliding pair (#2648).
   //
-  // Same two guards, same order, as `selectWebMcpToolEntries`: drop a cased
-  // CRUD impostor first (it must not outrank the real verb), then fold-dedupe
-  // whatever still collides.
+  // Same two guards, same order and conditionality as
+  // `selectWebMcpToolEntries`: drop a cased CRUD impostor only when the verb it
+  // shadows is actually in this action set (it must not outrank the real verb,
+  // but it is the only tool for that id when the verb is absent), then
+  // fold-dedupe whatever still collides.
+  const emittedCrudActions = new Set(input.actions.filter(isCrudOperation));
   const seenToolActions = new Set<string>();
   const actions = input.actions.filter((action) => {
-    if (isCrudToolAction(action) && !isCrudOperation(action)) return false;
+    if (
+      isCrudToolAction(action) &&
+      !isCrudOperation(action) &&
+      emittedCrudActions.has(action.toLowerCase())
+    ) {
+      return false;
+    }
     const folded = action.toLowerCase();
     if (seenToolActions.has(folded)) return false;
     seenToolActions.add(folded);

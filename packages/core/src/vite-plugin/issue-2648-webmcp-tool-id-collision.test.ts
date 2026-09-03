@@ -173,6 +173,28 @@ describe('#2648 WebMCP tool-id collisions', () => {
     ]);
   });
 
+  it('keeps a cased action when no CRUD tool owns the id', () => {
+    // `api: { include: ['List'] }` emits no generated `list`, so `product_list`
+    // is unowned and the custom action is the ONLY tool for it — and unlike an
+    // MCP tool, whose dispatch parses the verb from the id, this descriptor
+    // carries its own route (`/products/List`) and genuinely invokes `List()`.
+    // Reserving here would make a custom-action-only model undiscoverable while
+    // its REST route still answers.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: { List: publicMethod('List') },
+        decoratorConfig: { api: { include: ['List'] } },
+      }),
+    );
+
+    const ids = toolIds(m);
+
+    expect(ids).toContain('product_list');
+    expect(ids.filter((id) => id === 'product_list')).toEqual(['product_list']);
+  });
+
   it('produces no duplicate tool id for any object in the manifest', () => {
     const m = manifest(
       obj({
