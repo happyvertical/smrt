@@ -518,9 +518,16 @@ function configuredSurfaces(
   // `cli: { include: ['list', 'get'] }` a public `create()` is a reachable
   // `${object}:create` there that this projection does not report.
   //
-  // Retargeting this projection at the shipped binary is tracked on #2664, and
-  // is a CONTRACT CHANGE rather than a cleanup: the two generators genuinely
-  // disagree, so `smrt-knowledge.json` snapshots move. Predates #2646.
+  // A second divergence, from #2651: `resolveCustomMethodNames` filters only
+  // through `reservesCrudName`, never `isFrameworkLifecycleMethod`. So a class
+  // declaring its own `save()` gets a reported `cli` surface that
+  // `CLIGenerator` refuses to run — `assertCommandExposed` throws on it. Also
+  // pre-existing on main, not introduced or widened here.
+  //
+  // Retargeting this projection at the shipped binary, and closing the
+  // lifecycle gap, are tracked on #2664. Both are CONTRACT CHANGES rather than
+  // cleanups: the generators genuinely disagree, so `smrt-knowledge.json`
+  // snapshots move. Predates #2646.
   const collectionClass = isSurfaceCollectionClass(manifest, object);
   const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => {

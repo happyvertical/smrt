@@ -161,9 +161,13 @@ export interface ResolvableMethod {
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
  *   full rationale; do not "simplify" that branch onto this function.
  *
- * `crudActionNames` is supplied by the caller rather than duplicated here:
- * `CLIGenerator` and the SvelteKit generator each already keep their own
- * copy of the five CRUD verb names (`CRUD_OPERATIONS`/`STANDARD_API_ACTIONS`).
+ * `crudActionNames` stays a parameter because the callers do not agree on one
+ * list. `CLIGenerator` now passes {@link CRUD_OPERATIONS}, which #2646 moved
+ * into this module — so for that caller the argument is a round trip and could
+ * be defaulted. The SvelteKit generator still passes its own
+ * `STANDARD_API_ACTIONS`, and `vite-plugin/index.ts` an inline literal that
+ * additionally reserves `save`, so the parameter cannot be removed until those
+ * copies are retired (#2665).
  */
 export function resolveCustomActionNames(
   methods: Iterable<[string, ResolvableMethod]>,
