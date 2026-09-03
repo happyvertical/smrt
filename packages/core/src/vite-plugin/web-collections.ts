@@ -1013,7 +1013,28 @@ function buildWebToolDescriptorsForHost(input: {
   options: { kebabRoutes?: boolean };
   collectionHost?: boolean;
 }): ToolDescriptor[] {
-  const { owner, actionHost, actions, options, collectionHost = false } = input;
+  const { owner, actionHost, options, collectionHost = false } = input;
+  // Every descriptor id is `${prefix}_${action}` lowercased whole, so this is
+  // the one choke point both emission paths pass through: the canonical
+  // per-entry `buildWebMcpToolDefinition`, and the legacy per-collection
+  // `buildWebToolDescriptors` that fills `collectionDefinitions[].toolDescriptors`.
+  // The canonical path is already filtered by `selectWebMcpToolEntries`, so
+  // this only bites for the legacy one — where an unfiltered `entry.actions`
+  // would emit two `product_list` descriptors and make `validateProspectiveTools`
+  // throw `Duplicate WebMCP tool name`, aborting registration of EVERY tool on
+  // the page rather than just the colliding pair (#2648).
+  //
+  // Same two guards, same order, as `selectWebMcpToolEntries`: drop a cased
+  // CRUD impostor first (it must not outrank the real verb), then fold-dedupe
+  // whatever still collides.
+  const seenToolActions = new Set<string>();
+  const actions = input.actions.filter((action) => {
+    if (isCrudToolAction(action) && !isCrudOperation(action)) return false;
+    const folded = action.toLowerCase();
+    if (seenToolActions.has(folded)) return false;
+    seenToolActions.add(folded);
+    return true;
+  });
   const webFields = buildWebFieldDefinitions(owner);
   const fields: ToolFieldMeta[] = Object.entries(webFields).map(
     ([name, def]) => ({

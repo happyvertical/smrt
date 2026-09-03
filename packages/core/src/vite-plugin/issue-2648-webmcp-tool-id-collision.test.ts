@@ -23,6 +23,8 @@ import type {
 } from '../scanner/types.js';
 import {
   buildWebMcpToolDefinitions,
+  buildWebToolDescriptors,
+  selectWebCollectionEntries,
   selectWebMcpToolEntries,
 } from './web-collections.js';
 
@@ -76,6 +78,32 @@ function selectedActions(m: SmartObjectManifest): string[] {
 }
 
 describe('#2648 WebMCP tool-id collisions', () => {
+  it('emits unique ids on the LEGACY per-collection descriptor path too', () => {
+    // `collectionDefinitions[].toolDescriptors` is built from the unfiltered
+    // `entry.actions`, not from the guarded selector. A duplicate id there makes
+    // `validateProspectiveTools` throw `Duplicate WebMCP tool name`, which
+    // aborts registration of EVERY tool on the page — worse than the collision
+    // itself. The canonical path is already covered by the tests below.
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        methods: {
+          List: publicMethod('List'),
+          syncNow: publicMethod('syncNow'),
+        },
+      }),
+    );
+
+    const ids = selectWebCollectionEntries(m).flatMap((entry) =>
+      buildWebToolDescriptors(entry).map((d) => d.name),
+    );
+    const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+
+    expect(duplicates).toEqual([]);
+    expect(ids).toContain('product_syncnow');
+  });
+
   it('emits one descriptor per tool id when a method shadows a CRUD verb case-insensitively', () => {
     const m = manifest(
       obj({
