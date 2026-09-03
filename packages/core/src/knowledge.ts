@@ -652,6 +652,7 @@ function configuredOperations(
   const custom = resolveCustomMethodNames(
     Object.entries(object.methods),
     config,
+    kind,
   );
   // REST additionally refuses a custom action whose receiver cannot exist —
   // a collection class emits only collection-scoped routes, and a model class
@@ -680,18 +681,35 @@ function resolveCrudOperations(config: unknown): string[] {
 function resolveCustomMethodNames(
   methods: Iterable<[string, { isPublic?: boolean }]>,
   config: unknown,
+  kind: 'api' | 'cli' | 'mcp',
 ): string[] {
   const { include, exclude } = includeExcludeConfig(config);
   const excluded = new Set(exclude ?? []);
   const names: string[] = [];
   for (const [name, method] of methods) {
-    if (STANDARD_OPERATIONS.includes(name)) continue;
+    if (reservesCrudName(kind, name)) continue;
     if (!method.isPublic) continue;
     if (excluded.has(name)) continue;
     if (include !== undefined && !include.includes(name)) continue;
     names.push(name);
   }
   return names;
+}
+
+/**
+ * Whether `kind` reserves `name` for its generated CRUD operation, so the
+ * method behind it is not reported as a distinct surface.
+ *
+ * MCP folds case: its tool ids are lowercased whole
+ * (`` `${object}_${method}`.toLowerCase() ``), so a method named `List` lands on
+ * the `${object}_list` identifier the CRUD tool already owns and
+ * `MCPGenerator` emits no separate tool for it (#2646). REST and the CLI keep
+ * the declared casing in their route/command names, so only an exact match is
+ * reserved there.
+ */
+function reservesCrudName(kind: 'api' | 'cli' | 'mcp', name: string): boolean {
+  const candidate = kind === 'mcp' ? name.toLowerCase() : name;
+  return STANDARD_OPERATIONS.includes(candidate);
 }
 
 function includeExcludeConfig(config: unknown): {

@@ -193,17 +193,24 @@ export function resolveCustomActionNames(
  * This is a NAMESPACE rule, independent of where the method came from — a
  * class's own `list()` collides exactly as a merged ancestor's does (#2646).
  *
- * What a collision means differs by transport, so consult the emitting surface
- * rather than assuming the verb is always reserved:
+ * What a collision means differs by EMITTER — there are three, and two of them
+ * reserve the verb unconditionally — so consult the one you are changing rather
+ * than assuming a single rule:
  *
- * - MCP reserves it unconditionally. `executeAction` switches on the verb
- *   parsed out of the tool id, so `${object}_list` runs the built-in list
- *   whichever branch emitted it — the class's method could never run, and
+ * - `generators/mcp.ts` reserves unconditionally. `executeAction` switches on
+ *   the verb parsed out of the tool id, so `${object}_list` runs the built-in
+ *   list whichever branch emitted it — the class's method could never run, and
  *   emitting one would hand the caller an operation `include` never named.
- * - The CLI reserves it only where the CRUD command is actually emitted. Each
- *   custom command carries its own handler invoking the class's method, so with
- *   `cli: { include: ['list', 'get'] }` a public `create()` collides with
- *   nothing and stays a legitimate, reachable `${object}:create`.
+ * - `generators/cli.ts` (`CLIGenerator`) also reserves unconditionally.
+ *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
+ *   action never reaches custom-method resolution, and `listCommands` skips
+ *   those names outright.
+ * - `packages/cli/src/cli-generator.ts` — the generator behind the shipped
+ *   `smrt` object commands — reserves it only where the CRUD command is
+ *   actually emitted. Each command it pushes carries its own handler invoking
+ *   the class's method, so with `cli: { include: ['list', 'get'] }` a public
+ *   `create()` collides with nothing and stays a legitimate, reachable
+ *   `${object}:create`.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the

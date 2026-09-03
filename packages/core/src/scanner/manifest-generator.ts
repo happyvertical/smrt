@@ -157,10 +157,12 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
  * with default (non-strict) MCP config would have seen a generated
  * custom-action tool collide with the standard `list`/`get` tool name.
  * #2646 closed that separately and independently of this exclusion set: the
- * generators now refuse to expose a CRUD-named method as a custom action at
- * all, reading one shared verb list (`CRUD_OPERATIONS` in
- * `generators/custom-action.ts`). Keep in sync with the field-merge set's
- * own doc comment; this one governs method merging only.
+ * MCP generator now refuses to expose a CRUD-named method as a custom action,
+ * matching case-folded because its tool ids are lowercased whole. Each emitter
+ * reads the same verb list (`CRUD_OPERATIONS` in
+ * `generators/custom-action.ts`) but reserves on its own terms — see that
+ * docblock. Keep in sync with the field-merge set's own doc comment; this one
+ * governs method merging only.
  */
 const FRAMEWORK_METHOD_BASE_NAMES = new Set([
   'SmrtObject',
