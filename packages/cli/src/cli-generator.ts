@@ -15,7 +15,7 @@ import type {
   SmrtCollectionOptions,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { isCrudOperation, ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -1204,9 +1204,8 @@ export class CLIGenerator {
     const methods = await ObjectRegistry.getAllMethods(objectName);
 
     // Check if include list contains any custom method names (indicates strict mode)
-    const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
     const hasCustomMethodsInInclude = included?.some(
-      (item) => !crudOperations.includes(item),
+      (item) => !isCrudOperation(item),
     );
 
     for (const [methodName, methodDef] of methods as Map<
@@ -1223,7 +1222,7 @@ export class CLIGenerator {
         // `create()` collides with nothing and stays a reachable custom
         // command exactly as before.
         if (
-          crudOperations.includes(methodName) &&
+          isCrudOperation(methodName) &&
           shouldInclude(
             methodName as 'list' | 'get' | 'create' | 'update' | 'delete',
           )

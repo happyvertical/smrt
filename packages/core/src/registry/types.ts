@@ -460,12 +460,21 @@ export interface SmartObjectConfig {
     | boolean
     | {
         /**
-         * Include specific tools (supports both standard CRUD actions and custom methods)
+         * Include specific tools (supports both standard CRUD actions and custom methods).
+         *
+         * Entries are matched EXACTLY and are case-sensitive: write `list`, not
+         * `List`. An entry that differs only in case from a CRUD verb cannot be
+         * honored — it names no CRUD action, and exposing it as a custom action
+         * would build the reserved `${object}_${verb}` tool, which dispatches to
+         * the built-in operation rather than the class's method. Such an entry
+         * is discarded with a warning (#2646).
          */
         include?: string[];
 
         /**
-         * Exclude specific tools (supports both standard CRUD actions and custom methods)
+         * Exclude specific tools (supports both standard CRUD actions and custom methods).
+         *
+         * Matched exactly, like `include`.
          */
         exclude?: string[];
 
