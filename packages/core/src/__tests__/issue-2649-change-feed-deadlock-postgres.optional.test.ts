@@ -659,6 +659,151 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * Suppressing an unproven drain's signals must not lose them. Once its
+   * transaction commits, those rows are no longer staged, so no later drain
+   * would ever return them again — and an entry that is never signalled while
+   * a later one is is exactly the `Last-Event-ID` skip being guarded against.
+   */
+  it('signals a committed in-transaction drain once it can prove the commit', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    const seen: ChangeSignal[] = [];
+    const unsubscribe = subscribeToChangeSignals(owner, (signal) => {
+      seen.push(signal);
+    });
+    try {
+      // Drains as the first statement of a caller transaction, so the commit
+      // is not yet provable and the signal is queued, not published.
+      await runTransaction(owner, async (tx) => {
+        await drainChangeFeed(tx);
+        expect(seen).toEqual([]);
+      });
+      expect(seen).toEqual([]);
+
+      // The next drain on that handle settles the queue: the sequence still
+      // carries the row it was drained for, so the signal is published.
+      await drainChangeFeed(owner);
+      expect(seen.map((signal) => signal.rowId)).toEqual([ROW_A]);
+      expect(seen.map((signal) => signal.seq)).toEqual([1]);
+    } finally {
+      unsubscribe();
+    }
+  }, 120_000);
+
+  /**
+   * A rolled-back drain frees its sequences for somebody else, so its queued
+   * signals must be discarded rather than published against whatever now
+   * occupies them.
+   */
+  it('discards queued signals whose drain rolled back', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    const seen: ChangeSignal[] = [];
+    const unsubscribe = subscribeToChangeSignals(owner, (signal) => {
+      seen.push(signal);
+    });
+    try {
+      await expect(
+        runTransaction(owner, async (tx) => {
+          await drainChangeFeed(tx);
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+
+      // A different entry claims the freed sequence before the queue is
+      // settled — written directly so the drain order stays deterministic.
+      await setup.query(
+        `INSERT INTO _smrt_changes
+           (seq, table_name, row_id, operation, tenant_id, created_at)
+         VALUES (1, $1, $2, 'create', NULL, now())`,
+        FEED_TABLE,
+        ROW_B,
+      );
+
+      await drainChangeFeed(owner);
+      // The rolled-back entry is re-sequenced at 2 and signalled there; the
+      // stale queue entry for seq 1 is never published against ROW_B.
+      expect(seen.map((signal) => [signal.seq, signal.rowId])).toEqual([
+        [2, ROW_A],
+      ]);
+    } finally {
+      unsubscribe();
+    }
+  }, 120_000);
+
+  /**
+   * Existence is not currency. A database can hold helpers of the right name
+   * and signature whose *bodies* predate a fix; probing only for existence
+   * would call them current and never replace them — leaving the deadlock in
+   * place on exactly the deployment this repair exists for.
+   */
+  it('replaces a helper whose body is stale even when all three objects exist', async () => {
+    // Keep the staging table and drain helper; downgrade only the append body.
+    await setup.query(PRE_FIX_APPEND_FUNCTION);
+    const before = rowsOf(
+      await setup.query(
+        `SELECT to_regclass('_smrt_changes_pending') AS pending,
+                to_regprocedure('_smrt_drain_changes(integer)') AS drain,
+                (SELECT prosrc LIKE '%smrt-change-feed-helpers:v2%'
+                   FROM pg_proc
+                  WHERE oid = to_regprocedure(
+                    '_smrt_append_change(text,text,text,text,timestamp with time zone)'
+                  )) AS current`,
+      ),
+    );
+    expect(before[0]?.pending).toBeTruthy();
+    expect(before[0]?.drain).toBeTruthy();
+    expect(before[0]?.current).toBe(false);
+
+    await ensureSystemTables(setup);
+
+    const after = rowsOf(
+      await setup.query(
+        `SELECT (SELECT prosrc LIKE '%smrt-change-feed-helpers:v2%'
+                   FROM pg_proc
+                  WHERE oid = to_regprocedure(
+                    '_smrt_append_change(text,text,text,text,timestamp with time zone)'
+                  )) AS current`,
+      ),
+    );
+    expect(after[0]?.current).toBe(true);
+
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'repaired' WHERE id = $1`,
+        ROW_A,
+      );
+      expect(
+        await appendChange(tx, {
+          table: FEED_TABLE,
+          rowId: ROW_A,
+          operation: 'update',
+        }),
+      ).toBeNull();
+    });
+  }, 120_000);
+
+  /**
    * The hazard a plain `SEQUENCE`/identity allocator would introduce.
    *
    * Sequence values are handed out before commit and never roll back, so a

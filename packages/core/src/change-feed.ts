@@ -132,7 +132,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { publishChangeSignal } from './change-signals.js';
+import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
@@ -152,6 +152,7 @@ import {
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME,
+  POSTGRES_CHANGE_FEED_HELPER_MARKER,
   POSTGRES_CHANGE_FEED_PENDING_TABLE,
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   RETIRED_SYSTEM_TABLES,
@@ -346,6 +347,9 @@ const MAX_APPEND_ATTEMPTS = 20;
  */
 const MAX_DRAIN_PASSES = 50;
 
+/** Cap on signals held for a handle that keeps draining without committing. */
+const MAX_DEFERRED_SIGNALS = 5_000;
+
 /**
  * Per-handle low-water mark of sequences a drain allocated but has not proven
  * committed (#2649).
@@ -530,14 +534,33 @@ function isUniqueViolation(error: unknown): boolean {
  */
 const ensuredHandles = new WeakSet<object>();
 
+/**
+ * SQL fragment that reports a helper as present ONLY when its body is current.
+ *
+ * `to_regprocedure()` alone answers "a function of this name and signature
+ * exists", which is not the same question: an install can hold a helper whose
+ * body predates a fix, and an existence probe would call it current and never
+ * replace it. Matching {@link POSTGRES_CHANGE_FEED_HELPER_MARKER} against
+ * `pg_proc.prosrc` makes the probe version-aware, so bumping the marker is all
+ * a future helper change needs to reach existing databases.
+ */
+function currentHelperProbe(identity: string): string {
+  return `(
+    SELECT p.oid
+    FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${identity}')
+      AND p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+  )`;
+}
+
 async function postgresChangeFeedHelpersCurrent(
   db: DatabaseInterface,
 ): Promise<boolean> {
   const rows = getQueryRows(
     await db.query(
       `SELECT
-         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name,
-         to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}') AS drain_function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name`,
     ),
   );
@@ -561,9 +584,9 @@ async function getPostgresChangeFeedSchemaState(
     await db.query(
       `SELECT
          to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
-         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name,
-         to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}') AS drain_function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
          (
            SELECT data_type
            FROM information_schema.columns
@@ -876,6 +899,11 @@ async function drainChangeFeedDetailed(
   if (getEngine(db) !== 'postgres')
     return { drained: 0, firstAllocatedSeq: null };
 
+  // Anything a previous, unproven drain queued is settled first: its
+  // transaction has ended by now, and each queued entry is published only if
+  // its sequence still holds the row it was drained for.
+  await flushDeferredSignals(db);
+
   let firstAllocatedSeq: number | null = null;
   let drained = 0;
   // Each call sequences one bounded batch; loop so a large backlog is not left
@@ -914,31 +942,25 @@ async function drainChangeFeedDetailed(
     // transaction is still uncommitted, and a rollback would release the
     // sequences it just advertised for a concurrent appender to reuse — a
     // subscriber would then hold a `Last-Event-ID` naming somebody else's
-    // entry and skip the real one. Such entries are signalled by the next
-    // drain that does commit them.
-    if (sequenced.length > 0 && (await drainCommitted(db))) {
-      for (const row of sequenced) {
-        try {
-          publishChangeSignal(db, {
-            table: String(row.drained_table ?? ''),
-            operation: String(
-              row.drained_operation ?? 'update',
-            ) as ChangeOperation,
-            rowId:
-              row.drained_row_id == null ? null : String(row.drained_row_id),
-            tenantId:
-              row.drained_tenant_id == null
-                ? null
-                : String(row.drained_tenant_id),
-            seq: toSeqNumber(row.drained_seq),
-          });
-        } catch (error) {
-          warnSignalPublishFailureOnce(
-            db,
-            String(row.drained_table ?? ''),
-            error,
-          );
-        }
+    // entry and skip the real one.
+    //
+    // An unproven drain's entries are QUEUED, never dropped. Once its
+    // transaction commits they are no longer staged, so no later drain would
+    // ever return them again — and an entry that is never signalled while a
+    // later one is is exactly the skip this is guarding against.
+    const signals = sequenced.map((row) => ({
+      table: String(row.drained_table ?? ''),
+      operation: String(row.drained_operation ?? 'update') as ChangeOperation,
+      rowId: row.drained_row_id == null ? null : String(row.drained_row_id),
+      tenantId:
+        row.drained_tenant_id == null ? null : String(row.drained_tenant_id),
+      seq: toSeqNumber(row.drained_seq),
+    }));
+    if (signals.length > 0) {
+      if (await drainCommitted(db)) {
+        publishSignals(db, signals);
+      } else {
+        queueDeferredSignals(db, signals);
       }
     }
 
@@ -946,6 +968,89 @@ async function drainChangeFeedDetailed(
   }
   recordUncommittedDrainMark(db, firstAllocatedSeq);
   return { drained, firstAllocatedSeq };
+}
+
+/** Signals a drain produced but could not yet prove committed. */
+const deferredSignals = new Map<string, ChangeSignal[]>();
+
+function publishSignals(db: DatabaseInterface, signals: ChangeSignal[]): void {
+  for (const signal of signals) {
+    try {
+      publishChangeSignal(db, signal);
+    } catch (error) {
+      warnSignalPublishFailureOnce(db, signal.table, error);
+    }
+  }
+}
+
+function queueDeferredSignals(
+  db: DatabaseInterface,
+  signals: ChangeSignal[],
+): void {
+  try {
+    const dbKey = resolveDbCacheKey(db);
+    const queued = deferredSignals.get(dbKey);
+    if (queued) {
+      queued.push(...signals);
+      // Bound the queue: a handle that only ever drains inside uncommitted
+      // transactions must not grow it without limit. Dropped entries cost a
+      // live signal, never a feed row — cursor readers still see them.
+      if (queued.length > MAX_DEFERRED_SIGNALS) {
+        queued.splice(0, queued.length - MAX_DEFERRED_SIGNALS);
+      }
+    } else {
+      deferredSignals.set(dbKey, [...signals]);
+    }
+  } catch {
+    // Unkeyable handle — the signal is best-effort, the feed row is not.
+  }
+}
+
+/**
+ * Publish queued signals whose sequences are now committed.
+ *
+ * A queued entry's transaction may have rolled back, which returns its row to
+ * the staging table and frees its sequence for somebody else. Each queued
+ * signal is therefore verified against the committed log before it is
+ * published: the sequence must still carry the same table and row. A
+ * rolled-back entry fails that check and is dropped here — a later drain
+ * re-sequences and re-signals it.
+ */
+async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
+  let dbKey: string;
+  try {
+    dbKey = resolveDbCacheKey(db);
+  } catch {
+    return;
+  }
+  const queued = deferredSignals.get(dbKey);
+  if (!queued || queued.length === 0) return;
+  if (!(await drainCommitted(db))) return;
+  deferredSignals.delete(dbKey);
+
+  const p = placeholders(db);
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${queued
+        .map((_, index) => p(index + 1))
+        .join(', ')})`,
+      ...queued.map((signal) => signal.seq),
+    ),
+  );
+  const committed = new Map(
+    rows.map((row) => [
+      toSeqNumber(row.seq),
+      `${String(row.table_name ?? '')}\u0000${row.row_id == null ? '' : String(row.row_id)}`,
+    ]),
+  );
+  publishSignals(
+    db,
+    queued.filter(
+      (signal) =>
+        committed.get(signal.seq) ===
+        `${signal.table}\u0000${signal.rowId ?? ''}`,
+    ),
+  );
 }
 
 /**
@@ -1695,4 +1800,5 @@ export function resetChangeFeedWarnings(): void {
   // on drain-driven signals must not inherit a neighbour's timestamp.
   lastAppendDrain.clear();
   stagedSinceLastDrain.clear();
+  deferredSignals.clear();
 }

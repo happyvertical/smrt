@@ -360,6 +360,17 @@ export const LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_
 /** Exact PostgreSQL identity used for catalog lookup of the append helper. */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp with time zone)`;
 
+/**
+ * Body marker stamped into both PostgreSQL change-feed helpers (#2649).
+ *
+ * Existence is not currency: an install can hold a helper of the right name
+ * and signature whose *body* predates a fix. The probe in `change-feed.ts`
+ * matches this token against `pg_proc.prosrc`, so a stale body is detected and
+ * replaced. Bump it whenever either helper's body changes in a way an existing
+ * database must pick up.
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v2';
+
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
 
@@ -409,6 +420,7 @@ RETURNS TABLE(
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed_drain$
+-- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
 DECLARE
   v_base BIGINT;
   v_error_code TEXT;
@@ -544,6 +556,7 @@ RETURNS TABLE(
 LANGUAGE plpgsql
 SECURITY INVOKER
 AS $smrt_change_feed$
+-- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
 DECLARE
   v_seq BIGINT;
   v_error_code TEXT;
@@ -695,21 +708,25 @@ $smrt_replace_change_feed$;
 export const ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION = `
 DO $smrt_ensure_change_feed$
 DECLARE
-  v_pending_missing BOOLEAN;
+  v_append_stale BOOLEAN;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtext('smrt'),
     hashtext('system-tables')
   );
-  v_pending_missing := to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') IS NULL;
+  v_append_stale := to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc
+      WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}')
+        AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+    );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
   EXECUTE $smrt_change_feed_drain_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
 $smrt_change_feed_drain_ddl$;
-  IF v_pending_missing
-    OR to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL
-  THEN
+  IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
@@ -739,22 +756,26 @@ $smrt_change_feed_schema_ddl$;`,
 export const ENSURE_POSTGRES_CHANGE_FEED_SCHEMA = `
 DO $smrt_ensure_change_feed_schema$
 DECLARE
-  v_pending_missing BOOLEAN;
+  v_append_stale BOOLEAN;
 BEGIN
   PERFORM pg_advisory_xact_lock(
     hashtext('smrt'),
     hashtext('system-tables')
   );
-  v_pending_missing := to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') IS NULL;
+  v_append_stale := to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_proc
+      WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}')
+        AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+    );
 ${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
   EXECUTE $smrt_change_feed_drain_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
 $smrt_change_feed_drain_ddl$;
-  IF v_pending_missing
-    OR to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL
-  THEN
+  IF v_append_stale THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
