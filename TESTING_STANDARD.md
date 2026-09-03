@@ -532,7 +532,7 @@ import { MyObject, MyCollection } from './my-object.js';
 
 describe('API generation', () => {
   it('should require authentication for a non-public object', async () => {
-    const db = await createIsolatedTestDb();
+    const { db } = await createIsolatedTestDb();
     const collection = await MyCollection.create({
       persistence: { type: 'sql', db },
     });
