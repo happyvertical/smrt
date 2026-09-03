@@ -44,6 +44,7 @@ export {
   type ChangeFeedRetention,
   type ChangeOperation,
   DEFAULT_CHANGES_LIMIT,
+  drainChangeFeed,
   ensureChangeFeedTable,
   type GetChangesOptions,
   getChangesSince,

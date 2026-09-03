@@ -38,6 +38,46 @@
  * auto-increment mechanism exists in the system-table schema path either;
  * see `system/schema.ts`.)
  *
+ * ## Staged appends inside caller transactions (PostgreSQL, #2649)
+ *
+ * `MAX+1` allocation costs a *wait*: two appends that pick the same value
+ * conflict on the primary key, and the loser waits for the winner's
+ * transaction to end. Under autocommit that is one statement. Inside a
+ * caller-managed transaction it is the whole transaction — and a long write
+ * transaction that appends and then keeps taking row locks forms a genuine
+ * lock cycle with any writer that took those row locks first and then
+ * appended. PostgreSQL detects it (`40P01`) and aborts one side, so an
+ * ordinary concurrent request could abort a legitimate long write.
+ *
+ * PostgreSQL appends issued inside a caller transaction are therefore
+ * **staged**: `_smrt_append_change` inserts into `_smrt_changes_pending`,
+ * whose identity key conflicts with nothing, so the append never waits on
+ * another transaction and the cycle cannot form. The staged row is still
+ * fate-shared with the caller (a rollback removes it). {@link drainChangeFeed}
+ * — run by {@link getChangesSince} before it reads, and (throttled) by the
+ * append path itself — moves *committed* staged rows into `_smrt_changes`
+ * under a try-only advisory lock, numbering them `MAX(seq) + row_number()` in
+ * staged order. Draining is driven from JavaScript rather than inside the
+ * append helper so that every sequenced entry also gets its live `_events`
+ * signal: an entry sequenced invisibly server-side would be skipped for good
+ * by a subscriber whose `Last-Event-ID` came from a later, higher sequence.
+ * Signals for drained entries are published only once the drain is proven
+ * committed, so a rollback can never advertise a sequence another appender
+ * then reuses.
+ *
+ * The cursor guarantee is unchanged, because sequences are still allocated by
+ * exactly one `MAX+1` writer at a time and only ever for already-committed
+ * work: committed sequences stay contiguous, and no entry can appear at or
+ * below a horizon a reader already observed. What a staged append gives up is
+ * *promptness*, not durability or order: its entry becomes visible one drain
+ * after its transaction commits, and its position in the log is its drain
+ * order rather than its statement order. An autocommit append drains before
+ * allocating whenever its throttle allows, so staged work usually keeps its
+ * place ahead of later writes.
+ *
+ * SQLite and DuckDB keep the direct `MAX+1` insert unchanged — SQLite
+ * serializes writers outright, so the defect is unreachable there.
+ *
  * Contention note: appends serialize on the head of the log. Each append is
  * one small INSERT (issued from the write path *after* the user's row was
  * written), so the serialization window is one statement; conflicts resolve
@@ -57,7 +97,7 @@
  * JavaScript only throws/logs after PostgreSQL has restored the caller's
  * transaction, so a swallowed append failure cannot surface later as 25P02.
  * The append still joins a caller-managed transaction on the same handle and
- * shares its fate (a rollback removes the change row with the data row).
+ * shares its fate (a rollback removes the staged row with the data row).
  *
  * ## Known gaps (documented in the PRD)
  *
@@ -92,7 +132,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { publishChangeSignal } from './change-signals.js';
+import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
@@ -110,6 +150,10 @@ import {
   FRAMEWORK_OPERATIONAL_TABLES,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
+  POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME,
+  POSTGRES_CHANGE_FEED_HELPER_MARKER,
+  POSTGRES_CHANGE_FEED_PENDING_TABLE,
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   RETIRED_SYSTEM_TABLES,
 } from './system/schema.js';
@@ -137,6 +181,10 @@ export const CHANGE_FEED_TABLE = '_smrt_changes';
  */
 export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
   ...SYSTEM_TABLE_NAMES,
+  // PostgreSQL-only staging table for deferred appends (#2649). It is created
+  // by the change-feed ensure path rather than the portable system DDL, so it
+  // is not covered by SYSTEM_TABLE_NAMES.
+  POSTGRES_CHANGE_FEED_PENDING_TABLE,
   ...FRAMEWORK_OPERATIONAL_TABLES,
   ...RETIRED_SYSTEM_TABLES,
 ]);
@@ -292,6 +340,117 @@ export const MAX_CHANGES_LIMIT = 5_000;
  */
 const MAX_APPEND_ATTEMPTS = 20;
 
+/**
+ * Maximum bounded drain batches one {@link drainChangeFeed} call sequences.
+ * A cap rather than "until empty" so a pathological writer cannot make one
+ * reader drain forever; the remainder is picked up by the next drain.
+ */
+const MAX_DRAIN_PASSES = 50;
+
+/** Cap on signals held for a handle that keeps draining without committing. */
+const MAX_DEFERRED_SIGNALS = 5_000;
+
+/**
+ * Per-handle low-water mark of sequences a drain allocated but has not proven
+ * committed (#2649).
+ *
+ * The hold-back has to outlive the drain call that created it. A caller
+ * transaction can drain in one statement and read in the next — the second
+ * read's own drain allocates nothing (the server-side helper refuses once the
+ * transaction has an id), yet the transaction still sees the first drain's
+ * uncommitted rows and would serve them. Keyed on the handle object, which is
+ * the transaction's identity for its whole life, so every later read on the
+ * same transaction keeps holding back from the same mark.
+ *
+ * The mark is recorded unconditionally and *used* only while a transaction id
+ * is still assigned at read time. Under autocommit the drain committed as its
+ * own transaction, so the next read clears the mark and serves the rows.
+ */
+const uncommittedDrainMarks = new WeakMap<object, number>();
+
+/**
+ * How often the append path drains on its own behalf, per database.
+ *
+ * The append helper deliberately does not drain server-side: sequences it
+ * assigned there would never reach JavaScript, so no `_events` signal would be
+ * published for them while this append's own signal carries a higher sequence
+ * — and an EventSource resuming from that `Last-Event-ID` would skip them for
+ * good. Draining from here instead keeps every sequenced entry signalled, in
+ * ascending order, and keeps a deployment whose writers never read the feed
+ * from accumulating staged entries indefinitely. Throttled because it is a
+ * liveness convenience, not a correctness requirement: cursor readers drain
+ * for themselves, and `getTableVersion()` already counts staged entries.
+ */
+const APPEND_DRAIN_INTERVAL_MS = 250;
+
+/** dbKey → last time the append path drained for it. */
+const lastAppendDrain = new Map<string, number>();
+
+/** dbKeys that staged an append since this process last drained them. */
+const stagedSinceLastDrain = new Set<string>();
+
+function noteStagedAppend(db: DatabaseInterface): void {
+  try {
+    stagedSinceLastDrain.add(resolveDbCacheKey(db));
+  } catch {
+    // Unkeyable handle — the interval below still drives the drain.
+  }
+}
+
+async function drainBeforeAppend(
+  db: DatabaseInterface,
+): Promise<ChangeSignal[]> {
+  if (getEngine(db) !== 'postgres') return [];
+  let dbKey: string;
+  try {
+    dbKey = resolveDbCacheKey(db);
+  } catch {
+    return [];
+  }
+  const now = Date.now();
+  const last = lastAppendDrain.get(dbKey);
+  // A handle that staged an append since its last drain skips the interval:
+  // that entry is known to be waiting for a sequence and a signal.
+  if (
+    !stagedSinceLastDrain.has(dbKey) &&
+    last !== undefined &&
+    now - last < APPEND_DRAIN_INTERVAL_MS
+  ) {
+    return [];
+  }
+  stagedSinceLastDrain.delete(dbKey);
+  lastAppendDrain.set(dbKey, now);
+  // Inside a caller transaction the drain helper refuses server-side, so this
+  // costs one cheap statement and never sequences anything there. `settle:
+  // false, maxPasses: 1` keep it to that ONE statement: the caller may own the
+  // surrounding transaction, and any further statement issued here could fail
+  // and abort it behind the feed's own error-swallowing (#2026). The drain
+  // statement itself cannot — the helper catches everything, preflight
+  // included, and returns failures as data — but a write path is no place to
+  // loop over a backlog either; the rest drains on the next append or read.
+  // The signals come back undecided; appendChange settles them without
+  // spending a statement.
+  try {
+    return (await drainChangeFeedDetailed(db, { settle: false, maxPasses: 1 }))
+      .unsettledSignals;
+  } catch (error) {
+    warnDrainFailureOnce(db, error);
+    return [];
+  }
+}
+
+function recordUncommittedDrainMark(
+  db: DatabaseInterface,
+  firstAllocatedSeq: number | null,
+): void {
+  if (firstAllocatedSeq === null) return;
+  const key = db as unknown as object;
+  const existing = uncommittedDrainMarks.get(key);
+  if (existing === undefined || firstAllocatedSeq < existing) {
+    uncommittedDrainMarks.set(key, firstAllocatedSeq);
+  }
+}
+
 const VALID_OPERATIONS: ReadonlySet<string> = new Set([
   'create',
   'update',
@@ -391,15 +550,41 @@ function isUniqueViolation(error: unknown): boolean {
  */
 const ensuredHandles = new WeakSet<object>();
 
-async function postgresChangeFeedAppendFunctionExists(
+/**
+ * SQL fragment that reports a helper as present ONLY when its body is current.
+ *
+ * `to_regprocedure()` alone answers "a function of this name and signature
+ * exists", which is not the same question: an install can hold a helper whose
+ * body predates a fix, and an existence probe would call it current and never
+ * replace it. Matching {@link POSTGRES_CHANGE_FEED_HELPER_MARKER} against
+ * `pg_proc.prosrc` makes the probe version-aware, so bumping the marker is all
+ * a future helper change needs to reach existing databases.
+ */
+function currentHelperProbe(identity: string): string {
+  return `(
+    SELECT p.oid
+    FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${identity}')
+      AND p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+  )`;
+}
+
+async function postgresChangeFeedHelpersCurrent(
   db: DatabaseInterface,
 ): Promise<boolean> {
   const rows = getQueryRows(
     await db.query(
-      `SELECT to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+      `SELECT
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
+         to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name`,
     ),
   );
-  return Boolean(rows[0]?.function_name);
+  return Boolean(
+    rows[0]?.function_name &&
+      rows[0]?.drain_function_name &&
+      rows[0]?.pending_table_name,
+  );
 }
 
 async function getPostgresChangeFeedSchemaState(
@@ -407,13 +592,17 @@ async function getPostgresChangeFeedSchemaState(
 ): Promise<{
   tableExists: boolean;
   functionExists: boolean;
+  pendingTableExists: boolean;
+  drainFunctionExists: boolean;
   createdAtType: string | null;
 }> {
   const rows = getQueryRows(
     await db.query(
       `SELECT
          to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
-         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
+         to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
          (
            SELECT data_type
            FROM information_schema.columns
@@ -426,6 +615,8 @@ async function getPostgresChangeFeedSchemaState(
   return {
     tableExists: Boolean(rows[0]?.table_name),
     functionExists: Boolean(rows[0]?.function_name),
+    pendingTableExists: Boolean(rows[0]?.pending_table_name),
+    drainFunctionExists: Boolean(rows[0]?.drain_function_name),
     createdAtType: rows[0]?.created_at_type
       ? String(rows[0].created_at_type)
       : null,
@@ -468,12 +659,49 @@ export async function ensurePostgresChangeFeedAppendFunction(
   );
 
   if (options.replaceExisting === false) {
-    if (await postgresChangeFeedAppendFunctionExists(db)) return;
+    if (await postgresChangeFeedHelpersCurrent(db)) return;
     await db.query(ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
     return;
   }
 
   await db.query(REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+}
+
+/**
+ * Refresh the PostgreSQL change-feed helpers on an already-initialized
+ * database (issue #2649).
+ *
+ * `bootstrapSystemTables()` installs the helpers only while applying a system
+ * schema version, and #2649 changes the helper body without changing the
+ * portable system DDL — so a database already stamped with the current version
+ * would keep the pre-#2649 append function, and its `40P01` deadlock, until
+ * some feed route happened to call {@link ensureChangeFeedTable}. Ordinary
+ * model writes never do. Bootstrap therefore calls this before its
+ * version fast-return; it is one catalog probe when the helpers are current.
+ *
+ * Databases whose `_smrt_changes.created_at` is still the legacy
+ * timezone-naive column are left alone: they need their audited
+ * `migratePostgresSystemTimestamps()` pass first, and failing bootstrap on
+ * them here would be a new, unrelated break.
+ *
+ * @internal
+ */
+export async function ensurePostgresChangeFeedHelpers(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (getEngine(db, typeHint) !== 'postgres') return;
+  const state = await getPostgresChangeFeedSchemaState(db);
+  if (!state.tableExists) return;
+  if (state.createdAtType !== 'timestamp with time zone') return;
+  if (
+    state.functionExists &&
+    state.pendingTableExists &&
+    state.drainFunctionExists
+  ) {
+    return;
+  }
+  await db.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
 }
 
 export async function ensureChangeFeedTable(
@@ -486,6 +714,8 @@ export async function ensureChangeFeedTable(
     if (
       state.tableExists &&
       state.functionExists &&
+      state.pendingTableExists &&
+      state.drainFunctionExists &&
       state.createdAtType === 'timestamp with time zone'
     ) {
       ensuredHandles.add(db);
@@ -519,6 +749,14 @@ export async function ensureChangeFeedTable(
  * conflicts or on any non-conflict database error; the framework's
  * interceptor catches and logs instead of failing the user's write.
  *
+ * **Returns `null` for a staged append** (PostgreSQL, #2649): an append issued
+ * inside a caller-managed transaction is written to `_smrt_changes_pending`
+ * and receives its sequence from the next {@link drainChangeFeed} after that
+ * transaction commits, so no sequence exists to return yet. The entry is
+ * durable and ordered — it simply is not numbered at this instant. Callers
+ * that need the sequence (an SSE event id, say) must treat `null` as "not
+ * available yet", never as a failure: a failure still throws.
+ *
  * **PostgreSQL transaction safety (#2026).** The INSERT runs inside the
  * framework-owned `_smrt_append_change` PL/pgSQL function. Its exception
  * handler is a PostgreSQL subtransaction: a failed attempt is rolled back
@@ -531,7 +769,7 @@ export async function ensureChangeFeedTable(
 export async function appendChange(
   db: DatabaseInterface,
   input: AppendChangeInput,
-): Promise<number> {
+): Promise<number | null> {
   const table = input.table?.trim();
   if (!table) {
     throw new Error('appendChange requires a non-empty table name');
@@ -572,6 +810,34 @@ export async function appendChange(
     new Date().toISOString(),
   ];
 
+  // Sequence anything staged by a committed transaction before taking a
+  // sequence of our own, so signals stay in ascending order and no staged
+  // entry is left unsignalled beneath this one (see drainBeforeAppend). Their
+  // signals are settled below, once this append tells us whether that drain
+  // committed.
+  const drainedSignals = await drainBeforeAppend(db);
+
+  /**
+   * Settle the pre-append drain's signals from what this append revealed.
+   *
+   * A drain that allocated anything assigned a transaction id, so if this
+   * append then took the DIRECT path — `pg_current_xact_id_if_assigned()` was
+   * still null at its entry — that id is already gone, which can only mean the
+   * drain committed as its own autocommit transaction. Publishing here is
+   * therefore proven safe AND correctly ordered: these sequences are below the
+   * one this append is about to take, and the interceptor publishes that one
+   * only after this call returns. A deferred append proves nothing, so its
+   * signals go to the queue.
+   */
+  const settleDrainedSignals = (appended: number | null): void => {
+    if (drainedSignals.length === 0) return;
+    if (appended === null) {
+      queueDeferredSignals(db, drainedSignals);
+      return;
+    }
+    publishSignals(db, drainedSignals);
+  };
+
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
       // The append is a root-connection write; on embedded engines it goes
@@ -594,9 +860,34 @@ export async function appendChange(
         error.code = String(row.error_code);
         throw error;
       }
-      return toSeqNumber(engine === 'postgres' ? row.allocated_seq : row.seq);
+      if (engine === 'postgres' && row.allocated_seq == null) {
+        noteStagedAppend(db);
+        settleDrainedSignals(null);
+        // Staged, not sequenced (#2649): the append ran inside a
+        // caller-managed transaction, so it went to `_smrt_changes_pending`
+        // and receives its sequence from the next drain after that
+        // transaction commits. Durable and ordered, just not numbered yet.
+        return null;
+      }
+      const seq = toSeqNumber(
+        engine === 'postgres' ? row.allocated_seq : row.seq,
+      );
+      settleDrainedSignals(seq);
+      if (engine === 'postgres') {
+        // A direct allocation made as a caller transaction's FIRST statement
+        // is this transaction's uncommitted work, exactly like a drain's, and
+        // a read on the same handle must not serve it or hand back a cursor
+        // above it — a rollback frees that sequence for somebody else. Record
+        // it unconditionally: an autocommit read clears the mark before using
+        // it, because no transaction id remains by then.
+        recordUncommittedDrainMark(db, seq);
+      }
+      return seq;
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+        // Nothing was proven about the drain; hold its signals for a settling
+        // drain rather than dropping or publishing them.
+        queueDeferredSignals(db, drainedSignals);
         throw error;
       }
       // Sequence head contention: another append won the value. Re-running
@@ -605,8 +896,321 @@ export async function appendChange(
   }
 
   // Unreachable: the loop returns a seq or throws on the final attempt. Present
-  // so the function satisfies its `Promise<number>` contract structurally.
+  // so the function satisfies its `Promise<number | null>` contract structurally.
   throw new Error('appendChange exhausted retries without allocating a seq');
+}
+
+/**
+ * Sequence change-feed entries staged inside caller-managed transactions
+ * (issue #2649). PostgreSQL only; a no-op on every other engine.
+ *
+ * A `save()`/`delete()`/{@link appendChange} issued inside a caller
+ * transaction cannot allocate `MAX(seq) + 1` there: the allocation waits for
+ * any competing appender's transaction to end, and a long write transaction
+ * that goes on to take row locks the waiter holds closes a real lock cycle
+ * (`40P01`). Such appends are staged instead, and this call moves every
+ * **committed** staged entry into `_smrt_changes` with contiguous sequences,
+ * in staged order, under a try-only advisory lock.
+ *
+ * It runs by itself on the paths that matter — every autocommit append drains
+ * server-side before allocating its own sequence, and {@link getChangesSince}
+ * drains before it reads — so applications do not normally need to call it. A
+ * drain issued from inside a transaction that has already written is skipped
+ * server-side: allocating there would hold sequences uncommitted for the rest
+ * of that transaction, which is the wait this fix removes.
+ * Call it explicitly from a scheduled job when a deployment writes *only*
+ * through transactions and reads the feed from a connection that cannot write
+ * (a read replica or a read-only role), because neither self-draining path is
+ * then available.
+ *
+ * Best-effort by the feed's failure policy: a drain that cannot run leaves the
+ * staged entries in place for the next attempt and never throws into the
+ * caller's write path. Nothing is lost — staged entries are durable — they are
+ * simply not yet visible to cursor readers.
+ *
+ * @returns How many staged entries were sequenced.
+ */
+export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
+  return (await drainChangeFeedDetailed(db)).drained;
+}
+
+/**
+ * {@link drainChangeFeed} plus the lowest sequence this call allocated.
+ *
+ * A drain runs on the caller's handle, so when that handle is inside a
+ * caller-managed transaction the rows it just wrote are visible **to this
+ * transaction only** and disappear if it rolls back. A reader that served them
+ * would report entries that never committed and advance its cursor past
+ * sequences a concurrent autocommit appender goes on to claim — a permanently
+ * skipped change. {@link getChangesSince} therefore refuses to serve at or
+ * above `firstAllocatedSeq`: everything below it was committed by somebody
+ * else before this drain started, and the drain's own rows are served by the
+ * next poll, once they are committed for everyone.
+ *
+ * @internal
+ */
+async function drainChangeFeedDetailed(
+  db: DatabaseInterface,
+  options: { settle?: boolean; maxPasses?: number } = {},
+): Promise<{
+  drained: number;
+  firstAllocatedSeq: number | null;
+  unsettledSignals: ChangeSignal[];
+}> {
+  if (getEngine(db) !== 'postgres')
+    return { drained: 0, firstAllocatedSeq: null, unsettledSignals: [] };
+
+  // `settle: false` is the write path (see drainBeforeAppend): it issues the
+  // drain statement and NOTHING else, because every additional statement run
+  // on the caller's handle could fail and abort a caller-owned transaction,
+  // which the feed's failure policy would then swallow — leaving the caller in
+  // PostgreSQL's aborted state (`25P02`), the exact #2026 hazard. The drain
+  // statement itself is safe: the helper catches everything, preflight
+  // included, and returns failures as data. Its signals are queued and settled
+  // later, from a read path that is free to issue extra statements.
+  const settle = options.settle !== false;
+
+  // Anything a previous, unproven drain queued is settled first: its
+  // transaction has ended by now, and each queued entry is published only if
+  // its sequence still holds the row it was drained for.
+  if (settle) await flushDeferredSignals(db);
+
+  let firstAllocatedSeq: number | null = null;
+  let drained = 0;
+  const unsettledSignals: ChangeSignal[] = [];
+  // Each call sequences one bounded batch; loop so a large backlog is not left
+  // behind, with a hard iteration cap so a persistent failure cannot spin.
+  const maxPasses = Math.max(1, options.maxPasses ?? MAX_DRAIN_PASSES);
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const rows = getQueryRows(
+      await db.query(
+        `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}()`,
+      ),
+    );
+    const failure = rows.find((row) => row.error_code != null);
+    if (failure) {
+      const error = new Error(
+        String(failure.error_message || 'PostgreSQL change-feed drain failed'),
+      ) as Error & { code: string };
+      error.code = String(failure.error_code);
+      // A concurrent autocommit append can win the head between this drain's
+      // MAX(seq) read and its insert. The whole batch rolled back, so the
+      // staged rows are still there — recompute and try again, exactly like
+      // the appender's own conflict retry.
+      if (isUniqueViolation(error)) continue;
+      throw error;
+    }
+    const sequenced = rows.filter((row) => row.drained_seq != null);
+    drained += sequenced.length;
+    for (const row of sequenced) {
+      const seq = toSeqNumber(row.drained_seq);
+      if (firstAllocatedSeq === null || seq < firstAllocatedSeq) {
+        firstAllocatedSeq = seq;
+      }
+    }
+
+    // A drained entry is cursor-visible once its sequence is committed, which
+    // is the first honest moment to signal it. Publish ONLY after proving the
+    // drain committed: a drain that ran as the first statement of a caller
+    // transaction is still uncommitted, and a rollback would release the
+    // sequences it just advertised for a concurrent appender to reuse — a
+    // subscriber would then hold a `Last-Event-ID` naming somebody else's
+    // entry and skip the real one.
+    //
+    // An unproven drain's entries are QUEUED, never dropped. Once its
+    // transaction commits they are no longer staged, so no later drain would
+    // ever return them again — and an entry that is never signalled while a
+    // later one is is exactly the skip this is guarding against.
+    const signals = sequenced.map((row) => ({
+      table: String(row.drained_table ?? ''),
+      operation: String(row.drained_operation ?? 'update') as ChangeOperation,
+      rowId: row.drained_row_id == null ? null : String(row.drained_row_id),
+      tenantId:
+        row.drained_tenant_id == null ? null : String(row.drained_tenant_id),
+      seq: toSeqNumber(row.drained_seq),
+    }));
+    if (signals.length > 0) {
+      if (!settle) {
+        // The write path decides: see appendChange, which can prove these
+        // committed without spending a statement on it.
+        unsettledSignals.push(...signals);
+      } else if (await drainCommitted(db)) {
+        publishSignals(db, signals);
+      } else {
+        queueDeferredSignals(db, signals);
+      }
+    }
+
+    if (sequenced.length === 0) break;
+  }
+  recordUncommittedDrainMark(db, firstAllocatedSeq);
+  return { drained, firstAllocatedSeq, unsettledSignals };
+}
+
+/** Signals a drain produced but could not yet prove committed. */
+const deferredSignals = new Map<string, ChangeSignal[]>();
+
+function publishSignals(db: DatabaseInterface, signals: ChangeSignal[]): void {
+  for (const signal of signals) {
+    try {
+      publishChangeSignal(db, signal);
+    } catch (error) {
+      warnSignalPublishFailureOnce(db, signal.table, error);
+    }
+  }
+}
+
+function queueDeferredSignals(
+  db: DatabaseInterface,
+  signals: ChangeSignal[],
+): void {
+  try {
+    const dbKey = resolveDbCacheKey(db);
+    const queued = deferredSignals.get(dbKey);
+    if (queued) {
+      queued.push(...signals);
+      // Bound the queue: a handle that only ever drains inside uncommitted
+      // transactions must not grow it without limit. Dropped entries cost a
+      // live signal, never a feed row — cursor readers still see them.
+      if (queued.length > MAX_DEFERRED_SIGNALS) {
+        queued.splice(0, queued.length - MAX_DEFERRED_SIGNALS);
+      }
+    } else {
+      deferredSignals.set(dbKey, [...signals]);
+    }
+  } catch {
+    // Unkeyable handle — the signal is best-effort, the feed row is not.
+  }
+}
+
+/**
+ * Publish queued signals whose sequences are now committed.
+ *
+ * A queued entry's transaction may have rolled back, which returns its row to
+ * the staging table and frees its sequence for somebody else. Each queued
+ * signal is therefore verified against the committed log before it is
+ * published: the sequence must still carry the same table and row.
+ *
+ * An entry that does not verify is **kept, not dropped**. The queue is keyed
+ * per database, and every connection to that database shares it — so a second
+ * connection can reach this while the transaction that queued the entry is
+ * still open. Its own commit probe says "not in a transaction", but it cannot
+ * see the other connection's uncommitted rows, and discarding on that basis
+ * would strand a signal nobody can ever republish once that transaction
+ * commits. Unverified entries therefore wait for a later flush, bounded only
+ * by {@link MAX_DEFERRED_SIGNALS}, which evicts oldest-first — an entry whose
+ * transaction really did roll back is re-sequenced and re-signalled by a later
+ * drain regardless.
+ */
+async function flushDeferredSignals(db: DatabaseInterface): Promise<void> {
+  let dbKey: string;
+  try {
+    dbKey = resolveDbCacheKey(db);
+  } catch {
+    return;
+  }
+  const queued = deferredSignals.get(dbKey);
+  if (!queued || queued.length === 0) return;
+
+  // Claim the queue synchronously, before the first await. Two drains on the
+  // same database run concurrently, and a claim taken after an await lets both
+  // verify and publish the same entries — duplicate SSE event ids. Whatever
+  // this flush does not publish is put back below.
+  deferredSignals.delete(dbKey);
+  const candidates = queued;
+  let unpublished = candidates;
+  try {
+    if (!(await drainCommitted(db))) return;
+    unpublished = await publishVerifiedSignals(db, candidates);
+  } finally {
+    requeueDeferredSignals(dbKey, unpublished);
+  }
+}
+
+/**
+ * Publish the queued signals whose sequences still carry the row they were
+ * drained for, and return the ones that could not be verified.
+ */
+async function publishVerifiedSignals(
+  db: DatabaseInterface,
+  candidates: ChangeSignal[],
+): Promise<ChangeSignal[]> {
+  const p = placeholders(db);
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${candidates
+        .map((_, index) => p(index + 1))
+        .join(', ')})`,
+      ...candidates.map((signal) => signal.seq),
+    ),
+  );
+  const identity = (table: string, rowId: string | null) =>
+    `${table}\u0000${rowId ?? ''}`;
+  const committed = new Map(
+    rows.map((row) => [
+      toSeqNumber(row.seq),
+      identity(
+        String(row.table_name ?? ''),
+        row.row_id == null ? null : String(row.row_id),
+      ),
+    ]),
+  );
+
+  const verified = candidates.filter(
+    (signal) =>
+      committed.get(signal.seq) === identity(signal.table, signal.rowId),
+  );
+  if (verified.length === 0) return candidates;
+
+  const publishedSeqs = new Set(verified.map((signal) => signal.seq));
+  publishSignals(db, verified);
+  return candidates.filter((signal) => !publishedSeqs.has(signal.seq));
+}
+
+/** Put unpublished signals back, ahead of anything queued meanwhile. */
+function requeueDeferredSignals(dbKey: string, signals: ChangeSignal[]): void {
+  if (signals.length === 0) return;
+  const queuedSince = deferredSignals.get(dbKey) ?? [];
+  const merged = [...signals, ...queuedSince];
+  deferredSignals.set(
+    dbKey,
+    merged.length > MAX_DEFERRED_SIGNALS
+      ? merged.slice(merged.length - MAX_DEFERRED_SIGNALS)
+      : merged,
+  );
+}
+
+/**
+ * Whether the drain that just ran has committed.
+ *
+ * Under autocommit the drain was its own transaction and ended with its
+ * statement, so no transaction id is assigned by the time this separate
+ * statement runs. Inside a caller transaction the id the drain assigned is
+ * still live and its rows are still uncommitted.
+ */
+async function drainCommitted(db: DatabaseInterface): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      'SELECT pg_current_xact_id_if_assigned() IS NULL AS committed',
+    ),
+  );
+  const committed = rows[0]?.committed;
+  return committed === true || committed === 't';
+}
+
+/**
+ * Drain without ever failing the caller — the read-path and prune policy.
+ *
+ * Any sequences it allocates are recorded on the handle's uncommitted-drain
+ * mark; see {@link uncommittedDrainMarks} for why a reader must not serve at
+ * or above it while the caller's transaction is still open.
+ */
+async function drainChangeFeedBestEffort(db: DatabaseInterface): Promise<void> {
+  try {
+    await drainChangeFeedDetailed(db);
+  } catch (error) {
+    warnDrainFailureOnce(db, error);
+  }
 }
 
 /**
@@ -687,6 +1291,19 @@ export async function getChangesSince(
     MAX_CHANGES_LIMIT,
   );
 
+  // Sequence anything staged by a caller transaction that has since committed
+  // (#2649) so this read observes it. Best-effort: on a handle that cannot
+  // write, staged entries simply stay invisible until some writer drains —
+  // they are durable, never lost, and the horizon below is still a horizon.
+  //
+  // A drain writes on THIS handle, so if the caller wrapped this read in its
+  // own transaction the drained rows are visible only here and vanish on a
+  // rollback. Serving them would report changes that never committed and
+  // advance the cursor past sequences a concurrent autocommit appender then
+  // claims for its own entries. Anything this drain allocated is therefore
+  // held back to the next poll.
+  await drainChangeFeedBestEffort(db);
+
   const p = placeholders(db);
 
   // The committed horizon: every seq <= horizon is committed and immutable
@@ -694,30 +1311,61 @@ export async function getChangesSince(
   // though it runs as a separate statement. The floor bounds the retained
   // window for pruned-cursor detection; both are computed UNFILTERED so
   // table/tenant filters can neither trigger nor mask a resync signal.
+  // `in_transaction` decides whether the drain above is safe to serve. It is
+  // read in a SEPARATE statement from the drain on purpose: under autocommit
+  // the drain was its own transaction and has already committed, so no id is
+  // assigned here and its rows are committed for everyone. Inside a caller
+  // transaction the id the drain assigned is still live, and those same rows
+  // are this transaction's uncommitted work.
   const boundsRows = getQueryRows(
     await db.query(
-      `SELECT MIN(seq) AS floor, MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`,
+      getEngine(db) === 'postgres'
+        ? `SELECT MIN(seq) AS floor, MAX(seq) AS horizon, pg_current_xact_id_if_assigned() IS NOT NULL AS in_transaction FROM ${CHANGE_FEED_TABLE}`
+        : `SELECT MIN(seq) AS floor, MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`,
     ),
   );
   const floor = toSeqNumber(boundsRows[0]?.floor);
   const horizon = toSeqNumber(boundsRows[0]?.horizon);
 
-  if (horizon === 0) {
-    // No entries at all. A zero cursor is simply "no changes ever"; any
-    // other cursor came from a different database (or a reset feed) and
-    // cannot be served incrementally.
+  // Everything below the handle's uncommitted-drain mark was committed by
+  // another transaction before this read's transaction began; at or above it
+  // is this transaction's own uncommitted work. The mark spans the whole
+  // transaction, so a second read on the same handle holds back what the
+  // first read's drain wrote even though this read drained nothing.
+  const inCallerTransaction =
+    boundsRows[0]?.in_transaction === true ||
+    boundsRows[0]?.in_transaction === 't';
+  const handleKey = db as unknown as object;
+  if (!inCallerTransaction) {
+    // The drain committed as its own transaction; the mark has served out.
+    uncommittedDrainMarks.delete(handleKey);
+  }
+  const drainMark = inCallerTransaction
+    ? uncommittedDrainMarks.get(handleKey)
+    : undefined;
+  const servedHorizon =
+    drainMark === undefined ? horizon : Math.min(horizon, drainMark - 1);
+
+  if (servedHorizon === 0) {
+    // Nothing committed that this read may serve. A zero cursor is simply "no
+    // changes ever"; any other cursor came from a different database (or a
+    // reset feed) and cannot be served incrementally. Decided on the SERVED
+    // horizon, not the raw one: inside a caller transaction the raw horizon
+    // includes this transaction's own uncommitted rows, and accepting a cursor
+    // against those would wave through a foreign cursor that a rollback then
+    // makes point at somebody else's entry.
     return since === 0
       ? { changes: [], cursor: 0 }
       : { changes: [], cursor: since, resyncRequired: true, resyncCursor: 0 };
   }
 
-  if (since > horizon) {
+  if (since > servedHorizon) {
     // Foreign or reset cursor — ahead of anything this database allocated.
     return {
       changes: [],
       cursor: since,
       resyncRequired: true,
-      resyncCursor: horizon,
+      resyncCursor: servedHorizon,
     };
   }
 
@@ -727,11 +1375,11 @@ export async function getChangesSince(
       changes: [],
       cursor: since,
       resyncRequired: true,
-      resyncCursor: horizon,
+      resyncCursor: servedHorizon,
     };
   }
 
-  if (horizon === since) {
+  if (servedHorizon <= since) {
     return { changes: [], cursor: since };
   }
 
@@ -743,7 +1391,7 @@ export async function getChangesSince(
   conditions.push(`seq > ${next()}`);
   params.push(since);
   conditions.push(`seq <= ${next()}`);
-  params.push(horizon);
+  params.push(servedHorizon);
 
   const tables = options.tables?.filter((table) => table.trim().length > 0);
   if (tables && tables.length > 0) {
@@ -771,7 +1419,7 @@ export async function getChangesSince(
   // everything up to the horizon (matching or filtered out) has been
   // observed, so advance all the way.
   const cursor =
-    changes.length === limit ? changes[changes.length - 1].seq : horizon;
+    changes.length === limit ? changes[changes.length - 1].seq : servedHorizon;
 
   return { changes, cursor };
 }
@@ -853,24 +1501,44 @@ export async function getTableVersion(
   await ensureChangeFeedTable(db);
 
   const p = placeholders(db);
-  const tableRows = getQueryRows(
+
+  // Staged-but-unsequenced entries for this table (#2649) still have to move
+  // the version, or a client holding the pre-write ETag would be answered 304
+  // against data that has changed. Adding the table's own staged count is
+  // monotonic: draining `n` staged rows for this table raises its MAX(seq) by
+  // at least `n` (drained sequences start above the whole log's horizon) while
+  // the count drops by exactly `n`, so the sum never goes backwards.
+  //
+  // The two terms MUST come from one statement, i.e. one snapshot. Read
+  // separately, a drain landing between them is counted twice — the staged row
+  // in the first read and its sequence in the second — so the version jumps,
+  // then falls back on the next call, and a later write can re-mint the value
+  // a client already cached. That is a false 304 against changed data.
+  const versionRows = getQueryRows(
     await db.query(
-      `SELECT MAX(seq) AS version FROM ${CHANGE_FEED_TABLE} WHERE table_name = ${p(1)}`,
+      getEngine(db) === 'postgres'
+        ? `SELECT
+             (SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE} WHERE table_name = ${p(1)}) AS version,
+             (SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE}) AS horizon,
+             (SELECT COUNT(*) FROM ${POSTGRES_CHANGE_FEED_PENDING_TABLE} WHERE table_name = ${p(1)}) AS staged`
+        : `SELECT
+             (SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE} WHERE table_name = ${p(1)}) AS version,
+             (SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE}) AS horizon,
+             0 AS staged`,
       name,
     ),
   );
-  const tableVersion = tableRows[0]?.version;
+  const row = versionRows[0];
+  const staged = toSeqNumber(row?.staged);
+  const tableVersion = row?.version;
   if (tableVersion != null) {
-    return toSeqNumber(tableVersion);
+    return toSeqNumber(tableVersion) + staged;
   }
 
   // No retained entry for this table — fall back to the global horizon so an
   // all-pruned (or never-written) table never reports a resettable low value
   // that could false-304 a stale client. 0 only when the feed is empty.
-  const horizonRows = getQueryRows(
-    await db.query(`SELECT MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`),
-  );
-  return toSeqNumber(horizonRows[0]?.horizon);
+  return toSeqNumber(row?.horizon) + staged;
 }
 
 function toSeqNumber(value: unknown): number {
@@ -939,6 +1607,10 @@ export async function pruneChangeFeed(
 
   const p = placeholders(db);
 
+  // Sequence staged entries first (#2649) so retention prunes a complete log
+  // rather than leaving newer staged work outside the window it just sized.
+  await drainChangeFeedBestEffort(db);
+
   // Snapshot the horizon once: both bounds prune strictly below it so the
   // newest entry always survives (see resync-detection contract above).
   const horizonRows = getQueryRows(
@@ -967,16 +1639,46 @@ export async function pruneChangeFeed(
 
   if (maxAgeMs != null) {
     const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+
+    // Prune by age as a PREFIX, not as a predicate. Deleting every row with
+    // `created_at < cutoff` assumes `created_at` and `seq` are co-monotonic;
+    // they are not. `created_at` is stamped by the writer's clock (so two
+    // processes can skew) and, since #2649, a staged entry carries its
+    // stage-time stamp into the sequence the drain assigns later. Either way an
+    // old timestamp can sit at a high sequence, and deleting it would punch a
+    // hole in the MIDDLE of the retained run — which `getChangesSince` cannot
+    // detect: its pruned-cursor proof (`since < floor - 1`) only sees the
+    // floor move, so a reader below that hole is silently, permanently short
+    // one committed change.
+    //
+    // Retaining the whole run from the oldest entry that is still inside the
+    // window keeps deletion oldest-first and the retained sequences contiguous
+    // — the invariant the resync signal rests on. The cost is that a stale
+    // entry sequenced after a fresh one survives until the fresh one ages out.
+    const retainRows = getQueryRows(
+      await db.query(
+        `SELECT MIN(seq) AS first_retained FROM ${CHANGE_FEED_TABLE} WHERE created_at >= ${p(1)}`,
+        cutoff,
+      ),
+    );
+    const firstRetained = toSeqNumber(retainRows[0]?.first_retained);
+    // Nothing is inside the window → everything but the newest entry may go.
+    const ageThrough = Math.min(
+      firstRetained > 0 ? firstRetained - 1 : horizon - 1,
+      horizon - 1,
+    );
     // `seq > prunedThrough` excludes what the row bound already accounted for.
     // Redundant when the rows were really deleted, load-bearing under
     // `dryRun`, where nothing was — without it overlapping entries would be
     // counted by both bounds.
-    pruned += await deleteCounted(
-      db,
-      `created_at < ${p(1)} AND seq < ${p(2)} AND seq > ${p(3)}`,
-      [cutoff, horizon, prunedThrough],
-      dryRun,
-    );
+    if (ageThrough > prunedThrough) {
+      pruned += await deleteCounted(
+        db,
+        `seq <= ${p(1)} AND seq > ${p(2)}`,
+        [ageThrough, prunedThrough],
+        dryRun,
+      );
+    }
   }
 
   return { pruned };
@@ -1015,6 +1717,9 @@ const warnedAppendFailures = new Set<string>();
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
+
+/** Databases we already warned about after a failed feed drain (#2649). */
+const warnedDrainFailures = new Set<string>();
 
 /**
  * Register the change-feed writer with {@link GlobalInterceptors}.
@@ -1117,6 +1822,14 @@ async function appendForInstance(
       tenantId: rowTenantId,
     });
 
+    // A staged append (#2649) has no sequence yet, so there is no cursor to
+    // signal with. The signal is published by the drain that sequences it,
+    // which is also the first moment it is honest — the pre-commit signal this
+    // path used to publish for a transaction-wrapped write could describe work
+    // a later rollback undid. Live subscribers see such writes one drain
+    // later; cursor polling, the documented fallback, is unaffected.
+    if (seq == null) return;
+
     // Publish a coarse live signal for the SSE `_events` route (#1763). This
     // runs only after the durable feed append SUCCEEDED (same try block, so a
     // failed append never emits a signal — "no signal without a durable feed
@@ -1168,6 +1881,24 @@ function warnAppendFailureOnce(
   }
 }
 
+function warnDrainFailureOnce(db: DatabaseInterface, error: unknown): void {
+  try {
+    const dbKey = resolveDbCacheKey(db);
+    if (warnedDrainFailures.has(dbKey)) return;
+    warnedDrainFailures.add(dbKey);
+    logger.warn(
+      'Change feed: failed to sequence entries staged inside caller ' +
+        'transactions. Those entries are durable but stay invisible to cursor ' +
+        'readers until a drain succeeds (further failures for this database ' +
+        'are suppressed). A read-only handle cannot drain — schedule ' +
+        'drainChangeFeed() on a writable connection.',
+      { error: error instanceof Error ? error.message : String(error) },
+    );
+  } catch {
+    // Logging must never propagate into the read or write path.
+  }
+}
+
 function warnSignalPublishFailureOnce(
   db: DatabaseInterface,
   table: string,
@@ -1195,4 +1926,10 @@ function warnSignalPublishFailureOnce(
 export function resetChangeFeedWarnings(): void {
   warnedAppendFailures.clear();
   warnedSignalPublishFailures.clear();
+  warnedDrainFailures.clear();
+  // The append path's drain interval is process state too; a test that asserts
+  // on drain-driven signals must not inherit a neighbour's timestamp.
+  lastAppendDrain.clear();
+  stagedSinceLastDrain.clear();
+  deferredSignals.clear();
 }

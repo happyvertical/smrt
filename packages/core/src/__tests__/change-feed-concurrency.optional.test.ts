@@ -97,6 +97,9 @@ describe.skipIf(!pgUrl)(
         'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure ON _smrt_changes',
       );
       await writerA.query(
+        'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure_pending ON _smrt_changes_pending',
+      );
+      await writerA.query(
         'DROP FUNCTION IF EXISTS issue_2026_assert_feed_failure()',
       );
       await writerA.query(
@@ -415,6 +418,14 @@ describe.skipIf(!pgUrl)(
          ADD CONSTRAINT issue_2026_forced_failure
          CHECK (table_name <> '${TRANSACTION_WIDGETS_TABLE}')`,
       );
+      // These writes run inside caller transactions, so their feed appends are
+      // staged rather than sequenced (#2649). Constrain the staging table too,
+      // or the forced failure would never reach the append the caller issues.
+      await writerA.query(
+        `ALTER TABLE _smrt_changes_pending
+         ADD CONSTRAINT issue_2026_forced_failure_pending
+         CHECK (table_name <> '${TRANSACTION_WIDGETS_TABLE}')`,
+      );
 
       try {
         let readyTransactions = 0;
@@ -502,9 +513,21 @@ describe.skipIf(!pgUrl)(
           ),
         );
         expect(Number(droppedFeedRows[0]?.total)).toBe(0);
+
+        const stagedRows = rowsOf(
+          await writerA.query(
+            `SELECT COUNT(*) AS total FROM _smrt_changes_pending
+             WHERE table_name = $1`,
+            TRANSACTION_WIDGETS_TABLE,
+          ),
+        );
+        expect(Number(stagedRows[0]?.total)).toBe(0);
       } finally {
         await writerA.query(
           'ALTER TABLE _smrt_changes DROP CONSTRAINT IF EXISTS issue_2026_forced_failure',
+        );
+        await writerA.query(
+          'ALTER TABLE _smrt_changes_pending DROP CONSTRAINT IF EXISTS issue_2026_forced_failure_pending',
         );
       }
     }, 120_000);
@@ -530,7 +553,9 @@ describe.skipIf(!pgUrl)(
       let blockerError: unknown;
       const blocker = writerB
         .transaction(async (tx) => {
-          await tx.query('LOCK TABLE _smrt_changes IN ACCESS EXCLUSIVE MODE');
+          await tx.query(
+            'LOCK TABLE _smrt_changes, _smrt_changes_pending IN ACCESS EXCLUSIVE MODE',
+          );
           resolveLockReady();
           await lockRelease;
         })
@@ -579,6 +604,15 @@ describe.skipIf(!pgUrl)(
         ),
       );
       expect(Number(droppedFeedRows[0]?.total)).toBe(0);
+
+      const stagedRows = rowsOf(
+        await writerA.query(
+          `SELECT COUNT(*) AS total FROM _smrt_changes_pending
+           WHERE table_name = $1`,
+          TRANSACTION_WIDGETS_TABLE,
+        ),
+      );
+      expect(Number(stagedRows[0]?.total)).toBe(0);
     }, 120_000);
 
     it('keeps a caller transaction usable when a feed trigger raises assert_failure', async () => {
@@ -607,6 +641,15 @@ describe.skipIf(!pgUrl)(
           FOR EACH ROW
           EXECUTE FUNCTION issue_2026_assert_feed_failure()
         `);
+        // The write below runs in a caller transaction, so its append is
+        // staged (#2649) — the trigger has to sit on the staging table for the
+        // assertion to fire where the caller can observe it.
+        await writerA.query(`
+          CREATE TRIGGER issue_2026_assert_feed_failure_pending
+          BEFORE INSERT ON _smrt_changes_pending
+          FOR EACH ROW
+          EXECUTE FUNCTION issue_2026_assert_feed_failure()
+        `);
 
         await writerA.transaction(async (tx) => {
           const widgets = await ChangeFeedTransactionWidgetCollection.create({
@@ -625,6 +668,9 @@ describe.skipIf(!pgUrl)(
       } finally {
         await writerA.query(
           'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure ON _smrt_changes',
+        );
+        await writerA.query(
+          'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure_pending ON _smrt_changes_pending',
         );
         await writerA.query(
           'DROP FUNCTION IF EXISTS issue_2026_assert_feed_failure()',

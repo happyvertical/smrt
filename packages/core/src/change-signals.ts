@@ -46,17 +46,19 @@
  *   write path (same accepted gap as the #1758 feed and #1498 cache). A
  *   `bumpChangeFeed` escape-hatch write appends a feed row but does not
  *   publish a signal.
- * - **Caller-managed transactions are best-effort**: the append + signal fire
- *   from `afterSave`/`afterDelete`, i.e. *before* a caller-wrapped transaction
- *   commits (the autocommit default path — save()/delete() as independent
- *   statements — is exact). Inside such a transaction, a signal may fire for a
- *   change that a later rollback undoes, and the rolled-back seq is then reused
- *   by the next append — so a client trusting a pre-commit `Last-Event-ID`
- *   could skip the reuse via catch-up. This inherits the change feed's
- *   documented transaction caveat (see `change-feed.ts`); no generic
- *   post-commit hook exists to close it. Clients reconcile via full catch-up /
- *   resync, so convergence still holds — live delivery is just best-effort for
- *   transaction-wrapped writes.
+ * - **Caller-managed transactions signal late, not early** (#2649): a
+ *   PostgreSQL append made inside a caller transaction that has already
+ *   written is *staged*, so it has no sequence to signal with at
+ *   `afterSave`/`afterDelete` time. Its signal is published instead by the
+ *   drain that sequences it, which is the first post-commit moment — closing
+ *   the older hazard where a pre-commit signal could describe a write a later
+ *   rollback undid, and where the rolled-back seq was reused by the next
+ *   append. The cost is latency: live subscribers see a transaction-wrapped
+ *   write one drain after it commits, and on engines without staging
+ *   (SQLite, DuckDB) the pre-commit caveat still applies. The autocommit
+ *   default path — save()/delete() as independent statements — is exact and
+ *   unchanged. Clients reconcile via cursor catch-up either way, so
+ *   convergence holds.
  *
  * @see https://github.com/happyvertical/smrt/issues/1763
  * @packageDocumentation
