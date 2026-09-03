@@ -2815,6 +2815,22 @@ describe('SvelteKit Route Generator', () => {
       ]);
     });
 
+    it('flags a cli.include entry naming no real CRUD verb or scanned method (#2638 final review, F2)', () => {
+      // A typo, a getter (never in the manifest's methods map), or a
+      // private/protected method (the scanner drops these rather than
+      // recording isPublic: false) must still surface as unreachable at
+      // build time -- resolving purely through the manifest's real methods
+      // would silently drop such an entry instead of flagging it.
+      const manifest = buildManifest({
+        api: { include: ['list', 'get', 'discover', 'audit'] },
+        cli: { include: ['list', 'discover', 'audit', 'totallyNotAMethod'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        { className: 'Praeco', unreachable: ['totallyNotAMethod'] },
+      ]);
+    });
+
     it('throws with remediation guidance when invoked as a build-time gate', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get'] },

@@ -2379,11 +2379,22 @@ async function generateCLIModule(
       // generated static metadata can never advertise a command that the
       // real CLIGenerator refuses to invoke -- framework lifecycle methods
       // (save, initialize, getSlug, ...) included, not just `save`.
+      //
+      // The pre-#2638 loop this replaced also skipped a leading `_` by
+      // naming convention (scanned manifest methods have no reliable
+      // private/protected signal of their own -- the scanner records
+      // `isPublic: true` unconditionally, see manifest-adapter.ts -- so
+      // `_`-prefix is the only signal generateCLIModule ever had). Keep
+      // that filter here explicitly: resolveCustomActionNames() only gates
+      // on the manifest's (unreliable) isPublic flag, so dropping this
+      // would newly advertise internal-by-convention methods such as
+      // SmrtObject._setLoadedRelationship (final review, #2638).
       for (const methodName of resolveCustomActionNames(
         Object.entries(objectDef.methods),
         { include: included ?? undefined, exclude: excluded },
         ['list', 'get', 'create', 'update', 'delete'],
       )) {
+        if (methodName.startsWith('_')) continue;
         if (shouldInclude(methodName)) {
           availableCommands.push(`'${commandName}:${methodName}'`);
         }

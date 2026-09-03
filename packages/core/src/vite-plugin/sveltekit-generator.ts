@@ -2294,27 +2294,34 @@ export interface CliApiCoherenceViolation {
 
 /**
  * Resolve the effective CLI command set for an object, for the cli↔api
- * coherence lint.
+ * coherence lint. Two distinct resolutions, chosen by whether `cli.include`
+ * is spelled out:
  *
- * Custom (non-CRUD, non-framework-lifecycle — #2638) methods are always
- * checked, for any `cli` config shape: `resolveCustomActionNames` resolves
- * "every public method minus exclude" exactly the way
- * `CLIGenerator.listCommands()` does (reused, not reimplemented), so a bare
- * `cli: true`/`cli: {}` — the common form, and what `User` uses — is
- * resolved with the identical rule as one that names an explicit `include`.
- * A custom command is generated from the object's own public methods
- * regardless of whether the class opted into an `include` list, so it needs
- * checking regardless too.
+ * **Explicit `cli.include`** (preserves the lint's exact pre-#2638
+ * algorithm): the literal `include − exclude`, verbatim, whether or not an
+ * entry resolves to a real CRUD verb or a scanned public method. This is
+ * deliberate, not an oversight -- an `include` entry that names a typo, a
+ * getter (never in the manifest's `methods` map), or a private/protected
+ * method (the scanner drops these rather than recording `isPublic: false`,
+ * so nothing else catches it) must still surface as "unreachable" so the
+ * build fails loudly on the config mistake, the same way it always has.
+ * Resolving it instead through `resolveCustomActionNames` -- which only
+ * iterates real scanned methods -- would silently drop such an entry with no
+ * error at all (final review, #2638).
  *
- * CRUD verbs, in contrast, are only checked when named explicitly in
- * `cli.include` — preserving the lint's pre-#2638 behavior for that half.
- * A class that closes its API entirely (`api: false`) while keeping a
- * default-open, CLI/MCP-only admin surface (`cli: true`/omitted) is a common,
- * intentional combination (see `cli.skipApiCheck`'s own "in-process, no
- * HTTP" doc comment); blanket-checking CRUD reachability for every such class
- * would flag that existing, legitimate pattern across the whole codebase, not
- * just the #2638 defect (confirmed by running this against the full monorepo
- * build during development — it did exactly that).
+ * **Bare `cli: true`/`cli: {}`** (#2638, the new case this lint now
+ * inspects): every public custom method minus exclude, exactly the "every
+ * public method minus exclude" resolution `CLIGenerator.listCommands()`
+ * already applies (via `resolveCustomActionNames`, reused not
+ * reimplemented) -- lifecycle methods excluded, same as everywhere else.
+ * CRUD verbs are NOT checked in this branch: a class that closes its API
+ * entirely (`api: false`) while keeping a default-open, CLI/MCP-only admin
+ * surface (`cli: true`/omitted) is a common, intentional combination (see
+ * `cli.skipApiCheck`'s own "in-process, no HTTP" doc comment); blanket-
+ * checking CRUD reachability for every such class would flag that existing,
+ * legitimate pattern across the whole codebase, not just the #2638 defect
+ * (confirmed by running this against the full monorepo build during
+ * development — it did exactly that).
  */
 function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
   const cliConfig = objectDef.decoratorConfig?.cli;
@@ -2327,22 +2334,15 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
       ? cliConfig.exclude
       : [];
 
-  const actions = new Set<string>(
-    included
-      ? included.filter(
-          (cmd) =>
-            STANDARD_API_ACTIONS.includes(cmd) && !excluded.includes(cmd),
-        )
-      : [],
-  );
-  for (const name of resolveCustomActionNames(
-    Object.entries(objectDef.methods || {}),
-    { include: included, exclude: excluded },
-    STANDARD_API_ACTIONS,
-  )) {
-    actions.add(name);
+  if (included) {
+    return new Set(included.filter((cmd) => !excluded.includes(cmd)));
   }
-  return actions;
+
+  return resolveCustomActionNames(
+    Object.entries(objectDef.methods || {}),
+    { include: undefined, exclude: excluded },
+    STANDARD_API_ACTIONS,
+  );
 }
 
 /**

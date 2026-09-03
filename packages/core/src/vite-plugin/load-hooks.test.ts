@@ -126,6 +126,13 @@ export class Widget extends SmrtObject {
   override async initialize(): Promise<this> {
     return super.initialize();
   }
+
+  // #2638 final review (F1): the scanner records isPublic: true
+  // unconditionally (no reliable private/protected signal survives into the
+  // manifest), so an underscore-prefixed method is the one convention
+  // generateCLIModule can still filter on. Must never be advertised as a
+  // custom CLI command either.
+  async _internalHelper(): Promise<void> {}
 }
 
 @smrt({ cli: { exclude: ['delete'] } })
@@ -217,6 +224,11 @@ export class Gizmo extends SmrtObject {
     // hydration, not a distinct operation -- is not, even though `cli: true`
     // has no include list to filter it out.
     expect(code).not.toContain('widget:initialize');
+  });
+
+  it('never emits an underscore-prefixed method as a custom command (#2638 final review, F1)', async () => {
+    const code = await load('\0smrt:cli');
+    expect(code).not.toContain('widget:_internalHelper');
   });
 
   it('loads the default UI module source', async () => {
