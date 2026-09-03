@@ -186,16 +186,28 @@ export function resolveCustomActionNames(
 
 /**
  * The CRUD verbs a generated surface emits directly. A method whose name
- * collides with one of these is never a custom action: the verb is already
- * taken by the generated operation, so exposing the method under it emits a
- * second command/tool under a name that is already claimed.
+ * collides with one of these may not be exposed as a custom action under that
+ * name: the generated operation already claims it, so a second command/tool
+ * would land on a name that is taken.
  *
  * This is a NAMESPACE rule, independent of where the method came from — a
  * class's own `list()` collides exactly as a merged ancestor's does (#2646).
  *
- * Read it through {@link isCrudOperation} or {@link isCrudToolAction} rather
- * than re-declaring the list; the two predicates differ only in case folding,
- * because the transports namespace differently (see below).
+ * What a collision means differs by transport, so consult the emitting surface
+ * rather than assuming the verb is always reserved:
+ *
+ * - MCP reserves it unconditionally. `executeAction` switches on the verb
+ *   parsed out of the tool id, so `${object}_list` runs the built-in list
+ *   whichever branch emitted it — the class's method could never run, and
+ *   emitting one would hand the caller an operation `include` never named.
+ * - The CLI reserves it only where the CRUD command is actually emitted. Each
+ *   custom command carries its own handler invoking the class's method, so with
+ *   `cli: { include: ['list', 'get'] }` a public `create()` collides with
+ *   nothing and stays a legitimate, reachable `${object}:create`.
+ *
+ * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
+ * rather than re-declaring it; the two differ only in case folding, because the
+ * transports namespace differently (see below).
  */
 export const CRUD_OPERATIONS = [
   'list',

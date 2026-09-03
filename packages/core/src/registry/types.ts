@@ -474,7 +474,10 @@ export interface SmartObjectConfig {
         /**
          * Exclude specific tools (supports both standard CRUD actions and custom methods).
          *
-         * Matched exactly, like `include`.
+         * Matched exactly and case-sensitively, but unlike `include` a
+         * case-mismatched entry is silently inert rather than warned about: it
+         * matches no tool, so the tool it was meant to withhold is still
+         * emitted. Write the exact lowercase name.
          */
         exclude?: string[];
 
