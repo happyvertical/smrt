@@ -277,6 +277,58 @@ describe('SvelteKit Route Generator', () => {
       expect(generatedWidgetRoutes).toEqual([]);
     });
 
+    it('never generates a route directory for a framework base class, but still does for a genuine domain class (#2642)', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          // A foundation package (e.g. `@happyvertical/smrt-core` itself)
+          // declares its own framework base classes as real local classes,
+          // so the scanner emits a manifest entry for them too — with
+          // `decoratorConfig: {}`, indistinguishable in shape from a
+          // genuine bare `@smrt()`. `ObjectRegistry.loadAllManifests()`
+          // registers them like any genuine domain class, so route
+          // generation must skip them by class identity, not by config.
+          SmrtObject: {
+            className: 'SmrtObject',
+            qualifiedName: '@happyvertical/smrt-core:SmrtObject',
+            packageName: '@happyvertical/smrt-core',
+            collection: 'smrtobjects',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const generatedFrameworkBaseRoutes = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter(([filePath]) =>
+          String(filePath).includes('/src/routes/api/smrtobjects/'),
+        );
+      expect(generatedFrameworkBaseRoutes).toEqual([]);
+
+      const generatedWidgetRoutes = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter(([filePath]) =>
+          String(filePath).includes('/src/routes/api/widgets/'),
+        );
+      expect(generatedWidgetRoutes.length).toBeGreaterThan(0);
+    });
+
     it('resolves an inherited collection item type for custom routes', async () => {
       const manifest: SmartObjectManifest = {
         objects: {

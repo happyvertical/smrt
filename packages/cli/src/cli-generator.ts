@@ -15,7 +15,11 @@ import type {
   SmrtCollectionOptions,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { isCrudOperation, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  isCrudOperation,
+  isFrameworkBaseClass,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -1051,6 +1055,15 @@ export class CLIGenerator {
   ): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
     const lowerName = objectName.toLowerCase();
+
+    // The framework's own abstract base classes (SmrtObject,
+    // SmrtCollection, ...) are scaffolding, not resources — never expose an
+    // `objectname:list`/`:create`/... command for them, regardless of
+    // config (#2642).
+    if (isFrameworkBaseClass(objectName, _classInfo?.packageName)) {
+      return commands;
+    }
+
     const config = ObjectRegistry.getConfig(objectName);
     const cliConfig = config.cli;
 

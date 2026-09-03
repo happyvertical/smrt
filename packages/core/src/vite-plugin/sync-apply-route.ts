@@ -18,6 +18,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { ApiConfig } from '../registry/types.js';
 import type {
   SmartObjectDefinition,
@@ -125,6 +126,12 @@ export function collectSyncApplyTargets(
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     if (isCollectionManifestClass(manifest, objectDef)) continue;
+    // The framework's own abstract base classes are scaffolding, not
+    // resources — never make them a sync-apply target, regardless of
+    // config (#2642).
+    if (isFrameworkBaseClass(objectDef.className, objectDef.packageName)) {
+      continue;
+    }
 
     const apiConfig = objectDef.decoratorConfig?.api;
     if (apiConfig === false) continue;

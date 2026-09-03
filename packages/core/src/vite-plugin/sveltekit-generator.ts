@@ -23,6 +23,7 @@ import {
   DEFAULT_LIST_LIMIT,
   MAX_LIST_LIMIT,
 } from '../query-bounds.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -1315,6 +1316,12 @@ export async function generateSvelteKitRoutes(
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    // The framework's own abstract base classes (SmrtObject,
+    // SmrtCollection, ...) are scaffolding, not resources — never generate
+    // a route directory for them, regardless of config (#2642).
+    if (isFrameworkBaseClass(objectDef.className, objectDef.packageName)) {
+      continue;
+    }
     if (isCollectionManifestClass(manifest, objectDef)) {
       const collectionRoutePaths = await generateCollectionRoutesForObject(
         projectRoot,

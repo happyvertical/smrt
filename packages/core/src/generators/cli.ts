@@ -24,6 +24,7 @@ import { SmrtCollection } from '../collection';
 import type { DatabaseConfig } from '../database.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type { RegisteredClass } from '../registry/types.js';
 import {
   buildCustomActionInvocationArgs,
@@ -702,6 +703,12 @@ export class CLIGenerator {
     const commands: string[] = [];
     for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
       const objectName = classInfo.name || key;
+
+      // The framework's own abstract base classes are scaffolding, not
+      // resources — never expose an `objectname:list`/`:create`/... command
+      // for them, regardless of config (#2642).
+      if (isFrameworkBaseClass(objectName, classInfo.packageName)) continue;
+
       const config = ObjectRegistry.getConfig(objectName);
       const cliConfig = config?.cli;
       if (cliConfig === false) continue;
