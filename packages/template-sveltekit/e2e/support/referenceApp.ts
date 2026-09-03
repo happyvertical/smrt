@@ -44,12 +44,20 @@ export const packageRoot = resolve(here, '..', '..');
  * gate. The browser half serves a local-profile application on file-backed
  * SQLite and must not see any of it. `PG*` is stripped by prefix alongside.
  */
-const POSTGRES_WRAPPER_VARIABLES = new Set([
+export const POSTGRES_WRAPPER_VARIABLES = new Set([
+  // Derived targets the wrapper exports for its child.
   'DATABASE_TYPE',
   'DATABASE_URL',
   'SMRT_TEST_POSTGRES_URL',
   'TEST_DB_ADAPTER',
   'TEST_DB_URL',
+  // ...and the source they were derived from. Stripping only the derived
+  // names would leave the live connection string itself in the served
+  // process's environment, which is the value the documented local
+  // reproduction has a developer point at their own cluster.
+  'CI_POSTGRES_BASE_URL',
+  'CI_POSTGRES_BASE_URL_FILE',
+  'CI_POSTGRES_MANAGED',
 ]);
 
 /** Startup budget for the app's own build/migrate pass, in milliseconds. */

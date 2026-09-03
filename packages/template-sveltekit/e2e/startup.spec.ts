@@ -17,7 +17,10 @@ import {
 import { join, resolve } from 'node:path';
 
 import { expect, test } from './fixtures.js';
-import { packageRoot } from './support/referenceApp.js';
+import {
+  packageRoot,
+  POSTGRES_WRAPPER_VARIABLES,
+} from './support/referenceApp.js';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -54,15 +57,15 @@ test('starts from a clean temporary checkout copy and state root', async ({
   for (const key of Object.keys(referenceApp.servedEnvironment)) {
     expect(key.startsWith('PG')).toBe(false);
   }
-  for (const key of [
-    'DATABASE_TYPE',
-    'DATABASE_URL',
-    'SMRT_TEST_POSTGRES_URL',
-    'TEST_DB_ADAPTER',
-    'TEST_DB_URL',
-  ]) {
+  // The harness's own list, not a copy: a name added to the strip set but not
+  // to a restated list here would leave this assertion weaker than the
+  // invariant it names.
+  expect(POSTGRES_WRAPPER_VARIABLES.size).toBeGreaterThan(0);
+  for (const key of POSTGRES_WRAPPER_VARIABLES) {
     expect(referenceApp.servedEnvironment[key]).toBeUndefined();
   }
+  // The variable that actually carries the credential must be one of them.
+  expect([...POSTGRES_WRAPPER_VARIABLES]).toContain('CI_POSTGRES_BASE_URL');
 });
 
 test('proves process identity before the browser drives it', async ({
