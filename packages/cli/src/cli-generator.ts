@@ -1215,11 +1215,21 @@ export class CLIGenerator {
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
-        // A CRUD verb already names a command pushed above, so a method
-        // sharing its name is not a custom action — emitting one would add a
-        // second `${lowerName}:${verb}` that command lookup can never reach
-        // (#2646).
-        if (crudOperations.includes(methodName)) return false;
+        // A method sharing an EMITTED CRUD verb's name is not a custom
+        // action — pushing one would add a second `${lowerName}:${verb}` that
+        // `objectCommands.find` (first match wins) can never reach (#2646).
+        // Conditional on `shouldInclude` because a config like
+        // `include: ['list', 'get']` emits no `create` command, so a public
+        // `create()` collides with nothing and stays a reachable custom
+        // command exactly as before.
+        if (
+          crudOperations.includes(methodName) &&
+          shouldInclude(
+            methodName as 'list' | 'get' | 'create' | 'update' | 'delete',
+          )
+        ) {
+          return false;
+        }
 
         // Skip if not public (private/protected methods shouldn't be in CLI)
         if (!methodDef.isPublic) return false;
