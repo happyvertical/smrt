@@ -701,7 +701,9 @@ describe('change feed spine (issue #1758)', () => {
             rows: [
               {
                 created_at_type: 'timestamp with time zone',
+                drain_function_name: '_smrt_drain_changes',
                 function_name: '_smrt_append_change',
+                pending_table_name: '_smrt_changes_pending',
                 table_name: '_smrt_changes',
               },
             ],
