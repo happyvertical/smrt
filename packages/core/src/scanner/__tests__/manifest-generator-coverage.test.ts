@@ -499,13 +499,184 @@ describe('ManifestGenerator coverage', () => {
         'delete_notes',
       ]);
 
+      // The JSON definitions cover the same operation set under the same
+      // names as generateMCPTools (#2631).
       const code = gen.generateMCPToolsCode(baseManifest());
       expect(code).toContain('"list_notes"');
-      expect(code).toContain('"get_note"');
-      expect(code).toContain('"create_note"');
+      expect(code).toContain('"get_notes"');
+      expect(code).toContain('"create_notes"');
+      expect(code).toContain('"update_notes"');
+      expect(code).toContain('"delete_notes"');
       // JSON schema properties carry numeric/length constraints from fields.
       expect(code).toContain('"minimum": 0');
       expect(code).toContain('"maximum": 99');
+    });
+
+    it('requires the update payload, not just the id, on update_* tools', () => {
+      // `CollectionInterface.update(id, data)` needs the payload; a schema that
+      // required only `id` told clients `{id}` was valid input (#2631 review).
+      const gen = new ManifestGenerator();
+      const code = gen.generateMCPToolsCode(baseManifest());
+      const update = code.slice(code.indexOf('"update_notes"'));
+      expect(update.slice(0, update.indexOf('}\n  }'))).toContain(
+        'required: ["id", "data"]',
+      );
+    });
+
+    it('emits one canonical MCP owner per collection for a model/collection pair', () => {
+      // The framework's normal shape puts `Note` and `NoteCollection` in the
+      // manifest under the SAME `collection`. Emitting both produced duplicate
+      // tool names with differing create/update schemas, so a client indexing
+      // by name resolved an arbitrary definition (#2631 review). The model
+      // class owns the surface because create/update schemas come from
+      // `fields`, which is the row shape.
+      const gen = new ManifestGenerator();
+      const m = baseManifest();
+      m.objects['pkg:NoteCollection'] = def('NoteCollection', {
+        collection: 'notes',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Note',
+        fields: {},
+      });
+
+      const names = gen.generateMCPTools(m).split('\n').filter(Boolean);
+      expect(names).toEqual([...new Set(names)]);
+      expect(names).toEqual([
+        'list_notes',
+        'get_notes',
+        'create_notes',
+        'update_notes',
+        'delete_notes',
+      ]);
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      expect(emitted).toEqual(names);
+      // The model's field schema survived — the access class did not win.
+      expect(code).toContain('"minimum": 0');
+    });
+
+    it('picks the STI base, not an alphabetical leaf, as the MCP owner', () => {
+      // An STI family shares one `collection`; the base defines the shared row
+      // contract a `create_contents` tool addresses. Ranking by name alone
+      // would hand the surface to whichever subclass sorted first and narrow
+      // the emitted schema to one variant of the table.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          'pkg:Article': def('Article', {
+            collection: 'contents',
+            extends: 'Content',
+            fields: {
+              headline: { type: 'text', required: false } as never,
+            },
+          }),
+          'pkg:Content': def('Content', {
+            collection: 'contents',
+            fields: {
+              body: { type: 'text', required: false } as never,
+            },
+          }),
+          'pkg:Zine': def('Zine', {
+            collection: 'contents',
+            extends: 'Article',
+            fields: {
+              issue: { type: 'integer', required: false } as never,
+            },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // The base's field, not the alphabetically-first leaf subclass's.
+      expect(code).toContain('"body"');
+      expect(code).not.toContain('"headline"');
+      expect(code).not.toContain('"issue"');
+    });
+
+    it('does not link same-simple-name classes from different packages', () => {
+      // Two packages may legally contribute a `Content` to one collection.
+      // Resolving the parent on the simple name alone would make one an
+      // ancestor of the other and hand ownership to the wrong package.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          '@pkg-a:Content': def('Content', {
+            qualifiedName: '@pkg-a:Content' as never,
+            collection: 'contents',
+            fields: { alpha: { type: 'text', required: false } as never },
+          }),
+          '@pkg-b:Content': def('Content', {
+            qualifiedName: '@pkg-b:Content' as never,
+            collection: 'contents',
+            fields: { beta: { type: 'text', required: false } as never },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // Neither is a descendant of the other, so both sit at depth 0 and the
+      // qualified-name tie-break decides deterministically.
+      expect(code).toContain('"alpha"');
+      expect(code).not.toContain('"beta"');
+    });
+
+    it('refuses to invent ancestry through an ambiguous simple name', () => {
+      // Two packages contribute a `Widget` to one collection, and a third
+      // class extends the bare name `Widget`. Resolving that parent would
+      // link `Gadget` to an arbitrary package's class and rank it at depth 1,
+      // handing ownership to a `Widget`. The ambiguity guard stops the walk
+      // instead, so every candidate sits at depth 0 and the qualified-name
+      // tie-break decides.
+      const gen = new ManifestGenerator();
+      const m: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          '@pkg-a:Widget': def('Widget', {
+            qualifiedName: '@pkg-a:Widget' as never,
+            collection: 'contents',
+            fields: { alpha: { type: 'text', required: false } as never },
+          }),
+          '@pkg-b:Widget': def('Widget', {
+            qualifiedName: '@pkg-b:Widget' as never,
+            collection: 'contents',
+            fields: { beta: { type: 'text', required: false } as never },
+          }),
+          '@pkg-a:Gadget': def('Gadget', {
+            qualifiedName: '@pkg-a:Gadget' as never,
+            collection: 'contents',
+            extends: 'Widget',
+            fields: { gamma: { type: 'text', required: false } as never },
+          }),
+        },
+      };
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      // '@pkg-a:Gadget' sorts first among three depth-0 candidates. Were the
+      // ambiguous parent resolved, Gadget would be depth 1 and '@pkg-a:Widget'
+      // would own the surface instead.
+      expect(code).toContain('"gamma"');
+      expect(code).not.toContain('"alpha"');
+      expect(code).not.toContain('"beta"');
+    });
+
+    it('emits an empty array literal when every MCP operation is excluded', () => {
+      const gen = new ManifestGenerator();
+      const m = baseManifest();
+      m.objects.Note.decoratorConfig.mcp = { include: [] };
+      expect(gen.generateMCPToolsCode(m)).toBe('[]');
     });
 
     it('omits MCP tools entirely when mcp is false', () => {

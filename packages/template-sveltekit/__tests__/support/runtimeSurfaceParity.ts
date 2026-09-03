@@ -11,10 +11,11 @@
  * show up as a divergence in the canonical snapshot.
  *
  * The CLI inventory is read out of the plugin's own emitted
- * `@happyvertical/smrt-virt-cli` module TEXT rather than by importing it,
- * because that module currently emits source that is not valid JavaScript
- * (#2631). Extracting the emitted command literals still compares the real
- * generated artifact; re-deriving the command set in test code would not.
+ * `@happyvertical/smrt-virt-cli` module TEXT rather than by importing it.
+ * The module is valid JavaScript again as of #2631, but importing it would
+ * need its bare workspace specifiers resolved; extracting the emitted command
+ * literals still compares the real generated artifact, while re-deriving the
+ * command set in test code would not.
  * MCP is captured twice on purpose. `mcpToolNames` comes from the plugin's
  * per-copy emitted `smrt:mcp` module, so it is derived from THAT profile's
  * generation pass and would catch a copied-app divergence. `mcpToolSchemas`
@@ -278,19 +279,20 @@ async function runGenerationPass(appRoot: string): Promise<GenerationPass> {
 /**
  * Extract the generated MCP tool-name inventory from the emitted module text.
  *
- * The emitter currently interpolates a newline-separated name list into
- * `export const tools = …` (#2631), so the names are read back from that
- * assignment. This keeps the MCP inventory derived from the SAME per-profile
- * generation pass as the REST routes rather than from process-wide state.
+ * `export const tools = …` now holds the tool DEFINITION array (#2631 emits
+ * `generateMCPToolsCode()` there; it previously interpolated a newline-joined
+ * name list, which was not a valid expression). The names are read back from
+ * each definition's `name:` property. This keeps the MCP inventory derived
+ * from the SAME per-profile generation pass as the REST routes rather than
+ * from process-wide state.
  */
 function extractMcpToolNames(mcpModule: string): string[] {
   const assignment = /export const tools = ([\s\S]*?);\n/.exec(mcpModule);
   return [
     ...new Set(
-      (assignment?.[1] ?? '')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => /^[a-z0-9_]+$/i.test(line)),
+      [...(assignment?.[1] ?? '').matchAll(/\bname:\s*"([^"]+)"/g)].map(
+        (match) => match[1],
+      ),
     ),
   ].sort();
 }

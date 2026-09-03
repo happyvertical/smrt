@@ -2410,14 +2410,155 @@ ${fields}
   generateMCPTools(manifest: SmartObjectManifest): string {
     const tools: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
-      const mcpConfig = obj.decoratorConfig.mcp;
-      if (mcpConfig !== false) {
-        tools.push(...this.getSimpleMCPToolNames(obj));
-      }
+    for (const obj of this.selectMCPToolOwners(manifest)) {
+      tools.push(...this.getSimpleMCPToolNames(obj));
     }
 
     return tools.join('\n');
+  }
+
+  /**
+   * Choose exactly one canonical MCP owner per `collection`.
+   *
+   * MCP tool names are keyed on `collection`, but the framework's normal shape
+   * puts a model class and its `FooCollection` access class in the manifest
+   * under the SAME collection. Emitting both produces duplicate tool names with
+   * differing create/update schemas, and an MCP client that indexes tools by
+   * name then resolves an arbitrary one (#2631 review).
+   *
+   * Owners are ranked, in order:
+   *
+   * 1. The model class beats the collection-access class. `create`/`update`
+   *    input schemas derive from `obj.fields`, and the row shape lives on the
+   *    model, not on the access class.
+   * 2. The shallowest class in the collection's own inheritance tree wins. An
+   *    STI family shares one `collection`, and the base defines the shared row
+   *    contract; a leaf subclass would narrow the emitted schema to one variant
+   *    of a table the tool addresses as a whole.
+   * 3. Remaining ties break lexically on the qualified name, so the emitted
+   *    surface is deterministic across generation passes.
+   */
+  private selectMCPToolOwners(
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition[] {
+    const candidatesByCollection = new Map<string, SmartObjectDefinition[]>();
+
+    for (const obj of Object.values(manifest.objects)) {
+      if (obj.decoratorConfig.mcp === false) continue;
+      const bucket = candidatesByCollection.get(obj.collection);
+      if (bucket) bucket.push(obj);
+      else candidatesByCollection.set(obj.collection, [obj]);
+    }
+
+    return [...candidatesByCollection.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, candidates]) => {
+        const depths = this.inheritanceDepthsWithin(candidates);
+        let owner = candidates[0];
+        for (const candidate of candidates.slice(1)) {
+          if (this.preferMCPToolOwner(candidate, owner, depths)) {
+            owner = candidate;
+          }
+        }
+        return owner;
+      });
+  }
+
+  /** Stable identity for an MCP owner candidate. */
+  private mcpOwnerKey(obj: SmartObjectDefinition): string {
+    return obj.qualifiedName || obj.className;
+  }
+
+  /**
+   * Depth of each candidate inside the candidate set's OWN inheritance tree,
+   * keyed by {@link mcpOwnerKey}. A candidate with no candidate ancestor is a
+   * root at depth 0. Ancestors outside the set (framework bases, classes in
+   * other collections) do not add depth: only the shared-collection family
+   * decides which member is canonical.
+   *
+   * Parents resolve on `extendsQualified` first. Two packages may legally
+   * contribute same-simple-name classes to one collection, so a simple-name
+   * match is used only when it is unambiguous within the candidate set —
+   * otherwise the walk stops rather than linking unrelated classes.
+   */
+  private inheritanceDepthsWithin(
+    candidates: SmartObjectDefinition[],
+  ): Map<string, number> {
+    const byQualified = new Map<string, SmartObjectDefinition>();
+    const bySimpleName = new Map<string, SmartObjectDefinition | null>();
+    for (const candidate of candidates) {
+      byQualified.set(this.mcpOwnerKey(candidate), candidate);
+      const simple = this.simpleClassName(candidate.className);
+      // `null` marks an ambiguous simple name; never resolve through it.
+      bySimpleName.set(simple, bySimpleName.has(simple) ? null : candidate);
+    }
+
+    const resolveParent = (
+      obj: SmartObjectDefinition,
+    ): SmartObjectDefinition | undefined => {
+      if (obj.extendsQualified) return byQualified.get(obj.extendsQualified);
+      if (!obj.extends) return undefined;
+      return bySimpleName.get(this.simpleClassName(obj.extends)) ?? undefined;
+    };
+
+    const depths = new Map<string, number>();
+    for (const candidate of candidates) {
+      const key = this.mcpOwnerKey(candidate);
+      let depth = 0;
+      let current: SmartObjectDefinition | undefined = candidate;
+      const visited = new Set<string>([key]);
+      while (current) {
+        const parent: SmartObjectDefinition | undefined =
+          resolveParent(current);
+        if (!parent) break;
+        const parentKey = this.mcpOwnerKey(parent);
+        // Circular or self-referential extends: stop rather than loop.
+        if (visited.has(parentKey)) break;
+        visited.add(parentKey);
+        depth += 1;
+        current = parent;
+      }
+      depths.set(key, depth);
+    }
+    return depths;
+  }
+
+  /** True when `candidate` is the better canonical MCP owner than `current`. */
+  private preferMCPToolOwner(
+    candidate: SmartObjectDefinition,
+    current: SmartObjectDefinition,
+    depths: Map<string, number>,
+  ): boolean {
+    const candidateIsCollection = this.isCollectionAccessClass(candidate);
+    const currentIsCollection = this.isCollectionAccessClass(current);
+    if (candidateIsCollection !== currentIsCollection) {
+      return !candidateIsCollection;
+    }
+
+    const candidateKey = this.mcpOwnerKey(candidate);
+    const currentKey = this.mcpOwnerKey(current);
+
+    const candidateDepth = depths.get(candidateKey) ?? 0;
+    const currentDepth = depths.get(currentKey) ?? 0;
+    if (candidateDepth !== currentDepth) {
+      return candidateDepth < currentDepth;
+    }
+
+    return candidateKey < currentKey;
+  }
+
+  /**
+   * Collection-access class detection, matching the convention already used by
+   * `generateRestRoutes` (direct base / generic type argument) plus the
+   * `FooCollection` naming fallback this generator uses elsewhere, so a deeper
+   * subclass that carries no type argument of its own is still recognised.
+   */
+  private isCollectionAccessClass(obj: SmartObjectDefinition): boolean {
+    return (
+      obj.extends === 'SmrtCollection' ||
+      !!obj.extendsTypeArg ||
+      obj.className.endsWith('Collection')
+    );
   }
 
   /**
@@ -2426,14 +2567,14 @@ ${fields}
   generateMCPToolsCode(manifest: SmartObjectManifest): string {
     const tools: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
-      const mcpConfig = obj.decoratorConfig.mcp;
-      if (mcpConfig !== false) {
-        tools.push(this.generateMCPTool(obj));
-      }
+    for (const obj of this.selectMCPToolOwners(manifest)) {
+      const code = this.generateMCPTool(obj);
+      // An object whose every operation is excluded contributes nothing;
+      // pushing '' would emit a hole in the array literal (#2631).
+      if (code) tools.push(code);
     }
 
-    return `[\n${tools.join(',\n')}\n]`;
+    return tools.length > 0 ? `[\n${tools.join(',\n')}\n]` : '[]';
   }
 
   /**
@@ -2477,7 +2618,7 @@ ${fields}
    * Generate a single MCP tool
    */
   private generateMCPTool(obj: SmartObjectDefinition): string {
-    const { collection, className, name } = obj;
+    const { collection } = obj;
     const config = obj.decoratorConfig.mcp;
     const exclude = (typeof config === 'object' && config?.exclude) || [];
     const include =
@@ -2508,17 +2649,23 @@ ${fields}
 
     if (shouldInclude('get')) {
       tools.push(`  {
-    name: "get_${name}",
-    description: "Get a ${name} by ID",
+    name: "get_${collection}",
+    description: "Get a ${collection} entry by ID",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "The ${name} ID" }
+        id: { type: "string", description: "The ${collection} entry ID" }
       },
       required: ["id"]
     }
   }`);
     }
+
+    const schemaProperties = JSON.stringify(
+      this.generateSchemaProperties(obj.fields),
+      null,
+      6,
+    );
 
     if (shouldInclude('create')) {
       const requiredFields = Object.entries(obj.fields)
@@ -2526,12 +2673,45 @@ ${fields}
         .map(([fieldName]) => fieldName);
 
       tools.push(`  {
-    name: "create_${name}",
-    description: "Create a new ${name}",
+    name: "create_${collection}",
+    description: "Create a new ${collection} entry",
     inputSchema: {
       type: "object",
-      properties: ${JSON.stringify(this.generateSchemaProperties(obj.fields), null, 6)},
+      properties: ${schemaProperties},
       required: ${JSON.stringify(requiredFields)}
+    }
+  }`);
+    }
+
+    if (shouldInclude('update')) {
+      tools.push(`  {
+    name: "update_${collection}",
+    description: "Update an existing ${collection} entry",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ${collection} entry ID" },
+        data: {
+          type: "object",
+          description: "Fields to update on the ${collection} entry",
+          properties: ${schemaProperties}
+        }
+      },
+      required: ["id", "data"]
+    }
+  }`);
+    }
+
+    if (shouldInclude('delete')) {
+      tools.push(`  {
+    name: "delete_${collection}",
+    description: "Delete a ${collection} entry by ID",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ${collection} entry ID" }
+      },
+      required: ["id"]
     }
   }`);
     }
