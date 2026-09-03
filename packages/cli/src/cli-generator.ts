@@ -15,7 +15,11 @@ import type {
   SmrtCollectionOptions,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { isCrudOperation, isFrameworkBaseClass, ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  isCrudOperation,
+  isFrameworkBaseClass,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
