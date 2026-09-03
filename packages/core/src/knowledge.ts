@@ -512,11 +512,15 @@ function configuredSurfaces(
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
   // NOTE: the `cli` projection models core's `CLIGenerator`, which reserves a
-  // CRUD verb unconditionally. `@happyvertical/smrt-cli`'s generator reserves
-  // one only where the CRUD command is emitted (each of its commands carries
-  // its own handler), so with `cli: { include: ['list', 'get'] }` a public
-  // `create()` is a reachable `${object}:create` there that this projection
-  // does not report. Predates #2646; see #2648.
+  // CRUD verb unconditionally. That is NOT the shipped local CLI:
+  // `@happyvertical/smrt-cli`'s generator reserves one only where the CRUD
+  // command is emitted (each of its commands carries its own handler), so with
+  // `cli: { include: ['list', 'get'] }` a public `create()` is a reachable
+  // `${object}:create` there that this projection does not report.
+  //
+  // Retargeting this projection at the shipped binary is tracked on #2664, and
+  // is a CONTRACT CHANGE rather than a cleanup: the two generators genuinely
+  // disagree, so `smrt-knowledge.json` snapshots move. Predates #2646.
   const collectionClass = isSurfaceCollectionClass(manifest, object);
   const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => {
