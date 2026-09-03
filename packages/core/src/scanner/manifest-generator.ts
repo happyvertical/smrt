@@ -122,20 +122,37 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
  * Framework base classes to exclude from the ancestor **method** merge
  * below (#2624). Unlike fields, methods are never columns, so they never
  * needed the STI-vs-CTI field-merge rule above — they inherited it only by
- * sharing the same loop. This is the full framework-base set: mirrors
- * `FRAMEWORK_BASE_CLASSES` in `packages/scanner/src/inheritance-resolver.ts`
- * (`SmrtObject`/`SmrtClass`/`SmrtCollection` plus every name in
- * `FRAMEWORK_ABSTRACT_BASE_NAMES` above), matching the runtime resolver's
- * `getAllMethods()` (`packages/core/src/registry/inheritance-resolver.ts`),
- * which never surfaces these classes' own methods as inherited surfaces —
- * `SmrtObject`/`SmrtClass`/`SmrtCollection` because chain-building stops
- * before unshifting them, and the remaining five because they are
- * undecorated and never registered, so they never resolve as chain
- * ancestors either. Keep in sync with both sets; this one governs method
- * merging only.
+ * sharing the same loop.
+ *
+ * Deliberately NARROWER than `FRAMEWORK_ABSTRACT_BASE_NAMES`: only the
+ * three universal object/collection primitives (`SmrtObject`, `SmrtClass`,
+ * `SmrtCollection`) are internal-only. These are the same three the
+ * runtime resolver's `getAllMethods()`
+ * (`packages/core/src/registry/inheritance-resolver.ts`) explicitly skips
+ * by name, and the same three the field-merge doc comment above excludes
+ * from `FRAMEWORK_ABSTRACT_BASE_NAMES` for the identical reason: their
+ * surface (`save`, `destroy`, `toJSON`, `withTransaction`, ...) is generic
+ * object-lifecycle plumbing, never a subclass-specific action.
+ *
+ * `FRAMEWORK_ABSTRACT_BASE_NAMES` (`SmrtJunction`, `SmrtHierarchical`,
+ * `SmrtPolymorphicAssociation`, `SmrtReport`, `SmrtReportCollection`) is
+ * intentionally NOT folded in here, unlike an earlier version of this fix.
+ * Those classes are mixin-style bases whose declared methods ARE the
+ * subclass's real, intended public API — `SmrtJunction.attach`/`detach`/
+ * `byLeft`/`byRight`/`setLinks` for junction collections,
+ * `SmrtHierarchical.getParent`/`getChildren`/`getAncestors`/
+ * `getDescendants`/`getHierarchy`/`moveTo` for hierarchical objects — the
+ * same way `SmrtHierarchical.parentId` is a real, intended field, which is
+ * exactly why `FRAMEWORK_ABSTRACT_BASE_NAMES` fields already merge into
+ * every subclass regardless of STI/CTI (see above). Confirmed by
+ * `packages/template-sveltekit/__tests__/runtimeProfileParity.test.ts`'s
+ * committed snapshot, which asserts a junction collection subclass DOES
+ * expose `attach`/`byLeft`/`byRight`/`detach`/`setLinks` as generated
+ * surfaces — folding these five into the method exclusion broke that test,
+ * which is how this got caught. Keep in sync with the field-merge set's
+ * own doc comment; this one governs method merging only.
  */
 const FRAMEWORK_METHOD_BASE_NAMES = new Set([
-  ...FRAMEWORK_ABSTRACT_BASE_NAMES,
   'SmrtObject',
   'SmrtClass',
   'SmrtCollection',
@@ -1578,13 +1595,17 @@ export class ManifestGenerator {
         // METHODS (#2624): methods are not columns and never needed the
         // STI/CTI field rule above — they inherited it only by sharing the
         // loop. Give them their own rule instead: merge from every ancestor
-        // except framework base classes (internal framework API that was
-        // never meant to be inherited as a custom action), independent of
+        // except the universal object/collection primitives in
+        // FRAMEWORK_METHOD_BASE_NAMES (see its doc comment — deliberately
+        // narrower than FRAMEWORK_ABSTRACT_BASE_NAMES), independent of
         // `usesSTI`. This both stops STI subclasses from absorbing
         // `SmrtObject`/`SmrtClass`/`SmrtCollection` internals (over-merge)
         // and lets CTI subclasses inherit a concrete decorated ancestor's
         // own public methods (under-merge), matching the runtime resolver's
-        // `getAllMethods()`.
+        // `getAllMethods()` — while still letting a framework abstract
+        // base's own intended API (e.g. SmrtJunction.attach/detach,
+        // SmrtHierarchical.getChildren) merge in, the same way its fields
+        // already do.
         if (!FRAMEWORK_METHOD_BASE_NAMES.has(ancestorName)) {
           for (const [methodName, methodDef] of Object.entries(
             ancestor.methods || {},
