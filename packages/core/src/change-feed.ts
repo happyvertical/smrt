@@ -339,6 +339,36 @@ const MAX_APPEND_ATTEMPTS = 20;
  */
 const MAX_DRAIN_PASSES = 50;
 
+/**
+ * Per-handle low-water mark of sequences a drain allocated but has not proven
+ * committed (#2649).
+ *
+ * The hold-back has to outlive the drain call that created it. A caller
+ * transaction can drain in one statement and read in the next — the second
+ * read's own drain allocates nothing (the server-side helper refuses once the
+ * transaction has an id), yet the transaction still sees the first drain's
+ * uncommitted rows and would serve them. Keyed on the handle object, which is
+ * the transaction's identity for its whole life, so every later read on the
+ * same transaction keeps holding back from the same mark.
+ *
+ * The mark is recorded unconditionally and *used* only while a transaction id
+ * is still assigned at read time. Under autocommit the drain committed as its
+ * own transaction, so the next read clears the mark and serves the rows.
+ */
+const uncommittedDrainMarks = new WeakMap<object, number>();
+
+function recordUncommittedDrainMark(
+  db: DatabaseInterface,
+  firstAllocatedSeq: number | null,
+): void {
+  if (firstAllocatedSeq === null) return;
+  const key = db as unknown as object;
+  const existing = uncommittedDrainMarks.get(key);
+  if (existing === undefined || firstAllocatedSeq < existing) {
+    uncommittedDrainMarks.set(key, firstAllocatedSeq);
+  }
+}
+
 const VALID_OPERATIONS: ReadonlySet<string> = new Set([
   'create',
   'update',
@@ -801,24 +831,22 @@ async function drainChangeFeedDetailed(
 
     if (sequenced.length === 0) break;
   }
+  recordUncommittedDrainMark(db, firstAllocatedSeq);
   return { drained, firstAllocatedSeq };
 }
 
 /**
  * Drain without ever failing the caller — the read-path and prune policy.
  *
- * @returns The lowest sequence this drain allocated, or `null` when it
- *   allocated none. See {@link drainChangeFeedDetailed} for why a reader must
- *   not serve at or above it.
+ * Any sequences it allocates are recorded on the handle's uncommitted-drain
+ * mark; see {@link uncommittedDrainMarks} for why a reader must not serve at
+ * or above it while the caller's transaction is still open.
  */
-async function drainChangeFeedBestEffort(
-  db: DatabaseInterface,
-): Promise<number | null> {
+async function drainChangeFeedBestEffort(db: DatabaseInterface): Promise<void> {
   try {
-    return (await drainChangeFeedDetailed(db)).firstAllocatedSeq;
+    await drainChangeFeedDetailed(db);
   } catch (error) {
     warnDrainFailureOnce(db, error);
-    return null;
   }
 }
 
@@ -911,7 +939,7 @@ export async function getChangesSince(
   // advance the cursor past sequences a concurrent autocommit appender then
   // claims for its own entries. Anything this drain allocated is therefore
   // held back to the next poll.
-  const drainedFromSeq = await drainChangeFeedBestEffort(db);
+  await drainChangeFeedBestEffort(db);
 
   const p = placeholders(db);
 
@@ -936,16 +964,24 @@ export async function getChangesSince(
   const floor = toSeqNumber(boundsRows[0]?.floor);
   const horizon = toSeqNumber(boundsRows[0]?.horizon);
 
-  // Everything below the drain's own allocation was committed by another
-  // transaction before this read began; at or above it is this transaction's
-  // uncommitted work (see drainChangeFeedDetailed).
+  // Everything below the handle's uncommitted-drain mark was committed by
+  // another transaction before this read's transaction began; at or above it
+  // is this transaction's own uncommitted work. The mark spans the whole
+  // transaction, so a second read on the same handle holds back what the
+  // first read's drain wrote even though this read drained nothing.
   const inCallerTransaction =
     boundsRows[0]?.in_transaction === true ||
     boundsRows[0]?.in_transaction === 't';
+  const handleKey = db as unknown as object;
+  if (!inCallerTransaction) {
+    // The drain committed as its own transaction; the mark has served out.
+    uncommittedDrainMarks.delete(handleKey);
+  }
+  const drainMark = inCallerTransaction
+    ? uncommittedDrainMarks.get(handleKey)
+    : undefined;
   const servedHorizon =
-    drainedFromSeq === null || !inCallerTransaction
-      ? horizon
-      : Math.min(horizon, drainedFromSeq - 1);
+    drainMark === undefined ? horizon : Math.min(horizon, drainMark - 1);
 
   if (horizon === 0) {
     // No entries at all. A zero cursor is simply "no changes ever"; any

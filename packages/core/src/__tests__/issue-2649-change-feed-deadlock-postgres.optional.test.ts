@@ -442,6 +442,51 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
   }, 120_000);
 
   /**
+   * The hold-back has to span the transaction, not the drain call. A caller
+   * that reads twice on one open transaction drains only on the first call —
+   * the server-side helper refuses once the transaction has an id — yet the
+   * transaction still sees those uncommitted rows, so a call-scoped hold-back
+   * would serve them on the second read and hand back a cursor above sequences
+   * a rollback releases for reuse.
+   */
+  it('holds back an earlier drain on every later read of the same transaction', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'staged' WHERE id = $1`,
+        ROW_A,
+      );
+      await appendChange(tx, {
+        table: FEED_TABLE,
+        rowId: ROW_A,
+        operation: 'update',
+      });
+    });
+
+    await expect(
+      runTransaction(owner, async (tx) => {
+        // First read drains; second and third read nothing new but must not
+        // start serving what the first one wrote.
+        for (const attempt of [1, 2, 3]) {
+          const page = await getChangesSince(tx, { since: 0 });
+          expect({
+            attempt,
+            changes: page.changes,
+            cursor: page.cursor,
+          }).toEqual({ attempt, changes: [], cursor: 0 });
+        }
+        // An explicit drain on the same handle behaves the same way.
+        await drainChangeFeed(tx);
+        const after = await getChangesSince(tx, { since: 0 });
+        expect(after.changes).toEqual([]);
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    const page = await getChangesSince(setup, { since: 0 });
+    expect(page.changes.map((change) => change.rowId)).toEqual([ROW_A]);
+  }, 120_000);
+
+  /**
    * The hazard a plain `SEQUENCE`/identity allocator would introduce.
    *
    * Sequence values are handed out before commit and never roll back, so a
