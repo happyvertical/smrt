@@ -219,4 +219,13 @@ its worker finishes. Retention is seven days.
 
 Playwright's own output root lives outside the checkout too, at
 `$TMPDIR/smrt-m5-artifacts`, and the gate's `globalTeardown` empties it when a
-run ends. Nothing the gate generates is written into the repository.
+run ends. The served application's Vite cache stays in its own temporary root
+as well: the harness gives the copied app a real `node_modules` directory whose
+entries are individually symlinked, rather than one symlink to the workspace
+package's, so `node_modules/.vite` cannot land in the checkout.
+
+The gate writes exactly one file inside the repository —
+`packages/template-sveltekit/m5-gate-summary.json`, the sanitized summary
+described above, which is gitignored and overwritten on every run and is the
+file CI uploads. Everything else it generates lives in a test-owned temporary
+root.

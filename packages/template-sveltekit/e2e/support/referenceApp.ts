@@ -19,6 +19,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -182,7 +183,29 @@ async function provisionReferenceApp(
   mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
 
   copyRuntimeProfileReference(appRoot);
-  symlinkSync(join(packageRoot, 'node_modules'), join(appRoot, 'node_modules'), 'dir');
+  // Not a symlink to `packageRoot/node_modules`: Vite resolves `cacheDir` to
+  // `<root>/node_modules/.vite`, and through a whole-directory symlink that
+  // lands in the workspace package inside the checkout — persistent gate
+  // output in the repository, which M5 forbids and which `stop()` could not
+  // remove (unlinking the symlink leaves the target). A real directory whose
+  // entries are individually symlinked resolves every dependency to the
+  // packages built from this commit while keeping `.vite` inside
+  // `temporaryRoot`.
+  const appModules = join(appRoot, 'node_modules');
+  mkdirSync(appModules, { recursive: true, mode: 0o700 });
+  const workspaceModules = join(packageRoot, 'node_modules');
+  for (const entry of readdirSync(workspaceModules)) {
+    // `.vite` and friends are the caches this split exists to keep out; the
+    // scoped directories still need to be traversable, so link them as a whole.
+    if (entry.startsWith('.')) continue;
+    symlinkSync(join(workspaceModules, entry), join(appModules, entry), 'junction');
+  }
+  // The launchers the harness invokes live under `node_modules/.bin`, so that
+  // one dot-directory is linked deliberately rather than swept up above.
+  const workspaceBin = join(workspaceModules, '.bin');
+  if (existsSync(workspaceBin)) {
+    symlinkSync(workspaceBin, join(appModules, '.bin'), 'junction');
+  }
 
   const port = await reserveLoopbackPort();
   // `test:m5` runs under `scripts/run-with-ci-postgres.mjs`, which exports a

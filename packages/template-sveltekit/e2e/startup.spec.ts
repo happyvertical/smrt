@@ -6,7 +6,14 @@
  * and that the browser is talking to *that* process and not a stale one.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import { expect, test } from './fixtures.js';
@@ -97,18 +104,27 @@ test('completes owner onboarding without exposing the bootstrap token', async ({
     false,
   );
 
-  // Nothing this gate can publish contains the token. `e2e/.artifacts` is
-  // Playwright's own output root; it must stay empty of secrets even if a
-  // future change re-enables an artifact.
-  const artifactRoot = join(packageRoot, 'e2e', '.artifacts');
-  if (existsSync(artifactRoot)) {
-    for (const entry of readdirSync(artifactRoot, {
-      recursive: true,
-      encoding: 'utf8',
-    })) {
-      const path = join(artifactRoot, entry);
-      if (!statSync(path).isFile()) continue;
-      expect(readFileSync(path, 'utf8')).not.toContain(token!);
-    }
+  // Nothing this gate can publish contains the token. The root comes from
+  // Playwright rather than being restated here: a literal path that the config
+  // no longer uses would make this loop unreachable and the case vacuous.
+  const artifactRoot = test.info().project.outputDir;
+  // Traces, videos and screenshots are off, so the root can legitimately be
+  // empty and the loop below would never run. Plant one known-clean file so
+  // the scan is exercised on every run rather than only on the runs where
+  // something already went wrong.
+  mkdirSync(artifactRoot, { recursive: true });
+  writeFileSync(
+    join(artifactRoot, 'startup-token-scan-sentinel.json'),
+    `${JSON.stringify({ schemaVersion: 1, gate: 'm5', sentinel: true })}\n`,
+  );
+  const entries = readdirSync(artifactRoot, {
+    recursive: true,
+    encoding: 'utf8',
+  });
+  expect(entries).toContain('startup-token-scan-sentinel.json');
+  for (const entry of entries) {
+    const path = join(artifactRoot, entry);
+    if (!statSync(path).isFile()) continue;
+    expect(readFileSync(path, 'utf8')).not.toContain(token!);
   }
 });
