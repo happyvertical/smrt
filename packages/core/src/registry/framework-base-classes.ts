@@ -38,6 +38,19 @@
  * resolution for packages that don't declare these classes locally), not
  * resource exposure.
  *
+ * `scanner/manifest-generator.ts`'s `FRAMEWORK_METHOD_BASE_NAMES` is a
+ * DIFFERENT, narrower (3-name: `SmrtObject`/`SmrtClass`/`SmrtCollection`) set
+ * answering a different question — not "is this class a resource?" but
+ * "should this ancestor's METHODS merge into a subclass that doesn't declare
+ * them?" `SmrtReportCollection` and `SmrtJunction` are deliberately in this
+ * 8-name resource set but NOT in that 3-name method-merge set: their declared
+ * methods (`list`/`get` overrides, `attach`/`detach`/`byLeft`/`byRight`/
+ * `setLinks`) are real, subclass-inherited API, not generic object-lifecycle
+ * plumbing. Unifying the two sets — applying this one to method merging too —
+ * strips those methods from every subclass; that regression actually
+ * happened during #2624 and was caught only by a
+ * `packages/template-sveltekit` snapshot test. Do not merge these lists.
+ *
  * Most of these live in `@happyvertical/smrt-core` itself, but
  * `SmrtReport`/`SmrtReportCollection` are declared in
  * `@happyvertical/smrt-reports` — the owning package is per-name, not a

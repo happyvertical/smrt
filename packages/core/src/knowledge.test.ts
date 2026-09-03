@@ -80,6 +80,8 @@ describe('buildDomainKnowledgeManifest', () => {
       'RoutedOrder',
       'LegacyPathOrder',
       'ThrowingRouteOrder',
+      'CasedVerbItem',
+      'CasedIncludeItem',
       'MalformedConfigItem',
       'LifecycleOverrideOrder',
     ]);
@@ -314,6 +316,52 @@ describe('buildDomainKnowledgeManifest', () => {
       'list',
       'update',
     ]);
+  });
+
+  it('does not report an MCP surface the CRUD-name reservation suppresses (#2646)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const operations = (objectName: string, kind: 'api' | 'cli' | 'mcp') =>
+      artifact.surfaces
+        .filter(
+          (surface) =>
+            surface.objectName === objectName && surface.kind === kind,
+        )
+        .map((surface) => surface.operation)
+        .sort();
+
+    // MCP lowercases the whole tool id, so `List` lands on the identifier the
+    // CRUD list tool already owns and no separate tool is emitted.
+    expect(operations('@example/orders:CasedVerbItem', 'mcp')).toEqual([
+      'create',
+      'delete',
+      'get',
+      'list',
+      'syncNow',
+      'update',
+    ]);
+
+    // REST and the CLI keep declared casing in their route/command names, so
+    // `List` stays a distinct surface there — the reservation is per-transport.
+    expect(operations('@example/orders:CasedVerbItem', 'cli')).toContain(
+      'List',
+    );
+    expect(operations('@example/orders:CasedVerbItem', 'api')).toContain(
+      'List',
+    );
+  });
+
+  it('reports no MCP surface when a strict include names only a cased verb (#2646)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:CasedIncludeItem' &&
+        surface.kind === 'mcp',
+    );
+
+    // `include: ['List']` selects no CRUD verb (that gate is exact) and the
+    // cased entry fails closed, so the generator emits nothing. Reporting a
+    // `List` surface here would advertise a tool that does not exist.
+    expect(mcpSurfaces.map((surface) => surface.operation)).toEqual([]);
   });
 
   it("reports a custom action's REST route the way the generator emits it (#2619)", () => {
@@ -1032,6 +1080,54 @@ function fixtureManifest(): SmartObjectManifest {
       // never as a truthy value fed straight into `.includes()` — that
       // would either throw (no such method) or, for a string, silently do
       // substring matching instead of array membership (#2619).
+      // #2646: a public method whose name lands on a CRUD verb in the MCP tool
+      // namespace. `MCPGenerator` emits no separate tool for it, so the
+      // knowledge projection must not report one either.
+      '@example/orders:CasedVerbItem': {
+        className: 'CasedVerbItem',
+        qualifiedName: '@example/orders:CasedVerbItem',
+        collection: 'cased_verb_items',
+        fields: {},
+        methods: {
+          List: {
+            name: 'List',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          syncNow: {
+            name: 'syncNow',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+      },
+      // #2646: the same method reached through a strict include naming only the
+      // cased verb. `mcp.include` fails closed on it and `shouldInclude('list')`
+      // is exact, so the generator emits NO tool for this class at all.
+      '@example/orders:CasedIncludeItem': {
+        className: 'CasedIncludeItem',
+        qualifiedName: '@example/orders:CasedIncludeItem',
+        collection: 'cased_include_items',
+        fields: {},
+        methods: {
+          List: {
+            name: 'List',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { include: ['List'] } },
+      },
       '@example/orders:MalformedConfigItem': {
         className: 'MalformedConfigItem',
         qualifiedName: '@example/orders:MalformedConfigItem',

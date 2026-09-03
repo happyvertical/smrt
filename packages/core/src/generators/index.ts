@@ -24,10 +24,13 @@ export {
 export {
   buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
+  CRUD_OPERATIONS,
   type CustomActionFailure,
   type CustomActionMetadata,
   type CustomActionScope,
   customActionParameterInputName,
+  isCrudOperation,
+  isCrudToolAction,
   normalizeCustomActionFailure,
   type ResolveCustomActionMetadataOptions,
   type ResolvedCustomActionMetadata,
