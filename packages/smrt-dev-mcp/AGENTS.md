@@ -55,7 +55,8 @@ An app that installs the published packages authors none of them, so workspace
 discovery alone sees nothing. Every installed `@happyvertical/smrt-*` package,
 plus the known SDK packages, is resolved from the project's and each workspace
 package's `node_modules/@happyvertical` scope directory and marked
-`isInstalledDependency`. This is an enumeration, not a walk: pnpm materializes
+`isInstalledDependency`. The filesystem enumeration and canonical doc reader are shared with CLI snapshots
+through `smrt-core/knowledge`; enrichment stays here. This is an enumeration, not a walk: pnpm materializes
 a store whose entries link back out to their siblings, so a descent reads the
 same package once per path that reaches it. Real paths deduplicate the result;
 each package is still read through its `node_modules` path, because a realpath

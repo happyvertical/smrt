@@ -1,3 +1,9 @@
+export {
+  discoverScopedPackageDirectories,
+  readPackageAgentDoc,
+  type ScopedPackageDirectory,
+} from './knowledge-discovery.js';
+
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
