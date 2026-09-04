@@ -1,346 +1,78 @@
 # @happyvertical/smrt-users
 
-Multi-tenant user management with RBAC, hierarchical tenants, session handling, and SvelteKit integration.
+Multi-tenant identity, RBAC, hierarchical tenants, sessions, and SvelteKit auth.
 
 ## Modules
 
+Read only the module relevant to the change; protocol and provisioning details
+are not prerequisites for unrelated user-package work.
+
 | Module | Scope | Module doc |
 |---|---|---|
-| `src/retention.ts` | expired session/token/CLI-auth reaping and its wiring into the framework retention sweep | [agents/retention.md](agents/retention.md) |
+| `src/services/PermissionResolver.ts` | permission precedence, inherited memberships, guards, RLS, role seeding | [agents/permissions.md](agents/permissions.md) |
+| `src/services/OidcLoginService.ts`, collections and OIDC handlers | identity reconciliation, transaction boundaries, migration readiness | [agents/oidc-provisioning.md](agents/oidc-provisioning.md) |
+| `src/services/MobileAuthService.ts` | mobile handshake, bearer sessions, bootstrap extension boundary | [agents/mobile-auth.md](agents/mobile-auth.md) |
+| `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
-## Models (14)
+## Models and authority
 
-| Model | Key Pattern |
-|-------|-------------|
-| User | Auth identity. `profileId` is a unique cross-package reference to smrt-profiles (one User per non-null Profile). Email auto-lowercased; readonly nullable unique `emailKey` is derived on save for durable normalized uniqueness. |
-| AccessRequest | "Request access / waitlist" record captured before a `User` exists. CLOSED generated surface (`api`/`mcp`/`cli` = `[]`) — all access via `AccessRequestService`. Email normalized + indexed; JSON `requestContext` (NOT `context` — reserved for slug scoping). |
-| Tenant | **STI** + hierarchical parent-child. `hierarchyPath` (materialized path), `hierarchyLevel`. Max depth 10. |
-| Session | Server-side. Secure UUID. TTL in **seconds** (not ms). Status auto-updates to EXPIRED on access. |
-| MagicLinkToken | Single-use email login token. Backed by `MagicLinkService`. |
-| Role | `tenantId = null` → system role (available to all tenants). `isSystem: true` blocks deletion. `inheritsToDescendants: true` (default false) opts the role's membership authority into descendant tenants. |
-| Permission | Slug format: `resource.action`. Parsed by PermissionResolver. |
-| Membership | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
-| Group | Team within a tenant. Multiple roles via GroupRole. |
-| GroupMember, GroupRole, RolePermission | Join tables. |
-| MembershipOverride | Per-user permission grant/deny. **DENY always wins.** |
-| TenantPermissionOverride | Tenant-level cascade overrides. Effect: INHERIT/GRANT/DENY. |
+- Users are global; tenant access comes through Membership (unique user/tenant).
+  User email is normalized and globally unique through readonly nullable
+  `emailKey`. `profileId` is a unique cross-package reference: at most one User
+  owns each non-null Profile.
+- Tenant uses STI and a materialized hierarchy, maximum depth 10.
+  `createChild()` calculates paths; `moveToParent()` updates all descendants.
+- Role with `tenantId = null` is available to all tenants; `isSystem` prevents
+  deletion. `inheritsToDescendants` is opt-in. Seed owner/admin/member/viewer
+  through `RoleCollection.seedSystemRoles()` at application initialization.
+- Group roles apply only in their own tenant. Use `getGroupIdsForTenant()`,
+  never cross-tenant `getGroupIds()`, for authorization.
+- Membership DENY always wins. Direct inactive membership blocks inherited
+  authority; a direct active membership pins resolution instead of unioning it
+  with ancestors. Read the permissions module before changing these rules.
+- AccessRequest has no generated API/MCP/CLI operations; access it through
+  `AccessRequestService`. Its JSON field is `requestContext`, not reserved
+  slug-scoping `context`.
 
-## Permission Resolution — Precedence (broad → specific, most-specific wins)
+## Security boundaries
 
-`PermissionResolver.resolvePermissions` builds the effective set in this order;
-each later layer overrides earlier ones:
+- Generated REST/MCP operations on identity/RBAC models are list/get only.
+  Route authentication does not authorize authority mutations, and these models
+  are not tenant-scoped. Use permission-gated services or explicitly checked
+  consumer handlers. CLI remains a local-operator surface. Preserve the
+  registry assertions in `security-audit-1400.test.ts`.
+- Resource guards take the resource tenant, not the session tenant. Omit a
+  session membership when targeting a different tenant; mismatches fail closed.
+  `loadSessionContext().tenantAuthorization` must be checked by required-tenant
+  consumers: null membership can represent inherited authority.
+- Sessions use secure UUIDs; TTL is seconds (default seven days). Access marks
+  expired sessions EXPIRED. Magic-link tokens are single use.
+- Tenant switching verifies active membership before writing and rotates the
+  session ID for non-null targets, revoking the old session. Persist the returned
+  `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and
+  preserves its security settings. Failed switches mutate nothing; null clears
+  do not rotate. `SessionCollection.setSessionTenant()` is unguarded and must
+  never receive an untrusted tenant ID.
+- OIDC provisioning is atomic and fail-closed. Preserve exact issuer/subject
+  identifiers, claim-source email verification, unique global Person ownership,
+  and transaction-bound reconciliation. Read the OIDC module and canonical
+  scenario matrix before changing any provisioning path.
 
-1. **Tenant-inherited** — walk ancestors, apply each `TenantPermissionOverride`
-   down the cascade (GRANT adds, DENY removes within the hierarchy)
-2. **Membership role** — base permissions from the user's role in the tenant
-3. **Group roles** — permissions from all groups the user belongs to **in that tenant**
-4. **Tenant-level DENY** *(removes; overrides role/group grants, tenant-wide)* — a
-   `TenantPermissionOverride` with effect `DENY` is a HARD, tenant-wide block: it
-   subtracts the DENY'd slug even if a role or group granted it (steps 2–3). It
-   sits just **above** the per-user membership overrides and **below** role/group.
-5. **Membership GRANT override** *(re-adds; most specific)* — a per-user GRANT can
-   re-add a slug a tenant DENY'd in step 4, because it is more specific.
-6. **Membership DENY override** *(absolute; always wins)* — a per-user DENY removes
-   the slug last and is never overridden.
+## Entry points and validation
 
-So a permission a role grants but the tenant DENYs is **removed**, unless that
-exact user also has a membership-GRANT override for it. A membership-DENY always
-wins. Tenant-DENY of an inherited/cascade grant still blocks it (unchanged).
-The hard block reflects the tenant cascade's **net** resolution, not an
-unconditional union of every DENY in the chain — so a more-specific tenant GRANT
-(e.g. a child sub-tenant re-granting a permission its parent DENYs) still wins.
+`src/sveltekit/` owns `createSessionHandler`, `createSessionCookie`,
+`destroySessionCookie`, and `switchSessionTenant`. Use README integration examples
+rather than copying application setup into these instructions.
 
-### Membership selection — hierarchical inheritance (opt-in, #1866)
+From the repository root:
 
-Which membership feeds step 2 above:
-
-1. **A direct membership row in the target tenant always pins resolution to
-   itself** — active rows resolve normally; an inactive (pending/suspended)
-   row resolves to the **empty set**. A direct row therefore *attenuates*
-   rather than unions: "viewer here, despite being network admin" gives
-   viewer, and a suspension in the child is effective even for users holding
-   inheritable authority on an ancestor.
-2. **No direct row** → the resolver walks the tenant's ancestors (nearest
-   first, from `hierarchyPath`) and resolves through the **nearest ACTIVE
-   ancestor membership whose role has `inheritsToDescendants: true`**.
-   Unflagged or inactive ancestor memberships are skipped (they neither confer
-   nor block); there is **no union across the chain** — the nearest flagged
-   membership alone is used. To attenuate a specific descendant, create a
-   direct membership there or use a tenant-level DENY.
-3. **No qualifying ancestor** → empty set (byte-identical to the
-   pre-inheritance resolver; with no role flagged, nothing changes).
-
-`loadSessionContext()` exposes `tenantAuthorization`; required-tenant consumers
-must validate it because `membership: null` can mean inherited authority.
-
-All later layers run unchanged against the **target** tenant: the tenant
-cascade and tenant-DENY hard block come from the target tenant (a child can
-carve authority out of an inherited role), group roles stay exact-tenant (only
-target-tenant groups contribute; ancestor groups never flow down), and
-membership GRANT/DENY overrides travel with the ancestor membership used.
-`PermissionResolutionResult.inheritedFromTenantId` reports the ancestor tenant
-when inheritance was used (`null` for direct resolution).
-
-Safety: resolution is bounded by `MAX_TENANT_HIERARCHY_DEPTH`; malformed
-`hierarchyPath` values fail closed to the empty set — too deep,
-self-referential, duplicate ancestors, or inconsistent with the actual
-`parentTenantId` chain (the path is verified link-by-link against the loaded
-ancestor rows before it is trusted as an authorization source). Tenant `status` is not consulted (parity with direct
-resolution). Caching: a long-lived `(user, tenant)` permission cache must also
-invalidate on ancestor-membership changes and on `Role.inheritsToDescendants`
-flips — request-scoped caches (the common pattern) are unaffected.
-
-Flag roles at seed time with
-`seedSystemRoles({ inheritsToDescendants: ['owner', 'admin'] })` (additive:
-listed slugs are flagged, omitted slugs are never unflagged; unknown slugs
-throw). The default seed leaves every role exact-tenant.
-
-## Operation Permission Guards
-
-SMRT derives a fine-grained, per-`<collection>.<action>` permission catalog **from the
-manifest** (`PermissionCatalogService`, including custom `@smrt` actions — not just CRUD)
-and enforces it two ways: app-side via `assertOperationPermission()` / `PermissionResolver`,
-and at the database via generated **Postgres RLS** policies
-(`generatePostgresPermissionSql()` / `applyPostgresPermissionPolicies()`) that read the
-session-injected `smrt.permissions` / `smrt.tenant_id` (set by `withSessionPermissionContext`
-via `set_config`). Because the RLS teeth are at the data layer, enforcement is door-agnostic
-— REST, MCP, and in-process callers are all bounded once the principal's context is set.
-Setup: README → *Manifest-derived permission catalog* and *Postgres RLS enforcement*.
-
-- Use `assertOperationPermission()` for hand-written mutations in SvelteKit form
-  actions, custom endpoints, CLI scripts, and jobs. It derives the same
-  `<collection>.<action>` slugs as `PermissionCatalogService` (`list`/`get` →
-  `read`), requires the slug to exist in the catalog, then resolves permissions
-  through `PermissionResolver`.
-- `assertOperationPermission()` throws fail-closed by default. Use
-  `{ onDeny: 'return' }`, `checkOperationPermission()`, or
-  `hasOperationPermission()` when a structured/boolean result is needed.
-- **Resource-tenant calling convention**: for resource-anchored authorization,
-  pass the **resource's** tenant id — `tenantId: resourceTenantId` — not the
-  session's current tenant. With `Role.inheritsToDescendants` flagged, a
-  root-tenant admin then passes for any descendant resource with no app-side
-  authority logic (and no membership fan-out), while per-child delegation and
-  DENY precedence keep working. Do NOT pass a session-scoped `membership`
-  alongside a different resource `tenantId` — a membership/tenant mismatch
-  fails closed by design; omit `membership` and let the resolver look it up.
-- System context and super-admin bypass context are honored for parity with
-  Postgres RLS. Pass `{ allowSuperAdminBypass: false }` on money-class or
-  separation-of-duties operations that must require an explicit permission grant.
-- **Postgres RLS and membership inheritance**: RLS policies check the
-  session-injected `smrt.permissions` list (resolved app-side by
-  `PermissionResolver`), so a session whose `smrt.tenant_id` IS the child
-  tenant gets inherited authority in RLS automatically. But RLS row filtering
-  stays bound to the session's tenant setting — a root-tenant session acting
-  on child-tenant rows is authorized by the app-level guard (resource-tenant
-  convention above), not by RLS. This is a documented divergence, mirroring
-  how #1829 handled bypass parity.
-- Seed role mappings with `RolePermissionCollection.seedRolePermissions()` or
-  `RoleCollection.seedSystemRoles({ seedPermissions: true })`. The default
-  matrix maps owner/admin to all catalog permissions, member to read/create for
-  ordinary app resources, and viewer to read-only. Member create grants
-  intentionally exclude users/RBAC authority and security resources (`users`,
-  `tenants`, `roles`, `permissions`, memberships, groups, sessions, magic-link
-  tokens, and related join/override tables). Re-seeding is additive and
-  idempotent; pruning stale mappings requires `{ prune: true }`. When a
-  contributing package registers a new built-in self-personalization
-  permission after system roles already exist, call the explicit,
-  idempotent `RolePermissionCollection.seedDefaultRolePersonalizationPermissions()`
-  upgrade helper; it targets owner/admin/member/viewer only and never grants
-  custom roles.
-
-**Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
-
-## Hierarchical Tenants
-
-- `TenantCollection.createChild()` auto-calculates hierarchy fields, enforces depth limit
-- `moveToParent()` updates tenant + ALL descendants' paths/levels
-- `cascadePermissions` (parent pushes down) + `inheritPermissions` (child accepts) — both must be true
-- `getTree(rootId?)` returns nested structure for UI
-- Two independent downward flows: the `TenantPermissionOverride` **cascade**
-  (tenant-level permission config, flags above) and **membership-role
-  inheritance** (`Role.inheritsToDescendants`, per-role opt-in — see
-  "Membership selection" above). The cascade flags do not gate membership
-  inheritance.
-
-## SvelteKit Integration
-
-```typescript
-// hooks.server.ts
-export const handle = createSessionHandler({ db, ttl: 604800, skipPaths: ['/api/public'] });
-// Populates event.locals: { user, membership, permissions: string[], tenantId, sessionId }
-
-// +page.server.ts
-await createSessionCookie(event, userId, tenantId, { db });
-await destroySessionCookie(event, { db });
-await switchSessionTenant(event, tenantId, { db });
+```bash
+pnpm --filter @happyvertical/smrt-users test
+pnpm --filter @happyvertical/smrt-users typecheck
+pnpm --filter @happyvertical/smrt-users test:postgres
 ```
 
-## Mobile `/api/mobile` Handlers (ADR 0001 Phase 3.5, #1748)
-
-`createMobileAuthHandlers(options)` (from `/sveltekit`) returns the mountable
-server side of the KMP mobile contract: `authStart` (`POST auth/start`,
-server-brokered PKCE via `OidcLoginService`), `authComplete`
-(`POST auth/complete`, code + echoed `state`/`codeVerifier` → bearer
-session), `session.GET`/`session.DELETE` (bootstrap/logout), and
-`guard`/`withSession` — the bearer middleware for app-owned mobile routes.
-Core logic lives in `MobileAuthService` (framework-agnostic; exported from
-the package root).
-
-- **Bearer = session id** (same convention as `TerminalAuthService`); 401
-  bodies are `{ error, code }` and drive the mobile client's re-auth flow.
-- **Stateless handshake**: the OAuth `state` is an HMAC-signed token
-  (secret: `stateSecret` ?? provider `clientSecret`) carrying
-  nonce/provider/createdAt — full ID-token nonce verification with no
-  server-side pending state. The `codeVerifier` never enters a URL: it is
-  client-held per the frozen contract.
-- **Wire DTOs** come from `@happyvertical/smrt-mobile-contract`
-  (`MobileAuthStartRequest` etc.) — one owning package for the Kotlin,
-  Swift, and TypeScript shapes (compile-checked descriptors + parity test).
-- **Tenant options** honor `Role.inheritsToDescendants` (#1867): direct
-  ACTIVE memberships plus descendants of flagged memberships (nearest
-  flagged ancestor labels the option; any direct row pins; inactive direct
-  rows exclude). Session binding defaults to the first DIRECT tenant —
-  override with `resolveTenantId`.
-- **Hooks**: `resolveUser` (invite-gating; default provisions via
-  `getOrCreateFromOidc`), `resolveTenantId`, `buildExtras` (bootstrap
-  `extras`; model JSON must use `toPublicJSON({ permissions })` — #1822).
-  `buildExtras` is the only app-domain bootstrap extension point. Never emit
-  app fields such as `dashboard` at the response top level: they are outside
-  `MobileSessionBootstrap` and the Kotlin decoder ignores them.
-- **Guard** wraps `withSessionPermissionContext`, so
-  `assertOperationPermission`, tenancy context, and Postgres RLS all see the
-  bearer caller; `OperationPermissionError` maps to 403 with a
-  machine-readable `reason`.
-- **Uploads**: `resolveMobileUploadDedupKey` + the documented contract in
-  `docs/content/architecture/mobile-upload-contract.md` (`clientCaptureId`
-  field, `Idempotency-Key` header fallback); domain ingestion stays
-  app-side. Framework-model writes ride `sync/apply`, not this path.
-- Configure `redirectUris` in production — RFC 8252 scheme rules always
-  apply, but the allow list is the defense against redirecting authorization
-  responses to attacker-controlled URIs.
-
-## Security (S5 #1400)
-
-- **Generated REST/MCP surface is READ-ONLY for every RBAC/identity model.**
-  User, Tenant, Group, Membership, MembershipOverride, Role, Permission,
-  RolePermission, GroupRole, GroupMember, and TenantPermissionOverride generate
-  `list`/`get` only — `create`/`update`/`delete` are intentionally NOT
-  generated. The merged `requireRouteAuth` gate (#1540) enforces *authentication*,
-  not *authorization*, and these models are not `@TenantScoped`, so an
-  auto-generated mutating route would let any authenticated user self-grant a
-  role/permission, flip a tenant's cascade flags, or change another user's auth
-  identity. Mutate them through the permission-gated services (`TenantService`,
-  collection helpers) or consumer-owned, permission-checked handlers. A
-  structural regression test (`security-audit-1400.test.ts`) enumerates the
-  registry to assert no authority model exposes a mutating op. (`cli` stays
-  enabled — local-operator surface, outside the network/agent threat model.)
-- **`switchTenant` is fail-closed AND rotates the session id.**
-  `SessionService.switchTenant` / `switchSessionTenant` verify the session's user
-  has an ACTIVE membership in the target tenant before any write (the tenant id
-  is the isolation key for every `@TenantScoped` query). A non-member/unknown-
-  session switch returns `{ switched: false, sessionId: null, ... }` and mutates
-  nothing. On a successful switch into a NON-null tenant the session id is
-  ROTATED: a fresh `Session` (new secure id, fresh TTL, same user, new tenant,
-  device context carried over) is minted and the old session is REVOKED — so a
-  captured pre-switch id immediately stops validating, shrinking the blast radius
-  of a leaked id across a tenant boundary. `switchTenant` returns a
-  `SwitchTenantResult` (`{ switched, sessionId, session, rotated }`); callers MUST
-  persist the returned `sessionId`. `switchSessionTenant` does this for you by
-  re-setting the session cookie (preserving httpOnly/secure/sameSite) to the new
-  id. A `null` clear stays in place (no rotation, no cookie change). The
-  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive (used
-  for the null-clear path) — never call it with an untrusted tenant id.
-- **OIDC `email_verified` is enforced.** `UserCollection.getOrCreateFromOidc`
-  refuses to provision a user when the IdP explicitly returns
-  `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An
-  absent claim makes no assertion and is not enforced.
-- **RFC 9207 response issuer is exact.** OIDC callbacks validate a supplied
-  `iss` against discovered metadata with exact string comparison before trusting
-  a code or error. If metadata advertises issuer-response support, `iss` is
-  required.
-- **Verified-email Profile reuse is fail-closed.** The typed canonical scenarios
-  live in
-  `packages/profiles/src/testing/oidcProvisioningDecisionMatrix.ts`; both
-  package suites execute that matrix and public docs reference it rather than
-  maintaining another behavioral table. Default provisioning reuses only one
-  unowned, global `Person`. Tenant-scoped, non-Person, duplicate-email,
-  and already-owned matches fail before User/session creation. An existing
-  issuer/subject link without a User must still be the unique global Person for
-  the current verified claim email; once owned, the stable issuer/subject link
-  reuses its canonical Person and owner.
-  Issuer and subject are opaque, case-sensitive identifiers; preserve their
-  exact value and use trim only to reject blank claims.
-- **`resolveProfile` is the application reconciliation boundary.** The
-  SvelteKit handlers, `OidcLoginService`, and `getOrCreateFromOidc` accept the
-  same hook inside the provisioning transaction. The service/handler path
-  supplies protocol-validated claims; direct collection callers must validate
-  and trust their claim source before calling `getOrCreateFromOidc`.
-  Token/userinfo merging keeps `email` and `email_verified` paired to the same
-  claim source; verification is never borrowed across sources.
-  Resolver reads/writes use the supplied `db`, and the hook must be idempotent
-  because a concurrent unique-key conflict can retry it. `undefined` chooses
-  the secure default and `null` rejects, including exact issuer/subject reuse.
-  For a new identity, a supplied Profile is still validated as the unique,
-  unowned global Person for the verified email. For an exact existing identity,
-  it must be the already-linked Profile and cannot rebind identity authority;
-  stable-link owner and canonical-Person checks still apply. The hook receives a
-  separate frozen claims snapshot; internal retry and persistence state is not
-  exposed for mutation.
-- **Owned first binding requires `authorizeProfileOwner`.** An invitation or
-  approval workflow may explicitly return both its pre-provisioned canonical
-  global `Person` and existing approved `User` from this transaction-bound
-  hook. `undefined` keeps the secure `profile_owned` default and `null`
-  rejects. SMRT treats only the selected IDs as input, reloads them in the
-  provisioning transaction, and requires `email_verified === true`, the unique
-  canonical global Person for the normalized claim email, exactly one owner,
-  that owner as the selected User, and the same normalized User email. The
-  hook runs before identity/User/session creation and may be retried, so use
-  only its supplied `db` and `users` handles and keep application authorization
-  idempotent. Never authorize from email matching alone. Existing exact
-  identities cannot be rebound; when `resolveProfile` is also present both
-  hooks must select the same Profile.
-- **OIDC first login is atomic.** The Profile, `OidcIdentity`, and User are one
-  transaction. The database arbiters are `OidcIdentity.identityKey`,
-  private `oidc_profile_email_reservations.email_key`, `User.emailKey`, and the
-  unique `User.profileId`; local callbacks acquire exact issuer/subject and normalized
-  email locks in deterministic order so changed email claims also serialize.
-  SQLite and DuckDB callbacks additionally serialize every root-handle statement
-  the coordinator owns per database URL — `_smrt_backfills` initialization, the
-  transaction, and the post-commit rebind — because one adapter multiplexes a
-  single native connection and cannot safely overlap unrelated root
-  transactions. Never overlap two statements on one such handle, inside a
-  transaction or not: rebind and owner/email candidate reads are sequential,
-  never `Promise.all`. Owner-authorized DuckDB callbacks use that same
-  root-handle serialization;
-  PostgreSQL deadlock and serialization errors use a bounded transaction retry.
-  Newly provisioned Profiles use non-semantic per-profile slugs so equal IdP
-  display names cannot trigger a natural-key upsert;
-  run
-  `smrt db:status`, `smrt db:migrate`, then `smrt db:status` before deployment.
-  Stop or upgrade old writers first. Before migration, group
-  non-null `users.profile_id` values, then reconcile duplicates. After
-  migration, run public `backfillProfileEmailKeys(db)` followed by
-  `backfillUserEmailKeys(db)` from one deploy process. Both use the shared
-  TypeScript `normalizeIdentityEmail()` implementation transactionally and are
-  idempotent; the User backfill fails before writes if normalized duplicates
-  remain. Every OIDC path requires the Profile email-key readiness marker;
-  creating a User or checking User email uniqueness additionally requires the
-  User marker. A stable issuer/subject with an existing owning User skips only
-  the User email-key lookup and marker. Full scans remain in the explicit deploy
-  step; guarded runtime paths use indexed keys and validate only returned
-  candidates. Multiple null links remain valid.
-  Legacy race keys backfill only after canonical validation. Pass a root
-  database on adapters such as DuckDB that cannot create nested savepoints.
-  Root adapters must expose `beginTransaction`; transaction-only handles are
-  ambiguous and fail closed before provisioning writes. Caller-owned
-  transactions never run `_smrt_backfills` DDL and require that table to
-  already exist; use the root database when initialization or recovery is
-  needed.
-
-## Gotchas
-
-- **seedSystemRoles() required**: call `RoleCollection.seedSystemRoles()` at app init (creates owner/admin/member/viewer)
-- **PermissionResolver casts `as any`**: collections have protected constructors — known framework limitation
-- **Session TTL in seconds**: `DEFAULT_SESSION_TTL = 7 * 24 * 60 * 60` (not milliseconds)
-- **Users are cross-tenant**: one user, many tenants via Membership. Email globally unique.
-- **Batch permission queries**: resolver fetches all permission IDs in one query, then maps to slugs (avoids N+1)
+Start with the relevant test file via `test -- src/__tests__/<file>.test.ts`.
+Run `test:postgres` for RLS, principal context, OIDC, or terminal-auth database
+changes. `typecheck` includes Svelte accessibility checks; plain `tsc` is
+insufficient. Follow root knowledge freshness checks before shipping.

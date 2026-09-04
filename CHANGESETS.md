@@ -1,145 +1,50 @@
-# Changesets Workflow
+# Versioning and releases
 
-This project uses [Changesets](https://github.com/changesets/changesets) for versioning and publishing packages.
+SMRT uses Changesets to version the fixed package group declared in
+[.changeset/config.json](.changeset/config.json). Release automation owns
+changeset generation, versioning, and publishing; contributors must not create
+or edit changeset files manually.
 
-## Simple Release Model
+## Release timing
 
-**Every merge to main = release.**
+Merges accumulate into a release batch. [Batched Release](.github/workflows/on-merge-main.yml)
+runs daily at 07:17 UTC or by manual dispatch for an urgent release; merging a
+PR does not itself trigger publication. The batch defers while merge groups
+are active to avoid invalidating speculative merge-queue work.
 
-No selective commit types, no manual changeset creation needed. The workflow is:
+The batch delegates to [Publish](.github/workflows/publish.yml). It runs the
+fallback test/build jobs when merge-queue validation is disabled. Publish
+prepares versioned artifacts, validates the release package set, publishes it,
+and updates release refs and the GitHub release. Consult those workflows for
+current gates, publishing modes, and documentation-deployment conditions.
 
-1. Create PR with conventional commits when possible
-2. Tests pass, merge to main
-3. Version bumps automatically (patch, or minor for breaking changes)
-4. Packages published to npmjs.org
+## Contributor input
 
-## Version Policy (Pre-1.0)
+Use conventional commits and a clear PR description. The
+[auto-changeset script](scripts/auto-changeset.ts) reads commits since the latest
+release tag and uses core as the representative package for the fixed group.
 
-**⚠️ IMPORTANT**: This framework stays in 0.x.x versioning until API is stable.
+While versions remain pre-1.0:
 
-### Bump Types
+- Breaking changes (`!` or `BREAKING CHANGE`) produce a minor bump.
+- Other releasable commits, including non-conventional fallback subjects,
+  produce a patch bump.
+- Releases must stay below 1.0.0; the workflow guards/corrects versioning.
 
-- **patch** (0.7.1 → 0.7.2): All commits (feat, fix, chore, docs, refactor, etc.)
-- **minor** (0.7.1 → 0.8.0): Breaking changes only (using `!` or `BREAKING CHANGE`)
-- **major** (0.7.1 → 1.0.0): ❌ **BLOCKED** - Framework not ready for 1.0.0
+A manually added changeset causes the generator to skip automatic generation.
+Put changelog detail in the PR/commits instead. Do not run create/version/publish
+commands as contribution-preparation steps; follow [WORKFLOW.md](WORKFLOW.md).
 
-### Breaking Changes = Minor
-
-Breaking changes bump **minor** version (not major) until 1.0.0:
-
-```bash
-# Breaking change example:
-git commit -m "feat(core)!: rename method"
-git commit -m "fix(agents): change signature
-
-BREAKING CHANGE: method signature changed"
-```
-
-## Commit Format
-
-Use conventional commits when possible:
-
-```
-type(scope): description
-
-Examples:
-feat(core): add new feature
-fix(agents): fix bug
-docs: update README
-chore: update dependencies
-refactor(svelte): reorganize components
-feat(core)!: breaking change
-```
-
-**Supported scopes** (package names):
-- `core`, `types`, `config`
-- `accounts`, `agents`, `assets`, `cli`, `content`
-- `events`, `gnode`, `places`, `products`, `profiles`
-- `svelte`, `tags`, `dev-mcp`, `docs-mcp`
-
-**No scope** = affects all packages
-
-Squash-merge PR titles like `smrt#1069: normalize video owned asset models (#1071)`
-or `Follow up smrt#1063 owned asset helper refactor (#1072)` also trigger a
-patch release when they land on `main`.
-
-## What Happens When You Merge?
-
-1. **Tests run** on main
-2. **Build** completes
-3. **Changeset auto-generated** from commits (`scripts/auto-changeset.ts`)
-4. **Versions bumped** across all packages (fixed group)
-5. **Packages published** to npmjs.org
-6. **Git tag created** (e.g., `v0.17.33`)
-7. **GitHub release** created with changelog
-8. **Downstream repos notified** (cascade)
-
-## Manual Changeset (Optional)
-
-You can still create manual changesets for more detailed changelogs:
+For a read-only version-policy check:
 
 ```bash
-pnpm changeset
-```
-
-If a changeset already exists, auto-generation is skipped.
-
-## Commands
-
-```bash
-# Create manual changeset
-pnpm changeset
-
-# Apply version bumps (with version check)
-pnpm run version
-
-# Build and publish packages
-pnpm run release
-
-# Check versions don't exceed 0.x.x
 node scripts/check-version-limit.js
 ```
 
-## Troubleshooting
+## Diagnosing a missing release
 
-### "No conventional commits found"
-
-The auto-changeset script prefers conventional commits, but squash-merge PR
-titles also count as releasable patch changes. If a merge still doesn't
-release, check that the commit subject isn't empty and that it landed after
-the latest release tag.
-
-### Version check fails
-
-If version check fails with "exceeds 0.x.x limit":
-1. Check which package is at 1.0.0
-2. This shouldn't happen with normal operation
-3. Contact maintainers if it does
-
-### Publish fails
-
-Common causes:
-- npm registry authentication (`NPM_TOKEN`)
-- Package name conflicts
-- Build failures
-
-Check GitHub Actions logs for details.
-
-## Fixed Group
-
-All SMRT packages share the same version number. When one package bumps, all bump together.
-
-This is configured in `.changeset/config.json`:
-
-```json
-{
-  "fixed": [
-    ["@happyvertical/smrt-*"]
-  ]
-}
-```
-
-## Additional Resources
-
-- [Changesets Documentation](https://github.com/changesets/changesets)
-- [Conventional Commits](https://www.conventionalcommits.org/)
+Check whether a scheduled/manual batch has run and whether the merge queue
+allowed it to proceed. Then inspect the workflow's validation, artifact, and
+publishing logs. The generator needs releasable commits after the last tag;
+existing changeset files suppress generation. A merged PR alone does not
+promise an immediate new version, npm publication, or tag.

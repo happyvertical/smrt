@@ -98,6 +98,9 @@ package-local and deterministic:
 - **Example tests**: `*.examples.test.ts`
 - **Optional or expensive tests**: `*.optional.test.ts`
 
+For module-level singleton caches, use `vi.resetModules()` followed by a dynamic
+import so each test obtains fresh module state.
+
 ## Running Tests
 
 ### ⚠️ CRITICAL: Use the Vitest Plugin

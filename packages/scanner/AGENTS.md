@@ -63,42 +63,18 @@ argument**. `ScanResults.agentSurface` carries the merged result.
 Named imports (aliased or not) and namespace imports (`intents.defineIntent`)
 both resolve; a default import does not, since neither package has one.
 
-**Declaration discovery is NOT bound to the class-scan `include` glob.** A model
-scan is routinely narrowed to where models live — the shipped SvelteKit template
-uses `src/lib/objects/**/*.ts` — but an intent sidecar lives beside the component
-that uses it. So `agentSurfaceInclude` (default `**/*.{ts,tsx,js,jsx}`, the
-extensions the Vite plugin's own default accepts) is globbed separately, files
-the class pass already parsed are skipped so nothing is counted twice, and the
-token pre-filter keeps a non-declaring file at one read. Binding the two globs
-together made sidecars vanish from every artifact with no diagnostic at all —
-the exact silent omission this matcher exists to prevent.
+Declaration discovery uses a separate `agentSurfaceInclude` glob (default
+`**/*.{ts,tsx,js,jsx}`), independent of the model `include` glob. Skip files
+already parsed by the class pass; token-prefilter other files before parsing.
 
-**`isAgentSurfaceSourcePath` is the single authority on what counts as a
-declaration source**, and it is a path predicate, not a glob. Both passes here
-and `dev:knowledge-check`'s freshness re-scan call it. That matters because the
-two sides disagreeing is not cosmetic: a file the emitter reads but the checker
-skips reports as "no longer present in source" forever, and the reverse reports
-as "missing from smrt-knowledge.json" forever — neither clearable by a rebuild.
-It rejects `.d.ts`, `*.test.*`, `*.spec.*`, any hidden (dot) segment, and
-anything under `node_modules`, `dist`, `build`, `coverage`, `__tests__`, or
-`__typechecks__` — measured
-**relative to the scan root**, via the companion `isPrunedAgentSurfacePath`
-(which the `.svelte` passes call directly, since a `.svelte` path is rejected on
-extension by the source predicate). Relative matching is load-bearing: against
-an absolute path, a checkout that merely LIVES under `build/` — a container with
-`WORKDIR /build`, a clone in `~/build/…` — would drop every declaration with no
-diagnostic, and the freshness check would apply the same rule and agree, so the
-artifact would ship an empty surface and `smrt doctor` would call it healthy.
-This is the trap `discovery.ts` rewrites globs relative to `cwd` to avoid.
-
-`dist` is not paranoia. A caller's `exclude` REPLACES `DEFAULT_EXCLUDE`, and
-every real caller passes a narrower one (the Vite plugin sends only test globs
-plus `node_modules`), so this whole-project pass would otherwise walk build
-output. A transpiling build — `tsc`, `svelte-package`, vite lib mode with
-`@happyvertical/*` externalized — keeps both the import specifier and the
-module-scope call in its output, so `dist/foo.intents.js` matches this matcher
-exactly; and since `dist` sorts before `src`, it would WIN the duplicate tie and
-become the recorded source of a declaration nobody wrote there.
+`isAgentSurfaceSourcePath` is the shared authority for both scanner passes and
+`dev:knowledge-check` freshness scans. It excludes `.d.ts`, tests/specs, hidden
+segments, and `node_modules`, `dist`, `build`, `coverage`, `__tests__`, and
+`__typechecks__`. The companion `isPrunedAgentSurfacePath` applies the same
+prunes to `.svelte` files. Evaluate paths **relative to the scan root** so a
+checkout under an ancestor named `build` or a hidden worktree still scans.
+These prunes apply even when caller `exclude` replaces `DEFAULT_EXCLUDE`:
+build output can retain declarations and otherwise win duplicate resolution.
 
 ### What it refuses, always with a diagnostic
 
@@ -115,43 +91,20 @@ for a tool set genuinely derived from computed or fetched data:
 | `svelte-declaration` | written inline in a `.svelte` file |
 | `duplicate-identity` | two modules declare the same `id`/`key`, or two intent ids derive the same WebMCP tool name |
 
-These rules are mirrored from `defineIntent` and `definePlaybook` (this package
-cannot depend on `smrt-web` or `smrt-playbooks`), and keeping them in step is
-load-bearing: the declaration types `id` as `string`, so `id: 'Orders.Bad'`
-type-checks and fails only at page load. An entry the runtime would reject is
-worse than no entry, because the artifact and `smrt doctor` would then advertise
-an operation that can never register. The same applies to the tool name, which
-is `id` with `.`/`-` replaced by `_` and is therefore **not injective** —
-`orders.foo_bar` and `orders.foo.bar` collide, and `defineIntent` rejects the
-second registration.
+Mirror `defineIntent` and `definePlaybook` validation without importing their
+packages; update the scanner whenever those runtime rules tighten. Reject
+invalid values rather than repairing them: omitted capability gets the
+fail-closed default, malformed capability gets a diagnostic, and invalid
+`planes` never default to `server`. Playbook keys have no pattern restriction.
+WebMCP names replace `.`/`-` with `_`, so distinct intent ids can collide.
 
-Invalid values are **rejected, never repaired**. That matters most for a
-playbook's `planes`: `definePlaybook` throws on an empty or unknown-plane list,
-so defaulting it here would emit an entry asserting `server` validity the author
-never declared — the exact fail-open the plane rule exists to prevent. The same
-holds for `capability`: the fail-closed default is for an OMITTED capability,
-not a typo'd one, so `{ effect: 'reed' }` is a diagnostic rather than a silent
-`destructive`. Playbook *keys* get no pattern check, because `definePlaybook`
-imposes none; only uniqueness applies. **If either runtime tightens its rules,
-tighten these too.**
+Unlike decorator config extraction, agent-surface extraction never resolves
+spreads: declarations must be visible in one object literal.
 
-This is deliberately narrower than the decorator-config extractor, which
-RESOLVES spreads against module-scope constants. That one must, because a
-dropped `@smrt({ ...CFG })` key silently reopens an exposure surface. Here the
-requirement runs the other way: an emitted entry has to be exactly what an
-author can see in one object literal, so a partial resolution would be worse
-than a refusal.
-
-The `.svelte` pass is textual, not a Svelte parse: it requires the import
-specifier plus a call, and it exists only to say "move this to a `.ts` sidecar"
-— which is the answer regardless of what the declaration contains. It resolves
-the local names the file's own import binds, so `defineIntent as declare`
-followed by `declare({…})` is caught, and it tolerates whitespace before the
-parenthesis; requiring the literal token `defineIntent(` would let exactly the
-case this pass exists for slip through unremarked. Any `*.svelte` exclude a
-caller passes for the class scan is dropped here, since callers routinely
-exclude Svelte because OXC cannot parse it, and honouring that would silence the
-one thing the pass is for.
+The `.svelte` pass is textual: resolve named/aliased imports and calls (including
+whitespace before `(`), then diagnose moving the declaration to a `.ts`
+sidecar. Drop caller `*.svelte` class-scan excludes for this pass; otherwise the
+diagnostic would be suppressed merely because OXC cannot parse Svelte.
 
 ### Deterministic identity
 
@@ -174,27 +127,15 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 
 ## Discovery boundaries
 
-File discovery is the difference between a scan that finishes and one that
-exhausts the heap when the scanner is pointed at an application root (#2275):
-
-- `dot: true` is set so ignore patterns apply beneath dot directories. Without
-  it a `**` cannot cross a dot segment, so `**/node_modules/**` pruned the root
-  `node_modules` but nothing under `.svelte-kit/`, `.vercel/`, or `.turbo/`.
-- Mandatory excludes (`**/node_modules/**`, `**/.*/**`, `**/.*`) are unioned
-  with the caller's `exclude` and cannot be overridden. `exclude` REPLACES the
-  defaults, so every caller that narrowed it had silently reopened
-  `node_modules`.
-- `followSymbolicLinks` defaults to `false`. A pnpm `node_modules` is a symlink
-  graph with cycles, not a tree, so a link-following walk reaches the same real
-  directory once per path leading to it. This drops symlinked *files* as well as
-  directories, so pass `followSymbolicLinks: true` for a project that genuinely
-  keeps sources behind a link — it is threaded through `smrtPlugin` and
-  `ManifestBuilderOptions` for the build path.
-- Patterns are rewritten relative to `cwd` before globbing. Globs match as text,
-  so an absolute pattern would hand `**/.*/**` the project's own ancestors and a
-  checkout under `~/.worktrees` or `~/.cache` would match nothing at all.
-- `dot: true` would otherwise widen the result to hidden files, so `**/.*` is in
-  the mandatory prunes too: hidden files stay out, exactly as before.
+- Set `dot: true` so ignore patterns also prune dependencies under hidden
+  directories such as `.svelte-kit`.
+- Union mandatory `**/node_modules/**`, `**/.*/**`, and `**/.*` prunes with
+  caller exclusions; caller `exclude` replaces defaults, never mandatory prunes.
+- `followSymbolicLinks` defaults to `false` to bound walks of pnpm's symlink
+  graph. It excludes symlinked files as well as directories. Projects with
+  linked sources can opt in through `smrtPlugin`/`ManifestBuilderOptions`.
+- Rewrite patterns relative to `cwd` before globbing so hidden checkout
+  ancestors do not exclude the entire project.
 
 ## How It Works
 
