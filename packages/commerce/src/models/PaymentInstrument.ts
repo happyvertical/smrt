@@ -60,7 +60,7 @@ import {
     ],
   },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class PaymentInstrument extends SmrtObject {
   /**

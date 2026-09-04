@@ -32,7 +32,7 @@ import { type VendorOptions, VendorStatus } from '../types/index.js';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Vendor extends SmrtObject {
   /**
