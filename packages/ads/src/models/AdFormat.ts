@@ -43,7 +43,7 @@ export interface AdFormatOptions extends SmrtObjectOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AdFormat extends SmrtObject {
   /**
