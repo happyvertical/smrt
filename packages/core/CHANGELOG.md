@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.45.1
+
+### Patch Changes
+
+- ### Features
+
+  - generate the /api/\_resources discovery route (#2666) (core)
+  - @happyvertical/smrt-config@0.45.1
+  - @happyvertical/smrt-types@0.45.1
+  - @happyvertical/smrt-scanner@0.45.1
+
 ## 1.0.0
 
 ### Minor Changes

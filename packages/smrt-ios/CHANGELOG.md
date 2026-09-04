@@ -1,5 +1,7 @@
 # @happyvertical/smrt-ios
 
+## 0.45.1
+
 ## 1.0.0
 
 ## 1.0.0
