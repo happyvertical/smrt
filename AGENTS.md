@@ -61,7 +61,7 @@ use named `$props()` interfaces to avoid recursive inline intersections.
   Use migrations and `smrt doctor --db` / `db:status --parity`. Existing int4
   deployments require the maintenance-window `db:migrate-int8` flow; normal
   parity intentionally treats int4/int8 as equivalent. See CLI guidance.
-- Changesets are generated on merge; never author them manually. Dependency
+- Release automation generates changesets; never author them manually. Dependency
   overrides target the advisory range; ignored GHSAs also need an
   `audit-policy.json` record. Validate with `pnpm audit:policy`.
 
