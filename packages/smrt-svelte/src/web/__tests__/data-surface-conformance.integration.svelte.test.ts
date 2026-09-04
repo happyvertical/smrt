@@ -166,6 +166,13 @@ const mountedDescriptor: DataSurfaceDescriptor = {
     modes: descriptor.query.modes,
     projectableColumnIds: descriptor.query.projectableColumnIds,
   },
+  controls: [
+    ...descriptor.controls,
+    { id: 'set-filters', label: 'Filter' },
+    { id: 'set-column-order', label: 'Columns' },
+    { id: 'set-column-visibility', label: 'Column visibility' },
+    { id: 'set-selected-rows', label: 'Selection' },
+  ],
 };
 
 function bridgeTransport() {
@@ -487,54 +494,94 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     ).rejects.toBeInstanceOf(DataSurfaceDeadlineError);
     expect(aborted).toBe(true);
 
-    const api = new APIGenerator(
-      {
-        basePath: '/api/v1',
-        authMiddleware: () => async (request) => {
-          const token = request.headers.get('authorization');
-          if (!token) return new Response('auth required', { status: 401 });
-          if (token !== 'Bearer fixture-user')
-            return new Response('forbidden', { status: 403 });
-          return request;
+    // Model the production request boundary: authentication resolves a
+    // trusted session first, then the server binds both the principal and its
+    // tenant before entering the generated REST handler. The handler itself
+    // still runs its configured auth middleware, so a request cannot swap
+    // credentials after the session context has been selected.
+    const fixtureSessions = new Map([
+      ['Bearer fixture-user', { userId: 'surface-user', tenantId: 'tenant-a' }],
+      [
+        'Bearer fixture-user-b',
+        { userId: 'surface-user-b', tenantId: 'tenant-b' },
+      ],
+    ]);
+    const handleRestRequest = async (request: Request) => {
+      const token = request.headers.get('authorization');
+      if (!token) return new Response('auth required', { status: 401 });
+      const session = fixtureSessions.get(token);
+      if (!session) return new Response('forbidden', { status: 403 });
+
+      const api = new APIGenerator(
+        {
+          basePath: '/api/v1',
+          authMiddleware: () => async (authenticatedRequest) => {
+            if (authenticatedRequest.headers.get('authorization') !== token) {
+              return new Response('forbidden', { status: 403 });
+            }
+            return authenticatedRequest;
+          },
         },
-      },
-      { db },
-    );
-    api.registerCollection('surfaceconformancerecords', records);
-    const handler = api.generateHandler();
+        {
+          db,
+          user: { id: session.userId },
+          permissions: ['records.read', 'records.update'],
+        },
+      );
+      api.registerCollection('surfaceconformancerecords', records);
+      return withTenant({ tenantId: session.tenantId }, () =>
+        api.generateHandler()(request),
+      );
+    };
     expect(
       (
-        await handler(
+        await handleRestRequest(
           new Request('http://fixture.local/api/v1/surfaceconformancerecords'),
         )
       ).status,
     ).toBe(401);
     expect(
       (
-        await handler(
+        await handleRestRequest(
           new Request('http://fixture.local/api/v1/surfaceconformancerecords', {
             headers: { authorization: 'Bearer other' },
           }),
         )
       ).status,
     ).toBe(403);
-    const restResponse = await withTenant({ tenantId: 'tenant-a' }, () =>
-      handler(
-        new Request('http://fixture.local/api/v1/surfaceconformancerecords', {
-          headers: { authorization: 'Bearer fixture-user' },
-        }),
-      ),
+    const restResponse = await handleRestRequest(
+      new Request('http://fixture.local/api/v1/surfaceconformancerecords', {
+        headers: { authorization: 'Bearer fixture-user' },
+      }),
     );
     expect(restResponse.status).toBe(200);
     const restBody = await restResponse.json();
     expect(JSON.stringify(restBody)).toContain(firstId);
     expect(JSON.stringify(restBody)).not.toContain(hiddenId);
     expect(JSON.stringify(restBody)).not.toContain('Hidden tenant');
+
+    const otherTenantResponse = await handleRestRequest(
+      new Request('http://fixture.local/api/v1/surfaceconformancerecords', {
+        headers: { authorization: 'Bearer fixture-user-b' },
+      }),
+    );
+    expect(otherTenantResponse.status).toBe(200);
+    const otherTenantBody = await otherTenantResponse.json();
+    expect(JSON.stringify(otherTenantBody)).toContain(hiddenId);
+    expect(JSON.stringify(otherTenantBody)).not.toContain(firstId);
+    expect(JSON.stringify(otherTenantBody)).not.toContain('Ada');
   });
 
   it('keeps human and browser command snapshots identical and rejects bridge abuse', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createDataTableController({
+      columnIds: ['id', 'name', 'status'],
+    });
+    const browserIdentity: DataSurfaceIdentity = {
+      ...identity,
+      surfaceId: 'surface-conformance-browser',
+    };
+    const browserController = createDataTableController({
       columnIds: ['id', 'name', 'status'],
     });
     const { container } = render(DataTable, {
@@ -545,27 +592,146 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         ],
         columns: [
           { id: 'id', label: 'ID', accessor: 'id' },
-          { id: 'name', label: 'Name', accessor: 'name', sortable: true },
-          { id: 'status', label: 'Status', accessor: 'status', sortable: true },
+          {
+            id: 'name',
+            label: 'Name',
+            accessor: 'name',
+            sortable: true,
+            filterable: true,
+          },
+          {
+            id: 'status',
+            label: 'Status',
+            accessor: 'status',
+            sortable: true,
+            filterable: true,
+          },
         ],
         rowKey: 'id',
         sortable: true,
+        selectable: true,
         controller,
         caption: 'Records',
         dataSurface: { registry, descriptor: mountedDescriptor },
       },
     });
+    render(DataTable, {
+      props: {
+        data: [
+          { id: firstId, name: 'Ada', status: 'active' },
+          { id: secondId, name: 'Grace', status: 'active' },
+        ],
+        columns: [
+          { id: 'id', label: 'ID', accessor: 'id' },
+          {
+            id: 'name',
+            label: 'Name',
+            accessor: 'name',
+            sortable: true,
+            filterable: true,
+          },
+          {
+            id: 'status',
+            label: 'Status',
+            accessor: 'status',
+            sortable: true,
+            filterable: true,
+          },
+        ],
+        rowKey: 'id',
+        sortable: true,
+        selectable: true,
+        controller: browserController,
+        caption: 'Records browser mirror',
+        dataSurface: {
+          registry,
+          descriptor: { ...mountedDescriptor, identity: browserIdentity },
+        },
+      },
+    });
     await tick();
-    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    await vi.waitFor(() => {
+      expect(registry.inspect(identity)).toBeDefined();
+      expect(registry.inspect(browserIdentity)).toBeDefined();
+    });
+    const sortButton = container.querySelector(
+      'button[aria-label="Sort Name ascending"]',
     );
-    const human = registry.inspect(identity);
-    expect(human?.state).toMatchObject({
+    if (!(sortButton instanceof HTMLElement)) {
+      throw new Error('Mounted human table did not render its sort button');
+    }
+    await userEvent.click(sortButton);
+    const sortedHuman = registry.inspect(identity);
+    expect(sortedHuman?.state).toMatchObject({
       table: { state: { sorting: [{ columnId: 'name', direction: 'asc' }] } },
     });
     await expectNoA11yViolations(container);
+    const browserSort = await registry.execute({
+      version: 1,
+      commandId: 'browser-sort',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'toggle-sorting',
+      payload: { columnId: 'name' },
+    });
+    expect(browserSort).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
 
+    // Apply each remaining command once through the mounted human controller
+    // and once through the mounted browser registry. Separate controllers make
+    // this a real parity check rather than a second no-op against one state.
+    controller.dispatch({
+      type: 'setFilters',
+      filters: [{ columnId: 'name', operator: 'equals', value: 'Ada' }],
+    });
+    const browserFilter = await registry.execute({
+      version: 1,
+      commandId: 'browser-filter',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'set-filters',
+      payload: {
+        filters: [{ columnId: 'name', operator: 'equals', value: 'Ada' }],
+      },
+    });
+    expect(browserFilter).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
+
+    controller.dispatch({
+      type: 'setColumnOrder',
+      columnIds: ['status', 'name', 'id'],
+    });
+    const browserColumns = await registry.execute({
+      version: 1,
+      commandId: 'browser-columns',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'set-column-order',
+      payload: { columnIds: ['status', 'name', 'id'] },
+    });
+    expect(browserColumns).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
+
+    controller.dispatch({
+      type: 'toggleRowSelection',
+      rowId: firstId,
+    });
+    const browserSelection = await registry.execute({
+      version: 1,
+      commandId: 'browser-selection',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'set-selected-rows',
+      payload: { rowIds: [firstId] },
+    });
+    expect(browserSelection).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
+    expect(browserSelection.snapshot?.selection).toEqual({
+      scope: 'explicit-ids',
+      rowIds: [firstId],
+    });
+
+    const human = registry.inspect(identity);
     await expect(
       registry.execute({
         version: 1,
@@ -620,7 +786,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
             ? {}
             : { payload: message.payload }),
         })
-        .then((result) =>
+        .then((result) => {
           ackLink.receive(
             {
               type: 'data-surface.ack',
@@ -641,8 +807,8 @@ describe('data-surface human/agent parity and security (#2450)', () => {
               ...(result.reason === undefined ? {} : { reason: result.reason }),
             },
             { sessionId: 'session-1', source: 'browser-1' },
-          ),
-        );
+          );
+        });
     });
     const ackBridge = createDataSurfaceCommandBridge({
       transport: ackLink,
@@ -652,7 +818,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
       authorize: () => true,
       now: () => 1_000,
       ttlMs: 1_000,
-      timeoutMs: 100,
+      timeoutMs: 1_000,
     });
     const browserAck = await ackBridge.send({
       version: 1,
@@ -731,6 +897,16 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     adversarialLink.receive(
       {
         ...adversarialAck,
+        identity: {
+          ...identity,
+          subject: { type: 'tenant', id: 'tenant-b' },
+        },
+      },
+      { sessionId: 'session-ack', source: 'browser-ack' },
+    );
+    adversarialLink.receive(
+      {
+        ...adversarialAck,
         expectedRevision: adversarialAck.expectedRevision + 1,
       },
       { sessionId: 'session-ack', source: 'browser-ack' },
@@ -757,12 +933,23 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     adversarial.dispose();
 
     const link = bridgeTransport();
+    const authenticatedPrincipal = Object.freeze({
+      sessionId: 'session-1',
+      userId: 'surface-user',
+      tenantId: 'tenant-a',
+    });
     const browser = createDataSurfaceCommandBridge({
       transport: link,
-      sessionId: 'session-1',
+      sessionId: authenticatedPrincipal.sessionId,
       source: 'server-1',
       peerSource: 'browser-1',
-      authorize: async (command) => command.identity.subject?.id === 'tenant-a',
+      // Authorization comes from the trusted authenticated session. The
+      // command subject is only the requested target and cannot establish
+      // authority by itself.
+      authorize: async (command) =>
+        authenticatedPrincipal.userId === 'surface-user' &&
+        command.identity.subject?.type === 'tenant' &&
+        command.identity.subject.id === authenticatedPrincipal.tenantId,
       now: () => 1_000,
       ttlMs: 1_000,
       timeoutMs: 100,
@@ -796,6 +983,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         payload: { columnId: 'name' },
       }),
     ).resolves.toMatchObject({ ok: false, reason: 'idempotency_conflict' });
+    const messagesBeforeSpoof = link.messages.length;
     expect(
       await browser.send({
         version: 1,
@@ -806,6 +994,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         payload: { page: 2 },
       }),
     ).toMatchObject({ ok: false, reason: 'denied' });
+    expect(link.messages).toHaveLength(messagesBeforeSpoof);
     link.status('disconnected');
     expect(await commandPromise).toMatchObject({
       ok: false,
@@ -1036,12 +1225,13 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     // used by the principal query. This catches adapters that build a safe
     // descriptor but forget to carry the tenant boundary into row execution.
     const reportCollection = {
-      list: async () =>
+      list: async (_options: Record<string, unknown>) =>
         (await records.list()).map((row) => ({
           id: row.id,
           name: row.name,
         })),
-      count: async () => (await records.list()).length,
+      count: async (_options?: Record<string, unknown>) =>
+        (await records.list()).length,
     };
     const reportRows = await withTenant({ tenantId: 'tenant-a' }, () =>
       queryReportMaterializedRows(
@@ -1055,7 +1245,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         },
         {
           db,
-          collection: reportCollection as never,
+          collection: reportCollection,
           adapter: { tenantScope: 'tenant-a' },
           execution: 'visible',
         },
