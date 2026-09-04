@@ -50,7 +50,7 @@ export interface BomLineOptions extends SmrtObjectOptions {
   conflictColumns: ['bom_id', 'component_sku_id', 'tenant_id'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class BomLine extends SmrtObject {
   /** Tenant scope. `null` means the line is a global record. */
