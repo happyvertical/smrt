@@ -87,7 +87,7 @@ export interface OAuthStateOptions extends SmrtObjectOptions {
     include: ['list', 'get', 'create', 'delete'],
   },
   mcp: false,
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class OAuthState extends SmrtObject {
   /**
