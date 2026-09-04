@@ -14,6 +14,7 @@ import {
   dirname,
   isAbsolute,
   join,
+  matchesGlob,
   relative,
   resolve,
   sep,
@@ -4029,28 +4030,30 @@ function selectModuleDocs(
     return { embedded: [], scoped: true };
   }
 
-  const matched = all.filter((doc) => {
-    // A doc is relevant when its module name appears as a path segment of a
-    // changed file (`src/commissions/...` -> `agents/commissions.md`), when the
-    // doc itself changed, or when the request text names the module.
-    const mappedSources = (pkg.agentDoc ?? '')
-      .split('\n')
+  const sourceMappings = new Map<string, string[]>();
+  for (const row of (pkg.agentDoc ?? '').split('\n')) {
+    if (!row.trimStart().startsWith('|')) continue;
+    const paths = resolveAgentModuleDocPaths(pkg.directory, row);
+    if (paths.length === 0) continue;
+    const sources = [...row.matchAll(/`([^`]+)`/g)]
+      .map((match) => match[1].replace(/^\.\//, ''))
       .filter(
-        (line) =>
-          line.trimStart().startsWith('|') &&
-          resolveAgentModuleDocPaths(pkg.directory, line).includes(doc.path),
-      )
-      .flatMap((line) =>
-        [...line.matchAll(/`([^`]+)`/g)]
-          .map((match) => match[1].replace(/^\.\//, ''))
-          .filter(
-            (source) =>
-              !source.startsWith('/') &&
-              !source.split('/').includes('..') &&
-              !/\s/.test(source) &&
-              (source.includes('/') || /\.[a-z0-9]+$/i.test(source)),
-          ),
+        (source) =>
+          !source.startsWith('/') &&
+          !source.split('/').includes('..') &&
+          !/\s/.test(source) &&
+          (source.includes('/') || /\.[a-z0-9]+$/i.test(source)),
       );
+    for (const path of paths) {
+      sourceMappings.set(path, [
+        ...(sourceMappings.get(path) ?? []),
+        ...sources,
+      ]);
+    }
+  }
+
+  const matched = all.filter((doc) => {
+    const mappedSources = sourceMappings.get(doc.path) ?? [];
     const segment = new RegExp(`(^|[/.])${escapeRegExp(doc.module)}([/.]|$)`);
     return (
       packageFiles.some(
@@ -4059,7 +4062,7 @@ function selectModuleDocs(
           mappedSources.some((source) => {
             const relativeFile = file.slice(prefix.length);
             return (
-              relativeFile === source ||
+              matchesGlob(relativeFile, source) ||
               (source.endsWith('/') && relativeFile.startsWith(source))
             );
           }) ||

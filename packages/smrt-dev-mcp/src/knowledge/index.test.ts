@@ -1098,6 +1098,36 @@ describe('SMRT knowledge index', () => {
     }
   });
 
+  it('matches source globs without selecting unrelated paths', async () => {
+    await writeModuleDocs(rootDir);
+    const docPath = join(rootDir, 'packages/demo/AGENTS.md');
+    const { readFile } = await import('node:fs/promises');
+    await writeFile(
+      docPath,
+      (await readFile(docPath, 'utf8')).replace(
+        '| payouts |',
+        '| `src/svelte/content-list-*.ts` |',
+      ),
+    );
+    for (const [file, expected] of [
+      ['src/svelte/content-list-query.ts', true],
+      ['src/svelte/content-list-state.ts', true],
+      ['src/svelte/other-query.ts', false],
+      ['src/svelte/nested/content-list-query.ts', false],
+    ] as const) {
+      const result = await buildReviewContext({
+        rootDir,
+        changedFiles: [`packages/demo/${file}`],
+        detail: 'full',
+      });
+      expect(
+        result.promptBundle.contextMarkdown.includes(
+          'claimForPayout never double-owns',
+        ),
+      ).toBe(expected);
+    }
+  });
+
   it('narrows embedded module docs to the changed module, listing the rest', async () => {
     await writeModuleDocs(rootDir);
 

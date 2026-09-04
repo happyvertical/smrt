@@ -487,7 +487,10 @@ function renderPackageDoc(
       '',
     );
     for (const path of paths) {
-      const source = pkg.directory ? join(pkg.directory, path) : path;
+      const source = (pkg.directory ? join(pkg.directory, path) : path).replace(
+        /\\/g,
+        '/',
+      );
       lines.push(`- [${path}](<${source}>)`);
     }
     lines.push('');

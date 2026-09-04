@@ -155,7 +155,7 @@ Knowledge and introspection tools return a **summary** by default and accept
 - `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
   authored `AGENTS.md` and module docs **by path** rather than embedding them,
   and return compact package records. With `detail: "full"`, they embed the package
-  AGENTS doc plus module docs matching changed files or request text. Source paths
+  AGENTS doc plus module docs matching changed files or request text. Source paths and globs
   in the same Modules-table row as a doc link also select that module. Missing or
   unmatched hints leave all module docs listed by path for on-demand reading.
   `detail: "complete"` embeds every module and returns complete package records.

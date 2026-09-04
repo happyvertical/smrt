@@ -258,6 +258,22 @@ Gamma content.
       expect(complete).toContain('`smrt docs:agents --complete`');
     });
 
+    it('normalizes Windows module link separators', () => {
+      const markdown = generateMarkdown([
+        {
+          name: '@test/windows',
+          version: '1.0.0',
+          readme: null,
+          agentMd: '# Windows\n\nGuidance',
+          directory: String.raw`C:\project\node_modules\pkg`,
+          moduleDocPaths: ['agents/module.md'],
+        },
+      ]);
+      expect(markdown).toContain(
+        '(<C:/project/node_modules/pkg/agents/module.md>)',
+      );
+    });
+
     it('should include footer with regeneration note', () => {
       const packages: PackageInfo[] = [];
 
