@@ -24,6 +24,15 @@ vi.mock('node:fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+// consumerHasSmrtUsers (resources-route.ts, #2663) resolves via
+// node:module's createRequire rather than existsSync — see that module's
+// doc comment. Mock the require it constructs so _resources tests below
+// control whether resolution succeeds.
+const mockSmrtUsersResolve = vi.fn<(specifier: string) => string>();
+vi.mock('node:module', () => ({
+  createRequire: () => ({ resolve: mockSmrtUsersResolve }),
+}));
+
 // Import after mocking
 import {
   findCliApiCoherenceViolations,
@@ -3234,6 +3243,124 @@ describe('SvelteKit Route Generator', () => {
       expect(String(eventsWrite?.[1])).toContain(
         'tryReserveChangeEventSubscriberSlot(collection.db, 12)',
       );
+    });
+  });
+
+  // Proves the `_resources` CLI discovery route (#2663) threads end-to-end
+  // through generateSvelteKitRoutes: emitted only when smrt-users is
+  // resolvable, never emitted (and never clobbers) when a hand-written route
+  // already exists, and never emitted when smrt-users is absent — an
+  // unresolvable import must never reach a consumer's build.
+  describe('_resources route generation (#2663)', () => {
+    const resourcesManifest: SmartObjectManifest = {
+      objects: {
+        Widget: {
+          className: 'Widget',
+          collection: 'widgets',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      },
+    };
+
+    const resourcesServerPath = join(
+      projectRoot,
+      'src/routes/api',
+      '_resources',
+      '+server.ts',
+    );
+
+    function resolveSmrtUsers(): void {
+      mockSmrtUsersResolve.mockImplementation((specifier) => {
+        if (specifier === '@happyvertical/smrt-users/sveltekit') {
+          return '/fake/node_modules/@happyvertical/smrt-users/dist/sveltekit.js';
+        }
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      });
+    }
+
+    function doNotResolveSmrtUsers(): void {
+      mockSmrtUsersResolve.mockImplementation((specifier) => {
+        throw Object.assign(new Error(`Cannot find module '${specifier}'`), {
+          code: 'MODULE_NOT_FOUND',
+        });
+      });
+    }
+
+    it('generates the _resources route when smrt-users is resolvable', async () => {
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const resourcesWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === resourcesServerPath);
+      expect(resourcesWrite).toBeDefined();
+      expect(String(resourcesWrite?.[1])).toContain(
+        "import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';",
+      );
+      expect(String(resourcesWrite?.[1])).toContain(
+        "import '$lib/server/smrt';",
+      );
+    });
+
+    it('does not generate the _resources route when smrt-users is not resolvable', async () => {
+      doNotResolveSmrtUsers();
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const resourcesWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === resourcesServerPath);
+      expect(resourcesWrite).toBeUndefined();
+    });
+
+    it('preserves an existing hand-written _resources route', async () => {
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockImplementation(
+        (path) => path.toString() === resourcesServerPath,
+      );
+
+      await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const resourcesWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === resourcesServerPath);
+      expect(resourcesWrite).toBeUndefined();
+    });
+
+    it('skips the _resources route when resourcesRoute.enabled is false, even if smrt-users is resolvable', async () => {
+      resolveSmrtUsers();
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        resourcesRoute: { enabled: false },
+      });
+
+      const resourcesWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === resourcesServerPath);
+      expect(resourcesWrite).toBeUndefined();
     });
   });
 });

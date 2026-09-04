@@ -75,6 +75,52 @@ function writeWorkspaceTenancyShim(projectRoot: string): void {
   );
 }
 
+/**
+ * A real `node_modules/@happyvertical/smrt-users` package, so the generated
+ * `_resources` route's `import ... from '@happyvertical/smrt-users/sveltekit'`
+ * (#2663) both (a) is detected as resolvable by `consumerHasSmrtUsers` and
+ * (b) actually resolves and executes when the emitted route is bundled and
+ * run — proving the import genuinely works, not just that a file was
+ * written.
+ */
+function writeWorkspaceUsersShim(projectRoot: string): void {
+  const packageDir = join(
+    projectRoot,
+    'node_modules',
+    '@happyvertical',
+    'smrt-users',
+  );
+  mkdirSync(packageDir, { recursive: true });
+  writeFileSync(
+    join(packageDir, 'package.json'),
+    JSON.stringify(
+      {
+        exports: { './sveltekit': './sveltekit.js' },
+        name: '@happyvertical/smrt-users',
+        type: 'module',
+        version: '1.0.0',
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(
+    join(packageDir, 'sveltekit.js'),
+    [
+      'globalThis.__smrtGeneratedResourceListOptions ??= [];',
+      'export function createResourceListHandler(options) {',
+      '  return async () => {',
+      '    await options.ensureRegistry();',
+      '    globalThis.__smrtGeneratedResourceListOptions.push(options);',
+      '    return new Response(JSON.stringify({ resources: [] }), {',
+      "      headers: { 'content-type': 'application/json' },",
+      '    });',
+      '  };',
+      '}',
+    ].join('\n'),
+  );
+}
+
 function writeWorkspaceCoreShim(projectRoot: string): void {
   const packageDir = join(
     projectRoot,
@@ -644,6 +690,56 @@ describe('generated SvelteKit helper runtime', () => {
     expect(
       isIgnoredByGit(projectRoot, 'src/routes/api/_resources/+server.ts'),
     ).toBe(false);
+  });
+
+  it('generates and executes the _resources route when smrt-users is resolvable (#2663)', async () => {
+    writeWorkspaceUsersShim(projectRoot);
+    writeFileSync(
+      join(projectRoot, '.gitignore'),
+      ['node_modules/', ''].join('\n'),
+    );
+
+    const manifest = createManifest(
+      projectRoot,
+      join(projectRoot, 'src/lib/objects/Widget.ts'),
+    );
+    const options = {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, options);
+
+    const resourcesRoutePath = join(
+      projectRoot,
+      'src/routes/api/_resources/+server.ts',
+    );
+    const routeContent = readFileSync(resourcesRoutePath, 'utf-8');
+    expect(routeContent).toContain(
+      "from '@happyvertical/smrt-users/sveltekit'",
+    );
+    expect(routeContent).toContain("import '$lib/server/smrt';");
+
+    // Proves the emitted import actually resolves and the handler executes
+    // end to end — not merely that a file with the right text was written.
+    const route = await bundleGeneratedRoute(
+      'src/routes/api/_resources/+server.ts',
+      'resources-bundle.mjs',
+    );
+    const response: Response = await route.GET();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ resources: [] });
+    expect(
+      (globalThis as Record<string, unknown>)
+        .__smrtGeneratedResourceListOptions,
+    ).toHaveLength(1);
+
+    expect(
+      isIgnoredByGit(projectRoot, 'src/routes/api/_resources/+server.ts'),
+    ).toBe(true);
   });
 
   it('uses the configured routesDir for exact generated ignores', async () => {
