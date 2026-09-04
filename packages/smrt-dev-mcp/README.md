@@ -144,7 +144,7 @@ drift. Reach it with `--scope installed`.
 ## Response Budgets
 
 Knowledge and introspection tools return a **summary** by default and accept
-`detail: "full"` for the complete payload.
+`detail: "complete"` for complete knowledge context payloads (`introspect-project` uses `full`).
 
 - `introspect-project` summary returns one compact record per object
   (`className`, `qualifiedName`, `extends`, `tableName`, `tenantScope`,
@@ -154,13 +154,18 @@ Knowledge and introspection tools return a **summary** by default and accept
   budget.
 - `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
   authored `AGENTS.md` and module docs **by path** rather than embedding them,
-  and return compact package records. With `detail: "full"`, their prompt
+  and return compact package records. With `detail: "full"`, they embed the package
+  AGENTS doc plus module docs matching changed files or request text. Source paths and globs
+  in the same Modules-table row as a doc link also select that module. Missing or
+  unmatched hints leave all module docs listed by path for on-demand reading.
+  `detail: "complete"` embeds every module and returns complete package records.
+  With `detail: "full"` or `"complete"`, prompt
   bundles also render high-signal object facts: tenant mode/field, `cti`/`sti`
   strategy, conflict columns, method signatures, and field
   defaults/constraints/readonly/transient flags.
 
 The `smrt dev:knowledge-*` CLI commands request `detail: "full"`, so they remain
-full-detail and unbudgeted.
+structurally detailed and unbudgeted. Add `--complete` to embed every module.
 
 ## Knowledge Boundary
 
@@ -356,7 +361,7 @@ then return a model-ready prompt bundle.
 | `changedFiles` | `string[]` | No | Files to route to package experts |
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `build-domain-review-context`
 
@@ -370,7 +375,7 @@ Domain-scoped alias for `build-review-context`.
 | `documentation` | `string` | No | Additional docs or notes to include |
 | `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
 | `package` | `string` | No | Package name or short name to focus |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `smrt-review`
 
@@ -383,7 +388,7 @@ Return deterministic review findings, a prompt bundle, or both.
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
 | `mode` | `'findings' \| 'prompt-bundle' \| 'both'` | No | Response mode (default: `both`) |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `build-architecture-context`
 
@@ -396,7 +401,7 @@ then return a model-ready architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `build-package-specialist-context`
 
@@ -422,7 +427,7 @@ Domain-scoped alias for `build-architecture-context`.
 | `focus` | `string` | No | Architecture concern to prioritize |
 | `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
 | `package` | `string` | No | Package name or short name to focus |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `smrt-architecture`
 
@@ -435,7 +440,7 @@ risks, questions, and the reusable architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
-| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
+| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `list-agent-skills`
 

@@ -283,8 +283,24 @@ describe('smrt-dev-mcp stdio server', () => {
     const fullPackage = fullReview.selectedPackages.find(
       (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
     );
-    expect(fullPackage.agentDoc).toBeTruthy();
-    expect(textContent(fullReviewResult).length).toBeGreaterThan(
+    expect(fullPackage.agentDoc).toBeUndefined();
+    expect(fullPackage.domainKnowledge).toBeUndefined();
+    expect(fullReview.detail).toBe('full');
+    const completeReviewResult = await client.callTool({
+      name: 'build-review-context',
+      arguments: {
+        rootDir: fixtureRoot,
+        changedFiles: ['packages/content/src/models/Article.ts'],
+        detail: 'complete',
+      },
+    });
+    const completeReview = JSON.parse(textContent(completeReviewResult));
+    expect(
+      completeReview.selectedPackages.find(
+        (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
+      ).agentDoc,
+    ).toBeTruthy();
+    expect(textContent(completeReviewResult).length).toBeGreaterThan(
       textContent(reviewResult).length,
     );
 

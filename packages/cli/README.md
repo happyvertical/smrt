@@ -140,6 +140,18 @@ layout that means declaring them, not relying on the CLI's own dependencies.
 | `smrt knowledge:review-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
 | `smrt knowledge:architecture-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain architecture prompt bundle |
 
+`docs:agents` includes package AGENTS guidance and lists linked module files by
+source path; it does not read or embed their bodies. Use
+`smrt docs:agents --complete` for a complete authored reference. The deprecated `docs:claude`
+alias supports the same flag and retains its historical output path.
+Regenerate snapshots after moving the project or updating dependencies so the
+local source paths remain current.
+
+Review and architecture prompt bundles include package guidance and modules
+matched by file or focus hints. Add `--complete` to either context command to
+include every module for the selected packages. These commands still build the
+knowledge index; documentation snapshots use lightweight package discovery.
+
 ### Configuration
 
 | Command | Description |

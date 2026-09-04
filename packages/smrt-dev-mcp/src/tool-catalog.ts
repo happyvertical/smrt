@@ -30,7 +30,7 @@ const DEV_MCP_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
 };
 
 const KNOWLEDGE_DETAIL_DESCRIPTION =
-  'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed docs and render structural object facts.';
+  'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed package docs and matching modules with structural object facts. complete: embed all modules and return full package records.';
 
 // Tool definitions
 const TOOL_DEFINITIONS: Array<
@@ -307,7 +307,7 @@ const TOOL_DEFINITIONS: Array<
         documentation: { type: 'string' },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
@@ -333,7 +333,7 @@ const TOOL_DEFINITIONS: Array<
         package: { type: 'string' },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
@@ -358,7 +358,7 @@ const TOOL_DEFINITIONS: Array<
         },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
@@ -378,7 +378,7 @@ const TOOL_DEFINITIONS: Array<
         focus: { type: 'string' },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
@@ -422,7 +422,7 @@ const TOOL_DEFINITIONS: Array<
         package: { type: 'string' },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
@@ -442,7 +442,7 @@ const TOOL_DEFINITIONS: Array<
         focus: { type: 'string' },
         detail: {
           type: 'string',
-          enum: ['summary', 'full'],
+          enum: ['summary', 'full', 'complete'],
           default: 'summary',
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },

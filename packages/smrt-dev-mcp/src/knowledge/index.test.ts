@@ -1032,7 +1032,7 @@ describe('SMRT knowledge index', () => {
     }
   });
 
-  it('embeds every linked module doc when nothing narrows the request (#2108)', async () => {
+  it('lists module paths without expanding them when no hints are supplied', async () => {
     await writeModuleDocs(rootDir);
 
     const result = await buildArchitectureContext({
@@ -1042,12 +1042,90 @@ describe('SMRT knowledge index', () => {
     });
     const markdown = result.promptBundle.contextMarkdown;
 
-    // A package selector is not a module selector — the moved prose is not
-    // regenerable, so a bare package request must not silently drop any of it.
     expect(markdown).toContain('agents/payouts.md, agents/crm.md');
-    expect(markdown).toContain('claimForPayout never double-owns');
-    expect(markdown).toContain('Leads and pipelines');
-    expect(markdown).not.toContain('Module docs not loaded');
+    expect(markdown).not.toContain('claimForPayout never double-owns');
+    expect(markdown).not.toContain('Leads and pipelines');
+    expect(markdown).toContain('Module docs not loaded');
+    expect(markdown).toContain('detail: "complete"');
+  });
+
+  it('explicit complete includes every module even with narrowing hints', async () => {
+    await writeModuleDocs(rootDir);
+    const result = await buildReviewContext({
+      rootDir,
+      changedFiles: ['packages/demo/src/payouts/claim.ts'],
+      detail: 'complete',
+    });
+    expect(result.promptBundle.contextMarkdown).toContain(
+      'claimForPayout never double-owns',
+    );
+    expect(result.promptBundle.contextMarkdown).toContain(
+      'Leads and pipelines',
+    );
+    expect(result.promptBundle.contextMarkdown).not.toContain(
+      'Module docs not loaded',
+    );
+  });
+
+  it.each([
+    'agents/payouts.md',
+    'agents/payouts.md#claims',
+    'agents/payouts.md "Payouts"',
+    './agents/payouts.md',
+  ])('matches mapped sources with module link %s', async (href) => {
+    await writeModuleDocs(rootDir);
+    const docPath = join(rootDir, 'packages/demo/AGENTS.md');
+    const { readFile } = await import('node:fs/promises');
+    const content = await readFile(docPath, 'utf8');
+    await writeFile(
+      docPath,
+      content
+        .replace('| payouts |', '| `lib/settlement.ts` + `src/transfers/` |')
+        .replace('(agents/payouts.md)', `(${href})`),
+    );
+    for (const file of ['lib/settlement.ts', 'src/transfers/send.ts']) {
+      const result = await buildReviewContext({
+        rootDir,
+        changedFiles: [`packages/demo/${file}`],
+        detail: 'full',
+      });
+      expect(result.promptBundle.contextMarkdown).toContain(
+        'claimForPayout never double-owns',
+      );
+      expect(result.promptBundle.contextMarkdown).not.toContain(
+        'Leads and pipelines',
+      );
+    }
+  });
+
+  it('matches source globs without selecting unrelated paths', async () => {
+    await writeModuleDocs(rootDir);
+    const docPath = join(rootDir, 'packages/demo/AGENTS.md');
+    const { readFile } = await import('node:fs/promises');
+    await writeFile(
+      docPath,
+      (await readFile(docPath, 'utf8')).replace(
+        '| payouts |',
+        '| `src/svelte/content-list-*.ts` |',
+      ),
+    );
+    for (const [file, expected] of [
+      ['src/svelte/content-list-query.ts', true],
+      ['src/svelte/content-list-state.ts', true],
+      ['src/svelte/other-query.ts', false],
+      ['src/svelte/nested/content-list-query.ts', false],
+    ] as const) {
+      const result = await buildReviewContext({
+        rootDir,
+        changedFiles: [`packages/demo/${file}`],
+        detail: 'full',
+      });
+      expect(
+        result.promptBundle.contextMarkdown.includes(
+          'claimForPayout never double-owns',
+        ),
+      ).toBe(expected);
+    }
   });
 
   it('narrows embedded module docs to the changed module, listing the rest', async () => {
@@ -1067,7 +1145,25 @@ describe('SMRT knowledge index', () => {
     );
   });
 
-  it('falls open to every module doc when hints match no module', async () => {
+  it.each([
+    'payouts',
+    'crm',
+  ])('selects module %s from focus text', async (module) => {
+    await writeModuleDocs(rootDir);
+    const result = await buildArchitectureContext({
+      rootDir,
+      package: '@happyvertical/smrt-demo',
+      focus: `Review ${module}`,
+      detail: 'full',
+    });
+    const markdown = result.promptBundle.contextMarkdown;
+    expect(markdown.includes('claimForPayout never double-owns')).toBe(
+      module === 'payouts',
+    );
+    expect(markdown.includes('Leads and pipelines')).toBe(module === 'crm');
+  });
+
+  it('keeps unmatched modules discoverable without expanding their prose', async () => {
     await writeModuleDocs(rootDir);
 
     const result = await buildReviewContext({
@@ -1078,8 +1174,10 @@ describe('SMRT knowledge index', () => {
     });
     const markdown = result.promptBundle.contextMarkdown;
 
-    expect(markdown).toContain('claimForPayout never double-owns');
-    expect(markdown).toContain('Leads and pipelines');
+    expect(markdown).not.toContain('claimForPayout never double-owns');
+    expect(markdown).not.toContain('Leads and pipelines');
+    expect(markdown).toContain('packages/demo/agents/payouts.md');
+    expect(markdown).toContain('packages/demo/agents/crm.md');
   });
 
   it('flags a changed module doc as an authored-expertise change', async () => {

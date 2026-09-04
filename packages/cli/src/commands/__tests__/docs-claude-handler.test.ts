@@ -100,6 +100,52 @@ describe('docs:agents handler', () => {
     expect(printed).toContain('*No AGENTS.md found for this package.*');
   });
 
+  it.each([
+    'docs:agents',
+    'docs:claude',
+  ] as const)('%s keeps module sources reachable and requires --complete for bodies', async (command) => {
+    for (const name of ['smrt-content', 'ai']) {
+      makePackage('@happyvertical', name, {
+        agents: '# Package\n\nOrientation. [Details](agents/details.md)',
+      });
+      const moduleDir = join(
+        tempDir,
+        'node_modules',
+        '@happyvertical',
+        name,
+        'agents',
+      );
+      mkdirSync(moduleDir);
+      writeFileSync(
+        join(moduleDir, 'details.md'),
+        `# Details\n\n${name} module body.`,
+      );
+    }
+
+    await docsCommands[command].handler([], { 'dry-run': true });
+    const selected = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    for (const name of ['smrt-content', 'ai']) {
+      expect(selected).toContain(
+        join(
+          tempDir,
+          'node_modules',
+          '@happyvertical',
+          name,
+          'agents/details.md',
+        ),
+      );
+      expect(selected).not.toContain(`${name} module body.`);
+    }
+    logSpy.mockClear();
+    await docsCommands[command].handler([], {
+      'dry-run': true,
+      complete: true,
+    });
+    const complete = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(complete).toContain('smrt-content module body.');
+    expect(complete).toContain('ai module body.');
+  });
+
   it('writes the output file and reports package counts', async () => {
     makePackage('@happyvertical', 'smrt-content', {
       agents: '# smrt-content\n\nDocs.',

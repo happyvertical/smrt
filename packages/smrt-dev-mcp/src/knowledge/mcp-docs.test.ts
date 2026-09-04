@@ -89,7 +89,7 @@ describe('development MCP documentation freshness', () => {
 
   it('detects a missing README input parameter', async () => {
     const detailRow =
-      "| `detail` | `'summary' \\| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |\n";
+      "| `detail` | `'summary' \\| 'full' \\| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |\n";
     const mutated = readme.replace(detailRow, '');
     expect(mutated).not.toBe(readme);
     await writeFile(join(packageDir, 'README.md'), mutated);
@@ -236,7 +236,7 @@ describe('development MCP documentation freshness', () => {
       writeFile(join(packageDir, 'CLAUDE.md'), '@AGENTS.md\n'),
     ]);
     const detailRow =
-      "| `detail` | `'summary' \\| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |\n";
+      "| `detail` | `'summary' \\| 'full' \\| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |\n";
     const mutated = readme.replace(detailRow, '');
     expect(mutated).not.toBe(readme);
     await writeFile(join(packageDir, 'README.md'), mutated);
