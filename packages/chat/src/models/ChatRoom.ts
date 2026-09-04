@@ -33,7 +33,7 @@ type ChatRoomMetadata = Record<string, unknown>;
   tableName: 'chat_rooms',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ChatRoom extends SmrtObject {
   @tenantId()

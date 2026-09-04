@@ -26,7 +26,7 @@ import type {
   tableName: 'chat_participants',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ChatParticipant extends SmrtObject {
   @tenantId()

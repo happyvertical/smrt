@@ -25,7 +25,7 @@ import type {
   tableName: 'chat_messages',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ChatMessage extends SmrtObject {
   @tenantId()

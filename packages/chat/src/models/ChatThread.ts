@@ -15,7 +15,7 @@ import type { ChatThreadOptions } from '../types.js';
   tableName: 'chat_threads',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ChatThread extends SmrtObject {
   @tenantId()

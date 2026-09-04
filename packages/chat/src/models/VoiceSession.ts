@@ -19,7 +19,7 @@ import type { VoiceSessionOptions, VoiceSessionStatus } from '../types.js';
   tableName: 'voice_sessions',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class VoiceSession extends SmrtObject {
   @tenantId()
