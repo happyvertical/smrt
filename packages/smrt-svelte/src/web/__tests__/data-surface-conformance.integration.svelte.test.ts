@@ -1197,6 +1197,10 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     let revision = 1;
     let authorizationAllowed = true;
     let eligibilityAllowed = true;
+    let authoritativeSelection = {
+      queryFingerprint: 'records-query-v1',
+      rowIds: [firstId],
+    };
     const applied: string[] = [];
     const state = new InMemoryDataSurfaceActionStateStore();
     const context = {
@@ -1249,10 +1253,10 @@ describe('data-surface human/agent parity and security (#2450)', () => {
           },
         },
       }),
-      resolveSelection: async (invocation, selection) => ({
+      resolveSelection: async (invocation, _selection) => ({
         revision,
-        queryFingerprint: 'records-query-v1',
-        rowIds: selection.scope === 'explicit-ids' ? selection.rowIds : [],
+        queryFingerprint: authoritativeSelection.queryFingerprint,
+        rowIds: authoritativeSelection.rowIds,
       }),
     });
     const base = {
@@ -1284,6 +1288,38 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     expect(token.length).toBeGreaterThan(20);
     expect(token).not.toContain('tenant-a');
     expect(token).not.toContain('archive');
+
+    // The selected rows and their authoritative query can change without a
+    // surface revision changing. Applying the old token must re-resolve that
+    // selection and fail closed before the action callback is reached.
+    const selectionDriftPreview = await adapter.preview(
+      { ...base, requestId: 'selection-drift-preview' },
+      context,
+    );
+    authoritativeSelection = {
+      queryFingerprint: 'records-query-v2',
+      rowIds: [secondId],
+    };
+    const selectionDrift = await adapter.apply(
+      {
+        ...base,
+        phase: 'apply',
+        requestId: 'selection-drift',
+        idempotencyKey: 'selection-drift',
+        confirmationToken: selectionDriftPreview.confirmationToken,
+      },
+      context,
+    );
+    expect(selectionDrift).toMatchObject({
+      ok: false,
+      reason: 'stale_preview',
+    });
+    expect(applied).toEqual([]);
+    authoritativeSelection = {
+      queryFingerprint: 'records-query-v1',
+      rowIds: [firstId],
+    };
+
     revision = 2;
     const stale = await adapter.apply(
       {

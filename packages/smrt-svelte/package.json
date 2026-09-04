@@ -104,7 +104,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "typecheck:conformance": "tsc --noEmit -p ./tsconfig.conformance.json",
-    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && pnpm run typecheck:conformance && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "keywords": [
