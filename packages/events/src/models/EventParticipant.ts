@@ -20,7 +20,7 @@ import type { EventParticipantOptions } from '../types';
   conflictColumns: ['event_id', 'profile_id', 'role'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class EventParticipant extends SmrtObject {
   @tenantId({ nullable: true })
