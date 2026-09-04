@@ -22,9 +22,15 @@ the chat, and plays returned TTS audio. Exposing
 
 ## Models
 
-Internal models — all mutations go through the membership/owner-checked `ChatService` (S5 #1392) or the voice adapter's binding-checked flow. EVERY `@smrt()` model in this package (ChatRoom, ChatMessage, ChatParticipant, ChatThread, ChatReaction, AgentSession, VoiceSession) has a READ-ONLY generated REST/MCP surface (`list`/`get` only); `create`/`update`/`delete` are intentionally NOT generated so the raw collection routes cannot skip the service-layer authorization. A structural regression test enumerates the registry to assert no chat model exposes a mutating op.
+All seven models expose only generated REST/MCP `list`/`get`; structural tests
+check the registry for accidental mutating operations. Writes go through
+membership/owner-checked `ChatService` or the binding-checked voice adapter.
 
-`ChatService` is a CLOSED FACADE (S5 #1392). The raw collections (`rooms`, `messages`, `participants`, `threads`, `agentSessions`, `reactions`, `voiceSessions`) are ES `#private` fields — they are NOT on the public `ChatService` type and the package index does NOT export the collection classes, so a consumer cannot do `chat.messages.create({senderProfileId, role})` / `new ChatParticipantCollection(...)` to mutate around the authorization. The security-sensitive internals (`#writeMessage`, `#emitAgentReply`, `#enrollParticipant`, `#loadActiveSession`, `#requireActiveMembership`, `#requireRoomAdmin`, `#extractToolName`) are ES `#private` too, so they are unreachable at runtime — TypeScript `private` alone is erased and would leave them callable on the prototype. The agent-reply bridge is a `Symbol`-keyed static (not the old enumerable `_runAgentReply`), reachable only by the module-local `sendAgentReply` that holds the non-exported symbol.
+`ChatService` is a closed facade. Its collections and security-sensitive
+helpers use ES `#private` fields/methods (TypeScript `private` is erased).
+Collection classes are not exported from the package index. The agent-reply
+bridge is a Symbol-keyed static accessible through a non-exported symbol held
+by the module-local `sendAgentReply` function.
 
 - **ChatRoom**: `roomType` (public/private/dm/agent), `status`, `topic`, `maxParticipants`, `lastMessageAt`. Tenant-scoped (required).
 - **ChatMessage**: shared by users + agents. `role` (user/assistant/system/tool), `messageType` (text/system/action/file/tool_call/tool_result), `toolCallData` JSON. Unified model — no separate agent message type. Tenant-scoped (required).
@@ -36,9 +42,40 @@ Internal models — all mutations go through the membership/owner-checked `ChatS
 
 ## ChatService
 
-Every public write takes an explicit server-supplied `actorProfileId` (the authenticated principal the route injects) — never a caller-controlled `senderProfileId`/`role` (S5 #1392).
+Public writes take server-supplied `actorProfileId`; never trust a request's
+`senderProfileId`, `role`, owner id, or participant id as authority.
 
-Facade: `sendMessage()` (authors as the actor with `role: 'user'`; room-membership-checked; no caller-supplied sender/role and no public membership-skip), `createRoom()` (acting actor becomes owner — no caller-supplied `createdByProfileId`), `startThread()` (member-checked; optional `rootMessageId` bound to the same room+tenant), `addParticipant()`/`removeParticipant()` (owner/admin-checked; self-leave allowed), `updateRoom()` (owner/admin-checked), `addReaction()`/`removeReaction()` (member-checked, self-keyed), `getOrCreateDM()` (actor must be a DM participant), `createAgentSession()` (acting actor becomes the session participant — no caller-supplied `participantProfileId`; the existing-session room lookup is tenant-bound; optional `sessionKey` scopes session identity to a conversation subject so distinct keys get distinct sessions/rooms and a session opened for one subject is never reused/rewritten for another). Tenant-bound read facade (replaces raw-collection reach-ins; consumers apply their own ownership/context checks on the returned rows): `getAgentSession({agentSessionId, tenantId})`, `findActiveAgentSessions({tenantId, agentId, participantProfileId})`, `getThread({threadId, tenantId})`, `listRoomThreads({roomId, actorProfileId, tenantId})` (membership-gated), `getThreadMessages({threadId, actorProfileId, tenantId, limit?})` (membership-gated, chronological), `getRoomMessages({roomId, actorProfileId, tenantId})`/`getRoomForMember(roomId, actorProfileId, tenantId)` (membership-checked reads gated on the server-supplied `actorProfileId`, never a caller-controlled subject id — confused-deputy avoidance; `tenantId` required), `updateAgentSessionConfig()` (owner-checked; `tenantId` mandatory and bound into the lookup). Agent session messaging is split by authority: `sendAgentUserMessage()` (caller `actorProfileId` must be the session participant; always authored as the participant). The agent-authored reply path `sendAgentReply(service, params)` is an exported **function — NOT a `ChatService` method and NOT on the package index**; it is reachable only via the dedicated `@happyvertical/smrt-chat/internal/agent-runtime` subpath (S5 #1392), so only trusted in-process agent-runtime code that explicitly opts into that subpath can author as the agent. It authors as `session.agentId`, accepts an optional same-room/tenant `threadId`, and gates tool calls fail-closed against `allowedTools`. The shared internal persistence path (`writeMessage`) is private — it alone may author an arbitrary profile/role or skip the membership check, and is unreachable from any route; it also validates every supplied `threadId`/`agentSessionId`/`replyToMessageId` belongs to the SAME room AND tenant (tenant/room-bound lookups) before use, rejecting cross-room/cross-tenant references. Auto-creates rooms/sessions/participants via an internal `enrollParticipant`.
+| Operation | Authorization and behavior |
+|---|---|
+| `sendMessage()` | Room member; authors as actor with `role: 'user'`; no public membership bypass |
+| `createRoom()` | Actor becomes owner |
+| `startThread()` | Member; optional root message bound to room and tenant |
+| `addParticipant()` / `removeParticipant()` | Owner/admin; self-leave allowed |
+| `updateRoom()` | Owner/admin |
+| `addReaction()` / `removeReaction()` | Member; self-keyed |
+| `getOrCreateDM()` | Actor must be a DM participant |
+| `createAgentSession()` | Actor becomes session participant; existing-session lookup tenant-bound; optional `sessionKey` isolates conversation subjects |
+| `updateAgentSessionConfig()` | Owner; mandatory tenant-bound lookup |
+| `sendAgentUserMessage()` | Actor must be session participant; authored as participant |
+
+Read facade: `getAgentSession({agentSessionId, tenantId})`,
+`findActiveAgentSessions({tenantId, agentId, participantProfileId})`, and
+`getThread({threadId, tenantId})` are tenant-bound; consumers still check
+ownership/context. `listRoomThreads({roomId, actorProfileId, tenantId})`,
+`getThreadMessages({threadId, actorProfileId, tenantId, limit?})` (chronological),
+`getRoomMessages({roomId, actorProfileId, tenantId})`, and
+`getRoomForMember(roomId, actorProfileId, tenantId)` additionally require
+membership of the server-supplied actor, not a caller-selected subject.
+
+Trusted agent runtime imports `sendAgentReply(service, params)` only from
+`@happyvertical/smrt-chat/internal/agent-runtime`. It is not a `ChatService`
+method or package-index export. It authors as `session.agentId`, accepts a
+same-room/tenant thread, and enforces `allowedTools` fail-closed.
+
+Private `#writeMessage` alone can select arbitrary authors/roles or bypass
+membership. It binds every supplied `threadId`, `agentSessionId`, and
+`replyToMessageId` to the same room **and** tenant. Internal enrollment supports
+automatically created rooms, sessions, and participants.
 
 ## Agent Tool Whitelisting
 
@@ -53,7 +90,8 @@ bounded query results, and audit authority remain in the authenticated
 
 ## Conversational Harness (L3, #1891)
 
-The "chat with your learning agent" surface — the real agentic runtime for `AgentSession` (the only shipping chat runtime before this was a single-shot completion). This is the new **acyclic `chat → personas` / `chat → agents` / `chat → users` edge**; keep it that way (personas/agents/users never depend back on chat).
+The `AgentSession` runtime depends on personas, agents, and users. Keep those
+edges acyclic: none of those packages may depend back on chat.
 
 - **`runToolLoop(options)`** (`tool-loop.ts`) — a bounded `tool_call → observe → respond` loop. Tools are **manifest operations** of installed packages: `buildManifestToolCatalog({ allowedTools })` reads the `PermissionCatalogService` catalog and keeps only the `(collection, action)` entries named in the persona's allow-list (the **offer gate**; absent/empty ⇒ NO tools). The loop runs inside one `executeAsPrincipal` context, and `invokeManifestTool` executes each op **in-process ("side door")** against `run.context.database` (the RLS tx when Postgres RLS is on), after re-asserting the fail-closed allow-list (`run.assertToolAllowed`) AND the catalog permission (`run.assertOperation`) — the **execution gate**. Bounded by a max-steps ceiling (`DEFAULT_MAX_STEPS = 8`): on the ceiling it disables tools for one final completion so the turn always terminates with text.
 - **`runPersonaConversationTurn(options)`** (`persona-conversation.ts`) — binds a conversation to an `AgentPersona`/`ResolvedPersona`: runs as its principal (`runAsUserId`), offers only its `allowedTools`, speaks its instructions (`resolvePersonaInstructions`, layering approved learned directives), and injects its **recalled learning memory** (`personaLearningMemory`, isolated per `memoryScope`) into the system prompt. `bindPersonaToSession()` mirrors the persona's `allowedTools`/instructions onto the `AgentSession` so the chat authoring gate agrees with the loop's offer gate. Authors the reply (and each executed tool) via the internal `sendAgentReply` bridge.

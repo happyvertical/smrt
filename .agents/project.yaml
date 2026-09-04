@@ -39,9 +39,7 @@
     ]
   },
   "skills": {
-    "paths": [
-      ".agents/skills"
-    ]
+    "paths": []
   },
   "github": {
     "required_status_checks": [

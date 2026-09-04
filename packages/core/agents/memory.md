@@ -14,3 +14,7 @@ by `@smrt({ embeddings })`, with native pgvector/HNSW or an in-memory fallback.
 Results hydrate through `list({ 'id in': … })`, so normal tenant isolation still
 applies. Keep injected search behind the `SmrtCollection.semanticSearch`
 boundary.
+
+`LearningMemory.capture()` reinforces successes and decays failures while
+updating outcome counters. Its tenant-isolated `recall()` applies confidence,
+expiry, time-decay, and hierarchical-scope filters and refreshes `last_used_at`.
