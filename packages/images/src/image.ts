@@ -29,7 +29,7 @@ import type { ImageOptions } from './types';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'generateAltText'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Image extends Asset {
   // Core image dimensions (regular columns for querying)
