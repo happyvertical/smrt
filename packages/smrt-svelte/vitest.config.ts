@@ -6,8 +6,11 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 // This integration gate intentionally consumes the published package entry
 // points. Vite's workspace symlink resolver otherwise follows those imports
 // back to sibling `src/` files, whose source-mode manifest URL is not a valid
-// browser URL under strict registry diagnostics. Keep the aliases limited to
-// this package's test runner; production builds retain normal package exports.
+// browser URL under strict registry diagnostics. The aliases are enabled only
+// by the dedicated conformance invocation; normal package tests stay
+// independent of generated sibling dist artifacts.
+const usePublishedEntries = process.env.SMRT_SVELTE_PUBLISHED_ENTRY === '1';
+
 const built = (packageName: string, entry: string) =>
   fileURLToPath(new URL(`../${packageName}/dist/${entry}`, import.meta.url));
 
@@ -19,8 +22,9 @@ export default defineConfig({
       // base-class discovery, which imports workspace siblings a second time
       // and creates strict-registry constructor collisions with their built
       // exports. The built workspace manifests are loaded below instead.
-      generateManifest: false,
+      generateManifest: !usePublishedEntries,
       aliasFilter: ({ find }) =>
+        !usePublishedEntries ||
         ![
           '@happyvertical/smrt-agents',
           '@happyvertical/smrt-agents/server',
@@ -31,6 +35,7 @@ export default defineConfig({
           '@happyvertical/smrt-jobs',
           '@happyvertical/smrt-profiles',
           '@happyvertical/smrt-profiles/internal/oidc-provisioning',
+          '@happyvertical/smrt-playbooks',
           '@happyvertical/smrt-prompts',
           '@happyvertical/smrt-reports',
           '@happyvertical/smrt-secrets',
@@ -62,32 +67,37 @@ export default defineConfig({
   // green under jsdom.
   resolve: {
     conditions: ['browser'],
-    alias: {
-      '@happyvertical/smrt-agents/server': built('agents', 'server.js'),
-      '@happyvertical/smrt-agents': built('agents', 'index.js'),
-      '@happyvertical/smrt-assets': built('assets', 'index.js'),
-      '@happyvertical/smrt-chat/data-surface-bridge': built(
-        'chat',
-        'data-surface-bridge.js',
-      ),
-      '@happyvertical/smrt-content/svelte': built(
-        'content',
-        'svelte/index.js',
-      ),
-      '@happyvertical/smrt-config': built('config', 'index.js'),
-      '@happyvertical/smrt-jobs': built('jobs', 'index.js'),
-      '@happyvertical/smrt-profiles/internal/oidc-provisioning': built(
-        'profiles',
-        'internal/oidc-provisioning.js',
-      ),
-      '@happyvertical/smrt-profiles': built('profiles', 'index.js'),
-      '@happyvertical/smrt-prompts': built('prompts', 'index.js'),
-      '@happyvertical/smrt-reports': built('reports', 'index.js'),
-      '@happyvertical/smrt-secrets': built('secrets', 'index.js'),
-      '@happyvertical/smrt-tags': built('tags', 'index.js'),
-      '@happyvertical/smrt-tenancy': built('tenancy', 'index.js'),
-      '@happyvertical/smrt-users': built('users', 'index.js'),
-    },
+    ...(usePublishedEntries
+      ? {
+          alias: {
+            '@happyvertical/smrt-agents/server': built('agents', 'server.js'),
+            '@happyvertical/smrt-agents': built('agents', 'index.js'),
+            '@happyvertical/smrt-assets': built('assets', 'index.js'),
+            '@happyvertical/smrt-chat/data-surface-bridge': built(
+              'chat',
+              'data-surface-bridge.js',
+            ),
+            '@happyvertical/smrt-content/svelte': built(
+              'content',
+              'svelte/index.js',
+            ),
+            '@happyvertical/smrt-config': built('config', 'index.js'),
+            '@happyvertical/smrt-jobs': built('jobs', 'index.js'),
+            '@happyvertical/smrt-profiles/internal/oidc-provisioning': built(
+              'profiles',
+              'internal/oidc-provisioning.js',
+            ),
+            '@happyvertical/smrt-profiles': built('profiles', 'index.js'),
+            '@happyvertical/smrt-playbooks': built('playbooks', 'index.js'),
+            '@happyvertical/smrt-prompts': built('prompts', 'index.js'),
+            '@happyvertical/smrt-reports': built('reports', 'index.js'),
+            '@happyvertical/smrt-secrets': built('secrets', 'index.js'),
+            '@happyvertical/smrt-tags': built('tags', 'index.js'),
+            '@happyvertical/smrt-tenancy': built('tenancy', 'index.js'),
+            '@happyvertical/smrt-users': built('users', 'index.js'),
+          },
+        }
+      : {}),
   },
   test: {
     globals: true,

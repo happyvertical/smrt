@@ -30,6 +30,7 @@ import {
 } from '@happyvertical/smrt-chat/data-surface-bridge';
 import {
   buildContentListSurfaceDescriptor,
+  CONTENT_LIST_SCHEMA_VERSION,
   ContentList,
 } from '@happyvertical/smrt-content/svelte';
 import {
@@ -1476,7 +1477,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     });
     expect(contentDescriptor).toMatchObject({
       version: 1,
-      schemaVersion: 1,
+      schemaVersion: CONTENT_LIST_SCHEMA_VERSION,
       rowKey: 'id',
       identity: { kind: 'table' },
     });

@@ -36,8 +36,11 @@ warnings without leaking SQL, authority, or another tenant's rows.
 
 Treat `not_found`, `denied`, `stale_revision`, `expired`, `timeout`,
 `disconnected`, `invalid_request`, `idempotency_conflict`, and
-`confirmation_replayed` as terminal failures for that request. Do not retry a
-mutation without a new idempotency key and, where required, a new preview.
+`confirmation_replayed` as terminal failures for that request. If an apply
+outcome is unknown, retry the exact same logical request with its original
+idempotency key so the server can safely return the recorded result. Use a new
+idempotency key only for a distinct logical operation, and obtain a fresh
+preview whenever confirmation is required for that operation.
 
 The app-level regression gate is
 `packages/smrt-svelte/src/web/__tests__/data-surface-conformance.integration.svelte.test.ts`.
