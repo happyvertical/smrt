@@ -67,7 +67,7 @@ function stringifyAssetRecord(
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Asset extends SmrtObject {
   // Tenant isolation (optional - assets can be global or tenant-specific)
