@@ -49,7 +49,7 @@ export interface SkuOptions extends SmrtObjectOptions {
   conflictColumns: ['code', 'tenant_id'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Sku extends SmrtObject {
   /** Tenant scope. `null` means the SKU is a global record. */

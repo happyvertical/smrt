@@ -48,7 +48,7 @@ export interface ProductVariantOptions extends SmrtObjectOptions {
   conflictColumns: ['product_id', 'axis_name', 'tenant_id'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ProductVariant extends SmrtObject {
   /** Tenant scope. `null` means the variant axis is global. */

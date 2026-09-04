@@ -60,7 +60,7 @@ export interface ProductOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'], // AI tools for product discovery
   },
-  cli: true, // Enable CLI commands for admin
+  cli: { skipApiCheck: true }, // Enable CLI commands for admin
 })
 export class Product extends SmrtObject {
   /**
