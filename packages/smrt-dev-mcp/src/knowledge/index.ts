@@ -4039,7 +4039,15 @@ function selectModuleDocs(
           line.trimStart().startsWith('|') && line.includes(`](${doc.path})`),
       )
       .flatMap((line) =>
-        [...line.matchAll(/`(src\/[^`]+)`/g)].map((match) => match[1]),
+        [...line.matchAll(/`([^`]+)`/g)]
+          .map((match) => match[1].replace(/^\.\//, ''))
+          .filter(
+            (source) =>
+              !source.startsWith('/') &&
+              !source.split('/').includes('..') &&
+              !/\s/.test(source) &&
+              (source.includes('/') || /\.[a-z0-9]+$/i.test(source)),
+          ),
       );
     const segment = new RegExp(`(^|[/.])${escapeRegExp(doc.module)}([/.]|$)`);
     return (

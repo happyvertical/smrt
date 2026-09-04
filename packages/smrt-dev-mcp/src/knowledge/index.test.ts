@@ -1076,10 +1076,10 @@ describe('SMRT knowledge index', () => {
       docPath,
       content.replace(
         '| payouts |',
-        '| `src/settlement.ts` + `src/transfers/` |',
+        '| `lib/settlement.ts` + `src/transfers/` |',
       ),
     );
-    for (const file of ['src/settlement.ts', 'src/transfers/send.ts']) {
+    for (const file of ['lib/settlement.ts', 'src/transfers/send.ts']) {
       const result = await buildReviewContext({
         rootDir,
         changedFiles: [`packages/demo/${file}`],
