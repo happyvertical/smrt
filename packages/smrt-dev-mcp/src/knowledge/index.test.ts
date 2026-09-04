@@ -1067,17 +1067,21 @@ describe('SMRT knowledge index', () => {
     );
   });
 
-  it('matches explicit source mappings even when module basenames differ', async () => {
+  it.each([
+    'agents/payouts.md',
+    'agents/payouts.md#claims',
+    'agents/payouts.md "Payouts"',
+    './agents/payouts.md',
+  ])('matches mapped sources with module link %s', async (href) => {
     await writeModuleDocs(rootDir);
     const docPath = join(rootDir, 'packages/demo/AGENTS.md');
     const { readFile } = await import('node:fs/promises');
     const content = await readFile(docPath, 'utf8');
     await writeFile(
       docPath,
-      content.replace(
-        '| payouts |',
-        '| `lib/settlement.ts` + `src/transfers/` |',
-      ),
+      content
+        .replace('| payouts |', '| `lib/settlement.ts` + `src/transfers/` |')
+        .replace('(agents/payouts.md)', `(${href})`),
     );
     for (const file of ['lib/settlement.ts', 'src/transfers/send.ts']) {
       const result = await buildReviewContext({

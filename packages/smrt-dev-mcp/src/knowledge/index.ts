@@ -22,6 +22,7 @@ import {
   AGENT_SURFACE_HASH_PREFIX,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
+  resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
@@ -4036,7 +4037,8 @@ function selectModuleDocs(
       .split('\n')
       .filter(
         (line) =>
-          line.trimStart().startsWith('|') && line.includes(`](${doc.path})`),
+          line.trimStart().startsWith('|') &&
+          resolveAgentModuleDocPaths(pkg.directory, line).includes(doc.path),
       )
       .flatMap((line) =>
         [...line.matchAll(/`([^`]+)`/g)]
