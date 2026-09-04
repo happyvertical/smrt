@@ -11,7 +11,7 @@ import type { BlacklistOptions } from '../types';
  */
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
   tenantScoped: true,
 })
 export class Blacklist extends SmrtObject {

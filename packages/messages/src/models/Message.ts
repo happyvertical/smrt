@@ -25,7 +25,7 @@ import type {
   tableStrategy: 'sti',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Message extends SmrtObject {
   @tenantId({ nullable: true })
