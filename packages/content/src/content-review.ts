@@ -27,7 +27,7 @@ export interface ContentReviewOptions extends SmrtObjectOptions {
   tableName: 'content_reviews',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentReview extends SmrtObject {
   @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
