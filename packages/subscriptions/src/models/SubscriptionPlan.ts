@@ -19,7 +19,7 @@ import {
 @smrt({
   tableName: '_smrt_subscription_plans',
   api: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
   mcp: { include: ['list', 'get'] },
   conflictColumns: ['plan_key'],
 })
