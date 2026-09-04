@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const knowledgeMocks = vi.hoisted(() => ({
+  compactContextResult: vi.fn((result) => result),
   buildKnowledgeIndex: vi.fn(),
   checkKnowledgeFreshness: vi.fn(),
   diffKnowledgeIndex: vi.fn(),
@@ -20,6 +21,7 @@ const knowledgeMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@happyvertical/smrt-dev-mcp/knowledge', () => ({
+  compactContextResult: knowledgeMocks.compactContextResult,
   buildKnowledgeIndex: knowledgeMocks.buildKnowledgeIndex,
   checkKnowledgeFreshness: knowledgeMocks.checkKnowledgeFreshness,
   diffKnowledgeIndex: knowledgeMocks.diffKnowledgeIndex,
@@ -65,6 +67,47 @@ describe('dev:knowledge-* handlers', () => {
 
   afterEach(() => {
     logSpy.mockRestore();
+  });
+
+  it.each([
+    ['dev:knowledge-review-context', 'buildReviewContext'],
+    ['dev:knowledge-architecture-context', 'buildArchitectureContext'],
+  ] as const)('%s forwards explicit complete-document requests', async (command, builder) => {
+    await devKnowledgeCommands[command].handler([], {
+      complete: true,
+      package: 'core',
+    });
+    expect(knowledgeMocks[builder]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: 'complete',
+        package: 'core',
+      }),
+    );
+    expect(devKnowledgeCommands[command].options?.complete).toBeDefined();
+  });
+
+  it.each([
+    'dev:knowledge-review-context',
+    'dev:knowledge-architecture-context',
+  ])('%s prints the selective projection for JSON and preserves complete opt-in', async (command) => {
+    const projected = {
+      promptBundle: { contextMarkdown: 'Selected prose only' },
+    };
+    knowledgeMocks.compactContextResult.mockReturnValueOnce(projected);
+    await devKnowledgeCommands[command].handler([], { format: 'json' });
+    expect(knowledgeMocks.compactContextResult).toHaveBeenLastCalledWith(
+      contextResult,
+      'full',
+    );
+    expect(logSpy).toHaveBeenLastCalledWith(JSON.stringify(projected, null, 2));
+    await devKnowledgeCommands[command].handler([], {
+      json: true,
+      complete: true,
+    });
+    expect(knowledgeMocks.compactContextResult).toHaveBeenLastCalledWith(
+      contextResult,
+      'complete',
+    );
   });
 
   describe('dev:knowledge-index', () => {
@@ -174,7 +217,7 @@ describe('dev:knowledge-* handlers', () => {
         focus: 'focus area',
         scope: undefined,
         package: undefined,
-        // CLI keeps the full module-doc embedding contract (#2108, #2143).
+        // CLI includes package prose and matched module documentation.
         detail: 'full',
       });
       const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');

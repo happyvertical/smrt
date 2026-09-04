@@ -15,7 +15,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { readAgentModuleDocs } from '@happyvertical/smrt-core/knowledge';
+import {
+  readAgentModuleDocs,
+  resolveAgentModuleDocPaths,
+} from '@happyvertical/smrt-core/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
 
@@ -27,13 +30,12 @@ export interface PackageInfo {
   /** Backward-compatible alias for older tests/importers. */
   claudeMd?: string | null;
   docSource?: 'AGENTS.md' | 'CLAUDE.md' | null;
-  /**
-   * Sibling module docs linked from the package's AGENTS.md (#2108). Oversized
-   * package docs are split by module into `agents/<module>.md` instead of nested
-   * AGENTS.md files, so the snapshot must follow the links or it loses prose
-   * that cannot be regenerated from the manifest.
-   */
+  /** Linked module bodies, loaded only for complete snapshots. */
   moduleDocs?: DomainKnowledgeModuleDoc[];
+  /** Package directory for resolving authored documentation from the snapshot. */
+  directory?: string;
+  /** Module paths without loading their bodies in the default snapshot. */
+  moduleDocPaths?: string[];
 }
 
 export interface RootDocInfo {
@@ -57,6 +59,7 @@ interface DocsCommandOptions {
 interface DocsHandlerOptions {
   output?: string;
   'dry-run'?: boolean;
+  complete?: boolean;
 }
 
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
@@ -71,6 +74,11 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         type: 'string',
         description: `Output file path (default: ${config.defaultOutput})`,
         short: 'o',
+      },
+      complete: {
+        type: 'boolean',
+        description: 'Include every linked module document in the snapshot',
+        default: false,
       },
       'dry-run': {
         type: 'boolean',
@@ -91,8 +99,8 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         const dryRun = options['dry-run'];
         const monorepoRoot = detectMonorepoRoot();
         const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
-        const packages = await discoverInstalledPackages();
-        const sdkPackages = await discoverSdkPackages();
+        const packages = await discoverInstalledPackages(options.complete);
+        const sdkPackages = await discoverSdkPackages(options.complete);
 
         if (packages.length === 0 && sdkPackages.length === 0) {
           console.log('\n⚠️  No @happyvertical packages found in node_modules');
@@ -107,6 +115,7 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           rootDocs.length > 0 ? rootDocs : undefined,
           sdkPackages.length > 0 ? sdkPackages : undefined,
           config.generatedBy,
+          { complete: options.complete },
         );
 
         if (dryRun) {
@@ -136,7 +145,8 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
           console.log(`   ${withAgentDocs} with AGENTS.md`);
         }
         const moduleDocCount = allPackages.reduce(
-          (total, p) => total + (p.moduleDocs?.length ?? 0),
+          (total, p) =>
+            total + (p.moduleDocPaths?.length ?? p.moduleDocs?.length ?? 0),
           0,
         );
         if (moduleDocCount > 0) {
@@ -178,7 +188,9 @@ export const docsClaudeCommand: CLICommand = createDocsCommand({
  * Discover installed @happyvertical/smrt-* packages.
  * Checks both node_modules and workspace packages directory.
  */
-async function discoverInstalledPackages(): Promise<PackageInfo[]> {
+async function discoverInstalledPackages(
+  complete = false,
+): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
   const { readdirSync } = await import('node:fs');
 
@@ -200,7 +212,7 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
         // Not a symlink, use original path.
       }
 
-      const pkg = loadPackageInfo(packagePath, entry.name);
+      const pkg = loadPackageInfo(packagePath, entry.name, complete);
       if (pkg) packages.push(pkg);
     }
   }
@@ -224,7 +236,7 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
           );
           if (!packageJson.name?.startsWith('@happyvertical/smrt-')) continue;
 
-          const pkg = loadPackageInfo(packagePath, entry.name);
+          const pkg = loadPackageInfo(packagePath, entry.name, complete);
           if (pkg) packages.push(pkg);
         } catch {
           // Skip invalid package.json.
@@ -239,7 +251,7 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
 /**
  * Discover installed @happyvertical/* SDK packages (non-smrt).
  */
-async function discoverSdkPackages(): Promise<PackageInfo[]> {
+async function discoverSdkPackages(complete = false): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
   const { readdirSync } = await import('node:fs');
 
@@ -265,7 +277,7 @@ async function discoverSdkPackages(): Promise<PackageInfo[]> {
       // Not a symlink, use original path.
     }
 
-    const pkg = loadPackageInfo(packagePath, entry.name);
+    const pkg = loadPackageInfo(packagePath, entry.name, complete);
     if (pkg) packages.push(pkg);
   }
 
@@ -275,6 +287,7 @@ async function discoverSdkPackages(): Promise<PackageInfo[]> {
 function loadPackageInfo(
   packagePath: string,
   dirName: string,
+  complete: boolean,
 ): PackageInfo | null {
   const packageJsonPath = join(packagePath, 'package.json');
   if (!existsSync(packageJsonPath)) {
@@ -295,8 +308,16 @@ function loadPackageInfo(
       agentMd: agentDoc.content,
       claudeMd: agentDoc.content,
       docSource: agentDoc.source,
-      moduleDocs:
+      directory: packagePath,
+      moduleDocPaths:
         agentDoc.source === 'AGENTS.md'
+          ? resolveAgentModuleDocPaths(
+              packagePath,
+              agentDoc.content ?? undefined,
+            )
+          : [],
+      moduleDocs:
+        complete && agentDoc.source === 'AGENTS.md'
           ? readAgentModuleDocs(packagePath, agentDoc.content ?? undefined)
           : [],
     };
@@ -444,27 +465,37 @@ function renderAgentMd(content: string): string {
   return content.trim();
 }
 
-/**
- * The package's AGENTS.md followed by every module doc it links (#2108).
- * The links stay in the rendered text so a reader can still map a section back
- * to its source path; the bodies follow so nothing is lost downstream.
- */
-function renderPackageDoc(pkg: PackageInfo, lines: string[]): void {
+/** Keep package orientation inline; load module bodies only on explicit request. */
+function renderPackageDoc(
+  pkg: PackageInfo,
+  lines: string[],
+  complete: boolean,
+): void {
   const content = pkg.agentMd ?? pkg.claudeMd;
   if (!content) {
-    lines.push('*No AGENTS.md found for this package.*');
-    lines.push('');
+    lines.push('*No AGENTS.md found for this package.*', '');
     return;
   }
 
-  lines.push(renderAgentMd(content));
-  lines.push('');
-
-  for (const doc of pkg.moduleDocs ?? []) {
-    lines.push(`#### ${doc.path}`);
+  lines.push(renderAgentMd(content), '');
+  const paths =
+    pkg.moduleDocPaths ?? pkg.moduleDocs?.map((doc) => doc.path) ?? [];
+  if (!complete && paths.length > 0) {
+    lines.push('#### Module documentation', '');
+    lines.push(
+      'Read the relevant source file on demand, or regenerate with `--complete`.',
+      '',
+    );
+    for (const path of paths) {
+      const source = pkg.directory ? join(pkg.directory, path) : path;
+      lines.push(`- [${path}](<${source}>)`);
+    }
     lines.push('');
-    lines.push(renderAgentMd(doc.content));
-    lines.push('');
+  }
+  if (complete) {
+    for (const doc of pkg.moduleDocs ?? []) {
+      lines.push(`#### ${doc.path}`, '', renderAgentMd(doc.content), '');
+    }
   }
 }
 
@@ -473,6 +504,7 @@ export function generateMarkdown(
   rootDocs?: RootDocInfo[],
   sdkPackages?: PackageInfo[],
   generatedBy = 'smrt docs:agents',
+  options: { complete?: boolean } = {},
 ): string {
   const lines: string[] = [];
 
@@ -530,7 +562,7 @@ export function generateMarkdown(
     lines.push(`## ${pkg.name}`);
     lines.push('');
 
-    renderPackageDoc(pkg, lines);
+    renderPackageDoc(pkg, lines, options.complete === true);
   }
 
   if (sdkPackages && sdkPackages.length > 0) {
@@ -545,7 +577,7 @@ export function generateMarkdown(
       lines.push(`### ${pkg.name}`);
       lines.push('');
 
-      renderPackageDoc(pkg, lines);
+      renderPackageDoc(pkg, lines, options.complete === true);
     }
   }
 
@@ -567,7 +599,7 @@ export function generateMarkdown(
 
   lines.push('---');
   lines.push(
-    `*Generated by \`${generatedBy}\` — regenerate after dependency updates*`,
+    `*Generated by \`${generatedBy}${options.complete ? ' --complete' : ''}\` — regenerate after dependency updates*`,
   );
   lines.push('');
 

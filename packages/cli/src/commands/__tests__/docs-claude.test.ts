@@ -219,13 +219,11 @@ Gamma content.
       expect(markdown).not.toContain('# My Package');
     });
 
-    it('should append the module docs AGENTS.md links (#2108)', () => {
-      // An oversized package doc is split into sibling agents/<module>.md files,
-      // so the snapshot must follow the links or it silently loses curated
-      // prose that cannot be regenerated from the manifest.
+    it('lists module sources by default and embeds them only in complete mode', () => {
       const packages: PackageInfo[] = [
         {
           name: '@test/split-pkg',
+          directory: '/project/node_modules/@test/split-pkg',
           version: '1.0.0',
           readme: null,
           agentMd:
@@ -243,9 +241,21 @@ Gamma content.
       const markdown = generateMarkdown(packages);
 
       expect(markdown).toContain('Orientation and Gotchas.');
-      expect(markdown).toContain('#### agents/payouts.md');
-      expect(markdown).toContain('claimForPayout never double-owns.');
-      expect(markdown).not.toContain('# split/payouts');
+      expect(markdown).toContain(
+        '(<' + '/project/node_modules/@test/split-pkg/agents/payouts.md' + '>)',
+      );
+      expect(markdown).not.toContain('claimForPayout never double-owns.');
+      const complete = generateMarkdown(
+        packages,
+        undefined,
+        undefined,
+        'smrt docs:agents',
+        { complete: true },
+      );
+      expect(complete).toContain('#### agents/payouts.md');
+      expect(complete).toContain('claimForPayout never double-owns.');
+      expect(complete).not.toContain('# split/payouts');
+      expect(complete).toContain('`smrt docs:agents --complete`');
     });
 
     it('should include footer with regeneration note', () => {
