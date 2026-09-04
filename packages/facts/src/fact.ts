@@ -37,7 +37,7 @@ import type {
   },
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Fact extends SmrtObject {
   @field({ required: true })

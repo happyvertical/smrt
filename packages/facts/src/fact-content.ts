@@ -20,7 +20,7 @@ import type { FactContentOptions, FactContentRelationship } from './types';
   conflictColumns: ['fact_id', 'content_id', 'relationship'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class FactContent extends SmrtObject {
   @foreignKey('Fact', { required: true })

@@ -14,7 +14,7 @@ import type { FactSourceOptions } from './types';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class FactSource extends SmrtObject {
   @foreignKey('Fact', { required: true })

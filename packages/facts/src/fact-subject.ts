@@ -14,7 +14,7 @@ import type { FactSubjectOptions, SubjectRole } from './types';
   conflictColumns: ['fact_id', 'entity_type', 'entity_id'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class FactSubject extends SmrtObject {
   @foreignKey('Fact', { required: true })

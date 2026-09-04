@@ -14,7 +14,7 @@ import type { FactTagOptions } from './types';
   conflictColumns: ['fact_id', 'tag_slug'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class FactTag extends SmrtObject {
   @foreignKey('Fact', { required: true })
