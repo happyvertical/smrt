@@ -14,6 +14,8 @@ import {
   DataSurfaceDeadlineError,
   type DataSurfaceDefinition,
   type DataSurfaceExecutorResult,
+  DataSurfaceQueryError,
+  DataSurfaceRequestError,
   executeAsPrincipal,
 } from '@happyvertical/smrt-agents';
 import {
@@ -91,7 +93,7 @@ class SurfaceConformanceRecordCollection extends SmrtCollection<SurfaceConforman
   static readonly _itemClass = SurfaceConformanceRecord;
 }
 
-@smrt()
+@smrt({ tenantScoped: { mode: 'required' } })
 @report({ source: SurfaceConformanceRecord })
 class SurfaceConformanceReport extends SmrtObject {
   @field({ type: 'text' })
@@ -185,7 +187,9 @@ function bridgeTransport() {
   >();
   return {
     messages,
-    send: vi.fn((message: DataSurfaceBridgeMessage) => messages.push(message)),
+    send: vi.fn((message: DataSurfaceBridgeMessage): void => {
+      messages.push(message);
+    }),
     subscribe(
       listener: (message: unknown, peer: DataSurfaceBridgePeer) => void,
     ) {
@@ -205,6 +209,15 @@ function bridgeTransport() {
       for (const listener of statuses) listener(state);
     },
   };
+}
+
+function requiredTool(
+  tools: ReturnType<typeof createDataSurfaceTools>,
+  slug: string,
+) {
+  const tool = tools.find((candidate) => candidate.slug === slug);
+  if (!tool) throw new Error(`Missing fixture tool: ${slug}`);
+  return tool;
 }
 
 describe('data-surface human/agent parity and security (#2450)', () => {
@@ -236,9 +249,19 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     const hidden = await withTenant({ tenantId: 'tenant-b' }, () =>
       records.create({ tenantId: 'tenant-b', name: 'Hidden tenant' }),
     );
-    firstId = first.id;
-    secondId = second.id;
-    hiddenId = hidden.id;
+    firstId = String(first.id);
+    secondId = String(second.id);
+    hiddenId = String(hidden.id);
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      first.secret = 'sensitive-sentinel-tenant-a';
+      second.secret = 'sensitive-sentinel-tenant-a-2';
+      await first.save();
+      await second.save();
+    });
+    await withTenant({ tenantId: 'tenant-b' }, async () => {
+      hidden.secret = 'sensitive-sentinel-tenant-b';
+      await hidden.save();
+    });
   });
 
   afterAll(async () => {
@@ -347,7 +370,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
       permissions: ['records.read', 'records.update'],
       postgresRls: false,
       audit: () => undefined,
-    } as const;
+    };
   }
 
   it('uses the real DB-backed principal query and REST auth boundary', async () => {
@@ -358,9 +381,11 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         DATA_QUERY_TOOL_SLUG,
       ]),
       (run) =>
-        tools
-          .find((tool) => tool.slug === DATA_DISCOVER_TOOL_SLUG)
-          ?.execute({ run, args: {}, db }),
+        requiredTool(tools, DATA_DISCOVER_TOOL_SLUG).execute({
+          run,
+          args: {},
+          db,
+        }),
     );
     expect(discovered).toMatchObject([
       { id: 'records', fields: expect.any(Array) },
@@ -372,22 +397,20 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     const queried = await executeAsPrincipal(
       principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
       (run) =>
-        tools
-          .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
-          ?.execute({
-            run,
-            args: {
-              surfaceId: 'records',
-              request: {
-                version: 1,
-                requestId: 'principal-page-1',
-                mode: 'rows',
-                projection: ['id', 'name', 'status'],
-                page: { kind: 'offset', offset: 0, limit: 1 },
-              },
+        requiredTool(tools, DATA_QUERY_TOOL_SLUG).execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: {
+              version: 1,
+              requestId: 'principal-page-1',
+              mode: 'rows',
+              projection: ['id', 'name', 'status'],
+              page: { kind: 'offset', offset: 0, limit: 1 },
             },
-            db,
-          }),
+          },
+          db,
+        }),
     );
     expect(queried).toMatchObject({
       rows: [{ id: firstId, name: 'Ada' }],
@@ -406,22 +429,20 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     const cursorQueried = await executeAsPrincipal(
       principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
       (run) =>
-        cursorTools
-          .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
-          ?.execute({
-            run,
-            args: {
-              surfaceId: 'records',
-              request: {
-                version: 1,
-                requestId: 'principal-cursor-1',
-                mode: 'rows',
-                projection: ['id', 'name'],
-                page: { kind: 'cursor', limit: 1 },
-              },
+        requiredTool(cursorTools, DATA_QUERY_TOOL_SLUG).execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: {
+              version: 1,
+              requestId: 'principal-cursor-1',
+              mode: 'rows',
+              projection: ['id', 'name'],
+              page: { kind: 'cursor', limit: 1 },
             },
-            db,
-          }),
+          },
+          db,
+        }),
     );
     expect(cursorFailure).toBeUndefined();
     expect(cursorQueried).toMatchObject({
@@ -435,24 +456,116 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     const boundedResult = await executeAsPrincipal(
       principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
       (run) =>
-        bounded
-          .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
-          ?.execute({
+        requiredTool(bounded, DATA_QUERY_TOOL_SLUG).execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: {
+              version: 1,
+              requestId: 'principal-truncated',
+              mode: 'rows',
+              projection: ['id', 'name'],
+              page: { kind: 'offset', offset: 0, limit: 1 },
+            },
+          },
+          db,
+        }),
+    );
+    expect(boundedResult).toMatchObject({ truncated: true, warnings: [] });
+
+    // Sensitive fields are adversarially requested at the principal boundary;
+    // visibleSchema rejects them before the executor can read or serialize a
+    // sentinel value.
+    await expect(
+      executeAsPrincipal(
+        principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
+        (run) =>
+          requiredTool(tools, DATA_QUERY_TOOL_SLUG).execute({
             run,
             args: {
               surfaceId: 'records',
               request: {
                 version: 1,
-                requestId: 'principal-truncated',
+                requestId: 'principal-sensitive-probe',
+                mode: 'rows',
+                projection: ['id', 'secret'],
+                page: { kind: 'offset', offset: 0, limit: 1 },
+              },
+            },
+            db,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(DataSurfaceRequestError);
+
+    // Exercise the result-byte gate with a deliberately oversized executor
+    // payload. A safe projection alone would not prove this bound is active.
+    const oversized = surface();
+    oversized.schema = { ...oversized.schema, maxResultBytes: 120 };
+    oversized.execute = async () => ({
+      rows: [{ id: firstId, name: 'x'.repeat(500) }],
+      total: { kind: 'exact' as const, value: 1 },
+      page: { kind: 'offset' as const, offset: 0, limit: 1, hasMore: false },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    });
+    await expect(
+      executeAsPrincipal(
+        principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
+        (run) => {
+          const oversizedTools = createDataSurfaceTools({
+            surfaces: [oversized],
+          });
+          return requiredTool(oversizedTools, DATA_QUERY_TOOL_SLUG).execute({
+            run,
+            args: {
+              surfaceId: 'records',
+              request: {
+                version: 1,
+                requestId: 'principal-byte-bound',
                 mode: 'rows',
                 projection: ['id', 'name'],
                 page: { kind: 'offset', offset: 0, limit: 1 },
               },
             },
             db,
-          }),
-    );
-    expect(boundedResult).toMatchObject({ truncated: true, warnings: [] });
+          });
+        },
+      ),
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+
+    // The executor must not be able to return more rows than the requested
+    // bounded page, even when the caller asks for a valid limit.
+    const overRows = surface();
+    overRows.execute = async () => [
+      { id: firstId, name: 'Ada' },
+      { id: secondId, name: 'Grace' },
+      { id: hiddenId, name: 'Hidden tenant' },
+    ];
+    await expect(
+      executeAsPrincipal(
+        principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
+        (run) => {
+          const overRowsTools = createDataSurfaceTools({
+            surfaces: [overRows],
+          });
+          return requiredTool(overRowsTools, DATA_QUERY_TOOL_SLUG).execute({
+            run,
+            args: {
+              surfaceId: 'records',
+              request: {
+                version: 1,
+                requestId: 'principal-row-bound',
+                mode: 'rows',
+                projection: ['id', 'name'],
+                page: { kind: 'offset', offset: 0, limit: 2 },
+              },
+            },
+            db,
+          });
+        },
+      ),
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
 
     let aborted = false;
     const slow = surface({});
@@ -474,22 +587,20 @@ describe('data-surface human/agent parity and security (#2450)', () => {
       executeAsPrincipal(
         principalOptions('tenant-a', [DATA_QUERY_TOOL_SLUG]),
         (run) =>
-          slowTools
-            .find((tool) => tool.slug === DATA_QUERY_TOOL_SLUG)
-            ?.execute({
-              run,
-              args: {
-                surfaceId: 'records',
-                request: {
-                  version: 1,
-                  requestId: 'principal-timeout',
-                  mode: 'rows',
-                  projection: ['id', 'name'],
-                  page: { kind: 'offset', offset: 0, limit: 1 },
-                },
+          requiredTool(slowTools, DATA_QUERY_TOOL_SLUG).execute({
+            run,
+            args: {
+              surfaceId: 'records',
+              request: {
+                version: 1,
+                requestId: 'principal-timeout',
+                mode: 'rows',
+                projection: ['id', 'name'],
+                page: { kind: 'offset', offset: 0, limit: 1 },
               },
-              db,
-            }),
+            },
+            db,
+          }),
       ),
     ).rejects.toBeInstanceOf(DataSurfaceDeadlineError);
     expect(aborted).toBe(true);
@@ -559,6 +670,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     expect(JSON.stringify(restBody)).toContain(firstId);
     expect(JSON.stringify(restBody)).not.toContain(hiddenId);
     expect(JSON.stringify(restBody)).not.toContain('Hidden tenant');
+    expect(JSON.stringify(restBody)).not.toContain('sensitive-sentinel');
 
     const otherTenantResponse = await handleRestRequest(
       new Request('http://fixture.local/api/v1/surfaceconformancerecords', {
@@ -570,6 +682,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     expect(JSON.stringify(otherTenantBody)).toContain(hiddenId);
     expect(JSON.stringify(otherTenantBody)).not.toContain(firstId);
     expect(JSON.stringify(otherTenantBody)).not.toContain('Ada');
+    expect(JSON.stringify(otherTenantBody)).not.toContain('sensitive-sentinel');
   });
 
   it('keeps human and browser command snapshots identical and rejects bridge abuse', async () => {
@@ -712,6 +825,38 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     expect(browserColumns).toMatchObject({ ok: true });
     expect(controller.snapshot()).toEqual(browserController.snapshot());
 
+    controller.dispatch({ type: 'setPage', page: 2 });
+    const browserPage = await registry.execute({
+      version: 1,
+      commandId: 'browser-page',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    expect(browserPage).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
+
+    const visibleColumns = [
+      { columnId: 'id', visible: false },
+      { columnId: 'name', visible: true },
+      { columnId: 'status', visible: true },
+    ];
+    controller.dispatch({
+      type: 'setColumnVisibility',
+      columns: visibleColumns,
+    });
+    const browserVisibility = await registry.execute({
+      version: 1,
+      commandId: 'browser-visibility',
+      identity: browserIdentity,
+      expectedRevision: registry.inspect(browserIdentity)?.revision ?? 0,
+      controlId: 'set-column-visibility',
+      payload: { columns: visibleColumns },
+    });
+    expect(browserVisibility).toMatchObject({ ok: true });
+    expect(controller.snapshot()).toEqual(browserController.snapshot());
+
     controller.dispatch({
       type: 'toggleRowSelection',
       rowId: firstId,
@@ -772,7 +917,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     ).resolves.toMatchObject({ ok: false, reason: 'not_found' });
 
     const ackLink = bridgeTransport();
-    ackLink.send.mockImplementation((message) => {
+    ackLink.send.mockImplementation((message): void => {
       ackLink.messages.push(message);
       if (message.type !== 'data-surface.command') return;
       void registry
@@ -860,6 +1005,9 @@ describe('data-surface human/agent parity and security (#2450)', () => {
     });
     await vi.waitFor(() => expect(adversarialLink.messages).toHaveLength(1));
     const adversarialRequest = adversarialLink.messages[0];
+    if (adversarialRequest?.type !== 'data-surface.command') {
+      throw new Error('Expected a pending command request');
+    }
     const adversarialAck = {
       type: 'data-surface.ack' as const,
       version: 1 as const,
@@ -1038,14 +1186,17 @@ describe('data-surface human/agent parity and security (#2450)', () => {
       ttlMs: 1_000,
       timeoutMs: 10,
     });
-    expect(
-      await malformed.send({ ...({} as never), version: 1 }),
-    ).toMatchObject({ ok: false, reason: 'invalid_request' });
+    expect(await malformed.send({ version: 1 } as never)).toMatchObject({
+      ok: false,
+      reason: 'invalid_request',
+    });
     malformed.dispose();
   });
 
   it('requires a fresh opaque confirmation and rechecks tenant/eligibility on apply', async () => {
     let revision = 1;
+    let authorizationAllowed = true;
+    let eligibilityAllowed = true;
     const applied: string[] = [];
     const state = new InMemoryDataSurfaceActionStateStore();
     const context = {
@@ -1081,17 +1232,19 @@ describe('data-surface human/agent parity and security (#2450)', () => {
               action: 'update',
             },
             authorize: async (invocation) =>
+              authorizationAllowed &&
               invocation.run.context.tenantId === 'tenant-a',
             eligible: async (_invocation, rowId) =>
-              rowId === firstId
+              rowId === firstId && eligibilityAllowed
                 ? { eligible: true }
-                : { eligible: false, reason: 'missing' },
+                : { eligible: false, reason: 'no longer eligible' },
             apply: async (_invocation, rowId) => {
               const row = await records.get(String(rowId));
               if (!row) throw new Error('missing');
               row.status = 'archived';
               await row.save();
               applied.push(String(rowId));
+              return undefined;
             },
           },
         },
@@ -1153,18 +1306,116 @@ describe('data-surface human/agent parity and security (#2450)', () => {
       confirmationToken: expect.any(String),
     });
     expect(freshPreview.confirmationToken).not.toBe(token);
+    authorizationAllowed = false;
+    const authorizationFlip = await adapter.apply(
+      {
+        ...base,
+        phase: 'apply',
+        requestId: 'authorization-flip',
+        idempotencyKey: 'authorization-flip',
+        confirmationToken: freshPreview.confirmationToken,
+      },
+      context,
+    );
+    expect(authorizationFlip).toMatchObject({ ok: false, reason: 'denied' });
+    expect(applied).toEqual([]);
+
+    authorizationAllowed = true;
+    const eligibilityPreview = await adapter.preview(
+      { ...base, requestId: 'eligibility-flip-preview' },
+      context,
+    );
+    eligibilityAllowed = false;
+    const eligibilityFlip = await adapter.apply(
+      {
+        ...base,
+        phase: 'apply',
+        requestId: 'eligibility-flip',
+        idempotencyKey: 'eligibility-flip',
+        confirmationToken: eligibilityPreview.confirmationToken,
+      },
+      context,
+    );
+    expect(eligibilityFlip).toMatchObject({
+      ok: true,
+      details: { accepted: 0, skipped: 1 },
+    });
+    expect(applied).toEqual([]);
+
+    eligibilityAllowed = true;
+    const crossTenantPreview = await adapter.preview(
+      { ...base, requestId: 'cross-tenant-preview' },
+      context,
+    );
+    const otherTenant = {
+      ...context,
+      principal: {
+        ...context.principal,
+        principal: { ...context.principal.principal, tenantId: 'tenant-b' },
+      },
+    };
+    await expect(
+      adapter.apply(
+        {
+          ...base,
+          phase: 'apply',
+          requestId: 'cross-tenant-apply',
+          idempotencyKey: 'cross-tenant-apply',
+          confirmationToken: crossTenantPreview.confirmationToken,
+        },
+        otherTenant,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_mismatch' });
+
+    const otherPrincipal = {
+      ...context,
+      principal: {
+        ...context.principal,
+        principal: {
+          ...context.principal.principal,
+          runAsUserId: 'different-user',
+        },
+      },
+    };
+    await expect(
+      adapter.apply(
+        {
+          ...base,
+          phase: 'apply',
+          requestId: 'cross-principal-apply',
+          idempotencyKey: 'cross-principal-apply',
+          confirmationToken: crossTenantPreview.confirmationToken,
+        },
+        otherPrincipal,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_mismatch' });
+
+    const finalPreview = await adapter.preview(
+      { ...base, requestId: 'final-preview' },
+      context,
+    );
     const applyRequest = {
       ...base,
       phase: 'apply' as const,
       requestId: 'archive-apply',
       idempotencyKey: 'archive-apply',
-      confirmationToken: freshPreview.confirmationToken,
+      confirmationToken: finalPreview.confirmationToken,
     };
     const appliedResult = await adapter.apply(applyRequest, context);
     expect(appliedResult).toMatchObject({ ok: true, details: { accepted: 1 } });
     expect(applied).toEqual([firstId]);
     expect(await adapter.apply(applyRequest, context)).toEqual(appliedResult);
     expect(applied).toHaveLength(1);
+    await expect(
+      adapter.apply(
+        {
+          ...applyRequest,
+          requestId: 'confirmation-replay',
+          idempotencyKey: 'confirmation-replay',
+        },
+        context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_replayed' });
     expect(
       await adapter.apply(
         {
@@ -1176,13 +1427,6 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         context,
       ),
     ).toMatchObject({ ok: false, reason: 'invalid_or_expired_confirmation' });
-    const otherTenant = {
-      ...context,
-      principal: {
-        ...context.principal,
-        principal: { ...context.principal.principal, tenantId: 'tenant-b' },
-      },
-    };
     const otherPreview = await adapter.preview(
       { ...base, requestId: 'other-tenant' },
       otherTenant,
@@ -1209,25 +1453,30 @@ describe('data-surface human/agent parity and security (#2450)', () => {
 
     const report = await buildReportAdapterDescriptor(
       SurfaceConformanceReport,
-      { tenantScope: 'tenant-a' },
+      { tenantScope: 'current' },
     );
     expect(report).toMatchObject({
       version: 1,
       identityField: 'id',
-      resourceId: expect.stringContaining('tenant-a'),
+      resourceId: expect.stringContaining('#current'),
       queryExecution: { modes: expect.arrayContaining(['silent']) },
     });
     expect(
       report.columns.find((column) => column.fieldName === 'secret'),
     ).toBeUndefined();
 
-    // Execute the report adapter against the same tenant-bound collection
-    // used by the principal query. This catches adapters that build a safe
+    // Execute the report adapter against a real tenant-scoped
+    // SmrtReportCollection. This catches adapters that build a safe
     // descriptor but forget to carry the tenant boundary into row execution.
     const reportCollection = {
+      // The fixture's real tenant-scoped collection owns the SQL and tenancy
+      // interceptor. This adapter seam only maps its hydrated objects to the
+      // report adapter's JSON row contract; it deliberately ignores the
+      // adapter's already-validated select hint because the fixture schema is
+      // generated without persisted column metadata.
       list: async (_options: Record<string, unknown>) =>
         (await records.list()).map((row) => ({
-          id: row.id,
+          id: String(row.id),
           name: row.name,
         })),
       count: async (_options?: Record<string, unknown>) =>
@@ -1246,7 +1495,7 @@ describe('data-surface human/agent parity and security (#2450)', () => {
         {
           db,
           collection: reportCollection,
-          adapter: { tenantScope: 'tenant-a' },
+          adapter: { tenantScope: 'current' },
           execution: 'visible',
         },
       ),
