@@ -141,7 +141,7 @@ export interface VoiceProfileOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class VoiceProfile extends SmrtObject {
   /**
