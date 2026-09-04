@@ -45,4 +45,4 @@ The `smrt playground` commands (`init`, `dev`, `list`) consume this package. The
 ## Docs
 
 - See [`docs/ui-surfaces.md`](../../docs/ui-surfaces.md) for the full UI surface contract
-- See [`docs/standards.md`](../../docs/standards.md) for monorepo conventions
+- See [`docs/content/standards.md`](../../docs/content/standards.md) for monorepo conventions

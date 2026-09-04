@@ -8,21 +8,19 @@
  * bigger. The org-wide `hv-agent audit` caps that concatenated chain at 32 KB
  * and reports an error above it.
  *
- * Scope note (#2108): the cap is enforced by `hv-agent audit`, NOT by the
- * `lifecycle` CI check — a breach does not fail agent PRs. Chain size is a
- * context-hygiene budget: every byte here enters every agent turn that touches
- * the package, whether or not the task needs it.
+ * This check fails above the cap and runs in repository CI and pre-push.
+ * The 80% threshold is advisory. It measures AGENTS ancestry only, not
+ * shared skills, harness rules, or expanded module-document tool results.
  *
  * This mirrors hv-agent's computation so a doc addition that would breach the
  * org gate surfaces here, on the PR that grew the doc. The WARN threshold
  * (80% of the cap) exists so the next package approaching the gate is visible
  * before it breaches.
  *
- * Fix a failure by SPLITTING, not deleting: `AGENTS.md` files are canonical
- * expert documentation and the prose is curated, not regenerable. Move
- * per-module semantics into `packages/<pkg>/agents/<module>.md` and link them
- * from a Modules table (the knowledge tooling resolves those links); keep
- * orientation, cross-module invariants, and the Gotchas inline.
+ * Remove stale or redundant prose first. Keep orientation, cross-module
+ * invariants, and validation inline; place detailed current contracts in
+ * linked `packages/<pkg>/agents/<module>.md` references. Preserve distinct
+ * behavioral constraints when shortening or moving documentation.
  */
 import { readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
