@@ -270,13 +270,21 @@ class CustomActionFailureError extends Error {
  * JavaScript method names retain their declared casing. Resolve a tool suffix
  * back to the registry's canonical method name before inspecting metadata or
  * invoking it.
+ *
+ * Always walks `methods` in iteration order and returns the FIRST
+ * case-insensitive match, even when an exact lowercase key exists — never a
+ * `methods.get(toolAction)` fast path. `generateTools()`'s per-object dedup
+ * (`emittedLower`, #2638) picks the tool's advertised schema/description the
+ * same way: first-declared wins when two names collide on one tool id (e.g.
+ * `Refresh`/`refresh`). An exact-match shortcut here would let dispatch
+ * invoke whichever declared name happens to equal the lowercase tool id,
+ * independent of iteration order — silently diverging from the method the
+ * catalog just described for that same tool.
  */
 function resolveCustomActionMethod(
   methods: Map<string, MethodDefinition>,
   toolAction: string,
 ): [methodName: string, method: MethodDefinition | undefined] {
-  const direct = methods.get(toolAction);
-  if (direct) return [toolAction, direct];
   for (const [methodName, method] of methods) {
     if (methodName.toLowerCase() === toolAction.toLowerCase()) {
       return [methodName, method];

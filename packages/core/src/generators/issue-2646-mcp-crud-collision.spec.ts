@@ -240,6 +240,42 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     expect(tool?.description).toContain('Refresh');
   });
 
+  it('#2638: dispatches to the SAME method the catalog described, not whichever declared name equals the lowercase tool id', async () => {
+    // `resolveCustomActionMethod` previously tried an exact `methods.get(toolAction)`
+    // lookup first — `methods.get('refresh')` — before falling back to a
+    // case-insensitive scan. Since `refresh` (all-lowercase) is itself one of
+    // the two colliding declared names, that fast path always won, regardless
+    // of which method the catalog's first-declared-wins dedup had just
+    // described. A caller reading the `obj_refresh` tool's description
+    // (naming `Refresh`) would have every reason to expect `Refresh` runs,
+    // but `refresh` actually executed. Assert catalog and dispatch agree.
+    const mockObject = new Issue2638CustomCaseCollision({
+      db: null,
+      ai: null,
+      fs: null,
+      id: 'case-collision-id',
+    });
+    const mockCollection = { get: vi.fn().mockResolvedValue(mockObject) };
+    const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+    (generator as any).getCollection = vi.fn().mockReturnValue(mockCollection);
+    (generator as any).collections = new Map([
+      ['Issue2638CustomCaseCollision', mockCollection],
+    ]);
+
+    const response = await generator.handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'issue2638customcasecollision_refresh',
+        arguments: { id: 'case-collision-id' },
+      },
+    });
+
+    const result = JSON.parse(response.content[0].text);
+    // Must match the catalog's advertised method, not the exact-lowercase
+    // declared name.
+    expect(result.via).toBe('Refresh');
+  });
+
   it('produces no duplicate tool names across the whole registry', async () => {
     const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
     const tools = await generator.generateTools();
