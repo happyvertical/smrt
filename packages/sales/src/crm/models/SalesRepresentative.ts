@@ -38,7 +38,7 @@ import type {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class SalesRepresentative extends SmrtObject {
   /**

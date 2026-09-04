@@ -169,7 +169,7 @@ export function validateCommissionPlanComponents(
   // any server-side write path.
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class CommissionPlan extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global plans). */

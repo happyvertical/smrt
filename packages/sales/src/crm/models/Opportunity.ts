@@ -57,7 +57,7 @@ const loadedOpportunityStatus = new WeakMap<Opportunity, OpportunityStatus>();
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Opportunity extends SmrtObject {
   /**
