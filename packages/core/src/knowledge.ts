@@ -626,6 +626,16 @@ function manifestObjectPackage(
  * generator did not change in #2650/#2638, and the fix there is a PR #2651
  * recommendation, not yet implemented.
  *
+ * `resolveCustomMethodNames()` also mirrors two more `mcp`-only behaviors
+ * that follow from its case-folded tool-id namespace (#2638): an `exclude`
+ * entry is compared case-insensitively (matching `MCPGenerator`'s own
+ * asymmetry fix -- `exclude` used to fail open on a cased entry the way
+ * `include` never did), and two method names that fold onto the same tool id
+ * (e.g. `Refresh`/`refresh`) are reported once, keeping whichever was
+ * declared first, mirroring `MCPGenerator`'s per-object dedup. `cli`/`api`
+ * keep declared casing in their command/route names, so neither behavior
+ * applies to them.
+ *
  * This `cli` projection models `CLIGenerator` (`generators/cli.ts`), not the
  * shipped local CLI transport (`@happyvertical/smrt-cli`'s
  * `cli-generator.ts`, the `smrt <object>:<action>` binary): that generator
@@ -685,6 +695,23 @@ function resolveCustomMethodNames(
 ): string[] {
   const { include, exclude } = includeExcludeConfig(config);
   const excluded = new Set(exclude ?? []);
+  // MCP tool ids are case-folded, so `MCPGenerator` compares `exclude`
+  // case-insensitively too (`exclude: ['Refresh']` must suppress a method
+  // declared `refresh`, and vice versa, #2638) -- mirror that here for
+  // `kind === 'mcp'` only. `cli`/`api` keep the declared casing in their
+  // command/route names (same asymmetry `reservesCrudName` documents below),
+  // so an exact-match `exclude` stays correct for them.
+  const excludedLower =
+    kind === 'mcp'
+      ? new Set([...excluded].map((entry) => entry.toLowerCase()))
+      : undefined;
+  // Tool ids already claimed for this object's `mcp` surface, so two
+  // distinctly-cased method names (e.g. `Refresh`/`refresh`) that fold onto
+  // the same MCP tool id are reported once, not twice -- mirroring
+  // `MCPGenerator`'s per-object dedup (first declared wins, #2638). `cli`/
+  // `api` need no such set: their command/route names keep declared casing,
+  // so two cased method names never collide there.
+  const emittedLower = kind === 'mcp' ? new Set<string>() : undefined;
   const names: string[] = [];
   for (const [name, method] of methods) {
     if (reservesCrudName(kind, name)) continue;
@@ -697,8 +724,16 @@ function resolveCustomMethodNames(
     if ((kind === 'cli' || kind === 'mcp') && isFrameworkLifecycleMethod(name))
       continue;
     if (!method.isPublic) continue;
-    if (excluded.has(name)) continue;
+    if (
+      excludedLower ? excludedLower.has(name.toLowerCase()) : excluded.has(name)
+    )
+      continue;
     if (include !== undefined && !include.includes(name)) continue;
+    if (emittedLower) {
+      const lower = name.toLowerCase();
+      if (emittedLower.has(lower)) continue;
+      emittedLower.add(lower);
+    }
     names.push(name);
   }
   return names;

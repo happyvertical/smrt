@@ -84,6 +84,8 @@ describe('buildDomainKnowledgeManifest', () => {
       'CasedIncludeItem',
       'MalformedConfigItem',
       'LifecycleOverrideOrder',
+      'CaseCollisionItem',
+      'ExcludeCaseItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -349,6 +351,61 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(operations('@example/orders:CasedVerbItem', 'api')).toContain(
       'List',
     );
+  });
+
+  it('reports one mcp operation for two methods that fold onto the same MCP tool id (#2638)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const surfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:CaseCollisionItem',
+    );
+
+    // `mcp` folds case, so `Refresh`/`refresh` collide on one tool id and the
+    // projection reports the operation once (first declared -- `Refresh`),
+    // alongside the standard CRUD operations this omitted-config class also
+    // gets.
+    expect(
+      surfaces
+        .filter((surface) => surface.kind === 'mcp')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['Refresh', 'create', 'delete', 'get', 'list', 'update']);
+
+    // `cli`/`api` keep declared casing, so both distinct methods are
+    // reported as separate operations there.
+    for (const kind of ['cli', 'api'] as const) {
+      expect(
+        surfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation)
+          .sort(),
+      ).toEqual([
+        'Refresh',
+        'create',
+        'delete',
+        'get',
+        'list',
+        'refresh',
+        'update',
+      ]);
+    }
+  });
+
+  it('excludes an mcp operation via a case-mismatched `exclude` entry (#2638)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpOperations = artifact.surfaces
+      .filter(
+        (surface) =>
+          surface.objectName === '@example/orders:ExcludeCaseItem' &&
+          surface.kind === 'mcp',
+      )
+      .map((surface) => surface.operation);
+
+    // `exclude: ['refresh']` against a method declared `Refresh` still
+    // excludes it -- mcp's exclude comparison is case-folded, matching
+    // MCPGenerator's own fix for the asymmetry with `include`.
+    expect(mcpOperations).not.toContain('Refresh');
+    // An unrelated public method is unaffected.
+    expect(mcpOperations).toContain('syncNow');
   });
 
   it('reports no MCP surface when a strict include names only a cased verb (#2646)', () => {
@@ -1177,6 +1234,66 @@ function fixtureManifest(): SmartObjectManifest {
         },
         decoratorConfig: {},
         extends: 'SmrtObject',
+      },
+      // Two distinct, legitimate non-CRUD methods differing only in case.
+      // `MCPGenerator` folds both onto the tool id
+      // `casecollisionitem_refresh` and reports it once, keeping whichever
+      // was declared first (#2638, moved from #2648) -- the projection must
+      // mirror that, not report both method names as separate `mcp`
+      // operations.
+      '@example/orders:CaseCollisionItem': {
+        className: 'CaseCollisionItem',
+        qualifiedName: '@example/orders:CaseCollisionItem',
+        collection: 'case_collision_items',
+        fields: {},
+        methods: {
+          Refresh: {
+            name: 'Refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          refresh: {
+            name: 'refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+      },
+      // `exclude` names the method in the OPPOSITE case from how it is
+      // declared. MCP tool ids are case-folded, so `MCPGenerator` now
+      // compares `exclude` case-insensitively too (#2638) -- the projection
+      // must not still advertise `Refresh` as an `mcp` operation here.
+      '@example/orders:ExcludeCaseItem': {
+        className: 'ExcludeCaseItem',
+        qualifiedName: '@example/orders:ExcludeCaseItem',
+        collection: 'exclude_case_items',
+        fields: {},
+        methods: {
+          Refresh: {
+            name: 'Refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          syncNow: {
+            name: 'syncNow',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { exclude: ['refresh'] } },
       },
     },
   };
