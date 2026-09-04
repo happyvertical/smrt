@@ -11,7 +11,7 @@ import type { PlaceTypeOptions } from '../types';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class PlaceType extends SmrtObject {
   // id and slug are inherited from SmrtObject
