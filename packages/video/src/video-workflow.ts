@@ -159,7 +159,7 @@ export interface VideoWorkflowOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class VideoWorkflow extends SmrtObject {
   /**

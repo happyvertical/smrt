@@ -22,7 +22,7 @@ export interface VideoSequenceAssetOptions extends AssetOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class VideoSequenceAsset extends Asset {
   @foreignKey(() => VideoSequence)

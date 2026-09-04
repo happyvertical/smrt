@@ -123,7 +123,7 @@ export interface PerformerOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Performer extends SmrtObject {
   @tenantId({ nullable: true })

@@ -156,7 +156,7 @@ export interface CharacterOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Character extends SmrtObject {
   /** Tenant ID for multi-tenant isolation */
