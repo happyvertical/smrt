@@ -6,6 +6,47 @@
 
 - ### Breaking Changes
 
+  - stage change-feed appends made inside caller transactions (#2653) (core)
+
+  ### Features
+
+  - publish ContentList agent data surface (#2629) (content)
+  - complete ContentList lifecycle (#2616) (content)
+  - preflight authority endpoint (#2612) (smrt-playbooks)
+
+  ### Bug Fixes
+
+  - reserve CRUD aliases and case-folded WebMCP tool ids (#2670) (core,cli)
+  - stop exposing framework base classes and lifecycle-method overrides (#2669) (core)
+  - stop the MCP generator emitting a duplicate tool for CRUD-named methods (#2652) (core)
+  - framework lifecycle methods are not CLI custom actions (#2651) (core)
+  - exclude framework abstract base classes from planned schema (#2643) (core)
+  - give the STI ancestor method merge its own rule, independent of fields (#2640) (core)
+  - emit valid JavaScript from smrt-virt-cli and smrt-virt-mcp (#2634) (core)
+  - normalize a failed local migration into a coded, redacted error (#2635) (app-runtime)
+  - derive emitted surfaces from generator defaults, not config presence (#2625) (core)
+  - compare the save() revision guard at representable precision (#2622) (core)
+
+  ### Other Changes
+
+  - test: gate fresh-browser WebMCP QA and cross-profile M5 CI (#2637) (template-sveltekit)
+  - docs: stop teaching a fictional CLI API and document smrt-app-cli (#2660)
+  - docs: destructure createIsolatedTestDb()'s { db } in TESTING_STANDARD.md (#2662)
+  - test: enforce generated-surface and job parity across profiles (#2633) (template-sveltekit)
+  - chore: widen fast-uri override for GHSA-jqff-g426-hqxp (#2628) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
   - make DurationDisplay showLabel gate the unit (#2607) (projects)
   - route useWebMcpTool through the WebMCP registrar (#2595) (smrt-svelte)
 
