@@ -271,7 +271,7 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
 - `src/commands/` — individual command implementations
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
-- `src/commands/docs-claude.ts` — downstream AGENTS.md generation plus Claude compatibility alias
+- `src/commands/docs-claude.ts` — downstream AGENTS.md generation plus Claude compatibility alias; uses core knowledge discovery without object scanning
 
 ## Gotchas
 

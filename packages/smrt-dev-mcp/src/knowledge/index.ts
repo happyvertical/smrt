@@ -21,8 +21,10 @@ import {
 } from 'node:path';
 import {
   AGENT_SURFACE_HASH_PREFIX,
+  discoverScopedPackageDirectories,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
+  readPackageAgentDoc,
   resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
@@ -2067,28 +2069,10 @@ function discoverInstalledPackages(
   );
 
   const byRealPath = new Map<string, string>();
-  for (const scopeDir of new Set(scopeDirs)) {
-    if (!existsSync(scopeDir)) continue;
-    let entries: Dirent[];
-    try {
-      entries = readdirSync(scopeDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-      const entryPath = join(scopeDir, entry.name);
-      let resolved: string;
-      try {
-        resolved = realpathSync(entryPath);
-      } catch {
-        // A dangling link is not an installed package.
-        continue;
-      }
-      if (workspaceRealPaths.has(resolved)) continue;
-      if (byRealPath.has(resolved)) continue;
-      byRealPath.set(resolved, entryPath);
-    }
+  for (const entry of discoverScopedPackageDirectories(scopeDirs)) {
+    if (workspaceRealPaths.has(entry.realDirectory)) continue;
+    if (byRealPath.has(entry.realDirectory)) continue;
+    byRealPath.set(entry.realDirectory, entry.directory);
   }
 
   const packages: KnowledgePackage[] = [];
@@ -2154,14 +2138,10 @@ function readKnowledgePackage(
   const peerDependencies = stringRecord(packageJson.peerDependencies);
   const allDeps = { ...dependencies, ...devDependencies, ...peerDependencies };
   const name = String(packageJson.name ?? directory);
-  const agentsPath = join(directory, 'AGENTS.md');
-  const claudePath = join(directory, 'CLAUDE.md');
-  const hasAgentsMd = existsSync(agentsPath);
-  const hasClaudeMd = existsSync(claudePath);
-  const claudeContent = hasClaudeMd ? readFileSync(claudePath, 'utf8') : '';
-  const agentsContent = hasAgentsMd ? readFileSync(agentsPath, 'utf8') : '';
+  const agentDoc = readPackageAgentDoc(directory, { inspectAdapter: true });
+  const { hasAgentsMd, hasClaudeMd, agentsContent, claudeContent } = agentDoc;
   const fallbackClaudeDoc =
-    hasClaudeMd && claudeContent.trim() !== '@AGENTS.md' ? claudeContent : '';
+    hasClaudeMd && !agentDoc.hasClaudeShim ? claudeContent : '';
   const manifest = readManifest(directory);
   const discoveredDomainKnowledge = readDomainKnowledge(directory);
   const domainKnowledge = discoveredDomainKnowledge
@@ -2212,7 +2192,7 @@ function readKnowledgePackage(
     sdkDependencies,
     hasAgentsMd,
     hasClaudeMd,
-    hasClaudeShim: claudeContent.trim() === '@AGENTS.md',
+    hasClaudeShim: agentDoc.hasClaudeShim,
     docSource,
     agentDoc: includeDocs
       ? domainKnowledge?.content.agentDoc ||

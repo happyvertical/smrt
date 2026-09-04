@@ -15,6 +15,17 @@ schemas. No schema/persistence/security effect — `sensitive`/`readPermission`
 stay the security rail, and `sensitive`/`transient` fields never emit to the
 client at all.
 
+## Lightweight discovery
+
+`src/knowledge-discovery.ts`, exported through `smrt-core/knowledge`, enumerates
+installed scope directories and reads canonical AGENTS/legacy CLAUDE docs without
+loading package code, artifacts, or scanning objects. CLI snapshots and MCP share
+these primitives. Callers retain selection policy: snapshots resolve links and
+fall back to `packages/*` only when no installed SMRT package loads; MCP preserves
+node_modules paths, deduplicates realpaths, excludes authored workspace links,
+and then enriches the selected packages. Workspace-root/glob discovery remains
+owned by each consumer.
+
 ## Domain Knowledge Artifacts
 
 `smrtPlugin()` writes runtime manifests and agent/developer knowledge artifacts:

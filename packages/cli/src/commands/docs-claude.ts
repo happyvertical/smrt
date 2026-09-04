@@ -8,7 +8,6 @@
 
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -16,7 +15,9 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  discoverScopedPackageDirectories,
   readAgentModuleDocs,
+  readPackageAgentDoc,
   resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-core/knowledge';
 import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
@@ -99,8 +100,17 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         const dryRun = options['dry-run'];
         const monorepoRoot = detectMonorepoRoot();
         const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
-        const packages = await discoverInstalledPackages(options.complete);
-        const sdkPackages = await discoverSdkPackages(options.complete);
+        const installedDirectories = discoverScopedPackageDirectories([
+          join(process.cwd(), 'node_modules', '@happyvertical'),
+        ]);
+        const packages = await discoverInstalledPackages(
+          installedDirectories,
+          options.complete,
+        );
+        const sdkPackages = discoverSdkPackages(
+          installedDirectories,
+          options.complete,
+        );
 
         if (packages.length === 0 && sdkPackages.length === 0) {
           console.log('\n⚠️  No @happyvertical packages found in node_modules');
@@ -189,32 +199,16 @@ export const docsClaudeCommand: CLICommand = createDocsCommand({
  * Checks both node_modules and workspace packages directory.
  */
 async function discoverInstalledPackages(
+  installedDirectories: ReturnType<typeof discoverScopedPackageDirectories>,
   complete = false,
 ): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
   const { readdirSync } = await import('node:fs');
 
-  const nodeModulesPath = join(process.cwd(), 'node_modules', '@happyvertical');
-  if (existsSync(nodeModulesPath)) {
-    const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.name.startsWith('smrt-')) continue;
-
-      const entryPath = join(nodeModulesPath, entry.name);
-      let packagePath = entryPath;
-
-      try {
-        const stats = lstatSync(entryPath);
-        if (stats.isSymbolicLink()) {
-          packagePath = realpathSync(entryPath);
-        }
-      } catch {
-        // Not a symlink, use original path.
-      }
-
-      const pkg = loadPackageInfo(packagePath, entry.name, complete);
-      if (pkg) packages.push(pkg);
-    }
+  for (const entry of installedDirectories) {
+    if (!entry.name.startsWith('smrt-')) continue;
+    const pkg = loadPackageInfo(entry.realDirectory, entry.name, complete);
+    if (pkg) packages.push(pkg);
   }
 
   if (packages.length === 0) {
@@ -251,36 +245,16 @@ async function discoverInstalledPackages(
 /**
  * Discover installed @happyvertical/* SDK packages (non-smrt).
  */
-async function discoverSdkPackages(complete = false): Promise<PackageInfo[]> {
+function discoverSdkPackages(
+  installedDirectories: ReturnType<typeof discoverScopedPackageDirectories>,
+  complete = false,
+): PackageInfo[] {
   const packages: PackageInfo[] = [];
-  const { readdirSync } = await import('node:fs');
-
-  const nodeModulesPath = join(process.cwd(), 'node_modules', '@happyvertical');
-  if (!existsSync(nodeModulesPath)) {
-    return packages;
-  }
-
-  const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith('smrt-')) continue;
-    if (entry.name === 'smrt') continue;
-
-    const entryPath = join(nodeModulesPath, entry.name);
-    let packagePath = entryPath;
-
-    try {
-      const stats = lstatSync(entryPath);
-      if (stats.isSymbolicLink()) {
-        packagePath = realpathSync(entryPath);
-      }
-    } catch {
-      // Not a symlink, use original path.
-    }
-
-    const pkg = loadPackageInfo(packagePath, entry.name, complete);
+  for (const entry of installedDirectories) {
+    if (entry.name.startsWith('smrt-') || entry.name === 'smrt') continue;
+    const pkg = loadPackageInfo(entry.realDirectory, entry.name, complete);
     if (pkg) packages.push(pkg);
   }
-
   return packages.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -297,9 +271,7 @@ function loadPackageInfo(
   try {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     const readmePath = join(packagePath, 'README.md');
-    const agentsPath = join(packagePath, 'AGENTS.md');
-    const claudePath = join(packagePath, 'CLAUDE.md');
-    const agentDoc = loadAgentDoc(agentsPath, claudePath);
+    const agentDoc = readPackageAgentDoc(packagePath);
 
     const info: PackageInfo = {
       name: packageJson.name,
@@ -327,29 +299,6 @@ function loadPackageInfo(
     console.warn(`   ⚠️  Could not read package.json for ${dirName}`);
     return null;
   }
-}
-
-function loadAgentDoc(
-  agentsPath: string,
-  claudePath: string,
-): { content: string | null; source: 'AGENTS.md' | 'CLAUDE.md' | null } {
-  if (existsSync(agentsPath)) {
-    return {
-      content: readFileSync(agentsPath, 'utf-8'),
-      source: 'AGENTS.md',
-    };
-  }
-
-  if (!existsSync(claudePath)) {
-    return { content: null, source: null };
-  }
-
-  const claude = readFileSync(claudePath, 'utf-8');
-  if (claude.trim() === '@AGENTS.md') {
-    return { content: null, source: null };
-  }
-
-  return { content: claude, source: 'CLAUDE.md' };
 }
 
 export function detectMonorepoRoot(): string | null {

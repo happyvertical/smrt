@@ -14,6 +14,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -144,6 +145,37 @@ describe('docs:agents handler', () => {
     const complete = logSpy.mock.calls.map((call) => call[0]).join('\n');
     expect(complete).toContain('smrt-content module body.');
     expect(complete).toContain('ai module body.');
+  });
+
+  it('keeps snapshot selection separate from MCP manifest-name and workspace policies', async () => {
+    makePackage('@happyvertical', 'smrt-installed', {
+      agents: 'Installed expertise',
+    });
+    makePackage('@happyvertical', 'custom-sdk', {
+      agents: 'Custom SDK expertise',
+    });
+    const workspace = join(tempDir, 'packages', 'local');
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      'packages: [packages/*]',
+    );
+    writeFileSync(
+      join(workspace, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-local', version: '1.0.0' }),
+    );
+    writeFileSync(join(workspace, 'AGENTS.md'), 'Local fallback expertise');
+    // The scope alias controls snapshot selection; both aliases remain visible.
+    symlinkSync(
+      join(tempDir, 'node_modules', '@happyvertical', 'smrt-installed'),
+      join(tempDir, 'node_modules', '@happyvertical', 'smrt-alias'),
+      'dir',
+    );
+    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Custom SDK expertise');
+    expect(output).not.toContain('Local fallback expertise');
+    expect(output.match(/Installed expertise/g)).toHaveLength(2);
   });
 
   it('writes the output file and reports package counts', async () => {
