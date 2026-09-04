@@ -616,15 +616,15 @@ function manifestObjectPackage(
  * false` closes the surface entirely.
  *
  * Custom (non-CRUD, public) method gating is NOT identical across the three
- * kinds. `CLIGenerator.listCommands()`/`assertCommandExposed()` additionally
- * refuse a framework lifecycle method (`save`, `initialize`, ...) even when a
- * class declares its own override — it is the mechanism behind generated
- * CRUD, not a distinct action (#2638) — and `resolveCustomMethodNames()`
- * below mirrors that same `isFrameworkLifecycleMethod()` check for
- * `kind === 'cli'` only (#2657). `api`/`mcp` remain ungated on this: neither
- * generator changed in #2650, the mcp.ts wiring is separate #2638 scope still
- * pending, and the api-surface fix is a PR #2651 recommendation, not yet
- * implemented.
+ * kinds. `CLIGenerator.listCommands()`/`assertCommandExposed()` and
+ * `MCPGenerator.generateTools()` both refuse a framework lifecycle method
+ * (`save`, `initialize`, ...) even when a class declares its own override —
+ * it is the mechanism behind generated CRUD, not a distinct action (#2638) —
+ * and `resolveCustomMethodNames()` below mirrors that same
+ * `isFrameworkLifecycleMethod()` check for `kind === 'cli'` and
+ * `kind === 'mcp'` (#2657, #2638). `api` remains ungated on this: the
+ * generator did not change in #2650/#2638, and the fix there is a PR #2651
+ * recommendation, not yet implemented.
  *
  * This `cli` projection models `CLIGenerator` (`generators/cli.ts`), not the
  * shipped local CLI transport (`@happyvertical/smrt-cli`'s
@@ -689,12 +689,13 @@ function resolveCustomMethodNames(
   for (const [name, method] of methods) {
     if (reservesCrudName(kind, name)) continue;
     // A framework lifecycle method (save/initialize/...) is never a custom
-    // CLI action, even when a class declares its own override — it is the
-    // mechanism behind generated CRUD, not a distinct operation, matching
-    // CLIGenerator's own isFrameworkLifecycleMethod() gate (#2657). `api`
-    // and `mcp` are deliberately left alone — see configuredOperations'
-    // doc comment above.
-    if (kind === 'cli' && isFrameworkLifecycleMethod(name)) continue;
+    // CLI or MCP action, even when a class declares its own override — it is
+    // the mechanism behind generated CRUD, not a distinct operation, matching
+    // CLIGenerator's and MCPGenerator's own isFrameworkLifecycleMethod() gate
+    // (#2657, #2638). `api` is deliberately left alone — see
+    // configuredOperations' doc comment above.
+    if ((kind === 'cli' || kind === 'mcp') && isFrameworkLifecycleMethod(name))
+      continue;
     if (!method.isPublic) continue;
     if (excluded.has(name)) continue;
     if (include !== undefined && !include.includes(name)) continue;

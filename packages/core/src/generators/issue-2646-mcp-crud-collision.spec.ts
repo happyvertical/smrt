@@ -85,6 +85,30 @@ class Issue2646CasedVerb extends SmrtObject {
   }
 }
 
+// Two distinct, legitimate NON-CRUD methods differing only in case. Both
+// `Refresh` and `refresh` lowercase onto the identical tool id
+// `issue2638customcasecollision_refresh` — a collision `isCrudToolAction`
+// cannot catch, because neither name is a CRUD verb (#2638, moved from
+// #2648). `Refresh` is declared first, so it is the one whose tool survives.
+@smrt({ mcp: true })
+class Issue2638CustomCaseCollision extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async Refresh(): Promise<any> {
+    return { ok: true, via: 'Refresh' };
+  }
+
+  async refresh(): Promise<any> {
+    return { ok: true, via: 'refresh' };
+  }
+}
+
 // A strict `include` naming ONLY a cased CRUD verb. Emitting it would build
 // `issue2646casedinclude_list`, which `executeAction` dispatches on the parsed
 // verb — so it would run the built-in CRUD list, never this class's `List()`,
@@ -195,6 +219,25 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('#2638: dedupes two non-CRUD methods that differ only in case, keeping the first declared', async () => {
+    const names = await toolNamesFor('issue2638customcasecollision');
+
+    // Exactly one `obj_refresh` tool reaches the catalog, not two.
+    expect(
+      names.filter((name) => name === 'issue2638customcasecollision_refresh'),
+    ).toEqual(['issue2638customcasecollision_refresh']);
+
+    const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+    const tools = await generator.generateTools();
+    const tool = tools.find(
+      (t) => t.name === 'issue2638customcasecollision_refresh',
+    );
+    // Tie-break: first-declared-wins. `Refresh` is declared before `refresh`
+    // on the fixture class, so its description (naming the exact declared
+    // method) is the one that survives.
+    expect(tool?.description).toContain('Refresh');
   });
 
   it('produces no duplicate tool names across the whole registry', async () => {
