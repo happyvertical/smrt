@@ -149,7 +149,7 @@ function stringifyCheckSummary(
   conflictColumns: ['tenant_id', 'provider'],
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class TenantIntegration extends SmrtObject {
   /**

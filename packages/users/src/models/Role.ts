@@ -52,7 +52,7 @@ export interface RoleOptions extends SmrtObjectOptions {
   // permission-gated services, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Role extends SmrtObject implements RoleContract {
   /**

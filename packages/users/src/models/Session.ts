@@ -63,7 +63,7 @@ export function generateSessionId(): string {
   // Sessions should not be exposed via public API for security
   api: { include: ['get', 'delete'] },
   mcp: { include: [] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Session extends SmrtObject {
   /**

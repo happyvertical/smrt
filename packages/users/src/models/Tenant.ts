@@ -89,7 +89,7 @@ export const MAX_TENANT_HIERARCHY_DEPTH = 10;
   // cascade) goes through TenantService, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Tenant extends SmrtObject implements TenantContract {
   /**
