@@ -13,10 +13,12 @@ import { CRUD_OPERATIONS } from './custom-action.js';
  * `generators/custom-action.ts` instead.
  *
  * `vite-plugin/templates/default-ui.ts` deliberately keeps a local literal:
- * its source is copied verbatim into `dist/` and inlined as literal
- * browser-script text (`getDefaultUIModule()` in `vite-plugin/index.ts`),
- * never compiled or executed under Node, so a static import of the Node-side
- * `generators/custom-action.js` module is unsafe there even though it
+ * `src/vite-plugin/templates/**` is excluded from both tsconfigs and the
+ * vite-dts build graph, and the package build copies that directory to
+ * `dist/` verbatim rather than compiling it, so its `.ts` source is never
+ * resolved or bundled by anything in this package -- a static import of the
+ * Node-side `generators/custom-action.js` module is unsafe there regardless
+ * of how the copied template is eventually consumed, even though it
  * type-checks and builds fine (final review, #2665). That site's assertion
  * below checks the literal's *value* against {@link CRUD_OPERATIONS} instead
  * of checking for an import.
