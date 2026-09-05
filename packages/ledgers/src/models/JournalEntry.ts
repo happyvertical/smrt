@@ -13,7 +13,7 @@ import type { JournalEntryOptions } from '../types';
 @smrt({
   api: { include: ['list', 'get'] }, // Created via Journal, not directly
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class JournalEntry extends SmrtObject {
   /**

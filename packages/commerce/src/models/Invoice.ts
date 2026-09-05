@@ -176,7 +176,7 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
   // same `api.writable` allowlist, so status/amounts are unsettable over MCP
   // too. See S5 audit #1390.
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Invoice extends SmrtObject {
   /**

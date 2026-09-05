@@ -35,7 +35,7 @@ import type { FolderOptions } from './types';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Folder extends SmrtHierarchical {
   // Tenant isolation (optional — folders can be global or tenant-specific,

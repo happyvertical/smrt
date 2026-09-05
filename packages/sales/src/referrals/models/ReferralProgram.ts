@@ -32,7 +32,7 @@ import type {
   conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ReferralProgram extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global programs). */

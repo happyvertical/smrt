@@ -1676,8 +1676,15 @@ export class CLIGenerator {
                   (m) =>
                     cliConfig.include?.includes(m) && methods.get(m)?.isPublic,
                 );
-              } else if (cliConfig === true) {
-                // All public methods
+              } else {
+                // Default-open form: bare `cli: true`, or an object config
+                // with no `include` (e.g. `{ skipApiCheck: true }`) — the
+                // actual command generator exposes every public method for
+                // both, so this diagnostic must too. An object config with
+                // no `include` previously matched neither branch here, so
+                // `smrt objects --verbose` silently reported zero CLI
+                // methods for any class using an object-form `cli` config
+                // without `include` (#2654).
                 cliMethods = methodNames.filter(
                   (m) => methods.get(m)?.isPublic,
                 );

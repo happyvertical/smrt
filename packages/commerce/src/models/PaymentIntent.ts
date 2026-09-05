@@ -122,7 +122,7 @@ const DEFAULT_PRICE_LOCK_WINDOW_MS = 15 * 60 * 1000;
     ],
   },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class PaymentIntent extends SmrtObject {
   /**

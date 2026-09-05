@@ -10,7 +10,7 @@ import { Message } from './Message';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Tweet extends Message {
   tweetId = '';

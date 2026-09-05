@@ -46,7 +46,7 @@ export interface MembershipOptions extends SmrtObjectOptions {
   // is authentication-only, so a generated POST/PUT here is privilege escalation).
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Membership extends SmrtObject implements MembershipContract {
   /**

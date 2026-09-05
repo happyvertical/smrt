@@ -48,7 +48,7 @@ export interface ProfileOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Profile extends SmrtObject {
   @tenantId({ nullable: true })

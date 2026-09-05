@@ -35,7 +35,7 @@ export interface MagicLinkTokenOptions extends SmrtObjectOptions {
   // Magic link tokens are security-sensitive — no public API
   api: { include: [] },
   mcp: { include: [] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class UsersMagicLinkToken extends SmrtObject {
   /** Unique nonce embedded in the signed JWT */

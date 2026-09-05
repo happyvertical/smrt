@@ -67,7 +67,7 @@ export interface AnalyticsReportOptions
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'run'] },
   mcp: { include: ['list', 'get', 'run', 'analyze'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AnalyticsReport extends SmrtObject {
   /**

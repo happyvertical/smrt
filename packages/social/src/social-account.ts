@@ -205,7 +205,7 @@ export interface SocialAccountOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class SocialAccount extends SmrtObject {
   /**

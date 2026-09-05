@@ -31,7 +31,7 @@ function normalizeFactEvidenceStatus(
   conflictColumns: ['fact_id', 'evidence_key'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class FactEvidence extends SmrtObject {
   @foreignKey('Fact', { required: true })

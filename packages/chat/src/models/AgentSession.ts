@@ -22,7 +22,7 @@ import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
   tableName: 'agent_sessions',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AgentSession extends SmrtObject {
   /**

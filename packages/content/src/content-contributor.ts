@@ -48,7 +48,7 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
   conflictColumns: ['email'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentContributor extends SmrtObject {
   @crossPackageRef('@happyvertical/smrt-profiles:Profile')

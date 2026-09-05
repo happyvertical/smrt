@@ -23,7 +23,7 @@ export interface SceneAssetOptions extends AssetOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class SceneAsset extends Asset {
   @foreignKey(() => Scene)

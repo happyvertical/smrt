@@ -120,7 +120,7 @@ export function validateAttributionPolicyTerms(
   // through the guarded transition methods.
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AttributionPolicy extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global policies). */

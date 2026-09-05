@@ -19,7 +19,7 @@ import type { EarnerOptions, EarnerStatus, PayoutMethod } from '../types.js';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Earner extends SmrtObject {
   /**

@@ -75,7 +75,7 @@ function normalizeStatus(value: unknown): ContentFeedSourceStatus {
   conflictColumns: ['tenant_id', 'feed_url'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentFeedSource extends SmrtObject {
   @tenantId({ nullable: true })

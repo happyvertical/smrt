@@ -17,7 +17,7 @@ import type { AttachmentOptions } from '../types';
 @smrt({
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Attachment extends SmrtObject {
   @tenantId({ nullable: true })

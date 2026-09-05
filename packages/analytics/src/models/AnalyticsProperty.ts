@@ -58,7 +58,7 @@ export interface AnalyticsPropertyOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'runReport'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AnalyticsProperty extends SmrtObject {
   /**

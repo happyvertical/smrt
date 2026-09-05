@@ -54,7 +54,7 @@ export interface AnalyticsEventOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get', 'track'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AnalyticsEvent extends SmrtObject {
   /**

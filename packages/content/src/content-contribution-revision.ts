@@ -52,7 +52,7 @@ function parseMetadata(raw: unknown): Record<string, unknown> {
   conflictColumns: ['contribution_id', 'revision_number'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentContributionRevision extends SmrtObject {
   @foreignKey('ContentContribution', { required: true })

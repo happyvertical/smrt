@@ -53,7 +53,7 @@ function parseJSON<T>(raw: unknown, fallback: T): T {
   conflictColumns: ['key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentContributionType extends SmrtObject {
   @field({ required: true })

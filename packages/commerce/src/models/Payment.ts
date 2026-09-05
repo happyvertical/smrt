@@ -131,7 +131,7 @@ const settlementInProgress = new WeakSet<Payment>();
   // `api.writable` allowlist above, so `status` is unsettable over MCP too.
   // See S5 audit #1390.
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Payment extends SmrtObject {
   /**

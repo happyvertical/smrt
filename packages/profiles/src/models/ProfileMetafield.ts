@@ -55,7 +55,7 @@ function getCustomValidators(): Map<string, ValidatorFunction> {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ProfileMetafield extends SmrtObject {
   @tenantId({ nullable: true })

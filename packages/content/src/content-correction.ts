@@ -34,7 +34,7 @@ export interface ContentCorrectionOptions extends SmrtObjectOptions {
   tableName: 'content_corrections',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentCorrection extends SmrtObject {
   @foreignKey('Content', { required: true, onDelete: 'CASCADE' })

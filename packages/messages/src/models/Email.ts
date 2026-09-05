@@ -13,7 +13,7 @@ import { Message } from './Message';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Email extends Message {
   // RFC 822 fields

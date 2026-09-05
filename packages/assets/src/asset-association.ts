@@ -23,7 +23,7 @@ import type { AssetAssociationOptions } from './types';
   conflictColumns: ['asset_id', 'meta_type', 'meta_id', 'role'],
   api: { include: ['list', 'get', 'create', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AssetAssociation extends SmrtPolymorphicAssociation {
   /**

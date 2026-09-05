@@ -13,7 +13,7 @@ import type { ZoneOptions, ZoneTreeNode } from '../types';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Zone extends SmrtHierarchical {
   /**
