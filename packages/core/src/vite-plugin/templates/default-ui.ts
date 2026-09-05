@@ -6,14 +6,18 @@
 import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
 
 // Deliberately NOT importing CRUD_OPERATIONS/isCrudOperation from
-// `generators/custom-action.js` (#2665): this file's source is copied
-// verbatim into dist/ and inlined as literal browser-script text by
-// `getDefaultUIModule()` (vite-plugin/index.ts) -- it is never compiled or
-// executed under Node, so a static import of a Node-side helper module is
-// unsafe here even though it would work at build time. The value is kept in
-// sync with the shared vocabulary by
-// `issue-2665-crud-verb-consolidation.spec.ts`, which asserts this literal
-// equals CRUD_OPERATIONS rather than importing it.
+// `generators/custom-action.js` (#2665): `src/vite-plugin/templates/**` is
+// excluded from both `tsconfig.json` and `tsconfig.typecheck.json`, and from
+// the vite-dts build graph (`vite.config.ts`'s `dts` plugin `exclude`,
+// commented "browser template - loaded as string, not compiled"), and the
+// package build (`package.json`'s `build` script) copies this directory to
+// `dist/` verbatim rather than compiling it. So this file's `.ts` source is
+// never resolved or bundled by anything in this package -- a static import
+// of the Node-side `generators/custom-action.js` module (which itself pulls
+// in `tools/tool-generator.js`) would never be satisfied here, regardless of
+// how the copied template is eventually consumed. The value is kept in sync
+// with the shared vocabulary by `issue-2665-crud-verb-consolidation.spec.ts`,
+// which asserts this literal equals CRUD_OPERATIONS rather than importing it.
 const CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE: readonly string[] = [
   'list',
   'get',

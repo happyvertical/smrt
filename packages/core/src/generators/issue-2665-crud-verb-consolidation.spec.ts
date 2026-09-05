@@ -66,8 +66,10 @@ describe('CRUD verb list consolidation (#2665)', () => {
     const source = readFileSync(absolutePath, 'utf8');
 
     // Deliberately NOT importing generators/custom-action.js here: this
-    // file is inlined as literal browser-script text, never executed
-    // under Node (see the module-level comment in default-ui.ts).
+    // file's directory is excluded from both tsconfigs and the vite-dts
+    // build graph and is copied to dist/ verbatim rather than compiled, so
+    // its .ts source is never resolved or bundled by anything in this
+    // package (see the module-level comment in default-ui.ts).
     expect(source).not.toMatch(
       /import\s*\{[^}]*\}\s*from\s*['"][^'"]*generators\/custom-action\.js['"]/,
     );

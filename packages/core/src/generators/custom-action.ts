@@ -256,14 +256,16 @@ export function resolveCustomActionNames(
  * {@link isCrudOperation} where a bare `.includes()` on the readonly tuple
  * failed the stricter `tsconfig.typecheck.json`) rather than keeping their
  * own verb copies (#2665). `vite-plugin/templates/default-ui.ts` keeps its
- * verb list as a local literal deliberately: that file's source is copied
- * verbatim into `dist/` and inlined as literal browser-script text by
- * `getDefaultUIModule()` (`vite-plugin/index.ts`), never compiled or executed
- * under Node -- see the module's own comment. `isCrudOperation`/
- * `CRUD_OPERATIONS` are Node-side helpers pulling in `tools/tool-generator.js`
- * and are not safe to statically import there; the consolidation test instead
- * asserts the literal's *value* matches {@link CRUD_OPERATIONS} rather than
- * assuming it imports it. Consolidating the lists did not change any of the
+ * verb list as a local literal deliberately: `src/vite-plugin/templates/**`
+ * is excluded from both tsconfigs and the vite-dts build graph, and the
+ * package build copies that directory to `dist/` verbatim rather than
+ * compiling it -- see the module's own comment. Its `.ts` source is never
+ * resolved or bundled by anything in this package, so a static import of the
+ * Node-side `isCrudOperation`/`CRUD_OPERATIONS` (which pull in
+ * `tools/tool-generator.js`) would never be satisfied there. The
+ * consolidation test instead asserts the literal's *value* matches
+ * {@link CRUD_OPERATIONS} rather than assuming it imports it. Consolidating
+ * the lists did not change any of the
  * per-emitter RULES documented above -- each site still decides case-folding
  * and conditionality for itself.
  *
