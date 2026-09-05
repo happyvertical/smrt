@@ -16,7 +16,10 @@ import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
-import { resolveCustomActionNames } from '../generators/custom-action.js';
+import {
+  CRUD_OPERATIONS,
+  resolveCustomActionNames,
+} from '../generators/custom-action.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
@@ -2404,7 +2407,7 @@ async function generateCLIModule(
       for (const methodName of resolveCustomActionNames(
         Object.entries(objectDef.methods),
         { include: included ?? undefined, exclude: excluded },
-        ['list', 'get', 'create', 'update', 'delete'],
+        CRUD_OPERATIONS,
       )) {
         if (methodName.startsWith('_')) continue;
         if (shouldInclude(methodName)) {

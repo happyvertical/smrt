@@ -4,6 +4,7 @@
  */
 
 import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
+import { isCrudOperation } from '../../generators/custom-action.js';
 
 /** A single object definition as carried by the virtual manifest. */
 type SmrtObjectEntry = SmrtManifest['objects'][string];
@@ -114,8 +115,7 @@ function renderCollection(
   const fields = Object.entries(obj.fields);
   const methods = Object.entries(obj.methods);
   const customMethods = methods.filter(
-    ([methodName]) =>
-      !['list', 'get', 'create', 'update', 'delete'].includes(methodName),
+    ([methodName]) => !isCrudOperation(methodName),
   );
 
   return `

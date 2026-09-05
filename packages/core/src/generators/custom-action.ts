@@ -161,12 +161,13 @@ export interface ResolvableMethod {
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
  *   full rationale; do not "simplify" that branch onto this function.
  *
- * `crudActionNames` stays a parameter because the callers do not agree on one
- * list. `CLIGenerator` now passes {@link CRUD_OPERATIONS}, which #2646 moved
- * into this module — so for that caller the argument is a round trip and could
- * be defaulted. The SvelteKit generator still passes its own
- * `STANDARD_API_ACTIONS` and `vite-plugin/index.ts` an inline literal, so the
- * parameter cannot be removed until those copies are retired (#2665).
+ * `crudActionNames` stays a parameter even though every caller now passes
+ * {@link CRUD_OPERATIONS} (#2665 retired the last of the inline copies at
+ * `vite-plugin/sveltekit-generator.ts` and `vite-plugin/index.ts`, following
+ * `CLIGenerator`'s #2646 switch). Removing the parameter is a separate,
+ * unevidenced call this fix does not make -- it would foreclose a caller
+ * that legitimately needs a different verb set, and no such need has been
+ * demonstrated either way.
  */
 export function resolveCustomActionNames(
   methods: Iterable<[string, ResolvableMethod]>,
@@ -249,9 +250,12 @@ export function resolveCustomActionNames(
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
- * Still carrying their own verb copies, tracked on #2665:
- * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
- * `vite-plugin/templates/default-ui.ts`.
+ * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`,
+ * `vite-plugin/sveltekit-generator.ts`, and `vite-plugin/templates/
+ * default-ui.ts` all import {@link CRUD_OPERATIONS} directly rather than
+ * keeping their own verb copies (#2665). Consolidating the lists did not
+ * change any of the per-emitter RULES documented above -- each site still
+ * decides case-folding and conditionality for itself.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the
