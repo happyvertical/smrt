@@ -206,12 +206,19 @@ export function resolveCustomActionNames(
  *
  *     rg -U "'list',\s*'get',\s*'create',\s*'update',\s*'delete'" packages --type ts | grep -v include:
  *
- * (the `include:` filter drops decorator config, which names the same verbs)
- * As of #2665 the known survivors are `vite-plugin/generated-client.ts`,
- * `vite-plugin/templates/default-ui.ts` (deliberate, value-pinned by
- * `issue-2665-crud-verb-consolidation.spec.ts`), `scanner/manifest-generator.ts`,
- * and `packages/users/src/sveltekit/resource-list-handler.ts` -- all outside
- * this PR's scope.
+ * This is a STARTING POINT, not a closed inventory: the `include:` filter
+ * only drops a single-line `include: [...]` block, so a wrapped one (e.g.
+ * `packages/content/src/content.ts`) still surfaces, and the pattern also
+ * matches non-decorator uses of the same five-word literal that have nothing
+ * to do with this collision rule (e.g. `packages/smrt-workbench/src/
+ * discovery.ts`'s `CRUD_ACTIONS`, `packages/smrt-dev-mcp/.../
+ * introspect-project.ts`'s `DEFAULT_MCP_OPERATIONS`). Triage each hit rather
+ * than trusting the raw list. Within `packages/core/src/vite-plugin/`
+ * specifically, the emitter-relevant survivors as of #2665 are
+ * `generated-client.ts` and `templates/default-ui.ts` (the latter
+ * deliberate, value-pinned by `issue-2665-crud-verb-consolidation.spec.ts`);
+ * `scanner/manifest-generator.ts` and `packages/users/src/sveltekit/
+ * resource-list-handler.ts` are outside this PR's scope.
  *
  * The sites this rule was audited against (#2646), NOT an exhaustive
  * inventory:
