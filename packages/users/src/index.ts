@@ -112,6 +112,13 @@ export {
 } from './collections/index.js';
 // Deploy-time data migrations
 export {
+  type BackfillLegacyUserProfilesResult,
+  backfillLegacyUserProfiles,
+  LEGACY_USER_PROFILE_BACKFILL_NAME,
+  LegacyUserProfileBackfillError,
+  type LegacyUserProfileBackfillErrorCode,
+} from './migrations/backfillLegacyUserProfiles.js';
+export {
   type BackfillUserEmailKeysResult,
   backfillUserEmailKeys,
   type DuplicateUserEmailKey,
