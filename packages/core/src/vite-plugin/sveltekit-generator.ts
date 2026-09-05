@@ -2213,10 +2213,12 @@ function resolveStandardCrudActions(apiConfig: unknown): string[] {
   if (apiConfig === true || apiConfig === undefined) {
     return [...CRUD_OPERATIONS];
   }
-  if (typeof apiConfig !== 'object') return [...CRUD_OPERATIONS];
+  if (typeof apiConfig !== 'object' || apiConfig === null) {
+    return [...CRUD_OPERATIONS];
+  }
 
   const config = apiConfig as { include?: string[]; exclude?: string[] };
-  let crud: string[] = config.include
+  let crud: string[] = Array.isArray(config.include)
     ? config.include.filter((a) => isCrudOperation(a))
     : [...CRUD_OPERATIONS];
   if (Array.isArray(config.exclude)) {

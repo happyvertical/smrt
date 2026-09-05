@@ -2865,6 +2865,40 @@ describe('SvelteKit Route Generator', () => {
       expect(Array.from(set).sort()).toEqual(['discover', 'get', 'list']);
     });
 
+    it('resolveApiActionSet defaults to full CRUD for a null api config instead of throwing', () => {
+      // Drive-by regression (#2694 review): `typeof null === 'object'`, so a
+      // manifest carrying a literal `api: null` (e.g. round-tripped through
+      // JSON) previously fell into the object branch and threw reading
+      // `.include` off `null`.
+      const manifest = buildManifest({ api: null });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
+    it('resolveApiActionSet defaults to full CRUD when api.include is not an array', () => {
+      const manifest = buildManifest({
+        api: { include: 'list' as unknown as string[] },
+      });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
     it('flags cli.include methods that are not in the resolved api set', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get', 'discover'] },
