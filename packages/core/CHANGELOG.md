@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.45.3
+
+### Patch Changes
+
+- ### Features
+
+  - backfill profiles for legacy users (#2697) (users)
+
+  ### Other Changes
+
+  - chore: refresh managed agent kernel (#2699) (policy)
+  - @happyvertical/smrt-config@0.45.3
+  - @happyvertical/smrt-types@0.45.3
+  - @happyvertical/smrt-scanner@0.45.3
+
 ## 0.45.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-runtime",
-  "version": "0.45.2",
+  "version": "0.45.3",
   "description": "Validated local, self-hosted, and cloud runtime composition for s-m-r-t applications",
   "type": "module",
   "main": "./dist/index.js",
