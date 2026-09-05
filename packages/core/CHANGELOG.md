@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.45.2
+
+### Patch Changes
+
+- ### Features
+
+  - load authored module docs selectively (#2677) (knowledge)
+
+  ### Bug Fixes
+
+  - gate MCP tools on framework lifecycle methods and case collisions (#2679) (core)
+  - triage cli/api coherence backlog, apply skipApiCheck to 120 classes (#2678) (core)
+
+  ### Other Changes
+
+  - refactor: share lightweight installed doc discovery (#2682) (knowledge)
+  - docs: consolidate agent routing and trim package guidance (#2676)
+  - @happyvertical/smrt-config@0.45.2
+  - @happyvertical/smrt-types@0.45.2
+  - @happyvertical/smrt-scanner@0.45.2
+
 ## 0.45.1
 
 ### Patch Changes

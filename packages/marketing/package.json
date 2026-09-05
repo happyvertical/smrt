@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-marketing",
-  "version": "0.45.1",
+  "version": "0.45.2",
   "smrtJsdoc": "strict",
   "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
   "type": "module",
