@@ -73,16 +73,21 @@ OIDC handlers, or identity migrations. The canonical scenario matrix is
   `smrt db:status`, `smrt db:migrate`, then `smrt db:status` before deployment.
   Stop or upgrade old writers first. Before migration, group
   non-null `users.profile_id` values, then reconcile duplicates. After
-  migration, run public `backfillProfileEmailKeys(db)` followed by
-  `backfillUserEmailKeys(db)` from one deploy process. Both use the shared
+  migration, run public `backfillProfileEmailKeys(db)`,
+  `backfillUserEmailKeys(db)`, then `backfillLegacyUserProfiles(db)` from one
+  deploy process. The first two use the shared
   TypeScript `normalizeIdentityEmail()` implementation transactionally and are
   idempotent; the User backfill fails before writes if normalized duplicates
-  remain. Every OIDC path requires the Profile email-key readiness marker;
-  creating a User or checking User email uniqueness additionally requires the
-  User marker. A stable issuer/subject with an existing owning User skips only
-  the User email-key lookup and marker. Full scans remain in the explicit deploy
-  step; guarded runtime paths use indexed keys and validate only returned
-  candidates. Multiple null links remain valid.
+  remain. The legacy Profile backfill transactionally creates canonical global
+  Persons for null/blank User links without creating OIDC identities or
+  inferring ownership; reconcile any same-email Profile or reservation before
+  retrying. Its marker records a completed pass but never skips newly imported
+  legacy Users on a later run. Every OIDC path requires the Profile email-key
+  readiness marker; creating a User or checking User email uniqueness
+  additionally requires the User marker. A stable issuer/subject with an
+  existing owning User skips only the User email-key lookup and marker. Full
+  scans remain in the explicit deploy step; guarded runtime paths use indexed
+  keys and validate only returned candidates. Multiple null links remain valid.
   Legacy race keys backfill only after canonical validation. Pass a root
   database on adapters such as DuckDB that cannot create nested savepoints.
   Root adapters must expose `beginTransaction`; transaction-only handles are
