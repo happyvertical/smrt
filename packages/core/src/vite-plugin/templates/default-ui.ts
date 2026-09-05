@@ -4,7 +4,23 @@
  */
 
 import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
-import { isCrudOperation } from '../../generators/custom-action.js';
+
+// Deliberately NOT importing CRUD_OPERATIONS/isCrudOperation from
+// `generators/custom-action.js` (#2665): this file's source is copied
+// verbatim into dist/ and inlined as literal browser-script text by
+// `getDefaultUIModule()` (vite-plugin/index.ts) -- it is never compiled or
+// executed under Node, so a static import of a Node-side helper module is
+// unsafe here even though it would work at build time. The value is kept in
+// sync with the shared vocabulary by
+// `issue-2665-crud-verb-consolidation.spec.ts`, which asserts this literal
+// equals CRUD_OPERATIONS rather than importing it.
+const CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE: readonly string[] = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+];
 
 /** A single object definition as carried by the virtual manifest. */
 type SmrtObjectEntry = SmrtManifest['objects'][string];
@@ -115,7 +131,8 @@ function renderCollection(
   const fields = Object.entries(obj.fields);
   const methods = Object.entries(obj.methods);
   const customMethods = methods.filter(
-    ([methodName]) => !isCrudOperation(methodName),
+    ([methodName]) =>
+      !CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE.includes(methodName),
   );
 
   return `

@@ -226,8 +226,9 @@ export function resolveCustomActionNames(
  *   command carries its own handler invoking the class's method, so with
  *   `cli: { include: ['list', 'get'] }` neither a public `create()` nor an
  *   `edit()` collides with anything and both stay reachable.
- * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
- *   `STANDARD_API_ACTIONS` copy.
+ * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, via
+ *   {@link isCrudOperation} (#2665; previously its own `STANDARD_API_ACTIONS`
+ *   copy).
  * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — case-folded (ids are
  *   lowercased whole like MCP's), CONDITIONAL, and scoped PER COLLECTION.
  *   Applied in both of `selectWebMcpToolEntries`' loops and at the shared
@@ -250,12 +251,21 @@ export function resolveCustomActionNames(
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
- * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`,
- * `vite-plugin/sveltekit-generator.ts`, and `vite-plugin/templates/
- * default-ui.ts` all import {@link CRUD_OPERATIONS} directly rather than
- * keeping their own verb copies (#2665). Consolidating the lists did not
- * change any of the per-emitter RULES documented above -- each site still
- * decides case-folding and conditionality for itself.
+ * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`, and
+ * `vite-plugin/sveltekit-generator.ts` now import {@link CRUD_OPERATIONS} (or
+ * {@link isCrudOperation} where a bare `.includes()` on the readonly tuple
+ * failed the stricter `tsconfig.typecheck.json`) rather than keeping their
+ * own verb copies (#2665). `vite-plugin/templates/default-ui.ts` keeps its
+ * verb list as a local literal deliberately: that file's source is copied
+ * verbatim into `dist/` and inlined as literal browser-script text by
+ * `getDefaultUIModule()` (`vite-plugin/index.ts`), never compiled or executed
+ * under Node -- see the module's own comment. `isCrudOperation`/
+ * `CRUD_OPERATIONS` are Node-side helpers pulling in `tools/tool-generator.js`
+ * and are not safe to statically import there; the consolidation test instead
+ * asserts the literal's *value* matches {@link CRUD_OPERATIONS} rather than
+ * assuming it imports it. Consolidating the lists did not change any of the
+ * per-emitter RULES documented above -- each site still decides case-folding
+ * and conditionality for itself.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the
