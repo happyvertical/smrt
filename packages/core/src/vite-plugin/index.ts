@@ -16,7 +16,10 @@ import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
-import { resolveCustomActionNames } from '../generators/custom-action.js';
+import {
+  CRUD_OPERATIONS,
+  resolveCustomActionNames,
+} from '../generators/custom-action.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
@@ -344,6 +347,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       const cliConfig = m.objects[className]?.decoratorConfig?.cli;
       const isEnforced =
         typeof cliConfig === 'object' &&
+        cliConfig !== null &&
         Array.isArray(cliConfig.include) &&
         cliConfig.include.length > 0;
       for (const action of unreachable) {
@@ -2349,8 +2353,13 @@ async function generateCLIModule(
 
       // Determine which operations to include
       const excluded =
-        (typeof cliConfig === 'object' ? cliConfig.exclude : []) || [];
-      const included = typeof cliConfig === 'object' ? cliConfig.include : null;
+        (typeof cliConfig === 'object' && cliConfig !== null
+          ? cliConfig.exclude
+          : []) || [];
+      const included =
+        typeof cliConfig === 'object' && cliConfig !== null
+          ? cliConfig.include
+          : null;
 
       const shouldInclude = (command: string) => {
         if (included && !included.includes(command)) return false;
@@ -2404,7 +2413,7 @@ async function generateCLIModule(
       for (const methodName of resolveCustomActionNames(
         Object.entries(objectDef.methods),
         { include: included ?? undefined, exclude: excluded },
-        ['list', 'get', 'create', 'update', 'delete'],
+        CRUD_OPERATIONS,
       )) {
         if (methodName.startsWith('_')) continue;
         if (shouldInclude(methodName)) {

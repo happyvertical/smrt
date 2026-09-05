@@ -161,12 +161,13 @@ export interface ResolvableMethod {
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts` for the
  *   full rationale; do not "simplify" that branch onto this function.
  *
- * `crudActionNames` stays a parameter because the callers do not agree on one
- * list. `CLIGenerator` now passes {@link CRUD_OPERATIONS}, which #2646 moved
- * into this module — so for that caller the argument is a round trip and could
- * be defaulted. The SvelteKit generator still passes its own
- * `STANDARD_API_ACTIONS` and `vite-plugin/index.ts` an inline literal, so the
- * parameter cannot be removed until those copies are retired (#2665).
+ * `crudActionNames` stays a parameter even though every caller now passes
+ * {@link CRUD_OPERATIONS} (#2665 retired the last of the inline copies at
+ * `vite-plugin/sveltekit-generator.ts` and `vite-plugin/index.ts`, following
+ * `CLIGenerator`'s #2646 switch). Removing the parameter is a separate,
+ * unevidenced call this fix does not make -- it would foreclose a caller
+ * that legitimately needs a different verb set, and no such need has been
+ * demonstrated either way.
  */
 export function resolveCustomActionNames(
   methods: Iterable<[string, ResolvableMethod]>,
@@ -199,11 +200,25 @@ export function resolveCustomActionNames(
  * What a collision means differs by EMITTER, so consult the one you are
  * changing rather than assuming a single rule. The reservation lives at each
  * emission site, not here, and several emitters still keep their own inline
- * verb array — find them with:
+ * verb array — find them with a multi-line-tolerant search (#2665 turned the
+ * single-line form of this grep blind to a wrapped literal like
+ * `templates/default-ui.ts`'s `CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE`):
  *
- *     grep -rn "'update', 'delete'" packages --include='*.ts' | grep -v include:
+ *     rg -U "'list',\s*'get',\s*'create',\s*'update',\s*'delete'" packages --type ts | grep -v include:
  *
- * (the `include:` filter drops decorator config, which names the same verbs)
+ * This is a STARTING POINT, not a closed inventory: the `include:` filter
+ * only drops a single-line `include: [...]` block, so a wrapped one (e.g.
+ * `packages/content/src/content.ts`) still surfaces, and the pattern also
+ * matches non-decorator uses of the same five-word literal that have nothing
+ * to do with this collision rule (e.g. `packages/smrt-workbench/src/
+ * discovery.ts`'s `CRUD_ACTIONS`, `packages/smrt-dev-mcp/.../
+ * introspect-project.ts`'s `DEFAULT_MCP_OPERATIONS`). Triage each hit rather
+ * than trusting the raw list. Within `packages/core/src/vite-plugin/`
+ * specifically, the emitter-relevant survivors as of #2665 are
+ * `generated-client.ts` and `templates/default-ui.ts` (the latter
+ * deliberate, value-pinned by `issue-2665-crud-verb-consolidation.spec.ts`);
+ * `scanner/manifest-generator.ts` and `packages/users/src/sveltekit/
+ * resource-list-handler.ts` are outside this PR's scope.
  *
  * The sites this rule was audited against (#2646), NOT an exhaustive
  * inventory:
@@ -225,8 +240,9 @@ export function resolveCustomActionNames(
  *   command carries its own handler invoking the class's method, so with
  *   `cli: { include: ['list', 'get'] }` neither a public `create()` nor an
  *   `edit()` collides with anything and both stay reachable.
- * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, from its own
- *   `STANDARD_API_ACTIONS` copy.
+ * - `vite-plugin/sveltekit-generator.ts` — unconditional, exact, via
+ *   {@link isCrudOperation} (#2665; previously its own `STANDARD_API_ACTIONS`
+ *   copy).
  * - `vite-plugin/web-collections.ts` + `tool-schema.ts` — case-folded (ids are
  *   lowercased whole like MCP's), CONDITIONAL, and scoped PER COLLECTION.
  *   Applied in both of `selectWebMcpToolEntries`' loops and at the shared
@@ -249,9 +265,23 @@ export function resolveCustomActionNames(
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
- * Still carrying their own verb copies, tracked on #2665:
- * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts` and
- * `vite-plugin/templates/default-ui.ts`.
+ * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`, and
+ * `vite-plugin/sveltekit-generator.ts` now import {@link CRUD_OPERATIONS} (or
+ * {@link isCrudOperation} where a bare `.includes()` on the readonly tuple
+ * failed the stricter `tsconfig.typecheck.json`) rather than keeping their
+ * own verb copies (#2665). `vite-plugin/templates/default-ui.ts` keeps its
+ * verb list as a local literal deliberately: `src/vite-plugin/templates/**`
+ * is excluded from both tsconfigs and the vite-dts build graph, and the
+ * package build copies that directory to `dist/` verbatim rather than
+ * compiling it -- see the module's own comment. Its `.ts` source is never
+ * resolved or bundled by anything in this package, so a static import of the
+ * Node-side `isCrudOperation`/`CRUD_OPERATIONS` (which pull in
+ * `tools/tool-generator.js`) would never be satisfied there. The
+ * consolidation test instead asserts the literal's *value* matches
+ * {@link CRUD_OPERATIONS} rather than assuming it imports it. Consolidating
+ * the lists did not change any of the
+ * per-emitter RULES documented above -- each site still decides case-folding
+ * and conditionality for itself.
  *
  * Read the list through {@link isCrudOperation} or {@link isCrudToolAction}
  * rather than re-declaring it; the two differ only in case folding, because the

@@ -7,6 +7,7 @@
  * payloads, so a populated model always wins the shared collection key.
  */
 
+import { CRUD_OPERATIONS } from '../generators/custom-action.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -62,7 +63,7 @@ export function renderApiClientCrudType(
   if (
     methods.length === 6 &&
     methods.every(
-      (method, index) => method === [...STANDARD_API_ACTIONS, 'search'][index],
+      (method, index) => method === [...CRUD_OPERATIONS, 'search'][index],
     )
   ) {
     return `CrudOperations<${dataInterfaceName}>`;
@@ -169,14 +170,7 @@ function isAncestorOf(
   return false;
 }
 
-const STANDARD_API_ACTIONS = [
-  'list',
-  'get',
-  'create',
-  'update',
-  'delete',
-] as const;
-const STANDARD_API_ACTION_SET = new Set<string>(STANDARD_API_ACTIONS);
+const CRUD_OPERATION_SET = new Set<string>(CRUD_OPERATIONS);
 
 function resolveGeneratedClientCustomMethods(
   obj: SmartObjectDefinition,
@@ -192,7 +186,7 @@ function resolveGeneratedClientCustomMethods(
   const isCollection = isCollectionManifestClass(manifest, obj);
 
   return Object.entries(obj.methods ?? {}).flatMap(([name, method]) => {
-    if (STANDARD_API_ACTION_SET.has(name) || !method.isPublic) return [];
+    if (CRUD_OPERATION_SET.has(name) || !method.isPublic) return [];
     if (included && !included.includes(name)) return [];
     if (excluded?.includes(name)) return [];
 
@@ -248,10 +242,10 @@ function resolveGeneratedClientCrudMethods(
   if (!crudObject || apiConfig === false) return [];
 
   if (apiConfig === true || apiConfig === undefined) {
-    return [...STANDARD_API_ACTIONS, 'search'];
+    return [...CRUD_OPERATIONS, 'search'];
   }
   if (typeof apiConfig !== 'object' || apiConfig === null) {
-    return [...STANDARD_API_ACTIONS, 'search'];
+    return [...CRUD_OPERATIONS, 'search'];
   }
 
   const included = Array.isArray(apiConfig.include)
@@ -260,8 +254,8 @@ function resolveGeneratedClientCrudMethods(
   const excluded = Array.isArray(apiConfig.exclude) ? apiConfig.exclude : [];
   const standardMethods = (
     included
-      ? STANDARD_API_ACTIONS.filter((action) => included.includes(action))
-      : [...STANDARD_API_ACTIONS]
+      ? CRUD_OPERATIONS.filter((action) => included.includes(action))
+      : [...CRUD_OPERATIONS]
   ).filter((action) => !excluded.includes(action));
 
   // Preserve the historical search convenience only for an unbounded API
@@ -319,10 +313,7 @@ function resolveGeneratedEndpointCrudMethods(
   }
 
   const emitted = new Set([...collectionMethods, ...itemMethods]);
-  const orderedMethods: ApiClientCrudMethod[] = [
-    ...STANDARD_API_ACTIONS,
-    'search',
-  ];
+  const orderedMethods: ApiClientCrudMethod[] = [...CRUD_OPERATIONS, 'search'];
   return orderedMethods.filter((method) => emitted.has(method));
 }
 

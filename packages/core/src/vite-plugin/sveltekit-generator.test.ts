@@ -2865,6 +2865,51 @@ describe('SvelteKit Route Generator', () => {
       expect(Array.from(set).sort()).toEqual(['discover', 'get', 'list']);
     });
 
+    it('resolveApiActionSet defaults to full CRUD for a null api config instead of throwing', () => {
+      // Drive-by regression (#2694 review): `typeof null === 'object'`, so a
+      // manifest carrying a literal `api: null` (e.g. round-tripped through
+      // JSON) previously fell into the object branch and threw reading
+      // `.include` off `null`.
+      const manifest = buildManifest({ api: null });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
+    it('resolveApiActionSet defaults to full CRUD when api.include is not an array', () => {
+      const manifest = buildManifest({
+        api: { include: 'list' as unknown as string[] },
+      });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
+    it('findCliApiCoherenceViolations tolerates a null cli config instead of throwing', () => {
+      // Same drive-by class as the api:null fix above: typeof null ===
+      // 'object', so `cli: null` (e.g. round-tripped through JSON) must not
+      // throw reading `.skipApiCheck`/`.include` off `null` anywhere along
+      // this lint's cli-side branches (resolveCliActionSet,
+      // findCliApiCoherenceViolations, validateCliIncludeAgainstApi).
+      const manifest = buildManifest({ api: null, cli: null });
+      expect(() => findCliApiCoherenceViolations(manifest)).not.toThrow();
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+    });
+
     it('flags cli.include methods that are not in the resolved api set', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get', 'discover'] },

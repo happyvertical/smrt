@@ -5,6 +5,27 @@
 
 import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
 
+// Deliberately NOT importing CRUD_OPERATIONS/isCrudOperation from
+// `generators/custom-action.js` (#2665): `src/vite-plugin/templates/**` is
+// excluded from both `tsconfig.json` and `tsconfig.typecheck.json`, and from
+// the vite-dts build graph (`vite.config.ts`'s `dts` plugin `exclude`,
+// commented "browser template - loaded as string, not compiled"), and the
+// package build (`package.json`'s `build` script) copies this directory to
+// `dist/` verbatim rather than compiling it. So this file's `.ts` source is
+// never resolved or bundled by anything in this package -- a static import
+// of the Node-side `generators/custom-action.js` module (which itself pulls
+// in `tools/tool-generator.js`) would never be satisfied here, regardless of
+// how the copied template is eventually consumed. The value is kept in sync
+// with the shared vocabulary by `issue-2665-crud-verb-consolidation.spec.ts`,
+// which asserts this literal equals CRUD_OPERATIONS rather than importing it.
+const CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE: readonly string[] = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+];
+
 /** A single object definition as carried by the virtual manifest. */
 type SmrtObjectEntry = SmrtManifest['objects'][string];
 
@@ -115,7 +136,7 @@ function renderCollection(
   const methods = Object.entries(obj.methods);
   const customMethods = methods.filter(
     ([methodName]) =>
-      !['list', 'get', 'create', 'update', 'delete'].includes(methodName),
+      !CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE.includes(methodName),
   );
 
   return `
