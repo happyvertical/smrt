@@ -200,11 +200,18 @@ export function resolveCustomActionNames(
  * What a collision means differs by EMITTER, so consult the one you are
  * changing rather than assuming a single rule. The reservation lives at each
  * emission site, not here, and several emitters still keep their own inline
- * verb array — find them with:
+ * verb array — find them with a multi-line-tolerant search (#2665 turned the
+ * single-line form of this grep blind to a wrapped literal like
+ * `templates/default-ui.ts`'s `CRUD_OPERATIONS_FOR_BROWSER_TEMPLATE`):
  *
- *     grep -rn "'update', 'delete'" packages --include='*.ts' | grep -v include:
+ *     rg -U "'list',\s*'get',\s*'create',\s*'update',\s*'delete'" packages --type ts | grep -v include:
  *
  * (the `include:` filter drops decorator config, which names the same verbs)
+ * As of #2665 the known survivors are `vite-plugin/generated-client.ts`,
+ * `vite-plugin/templates/default-ui.ts` (deliberate, value-pinned by
+ * `issue-2665-crud-verb-consolidation.spec.ts`), `scanner/manifest-generator.ts`,
+ * and `packages/users/src/sveltekit/resource-list-handler.ts` -- all outside
+ * this PR's scope.
  *
  * The sites this rule was audited against (#2646), NOT an exhaustive
  * inventory:

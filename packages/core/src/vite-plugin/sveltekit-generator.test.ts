@@ -2899,6 +2899,17 @@ describe('SvelteKit Route Generator', () => {
       ]);
     });
 
+    it('findCliApiCoherenceViolations tolerates a null cli config instead of throwing', () => {
+      // Same drive-by class as the api:null fix above: typeof null ===
+      // 'object', so `cli: null` (e.g. round-tripped through JSON) must not
+      // throw reading `.skipApiCheck`/`.include` off `null` anywhere along
+      // this lint's cli-side branches (resolveCliActionSet,
+      // findCliApiCoherenceViolations, validateCliIncludeAgainstApi).
+      const manifest = buildManifest({ api: null, cli: null });
+      expect(() => findCliApiCoherenceViolations(manifest)).not.toThrow();
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+    });
+
     it('flags cli.include methods that are not in the resolved api set', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get', 'discover'] },

@@ -2355,9 +2355,13 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
   if (cliConfig === false) return new Set();
 
   const included: string[] | undefined =
-    typeof cliConfig === 'object' ? cliConfig.include : undefined;
+    typeof cliConfig === 'object' && cliConfig !== null
+      ? cliConfig.include
+      : undefined;
   const excluded: string[] =
-    typeof cliConfig === 'object' && Array.isArray(cliConfig.exclude)
+    typeof cliConfig === 'object' &&
+    cliConfig !== null &&
+    Array.isArray(cliConfig.exclude)
       ? cliConfig.exclude
       : [];
 
@@ -2391,7 +2395,13 @@ export function findCliApiCoherenceViolations(
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     const cliConfig = objectDef.decoratorConfig?.cli;
     if (cliConfig === false) continue;
-    if (typeof cliConfig === 'object' && cliConfig.skipApiCheck) continue;
+    if (
+      typeof cliConfig === 'object' &&
+      cliConfig !== null &&
+      cliConfig.skipApiCheck
+    ) {
+      continue;
+    }
 
     const effectiveCliCommands = resolveCliActionSet(objectDef);
     if (effectiveCliCommands.size === 0) continue;
@@ -2446,6 +2456,7 @@ export function validateCliIncludeAgainstApi(
       const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
       return (
         typeof cliConfig === 'object' &&
+        cliConfig !== null &&
         Array.isArray(cliConfig.include) &&
         cliConfig.include.length > 0
       );
