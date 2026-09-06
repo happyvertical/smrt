@@ -684,13 +684,9 @@ async function snapshotGeneratedBridges(
     const bridgeTable = String(row.table_name);
     const bridgeColumn = String(row.column_name);
     const expression = String(row.expression).replaceAll(' ', '');
-    const sourceColumn = columns.find(
-      (column) =>
-        column.table === bridgeTable &&
-        ['id', `${column.column}::text`, `(${column.column})::text`].includes(
-          expression,
-        ),
-    )?.column;
+    const sourceColumn = expression.match(
+      /^\(?([a-zA-Z_][a-zA-Z0-9_$]*)\)?(?:::text)?$/,
+    )?.[1];
     if (!sourceColumn) {
       if (columns.some((column) => column.table === bridgeTable)) {
         throw new Error(
@@ -699,6 +695,9 @@ async function snapshotGeneratedBridges(
       }
       continue;
     }
+    // A table may already contain native UUID columns and bridges unrelated to
+    // the TEXT candidate currently being converted. Leave those intact. Only
+    // a bridge whose *actual expression source* is converted participates.
     if (!requested.has(declaredUuidKey(bridgeTable, sourceColumn))) {
       continue;
     }
