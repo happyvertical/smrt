@@ -669,6 +669,7 @@ async function snapshotGeneratedBridges(
             format_type(generated_attr.atttypid, generated_attr.atttypmod) AS type_name,
             generated_attr.attnotnull AS not_null, generated_attr.attstorage AS storage,
             generated_attr.attacl IS NOT NULL AS has_acl,
+            generated_attr.attcollation <> (SELECT typcollation FROM pg_type WHERE oid = generated_attr.atttypid) AS nondefault_collation,
             col_description(generated_attr.attrelid, generated_attr.attnum) AS column_comment,
             generated.relispartition AS partitioned,
             EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhrelid = generated.oid OR i.inhparent = generated.oid) AS inherited
@@ -708,6 +709,7 @@ async function snapshotGeneratedBridges(
       row.not_null ||
       String(row.storage) !== 'x' ||
       row.has_acl ||
+      row.nondefault_collation ||
       row.column_comment != null ||
       row.partitioned ||
       row.inherited ||
@@ -755,6 +757,33 @@ async function snapshotBridgeIndexes(
   table: string,
   column: string,
 ): Promise<Array<{ definition: string; comment: string | null }>> {
+  const { rows: unsupported } = await db.query(
+    `SELECT index_rel.relname AS name
+       FROM pg_index idx
+       JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
+       JOIN pg_namespace ns ON ns.oid = table_rel.relnamespace
+       JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+      WHERE ns.nspname = 'public' AND table_rel.relname = ${quoteLiteral(table)}
+        AND (idx.indexprs IS NOT NULL OR idx.indpred IS NOT NULL)
+        AND (coalesce(pg_get_expr(idx.indexprs, idx.indrelid), '') ILIKE '%${column.replaceAll("'", "''")}%'
+          OR coalesce(pg_get_expr(idx.indpred, idx.indrelid), '') ILIKE '%${column.replaceAll("'", "''")}%')`,
+  );
+  if (unsupported.length > 0) {
+    throw new Error(
+      `Unsupported expression or partial index depends on generated bridge ${table}.${column}: ${(unsupported as Array<Record<string, unknown>>).map((row) => String(row.name)).join(', ')}.`,
+    );
+  }
+  const { rows: constraints } = await db.query(
+    `SELECT conname FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+       JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+       JOIN pg_attribute attr ON attr.attrelid = rel.oid AND attr.attnum = ANY(con.conkey)
+      WHERE ns.nspname = 'public' AND rel.relname = ${quoteLiteral(table)}
+        AND attr.attname = ${quoteLiteral(column)} AND con.contype IN ('c', 'u', 'p', 'x')`,
+  );
+  if (constraints.length > 0)
+    throw new Error(
+      `Unsupported CHECK/UNIQUE constraint depends on generated bridge ${table}.${column}.`,
+    );
   const { rows } = await db.query(
     `SELECT pg_get_indexdef(index_rel.oid) AS definition,
             obj_description(index_rel.oid, 'pg_class') AS comment,
