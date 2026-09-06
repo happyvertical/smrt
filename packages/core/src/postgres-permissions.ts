@@ -207,6 +207,9 @@ async function snapshot(
   // https://www.postgresql.org/docs/current/catalog-pg-init-privs.html
   const initialAcl = (fallback: string) =>
     `CASE WHEN i.privtype='i' THEN i.initprivs WHEN i.privtype='e' THEN NULL::aclitem[] ELSE ${fallback} END`;
+  // Only a type referenced by another type's typarray is its generated array.
+  // Nonzero typelem also describes non-array types (point); domains over arrays
+  // remain independent privilege targets and must not be filtered out.
   const queries: Record<string, string> = {
     server: `SELECT current_setting('server_version_num') AS version, current_database() AS database, current_user AS executor, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser`,
     roles: `SELECT oid::text, rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN (${roleNames}) ORDER BY rolname`,
@@ -216,7 +219,7 @@ async function snapshot(
     relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
     routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
-    types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
+    types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND NOT EXISTS (SELECT 1 FROM pg_type element WHERE element.typarray=t.oid) AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
     systemSchemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3)='pg_' OR nspname='information_schema' ORDER BY nspname`,
     systemPrivileges: `WITH resources AS (
       SELECT n.nspname AS schema, c.relname AS name, c.oid::text AS oid, CASE WHEN c.relkind='S' THEN 'sequence' ELSE 'relation' END AS kind, pg_get_userbyid(c.relowner) AS owner,
@@ -240,7 +243,7 @@ async function snapshot(
       SELECT n.nspname, t.typname, t.oid::text, 'type', pg_get_userbyid(t.typowner), COALESCE(t.typacl,acldefault('T',t.typowner)), ${initialAcl("CASE WHEN t.oid<16384 THEN acldefault('T',t.typowner) ELSE NULL::aclitem[] END")}
       FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid
       LEFT JOIN pg_init_privs i ON i.objoid=t.oid AND i.classoid='pg_type'::regclass AND i.objsubid=0
-      WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c')
+      WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND NOT EXISTS (SELECT 1 FROM pg_type element WHERE element.typarray=t.oid) AND (t.typrelid=0 OR c.relkind='c')
     ) SELECT r.schema,r.name,r.oid,r.kind,r.owner,COALESCE(d.acl,'[]'::json) AS acl FROM resources r
     CROSS JOIN LATERAL (
       SELECT json_agg(json_build_object('grantee', CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,

@@ -995,6 +995,73 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       await db.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
     }
   });
+  it('inspects non-array element types and domains over arrays without treating generated arrays as independent types', async () => {
+    await apply();
+    const before = await planPostgresPermissions(db, contract);
+    const point = (
+      await db.query(
+        "SELECT typelem::text,typtype,typcategory FROM pg_type WHERE oid='pg_catalog.point'::regtype",
+      )
+    ).rows[0];
+    expect(point.typelem).not.toBe('0');
+    expect(point.typcategory).toBe('G');
+    await db.query(
+      `GRANT USAGE ON TYPE pg_catalog.point TO ${q(runtime)} WITH GRANT OPTION`,
+    );
+    try {
+      const exposed = await planPostgresPermissions(db, contract);
+      expect(exposed.canApply).toBe(false);
+      expect(exposed.fingerprint).not.toBe(before.fingerprint);
+      expect(
+        exposed.diagnostics.some(
+          (entry) =>
+            entry.code === 'system-privilege-delta' &&
+            entry.resource.includes('point') &&
+            entry.role === runtime,
+        ),
+      ).toBe(true);
+      await expect(
+        applyPostgresPermissions(db, contract, {
+          expectedFingerprint: exposed.fingerprint,
+        }),
+      ).rejects.toThrow('unsupported');
+      expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+        exposed.fingerprint,
+      );
+    } finally {
+      await db.query(
+        `REVOKE USAGE ON TYPE pg_catalog.point FROM ${q(runtime)}`,
+      );
+    }
+    for (const schema of ['app', 'information_schema']) {
+      const domain = `${q(schema)}.synthetic_array_domain`;
+      await db.query(`CREATE DOMAIN ${domain} AS integer[]`);
+      try {
+        const exposed = await planPostgresPermissions(db, contract);
+        expect(exposed.canApply).toBe(false);
+        const typeDiagnostics = exposed.diagnostics.filter(
+          (entry) =>
+            entry.code === 'unsupported-types' ||
+            entry.code === 'system-privilege-delta',
+        );
+        expect(
+          typeDiagnostics.some((entry) =>
+            entry.resource.includes('synthetic_array_domain'),
+          ),
+        ).toBe(true);
+        expect(
+          typeDiagnostics.some((entry) =>
+            entry.resource.includes('_synthetic_array_domain'),
+          ),
+        ).toBe(false);
+      } finally {
+        await db.query(`DROP DOMAIN ${domain}`);
+      }
+    }
+    expect((await planPostgresPermissions(db, contract)).diagnostics).toEqual(
+      [],
+    );
+  });
   it('refuses user routines and standalone composite types after schema evolution', async () => {
     await apply();
     await as(owner, 'CREATE TYPE app.custom AS (value text)');
