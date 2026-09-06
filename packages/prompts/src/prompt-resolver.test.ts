@@ -487,6 +487,64 @@ describe('@happyvertical/smrt-prompts', () => {
     expect(afterRace.text).toBe('App Will');
   });
 
+  it('refuses a cache write from a resolution that started before clearPromptCache()', async () => {
+    definePrompt({
+      key: 'test.clear.race',
+      template: 'Code {name}',
+      editable: { template: true },
+    });
+
+    const loadLayers = PromptOverrideCollection.prototype.getResolutionLayers;
+
+    // Interleave the flush — not a save() — between the resolution's layer read
+    // and its cache write. This key has never been invalidated, so it has no
+    // generation entry of its own; only a clear that raises a floor covering
+    // absent keys can refuse the write below.
+    const spy = vi
+      .spyOn(PromptOverrideCollection.prototype, 'getResolutionLayers')
+      .mockImplementationOnce(async function (
+        this: PromptOverrideCollection,
+        ...args: Parameters<typeof loadLayers>
+      ) {
+        const staleLayers = await loadLayers.apply(this, args);
+        clearPromptCache();
+        // Written directly so no `save()` invalidation runs: the flush alone
+        // has to be what makes this row visible.
+        await (db as any).upsert('_smrt_prompt_overrides', ['key', 'context'], {
+          id: crypto.randomUUID(),
+          slug: 'test-clear-race-app',
+          context: '__app__',
+          created_at: new Date(),
+          updated_at: new Date(),
+          key: 'test.clear.race',
+          tenant_id: null,
+          template: 'DB {name}',
+          profile: null,
+          model: null,
+          params: null,
+        });
+        return staleLayers;
+      });
+
+    try {
+      const racing = await resolvePrompt('test.clear.race', {
+        db,
+        tenantId: 'tenant-a',
+        variables: { name: 'Will' },
+      });
+      expect(racing.text).toBe('Code Will');
+    } finally {
+      spy.mockRestore();
+    }
+
+    const afterClear = await resolvePrompt('test.clear.race', {
+      db,
+      tenantId: 'tenant-a',
+      variables: { name: 'Will' },
+    });
+    expect(afterClear.text).toBe('DB Will');
+  });
+
   it('expires stale cache entries after the ttl when storage changes without invalidation', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

@@ -15,6 +15,21 @@ const languageCache = new Map<string, CacheEntry>();
  * getLanguageCacheGeneration.
  */
 const cacheGenerations = new Map<string, number>();
+/**
+ * Source of every generation value. Drawing from one counter instead of
+ * incrementing each entry independently makes a generation unique across every
+ * `(key, locale)` and every clear, which is what lets `clearedThrough` work as
+ * a floor.
+ */
+let nextGeneration = 1;
+/**
+ * Floor that `clearLanguageCache()` raises for *every* `(key, locale)`,
+ * including pairs with no map entry. A pair that has never been invalidated in
+ * this process reads as generation 0, so a resolution that captured 0 before a
+ * clear would still see 0 after it and write its pre-clear value back — the
+ * flush would be silently undone for the rest of the TTL.
+ */
+let clearedThrough = 0;
 const dbInstanceIds = new WeakMap<object, string>();
 let nextDbId = 1;
 
@@ -75,11 +90,7 @@ function bumpGeneration(
   locale: string,
   db: DatabaseInterface | unknown,
 ): void {
-  const generationKey = buildGenerationKey(key, locale, db);
-  cacheGenerations.set(
-    generationKey,
-    (cacheGenerations.get(generationKey) ?? 0) + 1,
-  );
+  cacheGenerations.set(buildGenerationKey(key, locale, db), nextGeneration++);
 }
 
 export function getLanguageCacheTtlMs(): number {
@@ -136,13 +147,19 @@ export function getCachedLanguage(
  *   `(key, locale)` must be able to refuse an in-flight write for any other
  *   scope of it. This matches the coarsest fan-out of
  *   {@link invalidateLanguageCache}.
+ *
+ * A pair with no entry of its own reports the {@link clearLanguageCache} floor
+ * rather than a bare 0, so a clear refuses in-flight writes for pairs that have
+ * never been invalidated too.
  */
 export function getLanguageCacheGeneration(
   key: string,
   locale: string,
   db: DatabaseInterface | unknown,
 ): number {
-  return cacheGenerations.get(buildGenerationKey(key, locale, db)) ?? 0;
+  const generation =
+    cacheGenerations.get(buildGenerationKey(key, locale, db)) ?? 0;
+  return generation > clearedThrough ? generation : clearedThrough;
 }
 
 export function setCachedLanguage(
@@ -197,12 +214,10 @@ export function invalidateLanguageCache(
 
 export function clearLanguageCache(): void {
   languageCache.clear();
-  // Generations deliberately survive: resetting them to zero would let a
-  // resolution that started before the clear write its stale value back.
-  for (const generationKey of cacheGenerations.keys()) {
-    cacheGenerations.set(
-      generationKey,
-      (cacheGenerations.get(generationKey) ?? 0) + 1,
-    );
-  }
+  // Raise the floor instead of resetting counters: a resolution that started
+  // before the clear must be refused its write, and raising a single floor
+  // covers pairs with no generation entry, which a per-entry bump cannot reach.
+  // With the floor carrying the refusal, the per-entry values can be dropped.
+  clearedThrough = nextGeneration++;
+  cacheGenerations.clear();
 }

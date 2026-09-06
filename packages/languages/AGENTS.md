@@ -76,9 +76,11 @@ cached entry is built from is read at exactly the locale it is cached under:
 the fallback chain (`fr-CA` → `fr` → `en`) resolves each locale independently
 and an attempt that resolves nothing caches nothing, so a fallback hit is never
 stored under the requested locale. It deliberately excludes `tenantId`, because
-an app-level row is inherited by every tenant. `clearLanguageCache()` bumps
-rather than resets generations, so a resolution that started before the clear
-cannot write back either.
+an app-level row is inherited by every tenant. `clearLanguageCache()` raises a
+single floor (`clearedThrough`) rather than resetting or per-entry bumping: a
+`(key, locale)` that has never been invalidated has no map entry and reads as
+generation 0, so a per-entry bump cannot reach it and a resolution that started
+before the clear would write its pre-clear value back.
 
 ## Public API surface
 

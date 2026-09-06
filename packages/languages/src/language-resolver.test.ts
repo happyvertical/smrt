@@ -293,6 +293,73 @@ describe('@happyvertical/smrt-languages — resolver', () => {
     expect(afterRace.source).toBe('app');
   });
 
+  it('refuses a cache write from a resolution that started before clearLanguageCache()', async () => {
+    defineLanguageString({
+      key: 'test.clear.race',
+      locale: 'en',
+      template: 'Code {name}',
+    });
+
+    const loadAppOverride = LanguageOverrideCollection.prototype.getAppOverride;
+
+    // Interleave the flush — not a save() — between the resolution's layer read
+    // and its cache write. This (key, locale) has never been invalidated, so it
+    // has no generation entry of its own; only a clear that raises a floor
+    // covering absent entries can refuse the write below.
+    const spy = vi
+      .spyOn(LanguageOverrideCollection.prototype, 'getAppOverride')
+      .mockImplementationOnce(async function (
+        this: LanguageOverrideCollection,
+        ...args: Parameters<typeof loadAppOverride>
+      ) {
+        const staleOverride = await loadAppOverride.apply(this, args);
+        clearLanguageCache();
+        // Written directly so no `save()` invalidation runs: the flush alone
+        // has to be what makes this row visible.
+        await (db as any).upsert(
+          '_smrt_language_overrides',
+          ['key', 'locale', 'context'],
+          {
+            id: crypto.randomUUID(),
+            slug: 'test-clear-race-app',
+            context: '__app__',
+            created_at: new Date(),
+            updated_at: new Date(),
+            key: 'test.clear.race',
+            locale: 'en',
+            tenant_id: null,
+            template: 'DB {name}',
+            auto_generated: false,
+            source_hash: null,
+            ai_model: null,
+            reviewed_at: null,
+            reviewed_by: null,
+          },
+        );
+        return staleOverride;
+      });
+
+    try {
+      const racing = await resolveLanguageString('test.clear.race', {
+        db,
+        tenantId: 'tenant-a',
+        vars: { name: 'Will' },
+      });
+      expect(racing.text).toBe('Code Will');
+      expect(racing.source).toBe('code');
+    } finally {
+      spy.mockRestore();
+    }
+
+    const afterClear = await resolveLanguageString('test.clear.race', {
+      db,
+      tenantId: 'tenant-a',
+      vars: { name: 'Will' },
+    });
+    expect(afterClear.text).toBe('DB Will');
+    expect(afterClear.source).toBe('app');
+  });
+
   it('expires stale cache entries after the TTL', async () => {
     defineLanguageString({
       key: 'test.ttl',

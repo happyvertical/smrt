@@ -39,9 +39,13 @@ just invalidated with the pre-write value. Without it, "a stale entry is never
 served after a write" held only until a read raced a write, and then failed for
 the full 30s TTL (a raced `delete()` resurrected the deleted override).
 Generations are tracked per `(db, key)`, not per tenant, because an app-level
-row is inherited by every tenant. `clearPromptCache()` bumps rather than resets
-them, so a resolution that started before the clear cannot write back either.
-`smrt-playbooks` and `smrt-languages` carry the same mechanism.
+row is inherited by every tenant. `clearPromptCache()` raises a single floor
+(`clearedThrough`) rather than resetting or per-key bumping: a key that has
+never been invalidated has no map entry and reads as generation 0, so a per-key
+bump cannot reach it and a resolution that started before the clear would write
+its pre-clear value back. `smrt-languages` carries the same mechanism, keyed
+additionally by locale. `smrt-playbooks` has the generation but not the floor
+(#2716).
 
 ## Related
 
