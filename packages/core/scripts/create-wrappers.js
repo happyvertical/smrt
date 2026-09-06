@@ -37,11 +37,6 @@ const wrappers = [
     exports: '*', // Re-export everything from fields
   },
   {
-    path: 'generators/cli.js',
-    exports: ['main'], // Import and run main for CLI
-    isCLI: true,
-  },
-  {
     path: 'prebuild/cli.js',
     exports: '*', // Re-export everything for prebuild CLI
   },

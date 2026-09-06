@@ -2,9 +2,6 @@
  * @smrt/core generators - Create REST APIs and MCP servers from SMRT objects
  */
 
-export type { CLIConfig, CLIContext } from './cli';
-// CLI Generator
-export { CLIGenerator, getCLIHandler, setupCLI } from './cli';
 // Conditional GET for generated read routes (#1757 v1 body-hash, #1765 v2
 // per-table change-feed version source)
 export {

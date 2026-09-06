@@ -475,14 +475,17 @@ function configuredSurfaces(
   manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
-  // NOTE: the `cli` projection models core's `CLIGenerator`, which reserves a
-  // CRUD verb unconditionally. That is NOT the shipped local CLI:
-  // `@happyvertical/smrt-cli`'s generator reserves one only where the CRUD
-  // command is emitted (each of its commands carries its own handler), so with
+  // NOTE: the `cli` projection models the reservation rule core's
+  // `CLIGenerator` used to apply (retired by #2664 -- see git history for
+  // the deleted `packages/core/src/generators/cli.ts`), which reserves a
+  // CRUD verb unconditionally.
+  // That is NOT the shipped local CLI: `packages/cli/src/cli-generator.ts`'s
+  // generator reserves one only where the CRUD command is emitted (each of
+  // its commands carries its own handler), so with
   // `cli: { include: ['list', 'get'] }` a public `create()` is a reachable
   // `${object}:create` there that this projection does not report.
   //
-  // Retargeting this projection at the shipped binary is tracked on #2664.
+  // Retargeting this projection at the shipped binary is tracked on #2692.
   // That is a CONTRACT CHANGE rather than a cleanup: the generators genuinely
   // disagree, so `smrt-knowledge.json` snapshots would move. Predates #2646.
   const collectionClass = isSurfaceCollectionClass(manifest, object);
@@ -509,7 +512,8 @@ function configuredSurfaces(
  * joined string, not just the object-name prefix. A CRUD verb is already
  * lowercase so this is a no-op there, but a camelCase custom method name
  * (`findByDimensions`) would otherwise report a surface `name` the real tool
- * is never registered under. `CLIGenerator.listCommands()` does not
+ * is never registered under. `packages/cli/src/cli-generator.ts`'s command
+ * builder (`CLIGenerator`'s private `generateObjectCommands()`) does not
  * lowercase the method half of its command string, so `cli` keeps the
  * operation as-authored.
  *
@@ -531,12 +535,20 @@ function surfaceName(
  * A hand-written `SmrtCollection` subclass (`class WidgetCollection extends
  * SmrtCollection<Widget>`) is discovered structurally by the scanner and
  * lands in the manifest even without its own `@smrt()` decorator, so it never
- * registers with `ObjectRegistry`. `MCPGenerator`/`CLIGenerator` iterate
- * `ObjectRegistry`, not the manifest, so such a class never gets its own
- * MCP tools or CLI commands — only its collection-scoped custom actions get
- * REST routes. Reporting full CRUD for it here would over-report a surface
- * that does not exist, trading the #2619 under-report for a new false
- * positive.
+ * registers with `ObjectRegistry` by decoration. `MCPGenerator` (and,
+ * historically, core's now-retired `CLIGenerator`, #2664) iterate the
+ * decoration-populated `ObjectRegistry` directly, not the manifest, so such a
+ * class never gets its own MCP tools there — only its collection-scoped
+ * custom actions get REST routes. The shipped local CLI
+ * (`packages/cli/src/cli-generator.ts`) is a documented exception: its
+ * `ensureManifestLoaded()` pre-registers every manifest entry into
+ * `ObjectRegistry` via `registerFromManifest()` before generating commands,
+ * with no collection-class filter, so a manifest-only collection class IS
+ * reachable there (e.g. `smrt itemcollection:list`) even though this
+ * projection reports none. Reporting full CRUD for it here would over-report
+ * the projection's own (registry-scoped) surface, trading the #2619
+ * under-report for a new false positive there -- it does not claim the
+ * shipped CLI binary lacks the surface too.
  *
  * A deeper subclass (`SpecialCollection extends WidgetCollection`) carries no
  * `extendsTypeArg` of its own, so this walks the extends chain through the
@@ -614,7 +626,8 @@ function manifestObjectPackage(
 
 /**
  * Operations exposed for one object's `api`/`cli`/`mcp` surface, derived from
- * the same defaults `APIGenerator`/`CLIGenerator`/`MCPGenerator` apply rather
+ * the same defaults `APIGenerator`/core's retired `CLIGenerator`
+ * (#2664)/`MCPGenerator` apply rather
  * than from the presence of a config key (#2619): an omitted config is full
  * CRUD, not a closed surface — an `include` list, when present, is the
  * COMPLETE allowlist for custom methods too; without one, every public
@@ -622,7 +635,8 @@ function manifestObjectPackage(
  * false` closes the surface entirely.
  *
  * Custom (non-CRUD, public) method gating is NOT identical across the three
- * kinds. `CLIGenerator.listCommands()`/`assertCommandExposed()` and
+ * kinds. Core's retired `CLIGenerator.listCommands()`/`assertCommandExposed()`
+ * (#2664) and
  * `MCPGenerator.generateTools()` both refuse a framework lifecycle method
  * (`save`, `initialize`, ...) even when a class declares its own override —
  * it is the mechanism behind generated CRUD, not a distinct action (#2638) —
@@ -642,13 +656,14 @@ function manifestObjectPackage(
  * keep declared casing in their command/route names, so neither behavior
  * applies to them.
  *
- * This `cli` projection models `CLIGenerator` (`generators/cli.ts`), not the
- * shipped local CLI transport (`@happyvertical/smrt-cli`'s
- * `cli-generator.ts`, the `smrt <object>:<action>` binary): that generator
- * does not gate on `isFrameworkLifecycleMethod()` today, so a locally
- * overridden lifecycle method the artifact now reports as absent can still
- * be invoked there. Retargeting this projection at the shipped binary is a
- * contract change tracked on #2664, not part of this fix.
+ * This `cli` projection models the reservation rule core's `CLIGenerator`
+ * used to apply (`generators/cli.ts`, retired by #2664), not the shipped
+ * local CLI transport (`packages/cli/src/cli-generator.ts`, the
+ * `smrt <object>:<action>` binary): that generator does not gate on
+ * `isFrameworkLifecycleMethod()` today, so a locally overridden lifecycle
+ * method the artifact now reports as absent can still be invoked there.
+ * Retargeting this projection at the shipped binary is a contract change
+ * tracked on #2692, not part of this fix.
  */
 function configuredOperations(
   kind: 'api' | 'cli' | 'mcp',
@@ -658,8 +673,9 @@ function configuredOperations(
 ): string[] {
   if (config === false) return [];
   // The framework's own abstract base classes (SmrtObject, SmrtCollection,
-  // ...) are scaffolding, not resources: MCPGenerator/CLIGenerator/route
-  // generation all skip them by class identity now (#2642), independent of
+  // ...) are scaffolding, not resources: MCPGenerator/route generation and
+  // packages/cli's CLIGenerator all skip them by class identity now (#2642),
+  // independent of
   // their `decoratorConfig: {}` shape, so this mirrors the same shared
   // check rather than reporting a synthetic surface for them.
   if (isFrameworkBaseClass(object.className, object.packageName)) return [];
@@ -724,7 +740,8 @@ function resolveCustomMethodNames(
     // A framework lifecycle method (save/initialize/...) is never a custom
     // CLI or MCP action, even when a class declares its own override — it is
     // the mechanism behind generated CRUD, not a distinct operation, matching
-    // CLIGenerator's and MCPGenerator's own isFrameworkLifecycleMethod() gate
+    // core's retired CLIGenerator's (#2664) and MCPGenerator's own
+    // isFrameworkLifecycleMethod() gate
     // (#2657, #2638). `api` is deliberately left alone — see
     // configuredOperations' doc comment above.
     if ((kind === 'cli' || kind === 'mcp') && isFrameworkLifecycleMethod(name))

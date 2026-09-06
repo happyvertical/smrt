@@ -2338,9 +2338,11 @@ export interface CliApiCoherenceViolation {
  *
  * **Bare `cli: true`/`cli: {}`** (#2638, the new case this lint now
  * inspects): every public custom method minus exclude, exactly the "every
- * public method minus exclude" resolution `CLIGenerator.listCommands()`
- * already applies (via `resolveCustomActionNames`, reused not
- * reimplemented) -- lifecycle methods excluded, same as everywhere else.
+ * public method minus exclude" resolution this function shares with
+ * `packages/core/src/generators/custom-action.ts`'s `resolveCustomActionNames`
+ * -- lifecycle methods excluded, same as everywhere else. (Pre-#2664, core's
+ * now-retired `CLIGenerator.listCommands()` applied the same resolution via
+ * that helper too.)
  * CRUD verbs are NOT checked in this branch: a class that closes its API
  * entirely (`api: false`) while keeping a default-open, CLI/MCP-only admin
  * surface (`cli: true`/omitted) is a common, intentional combination (see
@@ -2428,8 +2430,9 @@ export function findCliApiCoherenceViolations(
  * This is deliberately narrower than `findCliApiCoherenceViolations` above.
  * That function is now fully correct for the broader `cli: true`/`cli: {}`
  * default surface too (#2638: same "every public method minus exclude"
- * resolution `listCommands()` uses, so a bare `cli: true` is inspected the
- * same as an explicit `include`). But `smrtPlugin()`'s default
+ * resolution core's now-retired `CLIGenerator.listCommands()` used (#2664),
+ * so a bare `cli: true` is inspected the same as an explicit `include`).
+ * But `smrtPlugin()`'s default
  * `validateCliApiCoherence: true` calls this THROWING gate unconditionally
  * from every consuming package's own build (`configResolved`,
  * `vite-plugin/index.ts`) -- and a full-monorepo build during #2638

@@ -10,19 +10,21 @@
  * classes with no `@smrt()` decorator of their own. `ObjectRegistry.
  * loadAllManifests()` registers them exactly like any genuine domain class
  * (no decoration or framework-base filter of its own), so before this fix
- * `MCPGenerator.generateTools()`, `CLIGenerator.listCommands()`, and
- * `generateSvelteKitRoutes()` all produced real tools/commands/routes under
- * their own name (`smrtobject_list`, `smrtobject:list`, a `smrtobjects/`
- * route directory, ...), and `knowledge.ts`'s projection worked around the
- * symptom instead of the cause.
+ * `MCPGenerator.generateTools()`, core's now-retired `CLIGenerator.
+ * listCommands()` (#2664), and `generateSvelteKitRoutes()` all produced real
+ * tools/commands/routes under their own name (`smrtobject_list`,
+ * `smrtobject:list`, a `smrtobjects/` route directory, ...), and
+ * `knowledge.ts`'s projection worked around the symptom instead of the
+ * cause.
  *
  * This file registers ONE shared manifest fixture — three framework base
  * classes (two from core, one from a different owning package, proving the
  * exclusion is keyed on (className, packageName) together) plus a genuine
  * domain class and a domain subclass of a framework base — and drives it
  * through every layer #2642 touches from that single fixture: schema
- * (`getAllSchemasAsDefinitions`), the MCP and CLI generators, and the
- * `knowledge.ts` projection. SvelteKit route generation is covered
+ * (`getAllSchemasAsDefinitions`), the MCP generator, and the
+ * `knowledge.ts` projection (the CLI generator's coverage was retired with
+ * `CLIGenerator` itself, #2664). SvelteKit route generation is covered
  * separately in `vite-plugin/sveltekit-generator.test.ts` (#2642) because it
  * operates on raw manifest objects behind a mocked `node:fs`, which cannot
  * share a test file with `knowledge.ts`'s real file reads.
@@ -42,7 +44,6 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
-import { CLIGenerator } from './cli.js';
 import { MCPGenerator } from './mcp.js';
 
 const CORE_PKG = '@happyvertical/smrt-core';
@@ -156,21 +157,6 @@ describe('issue #2642: framework base classes are not exposed as resources', () 
     // Folder extends SmrtHierarchical (a framework base) but is itself a
     // genuine domain class — it must still get its own tools.
     expect(toolNames).toContain('folder_list');
-  });
-
-  it('cli: CLIGenerator.listCommands() emits no command for any framework base class, but does for Widget', async () => {
-    const commands = await new CLIGenerator().listCommands();
-
-    for (const className of FRAMEWORK_BASE_NAMES) {
-      const lower = className.toLowerCase();
-      expect(
-        commands.filter((name) => name.startsWith(`${lower}:`)),
-        `no ${lower}:* command`,
-      ).toEqual([]);
-    }
-    expect(commands).toContain('widget:list');
-    expect(commands).toContain('widget:archive');
-    expect(commands).toContain('folder:list');
   });
 
   it('projection: knowledge.ts reports zero surfaces for every framework base class, using the same shared identity check as the generators', () => {

@@ -27,8 +27,8 @@ export type { ToolEffect } from '../registry/types.js';
  * even when a subclass declares its own override (e.g. `User.save()` at
  * `packages/users/src/models/User.ts`). An override is still the same
  * lifecycle operation, not a new one (#2638). `delete` itself is a CRUD verb
- * `CLIGenerator`/`MCPGenerator` already special-case, so it is not repeated
- * here.
+ * `packages/cli/src/cli-generator.ts`'s `CLIGenerator`/`MCPGenerator` already
+ * special-case, so it is not repeated here.
  *
  * Scope is deliberately narrower than "every public method on
  * SmrtObject/SmrtClass/SmrtCollection":
@@ -36,11 +36,13 @@ export type { ToolEffect } from '../registry/types.js';
  * - AI operations `is()`/`do()`/`describe()` are declared on `SmrtObject`
  *   but are explicitly designed to be overridden with domain-specific
  *   behavior and exposed as a distinct action -- confirmed by existing,
- *   intentional coverage (`generators/cli-commands.spec.ts`'s
- *   `describe()` custom-action fixture,
- *   `vite-plugin/generated-client-integration.test.ts`'s `ArtCollection.
+ *   intentional coverage
+ *   (`vite-plugin/generated-client-integration.test.ts`'s `ArtCollection.
  *   describe(tone)` with its own declared API route). Excluding them here
- *   would regress real, working behavior.
+ *   would regress real, working behavior. (The sibling
+ *   `generators/cli-commands.spec.ts` fixture that used to cover the same
+ *   `describe()` custom action was retired with core's `CLIGenerator`,
+ *   #2664; this remaining fixture still exercises the behavior.)
  * - Relationship loading (`loadRelated`/`loadRelatedMany`/`getRelated`/
  *   `isRelatedLoaded`), memory (`remember`/`recall`/`recallAll`/`forget`/
  *   `forgetScope`), embeddings (`generateEmbeddings`/`getEmbedding`/
@@ -129,29 +131,28 @@ export interface ResolvableMethod {
  * for an object, given its transport config's `include`/`exclude` and its
  * method map: every public method, minus CRUD verbs, minus framework
  * lifecycle methods, restricted to `include` when present and always minus
- * `exclude`. Reused by three callers, so they agree with each other and
- * with what `listCommands()` advertises:
+ * `exclude`. Its sole caller as of #2664 (`CLIGenerator` and the
+ * `generateCLIModule()` virtual module were retired):
  *
- * - `CLIGenerator.listCommands()` (over the live `ObjectRegistry`).
  * - `findCliApiCoherenceViolations`'s bare-`cli: true`/`cli: {}` branch
  *   (over the static manifest, no explicit `include`) -- see
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts`.
- * - `generateCLIModule()` in `vite-plugin/index.ts`, which generates the
- *   `smrt:cli` virtual module's static command metadata. It layers one
- *   additional filter on top of this function's result: a leading `_` on
- *   the method name, because the manifest's `isPublic` is unreliable there
- *   (see that call site's own comment) and this function has no other
- *   signal to exclude an internal-by-convention method.
  *
  * NOT the one universal resolution, and deliberately not reused by every
  * caller that resolves a CLI command set:
  *
- * - `CLIGenerator.assertCommandExposed()` does not call this for its custom-
- *   method branch — it checks `isFrameworkLifecycleMethod()` directly plus
- *   its own inline public/include/exclude logic, so it can give a distinct
- *   error message per failure reason (unknown vs. not public vs. not
- *   enabled vs. lifecycle method) rather than a single boolean membership
- *   test.
+ * - Core's now-retired `CLIGenerator.assertCommandExposed()` (#2664) did not
+ *   call this for its custom-method branch — it checked
+ *   `isFrameworkLifecycleMethod()` directly plus its own inline
+ *   public/include/exclude logic, so it could give a distinct error message
+ *   per failure reason (unknown vs. not public vs. not enabled vs. lifecycle
+ *   method) rather than a single boolean membership test. The shipped local
+ *   CLI's `generateObjectCommands()` (`packages/cli/src/cli-generator.ts`)
+ *   has no equivalent of that gate at all today — it filters on reserved-CRUD
+ *   name collision, `isPublic`, and `exclude`/`include`, but never
+ *   `isFrameworkLifecycleMethod()`, so a locally overridden lifecycle method
+ *   IS a reachable command there (see `knowledge.ts`'s `configuredOperations()`
+ *   docblock for the same caveat).
  * - `findCliApiCoherenceViolations`'s EXPLICIT-`cli.include` branch
  *   deliberately bypasses this function too: an `include` entry naming a
  *   typo, a getter, or a private/protected method must still surface as
@@ -163,8 +164,10 @@ export interface ResolvableMethod {
  *
  * `crudActionNames` stays a parameter even though every caller now passes
  * {@link CRUD_OPERATIONS} (#2665 retired the last of the inline copies at
- * `vite-plugin/sveltekit-generator.ts` and `vite-plugin/index.ts`, following
- * `CLIGenerator`'s #2646 switch). Removing the parameter is a separate,
+ * `vite-plugin/sveltekit-generator.ts`, following `CLIGenerator`'s #2646
+ * switch; `vite-plugin/index.ts`'s copy backed the `generateCLIModule()`
+ * emitter #2664 later retired, so `index.ts` no longer calls this function
+ * or imports `CRUD_OPERATIONS` at all). Removing the parameter is a separate,
  * unevidenced call this fix does not make -- it would foreclose a caller
  * that legitimately needs a different verb set, and no such need has been
  * demonstrated either way.
@@ -228,10 +231,6 @@ export function resolveCustomActionNames(
  *   built-in list whichever branch emitted it: the class's method could never
  *   run, and emitting one would hand the caller an operation `include` never
  *   named.
- * - `generators/cli.ts` (`CLIGenerator`) — unconditional, exact.
- *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
- *   action never reaches custom-method resolution, and `listCommands` skips
- *   those names outright.
  * - `packages/cli/src/cli-generator.ts`, behind the shipped `smrt` object
  *   commands — reserves only where the CRUD command is actually emitted, and
  *   reserves the command NAMES AND THEIR ALIASES (`ls`, `show`, `new`, `edit`,
@@ -265,11 +264,14 @@ export function resolveCustomActionNames(
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
- * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`, and
- * `vite-plugin/sveltekit-generator.ts` now import {@link CRUD_OPERATIONS} (or
- * {@link isCrudOperation} where a bare `.includes()` on the readonly tuple
- * failed the stricter `tsconfig.typecheck.json`) rather than keeping their
- * own verb copies (#2665). `vite-plugin/templates/default-ui.ts` keeps its
+ * `vite-plugin/api-client-entries.ts` and `vite-plugin/sveltekit-generator.ts`
+ * now import {@link CRUD_OPERATIONS} (or {@link isCrudOperation} where a bare
+ * `.includes()` on the readonly tuple failed the stricter
+ * `tsconfig.typecheck.json`) rather than keeping their own verb copies
+ * (#2665). `vite-plugin/index.ts`'s copy backed `generateCLIModule()`, which
+ * #2664 retired along with the rest of the unused `smrt-virt-cli` module, so
+ * `index.ts` no longer imports anything from this module at all.
+ * `vite-plugin/templates/default-ui.ts` keeps its
  * verb list as a local literal deliberately: `src/vite-plugin/templates/**`
  * is excluded from both tsconfigs and the vite-dts build graph, and the
  * package build copies that directory to `dist/` verbatim rather than

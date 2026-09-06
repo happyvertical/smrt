@@ -722,9 +722,12 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // enabled. Mirrors the GlobalInterceptors inversion above.
   setDispatchTenantResolver(() => getTenantId());
 
-  // Wire the fail-closed tenant gate for generated CLI/MCP entry points (#1554).
-  // Core invokes this runner around tenant-scoped CLI/MCP execution; without it
-  // (tenancy disabled) those surfaces pass through unchanged.
+  // Wire the fail-closed tenant gate for generated in-process entry points
+  // (#1554). Core's MCPGenerator invokes this runner around tenant-scoped MCP
+  // execution; without it (tenancy disabled) that surface passes through
+  // unchanged. Core's CLIGenerator used to invoke it too but was retired as
+  // unused public API (#2664); the shipped local CLI transport
+  // (packages/cli/src/cli-generator.ts) has never called it.
   setTenantEntryPointRunner(runTenantScopedEntryPoint);
 
   // Wire the tenant-scoped-class resolver so core-side fail-closed read guards
@@ -766,7 +769,8 @@ export function disableTenancy(): void {
   // Clear the DispatchBus tenant resolver so the bus reverts to its no-op
   // (pre-tenancy) behavior when tenancy is disabled.
   setDispatchTenantResolver(undefined);
-  // Clear the CLI/MCP tenant gate so those surfaces pass through (#1554).
+  // Clear the in-process tenant gate so that surface (MCP) passes through
+  // (#1554).
   setTenantEntryPointRunner(undefined);
   // Clear the tenant-scoped-class resolver (#1782).
   setTenantScopedClassResolver(undefined);

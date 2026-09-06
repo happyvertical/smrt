@@ -300,8 +300,10 @@ describe('framework lifecycle method exclusion (#2638)', () => {
     // is()/do()/describe() are designed to be overridden with domain-specific
     // behavior and exposed as a distinct action (see
     // generated-client-integration.test.ts's ArtCollection.describe(tone)
-    // fixture and cli-commands.spec.ts's describe() custom-action fixture) --
-    // excluding them here would regress real, intentional usage. Relationship
+    // fixture -- the sibling cli-commands.spec.ts fixture that used to cover
+    // the same describe() custom action was retired with core's
+    // CLIGenerator, #2664) -- excluding them here would regress real,
+    // intentional usage. Relationship
     // loading, memory, embeddings, AI-usage introspection, and
     // SmrtCollection's own query surface are excluded for the same reason:
     // they are distinct capabilities, not "the mechanism behind CRUD".
