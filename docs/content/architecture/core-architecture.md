@@ -146,12 +146,11 @@ ObjectRegistry.clear()                           // Clear all registrations
 ### Current Implementation (Before)
 
 ```
-❌ Consuming Application Pattern (OLD):
+❌ Consuming Application Pattern (OLD, pre-#211):
 packages/products/src/cli.ts
-├─ Import CLIGenerator
 ├─ Import Product, Category models
-├─ new CLIGenerator({ collections: [Product, Category] })
-└─ generator.generate()
+├─ Hand-write a command per object (list/get/create/update/delete)
+└─ Wire each command's argument parsing and DB calls by hand
 
 Problems:
 • Boilerplate in every consuming app
@@ -247,7 +246,9 @@ npx smrt mcp
 1. **Phase 1**: Enhance CLI to use pure ObjectRegistry discovery (no manual imports)
 2. **Phase 2**: Add `smrt mcp` subcommand that discovers objects at runtime
 3. **Phase 3**: Update documentation and examples to show zero-config pattern
-4. **Phase 4**: Deprecate old patterns (manual CLIGenerator usage in consuming apps)
+4. **Phase 4** (done): retired the in-process `CLIGenerator` public API entirely
+   rather than merely deprecating it — see #2664 and the note at the top of
+   this section.
 
 ## Generator Consistency Pattern
 
