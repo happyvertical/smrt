@@ -409,6 +409,8 @@ interface GeneratedBridgeSnapshot {
   sourceColumn: string;
   indexDefinitions: Array<{
     oid: string;
+    schema: string;
+    name: string;
     definition: string;
     comment: string | null;
   }>;
@@ -577,7 +579,7 @@ async function convertPostgresUuidColumns(
       await db.query(index.definition);
       if (index.comment)
         await db.query(
-          `COMMENT ON INDEX ${indexNameFromDefinition(index.definition)} IS ${quoteLiteral(index.comment)}`,
+          `COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)}`,
         );
     }
   }
@@ -778,7 +780,8 @@ async function snapshotBridgeIndexes(
   column: string,
 ): Promise<GeneratedBridgeSnapshot['indexDefinitions']> {
   const { rows } = await db.query(
-    `SELECT index_rel.oid::text AS oid, pg_get_indexdef(index_rel.oid) AS definition,
+    `SELECT index_rel.oid::text AS oid, index_ns.nspname AS index_schema,
+            index_rel.relname AS index_name, pg_get_indexdef(index_rel.oid) AS definition,
             obj_description(index_rel.oid, 'pg_class') AS comment,
             idx.indnkeyatts AS key_count, idx.indpred IS NOT NULL AS partial,
             idx.indexprs IS NOT NULL AS expression_index, idx.indisvalid AS valid,
@@ -787,6 +790,7 @@ async function snapshotBridgeIndexes(
        JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
        JOIN pg_namespace ns ON ns.oid = table_rel.relnamespace
        JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+       JOIN pg_namespace index_ns ON index_ns.oid = index_rel.relnamespace
        JOIN pg_am am ON am.oid = index_rel.relam
        JOIN pg_attribute attr ON attr.attrelid = table_rel.oid AND attr.attnum = ANY(idx.indkey)
       WHERE ns.nspname = 'public' AND table_rel.relname = ${quoteLiteral(table)}
@@ -806,6 +810,8 @@ async function snapshotBridgeIndexes(
     }
     return {
       oid: String(row.oid),
+      schema: String(row.index_schema),
+      name: String(row.index_name),
       definition: String(row.definition),
       comment: row.comment == null ? null : String(row.comment),
     };
@@ -941,15 +947,6 @@ async function assertSupportedBridgeDependencies(
       );
     }
   }
-}
-
-function indexNameFromDefinition(definition: string): string {
-  const match = definition.match(/^CREATE(?: UNIQUE)? INDEX (.+?) ON /i);
-  if (!match)
-    throw new Error(
-      `Cannot preserve generated bridge index comment: unsupported index definition ${definition}`,
-    );
-  return match[1];
 }
 
 /**
