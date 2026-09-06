@@ -9,6 +9,11 @@ import {
   resolve,
 } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  createClassNamePredicate,
+  resolveApiMethodExposure,
+  resolveEffectiveActionMetadata,
+} from '@happyvertical/smrt-core';
 import fg from 'fast-glob';
 import { coerceWorkbenchModules } from './runtime.js';
 import type {
@@ -965,6 +970,7 @@ function publicCustomMethodNames(object: Record<string, unknown>): string[] {
 function enabledCustomActions(
   object: Record<string, unknown>,
   surface: 'api' | 'cli' | 'mcp',
+  isModelClassName?: (name: string) => boolean,
 ): string[] {
   const decoratorConfig = configObject(object.decoratorConfig);
   const surfaceConfig = decoratorConfig[surface];
@@ -983,10 +989,29 @@ function enabledCustomActions(
       .filter((name) => !exclude.has(name));
   }
 
+  // `api` reads the framework's ONE exposure resolver rather than a local copy
+  // of the include/exclude rule. This summary is an agent-facing discovery
+  // artifact, so a stale copy advertises endpoints the route emitters never
+  // wrote -- the wire-ability gate, the framework-lifecycle exclusion, and
+  // `@method({ expose })` all decide here too (#2686). `cli`/`mcp` keep their
+  // own projection; #2692 owns those defaults.
   if (surface === 'api') {
-    return publicMethods
-      .filter((name) => include.length === 0 || include.includes(name))
-      .filter((name) => !exclude.has(name));
+    const methods = configObject(object.methods);
+    const isCollectionClass =
+      stringValue(object.extends) === 'SmrtCollection' ||
+      object.extendsTypeArg !== undefined;
+    return Object.keys(methods)
+      .sort()
+      .filter(
+        (name) =>
+          resolveApiMethodExposure({
+            actionName: name,
+            method: configObject(methods[name]),
+            apiConfig: decoratorConfig.api,
+            isCollectionClass,
+            ...(isModelClassName ? { isModelClassName } : {}),
+          }).exposed,
+      );
   }
 
   const customMethodsInInclude = include.filter(
@@ -1021,15 +1046,40 @@ function methodDefinition(
   return configObject(configObject(object.methods)[action]);
 }
 
+/**
+ * The effective route metadata for one custom action: `@method()` wins field by
+ * field over the class-level `api.routes` entry, exactly as the emitters and
+ * the knowledge artifact resolve it. Reading the map alone printed the
+ * pre-migration verb and path for a class that had moved to the decorator
+ * (#2686).
+ */
+function effectiveRoute(
+  object: Record<string, unknown>,
+  action: string,
+): { httpMethod?: string; path?: string; scope?: string } {
+  return resolveEffectiveActionMetadata({
+    actionName: action,
+    method: methodDefinition(object, action),
+    apiConfig: configObject(object.decoratorConfig).api,
+  });
+}
+
+function customRouteMethod(
+  object: Record<string, unknown>,
+  action: string,
+): string {
+  return effectiveRoute(object, action).httpMethod || 'POST';
+}
+
 function customRoutePath(
   object: Record<string, unknown>,
   action: string,
 ): string {
   const collection =
     stringValue(object.collection) || stringValue(object.name) || action;
-  const routeConfig = routeOverrides(object)[action] || {};
   const method = methodDefinition(object, action);
-  const configuredPath = stringValue(routeConfig.path) || action;
+  const effective = effectiveRoute(object, action);
+  const configuredPath = effective.path || action;
   const normalizedPath = configuredPath
     .split('/')
     .map((segment) => segment.trim())
@@ -1037,16 +1087,22 @@ function customRoutePath(
     .join('/')
     .replace(/\[([^\]]+)\]/g, '{$1}');
   const scope =
-    stringValue(routeConfig.scope) ||
-    (method.isStatic === true ? 'collection' : 'item');
+    effective.scope || (method.isStatic === true ? 'collection' : 'item');
 
   return scope === 'collection'
     ? `/api/v1/${collection}/${normalizedPath}`
     : `/api/v1/${collection}/{id}/${normalizedPath}`;
 }
 
-function restEndpointsFrom(
+/**
+ * Exported for the parity test that pins this summary against the framework's
+ * own `resolveApiActionSet`. This is a published agent-facing discovery
+ * artifact, so "the workbench and the route emitters agree" has to be a test,
+ * not a convention (#2686).
+ */
+export function restEndpointsFrom(
   object: Record<string, unknown>,
+  isModelClassName?: (name: string) => boolean,
 ): WorkbenchRestEndpointSummary[] {
   const className =
     stringValue(object.className) || stringValue(object.name) || 'Object';
@@ -1080,10 +1136,8 @@ function restEndpointsFrom(
     });
   }
 
-  const overrides = routeOverrides(object);
-  for (const action of enabledCustomActions(object, 'api')) {
-    const routeConfig = overrides[action] || {};
-    const method = stringValue(routeConfig.method) || 'POST';
+  for (const action of enabledCustomActions(object, 'api', isModelClassName)) {
+    const method = customRouteMethod(object, action);
     endpoints.push({
       objectName: className,
       action,
@@ -1241,7 +1295,21 @@ function readApiSummary(
           .filter(Boolean)
           .sort()
       : knowledge.objectNames;
-  const restEndpoints = objectRecords.flatMap(restEndpointsFrom);
+  // The wire-ability gate needs a class inventory to tell a model instance from
+  // an options interface. Without one it half-applies and this summary keeps
+  // advertising the `addAsset(asset: Asset)` shape (#2686).
+  const isModelClassName = createClassNamePredicate(
+    objectRecords.flatMap((record) =>
+      [
+        stringValue(record.className),
+        stringValue(record.name),
+        stringValue(record.qualifiedName),
+      ].filter((name): name is string => Boolean(name)),
+    ),
+  );
+  const restEndpoints = objectRecords.flatMap((record) =>
+    restEndpointsFrom(record, isModelClassName),
+  );
 
   return {
     objectNames,
