@@ -29,6 +29,10 @@ export default {
       schemaExclusive: true,
       migrationOwner: 'app_migrator',
       runtimeRole: 'app_runtime',
+      managedTriggerFunctions: [
+        'enforce_source_parent_provenance',
+        'enforce_source_parent_reverse_provenance',
+      ],
       monitor: {
         role: 'app_monitor',
         tables: {
@@ -51,6 +55,16 @@ present framework system tables. Add `managedTables: ['additional_table']` for
 application-managed tables outside that registry. Declared tables and monitoring
 columns must already exist. `packages.cli.postgresPermissions` can override the
 global contract using the normal package configuration precedence.
+
+`managedTriggerFunctions` is an explicit opt-in for application integrity
+triggers. Each name identifies one zero-argument function in the configured
+schema. The function must be owned by the migration owner, use `SECURITY
+INVOKER`, return `trigger`, have no function settings, and be bound only to
+enabled non-internal triggers on declared managed tables. The permission plan
+does not grant direct `EXECUTE` to the runtime or monitor roles (or `PUBLIC`):
+PostgreSQL invokes the function through the table trigger during allowed DML.
+Names with another signature, a definer function, an unbound function, or a
+binding outside the declared table surface fail closed.
 
 ## Plan, apply, verify
 
@@ -108,11 +122,16 @@ sessions is outside this permission contract.
 Future-object qualification covers tables and sequences. PostgreSQL implicitly
 grants PUBLIC execution of new routines and usage of new types unless global
 creator defaults say otherwise; this schema-scoped operation does not revoke
-those global privileges. Plans report that limitation explicitly. User-defined
-routines and types require separate review and produce unsupported diagnostics;
-table-backed row types are not standalone types. Rerun diagnostics after every
-migration and before enabling runtime access. Row-level security policies and
-views are also outside this ACL contract.
+those global privileges. Plans report that limitation explicitly. The canonical
+SMRT change-feed helpers are the only framework routines the plan recognizes:
+their exact signatures, owner, invoker mode, language, settings, and generated
+function body must match the framework definition. The planner grants runtime
+`EXECUTE` only on those exact helpers and removes their `PUBLIC` access. Other
+application routines require the declared trigger contract above; all remaining
+routines and types produce unsupported diagnostics. Table-backed row types are
+not standalone types. Rerun diagnostics after every migration and before
+enabling runtime access. Row-level security policies and views are also outside
+this ACL contract.
 
 PostgreSQL documents the creator-specific and additive behavior in
 [ALTER DEFAULT PRIVILEGES](https://www.postgresql.org/docs/17/sql-alterdefaultprivileges.html)

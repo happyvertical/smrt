@@ -77,7 +77,11 @@ export async function runPostgresPermissions(
         ...(configured.managedTables ?? []),
       ]),
     ].sort();
-    const contract = { ...configured, managedTables };
+    const contract = {
+      ...configured,
+      managedTables,
+      managedTriggerFunctions: configured.managedTriggerFunctions ?? [],
+    };
     const plan = options.apply
       ? await applyPostgresPermissions(db, contract, {
           expectedFingerprint: options['expected-fingerprint'] ?? '',
