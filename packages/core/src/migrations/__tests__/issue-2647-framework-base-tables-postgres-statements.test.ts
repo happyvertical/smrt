@@ -18,6 +18,14 @@
  *    MODE` *before* re-checking its row count, so the check-then-drop
  *    sequence cannot race a concurrent writer the way a plain
  *    `SELECT COUNT(*)` (which only takes an ACCESS SHARE lock) would.
+ * 3. `dropFrameworkBaseTables()` never executes a `DROP INDEX` statement by
+ *    name — only `DROP TABLE`, relying on its cascade to remove the
+ *    table's own indexes. A later review found that re-issuing the
+ *    planned `DROP INDEX` statements verbatim would not be identity-safe:
+ *    an index name is unique per schema (PostgreSQL) / globally (SQLite),
+ *    so if a concurrent session recreated that exact name on an unrelated
+ *    table between planning and execution, a stale name-based `DROP INDEX`
+ *    would delete the wrong object with no error.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -177,6 +185,19 @@ describe('framework base-table remediation (#2647) — PostgreSQL statement gene
     expect(
       Math.min(lockIndex('smrt_classes'), lockIndex('smrt_objects')),
     ).toBeGreaterThan(timeoutIndex);
+
+    // No `DROP INDEX` statement is ever executed — only `DROP TABLE`,
+    // which cascades to the table's own indexes identity-safely. A stale
+    // `DROP INDEX` by name could otherwise hit an unrelated index created
+    // under that name between planning and execution (index names are
+    // unique per schema on PostgreSQL, globally on SQLite).
+    expect(queries.some((sql) => sql.startsWith('DROP INDEX'))).toBe(false);
+    expect(result.droppedIndexes.sort()).toEqual([
+      'smrt_classes_created_at_idx',
+      'smrt_classes_slug_context_idx',
+      'smrt_objects_created_at_idx',
+      'smrt_objects_slug_context_idx',
+    ]);
   });
 
   it('refuses via the qualified re-check when a row appears between planning and the transaction', async () => {

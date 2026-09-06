@@ -175,10 +175,15 @@ export interface FrameworkBaseTablesPlan {
   /** True only when every existing target table has zero refusals. */
   safe: boolean;
   /**
-   * The exact bounded DDL that would run: `DROP INDEX` for every companion
-   * index (enumerated from the live schema) followed by `DROP TABLE` for its
-   * table, per existing target table. Empty when `safe` is `false` or no
-   * target table exists.
+   * The plan for the `--dry-run` preview: `DROP INDEX` for every companion
+   * index (enumerated from the live schema, never guessed) followed by
+   * `DROP TABLE` for its table, per existing target table. Empty when
+   * `safe` is `false` or no target table exists.
+   *
+   * {@link dropFrameworkBaseTables} does not execute the `DROP INDEX`
+   * entries verbatim — see its doc comment for why — so this array is a
+   * complete and accurate *forecast* of what a real run does to the
+   * database, but is not literally replayed statement-by-statement.
    */
   statements: string[];
 }
@@ -357,11 +362,15 @@ function describeColumnMismatch(
  * Read-only assessment: for each of the five target names, is it safe to
  * drop, and why or why not?
  *
- * Shared by {@link planFrameworkBaseTableDrop} (the initial, unlocked
- * preflight) and {@link dropFrameworkBaseTables} (a second, fresh call made
- * *after* acquiring PostgreSQL's `ACCESS EXCLUSIVE` locks, so the exact same
- * shape/type/foreign-key/emptiness logic runs again under lock rather than
- * trusting a possibly stale plan). Never mutates the database.
+ * Used only by {@link planFrameworkBaseTableDrop}'s unlocked preflight, via
+ * `getTableSchema()`. {@link dropFrameworkBaseTables}'s own execution-time
+ * re-check does **not** call this function or reuse its logic wholesale: it
+ * re-verifies shape and type from raw `information_schema.columns` /
+ * `PRAGMA table_info` instead, because `getTableSchema()` is not available
+ * on the transaction-scoped connection a `db.transaction()` callback
+ * receives (see that function's own doc comment for the full rationale,
+ * including why foreign keys are deliberately not re-scanned there). Never
+ * mutates the database.
  */
 async function assessTargets(
   db: DatabaseInterface,
@@ -582,6 +591,16 @@ export interface DropFrameworkBaseTablesResult {
  * both refuse the `DROP TABLE` itself when a real dependent exists, exactly
  * like the already-documented DuckDB introspection gap in
  * {@link qualifyIdentifier}'s doc comment.
+ *
+ * Only `plan.statements`' `DROP TABLE` entries are executed — the
+ * `DROP INDEX` entries are not. An index name is unique per schema
+ * (PostgreSQL) / globally (SQLite), so nothing re-verifies it is still the
+ * same object between planning and execution the way the table itself now
+ * is; re-issuing a stale `DROP INDEX` by name could hit an unrelated index
+ * created under that name in the meantime. `DROP TABLE` cascades to every
+ * index actually owned by the table on every engine this module supports,
+ * resolved fresh from the database's own catalog at drop time — identity-safe
+ * by construction, unlike a second name-based statement would be.
  */
 export async function dropFrameworkBaseTables(
   db: DatabaseInterface,
@@ -672,7 +691,20 @@ export async function dropFrameworkBaseTables(
       }
     }
 
+    // Execute only the `DROP TABLE` statements, never the `DROP INDEX`
+    // statements `plan.statements` also carries for the dry-run preview.
+    // An index name is unique per schema (PostgreSQL) / globally (SQLite),
+    // so a live name collision with the one enumerated at plan time
+    // necessarily means the object is not the one this re-check just
+    // verified — the same "swapped between planning and execution" risk
+    // the table-side re-check above closes, but for indexes there is no
+    // cheap re-verification to run. `DROP TABLE` itself cascades to every
+    // index actually owned by the table on every engine this module
+    // supports, which is identity-safe by construction: the database
+    // resolves "this table's indexes" fresh at drop time from its own
+    // catalog, never by matching the stale planned name.
     for (const statement of plan.statements) {
+      if (statement.startsWith('DROP INDEX')) continue;
       await tx.query(statement);
     }
   });
