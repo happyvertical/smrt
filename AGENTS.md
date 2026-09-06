@@ -28,7 +28,7 @@
 When something in this repository is broken — a pin, a hook, a gate, a stale
 generated file, a rule a package quietly disagrees with — **fix it in the branch
 you are already on**, as its own commit under `Drive-by fixes`. A workaround is
-never the answer, and neither is a new issue.
+never the answer, and a reflex issue usually is not either.
 
 - **No workarounds.** A shim, a skipped hook, a disabled gate, a `--no-verify`,
   a pinned-around version, an "unrelated environment artifact" — every one of
@@ -36,19 +36,25 @@ never the answer, and neither is a new issue.
   means. If a documented validation command cannot run as documented, that is
   the bug; repair it or stop and report a blocker. Do not proceed on a
   substitute toolchain and then call the result green.
-- **Prefer a drive-by over an issue.** An issue is for work that genuinely needs
-  its own review — a schema change, a contract break, a design decision someone
-  has to make. Everything else belongs in the PR that found it. Issue
-  proliferation is not thoroughness; it is unreviewed debt plus the cost of
-  rediscovering the context.
-- **The size bound is a floor, not a ceiling.** The kernel's ten-line drive-by
-  rule protects a reviewer from surprise, not a contributor from work. A larger
-  fix stays in the PR when it is what the branch's own change made necessary —
-  list it under `Drive-by fixes` with its files and commit so the diff is
-  legible.
-- **File an issue only when you can name why it cannot ship here**, and put that
-  reason in the issue. "Out of scope" is not a reason; "needs a migration
-  window" or "changes a published contract" is.
+- **A drive-by inside the kernel's envelope is mandatory, not optional.** The
+  kernel permits an incidental patch-class fix of ten lines or fewer near files
+  under edit; here it is expected. Noticing and leaving it is the thing this
+  section forbids. Ledger it under `Drive-by fixes` with its files and commit.
+- **Outside that envelope, the kernel routes to the patch train or the tracker,
+  and this section does not change that.** What it adds is a burden of proof:
+  a tracker issue must name the specific reason the work cannot ship in the
+  branch that found it, in the issue. "Out of scope" is not a reason; "needs a
+  migration window", "changes a published contract", or "the design decision is
+  someone else's" are. Issue proliferation is not thoroughness — it is
+  unreviewed debt plus the cost of rediscovering the context — so an issue you
+  cannot justify in one sentence is a fix you should be making.
+- **Only the owner can put a larger fix in the PR anyway**, and only in writing.
+  The kernel is precedence-bound: a repository instruction may add stricter
+  rules, never weaker ones, so this file cannot raise the ten-line bound. When
+  the owner decides a bigger fix belongs in the branch, record the decision and
+  its scope in the PR body next to the commit it authorizes. Wanting that to be
+  the standing default is a change to the control-plane kernel, not to this
+  file.
 
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
 REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
