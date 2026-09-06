@@ -24,13 +24,16 @@
  *    never derived from a differ orphan report or any other dynamic source —
  *    doing so would recreate the dangerous global-drop path by another route.
  * 2. {@link planFrameworkBaseTableDrop} is read-only. For every name in the
- *    list that exists live, it verifies the table has *only* the universal
- *    baseline columns (`id`, `slug`, `context`, `created_at`, `updated_at`)
- *    with a plausible type for each, is referenced by no foreign key
- *    anywhere in the live database, and is empty. Any live table missing
- *    that shape — e.g. a consumer's own, unrelated table that happens to
- *    share one of these five names — is reported as unsafe and dropped
- *    nothing.
+ *    list that exists live, it verifies the table has *only* that table's
+ *    expected columns — the universal `id`/`slug`/`context`/`created_at`/
+ *    `updated_at` base for three of the five, extended with the real fields
+ *    `SmrtHierarchical`/`SmrtPolymorphicAssociation` themselves declare for
+ *    `smrt_hierarchicals`/`smrt_polymorphic_associations` (see
+ *    {@link EXPECTED_COLUMN_BUCKETS_BY_TABLE}) — with a plausible type for
+ *    each, is referenced by no foreign key anywhere in the live database,
+ *    and is empty. Any live table missing that shape — e.g. a consumer's
+ *    own, unrelated table that happens to share one of these five names —
+ *    is reported as unsafe and dropped nothing.
  * 3. {@link dropFrameworkBaseTables} refuses to run against a plan that is
  *    not `safe`, locks every PostgreSQL target `IN ACCESS EXCLUSIVE MODE`
  *    (a plain `SELECT COUNT(*)` alone would not block a concurrent writer),
@@ -71,13 +74,21 @@ export type FrameworkBaseTableName =
   (typeof FRAMEWORK_BASE_TABLE_NAMES)[number];
 
 /**
- * The only columns a genuine (never-instantiated) framework-base table may
- * have. Anything more, or anything missing, means the live table is not what
- * this remediation expects — most likely a consumer's own unrelated table
- * that happens to share the name — and must be refused rather than guessed
- * about.
+ * Every one of the five tables carries this universal base — but two of
+ * them are not plain aliases of it. `SmrtHierarchical` and
+ * `SmrtPolymorphicAssociation` are abstract classes that *extend* the
+ * universal shape with their own real fields (true parent-id trees; the
+ * meta/role/sort columns generic associations need), exactly like any
+ * concrete class extending them would inherit those fields. Verified
+ * directly against a genuine pre-#2644 `db:migrate` run (a real installed
+ * multi-package consumer, not hand-typed DDL): `smrt_hierarchicals` and
+ * `smrt_polymorphic_associations` are generated with the extra columns
+ * below every time, on every engine. A per-table expectation is therefore
+ * required — treating all five as the plain 5-column baseline would refuse
+ * to ever drop these two genuine framework-base tables, reporting their own
+ * real columns as "unexpected".
  */
-const BASELINE_COLUMN_NAMES = [
+const UNIVERSAL_BASE_COLUMNS = [
   'id',
   'slug',
   'context',
@@ -85,26 +96,21 @@ const BASELINE_COLUMN_NAMES = [
   'updated_at',
 ] as const;
 
-const BASELINE_COLUMN_SET: ReadonlySet<string> = new Set(BASELINE_COLUMN_NAMES);
-
 /**
- * Coarse, dialect-tolerant type buckets for the five baseline columns.
- *
- * These five tables are always generated the same way, by the same
- * generator, for a given engine — `id` is `TEXT` (SQLite/DuckDB) or `UUID`
- * (PostgreSQL), `slug`/`context` are always text, `created_at`/`updated_at`
- * are always a timestamp type. A live column with a matching *name* but an
- * unrelated *type* (`id INTEGER`, `context BOOLEAN`, ...) is not a genuine
- * framework-base table — it is a consumer's own table that happens to share
- * every column name — and the name-only check alone cannot see that.
+ * Coarse, dialect-tolerant type buckets. A live column with a matching
+ * *name* but an unrelated *type* (`id INTEGER`, `context BOOLEAN`, ...) is
+ * not a genuine framework-base table — it is a consumer's own table that
+ * happens to share every column name — and a name-only check alone cannot
+ * see that.
  *
  * Buckets, not exact strings: PostgreSQL may report `TIMESTAMP` or
  * `TIMESTAMPTZ` depending on configuration, DuckDB normalizes `TEXT` to
  * `VARCHAR`, and SQLite's generator emits `DATETIME` — all legitimate for a
  * real framework-base table on their engine. Only a column outside its
- * expected bucket entirely (an integer, a boolean, a float) is refused.
+ * expected bucket entirely (an integer where text was expected, a boolean,
+ * a float) is refused.
  */
-type ColumnTypeBucket = 'text' | 'uuid' | 'timestamp' | 'other';
+type ColumnTypeBucket = 'text' | 'uuid' | 'timestamp' | 'integer' | 'other';
 
 function classifyColumnType(type: string): ColumnTypeBucket {
   const normalized = type
@@ -114,11 +120,14 @@ function classifyColumnType(type: string): ColumnTypeBucket {
   if (/^UUID$/.test(normalized)) return 'uuid';
   if (/^(TEXT|CLOB|STRING|VARCHAR|CHAR)/.test(normalized)) return 'text';
   if (/^(TIMESTAMP|DATETIME|DATE)/.test(normalized)) return 'timestamp';
+  if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/.test(normalized)) {
+    return 'integer';
+  }
   return 'other';
 }
 
-const EXPECTED_COLUMN_BUCKETS: Record<
-  (typeof BASELINE_COLUMN_NAMES)[number],
+const UNIVERSAL_BASE_BUCKETS: Record<
+  (typeof UNIVERSAL_BASE_COLUMNS)[number],
   readonly ColumnTypeBucket[]
 > = {
   id: ['text', 'uuid'],
@@ -126,6 +135,38 @@ const EXPECTED_COLUMN_BUCKETS: Record<
   context: ['text'],
   created_at: ['timestamp'],
   updated_at: ['timestamp'],
+};
+
+/**
+ * The exact columns (and their expected type buckets) each of the five
+ * tables may have — the universal base for three of them, extended for
+ * `smrt_hierarchicals` (true parent-id tree: `parent_id`) and
+ * `smrt_polymorphic_associations` (generic association: `meta_type`,
+ * `meta_id`, `role`, `sort_order`), matching {@link SmrtHierarchical} /
+ * {@link SmrtPolymorphicAssociation}'s own real field declarations exactly.
+ * Anything more, or anything missing, on any of the five means the live
+ * table is not what this remediation expects — most likely a consumer's
+ * own unrelated table that happens to share the name — and must be refused
+ * rather than guessed about.
+ */
+const EXPECTED_COLUMN_BUCKETS_BY_TABLE: Record<
+  FrameworkBaseTableName,
+  Readonly<Record<string, readonly ColumnTypeBucket[]>>
+> = {
+  smrt_objects: UNIVERSAL_BASE_BUCKETS,
+  smrt_classes: UNIVERSAL_BASE_BUCKETS,
+  smrt_collections: UNIVERSAL_BASE_BUCKETS,
+  smrt_hierarchicals: {
+    ...UNIVERSAL_BASE_BUCKETS,
+    parent_id: ['text', 'uuid'],
+  },
+  smrt_polymorphic_associations: {
+    ...UNIVERSAL_BASE_BUCKETS,
+    meta_type: ['text'],
+    meta_id: ['text', 'uuid'],
+    role: ['text'],
+    sort_order: ['integer'],
+  },
 };
 
 const DEFAULT_POSTGRES_LOCK_TIMEOUT_MS = 30_000;
@@ -323,34 +364,38 @@ async function inspectColumnTypes(
 }
 
 /**
- * Compare a freshly-read column map against the baseline shape/type
- * expectations, returning a human-readable reason it is unsafe, or `null`
- * when it matches exactly. Shared by the execution-time re-check so its
- * comparison logic cannot drift from {@link assessTargets}'s own baseline
- * definitions ({@link BASELINE_COLUMN_NAMES}, {@link BASELINE_COLUMN_SET},
- * {@link EXPECTED_COLUMN_BUCKETS}, {@link classifyColumnType}).
+ * Compare a freshly-read column map against `table`'s expected shape/type,
+ * returning a human-readable reason it is unsafe, or `null` when it matches
+ * exactly. Shared by the execution-time re-check so its comparison logic
+ * cannot drift from {@link assessTargets}'s own definitions
+ * ({@link EXPECTED_COLUMN_BUCKETS_BY_TABLE}, {@link classifyColumnType}).
  */
 function describeColumnMismatch(
+  table: FrameworkBaseTableName,
   columns: Record<string, string>,
 ): string | null {
+  const expectedBuckets = EXPECTED_COLUMN_BUCKETS_BY_TABLE[table];
+  const expectedColumns = Object.keys(expectedBuckets);
   const actualColumns = Object.keys(columns).sort();
-  const missingColumns = BASELINE_COLUMN_NAMES.filter(
+  const missingColumns = expectedColumns.filter(
     (column) => !(column in columns),
   );
   const extraColumns = actualColumns.filter(
-    (column) => !BASELINE_COLUMN_SET.has(column),
+    (column) => !(column in expectedBuckets),
   );
   if (missingColumns.length > 0 || extraColumns.length > 0) {
     return `unexpected column shape (actual columns: ${actualColumns.join(', ')})`;
   }
 
-  const typeMismatches = BASELINE_COLUMN_NAMES.map((column) => {
-    const actualType = columns[column] ?? '';
-    const bucket = classifyColumnType(actualType);
-    return EXPECTED_COLUMN_BUCKETS[column].includes(bucket)
-      ? null
-      : `${column} is "${actualType}"`;
-  }).filter((entry): entry is string => entry !== null);
+  const typeMismatches = expectedColumns
+    .map((column) => {
+      const actualType = columns[column] ?? '';
+      const bucket = classifyColumnType(actualType);
+      return expectedBuckets[column].includes(bucket)
+        ? null
+        : `${column} is "${actualType}"`;
+    })
+    .filter((entry): entry is string => entry !== null);
   if (typeMismatches.length > 0) {
     return `unexpected column type (${typeMismatches.join(', ')})`;
   }
@@ -463,12 +508,14 @@ async function assessTargets(
       continue;
     }
 
+    const expectedBucketsForTable = EXPECTED_COLUMN_BUCKETS_BY_TABLE[name];
+    const expectedColumnsForTable = Object.keys(expectedBucketsForTable);
     const actualColumns = Object.keys(schema.columns).sort();
-    const missingColumns = BASELINE_COLUMN_NAMES.filter(
+    const missingColumns = expectedColumnsForTable.filter(
       (column) => !schema.columns[column],
     );
     const extraColumns = actualColumns.filter(
-      (column) => !BASELINE_COLUMN_SET.has(column),
+      (column) => !(column in expectedBucketsForTable),
     );
     if (missingColumns.length > 0 || extraColumns.length > 0) {
       refusals.push({
@@ -479,19 +526,21 @@ async function assessTargets(
       });
     } else {
       // The column *set* matches exactly — only meaningful to type-check
-      // when every baseline column is actually present and nothing extra
+      // when every expected column is actually present and nothing extra
       // is there to confuse the comparison.
-      const mismatches = BASELINE_COLUMN_NAMES.map((column) => {
-        const actualType = schema.columns[column]?.type ?? '';
-        const bucket = classifyColumnType(actualType);
-        const expectedBuckets = EXPECTED_COLUMN_BUCKETS[column];
-        return expectedBuckets.includes(bucket)
-          ? null
-          : { column, actualType, expectedBuckets: [...expectedBuckets] };
-      }).filter(
-        (mismatch): mismatch is NonNullable<typeof mismatch> =>
-          mismatch !== null,
-      );
+      const mismatches = expectedColumnsForTable
+        .map((column) => {
+          const actualType = schema.columns[column]?.type ?? '';
+          const bucket = classifyColumnType(actualType);
+          const expectedBuckets = expectedBucketsForTable[column];
+          return expectedBuckets.includes(bucket)
+            ? null
+            : { column, actualType, expectedBuckets: [...expectedBuckets] };
+        })
+        .filter(
+          (mismatch): mismatch is NonNullable<typeof mismatch> =>
+            mismatch !== null,
+        );
       if (mismatches.length > 0) {
         refusals.push({ kind: 'unexpected-column-type', mismatches });
       }
@@ -676,7 +725,7 @@ export async function dropFrameworkBaseTables(
         );
       }
 
-      const mismatch = describeColumnMismatch(liveColumns);
+      const mismatch = describeColumnMismatch(target.table, liveColumns);
       if (mismatch) {
         throw new Error(
           `Refusing to drop "${target.table}": a fresh check inside the transaction found an ${mismatch}. Nothing was dropped.`,

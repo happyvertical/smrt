@@ -56,18 +56,39 @@ function describeError(error: unknown, depth = 0): string {
   return parts.join(' | ');
 }
 
+/**
+ * DDL matching the real generator's actual output per table — verified
+ * directly against a genuine pre-#2644 `db:migrate` run (a real installed
+ * multi-package consumer). `smrt_hierarchicals` and
+ * `smrt_polymorphic_associations` carry their own real extra columns
+ * (`SmrtHierarchical`/`SmrtPolymorphicAssociation`'s own fields) and no
+ * `created_at` list-ordering index, both empirically confirmed.
+ */
 function createFrameworkBaseTableDDL(table: string): string[] {
-  return [
+  const extraColumns: Record<string, string> = {
+    smrt_hierarchicals: `,\n      "parent_id" TEXT`,
+    smrt_polymorphic_associations: `,
+      "meta_type" TEXT NOT NULL,
+      "meta_id" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "sort_order" INTEGER DEFAULT 0`,
+  };
+  const statements = [
     `CREATE TABLE "${table}" (
       "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       "slug" TEXT NOT NULL,
       "context" TEXT NOT NULL DEFAULT '',
       "created_at" TIMESTAMPTZ NOT NULL DEFAULT current_timestamp,
-      "updated_at" TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+      "updated_at" TIMESTAMPTZ NOT NULL DEFAULT current_timestamp${extraColumns[table] ?? ''}
     )`,
     `CREATE UNIQUE INDEX "${table}_slug_context_idx" ON "${table}" ("slug", "context")`,
-    `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
   ];
+  if (!(table in extraColumns)) {
+    statements.push(
+      `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
+    );
+  }
+  return statements;
 }
 
 async function createAllFrameworkBaseTables(
@@ -139,7 +160,10 @@ postgresDescribe(
       expect(plan.engine).toBe('postgres');
       expect(plan.safe).toBe(true);
       expect(plan.tables.filter((t) => t.exists)).toHaveLength(5);
-      expect(plan.statements).toHaveLength(15);
+      // (2 indexes + 1 table) × 3 plain-baseline tables, (1 index + 1
+      // table) × 2 tables without a created_at index (smrt_hierarchicals,
+      // smrt_polymorphic_associations).
+      expect(plan.statements).toHaveLength(3 * 3 + 2 * 2);
 
       const result = await dropFrameworkBaseTables(db, plan, {
         lockTimeout: 5_000,
@@ -148,7 +172,7 @@ postgresDescribe(
       expect(result.droppedTables.sort()).toEqual(
         [...FRAMEWORK_BASE_TABLE_NAMES].sort(),
       );
-      expect(result.droppedIndexes).toHaveLength(10);
+      expect(result.droppedIndexes).toHaveLength(3 * 2 + 2 * 1);
 
       for (const table of FRAMEWORK_BASE_TABLE_NAMES) {
         expect(await tableExists(db, table)).toBe(false);
@@ -199,10 +223,39 @@ postgresDescribe(
     });
 
     it('refuses when every baseline column name is present but has the wrong type', async () => {
+      // Uses smrt_classes (one of the three plain-baseline tables) so this
+      // isolates the type check from smrt_hierarchicals' own extra-column
+      // shape requirement (covered separately below).
+      await createAllFrameworkBaseTables(db);
+      await db.query('DROP TABLE "smrt_classes"');
+      await db.query(
+        'CREATE TABLE "smrt_classes" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)',
+      );
+
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'postgres',
+      });
+      expect(plan.safe).toBe(false);
+      const report = plan.tables.find((t) => t.table === 'smrt_classes');
+      expect(report?.refusals).toContainEqual(
+        expect.objectContaining({
+          kind: 'unexpected-column-type',
+          mismatches: expect.arrayContaining([
+            expect.objectContaining({ column: 'id' }),
+            expect.objectContaining({ column: 'context' }),
+          ]),
+        }),
+      );
+
+      await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow();
+      expect(await tableExists(db, 'smrt_classes')).toBe(true);
+    });
+
+    it('refuses when smrt_hierarchicals is missing its own real parent_id field', async () => {
       await createAllFrameworkBaseTables(db);
       await db.query('DROP TABLE "smrt_hierarchicals"');
       await db.query(
-        'CREATE TABLE "smrt_hierarchicals" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)',
+        'CREATE TABLE "smrt_hierarchicals" (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), slug TEXT, context TEXT, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)',
       );
 
       const plan = await planFrameworkBaseTableDrop(db, {
@@ -212,11 +265,8 @@ postgresDescribe(
       const report = plan.tables.find((t) => t.table === 'smrt_hierarchicals');
       expect(report?.refusals).toContainEqual(
         expect.objectContaining({
-          kind: 'unexpected-column-type',
-          mismatches: expect.arrayContaining([
-            expect.objectContaining({ column: 'id' }),
-            expect.objectContaining({ column: 'context' }),
-          ]),
+          kind: 'unexpected-shape',
+          missingColumns: ['parent_id'],
         }),
       );
 

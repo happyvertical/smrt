@@ -16,18 +16,37 @@ import {
   planFrameworkBaseTableDrop,
 } from '../framework-base-tables.js';
 
+/**
+ * DDL matching the real generator's actual output per table — see the
+ * SQLite suite's identical helper for the empirical basis.
+ * `smrt_hierarchicals`/`smrt_polymorphic_associations` carry their own real
+ * extra columns and no `created_at` index.
+ */
 function createFrameworkBaseTableDDL(table: string): string[] {
-  return [
+  const extraColumns: Record<string, string> = {
+    smrt_hierarchicals: `,\n      "parent_id" TEXT`,
+    smrt_polymorphic_associations: `,
+      "meta_type" TEXT NOT NULL,
+      "meta_id" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "sort_order" INTEGER DEFAULT 0`,
+  };
+  const statements = [
     `CREATE TABLE "${table}" (
       "id" TEXT PRIMARY KEY,
       "slug" TEXT NOT NULL,
       "context" TEXT NOT NULL DEFAULT '',
       "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-      "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp
+      "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp${extraColumns[table] ?? ''}
     )`,
     `CREATE UNIQUE INDEX "${table}_slug_context_idx" ON "${table}" ("slug", "context")`,
-    `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
   ];
+  if (!(table in extraColumns)) {
+    statements.push(
+      `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
+    );
+  }
+  return statements;
 }
 
 async function createAllFrameworkBaseTables(

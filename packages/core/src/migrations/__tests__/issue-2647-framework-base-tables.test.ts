@@ -19,19 +19,41 @@ import {
   planFrameworkBaseTableDrop,
 } from '../framework-base-tables.js';
 
-/** DDL matching the framework generator's real output for a base CTI table. */
+/**
+ * DDL matching the real generator's actual output per table — verified
+ * directly against a genuine pre-#2644 `db:migrate` run (a real installed
+ * multi-package consumer). `smrt_hierarchicals` and
+ * `smrt_polymorphic_associations` are not plain aliases of the universal
+ * base: they are `SmrtHierarchical` / `SmrtPolymorphicAssociation`'s own
+ * real fields (a true parent-id tree; the meta/role/sort columns generic
+ * associations need), and neither carries the `created_at` list-ordering
+ * index the other three do — both empirically confirmed, not guessed.
+ */
 function createFrameworkBaseTableDDL(table: string): string[] {
-  return [
+  const extraColumns: Record<string, string> = {
+    smrt_hierarchicals: `,\n      "parent_id" TEXT`,
+    smrt_polymorphic_associations: `,
+      "meta_type" TEXT NOT NULL,
+      "meta_id" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "sort_order" INTEGER DEFAULT 0`,
+  };
+  const statements = [
     `CREATE TABLE "${table}" (
       "id" TEXT PRIMARY KEY,
       "slug" TEXT NOT NULL,
       "context" TEXT NOT NULL DEFAULT '',
       "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updated_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      "updated_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP${extraColumns[table] ?? ''}
     )`,
     `CREATE UNIQUE INDEX "${table}_slug_context_idx" ON "${table}" ("slug", "context")`,
-    `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
   ];
+  if (!(table in extraColumns)) {
+    statements.push(
+      `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
+    );
+  }
+  return statements;
 }
 
 async function createAllFrameworkBaseTables(
@@ -132,23 +154,31 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
       });
       expect(plan.safe).toBe(true);
       expect(plan.tables.filter((t) => t.exists)).toHaveLength(5);
+      // smrt_hierarchicals/smrt_polymorphic_associations do not carry the
+      // created_at list-ordering index the other three do (empirically
+      // confirmed against a real pre-#2644 db:migrate run).
+      const tablesWithoutCreatedAtIndex = new Set([
+        'smrt_hierarchicals',
+        'smrt_polymorphic_associations',
+      ]);
       for (const table of plan.tables) {
         expect(table.refusals).toEqual([]);
-        expect(table.indexNames.sort()).toEqual(
-          [
-            `${table.table}_slug_context_idx`,
-            `${table.table}_created_at_idx`,
-          ].sort(),
-        );
+        const expectedIndexes = tablesWithoutCreatedAtIndex.has(table.table)
+          ? [`${table.table}_slug_context_idx`]
+          : [
+              `${table.table}_slug_context_idx`,
+              `${table.table}_created_at_idx`,
+            ];
+        expect(table.indexNames.sort()).toEqual(expectedIndexes.sort());
       }
-      // 3 statements per table (2 indexes + 1 table) × 5 tables.
-      expect(plan.statements).toHaveLength(15);
+      // (2 indexes + 1 table) × 3 tables, (1 index + 1 table) × 2 tables.
+      expect(plan.statements).toHaveLength(3 * 3 + 2 * 2);
 
       const result = await dropFrameworkBaseTables(db, plan);
       expect(result.droppedTables.sort()).toEqual(
         [...FRAMEWORK_BASE_TABLE_NAMES].sort(),
       );
-      expect(result.droppedIndexes).toHaveLength(10);
+      expect(result.droppedIndexes).toHaveLength(3 * 2 + 2 * 1);
 
       for (const table of FRAMEWORK_BASE_TABLE_NAMES) {
         expect(await tableExists(db, table)).toBe(false);
@@ -253,8 +283,11 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
       // Same five column NAMES as a genuine framework-base table, but `id`
       // is INTEGER instead of TEXT/UUID and `context` is BOOLEAN instead of
       // TEXT — a name-only check would wrongly call this safe to drop.
+      // Uses `smrt_classes` (one of the three plain-baseline tables) so this
+      // test isolates the type check from the per-table extra-column shape
+      // `smrt_hierarchicals`/`smrt_polymorphic_associations` also require.
       await db.query(
-        'CREATE TABLE "smrt_hierarchicals" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMP, updated_at TIMESTAMP)',
+        'CREATE TABLE "smrt_classes" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMP, updated_at TIMESTAMP)',
       );
 
       const plan = await planFrameworkBaseTableDrop(db, {
@@ -262,7 +295,7 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
       });
       expect(plan.safe).toBe(false);
 
-      const report = plan.tables.find((t) => t.table === 'smrt_hierarchicals');
+      const report = plan.tables.find((t) => t.table === 'smrt_classes');
       expect(report?.refusals).toContainEqual(
         expect.objectContaining({
           kind: 'unexpected-column-type',
@@ -273,6 +306,32 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
               actualType: 'BOOLEAN',
             }),
           ]),
+        }),
+      );
+
+      await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow();
+      expect(await tableExists(db, 'smrt_classes')).toBe(true);
+    });
+
+    it('refuses when smrt_hierarchicals is missing its own real parent_id field (a plain-baseline table under that name)', async () => {
+      // smrt_hierarchicals is not a plain alias of the universal baseline —
+      // it is SmrtHierarchical's own real shape, which always includes
+      // parent_id. A table with only the five universal columns under this
+      // name is not a genuine framework-base table.
+      await db.query(
+        'CREATE TABLE "smrt_hierarchicals" (id TEXT PRIMARY KEY, slug TEXT, context TEXT, created_at TIMESTAMP, updated_at TIMESTAMP)',
+      );
+
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'sqlite',
+      });
+      expect(plan.safe).toBe(false);
+
+      const report = plan.tables.find((t) => t.table === 'smrt_hierarchicals');
+      expect(report?.refusals).toContainEqual(
+        expect.objectContaining({
+          kind: 'unexpected-shape',
+          missingColumns: ['parent_id'],
         }),
       );
 
