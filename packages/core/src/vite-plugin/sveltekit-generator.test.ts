@@ -2982,10 +2982,11 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('honors cli.exclude when checking effective CLI commands', () => {
-      // Match the shipped local CLI's own rule (packages/cli/src/
-      // cli-generator.ts's `shouldInclude()`, checked before `exclude` is
-      // applied to the emitted command set): a command in both cli.include
-      // AND cli.exclude is not actually registered as a CLI command, so the
+      // Match the shipped local CLI's own rule for a custom method (this
+      // fixture's `discover`/`audit` are scanned custom methods, not CRUD
+      // verbs): packages/cli/src/cli-generator.ts's `shouldIncludeMethod()`
+      // checks `excluded.includes(methodName)`, so a command in both
+      // cli.include AND cli.exclude is not actually registered, and the
       // lint must not flag it as unreachable even if no API route exists.
       // (The pre-#2664 `generateCLIModule()` virtual-module emitter applied
       // the same rule; it was retired as unused public API, but the shipped
