@@ -1309,7 +1309,7 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
     });
     await role.save();
     for (const slug of slugs) {
-      let permission = await permissions.list({ where: { slug }, limit: 1 });
+      const permission = await permissions.list({ where: { slug }, limit: 1 });
       let permissionRecord = permission[0];
       if (!permissionRecord) {
         permissionRecord = await permissions.create({ slug, name: slug });

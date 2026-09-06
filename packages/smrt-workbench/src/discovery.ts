@@ -9,11 +9,16 @@ import {
   resolve,
 } from 'node:path';
 import { pathToFileURL } from 'node:url';
+// The narrow `/generators` subpath, not the package root: all four symbols live
+// there, and the root entry pulls core's AI and filesystem surfaces (Bedrock,
+// OpenAI, the S3/Google clients behind `@happyvertical/files`) into the module
+// graph of a build-time discovery helper that needs none of it (#2686).
 import {
   createClassNamePredicate,
   resolveApiMethodExposure,
+  resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
-} from '@happyvertical/smrt-core';
+} from '@happyvertical/smrt-core/generators';
 import fg from 'fast-glob';
 import { coerceWorkbenchModules } from './runtime.js';
 import type {
@@ -1058,25 +1063,57 @@ function customRouteMethod(
   return effectiveRoute(object, action).httpMethod || 'POST';
 }
 
+/**
+ * The scope the emitters will actually route under.
+ *
+ * NOT `resolveEffectiveActionMetadata(...).scope`, which returns the raw
+ * declaration: a `scope` is a declaration about a method, never a relocation of
+ * it, and `resolveCustomActionMetadata` is what collapses a contradicting one
+ * back onto the executable receiver. Reading the raw value printed the
+ * collection URL for a route emitted under `[id]` — and, with no declaration at
+ * all, printed `{id}` for every instance action on a COLLECTION class, whose
+ * host makes it collection-scoped (#2686).
+ */
+function effectiveScope(
+  object: Record<string, unknown>,
+  action: string,
+): 'item' | 'collection' {
+  const method = methodDefinition(object, action);
+  const isCollectionClass =
+    stringValue(object.extends) === 'SmrtCollection' ||
+    object.extendsTypeArg !== undefined;
+  const defaultScope: 'item' | 'collection' =
+    isCollectionClass || method.isStatic === true ? 'collection' : 'item';
+  try {
+    return resolveCustomActionMetadata({
+      actionName: action,
+      method,
+      apiConfig: configObject(object.decoratorConfig).api,
+      defaultScope,
+    }).scope;
+  } catch {
+    // The shared resolver validates as it resolves; one malformed action must
+    // not fail a whole discovery pass, and a declaration cannot change the
+    // receiver anyway.
+    return defaultScope;
+  }
+}
+
 function customRoutePath(
   object: Record<string, unknown>,
   action: string,
 ): string {
   const collection =
     stringValue(object.collection) || stringValue(object.name) || action;
-  const method = methodDefinition(object, action);
-  const effective = effectiveRoute(object, action);
-  const configuredPath = effective.path || action;
+  const configuredPath = effectiveRoute(object, action).path || action;
   const normalizedPath = configuredPath
     .split('/')
     .map((segment) => segment.trim())
     .filter(Boolean)
     .join('/')
     .replace(/\[([^\]]+)\]/g, '{$1}');
-  const scope =
-    effective.scope || (method.isStatic === true ? 'collection' : 'item');
 
-  return scope === 'collection'
+  return effectiveScope(object, action) === 'collection'
     ? `/api/v1/${collection}/${normalizedPath}`
     : `/api/v1/${collection}/{id}/${normalizedPath}`;
 }

@@ -31,6 +31,7 @@ import '../__smrt-register__.js';
 import {
   createClassNamePredicate,
   ObjectRegistry,
+  resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
   type SmartObjectConfig,
 } from '@happyvertical/smrt-core';
@@ -487,6 +488,11 @@ interface MethodLike {
   parameters?: Array<{ name: string; type: string; optional?: boolean }>;
   returnType?: string;
   description?: string;
+  /**
+   * `@method()` config the manifest carries on the method. Needed here because
+   * both the route shape and the receiver resolve through it (#2686).
+   */
+  decoratorConfig?: Record<string, unknown>;
 }
 
 interface ToolLike {
@@ -774,7 +780,31 @@ function buildCustomCommand(
   const defaultScope: CommandScope = methodDef?.isStatic
     ? 'collection'
     : 'item';
-  const scope = (effective.scope as CommandScope | undefined) ?? defaultScope;
+  // The RECEIVER-collapsed scope, not the raw declaration: a `scope` declares a
+  // method's receiver and cannot relocate it, and `scope` here also decides
+  // whether the generated command carries an id. Reading the declaration
+  // uncollapsed advertised an unrunnable command (#2686).
+  let scope: CommandScope = defaultScope;
+  try {
+    scope = resolveCustomActionMetadata({
+      actionName: methodName,
+      // Only `isStatic` and `decoratorConfig` decide the receiver; this
+      // module's `MethodLike` view of a parameter is looser than the
+      // manifest's, and forwarding it would force a widening for no benefit.
+      method: {
+        ...(methodDef?.isStatic !== undefined
+          ? { isStatic: methodDef.isStatic }
+          : {}),
+        ...(methodDef?.decoratorConfig
+          ? { decoratorConfig: methodDef.decoratorConfig }
+          : {}),
+      },
+      apiConfig: apiConfigObj,
+      defaultScope,
+    }).scope;
+  } catch {
+    scope = defaultScope;
+  }
   const httpMethod = normalizeApiHttpMethod(effective.httpMethod);
 
   let pathSegments: string[];

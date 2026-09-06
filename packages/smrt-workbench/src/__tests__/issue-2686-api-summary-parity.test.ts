@@ -14,7 +14,10 @@
  */
 
 import { createClassNamePredicate } from '@happyvertical/smrt-core';
-import { resolveApiActionSet } from '@happyvertical/smrt-core/vite-plugin';
+import {
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+} from '@happyvertical/smrt-core/vite-plugin';
 import { describe, expect, it } from 'vitest';
 
 import { restEndpointsFrom } from '../discovery.js';
@@ -63,6 +66,18 @@ const WIDGET = {
       async: true,
       decoratorConfig: { expose: false, reason: 'internal' },
     },
+    // An INSTANCE action declared collection-scoped. The receiver wins, so the
+    // emitter routes it under `[id]`; reading the declaration uncollapsed
+    // printed the collection URL.
+    sweepItems: {
+      name: 'sweepItems',
+      isPublic: true,
+      isStatic: false,
+      parameters: [],
+      returnType: 'Promise<void>',
+      async: true,
+      decoratorConfig: { scope: 'collection' },
+    },
     // Routed, with a decorator-supplied verb and path.
     findRecent: {
       name: 'findRecent',
@@ -102,6 +117,27 @@ describe('#2686 workbench API summary matches the emitted route surface', () => 
   const customActions = endpoints
     .map((endpoint) => endpoint.action)
     .filter((action) => !CRUD.includes(action));
+
+  it('prints the same verb and path the emitter resolves, per action', () => {
+    // Comparing action NAMES is what let a scope bug through: the summary and
+    // the emitter agreed on which methods are exposed while disagreeing about
+    // where. Compare the full shape.
+    const expected = customActions.map((action) => {
+      const route = resolveApiActionRouteConfig(
+        action,
+        // biome-ignore lint/suspicious/noExplicitAny: hand-built fixture.
+        (WIDGET.methods as any)[action],
+        WIDGET.decoratorConfig.api,
+      );
+      const suffix = route.scope === 'collection' ? '' : '/{id}';
+      return `${route.method} /api/v1/widgets${suffix}/${route.pathSegments.join('/')}`;
+    });
+    const actual = endpoints
+      .filter((endpoint) => !CRUD.includes(endpoint.action))
+      .map((endpoint) => `${endpoint.method} ${endpoint.path}`);
+
+    expect(new Set(actual)).toEqual(new Set(expected));
+  });
 
   it('lists exactly the custom actions resolveApiActionSet exposes', () => {
     const manifest = {
