@@ -472,6 +472,77 @@ describePostgres(
   },
 );
 
+describePostgres('db:migrate-uuid default and retry (real Postgres)', () => {
+  const table = `mu_default_${Math.random().toString(36).slice(2, 8)}`;
+  let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+  async function freshDb(): Promise<any> {
+    return getDatabase({
+      type: 'postgres',
+      url: process.env.DATABASE_URL as string,
+    });
+  }
+  beforeEach(async () => {
+    const db = await freshDb();
+    await db.query(`DROP TABLE IF EXISTS "${table}"`);
+    await db.query(
+      `CREATE TABLE "${table}" (id text PRIMARY KEY DEFAULT '11111111-1111-1111-1111-111111111111'::text)`,
+    );
+    clearCache();
+    setConfig({
+      packages: {
+        cli: { database: { type: 'postgres', url: process.env.DATABASE_URL } },
+      },
+    } as any);
+    schemaSpy = vi
+      .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+      .mockReturnValue({
+        [table]: {
+          tableName: table,
+          ddl: '',
+          columns: { id: { type: 'UUID' } },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          version: '',
+          dependencies: [],
+        },
+      } as any);
+  });
+  afterEach(async () => {
+    schemaSpy?.mockRestore();
+    try {
+      const db = await freshDb();
+      await db.query(`DROP TABLE IF EXISTS "${table}"`);
+    } catch {}
+    clearCache();
+  });
+  it('preserves a castable UUID default and retries as a no-op', async () => {
+    const quiet = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await dbMigrateUuidCommand.handler([], {});
+    expect(errors).not.toHaveBeenCalled();
+    const db = await freshDb();
+    const afterFirst = await freshDb();
+    const first = await afterFirst.query(
+      `SELECT data_type, column_default FROM information_schema.columns WHERE table_name=$1 AND column_name='id'`,
+      table,
+    );
+    expect((first.rows as any[])[0].data_type).toBe('uuid');
+    expect((first.rows as any[])[0].column_default).toContain('uuid');
+    await dbMigrateUuidCommand.handler([], {});
+    expect(errors).not.toHaveBeenCalled();
+    const afterSecond = await freshDb();
+    const row = await afterSecond.query(
+      `INSERT INTO "${table}" DEFAULT VALUES RETURNING id`,
+    );
+    expect((row.rows as any[])[0].id).toBe(
+      '11111111-1111-1111-1111-111111111111',
+    );
+    quiet.mockRestore();
+    errors.mockRestore();
+  }, 30_000);
+});
+
 describePostgres(
   'db:migrate-uuid bounded generated TEXT bridge (real Postgres)',
   () => {
