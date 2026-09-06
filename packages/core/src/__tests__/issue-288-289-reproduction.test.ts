@@ -14,7 +14,10 @@ import { field, foreignKey } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 
-// Base class with STI (renamed to avoid collision with cli-module.test.ts)
+// Base class with STI (named to avoid an ObjectRegistry class-name collision
+// with another `Article` fixture elsewhere in the suite; the original
+// sibling this once named, cli-module.test.ts, was retired with core's
+// CLIGenerator, #2664)
 @smrt({ tableStrategy: 'sti' })
 class TestArticle extends SmrtObject {
   title: string = '';
