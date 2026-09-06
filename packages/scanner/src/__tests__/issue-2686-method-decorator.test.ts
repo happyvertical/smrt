@@ -218,6 +218,44 @@ describe('#2686 parameter type provenance', () => {
     expect(parameter.memberTypes).toBeUndefined();
   });
 
+  it('marks a generic with an unresolvable type argument as unresolved', () => {
+    // Dropping the bad argument left the bare string `'Array'`, which carries
+    // no provenance and is default-accepted by core's wire-ability gate.
+    const { widget } = parseClass(`
+      async run(rows: Array<[string, Asset]>): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'run').parameters;
+    expect(parameter.type).toBeNull();
+    expect(parameter.typeUnresolved).toBe(true);
+  });
+
+  it('marks a union with an unresolvable branch as unresolved', () => {
+    const { widget } = parseClass(`
+      async run(value: (A & B) | (C & D)): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'run').parameters;
+    expect(parameter.type).toBeNull();
+    expect(parameter.typeUnresolved).toBe(true);
+  });
+
+  it('resolves a `this` parameter so its union stays expressible', () => {
+    const { widget } = parseClass(`
+      async moveTo(newParent: this | string | null): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'moveTo').parameters;
+    expect(parameter.type).toBe('this | string | null');
+    expect(parameter.typeUnresolved).toBeUndefined();
+  });
+
+  it('still resolves a generic whose arguments are all expressible', () => {
+    const { widget } = parseClass(`
+      async run(byId: Record<string, Asset | null>): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'run').parameters;
+    expect(parameter.type).toBe('Record<string, Asset | null>');
+    expect(parameter.typeUnresolved).toBeUndefined();
+  });
+
   it('marks an inline literal with an unresolvable member as unresolved', () => {
     const { widget } = parseClass(`
       async run(options: { filter: A & B }): Promise<void> {}

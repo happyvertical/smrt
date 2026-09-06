@@ -590,7 +590,10 @@ Rules worth knowing:
   migrates from `api.routes`. Browser-plane preflight predicts exactly this gate,
   and honors `expose: false` with it — a withheld action is predicted
   unroutable, and a request to its declared URL gets an explicit 404 rather than
-  falling through into a `create`.
+  falling through into a `create`. The same refusal covers an ITEM-scoped
+  declaration, which this transport does not serve at all: `POST
+  /<collection>/<action>` for one answers 404, not a silent `create`. The
+  generated SvelteKit surface serves those under `[id]`.
 
 **Date hydration is top-level only.** A parameter declared exactly `Date` (or
 `Date | null` / `Date | undefined`) is converted from its ISO string or epoch

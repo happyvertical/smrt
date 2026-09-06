@@ -536,16 +536,17 @@ export class ObjectRegistry {
    * The manifest is the primary carrier of this metadata for BUILD-time
    * consumers (the scanner reads `@method()` into
    * `MethodDefinition.decoratorConfig`); this store serves the runtime paths
-   * that have a live class but no manifest entry for it.
+   * that have a live class but cannot reach a manifest entry for the method --
+   * see `resolveRuntimeMethodDecoratorConfig` for the two such cases.
    */
-  private static get methodDecorators(): Map<
-    string,
+  private static get methodDecorators(): WeakMap<
+    Function,
     Map<string, MethodDecoratorOptions>
   > {
     // Same documented narrowing cast as `fieldDecorators` above: shared state
     // stores the looser `Record<string, unknown>`.
-    return getMethodDecorators() as Map<
-      string,
+    return getMethodDecorators() as WeakMap<
+      Function,
       Map<string, MethodDecoratorOptions>
     >;
   }
@@ -677,21 +678,29 @@ export class ObjectRegistry {
   }
 
   /**
-   * Register `@method()` decorator metadata.
+   * Register `@method()` decorator metadata, keyed by the decorated class's
+   * CONSTRUCTOR.
+   *
+   * Constructor identity, not simple name: two packages may legitimately
+   * declare a class with the same simple name (`Account` exists in both
+   * `smrt-ledgers` and `smrt-messages`), and the kernel forbids inferring
+   * ownership from simple names. A name-keyed store would let one package's
+   * `@method({ expose: false })` withhold the other's identically-named
+   * action -- silent, non-local, and invisible in the 404 it produces.
    *
    * Merges with any existing options for the same method, so repeated
-   * decoration (or HMR re-evaluation) accumulates rather than replacing —
+   * decoration (or HMR re-evaluation) accumulates rather than replacing --
    * matching {@link registerFieldDecorator}.
    */
   static registerMethodDecorator(
-    className: string,
+    ctor: Function,
     methodName: string,
     options: MethodDecoratorOptions,
   ): void {
-    let classDecorators = ObjectRegistry.methodDecorators.get(className);
+    let classDecorators = ObjectRegistry.methodDecorators.get(ctor);
     if (!classDecorators) {
       classDecorators = new Map();
-      ObjectRegistry.methodDecorators.set(className, classDecorators);
+      ObjectRegistry.methodDecorators.set(ctor, classDecorators);
     }
     const existing = classDecorators.get(methodName);
     classDecorators.set(
@@ -702,55 +711,66 @@ export class ObjectRegistry {
 
   /** `@method()` options for one method, or `undefined` when undecorated. */
   static getMethodDecorator(
-    className: string,
+    ctor: Function | undefined,
     methodName: string,
   ): MethodDecoratorOptions | undefined {
-    return ObjectRegistry.methodDecorators.get(className)?.get(methodName);
+    return ctor
+      ? ObjectRegistry.methodDecorators.get(ctor)?.get(methodName)
+      : undefined;
   }
 
   /** All `@method()` options declared on a class, keyed by method name. */
   static getMethodDecorators(
-    className: string,
+    ctor: Function | undefined,
   ): Map<string, MethodDecoratorOptions> {
-    return ObjectRegistry.methodDecorators.get(className) ?? new Map();
+    return (
+      (ctor ? ObjectRegistry.methodDecorators.get(ctor) : undefined) ??
+      new Map()
+    );
   }
 
   /**
-   * Class names whose `@method()` decorators can govern `objectName`'s runtime
+   * Constructors whose `@method()` decorators can govern `objectName`'s runtime
    * REST surface: the model itself and its registered collection class, which
    * is where a collection-hosted custom action's decorator actually lands.
+   *
+   * Resolved through the registry's own qualified-name-safe lookups, so a
+   * simple name never decides ownership.
    */
-  private static methodDecoratorSources(objectName: string): string[] {
-    const sources = new Set<string>([objectName]);
-    // Runtime callers pass the QUALIFIED name
-    // (`@happyvertical/smrt-core:Widget`), while decorators register under the
-    // class's simple name and collections are keyed by the item class's simple
-    // name. Resolve through the registry rather than slicing the string.
-    const registered =
-      ObjectRegistry.classes.get(objectName) ??
-      (() => {
-        const canonical = ObjectRegistry.getCanonicalClassName(objectName);
-        return canonical ? ObjectRegistry.classes.get(canonical) : undefined;
-      })();
-    if (registered?.name) sources.add(registered.name);
-    for (const key of [...sources]) {
-      const collectionConstructor = ObjectRegistry.collections.get(key);
-      if (collectionConstructor?.name) sources.add(collectionConstructor.name);
+  private static methodDecoratorSources(objectName: string): Function[] {
+    const sources: Function[] = [];
+    const registered = ObjectRegistry.getClass(objectName);
+    if (registered?.constructor) sources.push(registered.constructor);
+    const canonical =
+      ObjectRegistry.getCanonicalClassName(objectName) ?? objectName;
+    for (const key of new Set([objectName, canonical, registered?.name])) {
+      const collectionConstructor = key
+        ? ObjectRegistry.collections.get(key)
+        : undefined;
+      if (collectionConstructor && !sources.includes(collectionConstructor)) {
+        sources.push(collectionConstructor);
+      }
     }
-    return [...sources];
+    return sources;
   }
 
   /**
    * The `@method()` config a RUNTIME transport must honor for
    * `objectName.methodName`.
    *
-   * The manifest is the primary carrier, and in a scanned project it is the
-   * only one that matters. But `startRestServer([Product], { db })` is a
-   * supported posture with no manifest at all: there, `getMethods()` is empty
-   * while the decorators DID run, so reading only the manifest silently drops
-   * `@method({ expose: false })` and a legacy `api.routes` entry alone would
-   * still route the withheld action. Absent exposure metadata defaults OPEN in
-   * this framework, so that drop is a widening (#2686).
+   * The manifest is the primary carrier, but it is not always reachable from
+   * here. Two cases need the live store:
+   *
+   * - `startRestServer([Product], { db })` is a supported posture with NO
+   *   manifest at all: `getMethods()` is empty while the decorators did run, so
+   *   reading only the manifest drops `@method({ expose: false })` while a
+   *   legacy `api.routes` entry alone still routes the withheld action.
+   * - A COLLECTION-hosted action's manifest entry lives under the collection
+   *   class, which the item-keyed `getMethods(objectName)` map never contains,
+   *   even in a fully scanned project.
+   *
+   * Absent exposure metadata defaults OPEN in this framework, so either drop is
+   * a widening (#2686).
    */
   static resolveRuntimeMethodDecoratorConfig(
     objectName: string,

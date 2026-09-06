@@ -135,6 +135,11 @@ describe('#2686 wire-ability heuristic', () => {
       'unresolved type parameter',
     ],
     [
+      'a `this` parameter',
+      [param('newParent', 'this')],
+      'instance of the declaring model class',
+    ],
+    [
       'an array of model instances',
       [param('assets', 'Asset[]')],
       'model class instance',
@@ -198,6 +203,17 @@ describe('#2686 wire-ability heuristic', () => {
     expect(
       classifyMethodWireability(
         { parameters: [param('assets', 'Array<Asset | string>')] },
+        { isModelClassName },
+      ).wireable,
+    ).toBe(true);
+  });
+
+  it('accepts `this | string`, which SmrtHierarchical.moveTo declares', () => {
+    // The `string` branch takes an id, so the method is genuinely reachable.
+    // Leaving `this` unresolvable would have withheld a working route.
+    expect(
+      classifyMethodWireability(
+        { parameters: [param('newParent', 'this | string | null')] },
         { isModelClassName },
       ).wireable,
     ).toBe(true);

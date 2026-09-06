@@ -10,8 +10,13 @@
  *
  * `issue-2686-rest-decorator-routes.spec.ts` seeds `ObjectRegistry.getMethods`
  * by hand to stand in for the manifest, which is exactly what hid this. This
- * file deliberately seeds NOTHING: every assertion below has to come from the
- * live decorator store.
+ * file deliberately seeds NOTHING.
+ *
+ * The same gap reaches a fully SCANNED project: the dispatcher looks methods up
+ * by the item object name, while a collection-hosted action's manifest entry
+ * lives under the collection class — so `getMethods(itemName)` never carries it
+ * either way. `beforeAll` asserts exactly that, rather than an empty method map,
+ * because core's own test manifest scans this file.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -26,7 +31,7 @@ import { APIGenerator } from './rest';
 @smrt({
   api: {
     public: true,
-    include: ['create', 'list', 'get', 'concealed', 'shaped'],
+    include: ['create', 'list', 'get', 'concealed', 'shaped', 'reviewed'],
     // The legacy declaration that, on its own, would still route `concealed`.
     routes: { concealed: { path: 'concealed', method: 'POST' } },
   },
@@ -38,6 +43,16 @@ class UnscannedWidget extends SmrtObject {
   constructor(options: any = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
+  }
+
+  /**
+   * The decorator's MOST COMMON shape: an item-scoped declaration on a model
+   * instance method. This transport serves only collection-scoped custom
+   * actions, so it has no receiver for it.
+   */
+  @method({ httpMethod: 'POST', path: 'reviewed' })
+  async reviewed(): Promise<{ reviewed: true }> {
+    return { reviewed: true };
   }
 }
 
@@ -57,6 +72,20 @@ class UnscannedWidgetCollection extends SmrtCollection<UnscannedWidget> {
   }
 }
 
+/**
+ * A second class whose simple NAME collides with the decorated one. Nothing
+ * decorates it, so a name-keyed store would still hand it the collection's
+ * `expose: false`.
+ */
+class SameNameDecoy {
+  async concealed(): Promise<unknown> {
+    return {};
+  }
+}
+Object.defineProperty(SameNameDecoy, 'name', {
+  value: 'UnscannedWidgetCollection',
+});
+
 describe('#2686 @method() is honored without a manifest', () => {
   ObjectRegistry.registerCollection(
     'UnscannedWidget',
@@ -67,8 +96,15 @@ describe('#2686 @method() is honored without a manifest', () => {
   let handler: (req: Request) => Promise<Response>;
 
   beforeAll(async () => {
-    // The premise of this file: nothing seeds the methods map.
-    expect(ObjectRegistry.getMethods('UnscannedWidget').size).toBe(0);
+    // The premise of this file, stated per method rather than as an empty map:
+    // the runtime dispatcher looks methods up by the ITEM object name, and a
+    // collection-hosted action's manifest entry lives under the COLLECTION
+    // class — so the config for these two can only come from the live store.
+    // (Core's own test manifest scans this file, so asserting an empty map
+    // would only be testing the scanner's include globs.)
+    const itemMethods = ObjectRegistry.getMethods('UnscannedWidget');
+    expect(itemMethods.get('concealed')).toBeUndefined();
+    expect(itemMethods.get('shaped')).toBeUndefined();
 
     db = await getTestDatabase({
       type: 'sqlite',
@@ -94,13 +130,16 @@ describe('#2686 @method() is honored without a manifest', () => {
       }),
     );
 
-  it('registers the decorator config on the collection class', () => {
+  it('registers the decorator config against the collection CONSTRUCTOR', () => {
+    // Constructor identity, not simple name: `Account` exists in both
+    // `smrt-ledgers` and `smrt-messages`, and a name-keyed store would let one
+    // package's `expose: false` withhold the other's identically-named action.
     expect(
-      ObjectRegistry.getMethodDecorator(
-        'UnscannedWidgetCollection',
-        'concealed',
-      ),
+      ObjectRegistry.getMethodDecorator(UnscannedWidgetCollection, 'concealed'),
     ).toMatchObject({ expose: false });
+    expect(
+      ObjectRegistry.getMethodDecorator(SameNameDecoy, 'concealed'),
+    ).toBeUndefined();
   });
 
   it('refuses a withheld action even though api.routes still declares it', async () => {
@@ -128,5 +167,18 @@ describe('#2686 @method() is honored without a manifest', () => {
 
   it('predicts the decorator-only route as routable', () => {
     expect(isRestActionRoutable('UnscannedWidget', 'shaped')).toBe(true);
+  });
+
+  it('refuses an item-scoped declaration instead of creating a row', async () => {
+    // Before #2686 closed it, this fell through to CRUD handling and
+    // `POST /<collection>/reviewed` resolved to `create`: an authenticated
+    // caller aiming at a custom action silently inserted a row and got 201.
+    const response = await post('reviewed', { name: 'should-not-persist' });
+    expect(response.status).toBe(404);
+
+    const listed = (await (
+      await handler(new Request('http://localhost/api/v1/unscannedwidgets'))
+    ).json()) as { data?: unknown[] };
+    expect(listed.data ?? []).toHaveLength(0);
   });
 });

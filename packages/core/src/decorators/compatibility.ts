@@ -5,11 +5,11 @@ const PENDING_FIELD_DECORATORS_KEY = Symbol.for(
 );
 const standardDecoratorRegistrations = new WeakMap<
   Function,
-  WeakSet<(className: string) => void>
+  WeakSet<(ctor: Function) => void>
 >();
 
 type PendingDecoratorRegistration = {
-  register: (className: string) => void;
+  register: (ctor: Function) => void;
 };
 
 export type LegacyPropertyDecoratorTarget = {
@@ -82,7 +82,7 @@ function getDecoratorConstructor(target: unknown): Function | undefined {
 
 function markStandardDecoratorRegistration(
   target: unknown,
-  register: (className: string) => void,
+  register: (ctor: Function) => void,
 ): boolean {
   const ctor = getDecoratorConstructor(target);
   if (!ctor) {
@@ -147,7 +147,7 @@ function getClassDecoratorMetadata(
 
 function queuePendingFieldDecorator(
   metadata: DecoratorMetadataStore,
-  register: (className: string) => void,
+  register: (ctor: Function) => void,
 ): void {
   const pendingDecorators =
     (metadata[PENDING_FIELD_DECORATORS_KEY] as
@@ -191,7 +191,7 @@ export function applyPendingDecoratorRegistrations(
       continue;
     }
 
-    register(target.name);
+    register(target);
   }
 
   Reflect.deleteProperty(metadata, PENDING_FIELD_DECORATORS_KEY);
@@ -205,8 +205,14 @@ export function applyPendingDecoratorRegistrations(
  * function: their legacy signatures differ (a method decorator receives a
  * property descriptor as a third argument), and a static method's legacy
  * `target` is the CONSTRUCTOR while an instance method's is the prototype —
- * `resolveDecoratorClassName` already handles both, which is why the class
- * name resolution is shared even though the entry point is not.
+ * `getDecoratorConstructor` already handles both, which is why the receiver
+ * resolution is shared even though the entry point is not.
+ *
+ * Registration is keyed by the CONSTRUCTOR, not by its name: two packages may
+ * legitimately declare a class with the same simple name (`Account` exists in
+ * both `smrt-ledgers` and `smrt-messages`), and the kernel forbids inferring
+ * ownership from simple names. A name-keyed store would let one package's
+ * `@method({ expose: false })` withhold the other's identically-named action.
  *
  * Metadata-only: nothing is wrapped and nothing is returned, so the decorated
  * method keeps its identity and remains directly callable (#2686).
@@ -217,23 +223,23 @@ export function registerCompatibleMethodDecorator<
 >(
   targetOrValue: LegacyPropertyDecoratorTarget | Value | undefined,
   propertyKeyOrContext: CompatibleMethodDecoratorContext<This, Value>,
-  registerMethodDecorator: (className: string, methodName: string) => void,
+  registerMethodDecorator: (ctor: Function, methodName: string) => void,
 ): void {
   if (
     typeof propertyKeyOrContext === 'string' ||
     typeof propertyKeyOrContext === 'symbol'
   ) {
-    const className = resolveDecoratorClassName(targetOrValue);
-    if (className) {
-      registerMethodDecorator(className, String(propertyKeyOrContext));
+    const ctor = getDecoratorConstructor(targetOrValue);
+    if (ctor) {
+      registerMethodDecorator(ctor, String(propertyKeyOrContext));
     }
     return;
   }
 
   const context = propertyKeyOrContext;
   const methodName = String(context.name);
-  const register = (className: string) =>
-    registerMethodDecorator(className, methodName);
+  const register = (ctor: Function) =>
+    registerMethodDecorator(ctor, methodName);
   const metadata = getDecoratorMetadata(context);
 
   if (metadata) {
@@ -243,15 +249,15 @@ export function registerCompatibleMethodDecorator<
 
   context.addInitializer?.(function registerSmrtMethodDecorator(this: unknown) {
     // A static method's initializer runs with the constructor as `this`; an
-    // instance method's runs with the instance. `resolveDecoratorClassName`
-    // reads the constructor in the latter case, so both land on the same name.
+    // instance method's runs with the instance. `getDecoratorConstructor`
+    // reads the constructor in the latter case, so both land on the same class.
     if (!markStandardDecoratorRegistration(this, register)) {
       return;
     }
 
-    const className = resolveDecoratorClassName(this);
-    if (className) {
-      register(className);
+    const ctor = getDecoratorConstructor(this);
+    if (ctor) {
+      register(ctor);
     }
   });
 }
@@ -274,8 +280,12 @@ export function registerCompatibleFieldDecorator<This, Value>(
 
   const context = propertyKeyOrContext;
   const propertyKey = String(context.name);
-  const register = (className: string) =>
-    registerFieldDecorator(className, propertyKey);
+  // The shared queue passes the CONSTRUCTOR (the method arm needs an identity a
+  // simple name cannot provide); field registration keeps its name-keyed store,
+  // so it derives the name here.
+  const register = (ctor: Function) => {
+    if (ctor.name) registerFieldDecorator(ctor.name, propertyKey);
+  };
   const metadata = getDecoratorMetadata(context);
 
   if (metadata) {
@@ -288,9 +298,9 @@ export function registerCompatibleFieldDecorator<This, Value>(
       return;
     }
 
-    const className = resolveDecoratorClassName(this);
-    if (className) {
-      register(className);
+    const ctor = getDecoratorConstructor(this);
+    if (ctor) {
+      register(ctor);
     }
   });
 }

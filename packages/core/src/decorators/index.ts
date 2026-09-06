@@ -917,8 +917,8 @@ export function method(options: MethodOptions = {}) {
     registerCompatibleMethodDecorator(
       targetOrValue as LegacyPropertyDecoratorTarget | undefined,
       propertyKeyOrContext,
-      (className, methodName) => {
-        ObjectRegistry.registerMethodDecorator(className, methodName, options);
+      (ctor, methodName) => {
+        ObjectRegistry.registerMethodDecorator(ctor, methodName, options);
       },
     );
   }) as CompatibleMethodDecorator;

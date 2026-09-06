@@ -72,11 +72,17 @@ and repository rules.
   `POST /<collection>/<segment>` resolves to `create` when nothing claims the
   segment. Split unions and type arguments with `splitTopLevel()` — a naive
   `split('|')` truncates `Record<string, Asset | null>` into fragments that
-  match no rule and are then accepted, widening the gate. Runtime transports
-  read `ObjectRegistry.resolveRuntimeMethodDecoratorConfig()` /
+  match no rule and are then accepted, widening the gate. `extractTypeName`
+  returns `null` for a generic with an unresolvable ARGUMENT or a union with an
+  unresolvable BRANCH so those reach that fail-closed path instead of arriving
+  as a bare `'Array'`. Runtime transports read
+  `ObjectRegistry.resolveRuntimeMethodDecoratorConfig()` /
   `listDecoratedMethodNames()`, which fall back to the live `@method()` store
-  for an unscanned project where `getMethods()` is empty. The one consumer NOT
-  migrated is `packages/smrt-workbench/src/discovery.ts`, which has no
+  ONLY when the class has no manifest methods at all; that store is keyed by
+  CONSTRUCTOR, never by simple name (`Account` exists in two packages). A
+  declared action with no receiver is refused (501 collection-scoped, 404
+  item-scoped), never allowed to fall through into `create`. The one consumer
+  NOT migrated is `packages/smrt-workbench/src/discovery.ts`, which has no
   dependency on this package (#2709).
 
 ## Gotchas

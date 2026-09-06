@@ -914,16 +914,32 @@ export class APIGenerator {
         !isCollectionHosted && typeof staticMethod === 'function';
 
       if (!isCollectionHosted && !isStaticHosted) {
-        // Declared collection routes must not degrade into a CRUD write;
-        // anything else (an item-scoped action reached at the collection URL,
-        // or an unrelated segment) falls through unchanged.
+        // A DECLARED action must never degrade into a CRUD write. The segment
+        // matched a declaration's own path and verb, so `POST` on it resolving
+        // to `create` silently inserts a row and answers 201 for a request
+        // aimed at an action -- the #2047 failure this dispatch exists to
+        // prevent, and the same argument the `expose: false` 404 above rests
+        // on.
+        //
+        // Split by cause so the caller can tell them apart: a
+        // collection-scoped declaration with no receiver is a 501 (declared but
+        // not implemented, the historical message), while an ITEM-scoped one is
+        // a 404 -- this transport only serves collection-scoped custom actions,
+        // so that URL genuinely has no route here even though the generated
+        // SvelteKit surface writes one under `[id]`. #2686 widened the
+        // population reaching this branch by admitting `@method()`
+        // declarations, and the item-scoped shape is the decorator's most
+        // common one.
         if (effective.scope === 'collection') {
           return this.createErrorResponse(
             501,
             `Custom action '${actionName}' is declared but not implemented`,
           );
         }
-        continue;
+        return this.createErrorResponse(
+          404,
+          `Custom action '${actionName}' is item-scoped and is not served by this transport`,
+        );
       }
 
       const metadata = resolveCustomActionMetadata({

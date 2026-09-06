@@ -984,6 +984,16 @@ function classifyTypeName(
     return classifyTypeName(base, options, depth + 1);
   }
 
+  // `this` in a parameter position is an instance of the declaring model
+  // class, so it is rejected for the same reason a named model class is —
+  // with its own wording, since "`this` is a runtime value" reads as nonsense.
+  if (type === 'this') {
+    return {
+      wireable: false,
+      reason:
+        '`this` is an instance of the declaring model class, not JSON data',
+    };
+  }
   if (NON_SERIALIZABLE_TYPE_NAMES.has(type)) {
     return {
       wireable: false,

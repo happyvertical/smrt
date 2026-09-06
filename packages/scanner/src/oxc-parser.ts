@@ -379,6 +379,7 @@ type TSType =
   | TSVoidKeyword
   | TSNullKeyword
   | TSUndefinedKeyword
+  | TSThisType
   | TSTypeReference
   | TSArrayType
   | TSUnionType
@@ -442,6 +443,10 @@ interface TSNullKeyword extends BaseNode {
 
 interface TSUndefinedKeyword extends BaseNode {
   type: 'TSUndefinedKeyword';
+}
+
+interface TSThisType extends BaseNode {
+  type: 'TSThisType';
 }
 
 interface TSTypeReference extends BaseNode {
@@ -2183,9 +2188,13 @@ function extractTypeName(type: TSType): string | null {
       const typeParams =
         type.typeArguments?.params || type.typeParameters?.params;
       if (baseName && typeParams?.length) {
-        const typeArgs = typeParams
-          .map((p: TSType) => extractTypeName(p))
-          .filter(Boolean);
+        const typeArgs = typeParams.map((p: TSType) => extractTypeName(p));
+        // An unresolvable ARGUMENT makes the whole reference unresolvable.
+        // Dropping it left `Array<[string, Asset]>` as the bare string
+        // `'Array'`, which carries no `typeUnresolved` provenance and is then
+        // default-accepted by core's wire-ability gate -- a silent widening
+        // through the exact channel that provenance exists to close (#2686).
+        if (typeArgs.some((arg) => arg === null)) return null;
         if (typeArgs.length > 0) {
           return `${baseName}<${typeArgs.join(', ')}>`;
         }
@@ -2222,6 +2231,13 @@ function extractTypeName(type: TSType): string | null {
       return 'symbol';
     case 'TSVoidKeyword':
       return 'void';
+    // `this` in a parameter position (`moveTo(p: this | string | null)`) is an
+    // instance of the declaring class. Naming it keeps the surrounding union
+    // resolvable -- leaving it unresolved would withhold a method whose
+    // `string` branch a caller can genuinely satisfy. Consumers judge the name
+    // itself; core's wire-ability gate treats it as a model instance (#2686).
+    case 'TSThisType':
+      return 'this';
     case 'TSNullKeyword':
       return 'null';
     case 'TSUndefinedKeyword':
@@ -2243,9 +2259,12 @@ function extractTypeName(type: TSType): string | null {
     }
 
     case 'TSUnionType': {
-      const types = type.types
-        .map((t: TSType) => extractTypeName(t))
-        .filter(Boolean);
+      const types = type.types.map((t: TSType) => extractTypeName(t));
+      // Same reason as the type-argument case above: silently dropping an
+      // unresolvable branch produced a partial union (or, when every branch
+      // failed, the empty string, which the adapter maps to `'any'`) with no
+      // provenance attached (#2686).
+      if (types.some((branch) => branch === null)) return null;
       return types.join(' | ');
     }
 
