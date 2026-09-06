@@ -2430,8 +2430,9 @@ export function findCliApiCoherenceViolations(
  * This is deliberately narrower than `findCliApiCoherenceViolations` above.
  * That function is now fully correct for the broader `cli: true`/`cli: {}`
  * default surface too (#2638: same "every public method minus exclude"
- * resolution `listCommands()` uses, so a bare `cli: true` is inspected the
- * same as an explicit `include`). But `smrtPlugin()`'s default
+ * resolution core's now-retired `CLIGenerator.listCommands()` used (#2664),
+ * so a bare `cli: true` is inspected the same as an explicit `include`).
+ * But `smrtPlugin()`'s default
  * `validateCliApiCoherence: true` calls this THROWING gate unconditionally
  * from every consuming package's own build (`configResolved`,
  * `vite-plugin/index.ts`) -- and a full-monorepo build during #2638

@@ -567,7 +567,9 @@ export class MCPGenerator {
           // FRAMEWORK_LIFECYCLE_METHOD_NAMES) is never a custom action, even
           // when named explicitly in `include`: it is the mechanism behind
           // generated CRUD, not a distinct operation a caller should invoke
-          // (#2638). Mirrors `assertCommandExposed`'s CLI-side rejection.
+          // (#2638). Mirrors core's now-retired `assertCommandExposed()`'s
+          // CLI-side rejection (#2664) -- the shipped local CLI
+          // (packages/cli/src/cli-generator.ts) has no equivalent gate today.
           if (isFrameworkLifecycleMethod(methodName)) continue;
 
           // Check if method exists (in manifest or on class prototype)
@@ -625,16 +627,23 @@ export class MCPGenerator {
           // would emit a second tool under a name that is already claimed.
           // Case-folded because `buildCustomActionTool` lowercases the whole
           // identifier, so `List` lands on `${lowerName}_list` too. Mirrors
-          // the strict branch above and `packages/cli/src/cli-generator.ts`'s
-          // own reserved-command-name skip in `generateObjectCommands()`
-          // (#2646).
+          // the strict branch above. NOT the same rule as
+          // `packages/cli/src/cli-generator.ts`'s reserved-command-name skip
+          // in `generateObjectCommands()`: that skip is CONDITIONAL (only a
+          // command name actually pushed reserves anything), while this MCP
+          // skip is unconditional -- see
+          // `generators/custom-action.ts`'s #2646 audit list for why the two
+          // deliberately differ.
           if (isCrudToolAction(methodName)) continue;
 
           // A framework lifecycle method (save/initialize/... — see
           // FRAMEWORK_LIFECYCLE_METHOD_NAMES) is the mechanism behind
           // generated CRUD, not a distinct operation, even when this class
           // declares its own override. Never expose it as a custom tool
-          // (#2638). Mirrors the strict branch above and the CLI-side rule.
+          // (#2638). Mirrors the strict branch above and core's now-retired
+          // CLIGenerator's equivalent rule (#2664) -- the shipped local CLI
+          // (packages/cli/src/cli-generator.ts) has no lifecycle-method gate
+          // of its own today.
           if (isFrameworkLifecycleMethod(methodName)) continue;
 
           // Skip if not public (private/protected methods shouldn't be in MCP)

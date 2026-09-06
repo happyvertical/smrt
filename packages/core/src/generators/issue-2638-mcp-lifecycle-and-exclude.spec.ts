@@ -13,7 +13,9 @@
  * file covers the MCP-side fix: `generateObjectTools()` now skips a
  * `FRAMEWORK_LIFECYCLE_METHOD_NAMES` member in both the strict-`include`
  * branch and the "show all discovered methods" default branch, mirroring
- * `assertCommandExposed`'s CLI-side rejection.
+ * core's now-retired `assertCommandExposed()` (#2664). The shipped local CLI
+ * (`packages/cli/src/cli-generator.ts`) has no equivalent lifecycle-method
+ * gate today.
  *
  * It also covers the `mcp.exclude` case-fold fix (moved from #2648, landed
  * alongside this issue's MCP wiring): after #2646, `mcp.include` fails
