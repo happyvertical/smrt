@@ -5,7 +5,12 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLogger } from '@happyvertical/logger';
-import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import {
+  createManifestClassNamePredicate,
+  resolveApiMethodExposure,
+  resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
+} from '../generators/custom-action.js';
 import {
   loadExternalManifestSync,
   lookupInManifest,
@@ -2193,7 +2198,7 @@ ${fields}
     for (const [_name, obj] of Object.entries(manifest.objects)) {
       const apiConfig = obj.decoratorConfig.api;
       if (apiConfig !== false) {
-        endpoints.push(...this.getSimpleEndpoints(obj));
+        endpoints.push(...this.getSimpleEndpoints(obj, manifest));
       }
     }
 
@@ -2222,7 +2227,7 @@ ${fields}
   private getApiRouteMetadata(
     obj: SmartObjectDefinition,
     actionName: string,
-    actionDef: { isStatic?: boolean },
+    actionDef: MethodDefinition | { isStatic?: boolean },
   ): {
     scope: 'item' | 'collection';
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -2232,8 +2237,17 @@ ${fields}
       obj.decoratorConfig.api && typeof obj.decoratorConfig.api === 'object'
         ? obj.decoratorConfig.api
         : undefined;
-    const routeConfig = config?.routes?.[actionName];
-    const normalizedPath = (routeConfig?.path || actionName)
+    // `@method({ httpMethod, path })` wins field by field over the class-level
+    // `api.routes[action]` entry, the same merge `resolveApiActionRouteConfig`
+    // and the knowledge artifact perform. Reading `routes` alone printed the
+    // PRE-migration verb and path for a class that had moved to the decorator
+    // (#2686).
+    const effective = resolveEffectiveActionMetadata({
+      actionName,
+      method: actionDef,
+      apiConfig: config,
+    });
+    const normalizedPath = (effective.path || actionName)
       .split('/')
       .map((segment) => segment.trim())
       .filter(Boolean)
@@ -2251,24 +2265,15 @@ ${fields}
         apiConfig: config,
         defaultScope,
       }).scope,
-      method:
-        routeConfig?.method?.toUpperCase() === 'GET' ||
-        routeConfig?.method?.toUpperCase() === 'POST' ||
-        routeConfig?.method?.toUpperCase() === 'PUT' ||
-        routeConfig?.method?.toUpperCase() === 'PATCH' ||
-        routeConfig?.method?.toUpperCase() === 'DELETE'
-          ? (routeConfig.method.toUpperCase() as
-              | 'GET'
-              | 'POST'
-              | 'PUT'
-              | 'PATCH'
-              | 'DELETE')
-          : 'POST',
+      method: effective.httpMethod ?? 'POST',
       path: normalizedPath || actionName,
     };
   }
 
-  private getSimpleEndpoints(obj: SmartObjectDefinition): string[] {
+  private getSimpleEndpoints(
+    obj: SmartObjectDefinition,
+    manifest?: SmartObjectManifest,
+  ): string[] {
     const { collection } = obj;
     const config = obj.decoratorConfig.api;
     const exclude = (typeof config === 'object' && config?.exclude) || [];
@@ -2276,6 +2281,7 @@ ${fields}
       (typeof config === 'object' && config?.include) || undefined;
     const isCollectionClass =
       obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
+    const isModelClassName = createManifestClassNamePredicate(manifest);
 
     const endpoints: string[] = [];
 
@@ -2304,29 +2310,25 @@ ${fields}
       }
     }
 
-    const standardActions = ['list', 'get', 'create', 'update', 'delete'];
+    // Custom actions read the ONE shared exposure resolver rather than a local
+    // copy of the include/exclude rule. This listing is a published virtual
+    // module (`@happyvertical/smrt-virt-routes`), so a stale rule here
+    // advertises operations whose routes the emitters never wrote -- exactly
+    // the consumer disagreement #2686 exists to close.
     for (const [actionName, actionDef] of Object.entries(obj.methods)) {
       if (
-        standardActions.includes(actionName) ||
-        !actionDef.isPublic ||
-        !shouldInclude(actionName)
+        !resolveApiMethodExposure({
+          actionName,
+          method: actionDef,
+          apiConfig: config,
+          isCollectionClass,
+          ...(isModelClassName ? { isModelClassName } : {}),
+        }).exposed
       ) {
         continue;
       }
 
       const route = this.getApiRouteMetadata(obj, actionName, actionDef);
-      if (
-        route.scope === 'collection' &&
-        !isCollectionClass &&
-        !actionDef.isStatic
-      ) {
-        continue;
-      }
-
-      if (route.scope === 'item' && isCollectionClass) {
-        continue;
-      }
-
       const suffix = route.scope === 'collection' ? '' : '/:id';
       endpoints.push(`${route.method} /${collection}${suffix}/${route.path}`);
     }

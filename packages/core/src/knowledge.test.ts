@@ -163,7 +163,7 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
   });
 
-  it('excludes a locally overridden framework lifecycle method from the cli and mcp surfaces (#2657, #2638)', () => {
+  it('excludes a locally overridden framework lifecycle method from every surface (#2657, #2638, #2686)', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const surfaces = artifact.surfaces.filter(
       (surface) =>
@@ -175,10 +175,15 @@ describe('buildDomainKnowledgeManifest', () => {
     // assertCommandExposed() (#2664) and MCPGenerator.generateTools() both
     // refused/refuse to expose or invoke it even when the class declares its
     // own override -- this projection mirrors that with the same
-    // isFrameworkLifecycleMethod() check, for cli and mcp. NOTE: the shipped
-    // local CLI (packages/cli/src/cli-generator.ts) does NOT apply this
-    // gate today -- see knowledge.ts's `configuredOperations()` docblock.
-    for (const kind of ['cli', 'mcp'] as const) {
+    // isFrameworkLifecycleMethod() check. NOTE: the shipped local CLI
+    // (packages/cli/src/cli-generator.ts) does NOT apply this gate today --
+    // see knowledge.ts's `configuredOperations()` docblock.
+    //
+    // `api` JOINED them in #2686: the wire-ability gate's shared resolver
+    // applies the same isFrameworkLifecycleMethod() check, so the route
+    // emitters no longer write `POST /orders/[id]/save` either. Before that,
+    // `api` alone still reported (and generated) a route for the override.
+    for (const kind of ['cli', 'mcp', 'api'] as const) {
       expect(
         surfaces
           .filter((surface) => surface.kind === kind)
@@ -187,23 +192,17 @@ describe('buildDomainKnowledgeManifest', () => {
       ).toEqual(['create', 'delete', 'get', 'list', 'reconcile', 'update']);
     }
 
-    // `api` is unaffected: the generator does not gate on
-    // isFrameworkLifecycleMethod() today, so `save` still appears as a
-    // custom-method surface there.
-    expect(
-      surfaces
-        .filter((surface) => surface.kind === 'api')
-        .map((surface) => surface.operation)
-        .sort(),
-    ).toEqual([
-      'create',
-      'delete',
-      'get',
-      'list',
-      'reconcile',
-      'save',
-      'update',
-    ]);
+    // ...and the artifact says WHY, rather than leaving the absence silent.
+    const lifecycleOverride = artifact.objects.find(
+      (object) => object.name === 'LifecycleOverrideOrder',
+    );
+    expect(lifecycleOverride?.withheldSurfaces).toContainEqual(
+      expect.objectContaining({
+        kind: 'api',
+        operation: 'save',
+        code: 'lifecycle-method',
+      }),
+    );
   });
 
   it('never reports CRUD for an undecorated SmrtCollection subclass, but does report its public custom methods on every surface (#2642)', () => {

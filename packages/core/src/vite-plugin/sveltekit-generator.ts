@@ -15,10 +15,18 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
+  type ApiMethodExposure,
   CRUD_OPERATIONS,
+  createManifestClassNamePredicate,
+  declaredTypeAcceptsDate,
   isCrudOperation,
+  queryStringDecoderFor,
+  resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
+  resolveDeclaredScopeMismatch,
+  resolveEffectiveActionMetadata,
+  type WireabilityOptions,
 } from '../generators/custom-action.js';
 import {
   buildDefaultListOrderBy,
@@ -28,7 +36,6 @@ import {
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   ApiConfig,
-  ApiCustomRouteConfig,
   ApiHttpMethod,
   ApiSerializerReference,
 } from '../registry/types.js';
@@ -953,20 +960,25 @@ function extractRoutePathParamNames(pathSegments: string[]): string[] {
 
 export function resolveApiActionRouteConfig(
   actionName: string,
-  actionDef: { isStatic?: boolean },
+  actionDef: { isStatic?: boolean; decoratorConfig?: Record<string, unknown> },
   apiConfig: unknown,
   routeOptions: { kebabRoutes?: boolean } = {},
   defaultScope: 'item' | 'collection' = actionDef.isStatic
     ? 'collection'
     : 'item',
 ): ResolvedApiActionRouteConfig {
-  const config = getApiConfigObject(apiConfig);
-  const routeConfig: ApiCustomRouteConfig | undefined =
-    config?.routes?.[actionName];
+  // `@method({ httpMethod, path })` wins field by field over the class-level
+  // `api.routes[action]` entry, so migrating one option off the map does not
+  // reset the ones left on it (#2686).
+  const effective = resolveEffectiveActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+  });
 
   const pathSegments = normalizeCustomRoutePath(
     actionName,
-    routeConfig?.path,
+    effective.path,
     routeOptions,
   );
 
@@ -979,7 +991,7 @@ export function resolveApiActionRouteConfig(
 
   return {
     scope,
-    method: normalizeApiHttpMethod(routeConfig?.method),
+    method: normalizeApiHttpMethod(effective.httpMethod),
     pathSegments,
     pathParamNames: extractRoutePathParamNames(pathSegments),
   };
@@ -1030,6 +1042,7 @@ function hasSingleOptionsParameter(actionDef: MethodDefinition): boolean {
 function buildActionInvocationArgs(
   actionDef: MethodDefinition,
   optionsIdentifier = 'options',
+  httpMethod?: string,
 ): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
@@ -1043,9 +1056,26 @@ function buildActionInvocationArgs(
     return [optionsIdentifier];
   }
 
-  return parameters.map((parameter) =>
-    buildOptionsPropertyAccess(parameter.name),
-  );
+  return parameters.map((parameter, index) => {
+    const access = buildOptionsPropertyAccess(parameter.name);
+    // A JSON body and a query string can only carry a `Date` as its ISO
+    // string, so hydrate it here. The wire-ability gate accepts a `Date`
+    // parameter precisely BECAUSE this conversion exists; drop one and the
+    // other must go too, or the generator writes a route that 500s on the
+    // first `getTime()` (#2686). The cast restores the declared parameter
+    // type, which the runtime helper widens to `unknown`.
+    // A GET handler builds its options from `URLSearchParams`, so EVERY value
+    // is a string and `limit: number` reached the method as `'2'`. A JSON body
+    // carries real numbers and booleans, so decode only on GET; `Date` is
+    // hydrated on both because a JSON body cannot carry one either (#2686).
+    const decoder =
+      httpMethod === 'GET'
+        ? queryStringDecoderFor(parameter.type)
+        : declaredTypeAcceptsDate(parameter.type)
+          ? 'toCustomActionDate'
+          : undefined;
+    return decoder ? `${decoder}(${access}) as ActionArgs[${index}]` : access;
+  });
 }
 
 function buildObjectTypeProperty(propertyName: string): string {
@@ -2054,13 +2084,17 @@ async function generateRoutesForObject(
     );
   }
 
-  // Generate custom action routes
-  const customActions = Object.entries(objectDef.methods).filter(
-    ([name, method]) =>
-      !isCrudOperation(name) &&
-      method.isPublic &&
-      shouldIncludeInApi(name, apiConfig),
+  // Generate custom action routes. Eligibility -- CRUD reservation, framework
+  // lifecycle methods, include/exclude, `@method()` overrides, wire-ability,
+  // and the receiver check -- comes from the ONE shared resolver every API
+  // consumer reads, so a route is written exactly when `resolveApiActionSet`
+  // and the knowledge artifact say one exists (#2686).
+  const { exposed: customActions, rejected } = resolveApiCustomActions(
+    objectDef,
+    manifest,
+    false,
   );
+  warnUnhostedActions(className, rejected);
 
   const actionSpecs: Array<{
     routeDir: string;
@@ -2074,13 +2108,13 @@ async function generateRoutesForObject(
       apiConfig,
       { kebabRoutes: options.kebabRoutes },
     );
-
-    if (routeConfig.scope === 'collection' && !actionDef.isStatic) {
-      console.warn(
-        `[smrt] Skipping ${className}.${actionName} - collection API routes require a static method`,
-      );
-      continue;
-    }
+    warnDeclaredScopeMismatch(
+      className,
+      actionName,
+      actionDef,
+      apiConfig,
+      routeConfig.scope,
+    );
 
     const actionBaseDir =
       routeConfig.scope === 'collection' ? routeDir : join(routeDir, '[id]');
@@ -2139,12 +2173,12 @@ async function generateCollectionRoutesForObject(
   );
   const lookupObjectDef = findObjectDefByRegistryKey(manifest, lookupClassName);
 
-  const customActions = Object.entries(objectDef.methods).filter(
-    ([name, method]) =>
-      !isCrudOperation(name) &&
-      method.isPublic &&
-      shouldIncludeInApi(name, apiConfig),
+  const { exposed: customActions, rejected } = resolveApiCustomActions(
+    objectDef,
+    manifest,
+    true,
   );
+  warnUnhostedActions(className, rejected);
 
   if (customActions.length === 0) {
     return generatedRoutePaths;
@@ -2162,13 +2196,13 @@ async function generateCollectionRoutesForObject(
       { kebabRoutes: options.kebabRoutes },
       'collection',
     );
-
-    if (routeConfig.scope !== 'collection') {
-      console.warn(
-        `[smrt] Skipping ${className}.${actionName} - collection class methods only support collection-scoped API routes`,
-      );
-      continue;
-    }
+    warnDeclaredScopeMismatch(
+      className,
+      actionName,
+      actionDef,
+      apiConfig,
+      routeConfig.scope,
+    );
 
     actionSpecs.push({
       routeDir: join(routeDir, ...routeConfig.pathSegments),
@@ -2229,30 +2263,112 @@ function resolveStandardCrudActions(apiConfig: unknown): string[] {
 }
 
 /**
- * Check if a custom action should be included in API.
+ * Partition an object's custom (non-CRUD) methods into the ones the API
+ * exposes and the ones it withholds, with a reason for each rejection.
  *
- * Mirrors the CRUD inclusion path: intersect with `include` (when set), then
- * subtract `exclude`. Both filters apply together, matching principle of least
- * surprise for users supplying both lists.
+ * The ONE place route generation, `resolveApiActionSet`, and the knowledge
+ * artifact's API projection agree, by all three reading
+ * {@link resolveApiMethodExposure}. Before #2686 each re-derived a subset and
+ * could disagree — most damagingly, a gate applied only to the coherence
+ * resolver would report a method unreachable while the emitter next door still
+ * wrote its route file.
  */
-function shouldIncludeInApi(actionName: string, apiConfig: unknown): boolean {
-  if (apiConfig === false) return false;
-  if (apiConfig === true || apiConfig === undefined) return true;
+export function resolveApiCustomActions(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest | undefined,
+  objectIsCollectionClass: boolean,
+  wireability: WireabilityOptions = {},
+): {
+  exposed: Array<[string, MethodDefinition]>;
+  rejected: Array<[string, ApiMethodExposure]>;
+} {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  const isModelClassName =
+    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
+  const exposed: Array<[string, MethodDefinition]> = [];
+  const rejected: Array<[string, ApiMethodExposure]> = [];
 
-  if (typeof apiConfig === 'object' && apiConfig !== null) {
-    const config = apiConfig as { include?: unknown; exclude?: unknown };
-    // Narrow the scanned decorator config defensively: a non-array
-    // include/exclude is treated as unset rather than throwing on .includes().
-    const included = Array.isArray(config.include)
-      ? config.include.includes(actionName)
-      : true;
-    const excluded = Array.isArray(config.exclude)
-      ? config.exclude.includes(actionName)
-      : false;
-    return included && !excluded;
+  for (const [name, method] of Object.entries(objectDef.methods || {})) {
+    const decision = resolveApiMethodExposure({
+      actionName: name,
+      method,
+      apiConfig,
+      isCollectionClass: objectIsCollectionClass,
+      ...(isModelClassName ? { isModelClassName } : {}),
+    });
+    if (decision.exposed) {
+      exposed.push([name, method]);
+      continue;
+    }
+    // CRUD reservation and non-public methods are not "rejections" worth
+    // reporting: neither was ever a candidate custom action, and listing every
+    // private helper would bury the rejections a developer can act on.
+    if (decision.code === 'crud-reserved' || decision.code === 'not-public') {
+      continue;
+    }
+    rejected.push([name, decision]);
   }
 
-  return true;
+  return { exposed, rejected };
+}
+
+/**
+ * Warn about the one rejection class that would be a structural failure rather
+ * than a configuration choice: an action whose declared scope has no receiver
+ * to bind. Both emitters carried this warning before #2686 moved the check into
+ * the shared resolver, and the message text is preserved.
+ *
+ * It cannot currently fire — `resolveCustomActionMetadata` collapses a
+ * contradicting scope back to the receiver-derived one, as it did before this
+ * change; see `resolveActionReceiver` in `generators/custom-action.ts`. The
+ * warning a developer actually sees for a contradicting declaration is
+ * `warnDeclaredScopeMismatch` below.
+ *
+ * Every other rejection is silent here and reported with its reason through
+ * the knowledge artifact instead, so a normal build is not buried in output
+ * for the 2% of methods the heuristic legitimately withholds.
+ */
+function warnUnhostedActions(
+  className: string,
+  rejected: Array<[string, ApiMethodExposure]>,
+): void {
+  for (const [actionName, decision] of rejected) {
+    if (decision.code !== 'no-receiver') continue;
+    console.warn(
+      `[smrt] Skipping ${className}.${actionName} - ${decision.reason}`,
+    );
+  }
+}
+
+/**
+ * Report a declared `scope` that contradicts the method's actual receiver.
+ *
+ * The declaration is honored only where it AGREES; nothing in config can move
+ * an instance method onto the class. Warning is the whole remedy — the route
+ * is still emitted at the receiver-derived URL, so an author who expected the
+ * other one learns why it is missing instead of silently getting nothing at
+ * either address (#2686).
+ */
+function warnDeclaredScopeMismatch(
+  className: string,
+  actionName: string,
+  actionDef: MethodDefinition,
+  apiConfig: unknown,
+  effectiveScope: 'item' | 'collection',
+): void {
+  const declared = resolveDeclaredScopeMismatch({
+    actionName,
+    method: actionDef,
+    apiConfig,
+    effectiveScope,
+  });
+  if (!declared) return;
+  console.warn(
+    `[smrt] ${className}.${actionName} declares scope '${declared}' but its receiver is ` +
+      `${effectiveScope}-scoped, so the declared scope is ignored. A scope describes where a ` +
+      `method already lives; it cannot move it. Make ${actionName} static to reach it on the ` +
+      'collection, or drop the scope option.',
+  );
 }
 
 /**
@@ -2260,10 +2376,20 @@ function shouldIncludeInApi(actionName: string, apiConfig: unknown): boolean {
  * API exposes for a given object definition. This is the same resolution used
  * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
  * can ask "what does the API expose?" without re-implementing the logic.
+ *
+ * Pass a class inventory: without one the wire-ability heuristic cannot tell a
+ * model class from an options interface and therefore accepts both, so the
+ * caller silently disagrees with the emitters on the LARGEST group of withheld
+ * methods (see `WireabilityOptions.isModelClassName`). Supply either
+ * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
+ * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
+ * resource listing is the second kind. Both stay optional only because this is
+ * public API.
  */
 export function resolveApiActionSet(
   objectDef: SmartObjectDefinition,
   manifest?: SmartObjectManifest,
+  wireability: WireabilityOptions = {},
 ): Set<string> {
   const apiConfig = objectDef.decoratorConfig?.api;
   if (apiConfig === false) return new Set();
@@ -2274,37 +2400,13 @@ export function resolveApiActionSet(
   const actions = objectIsCollectionClass
     ? new Set<string>()
     : new Set<string>(resolveStandardCrudActions(apiConfig));
-  // Custom (non-CRUD, public) methods. We mirror BOTH the include/exclude
-  // filter AND the scope/static skip rules that the route generators apply
-  // (sveltekit-generator.ts generateRoutesForObject and
-  // generateCollectionRoutesForObject). Otherwise the cli↔api coherence lint
-  // would claim "reachable via API" for methods that produce no HTTP route.
-  for (const [name, method] of Object.entries(objectDef.methods || {})) {
-    if (isCrudOperation(name)) continue;
-    if (!method.isPublic) continue;
-    if (!shouldIncludeInApi(name, apiConfig)) continue;
 
-    const defaultScope: 'item' | 'collection' = objectIsCollectionClass
-      ? 'collection'
-      : method.isStatic
-        ? 'collection'
-        : 'item';
-    const scope = resolveCustomActionMetadata({
-      actionName: name,
-      method,
-      apiConfig,
-      defaultScope,
-    }).scope;
-
-    if (objectIsCollectionClass) {
-      // Collection classes only emit collection-scoped custom routes.
-      if (scope !== 'collection') continue;
-    } else {
-      // Non-collection classes skip collection-scoped non-static methods
-      // (the generator emits a console warning in this case).
-      if (scope === 'collection' && !method.isStatic) continue;
-    }
-
+  for (const [name] of resolveApiCustomActions(
+    objectDef,
+    manifest,
+    objectIsCollectionClass,
+    wireability,
+  ).exposed) {
     actions.add(name);
   }
 
@@ -2472,9 +2574,14 @@ export function validateCliIncludeAgainstApi(
       (action) =>
         `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
         `  Either:\n` +
+        `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
         `    - Add '${action}' to api.include, or\n` +
         `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
         `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+        `  A public method is routed by default only when every parameter can be\n` +
+        `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
+        `  without widening api.include. See withheldSurfaces in the knowledge\n` +
+        `  artifact for the reason this one was withheld (#2686).\n` +
         `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
         `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
     ),
@@ -2957,9 +3064,31 @@ function generateActionRouteTemplate(
     );
   }
 
+  // Import only the decoders a handler in this file actually calls -- an
+  // unconditional import would leave unused symbols in every generated action
+  // route. A GET handler may need the number/boolean query-string decoders too,
+  // since `URLSearchParams` hands it strings for both (#2686).
+  const decoderImports = new Set<string>();
+  for (const spec of routeSpecs) {
+    if (hasSingleOptionsParameter(spec.actionDef)) continue;
+    for (const parameter of spec.actionDef.parameters ?? []) {
+      const decoder =
+        spec.routeConfig?.method === 'GET'
+          ? queryStringDecoderFor(parameter.type)
+          : declaredTypeAcceptsDate(parameter.type)
+            ? 'toCustomActionDate'
+            : undefined;
+      if (decoder) decoderImports.add(decoder);
+    }
+  }
+  const coreImports = [
+    'normalizeCustomActionFailure',
+    'normalizeTypedHttpError',
+    ...[...decoderImports].sort(),
+  ].join(', ');
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
-    "import { normalizeCustomActionFailure, normalizeTypedHttpError } from '@happyvertical/smrt-core';",
+    `import { ${coreImports} } from '@happyvertical/smrt-core';`,
     hostType === 'collection' || routeConfig.scope !== 'collection'
       ? "import { getCollection } from '$lib/server/smrt';"
       : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
@@ -3057,6 +3186,7 @@ function generateActionRouteHandler(
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
       scopedOptions.optionsIdentifier,
+      routeConfig.method,
     );
 
     return `// Custom collection method: ${actionName}
@@ -3108,6 +3238,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
       scopedOptions.optionsIdentifier,
+      routeConfig.method,
     );
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
@@ -3155,7 +3286,11 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     readScope ? { id: params.id, ...readScope } : params.id,
   );`
       : '  const item = await collection.get(params.id);';
-  const invocationArgs = buildActionInvocationArgs(actionDef);
+  const invocationArgs = buildActionInvocationArgs(
+    actionDef,
+    'options',
+    routeConfig.method,
+  );
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}
