@@ -30,6 +30,19 @@ Each layer can override any subset of fields (template, profile, model, params).
 
 `resolvePrompt()` results are cached per `(key, tenantId)` with a TTL. The cache is invalidated on `PromptOverride.save()` and `.delete()`. Use `clearPromptCache()` for manual invalidation in tests.
 
+**A monotonic per-`(db, key)` invalidation generation guards the cache write.**
+A resolution captures `getPromptCacheGeneration(key, db)` before its
+asynchronous layer loads and hands it back to `setCachedPromptBase()`; a
+concurrent `save()` / `delete()` bumps the generation and the in-flight
+resolution is then refused the cache write instead of repopulating the key it
+just invalidated with the pre-write value. Without it, "a stale entry is never
+served after a write" held only until a read raced a write, and then failed for
+the full 30s TTL (a raced `delete()` resurrected the deleted override).
+Generations are tracked per `(db, key)`, not per tenant, because an app-level
+row is inherited by every tenant. `clearPromptCache()` bumps rather than resets
+them, so a resolution that started before the clear cannot write back either.
+`smrt-playbooks` and `smrt-languages` carry the same mechanism.
+
 ## Related
 
 - `@happyvertical/smrt-languages` — parallel package for language strings (uses the same architecture pattern)

@@ -55,6 +55,31 @@ The translation job:
   `'__app__'` so the `(key, locale, context)` upsert key remains unique even
   with nullable `tenantId`.
 
+## Caching
+
+`resolveLanguageString()` results are cached per `(db, key, locale, tenantId)`
+with a TTL, invalidated on `LanguageOverride.save()` / `.delete()` (both
+identities when one changes) and by the translation job. An app-level write
+(`tenantId = null`) clears every tenant's entry for that `(key, locale)`. Use
+`clearLanguageCache()` in tests.
+
+**A monotonic per-`(db, key, locale)` invalidation generation guards the cache
+write.** A resolution captures `getLanguageCacheGeneration(key, locale, db)`
+before its asynchronous layer loads and hands it back to `setCachedLanguage()`;
+a concurrent write bumps the generation and the in-flight resolution is then
+refused the cache write instead of repopulating the entry it just invalidated
+with the pre-write value. Without it, a read that raced a write served the
+pre-write value for the full 30s TTL, and a raced `delete()` resurrected the
+deleted override. The generation includes `locale` — unlike `smrt-playbooks`
+and `smrt-prompts`, which have no locale dimension — because every layer a
+cached entry is built from is read at exactly the locale it is cached under:
+the fallback chain (`fr-CA` → `fr` → `en`) resolves each locale independently
+and an attempt that resolves nothing caches nothing, so a fallback hit is never
+stored under the requested locale. It deliberately excludes `tenantId`, because
+an app-level row is inherited by every tenant. `clearLanguageCache()` bumps
+rather than resets generations, so a resolution that started before the clear
+cannot write back either.
+
 ## Public API surface
 
 ```typescript

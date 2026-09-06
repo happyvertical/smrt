@@ -253,8 +253,8 @@ stale one:
   are tracked per `(db, key)`, not per tenant, because an app-level row is
   inherited by every tenant. `clearPlaybookCache()` bumps rather than resets
   them, so a resolution that started before the clear cannot write back either.
-  `smrt-prompts` and `smrt-languages` still carry the unguarded version of this
-  race; fixing them is separate work.
+  `smrt-prompts` and `smrt-languages` carry the same mechanism (#2609);
+  `smrt-languages` additionally keys its generation by locale.
 - **Restart vitest after adding a decorated class**; the manifest is generated
   at startup.
 

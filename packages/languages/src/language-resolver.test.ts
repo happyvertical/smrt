@@ -6,7 +6,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearLanguageCache, getLanguageCacheTtlMs } from './cache.js';
 import { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
 import { defineLanguageString, LanguageRegistry } from './language-registry.js';
@@ -238,6 +238,59 @@ describe('@happyvertical/smrt-languages — resolver', () => {
       db,
     });
     expect(resolved.text).toBe('Salut');
+  });
+
+  it('never repopulates an entry with a value read before a concurrent write', async () => {
+    defineLanguageString({
+      key: 'test.race',
+      locale: 'en',
+      template: 'Code {name}',
+    });
+
+    const loadAppOverride = LanguageOverrideCollection.prototype.getAppOverride;
+
+    // Interleave a write between the resolution's layer read and its cache
+    // write: the resolution has already read the pre-write state (no app
+    // override), then the write lands and invalidates the entry.
+    const spy = vi
+      .spyOn(LanguageOverrideCollection.prototype, 'getAppOverride')
+      .mockImplementationOnce(async function (
+        this: LanguageOverrideCollection,
+        ...args: Parameters<typeof loadAppOverride>
+      ) {
+        const staleOverride = await loadAppOverride.apply(this, args);
+        await overrides.create({
+          key: 'test.race',
+          locale: 'en',
+          tenantId: null,
+          template: 'App {name}',
+        });
+        return staleOverride;
+      });
+
+    try {
+      // This in-flight resolution legitimately returns what it read.
+      const racing = await resolveLanguageString('test.race', {
+        db,
+        tenantId: 'tenant-a',
+        vars: { name: 'Will' },
+      });
+      expect(racing.text).toBe('Code Will');
+      expect(racing.source).toBe('code');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The point of the fix: that stale value must not have been written back
+    // over the invalidated entry, so the next resolution sees the write rather
+    // than serving the pre-write value for the rest of the TTL.
+    const afterRace = await resolveLanguageString('test.race', {
+      db,
+      tenantId: 'tenant-a',
+      vars: { name: 'Will' },
+    });
+    expect(afterRace.text).toBe('App Will');
+    expect(afterRace.source).toBe('app');
   });
 
   it('expires stale cache entries after the TTL', async () => {
