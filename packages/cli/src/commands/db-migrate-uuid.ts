@@ -414,6 +414,7 @@ interface GeneratedBridgeSnapshot {
     definition: string;
     comment: string | null;
     clustered: boolean;
+    replicaIdentity: boolean;
   }>;
 }
 
@@ -585,6 +586,10 @@ async function convertPostgresUuidColumns(
       if (index.clustered)
         await db.query(
           `ALTER TABLE ${pgTable(bridge.table)} CLUSTER ON ${quoteIdentifier(index.name)}`,
+        );
+      if (index.replicaIdentity)
+        await db.query(
+          `ALTER TABLE ${pgTable(bridge.table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)}`,
         );
     }
   }
@@ -790,7 +795,8 @@ async function snapshotBridgeIndexes(
             obj_description(index_rel.oid, 'pg_class') AS comment,
             idx.indnkeyatts AS key_count, idx.indpred IS NOT NULL AS partial,
             idx.indexprs IS NOT NULL AS expression_index, idx.indisvalid AS valid,
-            idx.indisclustered AS clustered,
+            idx.indisready AS ready, idx.indisclustered AS clustered,
+            idx.indisreplident AS replica_identity,
             am.amname AS method
        FROM pg_index idx
        JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
@@ -808,6 +814,7 @@ async function snapshotBridgeIndexes(
       row.partial ||
       row.expression_index ||
       !row.valid ||
+      !row.ready ||
       row.method !== 'btree'
     ) {
       throw new Error(
@@ -821,6 +828,7 @@ async function snapshotBridgeIndexes(
       definition: String(row.definition),
       comment: row.comment == null ? null : String(row.comment),
       clustered: Boolean(row.clustered),
+      replicaIdentity: Boolean(row.replica_identity),
     };
   });
 }

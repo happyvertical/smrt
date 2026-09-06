@@ -591,6 +591,12 @@ describePostgres(
         `ALTER TABLE "${parent}" CLUSTER ON "${parent}_bridge_uidx"`,
       );
       await db.query(
+        `CREATE UNIQUE INDEX "${parent}_replica_uidx" ON "${parent}" (id) INCLUDE (_integrity_id_text)`,
+      );
+      await db.query(
+        `ALTER TABLE "${parent}" REPLICA IDENTITY USING INDEX "${parent}_replica_uidx"`,
+      );
+      await db.query(
         `CREATE TABLE "${child}" (id text PRIMARY KEY, parent_id text NOT NULL CONSTRAINT "${child}_parent_fkey" REFERENCES "${parent}"(id) ON UPDATE CASCADE ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED)`,
       );
       await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
@@ -676,13 +682,27 @@ describePostgres(
         '11111111-1111-1111-1111-111111111111',
       );
       const { rows: bridgeIndex } = await db.query(
-        `SELECT idx.indisclustered AS clustered
+        `SELECT index_rel.relname AS name, idx.indisclustered AS clustered,
+                idx.indisreplident AS replica_identity
            FROM pg_index idx
            JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
-          WHERE index_rel.relname = $1`,
+          WHERE index_rel.relname IN ($1, $2)
+          ORDER BY index_rel.relname`,
         `${parent}_bridge_uidx`,
+        `${parent}_replica_uidx`,
       );
-      expect((bridgeIndex as any[])[0].clustered).toBe(true);
+      expect(bridgeIndex).toEqual([
+        {
+          name: `${parent}_bridge_uidx`,
+          clustered: true,
+          replica_identity: false,
+        },
+        {
+          name: `${parent}_replica_uidx`,
+          clustered: false,
+          replica_identity: true,
+        },
+      ]);
       const { rows: constraints } = await db.query(
         `SELECT conname, convalidated FROM pg_constraint WHERE conname IN ($1, $2) ORDER BY conname`,
         `${child}_parent_fkey`,
