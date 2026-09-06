@@ -440,5 +440,43 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
         expect(await tableExists(db, table)).toBe(true);
       }
     });
+
+    /**
+     * Documents a real, verified limitation a final review found: unlike
+     * PostgreSQL (whose FK enforcement is dependency-based and refuses the
+     * DROP regardless of row count), SQLite's `DROP TABLE` only enforces
+     * foreign keys against the rows actually being removed. An empty parent
+     * — exactly this function's precondition — drops cleanly even with a
+     * real, enforced foreign key pointing at it. No data is lost (the
+     * dropped table is empty by construction), but the referencing table is
+     * left with a dangling reference. The plan-time full-catalog scan
+     * remains the only gate against this on SQLite/DuckDB; it is not
+     * re-run inside the execution transaction (see the module's own doc
+     * comment for the full rationale).
+     */
+    it('drops an empty target even past a real foreign key created after planning (documented SQLite limitation, not a data-loss risk)', async () => {
+      await createAllFrameworkBaseTables(db);
+      await db.query('PRAGMA foreign_keys = ON');
+
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'sqlite',
+      });
+      expect(plan.safe).toBe(true);
+
+      // A foreign key referencing smrt_classes appears after planning —
+      // the plan-time scan could not have seen it.
+      await db.query(
+        'CREATE TABLE "widgets" (id TEXT PRIMARY KEY, class_id TEXT REFERENCES "smrt_classes"(id))',
+      );
+
+      // smrt_classes is still empty, so SQLite's row-based FK enforcement
+      // raises nothing — the drop proceeds.
+      await dropFrameworkBaseTables(db, plan);
+
+      expect(await tableExists(db, 'smrt_classes')).toBe(false);
+      // The referencing table survives, now with a dangling reference —
+      // schema drift, not data loss.
+      expect(await tableExists(db, 'widgets')).toBe(true);
+    });
   });
 });

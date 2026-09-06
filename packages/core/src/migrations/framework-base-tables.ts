@@ -41,11 +41,17 @@
  *    count — inside that same bounded transaction immediately before
  *    dropping anything. A table rewritten or replaced between planning and
  *    execution therefore still stops the whole batch, not just a row-count
- *    race. Foreign keys are checked at planning time only; a foreign key
- *    added afterward is still caught, because the database itself refuses
- *    the `DROP TABLE` when a real dependent exists (see
- *    {@link qualifyIdentifier}'s doc comment for the one documented
- *    exception, DuckDB).
+ *    race. Foreign keys are checked at planning time only. On PostgreSQL, a
+ *    foreign key added afterward is still caught — its FK enforcement is
+ *    dependency-based, so `DROP TABLE` refuses when a real dependent
+ *    exists. This does **not** hold on SQLite/DuckDB: SQLite's `DROP TABLE`
+ *    only enforces against the rows actually being removed, so an empty
+ *    parent (exactly this function's precondition) drops cleanly past a
+ *    real foreign key, and DuckDB's adapter cannot even see the reference
+ *    at plan time (see {@link qualifyIdentifier}'s doc comment). No data is
+ *    lost either way — the residual risk on those two engines is a
+ *    dangling reference, not data loss, confined to a narrow window a
+ *    one-time operator-run command makes unlikely in practice.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -635,11 +641,24 @@ export interface DropFrameworkBaseTablesResult {
  * does not expose that richer introspection method on the transaction-scoped
  * connection this callback receives, only `query()`. Foreign keys are
  * deliberately **not** re-scanned here — doing so would need a fresh
- * full-catalog scan on every drop, and a foreign key that appeared after
- * planning is still caught: PostgreSQL (and SQLite, with enforcement on)
- * both refuse the `DROP TABLE` itself when a real dependent exists, exactly
- * like the already-documented DuckDB introspection gap in
- * {@link qualifyIdentifier}'s doc comment.
+ * full-catalog scan on every drop.
+ *
+ * On PostgreSQL a foreign key that appeared after planning is still caught:
+ * its FK enforcement is dependency-based, so `DROP TABLE` itself refuses
+ * when a real dependent exists, empty parent or not. **This does not hold
+ * on SQLite** — verified directly: `DROP TABLE` there only checks FK
+ * enforcement against the rows actually being removed, so a parent with
+ * zero rows (exactly the state this function requires) drops cleanly even
+ * with a real, enforced foreign key pointing at it, leaving the referencing
+ * table with a dangling reference. On SQLite/DuckDB, the plan-time
+ * full-catalog scan is therefore the *only* gate against a foreign key on
+ * these two engines — narrower than PostgreSQL's, on top of the
+ * already-documented DuckDB introspection gap in
+ * {@link qualifyIdentifier}'s doc comment where that plan-time scan cannot
+ * see the reference at all. No data is lost either way (the target table is
+ * verified empty before every drop); the residual risk is a dangling
+ * reference in the very narrow window between planning and this
+ * transaction, on either engine, or an FK created after planning at all.
  *
  * Only `plan.statements`' `DROP TABLE` entries are executed — the
  * `DROP INDEX` entries are not. An index name is unique per schema

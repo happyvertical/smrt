@@ -309,14 +309,19 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 - `--dry-run` prints the exact plan (which tables exist, their companion
   indexes, and the DROP statements) without executing.
 - Skipping it is safe: a table left behind is inert and permanently orphaned,
-  never written to or read from again. Two backstopped, documented
-  limitations: DuckDB's adapter does not report foreign keys through
-  `getTableSchema()`, and this module's reverse-FK scan (like every other
-  PostgreSQL schema tool in this package) only looks at the `public` schema.
-  In both cases the database's own foreign-key enforcement still refuses the
-  `DROP TABLE` when a real dependent exists, so nothing is actually
-  dropped — only the curated refusal message is missed in favor of a
-  generic engine error.
+  never written to or read from again. Documented, narrow residual risk, all
+  schema-integrity (never data loss — the target is always verified empty
+  first): DuckDB's adapter does not report foreign keys through
+  `getTableSchema()` at all; this module's reverse-FK scan (like every other
+  PostgreSQL schema tool in this package) only looks at the `public` schema;
+  and foreign keys are checked at planning time only, not re-scanned inside
+  the execution transaction. On PostgreSQL a foreign key that appeared after
+  planning is still caught there — `DROP TABLE` refuses when a real
+  dependent exists, dependency-based, empty parent or not. **This does not
+  hold on SQLite**: its FK enforcement on `DROP TABLE` is row-based, so an
+  empty parent (this command's precondition) drops cleanly past a real
+  foreign key, verified directly. The plan-time scan is the only gate on
+  SQLite/DuckDB, narrower than PostgreSQL's.
 
 ## Architecture
 
