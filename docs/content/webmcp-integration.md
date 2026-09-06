@@ -26,6 +26,16 @@ interaction state; bespoke tools and declared view intents describe a
 component-owned intent; and principal-bound tools stay behind server
 authorization.
 
+The four browser sources derive their tool names independently and all reach
+one `document.modelContext`, so each reserves its names through a
+document-global tool-name lock before registering
+([#2613](https://github.com/happyvertical/smrt/issues/2613)). A name two
+sources both want is refused synchronously, with a message naming the tool and
+which source already holds it (`generated`, `ui`, `intent`, or `bespoke`).
+Before the lock, the browser rejected whichever registration arrived second and
+that tool was simply absent. Disposing a registration releases its names, so
+mounting and unmounting the same tool repeatedly keeps working.
+
 Declared view intents and bespoke component tools are the same trust
 boundary reached two ways, and both register through
 `registerWebMcpBespokeTool` under one exposure policy. Prefer a declared

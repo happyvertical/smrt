@@ -24,6 +24,10 @@
     "./intents": {
       "types": "./dist/intents.d.ts",
       "import": "./dist/intents.js"
+    },
+    "./webmcp-tool-names": {
+      "types": "./dist/webmcp-tool-names.d.ts",
+      "import": "./dist/webmcp-tool-names.js"
     }
   },
   "dependencies": {

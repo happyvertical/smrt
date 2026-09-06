@@ -15,6 +15,10 @@ import type {
   ControlInteractionRegistry,
   ControlSnapshot,
 } from '@happyvertical/smrt-ui/forms';
+import {
+  reserveWebMcpToolNames,
+  type WebMcpToolNameReservation,
+} from '@happyvertical/smrt-web/webmcp-tool-names';
 import type { WebMcpToolSpec } from './webmcp.svelte.js';
 
 const CONTROL_ACTIONS = new Set<ControlCommandAction>([
@@ -611,6 +615,31 @@ export function registerWebMcpUiTools(
   }
   locks.add(prefix);
 
+  const specs = tools(
+    prefix,
+    options.controlRegistry,
+    options.dataSurfaceRegistry,
+  );
+  // The six fixed names go through the document-global tool-name lock (#2613)
+  // so a generated model tool, a declared view intent, or a bespoke
+  // `useWebMcpTool` name cannot silently take one of them from us — or lose to
+  // one of ours — at the host. Under a custom `prefix` these names are not
+  // knowable from any declaration, which is exactly why the lock exists.
+  // Reserved before the first `registerTool`, and released by `dispose`; the
+  // prefix lock above stays because it names the more common mistake (two
+  // Providers, one prefix) more precisely.
+  let reservation: WebMcpToolNameReservation;
+  try {
+    reservation = reserveWebMcpToolNames(
+      specs.map((spec) => spec.name),
+      'ui',
+      { document: documentLike },
+    );
+  } catch (error) {
+    locks.delete(prefix);
+    throw error;
+  }
+
   const controller = new AbortController();
   let disposed = false;
   const dispose = () => {
@@ -618,13 +647,10 @@ export function registerWebMcpUiTools(
     disposed = true;
     controller.abort();
     locks.delete(prefix);
+    reservation.release();
   };
   try {
-    for (const tool of tools(
-      prefix,
-      options.controlRegistry,
-      options.dataSurfaceRegistry,
-    )) {
+    for (const tool of specs) {
       const registration = modelContext.registerTool(tool, {
         signal: controller.signal,
       });

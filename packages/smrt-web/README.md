@@ -131,7 +131,7 @@ core.
 | Persistence | `persistCollection`, `wipeDurableStore` |
 | Live updates | `createSmrtWebEventSubscriber`, `liveInvalidation` |
 | Version awareness | `createUpdateState` |
-| WebMCP | `registerWebMcpTools` |
+| WebMCP | `registerWebMcpTools`, `registerWebMcpBespokeTool`, `registerViewIntent`, `reserveWebMcpToolNames` |
 
 ## WebMCP capability exposure
 
@@ -190,6 +190,26 @@ Do not concatenate complete legacy and canonical definition sets for the same
 collections. Their duplicate tool names or collection/action identities reject
 the registration atomically. Prefer the canonical set for complete generated
 coverage, or compose only disjoint legacy and canonical subsets.
+
+### Tool names are locked per document
+
+Generated model tools, the six fixed `smrt_ui_*` tools a UI layer registers
+under its own prefix, declared view intents, and hand-written bespoke tools all
+derive names independently and all end at one `document.modelContext`. None can
+see the others at declaration time, because a `namespace` and a UI `prefix` are
+runtime values.
+
+Every path reserves its names through a document-global lock before the browser
+sees them, so a cross-path collision is refused synchronously with a
+`WebMcpToolNameCollisionError` naming the tool and the owner holding it
+(`generated`, `ui`, `intent`, or `bespoke`). The browser used to reject the
+later registration and the tool was simply absent.
+
+Reservation is all-or-nothing, and disposing a registration releases its names,
+so a mount / unmount / remount cycle under one name keeps working. A UI layer
+that registers its own fixed tool set reserves through the dependency-free
+`@happyvertical/smrt-web/webmcp-tool-names` entry, passing the same `document`
+it reads `modelContext` from.
 
 WebMCP policy controls which capabilities a page advertises; it is not an
 authorization boundary. Execution still uses the page's authenticated REST

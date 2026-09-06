@@ -1670,11 +1670,15 @@ export {
   registerViewIntent,
   registerWebMcpBespokeTool,
   registerWebMcpTools,
+  reserveWebMcpToolNames,
   type WebMcpBespokeToolSpec,
   type WebMcpExposurePolicy,
   type WebMcpRegistrationDefinition,
   type WebMcpRegistrationDisposer,
   type WebMcpToolEffect,
+  WebMcpToolNameCollisionError,
+  type WebMcpToolNameOwner,
+  type WebMcpToolNameReservation,
 } from './webmcp.js';
 
 // ---------------------------------------------------------------------------

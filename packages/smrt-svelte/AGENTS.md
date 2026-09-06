@@ -109,6 +109,12 @@ share an application registry. The adapter resolves registry state at execution
 time, never reads the DOM, never accepts agent confirmation, and removes the
 entire tool set with one abort signal. A document may have only one active
 adapter for a prefix; configure distinct prefixes for intentional coexistence.
+The six derived names are also reserved through smrt-web's document-global
+tool-name lock (`@happyvertical/smrt-web/webmcp-tool-names`, #2613), so a
+generated model tool, a view intent, or a `useWebMcpTool` tool that would
+occupy one of them under the configured prefix fails at registration with the
+owner named instead of losing a tool at the host. Reserve before the first
+`registerTool` and release on dispose.
 
 ## Hooks
 
