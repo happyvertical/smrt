@@ -523,6 +523,26 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses a managed partition of a retained table', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (id bigint) PARTITION BY RANGE (id)',
+    );
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit_partition PARTITION OF app.operator_audit FOR VALUES FROM (0) TO (100)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    contract.managedTables = ['operator_audit_partition'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-inheritance',
+        resource: '"app"."operator_audit_partition"',
+      }),
+    );
+  });
   it('refuses retained foreign keys to a managed table', async () => {
     await as(
       owner,

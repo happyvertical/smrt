@@ -826,14 +826,13 @@ async function plan(
         'Retained tables must already exist before permission reconciliation.',
       );
   for (const relation of state.inherits) {
-    const parentTable = relation.parent_table;
-    if (
+    const childRetained =
       relation.child_schema === contract.schema &&
-      retained.has(relation.child_table) &&
-      (relation.parent_schema !== contract.schema ||
-        !parentTable ||
-        !retained.has(parentTable))
-    )
+      retained.has(relation.child_table);
+    const parentRetained =
+      relation.parent_schema === contract.schema &&
+      retained.has(relation.parent_table ?? '');
+    if (childRetained !== parentRetained)
       unsupported(
         'retained-inheritance',
         qualified(relation.child_schema, relation.child_table),
