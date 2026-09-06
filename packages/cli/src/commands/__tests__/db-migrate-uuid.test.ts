@@ -1715,3 +1715,248 @@ describePostgres(
     }, 30_000);
   },
 );
+
+describePostgres(
+  'db:migrate-uuid fixes only public tables under a shadow-first search_path (real Postgres)',
+  () => {
+    const stem = `mu_shadow_${Math.random().toString(36).slice(2, 8)}`;
+    const shadowSchema = `${stem}_schema`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const publicFk = `${child}_parent_fkey`;
+    const shadowFk = `${child}_shadow_parent_fkey`;
+
+    async function baseDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    function handlerUrl(): string {
+      const url = new URL(process.env.DATABASE_URL as string);
+      url.searchParams.set('options', `-c search_path=${shadowSchema},public`);
+      return url.toString();
+    }
+
+    async function snapshot(): Promise<Record<string, unknown>> {
+      const db = await baseDb();
+      const [data, columns, foreignKeys] = await Promise.all([
+        db.query(
+          `SELECT 'public_parent' AS source, to_jsonb(parent) AS row FROM public."${parent}" parent
+           UNION ALL SELECT 'public_child', to_jsonb(child) FROM public."${child}" child
+           UNION ALL SELECT 'shadow_parent', to_jsonb(parent) FROM "${shadowSchema}"."${parent}" parent
+           UNION ALL SELECT 'shadow_child', to_jsonb(child) FROM "${shadowSchema}"."${child}" child
+           ORDER BY source`,
+        ),
+        db.query(
+          `SELECT table_schema, table_name, column_name, data_type
+             FROM information_schema.columns
+            WHERE table_schema IN ('public', $1) AND table_name IN ($2, $3)
+            ORDER BY table_schema, table_name, ordinal_position`,
+          shadowSchema,
+          parent,
+          child,
+        ),
+        db.query(
+          `SELECT child_ns.nspname AS child_schema, child.relname AS child_table,
+                  con.conname, parent_ns.nspname AS parent_schema, parent.relname AS parent_table,
+                  pg_get_constraintdef(con.oid) AS definition
+             FROM pg_constraint con
+             JOIN pg_class child ON child.oid = con.conrelid
+             JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+             JOIN pg_class parent ON parent.oid = con.confrelid
+             JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+            WHERE con.contype = 'f' AND child_ns.nspname IN ('public', $1)
+              AND child.relname = $2
+            ORDER BY child_schema, con.conname`,
+          shadowSchema,
+          child,
+        ),
+      ]);
+      return {
+        data: data.rows,
+        columns: columns.rows,
+        foreignKeys: foreignKeys.rows,
+      };
+    }
+
+    beforeEach(async () => {
+      const db = await baseDb();
+      await db.query(`DROP SCHEMA IF EXISTS "${shadowSchema}" CASCADE`);
+      await db.query(
+        `DROP TABLE IF EXISTS public."${child}", public."${parent}" CASCADE`,
+      );
+      await db.query(`CREATE SCHEMA "${shadowSchema}"`);
+      await db.query(
+        `CREATE TABLE public."${parent}" (
+           id text PRIMARY KEY,
+           old_ref text NOT NULL,
+           new_ref text
+         )`,
+      );
+      await db.query(
+        `CREATE TABLE public."${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${publicFk}" REFERENCES public."${parent}"(id)
+         )`,
+      );
+      await db.query(
+        `CREATE TABLE "${shadowSchema}"."${parent}" (
+           id text PRIMARY KEY,
+           old_ref text NOT NULL,
+           new_ref text
+         )`,
+      );
+      await db.query(
+        `CREATE TABLE "${shadowSchema}"."${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${shadowFk}" REFERENCES "${shadowSchema}"."${parent}"(id)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO public."${parent}" (id, old_ref) VALUES ($1, $2)`,
+        '11111111-1111-1111-1111-111111111111',
+        'public-rename',
+      );
+      await db.query(
+        `INSERT INTO public."${child}" (id, parent_id) VALUES ($1, $2)`,
+        '22222222-2222-2222-2222-222222222222',
+        '11111111-1111-1111-1111-111111111111',
+      );
+      await db.query(
+        `INSERT INTO "${shadowSchema}"."${parent}" (id, old_ref) VALUES ($1, $2)`,
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        'shadow-rename',
+      );
+      await db.query(
+        `INSERT INTO "${shadowSchema}"."${child}" (id, parent_id) VALUES ($1, $2)`,
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      );
+      clearCache();
+      setConfig({
+        packages: {
+          cli: { database: { type: 'postgres', url: handlerUrl() } },
+        },
+      } as any);
+    });
+
+    afterEach(async () => {
+      try {
+        const db = await baseDb();
+        await db.query(`DROP SCHEMA IF EXISTS "${shadowSchema}" CASCADE`);
+        await db.query(
+          `DROP TABLE IF EXISTS public."${child}", public."${parent}" CASCADE`,
+        );
+      } catch {
+        // The handler closes its pool; teardown reacquires a base connection.
+      }
+      clearCache();
+    });
+
+    it('converts and renames the public component while leaving same-named shadow tables untouched', async () => {
+      const session = await getDatabase({
+        type: 'postgres',
+        url: handlerUrl(),
+      });
+      const searchPath = await session.query('SHOW search_path');
+      expect((searchPath.rows as any[])[0].search_path).toContain(
+        `${shadowSchema},public`,
+      );
+      const schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+      const before = await snapshot();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {
+        rename: `${parent}.old_ref:new_ref`,
+      });
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+      schemaSpy.mockRestore();
+      const after = await snapshot();
+      const shadowBefore = {
+        data: (before.data as any[]).filter((row) =>
+          row.source.startsWith('shadow_'),
+        ),
+        columns: (before.columns as any[]).filter(
+          (row) => row.table_schema === shadowSchema,
+        ),
+        foreignKeys: (before.foreignKeys as any[]).filter(
+          (row) => row.child_schema === shadowSchema,
+        ),
+      };
+      const shadowAfter = {
+        data: (after.data as any[]).filter((row) =>
+          row.source.startsWith('shadow_'),
+        ),
+        columns: (after.columns as any[]).filter(
+          (row) => row.table_schema === shadowSchema,
+        ),
+        foreignKeys: (after.foreignKeys as any[]).filter(
+          (row) => row.child_schema === shadowSchema,
+        ),
+      };
+      expect(shadowAfter).toEqual(shadowBefore);
+      expect(
+        (after.columns as any[])
+          .filter(
+            (row) =>
+              row.table_schema === 'public' &&
+              ['id', 'parent_id'].includes(row.column_name),
+          )
+          .every((row) => row.data_type === 'uuid'),
+      ).toBe(true);
+      expect(
+        (after.columns as any[]).some(
+          (row) =>
+            row.table_schema === 'public' && row.column_name === 'old_ref',
+        ),
+      ).toBe(false);
+      expect(
+        (after.data as any[]).find((row) => row.source === 'public_parent'),
+      ).toEqual({
+        source: 'public_parent',
+        row: {
+          id: '11111111-1111-1111-1111-111111111111',
+          new_ref: 'public-rename',
+        },
+      });
+      expect(
+        (after.foreignKeys as any[]).find(
+          (row) => row.child_schema === 'public',
+        ),
+      ).toMatchObject({
+        conname: publicFk,
+        parent_schema: 'public',
+        parent_table: parent,
+      });
+    }, 30_000);
+  },
+);
