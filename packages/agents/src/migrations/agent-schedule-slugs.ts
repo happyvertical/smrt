@@ -32,6 +32,7 @@ type ScheduleIdentityRow = {
   id: unknown;
   slug: unknown;
   context: unknown;
+  tenant_id: unknown;
 };
 
 type Candidate = { id: string; slug: string; context: string };
@@ -62,6 +63,11 @@ function normalizeRows(rows: readonly ScheduleIdentityRow[]): Candidate[] {
         `${AGENT_SCHEDULE_TABLE}.context must be a non-null string before schedule slug migration`,
       );
     }
+    if (row.tenant_id !== null && typeof row.tenant_id !== 'string') {
+      throw new AgentScheduleSlugBackfillError(
+        `${AGENT_SCHEDULE_TABLE}.tenant_id must be a string or null before schedule slug migration`,
+      );
+    }
     const slug = isPresentSlug(row.slug)
       ? row.slug
       : canonicalScheduleSlug(row.id);
@@ -70,11 +76,11 @@ function normalizeRows(rows: readonly ScheduleIdentityRow[]): Candidate[] {
         `Cannot derive a canonical slug for a legacy ${AGENT_SCHEDULE_TABLE} row with a missing or malformed id`,
       );
     }
-    const key = `${row.context}\u0000${slug}`;
+    const key = JSON.stringify([row.tenant_id, row.context, slug]);
     const prior = seen.get(key);
     if (prior && prior !== row.id) {
       throw new AgentScheduleSlugBackfillError(
-        `Refusing schedule slug migration: canonical slug ${JSON.stringify(slug)} collides within context ${JSON.stringify(row.context)}`,
+        `Refusing schedule slug migration: canonical slug ${JSON.stringify(slug)} collides within tenant ${JSON.stringify(row.tenant_id)} and context ${JSON.stringify(row.context)}`,
       );
     }
     seen.set(key, row.id);
@@ -87,16 +93,21 @@ function normalizeRows(rows: readonly ScheduleIdentityRow[]): Candidate[] {
 
 async function readRows(db: Pick<DatabaseInterface, 'query'>) {
   const result = await db.query(
-    `SELECT id, slug, context FROM "${AGENT_SCHEDULE_TABLE}" ORDER BY id`,
+    `SELECT id, slug, context, tenant_id FROM "${AGENT_SCHEDULE_TABLE}" ORDER BY id`,
   );
   return result.rows as ScheduleIdentityRow[];
 }
 
 async function assertSupportedShape(db: DatabaseInterface): Promise<void> {
   const schema = await db.getTableSchema?.(AGENT_SCHEDULE_TABLE);
-  if (!schema?.columns.id || !schema.columns.slug || !schema.columns.context) {
+  if (
+    !schema?.columns.id ||
+    !schema.columns.slug ||
+    !schema.columns.context ||
+    !schema.columns.tenant_id
+  ) {
     throw new AgentScheduleSlugBackfillError(
-      `${AGENT_SCHEDULE_TABLE} must contain id, slug, and context columns; run db:migrate before migrating schedule slugs`,
+      `${AGENT_SCHEDULE_TABLE} must contain id, slug, context, and tenant_id columns; run db:migrate before migrating schedule slugs`,
     );
   }
 }

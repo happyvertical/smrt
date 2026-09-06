@@ -42,6 +42,7 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
         id TEXT PRIMARY KEY,
         slug TEXT,
         context TEXT NOT NULL DEFAULT '',
+        tenant_id TEXT,
         agent_type TEXT,
         cron TEXT,
         enabled BOOLEAN,
@@ -52,7 +53,7 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
       )
     `);
     await db.query(
-      `CREATE UNIQUE INDEX "${table}_slug_context_idx" ON "${table}" (slug, context)`,
+      `CREATE UNIQUE INDEX "${table}_tenant_slug_context_idx" ON "${table}" (tenant_id, slug, context)`,
     );
   }
 
@@ -157,6 +158,57 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
         status: 'pending',
       },
     ]);
+  });
+
+  it('allows the same canonical slug in separate tenants, but rejects collisions within one tenant or the global scope', async () => {
+    await legacyTable();
+    await db.query(
+      `INSERT INTO "${table}" (id, slug, tenant_id) VALUES (?, NULL, ?), (?, NULL, ?)`,
+      'shared schedule!',
+      'tenant-a',
+      'shared-schedule',
+      'tenant-b',
+    );
+    await expect(migrateAgentScheduleSlugs(db)).resolves.toEqual({
+      ran: true,
+      updated: 2,
+    });
+    expect(
+      (
+        await db.query(
+          `SELECT tenant_id, slug FROM "${table}" ORDER BY tenant_id`,
+        )
+      ).rows,
+    ).toEqual([
+      { tenant_id: 'tenant-a', slug: 'shared-schedule' },
+      { tenant_id: 'tenant-b', slug: 'shared-schedule' },
+    ]);
+
+    await db.query(`DROP TABLE "${table}"`);
+    await legacyTable();
+    await db.query(
+      `INSERT INTO "${table}" (id, slug, tenant_id) VALUES (?, NULL, ?), (?, NULL, ?)`,
+      'same schedule!',
+      'tenant-a',
+      'same-schedule',
+      'tenant-a',
+    );
+    await expect(planAgentScheduleSlugMigration(db)).rejects.toBeInstanceOf(
+      AgentScheduleSlugBackfillError,
+    );
+
+    await db.query(`DROP TABLE "${table}"`);
+    await legacyTable();
+    // PostgreSQL permits several NULL values in a unique index. The framework
+    // treats NULL tenant_id as one global scope, so reject this before writes.
+    await db.query(
+      `INSERT INTO "${table}" (id, slug, tenant_id) VALUES (?, NULL, NULL), (?, NULL, NULL)`,
+      'global schedule!',
+      'global-schedule',
+    );
+    await expect(planAgentScheduleSlugMigration(db)).rejects.toBeInstanceOf(
+      AgentScheduleSlugBackfillError,
+    );
   });
 
   it('fails closed on normalized collisions without touching data or marker', async () => {
