@@ -1311,3 +1311,191 @@ describePostgres(
     }, 30_000);
   },
 );
+
+// Safety probe: these dependencies are not reconstructable by the narrow
+// bridge snapshotter. A migration must reject before DROP COLUMN can make
+// PostgreSQL silently remove a CHECK/UNIQUE constraint or an expression/predicate
+// index, and before re-adding the bridge loses its explicit collation.
+describePostgres(
+  'db:migrate-uuid refuses generated bridges with unsupported catalog dependencies (real Postgres)',
+  () => {
+    const stem = `mu_bridge_catalog_${Math.random().toString(36).slice(2, 8)}`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const junction = `${stem}_junction`;
+    const bridgeCheck = `${parent}_bridge_check`;
+    const bridgeUnique = `${parent}_bridge_unique`;
+    const bridgeExpressionIndex = `${parent}_bridge_expression_idx`;
+    const bridgePartialIndex = `${parent}_bridge_partial_idx`;
+    const childParentFk = `${child}_parent_fkey`;
+    const junctionBridgeFk = `${junction}_bridge_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function snapshot(): Promise<Record<string, unknown>> {
+      const db = await freshDb();
+      const [data, columns, constraints, indexes] = await Promise.all([
+        db.query(
+          `SELECT 'parent' AS source, to_jsonb(parent) AS row FROM "${parent}" parent
+           UNION ALL SELECT 'child', to_jsonb(child) FROM "${child}" child
+           UNION ALL SELECT 'junction', to_jsonb(junction) FROM "${junction}" junction
+           ORDER BY source`,
+        ),
+        db.query(
+          `SELECT table_name, column_name, data_type, collation_name, is_generated, generation_expression
+             FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name IN ($1, $2, $3)
+            ORDER BY table_name, ordinal_position`,
+          parent,
+          child,
+          junction,
+        ),
+        db.query(
+          `SELECT conname, contype, convalidated, pg_get_constraintdef(oid) AS definition
+             FROM pg_constraint
+            WHERE conname IN ($1, $2, $3, $4)
+            ORDER BY conname`,
+          bridgeCheck,
+          bridgeUnique,
+          childParentFk,
+          junctionBridgeFk,
+        ),
+        db.query(
+          `SELECT index_rel.relname AS name, pg_get_indexdef(idx.indexrelid) AS definition,
+                  pg_get_expr(idx.indexprs, idx.indrelid) AS expressions,
+                  pg_get_expr(idx.indpred, idx.indrelid) AS predicate
+             FROM pg_index idx
+             JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+            WHERE index_rel.relname IN ($1, $2)
+            ORDER BY name`,
+          bridgeExpressionIndex,
+          bridgePartialIndex,
+        ),
+      ]);
+      return {
+        data: data.rows,
+        columns: columns.rows,
+        constraints: constraints.rows,
+        indexes: indexes.rows,
+      };
+    }
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(
+        `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+      );
+      await db.query(
+        `CREATE TABLE "${parent}" (
+           id text PRIMARY KEY,
+           _integrity_id_text text COLLATE "C" GENERATED ALWAYS AS ((id)::text) STORED,
+           CONSTRAINT "${bridgeCheck}" CHECK (_integrity_id_text <> ''),
+           CONSTRAINT "${bridgeUnique}" UNIQUE (_integrity_id_text)
+         )`,
+      );
+      await db.query(
+        `CREATE INDEX "${bridgeExpressionIndex}" ON "${parent}" (lower(_integrity_id_text))`,
+      );
+      await db.query(
+        `CREATE INDEX "${bridgePartialIndex}" ON "${parent}" (id) WHERE _integrity_id_text <> ''`,
+      );
+      await db.query(
+        `CREATE TABLE "${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${childParentFk}" REFERENCES "${parent}"(id)
+         )`,
+      );
+      await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
+      await db.query(
+        `ALTER TABLE "${junction}" ADD CONSTRAINT "${junctionBridgeFk}"
+           FOREIGN KEY (parent_text) REFERENCES "${parent}"(_integrity_id_text)`,
+      );
+      await db.query(
+        `INSERT INTO "${parent}" (id) VALUES ($1)`,
+        '11111111-1111-1111-1111-111111111111',
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+        '22222222-2222-2222-2222-222222222222',
+        '11111111-1111-1111-1111-111111111111',
+      );
+      await db.query(
+        `INSERT INTO "${junction}" (parent_text) VALUES ($1)`,
+        '11111111-1111-1111-1111-111111111111',
+      );
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+        );
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('rejects before writes and retains CHECK/UNIQUE/collation/expression-predicate metadata', async () => {
+      const before = await snapshot();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      const after = await snapshot();
+      // Current production behavior is intentionally exercised before any fix:
+      // this equality exposes every catalog object PostgreSQL dropped or changed.
+      expect(after).toEqual(before);
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Unsupported generated dependency'),
+      );
+      errorSpy.mockRestore();
+    }, 30_000);
+  },
+);
