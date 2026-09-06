@@ -34,6 +34,7 @@ export {
   customActionParameterInputName,
   declaredTypeAcceptsDate,
   declaresRuntimeRestRoute,
+  declaresRuntimeRestRouteShape,
   type EffectiveActionMetadata,
   type ExposableMethod,
   isCrudOperation,

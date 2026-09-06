@@ -37,6 +37,7 @@ import type { MethodDefinition } from '../scanner/types.js';
 import { PRIVATE_READ_CACHE_CONTROL } from './conditional-get.js';
 import {
   declaresRuntimeRestRoute,
+  readMethodDecoratorConfig,
   resolveEffectiveActionMetadata,
 } from './custom-action.js';
 
@@ -284,6 +285,15 @@ export function isRestActionRoutable(
     return false;
   }
 
+  const registered = readRegisteredMethod(objectName, action);
+
+  // `@method({ expose: false })` outranks a legacy `api.routes` entry for the
+  // same method, and dispatch honors that. Checking it BEFORE the routes map is
+  // what keeps the two one rule: otherwise a withheld action that still carried
+  // a route declaration predicted `allow` for an operation the transport
+  // refuses (#2686).
+  if (readMethodDecoratorConfig(registered)?.expose === false) return false;
+
   if (
     apiConfig.routes &&
     Object.hasOwn(apiConfig.routes as Record<string, unknown>, action)
@@ -293,7 +303,7 @@ export function isRestActionRoutable(
 
   // Shared with `APIGenerator.declaredCollectionActions`, which decides the
   // dispatch this predicate exists to predict.
-  return declaresRuntimeRestRoute(readRegisteredMethod(objectName, action));
+  return declaresRuntimeRestRoute(registered);
 }
 
 /**

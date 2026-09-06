@@ -66,7 +66,13 @@ and repository rules.
   The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
   dispatch and `preflight-route.ts` prediction both read
   `declaresRuntimeRestRoute()`, which must accept every `ApiCustomRouteConfig`
-  option so a sweep moving one onto its method cannot delete the endpoint.
+  option so a sweep moving one onto its method cannot delete the endpoint. Its
+  twin `declaresRuntimeRestRouteShape()` deliberately ignores `expose: false`:
+  the dispatcher must still SEE a withheld declaration to answer 404, because
+  `POST /<collection>/<segment>` resolves to `create` when nothing claims the
+  segment. Split unions and type arguments with `splitTopLevel()` — a naive
+  `split('|')` truncates `Record<string, Asset | null>` into fragments that
+  match no rule and are then accepted, widening the gate.
 
 ## Gotchas
 

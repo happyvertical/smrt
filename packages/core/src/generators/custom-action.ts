@@ -919,11 +919,17 @@ function classifyTypeName(
   // Union: one JSON-shaped member is enough, because the caller can always
   // choose that branch. `addReference(content: Content | string)` already
   // accepts an id string and is genuinely reachable over HTTP (#2686).
-  if (type.includes('|')) {
-    const branches = type
-      .split('|')
-      .map((branch) => branch.trim())
-      .filter((branch) => branch !== 'null' && branch !== 'undefined');
+  //
+  // Split on TOP-LEVEL `|` only. A naive `split('|')` tore
+  // `Array<Asset | string>` into `Array<Asset` and `string`, and the truncated
+  // first fragment matched no rule and fell through to the default-accept path
+  // — certifying a container of model instances as wire-able while the
+  // union-free `Array<Asset>` was correctly rejected.
+  const unionParts = splitTopLevel(type, '|');
+  if (unionParts.length > 1) {
+    const branches = unionParts.filter(
+      (branch) => branch !== 'null' && branch !== 'undefined',
+    );
     if (branches.length === 0) return WIREABLE;
     const verdicts = branches.map((branch) =>
       classifyTypeName(branch, options, depth + 1),
@@ -949,7 +955,7 @@ function classifyTypeName(
       // Depth-bounded: the manifest stores the type as flat text, and a deeply
       // nested generic contributes nothing the gate can act on.
       if (depth >= WIREABILITY_MAX_DEPTH) return WIREABLE;
-      const args = splitTypeArguments(generic[2]);
+      const args = splitTopLevel(generic[2], ',');
       for (const arg of args) {
         const verdict = classifyTypeName(arg, options, depth + 1);
         if (!verdict.wireable) return verdict;
@@ -1035,8 +1041,17 @@ export function createManifestClassNamePredicate(
   return (name: string) => resolved.has(name);
 }
 
-/** Split `A, Record<string, B>` on TOP-LEVEL commas only. */
-function splitTypeArguments(source: string): string[] {
+/**
+ * Split a type string on `delimiter`, but only where it appears OUTSIDE every
+ * bracket pair — so `Record<string, Asset | null>` splits into two parts on
+ * `,` and one part on `|`, never into truncated fragments like `Record<string`.
+ *
+ * A naive `split()` on either delimiter produces fragments that match no
+ * classification rule and are therefore accepted by the default-accept path,
+ * silently widening the gate. Both the union test and the type-argument scan
+ * read this one implementation.
+ */
+function splitTopLevel(source: string, delimiter: ',' | '|'): string[] {
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
@@ -1046,7 +1061,7 @@ function splitTypeArguments(source: string): string[] {
       depth += 1;
     else if (char === '>' || char === ')' || char === ']' || char === '}')
       depth -= 1;
-    else if (char === ',' && depth === 0) {
+    else if (char === delimiter && depth === 0) {
       parts.push(source.slice(start, index));
       start = index + 1;
     }
@@ -1492,6 +1507,30 @@ function getIncludeExclude(config: unknown): {
 export function declaresRuntimeRestRoute(
   method: ExposableMethod | undefined,
 ): boolean {
+  // `expose: false` outranks every other option, including one that would
+  // otherwise declare a route. A predicate that still reported such an action
+  // routable would make browser-plane preflight answer `allow` for an operation
+  // the transport declines — the false-`allow` preflight exists to prevent.
+  if (readMethodDecoratorConfig(method)?.expose === false) return false;
+  return declaresRuntimeRestRouteShape(method);
+}
+
+/**
+ * Whether the author WROTE a runtime REST route declaration on this method,
+ * ignoring whether they then withheld it.
+ *
+ * Deliberately distinct from {@link declaresRuntimeRestRoute}: the dispatcher
+ * must still SEE a withheld declaration in order to refuse it explicitly. This
+ * router resolves `POST /<collection>/<segment>` to `create` when nothing
+ * claims the segment, so dropping a withheld action from the candidate set
+ * would turn a request aimed at an explicitly withheld operation into a silent
+ * row insert. The candidate set reads this; the preflight PREDICTION reads
+ * {@link declaresRuntimeRestRoute}, which adds the `expose: false` veto —
+ * "there is a declaration here" and "it is reachable" are different questions.
+ */
+export function declaresRuntimeRestRouteShape(
+  method: ExposableMethod | undefined,
+): boolean {
   const declared = readMethodDecoratorConfig(method);
   if (!declared) return false;
   return (
@@ -1501,7 +1540,7 @@ export function declaresRuntimeRestRoute(
     declared.effect !== undefined ||
     declared.idempotent !== undefined ||
     declared.openWorld !== undefined ||
-    declared.expose === true
+    declared.expose !== undefined
   );
 }
 

@@ -587,7 +587,10 @@ Rules worth knowing:
   migrates from that map (`httpMethod`, `path`, `scope`, `effect`,
   `idempotent`, `openWorld`) or an explicit `expose: true`. A bare `@method()`
   or a `description`-only one does not declare a route there, because neither
-  migrates from `api.routes`. Browser-plane preflight predicts exactly this gate.
+  migrates from `api.routes`. Browser-plane preflight predicts exactly this gate,
+  and honors `expose: false` with it — a withheld action is predicted
+  unroutable, and a request to its declared URL gets an explicit 404 rather than
+  falling through into a `create`.
 
 **Date hydration is top-level only.** A parameter declared exactly `Date` (or
 `Date | null` / `Date | undefined`) is converted from its ISO string or epoch

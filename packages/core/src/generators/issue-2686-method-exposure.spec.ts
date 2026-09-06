@@ -30,6 +30,7 @@ import {
   createManifestClassNamePredicate,
   declaredTypeAcceptsDate,
   declaresRuntimeRestRoute,
+  declaresRuntimeRestRouteShape,
   readMethodDecoratorConfig,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
@@ -149,6 +150,19 @@ describe('#2686 wire-ability heuristic', () => {
       'unreachable over HTTP',
     ],
     [
+      'a Record whose values are a nullable model instance',
+      // A naive `split('|')` tore this into `Record<string` and `Asset | null`;
+      // the truncated first fragment matched no rule and was accepted, so the
+      // container slipped through while `Record<string, Asset>` was rejected.
+      [param('byId', 'Record<string, Asset | null>')],
+      'model class instance',
+    ],
+    [
+      'an array of a nullable model instance',
+      [param('assets', 'Array<Asset | null>')],
+      'model class instance',
+    ],
+    [
       'a rest parameter',
       [param('...args', 'string')],
       'cannot be projected from a request body',
@@ -175,6 +189,18 @@ describe('#2686 wire-ability heuristic', () => {
     );
     expect(verdict.wireable).toBe(false);
     expect(verdict.reason).toContain(expectedReason);
+  });
+
+  it('accepts a container whose element union has a JSON-shaped branch', () => {
+    // `Array<Asset | string>` IS reachable — the caller sends id strings. It
+    // must be accepted by the union rule applied to the element type, not by a
+    // truncated fragment falling through the default-accept path.
+    expect(
+      classifyMethodWireability(
+        { parameters: [param('assets', 'Array<Asset | string>')] },
+        { isModelClassName },
+      ).wireable,
+    ).toBe(true);
   });
 
   it('accepts a union whose members include a JSON-shaped branch', () => {
@@ -546,6 +572,13 @@ describe('#2686 runtime REST route declaration', () => {
     ['openWorld', { openWorld: false }, true],
     ['expose: true', { expose: true }, true],
     ['expose: false', { expose: false }, false],
+    // `expose: false` outranks a route declaration on the same method: dispatch
+    // refuses the action, so the prediction must too.
+    [
+      'expose: false plus a route shape',
+      { expose: false, httpMethod: 'POST', path: 'hidden' },
+      false,
+    ],
     ['description only', { description: 'a note' }, false],
     ['bare @method()', {}, false],
   ])('%s → %s', (_label, decoratorConfig, expected) => {
@@ -557,6 +590,20 @@ describe('#2686 runtime REST route declaration', () => {
   it('is false for an undecorated method', () => {
     expect(declaresRuntimeRestRoute(method())).toBe(false);
     expect(declaresRuntimeRestRoute(undefined)).toBe(false);
+  });
+
+  it('separates "a declaration exists" from "it is reachable"', () => {
+    // The dispatcher's candidate set must still SEE a withheld declaration, so
+    // it can answer 404 rather than letting the segment fall through into
+    // `create`. The preflight PREDICTION must not: it would report `allow` for
+    // an operation the transport refuses.
+    const withheld = method({
+      decoratorConfig: { expose: false, httpMethod: 'POST', path: 'hidden' },
+    });
+    expect(declaresRuntimeRestRouteShape(withheld)).toBe(true);
+    expect(declaresRuntimeRestRoute(withheld)).toBe(false);
+    expect(declaresRuntimeRestRouteShape(method())).toBe(false);
+    expect(declaresRuntimeRestRouteShape(undefined)).toBe(false);
   });
 });
 

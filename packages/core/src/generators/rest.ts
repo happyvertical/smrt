@@ -53,7 +53,7 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
-  declaresRuntimeRestRoute,
+  declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
   readMethodDecoratorConfig,
   resolveCustomActionMetadata,
@@ -805,7 +805,10 @@ export class APIGenerator {
     const methods = ObjectRegistry.getMethods(objectName);
     const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
     for (const [name, methodDef] of methods ?? []) {
-      if (declaresRuntimeRestRoute(methodDef)) names.add(name);
+      // The SHAPE predicate, not the routable one: a withheld declaration must
+      // stay a candidate so the loop can refuse it with a 404 instead of
+      // letting the segment fall through into `create`.
+      if (declaresRuntimeRestRouteShape(methodDef)) names.add(name);
     }
     return [...names].map((name) => [name, methods?.get(name)]);
   }
@@ -853,8 +856,18 @@ export class APIGenerator {
       if (apiConfig.exclude?.includes(actionName)) {
         continue;
       }
+      // A DECLARED action withheld by `@method({ expose: false })` must not
+      // fall through: this router resolves `POST /<collection>/<segment>` to
+      // `create` when nothing claims the segment, so a `continue` here would
+      // turn a request aimed at an explicitly withheld operation into a silent
+      // row insert. Same no-degradation rule as the 501 branch below, and the
+      // same 404 the generated SvelteKit surface returns for a route it never
+      // wrote (#2686).
       if (readMethodDecoratorConfig(methodDef)?.expose === false) {
-        continue;
+        return this.createErrorResponse(
+          404,
+          `Custom action '${actionName}' is not exposed`,
+        );
       }
 
       // Receiver: an instance method on the registered collection, or a

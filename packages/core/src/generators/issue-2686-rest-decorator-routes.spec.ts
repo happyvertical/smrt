@@ -199,11 +199,32 @@ describe('#2686 runtime REST reads decorator-declared routes', () => {
     });
   });
 
-  it('refuses a method withheld by @method({ expose: false })', async () => {
-    const response = await post('hidden');
-    // Falls through to CRUD handling rather than invoking the action: the
-    // segment is not a known id, so it is not a successful action response.
+  it('refuses a withheld action without degrading into a CRUD create', async () => {
+    // The dangerous shape: this router resolves `POST /<collection>/<segment>`
+    // to `create` when nothing claims the segment, so falling through here
+    // turned a request aimed at an explicitly withheld operation into a silent
+    // row insert that answered 2xx. An `action`-shaped assertion alone passes
+    // on a created object, which is how that masked itself -- so this asserts
+    // the status AND that no row was written.
+    const before = (await await handler(
+      new Request('http://localhost/api/v1/decoratedwidgets'),
+    ).then((r) => r.json())) as { data?: unknown[] };
+
+    const response = await post('hidden', { name: 'should-not-persist' });
+    expect(response.status).toBe(404);
     expect(await response.json()).not.toMatchObject({ action: 'hidden' });
+
+    const after = (await (
+      await handler(new Request('http://localhost/api/v1/decoratedwidgets'))
+    ).json()) as { data?: unknown[] };
+    expect(after.data ?? []).toHaveLength((before.data ?? []).length);
+  });
+
+  it('predicts the withheld action as unroutable for preflight', () => {
+    // `expose: false` outranks the route declaration on the same method.
+    // Dispatch refuses it, so a prediction of `allow` would be the exact
+    // false-`allow` browser-plane preflight exists to prevent.
+    expect(isRestActionRoutable('DecoratedWidget', 'hidden')).toBe(false);
   });
 
   it('hydrates a Date parameter from the query string', async () => {
