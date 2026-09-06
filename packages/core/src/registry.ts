@@ -992,6 +992,20 @@ export class ObjectRegistry {
     objectName: string,
     collectionConstructor: CollectionConstructor,
   ): void {
+    // Flush any decorator registrations TC39 standard decorators queued on this
+    // class's metadata. `@smrt()` is the only other flush point, and a plain
+    // `SmrtCollection` subclass registered through here carries no class
+    // decorator at all — so under standard decorators its `@method()` config
+    // was queued and never applied, leaving the runtime store empty while a
+    // legacy `api.routes` entry still routed the action. Absent exposure
+    // metadata defaults open, so that drop is a widening (#2686).
+    //
+    // Always taking `addInitializer` instead would not fix it: an instance
+    // method's initializer does not run until the class is first constructed,
+    // which is after the transports have already asked.
+    applyPendingDecoratorRegistrations(
+      collectionConstructor as unknown as Function,
+    );
     _registerCollection(objectName, collectionConstructor);
   }
   static registerFromManifest(
