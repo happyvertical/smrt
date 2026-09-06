@@ -94,15 +94,10 @@ async generateSummary(): Promise<string> {
 
 ### 4. Code Generation Capabilities
 
-**CLI Generator** (in-process; no current SMRT consumers — a published app CLI
-uses `@happyvertical/smrt-app-cli` instead)
-```typescript
-import { CLIGenerator } from '@happyvertical/smrt-core/generators';
-
-const cliGen = new CLIGenerator({ name: 'my-cli' });
-const handler = cliGen.generateHandler();
-await handler(process.argv.slice(2)); // e.g. `product:list`
-```
+CLI generation does not live in `@happyvertical/smrt-core` — its in-process
+`CLIGenerator` had zero consumers and was retired (#2664). The live local CLI
+transport is `packages/cli/src/cli-generator.ts`'s `smrt <object>:<action>`
+binary; a distributable app CLI uses `@happyvertical/smrt-app-cli` instead.
 
 **API Generator**
 ```typescript

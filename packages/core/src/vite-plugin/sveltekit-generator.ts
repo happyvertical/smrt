@@ -2338,9 +2338,11 @@ export interface CliApiCoherenceViolation {
  *
  * **Bare `cli: true`/`cli: {}`** (#2638, the new case this lint now
  * inspects): every public custom method minus exclude, exactly the "every
- * public method minus exclude" resolution `CLIGenerator.listCommands()`
- * already applies (via `resolveCustomActionNames`, reused not
- * reimplemented) -- lifecycle methods excluded, same as everywhere else.
+ * public method minus exclude" resolution this function shares with
+ * `packages/core/src/generators/custom-action.ts`'s `resolveCustomActionNames`
+ * -- lifecycle methods excluded, same as everywhere else. (Pre-#2664, core's
+ * now-retired `CLIGenerator.listCommands()` applied the same resolution via
+ * that helper too.)
  * CRUD verbs are NOT checked in this branch: a class that closes its API
  * entirely (`api: false`) while keeping a default-open, CLI/MCP-only admin
  * surface (`cli: true`/omitted) is a common, intentional combination (see

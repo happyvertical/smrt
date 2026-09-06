@@ -27,8 +27,8 @@ export type { ToolEffect } from '../registry/types.js';
  * even when a subclass declares its own override (e.g. `User.save()` at
  * `packages/users/src/models/User.ts`). An override is still the same
  * lifecycle operation, not a new one (#2638). `delete` itself is a CRUD verb
- * `CLIGenerator`/`MCPGenerator` already special-case, so it is not repeated
- * here.
+ * `packages/cli/src/cli-generator.ts`'s `CLIGenerator`/`MCPGenerator` already
+ * special-case, so it is not repeated here.
  *
  * Scope is deliberately narrower than "every public method on
  * SmrtObject/SmrtClass/SmrtCollection":
@@ -129,29 +129,22 @@ export interface ResolvableMethod {
  * for an object, given its transport config's `include`/`exclude` and its
  * method map: every public method, minus CRUD verbs, minus framework
  * lifecycle methods, restricted to `include` when present and always minus
- * `exclude`. Reused by three callers, so they agree with each other and
- * with what `listCommands()` advertises:
+ * `exclude`. Its sole caller as of #2664 (`CLIGenerator` and the
+ * `generateCLIModule()` virtual module were retired):
  *
- * - `CLIGenerator.listCommands()` (over the live `ObjectRegistry`).
  * - `findCliApiCoherenceViolations`'s bare-`cli: true`/`cli: {}` branch
  *   (over the static manifest, no explicit `include`) -- see
  *   `resolveCliActionSet` in `vite-plugin/sveltekit-generator.ts`.
- * - `generateCLIModule()` in `vite-plugin/index.ts`, which generates the
- *   `smrt:cli` virtual module's static command metadata. It layers one
- *   additional filter on top of this function's result: a leading `_` on
- *   the method name, because the manifest's `isPublic` is unreliable there
- *   (see that call site's own comment) and this function has no other
- *   signal to exclude an internal-by-convention method.
  *
  * NOT the one universal resolution, and deliberately not reused by every
  * caller that resolves a CLI command set:
  *
- * - `CLIGenerator.assertCommandExposed()` does not call this for its custom-
- *   method branch — it checks `isFrameworkLifecycleMethod()` directly plus
- *   its own inline public/include/exclude logic, so it can give a distinct
- *   error message per failure reason (unknown vs. not public vs. not
- *   enabled vs. lifecycle method) rather than a single boolean membership
- *   test.
+ * - `packages/cli/src/cli-generator.ts`'s `CLIGenerator.assertCommandExposed()`
+ *   does not call this for its custom-method branch — it checks
+ *   `isFrameworkLifecycleMethod()` directly plus its own inline
+ *   public/include/exclude logic, so it can give a distinct error message
+ *   per failure reason (unknown vs. not public vs. not enabled vs. lifecycle
+ *   method) rather than a single boolean membership test.
  * - `findCliApiCoherenceViolations`'s EXPLICIT-`cli.include` branch
  *   deliberately bypasses this function too: an `include` entry naming a
  *   typo, a getter, or a private/protected method must still surface as
@@ -228,10 +221,6 @@ export function resolveCustomActionNames(
  *   built-in list whichever branch emitted it: the class's method could never
  *   run, and emitting one would hand the caller an operation `include` never
  *   named.
- * - `generators/cli.ts` (`CLIGenerator`) — unconditional, exact.
- *   `assertCommandExposed` returns inside its `isCrud` branch, so a CRUD-named
- *   action never reaches custom-method resolution, and `listCommands` skips
- *   those names outright.
  * - `packages/cli/src/cli-generator.ts`, behind the shipped `smrt` object
  *   commands — reserves only where the CRUD command is actually emitted, and
  *   reserves the command NAMES AND THEIR ALIASES (`ls`, `show`, `new`, `edit`,

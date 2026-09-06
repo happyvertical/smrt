@@ -37,14 +37,16 @@ The SMRT framework follows a **registry-driven architecture** where:
 ┌─────────────────────────────────────────────────────────────┐
 │                   Code Generators                            │
 │                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ CLIGenerator │  │ APIGenerator │  │ MCPGenerator │      │
-│  │              │  │              │  │              │      │
-│  │ Uses:        │  │ Uses:        │  │ Uses:        │      │
-│  │ • getAll()   │  │ • getAll()   │  │ • getAll()   │      │
-│  │ • getConfig()│  │ • getConfig()│  │ • getConfig()│      │
-│  │ • getFields()│  │ • getFields()│  │ • getFields()│      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│                 ┌──────────────┐  ┌──────────────┐      │
+│                 │ APIGenerator │  │ MCPGenerator │      │
+│                 │              │  │              │      │
+│                 │ Uses:        │  │ Uses:        │      │
+│                 │ • getAll()   │  │ • getAll()   │      │
+│                 │ • getConfig()│  │ • getConfig()│      │
+│                 │ • getFields()│  │ • getFields()│      │
+│                 └──────────────┘  └──────────────┘      │
+│  (core's in-process CLIGenerator was retired, #2664 —      │
+│  the live local CLI is packages/cli's CLIGenerator)         │
 │                                                               │
 │  ┌──────────────┐  ┌──────────────┐                         │
 │  │SwaggerGen    │  │ Runtime      │                         │
@@ -99,13 +101,15 @@ ObjectRegistry.clear()                           // Clear all registrations
 
 4. Generators discover at runtime
    ↓
-   CLIGenerator.listCommands() / generateHandler()
+   MCPGenerator.generateTools() (this example; APIGenerator is analogous —
+   core's in-process CLIGenerator described here historically was retired
+   as unused public API, #2664)
    ├─ ObjectRegistry.getAllClasses()
    ├─ For each class:
    │  ├─ ObjectRegistry.getConfig(name)  → Get @smrt() options
    │  ├─ ObjectRegistry.getFields(name)  → Get field definitions
-   │  └─ Resolve commands based on config.cli
-   └─ Commands served directly (no files written to disk)
+   │  └─ Resolve tools based on config.mcp
+   └─ Tools served directly (no files written to disk)
 ```
 
 ## CLI Architecture: Zero-Config Consumption
@@ -286,7 +290,10 @@ export class BaseGenerator {
 
 ### Generator-Specific Usage
 
-**CLIGenerator** (`src/generators/cli.ts`):
+**CLIGenerator** (`src/generators/cli.ts` — this in-process generator was
+retired as unused public API, #2664; the live local CLI transport is
+`packages/cli/src/cli-generator.ts`'s `CLIGenerator`, kept here for
+historical shape only):
 ```typescript
 async listCommands(): Promise<string[]> {
   const commands: string[] = [];
@@ -755,7 +762,9 @@ The framework provides several consistency guarantees across all generators:
 // APIGenerator resolves inclusion via the same static helper preflight uses.
 expect(isApiActionEnabledForObject('Product', 'delete')).toBe(false);
 
-// CLIGenerator's own surface is queryable directly.
+// The live local CLI's own surface is queryable directly
+// (packages/cli/src/cli-generator.ts; core's in-process CLIGenerator
+// this example historically used was retired, #2664).
 const commands = await new CLIGenerator().listCommands();
 expect(commands).toContain('product:delete');
 

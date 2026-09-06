@@ -2,40 +2,6 @@
 
 exports[`runtime-profile generated-surface and policy parity > emits one identical domain surface under local, self-hosted, and cloud > canonical-domain-surface 1`] = `
 "{
-  "cliCommands": [
-    "item:create",
-    "item:delete",
-    "item:get",
-    "item:list",
-    "item:update",
-    "itemcollection:create",
-    "itemcollection:delete",
-    "itemcollection:get",
-    "itemcollection:list",
-    "itemcollection:update",
-    "referenceworkitem:archive",
-    "referenceworkitem:create",
-    "referenceworkitem:delete",
-    "referenceworkitem:get",
-    "referenceworkitem:list",
-    "referenceworkitem:prepareForReview",
-    "referenceworkitem:update",
-    "referenceworkitemassetcollection:attach",
-    "referenceworkitemassetcollection:byLeft",
-    "referenceworkitemassetcollection:byRight",
-    "referenceworkitemassetcollection:create",
-    "referenceworkitemassetcollection:delete",
-    "referenceworkitemassetcollection:detach",
-    "referenceworkitemassetcollection:get",
-    "referenceworkitemassetcollection:list",
-    "referenceworkitemassetcollection:setLinks",
-    "referenceworkitemassetcollection:update",
-    "referenceworkitemcollection:create",
-    "referenceworkitemcollection:delete",
-    "referenceworkitemcollection:get",
-    "referenceworkitemcollection:list",
-    "referenceworkitemcollection:update"
-  ],
   "domainTools": [
     {
       "action": "create",

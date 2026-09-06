@@ -625,7 +625,8 @@ export class MCPGenerator {
           // would emit a second tool under a name that is already claimed.
           // Case-folded because `buildCustomActionTool` lowercases the whole
           // identifier, so `List` lands on `${lowerName}_list` too. Mirrors
-          // the strict branch above and `CLIGenerator.listCommands` (#2646).
+          // the strict branch above and `packages/cli/src/cli-generator.ts`'s
+          // `CLIGenerator.listCommands` (#2646).
           if (isCrudToolAction(methodName)) continue;
 
           // A framework lifecycle method (save/initialize/... — see

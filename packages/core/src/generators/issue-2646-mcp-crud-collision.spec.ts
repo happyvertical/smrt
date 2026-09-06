@@ -5,7 +5,8 @@
  * `generateObjectTools` emits the five standard CRUD tools as
  * `${lowerName}_${verb}`, then walks the class's merged methods to emit custom
  * actions as `${lowerName}_${methodName}`. The strict (`include`) branch drops
- * CRUD verbs before that walk, and `CLIGenerator.listCommands` skips
+ * CRUD verbs before that walk, and core's now-retired `CLIGenerator.
+ * listCommands` (#2664) skipped
  * `CRUD_OPERATIONS` outright — but the non-strict branch (the default, no
  * `include` list) had no such filter, so a public merged method named after a
  * CRUD verb produced a SECOND tool under a name the CRUD tool already owned.

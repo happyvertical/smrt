@@ -510,20 +510,11 @@ describe('error handling', () => {
 
 ### Testing CLI Commands
 
-```typescript
-import { describe, it, expect } from 'vitest';
-import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
-
-describe('CLI generation', () => {
-  it('should expose CRUD commands for a registered class', async () => {
-    // Assumes Product is registered via @smrt() in the test manifest.
-    const generator = new CLIGenerator({ name: 'test-cli' });
-
-    const commands = await generator.listCommands();
-    expect(commands).toContain('product:list');
-  });
-});
-```
+`@happyvertical/smrt-core/generators/cli` (the in-process `CLIGenerator`
+this example used to exercise) was retired as unused public API (#2664).
+CLI command coverage now lives against the live local transport,
+`packages/cli/src/cli-generator.ts`'s `CLIGenerator` — see that package's
+own test suite for the current pattern.
 
 ### Testing API Generation
 

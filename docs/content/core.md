@@ -451,25 +451,12 @@ const article = new NewsArticle({
 SMRT generates CLI, REST, and MCP surfaces from `@smrt()` objects in two ways:
 
 - **Build-time**, via the Vite plugin (`smrtPlugin()`, see [Vite Plugin Integration](#vite-plugin-integration) below) — scans decorated classes and emits virtual modules (routes, typed client, MCP tool definitions, manifest) consumed by the generated SvelteKit routes and `@happyvertical/smrt-web`. This is how a typical SMRT application ships REST/MCP today.
-- **Runtime**, via the generator classes below (`@happyvertical/smrt-core/generators`), which read whatever `@smrt()` objects are currently registered on `ObjectRegistry` and serve them directly — for a host process that wants REST/CLI/MCP without a Vite build. None of these classes accept a `collections` list; they discover registered objects themselves, and (`MCPGenerator.generateServer()` aside) none of them write files to disk.
+- **Runtime**, via the generator classes below (`@happyvertical/smrt-core/generators`), which read whatever `@smrt()` objects are currently registered on `ObjectRegistry` and serve them directly — for a host process that wants REST/MCP without a Vite build. None of these classes accept a `collections` list; they discover registered objects themselves, and (`MCPGenerator.generateServer()` aside) none of them write files to disk.
 
-### CLI Generation
+CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-process `CLIGenerator`/`setupCLI()` (plus the `@happyvertical/smrt-virt-cli` Vite virtual module) for admin `objectname:action` commands, but it had zero consumers and was retired (#2664). Two live CLI transports remain, both outside this package:
 
-`CLIGenerator` exposes registered objects as `objectname:action` admin commands (`list`/`get`/`create`/`update`/`delete` plus public custom methods). `CLIConfig` is `{ name?, version?, description? }` — there is no `collections`, `outputDir`, or `includeAI` option, and no `generate()` method.
-
-```typescript
-import { CLIGenerator, setupCLI } from '@happyvertical/smrt-core/generators';
-
-const generator = new CLIGenerator({ name: 'my-app-cli', version: '1.0.0' });
-const handler = generator.generateHandler(); // (args: string[]) => Promise<void>
-await handler(process.argv.slice(2));        // e.g. `product:list --tenant t1`
-
-// Or the setupCLI() convenience wrapper, which does the same wiring:
-const cli = setupCLI({ name: 'my-app-cli' });
-await cli.run(process.argv);
-```
-
-`listCommands()` enumerates the exposed `object:action` commands for help output. This generator is a low-level, in-process building block with no current consumers in the SMRT ecosystem; a distributable command-line application ships through [`@happyvertical/smrt-app-cli`](./app-cli.md) instead, which discovers commands over HTTP from a running app rather than embedding this generator.
+- The local `smrt <object>:<action>` binary (`packages/cli/src/cli-generator.ts`), against a database connection from `smrt.config`.
+- [`@happyvertical/smrt-app-cli`](./app-cli.md), a distributable command-line application that discovers commands over authenticated HTTP from a running app.
 
 ### REST API Generation
 

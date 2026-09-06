@@ -11,8 +11,9 @@
  * - SmrtCollection: Collection interface for managing sets of SmrtObjects
  *
  * Generators:
- * - CLIGenerator: Create admin CLI tools from SMRT objects
  * - APIGenerator: Generate REST APIs for SMRT objects
+ * - CLI: local `smrt` binary transport lives in `@happyvertical/cli`
+ *   (`packages/cli/src/cli-generator.ts`), not in this package.
  * - MCPGenerator: Create MCP servers for AI model integration
  */
 

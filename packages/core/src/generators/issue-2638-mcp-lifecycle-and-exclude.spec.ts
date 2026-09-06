@@ -2,7 +2,8 @@
  * Acceptance coverage for the MCP-side half of issue #2638.
  * https://github.com/happyvertical/smrt/issues/2638
  *
- * #2650/PR #2651 already gated `CLIGenerator`/`findCliApiCoherenceViolations`
+ * #2650/PR #2651 already gated core's now-retired `CLIGenerator` (#2664)/
+ * `findCliApiCoherenceViolations`
  * against framework lifecycle methods (`save`, `initialize`, `loadFromId`,
  * ...) so a locally declared override — e.g. `User.save()` in
  * `packages/users/src/models/User.ts` — is never advertised as a custom CLI

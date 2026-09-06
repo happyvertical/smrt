@@ -121,7 +121,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // OrderTree additionally declares two public custom methods (`archive`,
     // `findByReference`) and a non-public one (`internalRebalance`); only
     // the public methods are eligible, matching
-    // MCPGenerator/CLIGenerator/APIGenerator's own isPublic gate.
+    // MCPGenerator/APIGenerator's own isPublic gate (packages/cli's CLIGenerator shares it too).
     for (const kind of ['api', 'cli', 'mcp'] as const) {
       const names = orderTreeSurfaces
         .filter((surface) => surface.kind === kind)
@@ -148,7 +148,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // MCPGenerator's `buildCustomActionTool()` lowercases the WHOLE joined
     // `${lowerName}_${methodName}` tool name, not just the object-name
     // prefix, so a camelCase method name must be reported under its real
-    // (fully lowercased) tool id. CLIGenerator's `object:methodName` command
+    // (fully lowercased) tool id. packages/cli's CLIGenerator's `object:methodName` command
     // string does not lowercase the method half, so `cli` keeps it as
     // authored.
     const findByReferenceMcp = orderTreeSurfaces.find(
@@ -171,7 +171,7 @@ describe('buildDomainKnowledgeManifest', () => {
     );
 
     // `save` is a framework lifecycle method (the mechanism behind generated
-    // create/update), so CLIGenerator.listCommands()/assertCommandExposed()
+    // create/update), so packages/cli's CLIGenerator.listCommands()/assertCommandExposed()
     // and MCPGenerator.generateTools() both refuse to expose or invoke it
     // even when the class declares its own override -- this projection
     // mirrors that with the same isFrameworkLifecycleMethod() check, for
@@ -254,7 +254,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // same shape as a genuine bare `@smrt()`. #2619 excluded it on the false
     // premise that it "never registers with ObjectRegistry"; #2642 confirmed
     // `loadAllManifests()` registers it exactly like any genuine domain
-    // class, and fixed the real root cause — MCPGenerator/CLIGenerator/route
+    // class, and fixed the real root cause — MCPGenerator/route generation/packages/cli's CLIGenerator
     // generation now skip the framework's own abstract base classes by class
     // identity, independent of config. This projection mirrors that same
     // shared check (`isFrameworkBaseClass`), so it stays truthful rather
@@ -1206,7 +1206,7 @@ function fixtureManifest(): SmartObjectManifest {
       // A locally overridden framework lifecycle method (mirroring
       // User.save() at packages/users/src/models/User.ts) must not be
       // reported as a `cli` or `mcp` custom-action surface, matching
-      // CLIGenerator.listCommands()'s and MCPGenerator.generateTools()'s
+      // packages/cli's CLIGenerator.listCommands()'s and MCPGenerator.generateTools()'s
       // isFrameworkLifecycleMethod() gate (#2657, #2638) -- but `api` is
       // unaffected, since that generator did not change.
       '@example/orders:LifecycleOverrideOrder': {

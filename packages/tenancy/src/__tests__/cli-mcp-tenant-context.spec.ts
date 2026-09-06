@@ -1,16 +1,26 @@
 /**
- * End-to-end fail-closed tenant-context tests for the generated CLI/MCP surfaces
+ * End-to-end fail-closed tenant-context tests for the generated MCP surface
  * (#1554).
  *
  * The generated SvelteKit routes establish tenant context from the request
- * principal (#1540), but the in-process CLI/MCP generators have none. Without a
- * gate, an `@TenantScoped({ mode: 'optional' })` model queried via CLI/MCP with
+ * principal (#1540), but the in-process MCP generator has none. Without a
+ * gate, an `@TenantScoped({ mode: 'optional' })` model queried via MCP with
  * no active context returns rows across ALL tenants (the interceptor only
  * hard-fails `required` mode). These tests verify the gate, which lives in core
  * but is filled by tenancy's `enableTenancy()`, so they run here (core cannot
  * depend on tenancy).
  *
  * Uses a real in-memory SQLite database — no DB mocking.
+ *
+ * The CLI half of this file was dropped by #2664 (core's `CLIGenerator` /
+ * `@happyvertical/smrt-core/generators/cli` was retired as unused public API
+ * — see the issue for the zero-importer evidence). It is not ported to the
+ * live local transport (`packages/cli/src/cli-generator.ts`): that generator
+ * has no `--tenant`/`--all-tenants` flags or fail-closed tenant gate of its
+ * own today, so porting these assertions would mean adding net-new tenancy
+ * behavior to the shipped `smrt` binary, not preserving existing behavior.
+ * That is out of scope for a straight removal; file a fresh issue if the
+ * live CLI needs the same tenant-context gate MCP has.
  */
 
 import {
@@ -20,7 +30,6 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -49,22 +58,7 @@ class TenantDocCollection extends SmrtCollection<TenantDoc> {
   static readonly _itemClass = TenantDoc;
 }
 
-/** Capture console.log output produced while running `fn`. */
-async function captureLog(fn: () => Promise<void>): Promise<string> {
-  const logs: string[] = [];
-  const original = console.log;
-  console.log = (...args: unknown[]) => {
-    logs.push(args.map(String).join(' '));
-  };
-  try {
-    await fn();
-  } finally {
-    console.log = original;
-  }
-  return logs.join('\n');
-}
-
-describe('Generated CLI/MCP fail-closed tenant context (#1554)', () => {
+describe('Generated MCP fail-closed tenant context (#1554)', () => {
   let db: any;
 
   beforeAll(async () => {
@@ -95,34 +89,6 @@ describe('Generated CLI/MCP fail-closed tenant context (#1554)', () => {
   afterAll(async () => {
     disableTenancy();
     await db?.close?.();
-  });
-
-  describe('CLI', () => {
-    it('fails closed: list with no --tenant throws rather than ranging across tenants', async () => {
-      const gen = new CLIGenerator({}, { db });
-      await expect(gen.run(['tenantdoc:list'])).rejects.toThrow(
-        /tenant context required/i,
-      );
-    });
-
-    it('--tenant scopes the list to that tenant only', async () => {
-      const gen = new CLIGenerator({}, { db });
-      const out = await captureLog(() =>
-        gen.run(['tenantdoc:list', '--tenant', 'tenant-a']),
-      );
-      expect(out).toContain('A-One');
-      expect(out).toContain('A-Two');
-      expect(out).not.toContain('B-One');
-    });
-
-    it('--all-tenants opts into cross-tenant access', async () => {
-      const gen = new CLIGenerator({}, { db });
-      const out = await captureLog(() =>
-        gen.run(['tenantdoc:list', '--all-tenants']),
-      );
-      expect(out).toContain('A-One');
-      expect(out).toContain('B-One');
-    });
   });
 
   describe('MCP', () => {

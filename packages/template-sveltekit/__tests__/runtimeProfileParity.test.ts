@@ -239,11 +239,14 @@ describe('runtime-profile generated-surface and policy parity', () => {
     const tampered: RuntimeProfileSurfaces = {
       ...baseline,
       profile: 'cloud',
-      cliCommands: [...baseline.cliCommands, 'referenceworkitem:sneak'],
+      openApiOperations: [
+        ...baseline.openApiOperations,
+        'GET /referenceworkitems/sneak',
+      ],
     };
     const report = describeSurfaceDivergence(baseline, tampered);
     expect(report).toContain('Generated surface differs');
-    expect(report).toContain('referenceworkitem:sneak');
+    expect(report).toContain('referenceworkitems/sneak');
     expect(report).toContain('do not');
     expect(report).not.toContain(realpathSync(tmpdir()));
   }, 180_000);
