@@ -126,16 +126,6 @@
       "cache": false,
       "persistent": true
     },
-    "lint": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "biome.json"
-      ],
-      "cache": true
-    },
     "lint:fix": {
       "inputs": [
         "src/**",
@@ -187,18 +177,6 @@
         "biome.json"
       ],
       "cache": false
-    },
-    "format-check": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "**/*.json",
-        "**/*.md",
-        "biome.json"
-      ],
-      "cache": true
     },
     "typecheck": {
       "dependsOn": [
