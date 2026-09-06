@@ -1026,19 +1026,6 @@ function enabledCustomActions(
     .filter((name) => !exclude.has(name));
 }
 
-function routeOverrides(
-  object: Record<string, unknown>,
-): Record<string, Record<string, unknown>> {
-  const apiConfig = configObject(configObject(object.decoratorConfig).api);
-  const routes = configObject(apiConfig.routes);
-
-  return Object.fromEntries(
-    Object.entries(routes).filter(
-      (entry): entry is [string, Record<string, unknown>] => isRecord(entry[1]),
-    ),
-  );
-}
-
 function methodDefinition(
   object: Record<string, unknown>,
   action: string,
