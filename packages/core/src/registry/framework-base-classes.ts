@@ -19,8 +19,6 @@
  * - `./schema-builder.ts` (skips table/DDL generation for these classes)
  * - `../knowledge.ts` (the `.smrt/smrt-knowledge.json` surface projection)
  * - `../generators/mcp.ts` (`MCPGenerator.generateTools()`)
- * - `packages/cli/src/cli-generator.ts` (`CLIGenerator.listCommands()`, the
- *   local `smrt` binary transport — lives outside this package)
  * - `../generators/rest.ts` (`APIGenerator.findClassByCollectionSegment()`)
  * - `../vite-plugin/sveltekit-generator.ts` (REST route generation)
  * - `../vite-plugin/sync-apply-route.ts` (`collectSyncApplyTargets()`)

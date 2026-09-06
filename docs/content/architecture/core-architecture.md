@@ -762,11 +762,12 @@ The framework provides several consistency guarantees across all generators:
 // APIGenerator resolves inclusion via the same static helper preflight uses.
 expect(isApiActionEnabledForObject('Product', 'delete')).toBe(false);
 
-// The live local CLI's own surface is queryable directly
-// (packages/cli/src/cli-generator.ts; core's in-process CLIGenerator
-// this example historically used was retired, #2664).
-const commands = await new CLIGenerator().listCommands();
-expect(commands).toContain('product:delete');
+// The live local CLI (packages/cli/src/cli-generator.ts) resolves its own
+// command surface from the same config, but has no public method shaped
+// like this example -- core's in-process CLIGenerator, whose
+// `listCommands()` this snippet historically called, was retired as unused
+// public API (#2664). See packages/cli's own test suite for how it asserts
+// command exposure today.
 
 // MCPGenerator's tool list reflects the same mcp.include/exclude config.
 const tools = await new MCPGenerator().generateTools();

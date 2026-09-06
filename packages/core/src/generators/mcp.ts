@@ -626,7 +626,8 @@ export class MCPGenerator {
           // Case-folded because `buildCustomActionTool` lowercases the whole
           // identifier, so `List` lands on `${lowerName}_list` too. Mirrors
           // the strict branch above and `packages/cli/src/cli-generator.ts`'s
-          // `CLIGenerator.listCommands` (#2646).
+          // own reserved-command-name skip in `generateObjectCommands()`
+          // (#2646).
           if (isCrudToolAction(methodName)) continue;
 
           // A framework lifecycle method (save/initialize/... — see

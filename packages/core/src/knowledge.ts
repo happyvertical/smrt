@@ -512,9 +512,10 @@ function configuredSurfaces(
  * joined string, not just the object-name prefix. A CRUD verb is already
  * lowercase so this is a no-op there, but a camelCase custom method name
  * (`findByDimensions`) would otherwise report a surface `name` the real tool
- * is never registered under. `packages/cli/src/cli-generator.ts`'s
- * `CLIGenerator.listCommands()` does not lowercase the method half of its
- * command string, so `cli` keeps the operation as-authored.
+ * is never registered under. `packages/cli/src/cli-generator.ts`'s command
+ * builder (`CLIGenerator`'s private `generateObjectCommands()`) does not
+ * lowercase the method half of its command string, so `cli` keeps the
+ * operation as-authored.
  *
  * Note the shapes differ from the transports' own: a `cli` surface `name`
  * here is `object_operation`, while the command a user types is

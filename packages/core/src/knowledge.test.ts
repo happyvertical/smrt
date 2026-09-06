@@ -171,11 +171,13 @@ describe('buildDomainKnowledgeManifest', () => {
     );
 
     // `save` is a framework lifecycle method (the mechanism behind generated
-    // create/update), so packages/cli's CLIGenerator.listCommands()/assertCommandExposed()
-    // and MCPGenerator.generateTools() both refuse to expose or invoke it
-    // even when the class declares its own override -- this projection
-    // mirrors that with the same isFrameworkLifecycleMethod() check, for
-    // cli and mcp.
+    // create/update), so core's now-retired CLIGenerator.listCommands()/
+    // assertCommandExposed() (#2664) and MCPGenerator.generateTools() both
+    // refused/refuse to expose or invoke it even when the class declares its
+    // own override -- this projection mirrors that with the same
+    // isFrameworkLifecycleMethod() check, for cli and mcp. NOTE: the shipped
+    // local CLI (packages/cli/src/cli-generator.ts) does NOT apply this
+    // gate today -- see knowledge.ts's `configuredOperations()` docblock.
     for (const kind of ['cli', 'mcp'] as const) {
       expect(
         surfaces
@@ -1205,10 +1207,12 @@ function fixtureManifest(): SmartObjectManifest {
       },
       // A locally overridden framework lifecycle method (mirroring
       // User.save() at packages/users/src/models/User.ts) must not be
-      // reported as a `cli` or `mcp` custom-action surface, matching
-      // packages/cli's CLIGenerator.listCommands()'s and MCPGenerator.generateTools()'s
-      // isFrameworkLifecycleMethod() gate (#2657, #2638) -- but `api` is
-      // unaffected, since that generator did not change.
+      // reported as a `cli` or `mcp` custom-action surface, matching core's
+      // now-retired CLIGenerator.listCommands()'s (#2664) and
+      // MCPGenerator.generateTools()'s isFrameworkLifecycleMethod() gate
+      // (#2657, #2638) -- but `api` is unaffected, since that generator did
+      // not change. NOTE: the shipped local CLI
+      // (packages/cli/src/cli-generator.ts) does NOT apply this gate today.
       '@example/orders:LifecycleOverrideOrder': {
         className: 'LifecycleOverrideOrder',
         qualifiedName: '@example/orders:LifecycleOverrideOrder',

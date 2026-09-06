@@ -141,12 +141,18 @@ export interface ResolvableMethod {
  * NOT the one universal resolution, and deliberately not reused by every
  * caller that resolves a CLI command set:
  *
- * - `packages/cli/src/cli-generator.ts`'s `CLIGenerator.assertCommandExposed()`
- *   does not call this for its custom-method branch — it checks
+ * - Core's now-retired `CLIGenerator.assertCommandExposed()` (#2664) did not
+ *   call this for its custom-method branch — it checked
  *   `isFrameworkLifecycleMethod()` directly plus its own inline
- *   public/include/exclude logic, so it can give a distinct error message
+ *   public/include/exclude logic, so it could give a distinct error message
  *   per failure reason (unknown vs. not public vs. not enabled vs. lifecycle
- *   method) rather than a single boolean membership test.
+ *   method) rather than a single boolean membership test. The shipped local
+ *   CLI's `generateObjectCommands()` (`packages/cli/src/cli-generator.ts`)
+ *   has no equivalent of that gate at all today — it filters on reserved-CRUD
+ *   name collision, `isPublic`, and `exclude`/`include`, but never
+ *   `isFrameworkLifecycleMethod()`, so a locally overridden lifecycle method
+ *   IS a reachable command there (see `knowledge.ts`'s `configuredOperations()`
+ *   docblock for the same caveat).
  * - `findCliApiCoherenceViolations`'s EXPLICIT-`cli.include` branch
  *   deliberately bypasses this function too: an `include` entry naming a
  *   typo, a getter, or a private/protected method must still surface as
