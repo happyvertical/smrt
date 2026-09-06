@@ -2563,9 +2563,14 @@ export function validateCliIncludeAgainstApi(
       (action) =>
         `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
         `  Either:\n` +
+        `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
         `    - Add '${action}' to api.include, or\n` +
         `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
         `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+        `  A public method is routed by default only when every parameter can be\n` +
+        `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
+        `  without widening api.include. See withheldSurfaces in the knowledge\n` +
+        `  artifact for the reason this one was withheld (#2686).\n` +
         `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
         `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
     ),
