@@ -20,7 +20,11 @@ class SchemaGenTestEvent extends SmrtObject {
   startDate: string = '';
 }
 
-// Move to top level to avoid collision with Article in cli-module.test.ts
+// Top-level (not nested in a describe/it) to avoid a class-name collision
+// with another `Article` fixture registered elsewhere via `ObjectRegistry`.
+// (The specific sibling this originally named, cli-module.test.ts, was
+// retired with core's CLIGenerator, #2664; this file's own reason for
+// staying top-level is unchanged.)
 @smrt()
 class SchemaGenArticle extends SmrtObject {
   @field({ required: true })

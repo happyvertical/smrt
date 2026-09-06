@@ -264,11 +264,14 @@ export function resolveCustomActionNames(
  *   `resolveApiActionSet` stays exact-match: REST routes keep declared casing,
  *   so `/products/List` is genuinely distinct from `/products`.
  *
- * `vite-plugin/api-client-entries.ts`, `vite-plugin/index.ts`, and
- * `vite-plugin/sveltekit-generator.ts` now import {@link CRUD_OPERATIONS} (or
- * {@link isCrudOperation} where a bare `.includes()` on the readonly tuple
- * failed the stricter `tsconfig.typecheck.json`) rather than keeping their
- * own verb copies (#2665). `vite-plugin/templates/default-ui.ts` keeps its
+ * `vite-plugin/api-client-entries.ts` and `vite-plugin/sveltekit-generator.ts`
+ * now import {@link CRUD_OPERATIONS} (or {@link isCrudOperation} where a bare
+ * `.includes()` on the readonly tuple failed the stricter
+ * `tsconfig.typecheck.json`) rather than keeping their own verb copies
+ * (#2665). `vite-plugin/index.ts`'s copy backed `generateCLIModule()`, which
+ * #2664 retired along with the rest of the unused `smrt-virt-cli` module, so
+ * `index.ts` no longer imports anything from this module at all.
+ * `vite-plugin/templates/default-ui.ts` keeps its
  * verb list as a local literal deliberately: `src/vite-plugin/templates/**`
  * is excluded from both tsconfigs and the vite-dts build graph, and the
  * package build copies that directory to `dist/` verbatim rather than
