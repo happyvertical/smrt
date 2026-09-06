@@ -392,6 +392,7 @@ interface PostgresColumn extends ConvertCandidate {
 }
 
 interface ForeignKeySnapshot {
+  oid: string;
   table: string;
   name: string;
   definition: string;
@@ -400,14 +401,26 @@ interface ForeignKeySnapshot {
 }
 
 interface GeneratedBridgeSnapshot {
+  tableOid: string;
+  attributeNumber: number;
+  attributeDefaultOid: string;
   table: string;
   column: string;
   sourceColumn: string;
-  indexDefinitions: Array<{ definition: string; comment: string | null }>;
+  indexDefinitions: Array<{
+    oid: string;
+    definition: string;
+    comment: string | null;
+  }>;
 }
 
 function quoteLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+/** PostgreSQL relation reference in the migration's fixed public schema. */
+function pgTable(table: string): string {
+  return `${quoteIdentifier('public')}.${quoteIdentifier(table)}`;
 }
 
 /**
@@ -435,7 +448,7 @@ async function convertPostgresUuidColumns(
     let nonUuid = 0;
     if (declaredUuid.has(declaredUuidKey(table, column))) {
       const { rows } = await db.query(
-        `SELECT count(*)::text AS n FROM ${quoteIdentifier(table)}
+        `SELECT count(*)::text AS n FROM ${pgTable(table)}
           WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
             AND btrim(${quoteIdentifier(column)}) !~* '${UUID_RE}'`,
       );
@@ -482,6 +495,7 @@ async function convertPostgresUuidColumns(
   await assertSupportedSourceColumns(db, columns);
   const bridges = await snapshotGeneratedBridges(db, columns);
   const foreignKeys = await snapshotForeignKeys(db, columns, bridges);
+  await assertSupportedBridgeDependencies(db, bridges, foreignKeys);
   const tables = [
     ...new Set([
       ...columns.map((column) => column.table),
@@ -495,9 +509,7 @@ async function convertPostgresUuidColumns(
       `\nDRY RUN — dependency plan for ${columns.length} conversion(s):`,
     );
     for (const table of tables)
-      console.log(
-        `  LOCK TABLE ${quoteIdentifier(table)} IN ACCESS EXCLUSIVE MODE;`,
-      );
+      console.log(`  LOCK TABLE ${pgTable(table)} IN ACCESS EXCLUSIVE MODE;`);
     renderUuidConversionSql(columns, bridges, foreignKeys);
     console.log('\nDry run complete — no changes applied.\n');
     return;
@@ -506,15 +518,18 @@ async function convertPostgresUuidColumns(
   // Locks prevent a DDL/data race between the plan and mutation.  Re-read the
   // whole bounded catalog after acquiring them; any changed shape is refused.
   for (const table of tables) {
-    await db.query(
-      `LOCK TABLE ${quoteIdentifier(table)} IN ACCESS EXCLUSIVE MODE`,
-    );
+    await db.query(`LOCK TABLE ${pgTable(table)} IN ACCESS EXCLUSIVE MODE`);
   }
   const rescannedBridges = await snapshotGeneratedBridges(db, columns);
   const rescannedForeignKeys = await snapshotForeignKeys(
     db,
     columns,
     rescannedBridges,
+  );
+  await assertSupportedBridgeDependencies(
+    db,
+    rescannedBridges,
+    rescannedForeignKeys,
   );
   if (
     JSON.stringify({ bridges, foreignKeys }) !==
@@ -530,16 +545,16 @@ async function convertPostgresUuidColumns(
   renderUuidConversionSql(columns, bridges, foreignKeys);
   for (const foreignKey of foreignKeys) {
     await db.query(
-      `ALTER TABLE ${quoteIdentifier(foreignKey.table)} DROP CONSTRAINT ${quoteIdentifier(foreignKey.name)}`,
+      `ALTER TABLE ${pgTable(foreignKey.table)} DROP CONSTRAINT ${quoteIdentifier(foreignKey.name)}`,
     );
   }
   for (const bridge of bridges) {
     await db.query(
-      `ALTER TABLE ${quoteIdentifier(bridge.table)} DROP COLUMN ${quoteIdentifier(bridge.column)}`,
+      `ALTER TABLE ${pgTable(bridge.table)} DROP COLUMN ${quoteIdentifier(bridge.column)}`,
     );
   }
   for (const column of columns) {
-    const table = quoteIdentifier(column.table);
+    const table = pgTable(column.table);
     const name = quoteIdentifier(column.column);
     if (column.defaultExpression)
       await db.query(`ALTER TABLE ${table} ALTER COLUMN ${name} DROP DEFAULT`);
@@ -556,7 +571,7 @@ async function convertPostgresUuidColumns(
   }
   for (const bridge of bridges) {
     await db.query(
-      `ALTER TABLE ${quoteIdentifier(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED`,
+      `ALTER TABLE ${pgTable(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED`,
     );
     for (const index of bridge.indexDefinitions) {
       await db.query(index.definition);
@@ -568,11 +583,11 @@ async function convertPostgresUuidColumns(
   }
   for (const foreignKey of foreignKeys) {
     await db.query(
-      `ALTER TABLE ${quoteIdentifier(foreignKey.table)} ADD CONSTRAINT ${quoteIdentifier(foreignKey.name)} ${foreignKey.definition}${foreignKey.validated ? '' : ' NOT VALID'}`,
+      `ALTER TABLE ${pgTable(foreignKey.table)} ADD CONSTRAINT ${quoteIdentifier(foreignKey.name)} ${foreignKey.definition}${foreignKey.validated ? '' : ' NOT VALID'}`,
     );
     if (foreignKey.comment)
       await db.query(
-        `COMMENT ON CONSTRAINT ${quoteIdentifier(foreignKey.name)} ON ${quoteIdentifier(foreignKey.table)} IS ${quoteLiteral(foreignKey.comment)}`,
+        `COMMENT ON CONSTRAINT ${quoteIdentifier(foreignKey.name)} ON ${pgTable(foreignKey.table)} IS ${quoteLiteral(foreignKey.comment)}`,
       );
   }
   console.log(`\n✓ Converted ${columns.length} column(s) to uuid.\n`);
@@ -624,14 +639,14 @@ function renderUuidConversionSql(
 ): void {
   for (const foreignKey of foreignKeys)
     console.log(
-      `  ALTER TABLE ${quoteIdentifier(foreignKey.table)} DROP CONSTRAINT ${quoteIdentifier(foreignKey.name)};`,
+      `  ALTER TABLE ${pgTable(foreignKey.table)} DROP CONSTRAINT ${quoteIdentifier(foreignKey.name)};`,
     );
   for (const bridge of bridges)
     console.log(
-      `  ALTER TABLE ${quoteIdentifier(bridge.table)} DROP COLUMN ${quoteIdentifier(bridge.column)};`,
+      `  ALTER TABLE ${pgTable(bridge.table)} DROP COLUMN ${quoteIdentifier(bridge.column)};`,
     );
   for (const column of columns) {
-    const table = quoteIdentifier(column.table);
+    const table = pgTable(column.table);
     const name = quoteIdentifier(column.column);
     if (column.defaultExpression)
       console.log(`  ALTER TABLE ${table} ALTER COLUMN ${name} DROP DEFAULT;`);
@@ -645,14 +660,14 @@ function renderUuidConversionSql(
   }
   for (const bridge of bridges) {
     console.log(
-      `  ALTER TABLE ${quoteIdentifier(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED;`,
+      `  ALTER TABLE ${pgTable(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED;`,
     );
     for (const index of bridge.indexDefinitions)
       console.log(`  ${index.definition};`);
   }
   for (const foreignKey of foreignKeys)
     console.log(
-      `  ALTER TABLE ${quoteIdentifier(foreignKey.table)} ADD CONSTRAINT ${quoteIdentifier(foreignKey.name)} ${foreignKey.definition}${foreignKey.validated ? '' : ' NOT VALID'};`,
+      `  ALTER TABLE ${pgTable(foreignKey.table)} ADD CONSTRAINT ${quoteIdentifier(foreignKey.name)} ${foreignKey.definition}${foreignKey.validated ? '' : ' NOT VALID'};`,
     );
 }
 
@@ -664,7 +679,9 @@ async function snapshotGeneratedBridges(
     columns.map((column) => declaredUuidKey(column.table, column.column)),
   );
   const { rows } = await db.query(
-    `SELECT generated.relname AS table_name, generated_attr.attname AS column_name,
+    `SELECT generated.oid::text AS table_oid, generated_attr.attnum AS attribute_number,
+            def.oid::text AS attribute_default_oid,
+            generated.relname AS table_name, generated_attr.attname AS column_name,
             pg_get_expr(def.adbin, def.adrelid) AS expression,
             format_type(generated_attr.atttypid, generated_attr.atttypmod) AS type_name,
             generated_attr.attnotnull AS not_null, generated_attr.attstorage AS storage,
@@ -728,7 +745,7 @@ async function snapshotGeneratedBridges(
     // so accepting upper-case/space-padded legacy values would break TEXT FK
     // children after recreation.
     const { rows: nonCanonical } = await db.query(
-      `SELECT count(*)::text AS n FROM ${quoteIdentifier(table)}
+      `SELECT count(*)::text AS n FROM ${pgTable(table)}
         WHERE ${quoteIdentifier(sourceColumn)} IS NOT NULL
           AND ${quoteIdentifier(sourceColumn)} !~ '${UUID_RE}'`,
     );
@@ -741,6 +758,9 @@ async function snapshotGeneratedBridges(
       );
     }
     bridges.push({
+      tableOid: String(row.table_oid),
+      attributeNumber: Number(row.attribute_number),
+      attributeDefaultOid: String(row.attribute_default_oid),
       table,
       column: bridgeColumn,
       sourceColumn,
@@ -756,36 +776,9 @@ async function snapshotBridgeIndexes(
   db: QueryExecutor,
   table: string,
   column: string,
-): Promise<Array<{ definition: string; comment: string | null }>> {
-  const { rows: unsupported } = await db.query(
-    `SELECT index_rel.relname AS name
-       FROM pg_index idx
-       JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
-       JOIN pg_namespace ns ON ns.oid = table_rel.relnamespace
-       JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
-      WHERE ns.nspname = 'public' AND table_rel.relname = ${quoteLiteral(table)}
-        AND (idx.indexprs IS NOT NULL OR idx.indpred IS NOT NULL)
-        AND (coalesce(pg_get_expr(idx.indexprs, idx.indrelid), '') ILIKE '%${column.replaceAll("'", "''")}%'
-          OR coalesce(pg_get_expr(idx.indpred, idx.indrelid), '') ILIKE '%${column.replaceAll("'", "''")}%')`,
-  );
-  if (unsupported.length > 0) {
-    throw new Error(
-      `Unsupported expression or partial index depends on generated bridge ${table}.${column}: ${(unsupported as Array<Record<string, unknown>>).map((row) => String(row.name)).join(', ')}.`,
-    );
-  }
-  const { rows: constraints } = await db.query(
-    `SELECT conname FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
-       JOIN pg_namespace ns ON ns.oid = rel.relnamespace
-       JOIN pg_attribute attr ON attr.attrelid = rel.oid AND attr.attnum = ANY(con.conkey)
-      WHERE ns.nspname = 'public' AND rel.relname = ${quoteLiteral(table)}
-        AND attr.attname = ${quoteLiteral(column)} AND con.contype IN ('c', 'u', 'p', 'x')`,
-  );
-  if (constraints.length > 0)
-    throw new Error(
-      `Unsupported CHECK/UNIQUE constraint depends on generated bridge ${table}.${column}.`,
-    );
+): Promise<GeneratedBridgeSnapshot['indexDefinitions']> {
   const { rows } = await db.query(
-    `SELECT pg_get_indexdef(index_rel.oid) AS definition,
+    `SELECT index_rel.oid::text AS oid, pg_get_indexdef(index_rel.oid) AS definition,
             obj_description(index_rel.oid, 'pg_class') AS comment,
             idx.indnkeyatts AS key_count, idx.indpred IS NOT NULL AS partial,
             idx.indexprs IS NOT NULL AS expression_index, idx.indisvalid AS valid,
@@ -812,6 +805,7 @@ async function snapshotBridgeIndexes(
       );
     }
     return {
+      oid: String(row.oid),
       definition: String(row.definition),
       comment: row.comment == null ? null : String(row.comment),
     };
@@ -883,6 +877,7 @@ async function snapshotForeignKeys(
       );
     }
     participating.push({
+      oid: String(row.oid),
       table: String(row.child_table),
       name: String(row.name),
       definition: String(row.definition),
@@ -893,6 +888,59 @@ async function snapshotForeignKeys(
   return participating.sort((a, b) =>
     `${a.table}.${a.name}`.localeCompare(`${b.table}.${b.name}`),
   );
+}
+
+/**
+ * A bridge column is dropped and rebuilt. pg_depend is the authoritative
+ * catalog for every object which would be removed with it, including objects
+ * whose definition does not expose the column name (expression indexes,
+ * predicates, and extended statistics). Keep only dependencies we snapshot
+ * and recreate exactly; fail closed for every other catalog object.
+ */
+async function assertSupportedBridgeDependencies(
+  db: QueryExecutor,
+  bridges: GeneratedBridgeSnapshot[],
+  foreignKeys: ForeignKeySnapshot[],
+): Promise<void> {
+  const foreignKeyOids = new Set(
+    foreignKeys.map((foreignKey) => foreignKey.oid),
+  );
+  for (const bridge of bridges) {
+    const indexOids = new Set(
+      bridge.indexDefinitions.map((index) => index.oid),
+    );
+    const { rows } = await db.query(
+      `SELECT dep.classid::regclass::text AS class_name,
+              dep.objid::text AS object_oid,
+              dep.objsubid AS object_subid,
+              dep.deptype,
+              coalesce(obj_class.relname, con.conname, stat.stxname, '') AS object_name
+         FROM pg_depend dep
+         LEFT JOIN pg_class obj_class
+           ON dep.classid = 'pg_class'::regclass AND obj_class.oid = dep.objid
+         LEFT JOIN pg_constraint con
+           ON dep.classid = 'pg_constraint'::regclass AND con.oid = dep.objid
+         LEFT JOIN pg_statistic_ext stat
+           ON dep.classid = 'pg_statistic_ext'::regclass AND stat.oid = dep.objid
+        WHERE dep.refclassid = 'pg_class'::regclass
+          AND dep.refobjid = ${quoteLiteral(bridge.tableOid)}::oid
+          AND dep.refobjsubid = ${bridge.attributeNumber}`,
+    );
+    for (const row of rows as Array<Record<string, unknown>>) {
+      const className = String(row.class_name);
+      const objectOid = String(row.object_oid);
+      const knownAttributeDefinition =
+        className === 'pg_attrdef' && objectOid === bridge.attributeDefaultOid;
+      const knownIndex = className === 'pg_class' && indexOids.has(objectOid);
+      const knownForeignKey =
+        className === 'pg_constraint' && foreignKeyOids.has(objectOid);
+      if (knownAttributeDefinition || knownIndex || knownForeignKey) continue;
+      const name = row.object_name ? ` ${String(row.object_name)}` : '';
+      throw new Error(
+        `Unsupported catalog dependency on generated bridge ${bridge.table}.${bridge.column}:${name} (${className} OID ${objectOid}, dependency ${String(row.deptype)}). Remove or migrate it separately before db:migrate-uuid.`,
+      );
+    }
+  }
 }
 
 function indexNameFromDefinition(definition: string): string {
@@ -929,7 +977,7 @@ async function applyRenameBackfills(
   if (useOwnTxn) await db.query('BEGIN');
   try {
     for (const spec of renameSpecs) {
-      const t = quoteIdentifier(spec.table);
+      const t = isPostgres ? pgTable(spec.table) : quoteIdentifier(spec.table);
       const from = quoteIdentifier(spec.from);
       const to = quoteIdentifier(spec.to);
 
