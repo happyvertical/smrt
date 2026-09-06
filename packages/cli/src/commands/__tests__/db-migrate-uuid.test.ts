@@ -471,3 +471,132 @@ describePostgres(
     }, 30_000);
   },
 );
+
+describePostgres(
+  'db:migrate-uuid bounded generated TEXT bridge (real Postgres)',
+  () => {
+    const stem = `mu_bridge_${Math.random().toString(36).slice(2, 8)}`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const junction = `${stem}_junction`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(
+        `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+      );
+      await db.query(
+        `CREATE TABLE "${parent}" (id text PRIMARY KEY, _integrity_id_text text GENERATED ALWAYS AS (id) STORED)`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${parent}_bridge_uidx" ON "${parent}" USING btree (_integrity_id_text)`,
+      );
+      await db.query(
+        `CREATE TABLE "${child}" (id text PRIMARY KEY, parent_id text NOT NULL CONSTRAINT "${child}_parent_fkey" REFERENCES "${parent}"(id) ON UPDATE CASCADE ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED)`,
+      );
+      await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
+      await db.query(
+        `ALTER TABLE "${junction}" ADD CONSTRAINT "${junction}_bridge_fkey" FOREIGN KEY (parent_text) REFERENCES "${parent}"(_integrity_id_text) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID`,
+      );
+      await db.query(
+        `INSERT INTO "${parent}" (id) VALUES ('11111111-1111-1111-1111-111111111111')`,
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, parent_id) VALUES ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111')`,
+      );
+      await db.query(
+        `INSERT INTO "${junction}" (parent_text) VALUES ('11111111-1111-1111-1111-111111111111')`,
+      );
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+        );
+      } catch {
+        /* cleanup best effort */
+      }
+      clearCache();
+    });
+
+    it('rebuilds the bridge, its index, and validated/non-validated FKs while converting the UUID component', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+      const db = await freshDb();
+      const { rows: types } = await db.query(
+        `SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_name IN ($1, $2) AND column_name IN ('id', 'parent_id') ORDER BY table_name, column_name`,
+        parent,
+        child,
+      );
+      expect((types as any[]).every((row) => row.data_type === 'uuid')).toBe(
+        true,
+      );
+      const { rows: bridge } = await db.query(
+        `SELECT _integrity_id_text FROM "${parent}"`,
+      );
+      expect((bridge as any[])[0]._integrity_id_text).toBe(
+        '11111111-1111-1111-1111-111111111111',
+      );
+      const { rows: constraints } = await db.query(
+        `SELECT conname, convalidated FROM pg_constraint WHERE conname IN ($1, $2) ORDER BY conname`,
+        `${child}_parent_fkey`,
+        `${junction}_bridge_fkey`,
+      );
+      expect(constraints).toEqual([
+        { conname: `${child}_parent_fkey`, convalidated: true },
+        { conname: `${junction}_bridge_fkey`, convalidated: false },
+      ]);
+      await expect(
+        db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000')`,
+        ),
+      ).rejects.toThrow();
+    }, 30_000);
+  },
+);
