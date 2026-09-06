@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  checkAgentSurfaceToolNames,
   extractAgentSurface,
   isAgentSurfaceSourcePath,
   isPrunedAgentSurfacePath,
@@ -929,6 +930,277 @@ export const b = defineIntent({
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('collisions with names this pass does not own (#2725)', () => {
+  /**
+   * A merged surface holding exactly the intents named, each in its own file.
+   *
+   * `checkAgentSurfaceToolNames` runs on the MERGED result on purpose: the
+   * intent-vs-intent losers are already gone by then, so a dropped declaration
+   * can never also be reported as colliding with a generated tool.
+   */
+  function surfaceWithIntents(...ids: string[]): AgentSurface {
+    return mergeAgentSurfaces(
+      ids.map((id, index) =>
+        surfaceOf(
+          `${INTENT_IMPORT}
+export const intent${index} = defineIntent({
+  id: '${id}',
+  description: 'Declared intent',
+  target: { registry: 'control', action: 'focus' },
+});
+`,
+          `src/lib/intent-${index}.intents.ts`,
+        ),
+      ),
+    );
+  }
+
+  it('reports an intent that lands on a generated model tool name', () => {
+    // The flagship case: `product.list` flattens to `product_list`, which is
+    // exactly `${className.toLowerCase()}_${action}` for a `Product` exposing
+    // `list`. Nothing compared them before, so `smrt doctor` listed both as
+    // present under one name.
+    const surface = surfaceWithIntents('product.list');
+
+    const diagnostics = checkAgentSurfaceToolNames(surface, {
+      generatedToolNames: [
+        { name: 'product_list', declaredBy: 'Product.list' },
+        { name: 'product_get', declaredBy: 'Product.get' },
+      ],
+    });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      code: 'tool-name-collision',
+      helper: 'defineIntent',
+      filePath: 'src/lib/intent-0.intents.ts',
+    });
+    expect(diagnostics[0].message).toContain('`product.list`');
+    expect(diagnostics[0].message).toContain('`product_list`');
+    expect(diagnostics[0].message).toContain('`Product.list`');
+    expect(diagnostics[0].message).toContain('namespace');
+  });
+
+  it('states the runtime precondition the generated-tool collision assumes', () => {
+    // A build cannot see the provider's `namespace` or `effects` policy, and a
+    // `namespace` prefixes generated tools while leaving intents alone — so for
+    // a namespaced app there is no collision and this notice is wrong every
+    // time it fires. Asserting it flatly would recommend the remedy that app
+    // had already applied and leave renaming a correct intent as the only
+    // clearing action. The caller CAN pass namespaced names when it knows them;
+    // when it cannot, the message has to carry the condition.
+    const [diagnostic] = checkAgentSurfaceToolNames(
+      surfaceWithIntents('product.list'),
+      { generatedToolNames: [{ name: 'product_list' }] },
+    );
+
+    expect(diagnostic.message).toContain('with no WebMCP `namespace`');
+    expect(diagnostic.message).toContain('`effects`');
+    expect(diagnostic.message).toContain('disregard this');
+    // And it names the runtime outcome the lock (#2613) actually produces, so
+    // an author who ignores the notice knows what to look for at mount.
+    expect(diagnostic.message).toContain('WebMcpToolNameCollisionError');
+  });
+
+  it('emits the colliding intent rather than dropping it', () => {
+    // The asymmetry with intent-vs-intent, asserted rather than described.
+    // `defineIntent` REJECTS a second colliding intent, so only one can exist
+    // and the merge drops the loser; it accepts this id, the declaration is
+    // real, and which registration survives is a runtime question. Dropping it
+    // would make the emitted surface disagree with the source.
+    const surface = surfaceWithIntents('product.list');
+
+    checkAgentSurfaceToolNames(surface, {
+      generatedToolNames: [
+        { name: 'product_list', declaredBy: 'Product.list' },
+      ],
+    });
+
+    expect(surface.intents.map((intent) => intent.id)).toEqual([
+      'product.list',
+    ]);
+    expect(surface.diagnostics).toEqual([]);
+  });
+
+  it('does NOT report an action the exposure policy leaves unexposed', () => {
+    // The reason the comparison takes NAMES and not classes: a `Report` that
+    // excludes `list` never registers `report_list`, so `report.list` is free.
+    // Comparing against every verb a class could expose would invent this one.
+    const surface = surfaceWithIntents('product.list', 'report.list');
+
+    const diagnostics = checkAgentSurfaceToolNames(surface, {
+      generatedToolNames: [
+        { name: 'product_list', declaredBy: 'Product.list' },
+        { name: 'report_get', declaredBy: 'Report.get' },
+      ],
+    });
+
+    expect(diagnostics.map((diagnostic) => diagnostic.filePath)).toEqual([
+      'src/lib/intent-0.intents.ts',
+    ]);
+    expect(diagnostics[0].message).toContain('`product.list`');
+  });
+
+  it('reports nothing when no generated names are supplied', () => {
+    expect(
+      checkAgentSurfaceToolNames(surfaceWithIntents('product.list')),
+    ).toEqual([]);
+  });
+
+  it('reports an intent that lands on a fixed UI tool under the CONFIGURED prefix', () => {
+    // `defineIntent` reserves only the literal `smrt_ui_`, so this id is
+    // accepted and the intent really registers — and then collides with the
+    // six fixed UI tools of an app whose `ui.prefix` is `agent_ui_`.
+    const surface = surfaceWithIntents('agent.ui.list_form_controls');
+
+    const diagnostics = checkAgentSurfaceToolNames(surface, {
+      uiToolPrefixes: ['agent_ui_'],
+    });
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toMatchObject({
+      code: 'tool-name-collision',
+      helper: 'defineIntent',
+      filePath: 'src/lib/intent-0.intents.ts',
+    });
+    expect(diagnostics[0].message).toContain('`agent_ui_list_form_controls`');
+    expect(diagnostics[0].message).toContain('`agent_ui_`');
+    expect(diagnostics[0].message).toContain('ui.prefix');
+    expect(diagnostics[0].message).toContain('WebMcpToolNameCollisionError');
+  });
+
+  it('covers all six fixed UI tools, and nothing that merely resembles them', () => {
+    const suffixes = [
+      'list_form_controls',
+      'inspect_form_control',
+      'execute_form_control',
+      'list_data_surfaces',
+      'inspect_data_surface',
+      'execute_data_surface_control',
+    ];
+    for (const suffix of suffixes) {
+      expect(
+        checkAgentSurfaceToolNames(surfaceWithIntents(`agent.ui.${suffix}`), {
+          uiToolPrefixes: ['agent_ui_'],
+        }),
+      ).toHaveLength(1);
+    }
+    // Not a fixed UI tool name at all.
+    expect(
+      checkAgentSurfaceToolNames(surfaceWithIntents('agent.ui.list_forms'), {
+        uiToolPrefixes: ['agent_ui_'],
+      }),
+    ).toEqual([]);
+  });
+
+  it('never fires under the DEFAULT prefix, where it could only be wrong', () => {
+    // The reason the prefixes are supplied rather than derived from the name.
+    // Deriving would flag every one of these — `orders_`, `admin_`, `` and a
+    // 65-character remainder are all prefixes SOME app could configure — while
+    // under the default `smrt_ui_` not one of them is a fixed UI tool. The only
+    // name that would be is already rejected by `intentIdentityProblem`, so a
+    // derived rule has no true positive here at all, and every diagnostic it
+    // emitted for a default-configured app would be false.
+    const shadowShaped = [
+      'orders.list_data_surfaces',
+      'admin.inspect_form_control',
+      'list.form_controls',
+      `${'a'.repeat(64)}.list_form_controls`,
+    ];
+
+    for (const id of shadowShaped) {
+      expect(checkAgentSurfaceToolNames(surfaceWithIntents(id))).toEqual([]);
+    }
+  });
+
+  it('ignores a prefix `registerWebMcpUiTools` would itself reject', () => {
+    // Such a prefix mounts no UI tools, so it owns no names. Skipped rather
+    // than thrown: an advisory pass must not fail a build over its own input.
+    const surface = surfaceWithIntents('agent.ui.list_form_controls');
+
+    expect(
+      checkAgentSurfaceToolNames(surface, {
+        uiToolPrefixes: ['1_bad_start', '', 'a'.repeat(65)],
+      }),
+    ).toEqual([]);
+  });
+
+  it('leaves `smrt_ui_*` to the hard identity failure, and does not double-report it', () => {
+    // The issue asked whether an intent under `smrt_ui_*` should become legal
+    // for an app that moved its UI tools elsewhere. It must not:
+    // `defineIntent` rejects such an id UNCONDITIONALLY
+    // (`RESERVED_TOOL_NAME_PREFIX` in `packages/smrt-web/src/intents.ts`),
+    // wherever the UI tools live. Accepting it here would emit an entry the
+    // runtime refuses to construct — an advertised operation that can never
+    // register, which is worse than no entry at all. So it stays an
+    // `invalid-identity` failure, and this pass must not also describe it as
+    // an advisory collision: one id, one answer.
+    const rejected = surfaceOf(
+      `${INTENT_IMPORT}
+export const shadow = defineIntent({
+  id: 'smrt.ui.list_form_controls',
+  description: 'Shadows a fixed UI tool',
+  target: { registry: 'control', action: 'focus' },
+});
+`,
+      'src/lib/shadow.intents.ts',
+    );
+    const merged = mergeAgentSurfaces([rejected]);
+
+    expect(merged.intents).toEqual([]);
+    expect(merged.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      'invalid-identity',
+    ]);
+    expect(merged.diagnostics[0].message).toContain('smrt_ui_');
+    expect(
+      checkAgentSurfaceToolNames(merged, { uiToolPrefixes: ['smrt_ui_'] }),
+    ).toEqual([]);
+  });
+
+  it('reports both collisions for one intent, in a stable order', () => {
+    // A single name can be taken twice over. Emission must not depend on the
+    // order the caller happened to hand names in, for the same reason
+    // `mergeAgentSurfaces` sorts: a churning artifact proves nothing.
+    const surface = surfaceWithIntents(
+      'agent.ui.list_form_controls',
+      'product.list',
+    );
+    const names = [
+      { name: 'product_list', declaredBy: 'Product.list' },
+      {
+        name: 'agent_ui_list_form_controls',
+        declaredBy: 'AgentUi.listFormControls',
+      },
+    ];
+
+    const forward = checkAgentSurfaceToolNames(surface, {
+      generatedToolNames: names,
+      uiToolPrefixes: ['agent_ui_'],
+    });
+    const reverse = checkAgentSurfaceToolNames(surface, {
+      generatedToolNames: [...names].reverse(),
+      uiToolPrefixes: ['agent_ui_'],
+    });
+
+    expect(forward).toEqual(reverse);
+    expect(forward.map((diagnostic) => diagnostic.filePath)).toEqual([
+      'src/lib/intent-0.intents.ts',
+      'src/lib/intent-0.intents.ts',
+      'src/lib/intent-1.intents.ts',
+    ]);
+  });
+
+  it('names the generated tool generically when the caller gives no owner', () => {
+    const diagnostics = checkAgentSurfaceToolNames(
+      surfaceWithIntents('product.list'),
+      { generatedToolNames: [{ name: 'product_list' }] },
+    );
+
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].message).toContain('a generated model action');
   });
 });
 

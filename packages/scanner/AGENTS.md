@@ -38,6 +38,9 @@ executes the source.
   by `OxcScanner` and the core manifest preflight.
 - `extractAgentSurface` / `scanSvelteAgentSurface` / `mergeAgentSurfaces` —
   the agent-surface matcher (#2591). See below.
+- `checkAgentSurfaceToolNames(surface, { generatedToolNames, uiToolPrefixes })`
+  — report an emitted intent whose derived WebMCP tool name a generated model
+  tool or a fixed UI tool already registers (#2725). Takes names, never config.
 - Types (re-exported from `./types`): `RawClassDefinition`,
   `RawFieldDefinition`, `RawMethodDefinition`, `ResolvedClassDefinition`,
   `ScanResults`, `FileScanResult`, `OxcScannerOptions`, `InferredFieldType`,
@@ -79,7 +82,9 @@ build output can retain declarations and otherwise win duplicate resolution.
 ### What it refuses, always with a diagnostic
 
 Never a silent omission — every message names `useWebMcpTool`, the escape hatch
-for a tool set genuinely derived from computed or fetched data:
+for a tool set genuinely derived from computed or fetched data. Every code here
+means the declaration was NOT emitted; `tool-name-collision` (below) is the one
+exception and is advisory:
 
 | Code | Shape |
 |---|---|
@@ -90,6 +95,7 @@ for a tool set genuinely derived from computed or fetched data:
 | `invalid-identity` | a declaration the runtime helper itself would reject: an intent `id` that is not lowercase and dot-namespaced, over 128 chars, or resolving into the reserved `smrt_ui_` namespace; an unknown declaration, target, or capability key; a malformed `capability` (bad `effect`, non-boolean flag); a `target` outside the closed `control`/`dataSurface` unions or missing a required `controlId`; a playbook with no steps, an empty/non-array/unknown-plane `planes`, an `onStepFailure` outside `abort`/`continue`, a non-boolean `enabled`, or a step whose `model` is not a qualified pair |
 | `svelte-declaration` | written inline in a `.svelte` file |
 | `duplicate-identity` | two modules declare the same `id`/`key`, or two intent ids derive the same WebMCP tool name |
+| `tool-name-collision` | an EMITTED intent whose derived tool name is already registered by a generated model tool or a fixed UI tool (see below) |
 
 Mirror `defineIntent` and `definePlaybook` validation without importing their
 packages; update the scanner whenever those runtime rules tighten. Reject
@@ -119,6 +125,68 @@ cross-profile parity snapshot does not churn on directory order:
 - diagnostics sort by path, line, column, code, message;
 - paths are recorded `cwd`-relative and POSIX-separated, so a checked-in
   artifact is neither machine- nor platform-specific.
+
+### Collisions with names this pass does not own (#2725)
+
+`mergeAgentSurfaces` resolves intent-vs-intent by dropping the loser, because
+`defineIntent` REJECTS the second colliding declaration — only one can exist.
+Two other sources register into the same document and are invisible to the
+declaration scan, so `checkAgentSurfaceToolNames` reports them **without
+dropping anything**:
+
+- **generated model tools**, `${className.toLowerCase()}_${action}`, so
+  `defineIntent({ id: 'product.list' })` lands on `Product.list`;
+- **the six fixed UI tools** under the configured `webmcp.ui.prefix`.
+
+Warnings, not drops, and the asymmetry is the point: `defineIntent` accepts
+these ids, so the declarations are real and belong in the artifact; the
+document-global tool-name lock (#2613) decides which registration survives,
+rejecting the second with a `WebMcpToolNameCollisionError` — a runtime answer to
+a question the build can already see coming, which costs whoever loses its tool;
+and whether it happens at all turns on runtime values no artifact records (a
+WebMCP `namespace`, an `effects` policy, whether a page mounts both). A
+build-time drop would guess all three, and the emitted surface would stop
+matching the source.
+
+Because those values are unknowable here, the generated-tool message **states
+the precondition it assumes** — no `namespace`, action within the `effects`
+policy — and says to disregard it when either already separates the pair. A
+`namespace` prefixes generated tools and leaves intents alone, so it dissolves
+the collision outright; without that sentence a namespaced app would get a
+notice that is always wrong where it fires, recommending the remedy it had
+already applied. `smrt doctor`'s header is `Tool name also claimed` for the same
+reason: it must not assert past what the message says.
+
+**It takes NAMES, never config.** The caller passes the tool names that will
+really register; this module never derives a generated name and never applies a
+namespace. `namespace` and `ui.prefix` are runtime `<Provider webmcp={…}>`
+values that no build artifact records, so a build-time declaration of either
+would be a second place to say what the provider already says, free to diverge
+silently. Core supplies the names from `buildWebMcpToolDefinitions` — the same
+function that emits the runtime `webMcpToolDefinitions`, and therefore already
+filtered by the exposure policy. Comparing against every verb a class *could*
+expose would invent collisions with tools nobody mounts.
+
+`uiToolPrefixes` is supplied for the same reason, defaulting to the registrar's
+`smrt_ui_`. Do NOT replace it with a prefix derived from the name: quantifying
+over every prefix an app could have configured has, under the default, no true
+positive at all — an id flattening to `smrt_ui_*` is rejected during extraction
+— so every diagnostic it emits for a default-configured app is false, persisted
+into the artifact and clearable only by renaming a correct intent. There is no
+build-time source for `ui.prefix` (a runtime `<Provider>` prop), so this half is
+dormant by default and the seam waits for a caller that can fill it.
+
+`RESERVED_TOOL_NAME_PREFIX` is **not** configurable and must not become so — it
+mirrors `defineIntent`'s own literal, which rejects the id wherever an app moved
+its UI tools, so accepting one here would emit an entry the runtime refuses to
+construct.
+
+Consumers: core's Vite plugin runs the check once the manifest exists and
+appends the diagnostics to the emitted surface; `dev:knowledge-check` maps the
+code to the `agent-surface-tool-name-collision` warning and **excludes it from
+the artifact-drift comparison**, which re-derives declarations from source and
+has no manifest to produce one from; `smrt doctor` prints it under
+`⚠️  Tool name also claimed`, separately from `Not statically emittable`.
 
 The scanner mirrors the #2587 capability vocabulary structurally instead of
 importing `@happyvertical/smrt-types`: core depends on this package, so the
@@ -160,7 +228,8 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   field-type inference.
 - `src/verify-completeness.ts` — `verifyManifestCompleteness` publish guard.
 - `src/agent-surface.ts` — the `defineIntent` / `definePlaybook` matcher, its
-  diagnostics, and `mergeAgentSurfaces` (#2591).
+  diagnostics, `mergeAgentSurfaces` (#2591), and `checkAgentSurfaceToolNames`
+  (#2725).
 - `src/source-location.ts` — `getLineColumn`, split out so `agent-surface.ts`
   can resolve a diagnostic's position without importing `oxc-parser.ts`, which
   imports it back.
