@@ -36,11 +36,13 @@ export type { ToolEffect } from '../registry/types.js';
  * - AI operations `is()`/`do()`/`describe()` are declared on `SmrtObject`
  *   but are explicitly designed to be overridden with domain-specific
  *   behavior and exposed as a distinct action -- confirmed by existing,
- *   intentional coverage (`generators/cli-commands.spec.ts`'s
- *   `describe()` custom-action fixture,
- *   `vite-plugin/generated-client-integration.test.ts`'s `ArtCollection.
+ *   intentional coverage
+ *   (`vite-plugin/generated-client-integration.test.ts`'s `ArtCollection.
  *   describe(tone)` with its own declared API route). Excluding them here
- *   would regress real, working behavior.
+ *   would regress real, working behavior. (The sibling
+ *   `generators/cli-commands.spec.ts` fixture that used to cover the same
+ *   `describe()` custom action was retired with core's `CLIGenerator`,
+ *   #2664; this remaining fixture still exercises the behavior.)
  * - Relationship loading (`loadRelated`/`loadRelatedMany`/`getRelated`/
  *   `isRelatedLoaded`), memory (`remember`/`recall`/`recallAll`/`forget`/
  *   `forgetScope`), embeddings (`generateEmbeddings`/`getEmbedding`/
@@ -156,8 +158,10 @@ export interface ResolvableMethod {
  *
  * `crudActionNames` stays a parameter even though every caller now passes
  * {@link CRUD_OPERATIONS} (#2665 retired the last of the inline copies at
- * `vite-plugin/sveltekit-generator.ts` and `vite-plugin/index.ts`, following
- * `CLIGenerator`'s #2646 switch). Removing the parameter is a separate,
+ * `vite-plugin/sveltekit-generator.ts`, following `CLIGenerator`'s #2646
+ * switch; `vite-plugin/index.ts`'s copy backed the `generateCLIModule()`
+ * emitter #2664 later retired, so `index.ts` no longer calls this function
+ * or imports `CRUD_OPERATIONS` at all). Removing the parameter is a separate,
  * unevidenced call this fix does not make -- it would foreclose a caller
  * that legitimately needs a different verb set, and no such need has been
  * demonstrated either way.
