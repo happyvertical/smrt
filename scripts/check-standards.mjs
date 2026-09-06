@@ -351,7 +351,7 @@ function checkPackage(name) {
   }
 
   // 9. No per-package lint/format scripts (Sweep S2, #1374). Lint and format
-  //    are root-level Biome tasks (`turbo lint`, `biome ci`, `npm run
+  //    are root-level Biome tasks (`pnpm lint`, `biome ci`, `pnpm
   //    format-check`) that already gate every package on PRs. Per-package
   //    `lint`/`format` scripts are anti-standard — they drift from the single
   //    Biome config and create inconsistent local behavior. See
@@ -361,7 +361,7 @@ function checkPackage(name) {
       if (typeof json.scripts[key] === 'string') {
         violations.push(
           `scripts.${key} is forbidden — lint/format are root-level Biome ` +
-            'tasks only (turbo lint / biome ci / npm run format-check). ' +
+            'tasks only (pnpm lint / biome ci / pnpm format-check). ' +
             'Remove the per-package script.',
         );
       }
