@@ -428,25 +428,43 @@ async function assessTargets(
   engine: DatabaseEngine,
 ): Promise<{ tables: FrameworkBaseTableReport[]; safe: boolean }> {
   if (typeof db.getTableSchema !== 'function') {
-    // Fail closed: without shape introspection we cannot tell a genuine
-    // framework-base table apart from a consumer's own unrelated table of
-    // the same name, so every target table is reported unsafe.
+    // Fail closed for any target that actually exists: without shape
+    // introspection we cannot tell a genuine framework-base table apart
+    // from a consumer's own unrelated table of the same name. But existence
+    // itself only needs a raw catalog query (`getExistingTableNames()`,
+    // which never calls `getTableSchema()`), so a database with none of the
+    // five tables present is still a safe, clean no-op even on an adapter
+    // this degraded — refusing unconditionally here would report five
+    // nonexistent tables as unsafe instead of nothing to do.
+    const existingTableNames = await getExistingTableNames(db, engine);
     const tables: FrameworkBaseTableReport[] = FRAMEWORK_BASE_TABLE_NAMES.map(
-      (name) => ({
-        table: name,
-        exists: true,
-        rowCount: null,
-        indexNames: [],
-        refusals: [
-          {
-            kind: 'introspection-unavailable',
-            reason:
-              'The configured database adapter cannot describe tables (`getTableSchema` is unavailable), so table shape cannot be verified.',
-          },
-        ],
-      }),
+      (name) =>
+        existingTableNames.has(name)
+          ? {
+              table: name,
+              exists: true,
+              rowCount: null,
+              indexNames: [],
+              refusals: [
+                {
+                  kind: 'introspection-unavailable' as const,
+                  reason:
+                    'The configured database adapter cannot describe tables (`getTableSchema` is unavailable), so table shape cannot be verified.',
+                },
+              ],
+            }
+          : {
+              table: name,
+              exists: false,
+              rowCount: null,
+              indexNames: [],
+              refusals: [],
+            },
     );
-    return { tables, safe: false };
+    return {
+      tables,
+      safe: tables.every((table) => table.refusals.length === 0),
+    };
   }
 
   const existingTableNames = await getExistingTableNames(db, engine);

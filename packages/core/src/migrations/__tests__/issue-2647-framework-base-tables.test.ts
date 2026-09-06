@@ -385,7 +385,8 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
   });
 
   describe('refusal: introspection unavailable (fail closed)', () => {
-    it('refuses every target table when the adapter cannot describe tables', async () => {
+    it('refuses every existing target table when the adapter cannot describe tables', async () => {
+      await createAllFrameworkBaseTables(db);
       const noSchemaDb = {
         ...db,
         getTableSchema: undefined,
@@ -397,9 +398,31 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
       expect(plan.safe).toBe(false);
       expect(plan.statements).toEqual([]);
       for (const table of plan.tables) {
+        expect(table.exists).toBe(true);
         expect(table.refusals).toEqual([
           expect.objectContaining({ kind: 'introspection-unavailable' }),
         ]);
+      }
+    });
+
+    it('is still a safe no-op when none of the five tables exist, even with a degraded adapter', async () => {
+      // Existence alone only needs a raw catalog query, never
+      // getTableSchema() — a database with none of the five target tables
+      // present has nothing to verify the shape of, so a missing
+      // getTableSchema() must not turn "nothing to do" into a false refusal.
+      const noSchemaDb = {
+        ...db,
+        getTableSchema: undefined,
+      } as unknown as DatabaseInterface;
+
+      const plan = await planFrameworkBaseTableDrop(noSchemaDb, {
+        engineHint: 'sqlite',
+      });
+      expect(plan.safe).toBe(true);
+      expect(plan.statements).toEqual([]);
+      for (const table of plan.tables) {
+        expect(table.exists).toBe(false);
+        expect(table.refusals).toEqual([]);
       }
     });
   });
