@@ -214,15 +214,8 @@ export function restMethodForApiAction(
 function readRegisteredMethod(
   objectName: string,
   action: string,
-): MethodDefinition | { decoratorConfig: Record<string, unknown> } | undefined {
-  const methodDef = ObjectRegistry.getMethods(objectName)?.get(action);
-  if (methodDef?.decoratorConfig) return methodDef;
-  const decoratorConfig = ObjectRegistry.resolveRuntimeMethodDecoratorConfig(
-    objectName,
-    action,
-  );
-  if (!decoratorConfig) return methodDef;
-  return methodDef ? { ...methodDef, decoratorConfig } : { decoratorConfig };
+): MethodDefinition | undefined {
+  return ObjectRegistry.resolveRuntimeMethod(objectName, action).method;
 }
 
 /**
@@ -311,12 +304,28 @@ export function isRestActionRoutable(
     apiConfig.routes &&
     Object.hasOwn(apiConfig.routes as Record<string, unknown>, action)
   ) {
-    return true;
+    return isHostableByRuntimeRest(objectName, action);
   }
 
   // Shared with `APIGenerator.declaredCollectionActions`, which decides the
   // dispatch this predicate exists to predict.
-  return declaresRuntimeRestRoute(registered);
+  return (
+    declaresRuntimeRestRoute(registered) &&
+    isHostableByRuntimeRest(objectName, action)
+  );
+}
+
+/**
+ * Whether this transport can HOST the action at all.
+ *
+ * It serves only collection-scoped custom actions, so an item-scoped
+ * declaration — the `@method()` decorator's most common shape, on a model
+ * instance method — answers 404 in dispatch. Predicting `allow` for it is the
+ * false-`allow` this module exists to prevent, so routability is the
+ * conjunction of "declared" and "hostable" (#2686).
+ */
+function isHostableByRuntimeRest(objectName: string, action: string): boolean {
+  return ObjectRegistry.isCollectionHostedMethod(objectName, action);
 }
 
 /**

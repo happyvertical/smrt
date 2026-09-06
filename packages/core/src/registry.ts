@@ -259,6 +259,15 @@ interface FieldDecoratorOptions extends FieldOptions {
 type MethodDecoratorOptions = MethodOptions;
 
 /**
+ * One stored `@method()` declaration: its options plus the receiver the
+ * decorator observed. See {@link ObjectRegistry.registerMethodDecorator}.
+ */
+interface MethodDecoratorRecord {
+  options: MethodDecoratorOptions;
+  isStatic: boolean;
+}
+
+/**
  * Constructor shape for a registered collection class.
  *
  * The `SmrtCollection<any>` type argument is an intentional heterogeneous-
@@ -541,13 +550,13 @@ export class ObjectRegistry {
    */
   private static get methodDecorators(): WeakMap<
     Function,
-    Map<string, MethodDecoratorOptions>
+    Map<string, MethodDecoratorRecord>
   > {
     // Same documented narrowing cast as `fieldDecorators` above: shared state
     // stores the looser `Record<string, unknown>`.
     return getMethodDecorators() as WeakMap<
       Function,
-      Map<string, MethodDecoratorOptions>
+      Map<string, MethodDecoratorRecord>
     >;
   }
 
@@ -696,6 +705,7 @@ export class ObjectRegistry {
     ctor: Function,
     methodName: string,
     options: MethodDecoratorOptions,
+    isStatic = false,
   ): void {
     let classDecorators = ObjectRegistry.methodDecorators.get(ctor);
     if (!classDecorators) {
@@ -703,10 +713,10 @@ export class ObjectRegistry {
       ObjectRegistry.methodDecorators.set(ctor, classDecorators);
     }
     const existing = classDecorators.get(methodName);
-    classDecorators.set(
-      methodName,
-      existing ? { ...existing, ...options } : options,
-    );
+    classDecorators.set(methodName, {
+      options: existing ? { ...existing.options, ...options } : options,
+      isStatic,
+    });
   }
 
   /** `@method()` options for one method, or `undefined` when undecorated. */
@@ -714,6 +724,20 @@ export class ObjectRegistry {
     ctor: Function | undefined,
     methodName: string,
   ): MethodDecoratorOptions | undefined {
+    return ObjectRegistry.getMethodDecoratorEntry(ctor, methodName)?.options;
+  }
+
+  /**
+   * The stored `@method()` record, including the RECEIVER the decorator saw.
+   *
+   * `isStatic` cannot be recovered later in an unscanned runtime — there is no
+   * manifest to read it from — and it is what tells the standalone REST
+   * transport whether it can host the action at all (#2686).
+   */
+  private static getMethodDecoratorEntry(
+    ctor: Function | undefined,
+    methodName: string,
+  ): MethodDecoratorRecord | undefined {
     return ctor
       ? ObjectRegistry.methodDecorators.get(ctor)?.get(methodName)
       : undefined;
@@ -723,9 +747,9 @@ export class ObjectRegistry {
   static getMethodDecorators(
     ctor: Function | undefined,
   ): Map<string, MethodDecoratorOptions> {
-    return (
-      (ctor ? ObjectRegistry.methodDecorators.get(ctor) : undefined) ??
-      new Map()
+    const stored = ctor ? ObjectRegistry.methodDecorators.get(ctor) : undefined;
+    return new Map(
+      [...(stored ?? [])].map(([name, record]) => [name, record.options]),
     );
   }
 
@@ -776,9 +800,119 @@ export class ObjectRegistry {
     objectName: string,
     methodName: string,
   ): Record<string, unknown> | undefined {
-    const fromManifest =
-      ObjectRegistry.getMethods(objectName)?.get(methodName)?.decoratorConfig;
-    if (fromManifest) return fromManifest;
+    return ObjectRegistry.resolveRuntimeMethod(objectName, methodName).method
+      ?.decoratorConfig;
+  }
+
+  /**
+   * Whether the standalone REST transport can HOST `objectName.methodName`.
+   *
+   * That transport serves only collection-scoped custom actions: an instance
+   * method on the collection class, or a static on the item class. An instance
+   * method on the MODEL is item-scoped and has no receiver there, and the
+   * browser-plane preflight prediction has to agree with dispatch about that,
+   * or it reports a runnable step for an action that answers 404 (#2686).
+   *
+   * Resolution mirrors {@link resolveRuntimeMethodDecoratorConfig}: the item
+   * class's manifest entry first, then the live decorator store, which records
+   * the receiver the decorator saw precisely because an unscanned runtime has
+   * no manifest to recover it from.
+   */
+  static isCollectionHostedMethod(
+    objectName: string,
+    methodName: string,
+  ): boolean {
+    return ObjectRegistry.resolveRuntimeMethod(objectName, methodName)
+      .collectionHosted;
+  }
+
+  /**
+   * The method view a RUNTIME transport should read for one action, and whether
+   * this transport can host it.
+   *
+   * Three sources, in order, because no single one covers every posture:
+   *
+   * 1. The ITEM class's manifest entry — a static there is collection-hosted,
+   *    an instance method is item-scoped.
+   * 2. The registered COLLECTION class's manifest entry, which is where a
+   *    collection-hosted action's parameters actually live. Without this the
+   *    runtime transport sees no parameter metadata for them and silently
+   *    degrades every one to the legacy options-bag contract.
+   * 3. The live `@method()` store, for an unscanned project with no manifest at
+   *    all. It records the receiver the decorator saw, which is the only place
+   *    that fact survives there.
+   *
+   * `collectionHosted` defaults to true when nothing is known: that is the
+   * legacy `api.routes`-only shape this transport has always attempted, and
+   * predicting a denial dispatch may not issue would be its own false answer.
+   */
+  static resolveRuntimeMethod(
+    objectName: string,
+    methodName: string,
+  ): { method?: MethodDefinition; collectionHosted: boolean } {
+    const withConfig = (
+      method: MethodDefinition,
+      collectionHosted: boolean,
+    ): { method: MethodDefinition; collectionHosted: boolean } => {
+      if (method.decoratorConfig) return { method, collectionHosted };
+      const declared = ObjectRegistry.resolveDeclaredMethodConfig(
+        objectName,
+        methodName,
+      );
+      return {
+        method: declared ? { ...method, decoratorConfig: declared } : method,
+        collectionHosted,
+      };
+    };
+
+    const fromItem = ObjectRegistry.getMethods(objectName)?.get(methodName);
+    if (fromItem) return withConfig(fromItem, fromItem.isStatic === true);
+
+    for (const collectionName of ObjectRegistry.collectionClassNames(
+      objectName,
+    )) {
+      const fromCollection =
+        ObjectRegistry.getMethods(collectionName)?.get(methodName);
+      if (fromCollection) return withConfig(fromCollection, true);
+    }
+
+    const itemConstructor = ObjectRegistry.getClass(objectName)?.constructor;
+    for (const source of ObjectRegistry.methodDecoratorSources(objectName)) {
+      const record = ObjectRegistry.getMethodDecoratorEntry(source, methodName);
+      if (!record) continue;
+      return {
+        method: {
+          decoratorConfig: record.options as Record<string, unknown>,
+        } as MethodDefinition,
+        // A declaration on the COLLECTION class is collection-hosted whatever
+        // its receiver; on the ITEM class only a static is.
+        collectionHosted: source === itemConstructor ? record.isStatic : true,
+      };
+    }
+
+    return { collectionHosted: true };
+  }
+
+  /** Registered collection class names for `objectName`, qualified-name safe. */
+  private static collectionClassNames(objectName: string): string[] {
+    const names: string[] = [];
+    const canonical =
+      ObjectRegistry.getCanonicalClassName(objectName) ?? objectName;
+    const registered = ObjectRegistry.getClass(objectName);
+    for (const key of new Set([objectName, canonical, registered?.name])) {
+      const collectionConstructor = key
+        ? ObjectRegistry.collections.get(key)
+        : undefined;
+      if (collectionConstructor?.name) names.push(collectionConstructor.name);
+    }
+    return names;
+  }
+
+  /** `@method()` config from the live store alone, ignoring the manifest. */
+  private static resolveDeclaredMethodConfig(
+    objectName: string,
+    methodName: string,
+  ): Record<string, unknown> | undefined {
     for (const source of ObjectRegistry.methodDecoratorSources(objectName)) {
       const declared = ObjectRegistry.getMethodDecorator(source, methodName);
       if (declared) return declared as Record<string, unknown>;

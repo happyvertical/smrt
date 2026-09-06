@@ -47,7 +47,10 @@ declare global {
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryMethodDecorators:
-    | WeakMap<Function, Map<string, Record<string, unknown>>>
+    | WeakMap<
+        Function,
+        Map<string, { options: Record<string, unknown>; isStatic: boolean }>
+      >
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
@@ -241,7 +244,8 @@ export function getFieldDecorators(): Map<
 }
 
 /**
- * `@method()` decorator metadata, `constructor -> methodName -> options`.
+ * `@method()` decorator metadata,
+ * `constructor -> methodName -> { options, isStatic }`.
  *
  * Stored on `globalThis` for the same reason as {@link getFieldDecorators}:
  * registration must survive HMR and multiple module instances. Keyed by the
@@ -252,12 +256,12 @@ export function getFieldDecorators(): Map<
  */
 export function getMethodDecorators(): WeakMap<
   Function,
-  Map<string, Record<string, unknown>>
+  Map<string, { options: Record<string, unknown>; isStatic: boolean }>
 > {
   if (!globalThis.__smrtRegistryMethodDecorators) {
     globalThis.__smrtRegistryMethodDecorators = new WeakMap<
       Function,
-      Map<string, Record<string, unknown>>
+      Map<string, { options: Record<string, unknown>; isStatic: boolean }>
     >();
   }
   return globalThis.__smrtRegistryMethodDecorators;

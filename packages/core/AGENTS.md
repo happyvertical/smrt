@@ -76,12 +76,15 @@ and repository rules.
   returns `null` for a generic with an unresolvable ARGUMENT or a union with an
   unresolvable BRANCH so those reach that fail-closed path instead of arriving
   as a bare `'Array'`. Runtime transports read
-  `ObjectRegistry.resolveRuntimeMethodDecoratorConfig()` /
-  `listDecoratedMethodNames()`, which fall back to the live `@method()` store
-  ONLY when the class has no manifest methods at all; that store is keyed by
-  CONSTRUCTOR, never by simple name (`Account` exists in two packages). A
-  declared action with no receiver is refused (501 collection-scoped, 404
-  item-scoped), never allowed to fall through into `create`. The one consumer
+  `ObjectRegistry.resolveRuntimeMethod()`, which tries the item class's manifest
+  entry, then the COLLECTION class's (where a collection-hosted action's
+  parameters live), then the live `@method()` store — keyed by CONSTRUCTOR,
+  never by simple name (`Account` exists in two packages), and recording
+  `isStatic` because an unscanned runtime has no manifest to recover the
+  receiver from. `isRestActionRoutable` ANDs "declared" with that receiver, so
+  it never predicts `allow` for an action dispatch refuses. A declared action
+  with no receiver is refused (501 collection-scoped, 404 item-scoped), never
+  allowed to fall through into `create`. The one consumer
   NOT migrated is `packages/smrt-workbench/src/discovery.ts`, which has no
   dependency on this package (#2709).
 

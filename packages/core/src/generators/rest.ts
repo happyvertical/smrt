@@ -802,7 +802,6 @@ export class APIGenerator {
     objectName: string,
     apiConfig: { routes?: Record<string, ApiCustomRouteConfig> },
   ): Array<[string, MethodDefinition | undefined]> {
-    const methods = ObjectRegistry.getMethods(objectName);
     const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
     // `listDecoratedMethodNames` reads the manifest AND the live decorator
     // store, so a decorator-declared route survives in an unscanned project
@@ -815,7 +814,10 @@ export class APIGenerator {
         names.add(name);
       }
     }
-    return [...names].map((name) => [name, methods?.get(name)]);
+    return [...names].map((name) => [
+      name,
+      this.runtimeMethod(objectName, name),
+    ]);
   }
 
   /**
@@ -826,18 +828,8 @@ export class APIGenerator {
   private runtimeMethod(
     objectName: string,
     methodName: string,
-  ):
-    | MethodDefinition
-    | { decoratorConfig: Record<string, unknown> }
-    | undefined {
-    const methodDef = ObjectRegistry.getMethods(objectName)?.get(methodName);
-    if (methodDef?.decoratorConfig) return methodDef;
-    const decoratorConfig = ObjectRegistry.resolveRuntimeMethodDecoratorConfig(
-      objectName,
-      methodName,
-    );
-    if (!decoratorConfig) return methodDef;
-    return methodDef ? { ...methodDef, decoratorConfig } : { decoratorConfig };
+  ): MethodDefinition | undefined {
+    return ObjectRegistry.resolveRuntimeMethod(objectName, methodName).method;
   }
 
   private async dispatchCustomCollectionAction(
@@ -860,11 +852,10 @@ export class APIGenerator {
       return null;
     }
 
-    for (const [actionName, methodDef] of declaredActions) {
-      // One view of the method for the whole loop: manifest metadata where the
-      // project was scanned, `@method()` config from the live decorator store
-      // where it was not.
-      const declaredMethod = this.runtimeMethod(objectName, actionName);
+    for (const [actionName, declaredMethod] of declaredActions) {
+      // One view of the method for the whole loop: the item class's manifest
+      // entry, else the collection class's (where a collection-hosted action's
+      // parameters live), else the live `@method()` store.
       const effective = resolveEffectiveActionMetadata({
         actionName,
         ...(declaredMethod ? { method: declaredMethod } : {}),

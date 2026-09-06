@@ -54,6 +54,21 @@ class DecoratedWidget extends SmrtObject {
     super(options);
     if (options.name !== undefined) this.name = options.name;
   }
+
+  /**
+   * A STATIC model method: collection-scoped by receiver, and the one shape in
+   * this file whose parameter metadata the runtime transport can actually read
+   * (a collection-hosted action's manifest entry lives under the collection
+   * class, so its parameters are invisible here and it degrades to the legacy
+   * options bag).
+   */
+  @method({ httpMethod: 'GET', path: 'window' })
+  static async window(start: Date): Promise<{ iso: string; isDate: boolean }> {
+    return {
+      iso: start instanceof Date ? start.toISOString() : String(start),
+      isDate: start instanceof Date,
+    };
+  }
 }
 
 class DecoratedWidgetCollection extends SmrtCollection<DecoratedWidget> {
@@ -73,14 +88,6 @@ class DecoratedWidgetCollection extends SmrtCollection<DecoratedWidget> {
   @method({ httpMethod: 'POST', path: 'hidden', expose: false })
   async hidden(): Promise<{ reached: true }> {
     return { reached: true };
-  }
-
-  @method({ httpMethod: 'GET', path: 'window' })
-  async window(start: Date): Promise<{ iso: string; isDate: boolean }> {
-    return {
-      iso: start instanceof Date ? start.toISOString() : String(start),
-      isDate: start instanceof Date,
-    };
   }
 
   /** `expose: true` alone — no route shape at all. */
@@ -107,51 +114,22 @@ describe('#2686 runtime REST reads decorator-declared routes', () => {
     'DecoratedWidget',
     DecoratedWidgetCollection,
   );
-  // Stand in for the manifest the scanner would supply at build time: the
-  // registry is where the runtime transport reads method metadata from.
-  const methods = ObjectRegistry.getMethods('DecoratedWidget');
-  methods.set('decorated', {
-    name: 'decorated',
-    async: true,
-    isPublic: true,
-    isStatic: false,
-    returnType: 'object',
-    parameters: [{ name: 'options', type: 'object', optional: true }],
-    decoratorConfig: { httpMethod: 'POST', path: 'decorated', effect: 'write' },
-  });
-  methods.set('hidden', {
-    name: 'hidden',
-    async: true,
-    isPublic: true,
-    isStatic: false,
-    returnType: 'object',
-    parameters: [],
-    decoratorConfig: { httpMethod: 'POST', path: 'hidden', expose: false },
-  });
-  methods.set('window', {
+  // Only the STATIC item method is seeded, and only for its parameter
+  // metadata: that is exactly what a real scan would put in the item class's
+  // manifest entry, and it is what the Date-hydration assertion needs. The
+  // collection-hosted methods are deliberately NOT seeded — their config comes
+  // from the live `@method()` store, the way it does in a real project, where
+  // their manifest entry lives under the COLLECTION class and never reaches
+  // this map.
+  ObjectRegistry.getMethods('DecoratedWidget').set('window', {
     name: 'window',
     async: true,
     isPublic: true,
-    isStatic: false,
+    isStatic: true,
     returnType: 'object',
     parameters: [{ name: 'start', type: 'Date', optional: false }],
     decoratorConfig: { httpMethod: 'GET', path: 'window' },
   });
-  for (const [name, decoratorConfig] of [
-    ['forced', { expose: true }],
-    ['weighted', { effect: 'write' }],
-    ['noted', { description: 'not a route declaration' }],
-  ] as const) {
-    methods.set(name, {
-      name,
-      async: true,
-      isPublic: true,
-      isStatic: false,
-      returnType: 'object',
-      parameters: [],
-      decoratorConfig,
-    });
-  }
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;

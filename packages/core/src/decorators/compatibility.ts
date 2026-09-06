@@ -223,23 +223,37 @@ export function registerCompatibleMethodDecorator<
 >(
   targetOrValue: LegacyPropertyDecoratorTarget | Value | undefined,
   propertyKeyOrContext: CompatibleMethodDecoratorContext<This, Value>,
-  registerMethodDecorator: (ctor: Function, methodName: string) => void,
+  registerMethodDecorator: (
+    ctor: Function,
+    methodName: string,
+    isStatic: boolean,
+  ) => void,
 ): void {
   if (
     typeof propertyKeyOrContext === 'string' ||
     typeof propertyKeyOrContext === 'symbol'
   ) {
+    // Legacy decorators hand a STATIC method its constructor and an instance
+    // method its prototype. That distinction IS the method's receiver, and
+    // nothing downstream can recover it in an unscanned runtime, so capture it
+    // here (#2686).
     const ctor = getDecoratorConstructor(targetOrValue);
     if (ctor) {
-      registerMethodDecorator(ctor, String(propertyKeyOrContext));
+      registerMethodDecorator(
+        ctor,
+        String(propertyKeyOrContext),
+        typeof targetOrValue === 'function',
+      );
     }
     return;
   }
 
   const context = propertyKeyOrContext;
   const methodName = String(context.name);
+  // Standard decorators state the receiver outright.
+  const isStatic = context.static === true;
   const register = (ctor: Function) =>
-    registerMethodDecorator(ctor, methodName);
+    registerMethodDecorator(ctor, methodName, isStatic);
   const metadata = getDecoratorMetadata(context);
 
   if (metadata) {

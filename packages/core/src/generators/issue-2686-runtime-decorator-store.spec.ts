@@ -169,6 +169,14 @@ describe('#2686 @method() is honored without a manifest', () => {
     expect(isRestActionRoutable('UnscannedWidget', 'shaped')).toBe(true);
   });
 
+  it('predicts an item-scoped declaration as unroutable', () => {
+    // Dispatch answers 404 for it (next test), so predicting `allow` would be
+    // the false-`allow` browser-plane preflight exists to prevent. The receiver
+    // survives only because the decorator recorded it — an unscanned runtime
+    // has no manifest to recover `isStatic` from.
+    expect(isRestActionRoutable('UnscannedWidget', 'reviewed')).toBe(false);
+  });
+
   it('refuses an item-scoped declaration instead of creating a row', async () => {
     // Before #2686 closed it, this fell through to CRUD handling and
     // `POST /<collection>/reviewed` resolved to `create`: an authenticated
