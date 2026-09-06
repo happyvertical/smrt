@@ -593,6 +593,14 @@ Rules worth knowing:
   at build time.
 - `api.routes` and `ai.descriptions` keep working unchanged. Where both are
   present, `@method()` wins.
+- **The runtime REST transport is declaration-gated.** `APIGenerator` (the
+  standalone fetch handler, as opposed to the generated SvelteKit routes) serves
+  a custom collection action only where one was DECLARED — historically an
+  `api.routes` entry, and now also a `@method()` carrying any option that
+  migrates from that map (`httpMethod`, `path`, `scope`, `effect`,
+  `idempotent`, `openWorld`) or an explicit `expose: true`. A bare `@method()`
+  or a `description`-only one does not declare a route there, because neither
+  migrates from `api.routes`. Browser-plane preflight predicts exactly this gate.
 
 **Date hydration is top-level only.** A parameter declared exactly `Date` (or
 `Date | null` / `Date | undefined`) is converted from its ISO string or epoch

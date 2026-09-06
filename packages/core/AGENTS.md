@@ -63,6 +63,10 @@ and repository rules.
   uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
   substitutes. Accepting `Date` as wire-able and hydrating it
   (`toCustomActionDate`) are one decision — changing either breaks the other.
+  The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
+  dispatch and `preflight-route.ts` prediction both read
+  `declaresRuntimeRestRoute()`, which must accept every `ApiCustomRouteConfig`
+  option so a sweep moving one onto its method cannot delete the endpoint.
 
 ## Gotchas
 

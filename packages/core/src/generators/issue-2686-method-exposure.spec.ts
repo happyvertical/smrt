@@ -29,6 +29,7 @@ import {
   coerceCustomActionArgument,
   createManifestClassNamePredicate,
   declaredTypeAcceptsDate,
+  declaresRuntimeRestRoute,
   readMethodDecoratorConfig,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
@@ -527,6 +528,35 @@ describe('#2686 effective metadata merge', () => {
         }),
       }),
     ).toThrow(/cannot declare a read effect/);
+  });
+});
+
+describe('#2686 runtime REST route declaration', () => {
+  // The runtime `APIGenerator` transport is declaration-gated, and this
+  // predicate is the gate. It must recognize every option that migrates from
+  // `ApiCustomRouteConfig` — a legacy `routes: { m: { effect } }` entry already
+  // dispatches at `POST /<collection>/m` — and no more, or the sweeps that move
+  // those options onto methods silently delete endpoints.
+  it.each([
+    ['httpMethod', { httpMethod: 'GET' }, true],
+    ['path', { path: 'reviews' }, true],
+    ['scope', { scope: 'collection' }, true],
+    ['effect', { effect: 'write' }, true],
+    ['idempotent', { idempotent: true }, true],
+    ['openWorld', { openWorld: false }, true],
+    ['expose: true', { expose: true }, true],
+    ['expose: false', { expose: false }, false],
+    ['description only', { description: 'a note' }, false],
+    ['bare @method()', {}, false],
+  ])('%s → %s', (_label, decoratorConfig, expected) => {
+    expect(declaresRuntimeRestRoute(method({ decoratorConfig }))).toBe(
+      expected,
+    );
+  });
+
+  it('is false for an undecorated method', () => {
+    expect(declaresRuntimeRestRoute(method())).toBe(false);
+    expect(declaresRuntimeRestRoute(undefined)).toBe(false);
   });
 });
 

@@ -36,7 +36,7 @@ import { ObjectRegistry } from '../registry.js';
 import type { MethodDefinition } from '../scanner/types.js';
 import { PRIVATE_READ_CACHE_CONTROL } from './conditional-get.js';
 import {
-  readMethodDecoratorConfig,
+  declaresRuntimeRestRoute,
   resolveEffectiveActionMetadata,
 } from './custom-action.js';
 
@@ -291,15 +291,9 @@ export function isRestActionRoutable(
     return true;
   }
 
-  const declared = readMethodDecoratorConfig(
-    readRegisteredMethod(objectName, action),
-  );
-  return (
-    declared !== undefined &&
-    (declared.httpMethod !== undefined ||
-      declared.path !== undefined ||
-      declared.scope !== undefined)
-  );
+  // Shared with `APIGenerator.declaredCollectionActions`, which decides the
+  // dispatch this predicate exists to predict.
+  return declaresRuntimeRestRoute(readRegisteredMethod(objectName, action));
 }
 
 /**

@@ -37,6 +37,9 @@ import { APIGenerator } from './rest';
       'legacy',
       'hidden',
       'window',
+      'forced',
+      'weighted',
+      'noted',
     ],
     // `legacy` keeps the historical class-map declaration; `decorated` and
     // `hidden` declare themselves on the method instead.
@@ -79,6 +82,24 @@ class DecoratedWidgetCollection extends SmrtCollection<DecoratedWidget> {
       isDate: start instanceof Date,
     };
   }
+
+  /** `expose: true` alone — no route shape at all. */
+  @method({ expose: true })
+  async forced(): Promise<{ forced: true }> {
+    return { forced: true };
+  }
+
+  /** Tool semantics only, the shape a migrated `routes: { m: { effect } }` takes. */
+  @method({ effect: 'write' })
+  async weighted(): Promise<{ weighted: true }> {
+    return { weighted: true };
+  }
+
+  /** `description` migrates from `ai.descriptions`, not from a route entry. */
+  @method({ description: 'not a route declaration' })
+  async noted(): Promise<{ noted: true }> {
+    return { noted: true };
+  }
 }
 
 describe('#2686 runtime REST reads decorator-declared routes', () => {
@@ -116,6 +137,21 @@ describe('#2686 runtime REST reads decorator-declared routes', () => {
     parameters: [{ name: 'start', type: 'Date', optional: false }],
     decoratorConfig: { httpMethod: 'GET', path: 'window' },
   });
+  for (const [name, decoratorConfig] of [
+    ['forced', { expose: true }],
+    ['weighted', { effect: 'write' }],
+    ['noted', { description: 'not a route declaration' }],
+  ] as const) {
+    methods.set(name, {
+      name,
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'object',
+      parameters: [],
+      decoratorConfig,
+    });
+  }
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;
@@ -183,9 +219,39 @@ describe('#2686 runtime REST reads decorator-declared routes', () => {
     });
   });
 
+  it('dispatches a route declared only by @method({ expose: true })', async () => {
+    // `expose: true` carries no verb or path, but it is the strongest available
+    // statement that the method is an action. Recognizing it only where a route
+    // SHAPE was also supplied left the SvelteKit transport serving the method
+    // while this one 404'd and preflight predicted denial.
+    const response = await post('forced');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      action: 'forced',
+      result: { forced: true },
+    });
+  });
+
+  it('dispatches a route whose decorator supplies only tool semantics', async () => {
+    // The migration shape that matters: `routes: { weighted: { effect: 'write' } }`
+    // already dispatches at POST /<collection>/weighted with no path or verb, so
+    // moving that option onto the method must not delete the endpoint.
+    const response = await post('weighted');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ action: 'weighted' });
+  });
+
+  it('does not invent a runtime route for a description-only decorator', () => {
+    // `description` migrates from `ai.descriptions`, not from `api.routes`;
+    // counting it would hand this transport an endpoint it never served.
+    expect(isRestActionRoutable('DecoratedWidget', 'noted')).toBe(false);
+  });
+
   it('predicts the decorator-declared route and its verb for preflight', () => {
     expect(isRestActionRoutable('DecoratedWidget', 'decorated')).toBe(true);
     expect(isRestActionRoutable('DecoratedWidget', 'legacy')).toBe(true);
+    expect(isRestActionRoutable('DecoratedWidget', 'forced')).toBe(true);
+    expect(isRestActionRoutable('DecoratedWidget', 'weighted')).toBe(true);
     expect(isRestActionRoutable('DecoratedWidget', 'missing')).toBe(false);
     expect(restMethodForApiAction('window', 'DecoratedWidget')).toBe('GET');
     expect(restMethodForApiAction('legacy', 'DecoratedWidget')).toBe('POST');

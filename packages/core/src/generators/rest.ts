@@ -53,6 +53,7 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
+  declaresRuntimeRestRoute,
   normalizeCustomActionFailure,
   readMethodDecoratorConfig,
   resolveCustomActionMetadata,
@@ -792,6 +793,10 @@ export class APIGenerator {
    * single-segment collection paths, and widening it to every wire-able public
    * method would publish endpoints that have never existed here. That is a
    * separate contract change, not a compatibility fix.
+   *
+   * `declaresRuntimeRestRoute` is shared with `isRestActionRoutable`, the
+   * browser-plane preflight prediction of this same dispatch, so the route and
+   * the prediction of the route cannot drift.
    */
   private declaredCollectionActions(
     objectName: string,
@@ -800,15 +805,7 @@ export class APIGenerator {
     const methods = ObjectRegistry.getMethods(objectName);
     const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
     for (const [name, methodDef] of methods ?? []) {
-      const declared = readMethodDecoratorConfig(methodDef);
-      if (!declared) continue;
-      if (
-        declared.httpMethod !== undefined ||
-        declared.path !== undefined ||
-        declared.scope !== undefined
-      ) {
-        names.add(name);
-      }
+      if (declaresRuntimeRestRoute(methodDef)) names.add(name);
     }
     return [...names].map((name) => [name, methods?.get(name)]);
   }

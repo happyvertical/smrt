@@ -1465,6 +1465,45 @@ function getIncludeExclude(config: unknown): {
 }
 
 /**
+ * Whether a method's `@method()` declaration is also a RUNTIME REST route
+ * declaration, the way an `api.routes[m]` entry is.
+ *
+ * The runtime `APIGenerator` transport is deliberately declaration-gated: it
+ * serves a custom collection action only where one was declared, because its URL
+ * shape supports a single segment and an undeclared public method has never had
+ * a route there. `dispatchCustomCollectionAction` and the `isRestActionRoutable`
+ * preflight prediction must agree on that gate exactly, so both read this (#2686).
+ *
+ * True for any option that migrates from `ApiCustomRouteConfig` — its complete
+ * field set is `scope`, `method`, `path`, `effect`, `idempotent`, `openWorld` —
+ * because a legacy `routes: { m: { effect: 'write' } }` entry with no path or
+ * verb already dispatches at `POST /<collection>/m`, and migrating it onto the
+ * method must not silently delete that endpoint. Also true for an explicit
+ * `expose: true`, which is a stronger statement that the method is an action
+ * than an empty route entry is.
+ *
+ * FALSE for a bare `@method()` and for a `description`-only one. Neither
+ * migrates from a route entry — `description` migrates from `ai.descriptions`,
+ * and a bare decorator is a review marker — so counting them would hand the
+ * runtime transport endpoints it never served.
+ */
+export function declaresRuntimeRestRoute(
+  method: ExposableMethod | undefined,
+): boolean {
+  const declared = readMethodDecoratorConfig(method);
+  if (!declared) return false;
+  return (
+    declared.httpMethod !== undefined ||
+    declared.path !== undefined ||
+    declared.scope !== undefined ||
+    declared.effect !== undefined ||
+    declared.idempotent !== undefined ||
+    declared.openWorld !== undefined ||
+    declared.expose === true
+  );
+}
+
+/**
  * Coerce one transport-supplied argument into the runtime value the declared
  * parameter type needs.
  *

@@ -36,6 +36,7 @@ export {
   createManifestClassNamePredicate,
   customActionParameterInputName,
   declaredTypeAcceptsDate,
+  declaresRuntimeRestRoute,
   type EffectiveActionMetadata,
   type ExposableMethod,
   isCrudOperation,
