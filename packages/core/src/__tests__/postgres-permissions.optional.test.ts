@@ -511,6 +511,18 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses retained inheritance from a managed table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit () INHERITS (app.items)');
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-inheritance',
+        resource: '"app"."operator_audit"',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
