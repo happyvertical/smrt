@@ -989,6 +989,7 @@ async function plan(
   }
   const triggerRoutineNames = new Set(contract.managedTriggerFunctions);
   const acceptedTriggerRoutineNames = new Set<string>();
+  const acceptedTriggerRoutineOids = new Set<string>();
   const routineConfigIsEmpty = (value: unknown) =>
     (Array.isArray(value) && value.length === 0) || value === '[]';
   for (const resource of state.routines) {
@@ -1055,6 +1056,7 @@ async function plan(
       );
     if (triggerRoutine) {
       acceptedTriggerRoutineNames.add(resource.name);
+      acceptedTriggerRoutineOids.add(resource.oid);
       reconcileRoutine(resource.identity, resource.acl, new Map());
       continue;
     }
@@ -1079,6 +1081,19 @@ async function plan(
         'missing-managed-trigger-function',
         qualified(contract.schema, name),
         'Run the migration that creates this exact managed trigger function and its enabled binding before reconciling permissions.',
+      );
+  for (const trigger of state.triggers)
+    if (
+      trigger.schema === contract.schema &&
+      declared.has(trigger.table_name) &&
+      trigger.internal === false &&
+      (trigger.enabled === 'O' || trigger.enabled === 'A') &&
+      !acceptedTriggerRoutineOids.has(trigger.function_oid)
+    )
+      unsupported(
+        'unsupported-managed-trigger',
+        `${qualified(trigger.schema, trigger.table_name)} (${trigger.name})`,
+        'Enabled managed-table triggers must use an exact declared invoker trigger routine; undeclared or SECURITY DEFINER trigger functions can bypass retained-table isolation.',
       );
   for (const resource of state.types)
     for (const role of roles)

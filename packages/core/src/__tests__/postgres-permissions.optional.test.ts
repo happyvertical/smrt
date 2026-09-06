@@ -584,6 +584,29 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     const plan = await planPostgresPermissions(db, contract);
     expect(plan.canApply, JSON.stringify(plan.diagnostics)).toBe(true);
   });
+  it('refuses an undeclared definer trigger on a managed table that writes retained data', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      `CREATE FUNCTION other.items_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER items_to_audit BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION other.items_to_audit()',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unsupported-managed-trigger',
+        resource: '"app"."items" (items_to_audit)',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
