@@ -1543,6 +1543,13 @@ describePostgres(
         statisticsSql:
           'CREATE STATISTICS "BRIDGE_STATISTICS" (dependencies) ON id, _integrity_id_text FROM "PARENT"',
       },
+      {
+        name: 'a foreign key with nondefault trigger enforcement',
+        key: 'always_trigger',
+        bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
+        foreignKeyTriggerSql:
+          "DO $$ DECLARE trigger_name text; BEGIN SELECT tgname INTO trigger_name FROM pg_trigger WHERE tgrelid = 'CHILD'::regclass AND tgconstraint <> 0 LIMIT 1; EXECUTE format('ALTER TABLE %I ENABLE ALWAYS TRIGGER %I', 'CHILD', trigger_name); END $$",
+      },
     ] as const;
 
     it.each(scenarios)('rejects $name before writes', async (scenario) => {
@@ -1565,6 +1572,10 @@ describePostgres(
       const statisticsSql = scenario.statisticsSql
         ?.replace('BRIDGE_STATISTICS', statisticsName)
         .replace('PARENT', parent);
+      const foreignKeyTriggerSql = scenario.foreignKeyTriggerSql?.replaceAll(
+        'CHILD',
+        child,
+      );
 
       async function db(): Promise<any> {
         return getDatabase({
@@ -1653,6 +1664,7 @@ describePostgres(
           '22222222-2222-2222-2222-222222222222',
           '11111111-1111-1111-1111-111111111111',
         );
+        if (foreignKeyTriggerSql) await connection.query(foreignKeyTriggerSql);
         clearCache();
         setConfig({
           packages: {

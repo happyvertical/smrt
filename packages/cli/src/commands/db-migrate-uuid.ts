@@ -834,6 +834,11 @@ async function snapshotForeignKeys(
             parent.relname AS parent_table, con.convalidated AS validated,
             pg_get_constraintdef(con.oid) AS definition,
             obj_description(con.oid, 'pg_constraint') AS comment,
+            EXISTS (
+              SELECT 1 FROM pg_trigger trigger
+               WHERE trigger.tgconstraint = con.oid
+                 AND trigger.tgenabled <> 'O'
+            ) AS nondefault_trigger_mode,
             array_length(con.conkey, 1) AS child_keys,
             array_length(con.confkey, 1) AS parent_keys,
             child_attr.attname AS child_column, parent_attr.attname AS parent_column
@@ -880,6 +885,11 @@ async function snapshotForeignKeys(
     if (!bridgeEdge && (!converted.has(child) || !converted.has(parent))) {
       throw new Error(
         `Foreign key ${String(row.name)} crosses a UUID conversion component boundary (${child} → ${parent}); declare both endpoints UUID or migrate it separately.`,
+      );
+    }
+    if (row.nondefault_trigger_mode) {
+      throw new Error(
+        `Unsupported foreign key ${String(row.name)} has nondefault PostgreSQL trigger enforcement; refusing to recreate it with weaker semantics.`,
       );
     }
     participating.push({
