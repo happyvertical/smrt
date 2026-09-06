@@ -52,6 +52,12 @@ import {
   runLiveSchemaParity,
   selectFindings,
 } from './db-parity.js';
+import {
+  dbPermissionsCommand,
+  formatPermissionsOutcome,
+  outputPermissionsOutcome,
+  runPostgresPermissions,
+} from './db-permissions.js';
 import { dbPruneCommand } from './db-prune.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
@@ -1318,7 +1324,8 @@ export default testManifest;
 
   'db:validate': {
     name: 'db:validate',
-    description: 'Validate JSON database integrity against manifest schema',
+    description:
+      'Validate JSON database integrity or configured PostgreSQL permissions',
     aliases: ['json:validate', 'validate-db'],
     args: [],
     options: {
@@ -1355,6 +1362,17 @@ export default testManifest;
     },
     handler: async (_args: string[], options: DbValidateOptions) => {
       const startTime = Date.now();
+      // An explicit JSON data directory always retains the JSON validation path.
+      const { getPackageConfig } = await import('@happyvertical/smrt-config');
+      const { DEFAULT_CLI_CONFIG } = await import('../config.js');
+      const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
+      if (!options.data && config.database?.type === 'postgres') {
+        const permissions = await runPostgresPermissions({}, true);
+        if (!permissions.skipped) {
+          outputPermissionsOutcome(permissions, options.json);
+          return;
+        }
+      }
 
       try {
         const {
@@ -3269,6 +3287,17 @@ export default testManifest;
           }
         }
 
+        const permissions = await runPostgresPermissions({}, true);
+        for (const line of formatPermissionsOutcome(permissions))
+          console.log(line);
+        if (!permissions.skipped) {
+          check(
+            'PostgreSQL role permissions',
+            !permissions.error && permissions.plan?.diagnostics.length === 0,
+            permissions.error ??
+              'PostgreSQL role permissions differ from the configured contract',
+          );
+        }
         console.log();
       }
 
@@ -3329,6 +3358,7 @@ export default testManifest;
   'db:migrate-uuid': dbMigrateUuidCommand,
   'db:migrate-int8': dbMigrateInt8Command,
   'db:prune': dbPruneCommand,
+  'db:permissions': dbPermissionsCommand,
 
   // Configuration commands
   'config:export': configExportCommand,
