@@ -32,6 +32,15 @@ import {
   introspectProject,
   reviewSmrtProject,
 } from './tools/index.js';
+import { redactConnectionString } from './tools/runtime/connection.js';
+import {
+  runtimeDispatchHealth,
+  runtimeJobHealth,
+  runtimeMigrationStatus,
+  runtimeRecentChanges,
+  runtimeRegistryDrift,
+  runtimeScheduleHealth,
+} from './tools/runtime/tools.js';
 
 export { TOOLS } from './tool-catalog.js';
 
@@ -458,7 +467,7 @@ export function createServer(): Server {
       console.error(`[${SERVER_NAME}] CallTool: ${name}`);
       console.error(
         `[${SERVER_NAME}] Arguments:`,
-        JSON.stringify(args, null, 2),
+        JSON.stringify(redactDebugArguments(args), null, 2),
       );
     }
 
@@ -652,6 +661,66 @@ export function createServer(): Server {
           );
           break;
 
+        case 'migration-status':
+          result = JSON.stringify(
+            await runtimeMigrationStatus(
+              args as unknown as Parameters<typeof runtimeMigrationStatus>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'job-health':
+          result = JSON.stringify(
+            await runtimeJobHealth(
+              args as unknown as Parameters<typeof runtimeJobHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'schedule-health':
+          result = JSON.stringify(
+            await runtimeScheduleHealth(
+              args as unknown as Parameters<typeof runtimeScheduleHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'dispatch-health':
+          result = JSON.stringify(
+            await runtimeDispatchHealth(
+              args as unknown as Parameters<typeof runtimeDispatchHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'recent-changes':
+          result = JSON.stringify(
+            await runtimeRecentChanges(
+              args as unknown as Parameters<typeof runtimeRecentChanges>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'registry-drift':
+          result = JSON.stringify(
+            await runtimeRegistryDrift(
+              args as unknown as Parameters<typeof runtimeRegistryDrift>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -822,12 +891,43 @@ function detailArg(args: unknown): string | undefined {
   return typeof detail === 'string' ? detail : undefined;
 }
 
+/**
+ * Debug logging happens before any tool runs its own redaction, so a
+ * credential-bearing `dbUrl` argument must be masked here.
+ */
+function redactDebugArguments(args: unknown): unknown {
+  if (!isRecord(args) || typeof args.dbUrl !== 'string') return args;
+  return { ...args, dbUrl: redactConnectionString(args.dbUrl) };
+}
+
+function isRuntimeEnvelope(value: unknown): value is {
+  ok: boolean;
+  coverage: unknown;
+  diagnostics: unknown[];
+  data: unknown;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.ok === 'boolean' &&
+    'coverage' in value &&
+    Array.isArray(value.diagnostics) &&
+    'data' in value
+  );
+}
+
 function toDevToolStructuredContent(result: string) {
   let data: unknown = result;
   try {
     data = JSON.parse(result);
   } catch {
     // `generate-smrt-class` intentionally returns source text, not JSON.
+  }
+
+  // Runtime diagnostics tools already return the `{ok, coverage, diagnostics,
+  // data}` envelope; re-wrapping would expose `data.data.*` in
+  // structuredContent while the text response exposes `data.*`.
+  if (isRuntimeEnvelope(data)) {
+    return data;
   }
 
   const source = isRecord(data) ? data : undefined;
