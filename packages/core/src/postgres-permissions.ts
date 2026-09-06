@@ -945,7 +945,7 @@ async function plan(
         (trigger) =>
           trigger.schema === contract.schema &&
           trigger.internal === false &&
-          trigger.enabled === 'O' &&
+          (trigger.enabled === 'O' || trigger.enabled === 'A') &&
           declared.has(trigger.table_name),
       );
     if (triggerRoutine) {

@@ -195,6 +195,11 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       'CREATE TRIGGER integrity_guard BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION app.integrity_guard()',
     );
     await apply();
+    await as(
+      owner,
+      'ALTER TABLE app.items ENABLE ALWAYS TRIGGER integrity_guard',
+    );
+    await apply();
     expect(
       (
         await as(
