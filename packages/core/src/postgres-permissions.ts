@@ -189,7 +189,7 @@ async function snapshot(
   const queries: Record<string, string> = {
     server: `SELECT current_setting('server_version_num') AS version, current_database() AS database, current_user AS executor, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser`,
     roles: `SELECT oid::text, rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN (${roleNames}) ORDER BY rolname`,
-    memberships: `SELECT pg_get_userbyid(member) AS member, pg_get_userbyid(roleid) AS parent FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) ORDER BY member, roleid`,
+    memberships: `SELECT pg_get_userbyid(member) AS member, pg_get_userbyid(roleid) AS parent FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) OR roleid IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) ORDER BY member, roleid`,
     database: `SELECT datname AS name, pg_get_userbyid(datdba) AS owner, ${acl("COALESCE(datacl, acldefault('d',datdba))")} AS acl FROM pg_database WHERE datname=current_database()`,
     schemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3) <> 'pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
     relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
@@ -282,7 +282,7 @@ async function plan(
     unsupported(
       'role-membership',
       membership.member,
-      `Role is a member of ${membership.parent}; inherited and SET ROLE authority require infrastructure review. Memberships are never modified.`,
+      `Role ${membership.member} is a member of ${membership.parent}; inbound and outbound membership, inherited privileges, and SET ROLE authority require infrastructure review. Memberships are never modified.`,
       membership.member,
     );
   const schema = state.schemas.find((entry) => entry.name === contract.schema);
@@ -407,6 +407,15 @@ async function plan(
   const tables = state.relations.filter(
     (entry) => entry.schema === contract.schema && entry.kind !== 'S',
   );
+  for (const table of bookkeeping) {
+    if (!tables.some((entry) => entry.name === table)) {
+      unsupported(
+        'missing-bookkeeping-table',
+        qualified(contract.schema, table),
+        'Bootstrap all framework bookkeeping tables as the migration owner before permission setup. Stop runtime and monitoring access during migrations or restores, then reconcile before reactivation.',
+      );
+    }
+  }
   const declared = new Set(contract.managedTables);
   // Framework feature tables are owned by SMRT even when absent from manifests.
   for (const table of tables)
@@ -678,6 +687,7 @@ async function plan(
       'Only PostgreSQL table, column, sequence, schema and database ACLs are qualified; application authorization and RLS are separate.',
       'Future user-defined routines and types are unsupported. PostgreSQL implicit global defaults grant PUBLIC EXECUTE/USAGE; rerun diagnostics after every migration before activating runtime roles.',
       'Pause migrations and external ACL/role writers during planning and apply. The advisory lock coordinates SMRT permission writers only.',
+      'All framework bookkeeping tables must exist before setup. Stop runtime and monitor access throughout migrations, restores and repair: recreated bookkeeping tables temporarily receive creator CRUD defaults and require explicit reconciliation before either role is reactivated.',
     ],
     statements: [...new Set(statements)],
     canApply: !diagnostics.some((entry) => entry.severity === 'unsupported'),

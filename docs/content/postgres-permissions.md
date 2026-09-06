@@ -54,7 +54,10 @@ global contract using the normal package configuration precedence.
 
 ## Plan, apply, verify
 
-Run supported migrations as the migration owner before reconciling permissions.
+Stop runtime and monitoring sessions for the complete migration or restore,
+permission-reconciliation, and verification cycle. Resume them only after the
+checks below pass. Run supported migrations as the migration owner before
+reconciling permissions.
 Use the configured PostgreSQL connection for these operator commands. Keep
 connection secrets in the deployment's existing secret configuration; the
 permission contract contains role identifiers only.
@@ -91,6 +94,16 @@ the declared migration owner, then review and reconcile permissions after each
 migration or restore. Existing objects, historical column grants, and global
 defaults must be assessed as well as schema-local defaults. Monitoring access
 does not automatically expand when columns or tables are added.
+
+The migration bookkeeping tables `_smrt_migrations`, `_smrt_schema_migrations`,
+and `_smrt_backfills` must already exist before permission setup can succeed.
+Their runtime access is SELECT-only. PostgreSQL defaults cannot distinguish
+table names: dropping and recreating one of those tables would temporarily
+inherit the future-table DML grants. Never recreate bookkeeping tables while
+runtime or monitor sessions are active. After a restore or recreation, keep
+those sessions stopped until explicit reconciliation restores the restricted
+grants and diagnostics pass. Online migration/restore with active restricted
+sessions is outside this permission contract.
 
 Future-object qualification covers tables and sequences. PostgreSQL implicitly
 grants PUBLIC execution of new routines and usage of new types unless global
