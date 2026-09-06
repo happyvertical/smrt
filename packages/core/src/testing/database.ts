@@ -332,7 +332,12 @@ function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
  * - Uses `SchemaGenerator.generateSQL()` - the single source of truth for DDL
  * - Handles STI (Single Table Inheritance) correctly
  * - Creates system tables for framework functionality
- * - Safe for parallel test execution (each call creates isolated instance)
+ * - Safe for parallel test execution: each call creates an isolated
+ *   in-memory instance with its own embedded write-queue identity, so
+ *   unrelated `:memory:` databases never serialize writes against each
+ *   other (#2707). A `cache=shared` URL is the deliberate exception: it
+ *   asks SQLite/DuckDB to genuinely share the underlying database, so it
+ *   keeps sharing one write-queue identity too.
  *
  * @param options - Configuration options
  * @returns Promise resolving to configured DatabaseInterface
