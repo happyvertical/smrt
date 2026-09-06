@@ -1499,3 +1499,219 @@ describePostgres(
     }, 30_000);
   },
 );
+
+describePostgres(
+  'db:migrate-uuid rejects each unsupported generated bridge catalog shape (real Postgres)',
+  () => {
+    const scenarios = [
+      {
+        name: 'a bridge CHECK constraint',
+        key: 'check',
+        bridgeDefinition:
+          'text GENERATED ALWAYS AS ((id)::text) STORED, CONSTRAINT "BRIDGE_CHECK" CHECK (_integrity_id_text <> \'\')',
+      },
+      {
+        name: 'a bridge UNIQUE constraint',
+        key: 'unique',
+        bridgeDefinition:
+          'text GENERATED ALWAYS AS ((id)::text) STORED, CONSTRAINT "BRIDGE_UNIQUE" UNIQUE (_integrity_id_text)',
+      },
+      {
+        name: 'a nondefault bridge collation',
+        key: 'collation',
+        bridgeDefinition:
+          'text COLLATE "C" GENERATED ALWAYS AS ((id)::text) STORED',
+      },
+      {
+        name: 'an expression index that references the bridge',
+        key: 'expression_index',
+        bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
+        indexSql:
+          'CREATE INDEX "BRIDGE_EXPRESSION_IDX" ON "PARENT" (lower(_integrity_id_text))',
+      },
+      {
+        name: 'a partial-index predicate that references the bridge',
+        key: 'partial_index',
+        bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
+        indexSql:
+          'CREATE INDEX "BRIDGE_PARTIAL_IDX" ON "PARENT" (id) WHERE _integrity_id_text <> \'\'',
+      },
+      {
+        name: 'an extended-statistics dependency on the bridge',
+        key: 'statistics',
+        bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
+        statisticsSql:
+          'CREATE STATISTICS "BRIDGE_STATISTICS" (dependencies) ON id, _integrity_id_text FROM "PARENT"',
+      },
+    ] as const;
+
+    it.each(scenarios)('rejects $name before writes', async (scenario) => {
+      const stem = `mu_bridge_reject_${scenario.key}_${Math.random().toString(36).slice(2, 8)}`;
+      const parent = `${stem}_parent`;
+      const child = `${stem}_child`;
+      const childParentFk = `${child}_parent_fkey`;
+      const checkName = `${parent}_bridge_check`;
+      const uniqueName = `${parent}_bridge_unique`;
+      const expressionIndex = `${parent}_bridge_expression_idx`;
+      const partialIndex = `${parent}_bridge_partial_idx`;
+      const statisticsName = `${parent}_bridge_statistics`;
+      const bridgeDefinition = scenario.bridgeDefinition
+        .replace('BRIDGE_CHECK', checkName)
+        .replace('BRIDGE_UNIQUE', uniqueName);
+      const indexSql = scenario.indexSql
+        ?.replace('BRIDGE_EXPRESSION_IDX', expressionIndex)
+        .replace('BRIDGE_PARTIAL_IDX', partialIndex)
+        .replace('PARENT', parent);
+      const statisticsSql = scenario.statisticsSql
+        ?.replace('BRIDGE_STATISTICS', statisticsName)
+        .replace('PARENT', parent);
+
+      async function db(): Promise<any> {
+        return getDatabase({
+          type: 'postgres',
+          url: process.env.DATABASE_URL as string,
+        });
+      }
+
+      async function snapshot(): Promise<Record<string, unknown>> {
+        const connection = await db();
+        const [data, columns, constraints, indexes, statistics] =
+          await Promise.all([
+            connection.query(
+              `SELECT 'parent' AS source, to_jsonb(parent) AS row FROM "${parent}" parent
+               UNION ALL SELECT 'child', to_jsonb(child) FROM "${child}" child
+               ORDER BY source`,
+            ),
+            connection.query(
+              `SELECT table_name, column_name, data_type, collation_name, is_generated, generation_expression
+                 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name IN ($1, $2)
+                ORDER BY table_name, ordinal_position`,
+              parent,
+              child,
+            ),
+            connection.query(
+              `SELECT rel.relname AS table_name, conname, contype, convalidated,
+                      pg_get_constraintdef(con.oid) AS definition
+                 FROM pg_constraint con
+                 JOIN pg_class rel ON rel.oid = con.conrelid
+                WHERE rel.relname IN ($1, $2)
+                ORDER BY table_name, conname`,
+              parent,
+              child,
+            ),
+            connection.query(
+              `SELECT index_rel.relname AS name, pg_get_indexdef(idx.indexrelid) AS definition,
+                      pg_get_expr(idx.indexprs, idx.indrelid) AS expressions,
+                      pg_get_expr(idx.indpred, idx.indrelid) AS predicate
+                 FROM pg_index idx
+                 JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
+                 JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+                WHERE table_rel.relname = $1
+                ORDER BY name`,
+              parent,
+            ),
+            connection.query(
+              `SELECT stxname, stxkeys::text AS keys
+                 FROM pg_statistic_ext
+                WHERE stxname = $1`,
+              statisticsName,
+            ),
+          ]);
+        return {
+          data: data.rows,
+          columns: columns.rows,
+          constraints: constraints.rows,
+          indexes: indexes.rows,
+          statistics: statistics.rows,
+        };
+      }
+
+      const connection = await db();
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        await connection.query(
+          `CREATE TABLE "${parent}" (
+               id text PRIMARY KEY,
+               _integrity_id_text ${bridgeDefinition}
+             )`,
+        );
+        if (indexSql) await connection.query(indexSql);
+        if (statisticsSql) await connection.query(statisticsSql);
+        await connection.query(
+          `CREATE TABLE "${child}" (
+               id text PRIMARY KEY,
+               parent_id text NOT NULL CONSTRAINT "${childParentFk}" REFERENCES "${parent}"(id)
+             )`,
+        );
+        await connection.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1)`,
+          '11111111-1111-1111-1111-111111111111',
+        );
+        await connection.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '22222222-2222-2222-2222-222222222222',
+          '11111111-1111-1111-1111-111111111111',
+        );
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [parent]: {
+              tableName: parent,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [child]: {
+              tableName: child,
+              ddl: '',
+              columns: {
+                id: { type: 'UUID' },
+                parent_id: { type: 'UUID' },
+              },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+        const before = await snapshot();
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        process.exitCode = undefined;
+
+        await dbMigrateUuidCommand.handler([], {});
+
+        const exitCode = process.exitCode;
+        process.exitCode = undefined;
+        logSpy.mockRestore();
+        expect(await snapshot()).toEqual(before);
+        expect(exitCode).toBe(1);
+        expect(errorSpy.mock.calls.flat().join('\n')).toContain('Unsupported');
+        errorSpy.mockRestore();
+      } finally {
+        schemaSpy?.mockRestore();
+        clearCache();
+        const cleanup = await db();
+        await cleanup.query(
+          `DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`,
+        );
+      }
+    }, 30_000);
+  },
+);
