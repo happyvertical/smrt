@@ -196,9 +196,9 @@ describe('#2725 declared intents vs the names the build already registers', () =
 
   it('keeps every declared intent emitted — the report is advisory', async () => {
     // The build-time report must not contradict the source. `defineIntent`
-    // accepts all three ids, so all three belong in the artifact; at mount a
-    // colliding pair simply registers under one name with one shadowing the
-    // other, which is why the notice is advisory rather than a drop.
+    // accepts all three ids, so all three belong in the artifact; the runtime
+    // tool-name lock (#2613) decides which registration survives, which is why
+    // the notice is advisory rather than a drop.
     const { surface } = await scan();
 
     expect(surface.intents.map((intent) => intent.id).sort()).toEqual([

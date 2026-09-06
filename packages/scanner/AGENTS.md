@@ -139,14 +139,14 @@ dropping anything**:
 - **the six fixed UI tools** under the configured `webmcp.ui.prefix`.
 
 Warnings, not drops, and the asymmetry is the point: `defineIntent` accepts
-these ids, so the declarations are real and belong in the artifact; nothing
-decides a winner — per `packages/smrt-web/AGENTS.md` there is no document-global
-tool-name lock for these registrations, so both register under one name and one
-**silently shadows or loses** to the other, with no error to catch (#2613 would
-add one; it is not on this base); and whether it happens turns on runtime values
-no artifact records (a WebMCP `namespace`, an `effects` policy, whether a page
-mounts both). A build-time drop would guess all three, and the emitted surface
-would stop matching the source.
+these ids, so the declarations are real and belong in the artifact; the
+document-global tool-name lock (#2613) decides which registration survives,
+rejecting the second with a `WebMcpToolNameCollisionError` — a runtime answer to
+a question the build can already see coming, which costs whoever loses its tool;
+and whether it happens at all turns on runtime values no artifact records (a
+WebMCP `namespace`, an `effects` policy, whether a page mounts both). A
+build-time drop would guess all three, and the emitted surface would stop
+matching the source.
 
 Because those values are unknowable here, the generated-tool message **states
 the precondition it assumes** — no `namespace`, action within the `effects`

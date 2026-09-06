@@ -564,6 +564,11 @@ export interface AgentSurfaceReport {
    * "Also claimed", not "already taken": a build cannot see the provider's
    * WebMCP `namespace`, and one dissolves a generated-tool collision entirely.
    * Each message states that condition; this header must not assert past it.
+   *
+   * Deliberately NOT restated in `packages/cli/AGENTS.md`: that chain sits 44
+   * bytes under the 32 KB cap `pnpm check:agents-chain` enforces, so any
+   * paragraph there fails the build. `packages/scanner/AGENTS.md` carries the
+   * rule for this diagnostic, and this comment carries it for the renderer.
    */
   toolNameCollisions: Array<{ sourceFile: string; message: string }>;
 }

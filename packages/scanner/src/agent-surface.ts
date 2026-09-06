@@ -1541,11 +1541,11 @@ export interface AgentSurfaceToolNameOptions {
  *   entry belongs in the artifact. Dropping it would make the emitted surface
  *   disagree with the source, which is the failure this module exists to
  *   prevent;
- * - nothing decides a winner. As `packages/smrt-web/AGENTS.md` puts it, there
- *   is no document-global tool-name lock for these registrations to
- *   participate in: both register under one name and one silently shadows or
- *   loses to the other. Which one is not defined, and there is no error to
- *   catch — which is exactly why the notice has to come at build time;
+ * - which registration survives is decided at mount by the document-global
+ *   tool-name lock (#2613), which rejects the second with a
+ *   `WebMcpToolNameCollisionError` naming the owner. That is a runtime answer
+ *   to a question the build can already see coming, and it costs whoever loses
+ *   its tool; the build-time notice is the earlier, cheaper one;
  * - and whether it happens at all depends on runtime values no artifact
  *   records: a WebMCP `namespace` moves every generated tool out of the way,
  *   an `effects` policy can exclude the action, and a page need not mount
@@ -1601,10 +1601,11 @@ export function checkAgentSurfaceToolNames(
           `view intent \`${intent.id}\` derives the WebMCP tool name \`${toolName}\`, which is ` +
           `also the generated model tool for ${owner}. Both are emitted — \`defineIntent\` ` +
           'accepts the id, so the declaration is real. On a page that mounts both with no ' +
-          'WebMCP `namespace`, they register under one name and one silently shadows or loses ' +
-          "to the other. A build cannot see the provider's `namespace` or `effects` policy, so " +
-          'if either already separates this pair, disregard this. Otherwise set a `namespace`, ' +
-          'which prefixes the generated tools and leaves intents alone, or rename the intent.',
+          'WebMCP `namespace`, the document-global tool-name lock rejects whichever registers ' +
+          "second with a `WebMcpToolNameCollisionError`. A build cannot see the provider's " +
+          '`namespace` or `effects` policy, so if either already separates this pair, disregard ' +
+          'this. Otherwise set a `namespace`, which prefixes the generated tools and leaves ' +
+          'intents alone, or rename the intent.',
         filePath: intent.filePath,
       });
     }
@@ -1617,9 +1618,10 @@ export function checkAgentSurfaceToolNames(
         message:
           `view intent \`${intent.id}\` derives the WebMCP tool name \`${toolName}\`, which is ` +
           `also one of the six fixed UI tools mounted under \`ui.prefix\` \`${uiPrefix}\`. ` +
-          '`defineIntent` accepts the id because it reserves only the default `smrt_ui_` prefix, ' +
-          'so both are registered under one name and one silently shadows or loses to the other. ' +
-          'Rename the intent, or give the fixed UI tools a different `ui.prefix`.',
+          '`defineIntent` accepts the id because it reserves only the default `smrt_ui_` ' +
+          'prefix, so the two reach the document-global tool-name lock and whichever registers ' +
+          'second is rejected with a `WebMcpToolNameCollisionError`. Rename the intent, or give ' +
+          'the fixed UI tools a different `ui.prefix`.',
         filePath: intent.filePath,
       });
     }

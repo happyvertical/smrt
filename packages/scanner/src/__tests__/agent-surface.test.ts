@@ -1000,6 +1000,9 @@ export const intent${index} = defineIntent({
     expect(diagnostic.message).toContain('with no WebMCP `namespace`');
     expect(diagnostic.message).toContain('`effects`');
     expect(diagnostic.message).toContain('disregard this');
+    // And it names the runtime outcome the lock (#2613) actually produces, so
+    // an author who ignores the notice knows what to look for at mount.
+    expect(diagnostic.message).toContain('WebMcpToolNameCollisionError');
   });
 
   it('emits the colliding intent rather than dropping it', () => {
@@ -1066,6 +1069,7 @@ export const intent${index} = defineIntent({
     expect(diagnostics[0].message).toContain('`agent_ui_list_form_controls`');
     expect(diagnostics[0].message).toContain('`agent_ui_`');
     expect(diagnostics[0].message).toContain('ui.prefix');
+    expect(diagnostics[0].message).toContain('WebMcpToolNameCollisionError');
   });
 
   it('covers all six fixed UI tools, and nothing that merely resembles them', () => {

@@ -170,12 +170,12 @@ the exposure policy, and appends the result to the surface. So it is excluded
 from the drift comparison above — that pass re-derives declarations from source
 alone and has no manifest, so counting one as "declared" would report every
 collision as drift no rebuild could clear. The check is advisory and drops
-nothing: `defineIntent` accepts the id, so the intent is emitted, and at mount
-both names register with one silently shadowing the other — there is no runtime
-error, which is why the notice belongs at build time. A build cannot see the
-provider's WebMCP `namespace` or `effects` policy, either of which can separate
-the pair, so the message states that precondition rather than asserting the
-collision.
+nothing: `defineIntent` accepts the id, so the intent is emitted, and the
+document-global tool-name lock (#2613) rejects whichever registers second — the
+build-time notice is the earlier, cheaper form of the same answer. A build
+cannot see the provider's WebMCP `namespace` or `effects` policy, either of
+which separates the pair outright, so the message states that precondition
+rather than asserting the collision.
 
 `smrt doctor` prints the whole surface — model tools, intents, playbooks — from
 these artifacts alone, with no application running.
