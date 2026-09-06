@@ -36,6 +36,13 @@ Before the lock, the browser rejected whichever registration arrived second and
 that tool was simply absent. Disposing a registration releases its names, so
 mounting and unmounting the same tool repeatedly keeps working.
 
+"Synchronously" describes the registrar's own contract — it throws before
+calling `registerTool`. The Svelte bindings load `@happyvertical/smrt-web`
+lazily, so from a component's point of view the report still arrives a
+microtask or two after mount: `<Provider>` logs the throw through its logger,
+and `useWebMcpTool` reports it as a `console.warn` naming the tool and owner.
+Neither surfaces a collision as an exception the component can catch.
+
 Declared view intents and bespoke component tools are the same trust
 boundary reached two ways, and both register through
 `registerWebMcpBespokeTool` under one exposure policy. Prefer a declared

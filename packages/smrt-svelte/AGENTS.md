@@ -144,6 +144,16 @@ for a data-surface one — for exactly the component's lifetime.
   compilation to a browser tool live in `@happyvertical/smrt-web` with no
   Svelte dependency. This binding is the thin part; a second framework is a
   binding, not a rewrite. Do not add intent semantics to this package.
+- **A tool-name collision (#2613) reports, it does not throw at the caller.**
+  `registerWebMcpBespokeTool` throws synchronously, but both bindings here run
+  it after a lazy import inside an effect, so neither can hand the exception
+  back to a component. `<Provider>` catches the UI and generated registrars
+  into `logger.warn`; `useWebMcpTool` catches only
+  `WebMcpToolNameCollisionError` into its existing
+  `console.warn('[smrt-svelte] bespoke WebMCP tool registration failed', …)`
+  path — its `register()` is fire-and-forget, so anything it does not catch
+  becomes a page-level unhandled rejection. Every other synchronous throw (an
+  invalid `effects` policy) still propagates: that is an author bug.
 - **Built on `useWebMcpTool`.** Do not write a second WebMCP lifecycle: the
   synchronous Provider policy read, the `options.effects` fallback, serialized
   same-name re-registration across effect reruns, and the lazy

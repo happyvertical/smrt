@@ -118,6 +118,7 @@ export {
   WebMcpToolNameCollisionError,
   type WebMcpToolNameOwner,
   type WebMcpToolNameReservation,
+  webMcpToolNameOwner,
 } from './webmcp-tool-names.js';
 
 export interface WebMcpExposurePolicy {
