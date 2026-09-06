@@ -32,6 +32,14 @@ import {
   introspectProject,
   reviewSmrtProject,
 } from './tools/index.js';
+import {
+  runtimeDispatchHealth,
+  runtimeJobHealth,
+  runtimeMigrationStatus,
+  runtimeRecentChanges,
+  runtimeRegistryDrift,
+  runtimeScheduleHealth,
+} from './tools/runtime/tools.js';
 
 export { TOOLS } from './tool-catalog.js';
 
@@ -646,6 +654,66 @@ export function createServer(): Server {
           result = JSON.stringify(
             await getAgentSkill(
               args as unknown as Parameters<typeof getAgentSkill>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'migration-status':
+          result = JSON.stringify(
+            await runtimeMigrationStatus(
+              args as unknown as Parameters<typeof runtimeMigrationStatus>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'job-health':
+          result = JSON.stringify(
+            await runtimeJobHealth(
+              args as unknown as Parameters<typeof runtimeJobHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'schedule-health':
+          result = JSON.stringify(
+            await runtimeScheduleHealth(
+              args as unknown as Parameters<typeof runtimeScheduleHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'dispatch-health':
+          result = JSON.stringify(
+            await runtimeDispatchHealth(
+              args as unknown as Parameters<typeof runtimeDispatchHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'recent-changes':
+          result = JSON.stringify(
+            await runtimeRecentChanges(
+              args as unknown as Parameters<typeof runtimeRecentChanges>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'registry-drift':
+          result = JSON.stringify(
+            await runtimeRegistryDrift(
+              args as unknown as Parameters<typeof runtimeRegistryDrift>[0],
             ),
             null,
             2,

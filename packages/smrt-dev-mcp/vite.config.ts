@@ -38,6 +38,8 @@ export default defineConfig({
         /^@modelcontextprotocol\//,
         /^@happyvertical\/smrt-core/,
         /^@happyvertical\/smrt-scanner/,
+        /^@happyvertical\/smrt-config/,
+        /^@happyvertical\/sql/,
         /^node:/,
       ],
       output: {

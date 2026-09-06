@@ -20,6 +20,7 @@ and repository rules.
 | `src/generators/`, `src/vite-plugin/web-collections.ts` | REST/CLI/MCP generation, manifest hashes, ETags | [agents/generators.md](agents/generators.md) |
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
+| `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 
 ## Cross-module invariants
 

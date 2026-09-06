@@ -8,5 +8,6 @@
 // Export the public runtime helpers and types; schema SQL stays internal.
 export { ensureSystemTables } from './bootstrap.js';
 export * from './compatibility.js';
+export * from './diagnostics.js';
 export * from './retention.js';
 export * from './types.js';

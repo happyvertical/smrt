@@ -32,6 +32,24 @@ const DEV_MCP_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
 const KNOWLEDGE_DETAIL_DESCRIPTION =
   'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed package docs and matching modules with structural object facts. complete: embed all modules and return full package records.';
 
+const DATABASE_URL_PROPERTY = {
+  type: 'string',
+  description:
+    'Optional dev database URL override (read-only diagnostics); prefer SMRT_DEV_DB_URL or cli.database config',
+};
+
+const DATABASE_TYPE_PROPERTY = {
+  type: 'string',
+  enum: ['sqlite', 'postgres', 'duckdb'],
+  description:
+    'Optional engine hint for dbUrl or the environment connection (sqlite, postgres, duckdb); inferred from the URL scheme when omitted',
+};
+
+const LIMIT_PROPERTY = {
+  type: 'number',
+  description: 'Row budget for result lists (default 50, capped at 500)',
+};
+
 // Tool definitions
 const TOOL_DEFINITIONS: Array<
   Pick<Tool, 'name' | 'description' | 'inputSchema'>
@@ -477,6 +495,96 @@ const TOOL_DEFINITIONS: Array<
         },
       },
       required: ['name'],
+    },
+  },
+  {
+    name: 'migration-status',
+    description:
+      'Live migration status from the _smrt_schema_migrations system table (runtime provenance; read-only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+        limit: LIMIT_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'job-health',
+    description:
+      'Live job queue health from the _smrt_jobs/_smrt_workers system tables (runtime provenance; read-only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+        limit: LIMIT_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'schedule-health',
+    description:
+      'Live agent schedule health from the _smrt_agent_schedules system table (runtime provenance; read-only; sensitive agentConfig never read)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+        limit: LIMIT_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'dispatch-health',
+    description:
+      'Live dispatch health from the _smrt_dispatch/_smrt_dispatch_subscriptions system tables (runtime provenance; read-only; payloads never read)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+        limit: LIMIT_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'recent-changes',
+    description:
+      'Tail of the _smrt_changes change feed (runtime provenance; read-only; filter by table/tenant)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+        since: {
+          type: 'number',
+          description: 'Cursor to read after (default 0)',
+        },
+        tables: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Restrict to these physical table names',
+        },
+        tenantId: {
+          type: 'string',
+          description: 'Tenant narrowing filter',
+        },
+        limit: LIMIT_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'registry-drift',
+    description:
+      'Registry drift report; _smrt_registry is retired and reported as such, never queried (read-only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+      },
     },
   },
 ];

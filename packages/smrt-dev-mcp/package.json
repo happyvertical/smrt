@@ -54,9 +54,11 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-build-artifacts.mjs"
   },
   "dependencies": {
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
