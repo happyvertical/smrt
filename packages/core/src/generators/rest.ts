@@ -832,6 +832,33 @@ export class APIGenerator {
     return ObjectRegistry.resolveRuntimeMethod(objectName, methodName).method;
   }
 
+  /**
+   * Refuse a request that matched a DECLARED action's own path and verb but
+   * whose action is withheld — or return `null` to let it fall through.
+   *
+   * Only `POST` is refused, and the asymmetry is the whole point.
+   * `getCrudAction` maps `POST` to `create` and DISCARDS the path segment, so
+   * falling through writes a row and answers 201 for a request aimed at an
+   * operation the author withheld: silent, mutating, and the opposite of what
+   * the generated SvelteKit surface does for the same URL, which 404s because
+   * it wrote no route file. Every other verb carries the segment into a by-id
+   * operation that 404s on its own when the segment is not an id — and that
+   * fall-through is load-bearing, because an object's id may legitimately equal
+   * a declared action's path, and `GET /<collection>/<id>` must keep resolving
+   * to that object (#2686).
+   */
+  private refuseWithheldAction(
+    req: Request,
+    actionName: string,
+    withheldBy: string,
+  ): Response | null {
+    if (req.method.toUpperCase() !== 'POST') return null;
+    return this.createErrorResponse(
+      404,
+      `Custom action '${actionName}' is not exposed (${withheldBy})`,
+    );
+  }
+
   private async dispatchCustomCollectionAction(
     req: Request,
     collection: SmrtCollection<SmrtObject>,
@@ -869,27 +896,38 @@ export class APIGenerator {
       if (routeMethod !== req.method.toUpperCase()) {
         continue;
       }
-      // Explicit exposure only: same include/exclude gating as the SvelteKit
-      // generator applies to custom actions, plus `@method({ expose: false })`,
-      // which outranks a legacy route entry for the same method (#2686).
+      // Past this point the request matched a DECLARATION's own path and verb,
+      // so it was aimed at that action and nothing else. Withholding it must
+      // not silently become a CRUD write -- see `refuseWithheldAction` (#2686).
+      // Explicit exposure only: the same include/exclude gating the SvelteKit
+      // generator applies, plus `@method({ expose: false })`, which outranks a
+      // legacy route entry for the same method.
       if (apiConfig.include && !apiConfig.include.includes(actionName)) {
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'api.include',
+        );
+        if (refusal) return refusal;
         continue;
       }
       if (apiConfig.exclude?.includes(actionName)) {
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'api.exclude',
+        );
+        if (refusal) return refusal;
         continue;
       }
-      // A DECLARED action withheld by `@method({ expose: false })` must not
-      // fall through: this router resolves `POST /<collection>/<segment>` to
-      // `create` when nothing claims the segment, so a `continue` here would
-      // turn a request aimed at an explicitly withheld operation into a silent
-      // row insert. Same no-degradation rule as the 501 branch below, and the
-      // same 404 the generated SvelteKit surface returns for a route it never
-      // wrote (#2686).
       if (readMethodDecoratorConfig(declaredMethod)?.expose === false) {
-        return this.createErrorResponse(
-          404,
-          `Custom action '${actionName}' is not exposed`,
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          '@method({ expose: false })',
         );
+        if (refusal) return refusal;
+        continue;
       }
 
       // Receiver: an instance method on the registered collection, or a
@@ -922,15 +960,21 @@ export class APIGenerator {
         // declarations, and the item-scoped shape is the decorator's most
         // common one.
         if (effective.scope === 'collection') {
+          // Declared-but-unimplemented is a server-side defect, reported on
+          // every verb: unlike the withheld cases, there is no reading of this
+          // request under which falling through was the caller's intent.
           return this.createErrorResponse(
             501,
             `Custom action '${actionName}' is declared but not implemented`,
           );
         }
-        return this.createErrorResponse(
-          404,
-          `Custom action '${actionName}' is item-scoped and is not served by this transport`,
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'an item-scoped declaration, which this transport does not serve',
         );
+        if (refusal) return refusal;
+        continue;
       }
 
       const metadata = resolveCustomActionMetadata({

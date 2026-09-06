@@ -65,6 +65,15 @@ class UnscannedWidgetCollection extends SmrtCollection<UnscannedWidget> {
     return { reached: true };
   }
 
+  /**
+   * Declared by the decorator but NOT listed in `api.include`, so the class
+   * config withholds it while the decorator still declares its route.
+   */
+  @method({ httpMethod: 'POST', path: 'excluded-by-include' })
+  async excludedByInclude(): Promise<{ reached: true }> {
+    return { reached: true };
+  }
+
   /** Declared only by the decorator — no `api.routes` entry at all. */
   @method({ httpMethod: 'POST', path: 'shaped' })
   async shaped(options: { note?: string } = {}): Promise<{ note: string }> {
@@ -121,6 +130,14 @@ describe('#2686 @method() is honored without a manifest', () => {
     await db?.close?.();
   });
 
+  /** Rows currently persisted, so no assertion depends on test order. */
+  const rowCount = async (): Promise<number> => {
+    const listed = (await (
+      await handler(new Request('http://localhost/api/v1/unscannedwidgets'))
+    ).json()) as { data?: unknown[] };
+    return (listed.data ?? []).length;
+  };
+
   const post = (path: string, body?: unknown): Promise<Response> =>
     handler(
       new Request(`http://localhost/api/v1/unscannedwidgets/${path}`, {
@@ -143,13 +160,11 @@ describe('#2686 @method() is honored without a manifest', () => {
   });
 
   it('refuses a withheld action even though api.routes still declares it', async () => {
+    const before = await rowCount();
     const response = await post('concealed', { name: 'should-not-persist' });
     expect(response.status).toBe(404);
 
-    const listed = (await (
-      await handler(new Request('http://localhost/api/v1/unscannedwidgets'))
-    ).json()) as { data?: unknown[] };
-    expect(listed.data ?? []).toHaveLength(0);
+    expect(await rowCount()).toBe(before);
   });
 
   it('predicts the withheld action as unroutable', () => {
@@ -169,6 +184,43 @@ describe('#2686 @method() is honored without a manifest', () => {
     expect(isRestActionRoutable('UnscannedWidget', 'shaped')).toBe(true);
   });
 
+  it('refuses an include-withheld action instead of creating a row', async () => {
+    // `@method()` reaches this arm with no `api.routes` entry at all, so the
+    // include/exclude gate is now reachable purely through the decorator. It
+    // used to `continue` into CRUD handling, where POST resolves to `create`
+    // and discards the segment: a silent row insert answering 201 for a
+    // request aimed at an operation `api.include` withholds.
+    const before = await rowCount();
+    const response = await post('excluded-by-include', {
+      name: 'should-not-persist',
+    });
+    expect(response.status).toBe(404);
+    expect(await rowCount()).toBe(before);
+  });
+
+  it('still resolves a GET whose id equals a declared action path', async () => {
+    // The refusal is POST-only for exactly this reason: every other verb
+    // carries the segment into a by-id operation, and an object's id may
+    // legitimately equal a declared action's path. Refusing on GET would make
+    // that object unreachable.
+    const created = (await (
+      await handler(
+        new Request('http://localhost/api/v1/unscannedwidgets', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: 'id-collision' }),
+        }),
+      )
+    ).json()) as { id?: string };
+    const id = created.id;
+    expect(id).toBeTruthy();
+
+    const fetched = await handler(
+      new Request(`http://localhost/api/v1/unscannedwidgets/${id}`),
+    );
+    expect(fetched.status).toBe(200);
+  });
+
   it('predicts an item-scoped declaration as unroutable', () => {
     // Dispatch answers 404 for it (next test), so predicting `allow` would be
     // the false-`allow` browser-plane preflight exists to prevent. The receiver
@@ -181,12 +233,9 @@ describe('#2686 @method() is honored without a manifest', () => {
     // Before #2686 closed it, this fell through to CRUD handling and
     // `POST /<collection>/reviewed` resolved to `create`: an authenticated
     // caller aiming at a custom action silently inserted a row and got 201.
+    const before = await rowCount();
     const response = await post('reviewed', { name: 'should-not-persist' });
     expect(response.status).toBe(404);
-
-    const listed = (await (
-      await handler(new Request('http://localhost/api/v1/unscannedwidgets'))
-    ).json()) as { data?: unknown[] };
-    expect(listed.data ?? []).toHaveLength(0);
+    expect(await rowCount()).toBe(before);
   });
 });
