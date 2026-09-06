@@ -209,7 +209,10 @@ Reservation is all-or-nothing, and disposing a registration releases its names,
 so a mount / unmount / remount cycle under one name keeps working. A UI layer
 that registers its own fixed tool set reserves through the dependency-free
 `@happyvertical/smrt-web/webmcp-tool-names` entry, passing the same `document`
-it reads `modelContext` from.
+it reads `modelContext` from. A binding that compiles a declared view intent
+itself and registers it with `registerWebMcpBespokeTool` — rather than through
+`registerViewIntent` — passes `owner: 'intent'` so the diagnostic names the
+intent. The owner is a label only; it grants nothing.
 
 WebMCP policy controls which capabilities a page advertises; it is not an
 authorization boundary. Execution still uses the page's authenticated REST

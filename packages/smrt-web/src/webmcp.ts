@@ -159,6 +159,23 @@ export interface RegisterWebMcpBespokeToolOptions {
    * an unrelated generated tool set fail to register.
    */
   effects?: readonly WebMcpToolEffect[];
+  /**
+   * Which path this registration belongs to, used ONLY to label its
+   * tool-name reservation (#2613) so a later collision names the right
+   * source. Defaults to `bespoke`.
+   *
+   * A UI-framework binding that compiles a declared view intent itself and
+   * registers it here — rather than through {@link registerViewIntent} —
+   * must pass `'intent'`. `useViewIntent` in `@happyvertical/smrt-svelte`
+   * does exactly that, because reusing `useWebMcpTool`'s single WebMCP
+   * lifecycle is a documented invariant of that package; without this it
+   * would be the only shipped intent path and every intent collision would
+   * blame a `useWebMcpTool` call that does not exist.
+   *
+   * Purely a diagnostic label: it grants no capability, narrows no policy,
+   * and changes nothing about how the tool registers or executes.
+   */
+  owner?: Extract<WebMcpToolNameOwner, 'intent' | 'bespoke'>;
 }
 
 export interface RegisterWebMcpToolsOptions extends WebMcpExposurePolicy {
@@ -444,15 +461,13 @@ export function registerWebMcpBespokeTool(
   spec: WebMcpBespokeToolSpec,
   options: RegisterWebMcpBespokeToolOptions = {},
 ): WebMcpRegistrationDisposer {
-  return registerSingleTool(spec, options, 'bespoke');
+  return registerSingleTool(spec, options, options.owner ?? 'bespoke');
 }
 
 /**
  * The shared body of {@link registerWebMcpBespokeTool} and
- * {@link registerViewIntent}. `owner` is not part of either public signature:
- * it only labels the tool-name reservation (#2613) so a collision diagnostic
- * can say which path holds a name, and a caller must not be able to claim to
- * be a path it is not.
+ * {@link registerViewIntent}. `owner` only labels the tool-name reservation
+ * (#2613) so a collision diagnostic can say which path holds a name.
  */
 function registerSingleTool(
   spec: WebMcpBespokeToolSpec,
@@ -553,6 +568,8 @@ export function registerViewIntent(
   binding: ViewIntentBinding,
   options: RegisterWebMcpBespokeToolOptions = {},
 ): WebMcpRegistrationDisposer {
+  // Always `intent`, whatever `options.owner` says: this function only ever
+  // registers a compiled view intent.
   return registerSingleTool(
     compileViewIntentToolSpec(intent, binding),
     options,

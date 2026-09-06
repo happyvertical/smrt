@@ -211,8 +211,8 @@ directly; only intents and `useWebMcpTool` route through
 |---|---|---|
 | generated model tools | `generated` | `registerWebMcpTools`, after selection/budget validation, before the first `registerTool` |
 | the six fixed `smrt_ui_*` tools | `ui` | `registerWebMcpUiTools` (`smrt-svelte`), after the prefix lock |
-| declared view intents | `intent` | `registerWebMcpBespokeTool`'s shared body, via `registerViewIntent` |
-| bespoke `useWebMcpTool` tools | `bespoke` | the same shared body |
+| declared view intents | `intent` | `registerWebMcpBespokeTool`'s shared body — via `registerViewIntent`, or via `registerWebMcpBespokeTool` with `owner: 'intent'` |
+| bespoke `useWebMcpTool` tools | `bespoke` | the same shared body (the default owner) |
 
 Reservation is all-or-nothing and rejects a duplicate SYNCHRONOUSLY with
 `WebMcpToolNameCollisionError`, which carries the colliding name plus the
@@ -236,6 +236,13 @@ Rules for anything that adds a fourth path or edits an existing one:
   A reservation releases only names it still holds.
 - **A tool the effects policy excluded reserves nothing**: it was never
   registered, so its name stays available.
+- **A binding that compiles an intent itself must pass `owner: 'intent'`.**
+  `registerViewIntent` is not the shipped intent path: `useViewIntent` in
+  `@happyvertical/smrt-svelte` compiles the spec and hands it to
+  `useWebMcpTool`, because that package must not duplicate the WebMCP
+  lifecycle. Without the explicit owner every intent collision would report
+  `bespoke` and send an author looking for a `useWebMcpTool` call that does
+  not exist. The label is a diagnostic only — it grants nothing.
 - Consumer app code that registers directly against `document.modelContext`
   (for example `packages/template-sveltekit`'s runtime-diagnostics tools) does
   not participate and can still collide at the host.

@@ -32,6 +32,9 @@ document-global tool-name lock before registering
 ([#2613](https://github.com/happyvertical/smrt/issues/2613)). A name two
 sources both want is refused synchronously, with a message naming the tool and
 which source already holds it (`generated`, `ui`, `intent`, or `bespoke`).
+`useViewIntent` labels its reservation `intent` even though it registers
+through the bespoke registrar, so an intent collision names the intent rather
+than a hand-written tool.
 Before the lock, the browser rejected whichever registration arrived second and
 that tool was simply absent. Disposing a registration releases its names, so
 mounting and unmounting the same tool repeatedly keeps working.

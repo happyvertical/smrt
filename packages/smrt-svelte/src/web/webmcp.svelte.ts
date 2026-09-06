@@ -1,4 +1,5 @@
 import type {
+  RegisterWebMcpBespokeToolOptions,
   WebMcpBespokeToolSpec,
   WebMcpRegistrationDisposer,
   WebMcpToolEffect,
@@ -18,6 +19,15 @@ export interface UseWebMcpToolOptions {
    * registrar's own read-only default as the no-Provider fallback.
    */
   effects?: readonly WebMcpToolEffect[];
+  /**
+   * Which path this tool belongs to, for the tool-name lock's collision
+   * diagnostic only (#2613). Defaults to `bespoke`, which is right for every
+   * hand-written component tool. `useViewIntent` passes `intent` because it
+   * routes a declared view intent through this same hook rather than
+   * duplicating the WebMCP lifecycle — see
+   * `RegisterWebMcpBespokeToolOptions['owner']`. It grants nothing.
+   */
+  owner?: RegisterWebMcpBespokeToolOptions['owner'];
 }
 
 // Keep the ambient contract on the public hook declaration too, so consumers
@@ -65,6 +75,9 @@ function getModelContext(): WebMcpModelContext | undefined {
  *
  * @param options.effects a fallback exposure policy applied only when no
  * Provider ancestor declares one — see {@link UseWebMcpToolOptions}.
+ * @param options.owner the tool-name lock's diagnostic label for this
+ * registration (#2613); `useViewIntent` passes `intent`, everything else
+ * leaves the `bespoke` default.
  */
 export function useWebMcpTool(
   factory: () => WebMcpToolSpec | null | undefined,
@@ -141,7 +154,10 @@ export function useWebMcpTool(
       }
       let registration: ReturnType<typeof smrtWeb.registerWebMcpBespokeTool>;
       try {
-        registration = smrtWeb.registerWebMcpBespokeTool(spec, { effects });
+        registration = smrtWeb.registerWebMcpBespokeTool(spec, {
+          effects,
+          ...(options.owner ? { owner: options.owner } : {}),
+        });
       } catch (error) {
         // A tool-name collision (#2613) is a RUNTIME condition — a generated
         // model tool, a fixed `smrt_ui_*` tool, or another live component

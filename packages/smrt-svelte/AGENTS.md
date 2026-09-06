@@ -144,6 +144,10 @@ for a data-surface one — for exactly the component's lifetime.
   compilation to a browser tool live in `@happyvertical/smrt-web` with no
   Svelte dependency. This binding is the thin part; a second framework is a
   binding, not a rewrite. Do not add intent semantics to this package.
+- **`useViewIntent` reserves as `intent`, not `bespoke`.** It reuses
+  `useWebMcpTool` rather than `registerViewIntent`, so it passes
+  `owner: 'intent'` explicitly; drop that and every intent collision blames a
+  `useWebMcpTool` call that does not exist. Diagnostic label only.
 - **A tool-name collision (#2613) reports, it does not throw at the caller.**
   `registerWebMcpBespokeTool` throws synchronously, but both bindings here run
   it after a lazy import inside an effect, so neither can hand the exception

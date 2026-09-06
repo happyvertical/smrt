@@ -305,6 +305,27 @@ describe('bespoke vs bespoke and intent vs intent', () => {
     first();
   });
 
+  it('labels a compiled intent registered through the bespoke registrar as intent', async () => {
+    // A UI binding that compiles an intent itself and registers it through
+    // `registerWebMcpBespokeTool` — which is what `useViewIntent` does, to
+    // reuse one WebMCP lifecycle — must still reserve as `intent`, or every
+    // intent collision blames a bespoke tool that does not exist.
+    const compiled = registerWebMcpBespokeTool(readTool('orders_next_page'), {
+      owner: 'intent',
+    });
+    await compiled.ready;
+    expect(webMcpToolNameOwner('orders_next_page')).toBe('intent');
+
+    try {
+      registerWebMcpTools([ORDERS_DEF]);
+      throw new Error('expected a collision');
+    } catch (error) {
+      expect(error).toBeInstanceOf(WebMcpToolNameCollisionError);
+      expect((error as WebMcpToolNameCollisionError).owner).toBe('intent');
+    }
+    compiled();
+  });
+
   it('names the intent owner when two bound intents derive one name', async () => {
     // `defineIntent` rejects a second id deriving a name an already declared
     // intent derives, so the surviving runtime case is one declaration bound
