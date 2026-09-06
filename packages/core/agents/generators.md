@@ -9,7 +9,6 @@ invariants, and the traps that apply before editing anything live in
 | Generator | Location | Output |
 |-----------|----------|--------|
 | REST API | `src/generators/rest.ts` | OpenAPI-compliant CRUD endpoints |
-| CLI | `src/generators/cli.ts` | `objectname:action` admin commands — writable allowlist, exhaustive-include, `--from-file`, fail-closed tenant context |
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 | Web collections | `src/vite-plugin/web-collections.ts` (selectors) + `generateWebModule` | `@happyvertical/smrt-virt-web` — one typed collection definition per API-exposed REST collection (#1761), consumed by `@happyvertical/smrt-web` |
 
