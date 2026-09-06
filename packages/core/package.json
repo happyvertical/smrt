@@ -56,6 +56,11 @@
       "import": "./dist/generators.js",
       "default": "./dist/generators.js"
     },
+    "./generators/custom-action": {
+      "types": "./dist/generators/custom-action.d.ts",
+      "import": "./dist/generators/custom-action.js",
+      "default": "./dist/generators/custom-action.js"
+    },
     "./generators/rest": {
       "types": "./dist/generators/rest.d.ts",
       "import": "./dist/generators/rest.js",

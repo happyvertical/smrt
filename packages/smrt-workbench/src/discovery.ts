@@ -9,16 +9,21 @@ import {
   resolve,
 } from 'node:path';
 import { pathToFileURL } from 'node:url';
-// The narrow `/generators` subpath, not the package root: all four symbols live
-// there, and the root entry pulls core's AI and filesystem surfaces (Bedrock,
-// OpenAI, the S3/Google clients behind `@happyvertical/files`) into the module
-// graph of a build-time discovery helper that needs none of it (#2686).
+// The leaf `/generators/custom-action` subpath — not the package root, and not
+// the `/generators` barrel, which value-re-exports `MCPGenerator` and so reaches
+// `SmrtCollection` -> `SmrtObject` -> `SmrtClass` and its module-scope
+// `@happyvertical/ai` / `@happyvertical/sql` imports. Measured over `dist`:
+// this subpath is 2 modules with no `@happyvertical` external, the barrel is
+// 109 with the full AI/SQL surface, the root 151. `custom-action`'s only runtime
+// import is `tools/tool-generator`, whose own imports are type-only, which is
+// what keeps it a leaf — a build-time discovery helper should load none of the
+// rest (#2686).
 import {
   createClassNamePredicate,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
-} from '@happyvertical/smrt-core/generators';
+} from '@happyvertical/smrt-core/generators/custom-action';
 import fg from 'fast-glob';
 import { coerceWorkbenchModules } from './runtime.js';
 import type {
