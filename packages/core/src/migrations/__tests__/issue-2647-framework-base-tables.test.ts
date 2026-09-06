@@ -248,6 +248,53 @@ describe('framework base-table remediation (#2647) — SQLite', () => {
     });
   });
 
+  describe('refusal: unexpected column type', () => {
+    it('refuses when every baseline column name is present but a column has the wrong type (a real unrelated table matching names only)', async () => {
+      // Same five column NAMES as a genuine framework-base table, but `id`
+      // is INTEGER instead of TEXT/UUID and `context` is BOOLEAN instead of
+      // TEXT — a name-only check would wrongly call this safe to drop.
+      await db.query(
+        'CREATE TABLE "smrt_hierarchicals" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMP, updated_at TIMESTAMP)',
+      );
+
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'sqlite',
+      });
+      expect(plan.safe).toBe(false);
+
+      const report = plan.tables.find((t) => t.table === 'smrt_hierarchicals');
+      expect(report?.refusals).toContainEqual(
+        expect.objectContaining({
+          kind: 'unexpected-column-type',
+          mismatches: expect.arrayContaining([
+            expect.objectContaining({ column: 'id', actualType: 'INTEGER' }),
+            expect.objectContaining({
+              column: 'context',
+              actualType: 'BOOLEAN',
+            }),
+          ]),
+        }),
+      );
+
+      await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow();
+      expect(await tableExists(db, 'smrt_hierarchicals')).toBe(true);
+    });
+
+    it('accepts the real generator-produced TIMESTAMP/DATETIME and TEXT/UUID variance across dialects', async () => {
+      // Confirms the type-bucket check does not false-positive on the
+      // dialect spellings the real generator actually emits (DATETIME on
+      // SQLite here; UUID and TIMESTAMPTZ are exercised on PostgreSQL).
+      await createAllFrameworkBaseTables(db);
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'sqlite',
+      });
+      expect(plan.safe).toBe(true);
+      for (const table of plan.tables) {
+        expect(table.refusals).toEqual([]);
+      }
+    });
+  });
+
   describe('refusal: referenced by foreign key', () => {
     it('refuses when any live table anywhere in the database has a foreign key onto a target table', async () => {
       await createAllFrameworkBaseTables(db);

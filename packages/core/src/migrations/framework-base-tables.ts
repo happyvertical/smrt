@@ -25,17 +25,24 @@
  *    doing so would recreate the dangerous global-drop path by another route.
  * 2. {@link planFrameworkBaseTableDrop} is read-only. For every name in the
  *    list that exists live, it verifies the table has *only* the universal
- *    baseline columns (`id`, `slug`, `context`, `created_at`, `updated_at`),
- *    is referenced by no foreign key anywhere in the live database, and is
- *    empty. Any live table missing that shape — e.g. a consumer's own,
- *    unrelated table that happens to share one of these five names — is
- *    reported as unsafe and dropped nothing.
+ *    baseline columns (`id`, `slug`, `context`, `created_at`, `updated_at`)
+ *    with a plausible type for each, is referenced by no foreign key
+ *    anywhere in the live database, and is empty. Any live table missing
+ *    that shape — e.g. a consumer's own, unrelated table that happens to
+ *    share one of these five names — is reported as unsafe and dropped
+ *    nothing.
  * 3. {@link dropFrameworkBaseTables} refuses to run against a plan that is
  *    not `safe`, locks every PostgreSQL target `IN ACCESS EXCLUSIVE MODE`
- *    before re-checking it (a plain `SELECT COUNT(*)` alone would not block
- *    a concurrent writer), and re-verifies emptiness a second time inside
- *    the bounded transaction immediately before dropping anything, so a
- *    write that lands between planning and execution still stops the drop.
+ *    (a plain `SELECT COUNT(*)` alone would not block a concurrent writer),
+ *    and then re-verifies shape, type, and emptiness — not just the row
+ *    count — inside that same bounded transaction immediately before
+ *    dropping anything. A table rewritten or replaced between planning and
+ *    execution therefore still stops the whole batch, not just a row-count
+ *    race. Foreign keys are checked at planning time only; a foreign key
+ *    added afterward is still caught, because the database itself refuses
+ *    the `DROP TABLE` when a real dependent exists (see
+ *    {@link qualifyIdentifier}'s doc comment for the one documented
+ *    exception, DuckDB).
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -80,6 +87,47 @@ const BASELINE_COLUMN_NAMES = [
 
 const BASELINE_COLUMN_SET: ReadonlySet<string> = new Set(BASELINE_COLUMN_NAMES);
 
+/**
+ * Coarse, dialect-tolerant type buckets for the five baseline columns.
+ *
+ * These five tables are always generated the same way, by the same
+ * generator, for a given engine — `id` is `TEXT` (SQLite/DuckDB) or `UUID`
+ * (PostgreSQL), `slug`/`context` are always text, `created_at`/`updated_at`
+ * are always a timestamp type. A live column with a matching *name* but an
+ * unrelated *type* (`id INTEGER`, `context BOOLEAN`, ...) is not a genuine
+ * framework-base table — it is a consumer's own table that happens to share
+ * every column name — and the name-only check alone cannot see that.
+ *
+ * Buckets, not exact strings: PostgreSQL may report `TIMESTAMP` or
+ * `TIMESTAMPTZ` depending on configuration, DuckDB normalizes `TEXT` to
+ * `VARCHAR`, and SQLite's generator emits `DATETIME` — all legitimate for a
+ * real framework-base table on their engine. Only a column outside its
+ * expected bucket entirely (an integer, a boolean, a float) is refused.
+ */
+type ColumnTypeBucket = 'text' | 'uuid' | 'timestamp' | 'other';
+
+function classifyColumnType(type: string): ColumnTypeBucket {
+  const normalized = type
+    .toUpperCase()
+    .trim()
+    .replace(/\(\s*\d+\s*\)/g, '');
+  if (/^UUID$/.test(normalized)) return 'uuid';
+  if (/^(TEXT|CLOB|STRING|VARCHAR|CHAR)/.test(normalized)) return 'text';
+  if (/^(TIMESTAMP|DATETIME|DATE)/.test(normalized)) return 'timestamp';
+  return 'other';
+}
+
+const EXPECTED_COLUMN_BUCKETS: Record<
+  (typeof BASELINE_COLUMN_NAMES)[number],
+  readonly ColumnTypeBucket[]
+> = {
+  id: ['text', 'uuid'],
+  slug: ['text'],
+  context: ['text'],
+  created_at: ['timestamp'],
+  updated_at: ['timestamp'],
+};
+
 const DEFAULT_POSTGRES_LOCK_TIMEOUT_MS = 30_000;
 const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 60_000;
 
@@ -91,6 +139,14 @@ export type FrameworkBaseTableRefusal =
       actualColumns: string[];
       missingColumns: string[];
       extraColumns: string[];
+    }
+  | {
+      kind: 'unexpected-column-type';
+      mismatches: Array<{
+        column: string;
+        actualType: string;
+        expectedBuckets: string[];
+      }>;
     }
   | {
       kind: 'referenced-by-foreign-key';
@@ -149,6 +205,19 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
  * satisfy every safety check yet let the DROP hit a different object than
  * the one just verified. SQLite and DuckDB have no equivalent search-path
  * ambiguity for this module's purposes, so only PostgreSQL is schema-qualified.
+ *
+ * Known limitation, documented rather than fixed: this module (like
+ * `differ.ts` and `live-parity.ts` elsewhere in this package) only ever
+ * discovers PostgreSQL objects in the `public` schema — multi-schema
+ * PostgreSQL deployments are not a supported SMRT configuration anywhere in
+ * this package. A table in a *different* schema with a foreign key onto one
+ * of these five names is therefore invisible to the `referenced-by-foreign-key`
+ * check. It is not, however, an actual data-loss risk: PostgreSQL's own
+ * foreign-key enforcement refuses the `DROP TABLE` at execution time
+ * ("cannot drop table ... because other objects depend on it") inside this
+ * module's bounded transaction, so nothing is still dropped — exactly the
+ * same fail-safe shape as the documented DuckDB foreign-key gap below, just
+ * surfaced as a generic execution error instead of a curated refusal.
  */
 function qualifyIdentifier(engine: DatabaseEngine, name: string): string {
   return engine === 'postgres'
@@ -202,18 +271,102 @@ function formatPostgresTimeout(milliseconds: number): string {
 }
 
 /**
- * Read-only preflight: is it safe to drop the five framework-base tables,
- * and what exactly would that require?
+ * Column name → declared type, read with a query every engine supports
+ * *inside a transaction* — unlike `getTableSchema()`, which
+ * `@happyvertical/sql` does not expose on the connection object a
+ * `db.transaction()` callback receives (verified directly: `typeof
+ * tx.getTableSchema` is `undefined`). Used only for the execution-time
+ * re-check in {@link dropFrameworkBaseTables}; planning uses the richer
+ * `getTableSchema()` on the ordinary (non-transactional) connection.
  *
- * Never mutates the database. Safe to call for `--dry-run` and as the
- * required first half of a real run.
+ * Returns `null` when the table cannot be described right now — SQLite
+ * returns zero rows for an unknown table, DuckDB instead throws a Catalog
+ * Error (caught below) — either way meaning "cannot confirm this is safe",
+ * which must fail closed exactly like a table that no longer exists.
  */
-export async function planFrameworkBaseTableDrop(
+async function inspectColumnTypes(
   db: DatabaseInterface,
-  options: PlanFrameworkBaseTableDropOptions = {},
-): Promise<FrameworkBaseTablesPlan> {
-  const engine = detectEngine(resolveDatabaseUrl(db), options.engineHint);
+  engine: DatabaseEngine,
+  table: string,
+): Promise<Record<string, string> | null> {
+  try {
+    if (engine === 'postgres') {
+      const result = await db.query(
+        `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+        table,
+      );
+      const rows = result.rows as { column_name: string; data_type: string }[];
+      if (rows.length === 0) return null;
+      const columns: Record<string, string> = {};
+      for (const row of rows) columns[row.column_name] = row.data_type;
+      return columns;
+    }
 
+    const result = await db.query(
+      `PRAGMA table_info(${quoteIdentifier(table)})`,
+    );
+    const rows = result.rows as { name?: string; type?: string }[];
+    if (rows.length === 0) return null;
+    const columns: Record<string, string> = {};
+    for (const row of rows) {
+      if (row.name) columns[row.name] = row.type ?? '';
+    }
+    return columns;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare a freshly-read column map against the baseline shape/type
+ * expectations, returning a human-readable reason it is unsafe, or `null`
+ * when it matches exactly. Shared by the execution-time re-check so its
+ * comparison logic cannot drift from {@link assessTargets}'s own baseline
+ * definitions ({@link BASELINE_COLUMN_NAMES}, {@link BASELINE_COLUMN_SET},
+ * {@link EXPECTED_COLUMN_BUCKETS}, {@link classifyColumnType}).
+ */
+function describeColumnMismatch(
+  columns: Record<string, string>,
+): string | null {
+  const actualColumns = Object.keys(columns).sort();
+  const missingColumns = BASELINE_COLUMN_NAMES.filter(
+    (column) => !(column in columns),
+  );
+  const extraColumns = actualColumns.filter(
+    (column) => !BASELINE_COLUMN_SET.has(column),
+  );
+  if (missingColumns.length > 0 || extraColumns.length > 0) {
+    return `unexpected column shape (actual columns: ${actualColumns.join(', ')})`;
+  }
+
+  const typeMismatches = BASELINE_COLUMN_NAMES.map((column) => {
+    const actualType = columns[column] ?? '';
+    const bucket = classifyColumnType(actualType);
+    return EXPECTED_COLUMN_BUCKETS[column].includes(bucket)
+      ? null
+      : `${column} is "${actualType}"`;
+  }).filter((entry): entry is string => entry !== null);
+  if (typeMismatches.length > 0) {
+    return `unexpected column type (${typeMismatches.join(', ')})`;
+  }
+
+  return null;
+}
+
+/**
+ * Read-only assessment: for each of the five target names, is it safe to
+ * drop, and why or why not?
+ *
+ * Shared by {@link planFrameworkBaseTableDrop} (the initial, unlocked
+ * preflight) and {@link dropFrameworkBaseTables} (a second, fresh call made
+ * *after* acquiring PostgreSQL's `ACCESS EXCLUSIVE` locks, so the exact same
+ * shape/type/foreign-key/emptiness logic runs again under lock rather than
+ * trusting a possibly stale plan). Never mutates the database.
+ */
+async function assessTargets(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+): Promise<{ tables: FrameworkBaseTableReport[]; safe: boolean }> {
   if (typeof db.getTableSchema !== 'function') {
     // Fail closed: without shape introspection we cannot tell a genuine
     // framework-base table apart from a consumer's own unrelated table of
@@ -233,7 +386,7 @@ export async function planFrameworkBaseTableDrop(
         ],
       }),
     );
-    return { engine, tables, safe: false, statements: [] };
+    return { tables, safe: false };
   }
 
   const existingTableNames = await getExistingTableNames(db, engine);
@@ -315,6 +468,24 @@ export async function planFrameworkBaseTableDrop(
         missingColumns,
         extraColumns,
       });
+    } else {
+      // The column *set* matches exactly — only meaningful to type-check
+      // when every baseline column is actually present and nothing extra
+      // is there to confuse the comparison.
+      const mismatches = BASELINE_COLUMN_NAMES.map((column) => {
+        const actualType = schema.columns[column]?.type ?? '';
+        const bucket = classifyColumnType(actualType);
+        const expectedBuckets = EXPECTED_COLUMN_BUCKETS[column];
+        return expectedBuckets.includes(bucket)
+          ? null
+          : { column, actualType, expectedBuckets: [...expectedBuckets] };
+      }).filter(
+        (mismatch): mismatch is NonNullable<typeof mismatch> =>
+          mismatch !== null,
+      );
+      if (mismatches.length > 0) {
+        refusals.push({ kind: 'unexpected-column-type', mismatches });
+      }
     }
 
     const references = inboundForeignKeys.get(name) ?? [];
@@ -333,6 +504,23 @@ export async function planFrameworkBaseTableDrop(
 
     tables.push({ table: name, exists: true, rowCount, indexNames, refusals });
   }
+
+  return { tables, safe };
+}
+
+/**
+ * Read-only preflight: is it safe to drop the five framework-base tables,
+ * and what exactly would that require?
+ *
+ * Never mutates the database. Safe to call for `--dry-run` and as the
+ * required first half of a real run.
+ */
+export async function planFrameworkBaseTableDrop(
+  db: DatabaseInterface,
+  options: PlanFrameworkBaseTableDropOptions = {},
+): Promise<FrameworkBaseTablesPlan> {
+  const engine = detectEngine(resolveDatabaseUrl(db), options.engineHint);
+  const { tables, safe } = await assessTargets(db, engine);
 
   const statements: string[] = [];
   if (safe) {
@@ -374,14 +562,26 @@ export interface DropFrameworkBaseTablesResult {
  * On PostgreSQL the whole batch runs in one transaction bounded by
  * `SET LOCAL lock_timeout` / `SET LOCAL statement_timeout` (#2362), so a
  * batch that queues behind a long-running writer fails fast and rolls back
- * instead of holding locks against every writer. Every target is then
- * locked `IN ACCESS EXCLUSIVE MODE` — a plain `SELECT COUNT(*)` alone only
- * takes an ACCESS SHARE lock, which would let a concurrent writer commit a
- * row between the check and the DROP; holding the exclusive lock first
- * makes the check-then-drop sequence atomic. Only then is every target
- * table's row count re-checked (inside that same transaction, on all
- * engines): if anything wrote to a table between planning and this call,
- * the whole batch is refused and nothing is dropped.
+ * instead of holding locks against every writer. Every target is then locked
+ * `IN ACCESS EXCLUSIVE MODE` — a plain `SELECT COUNT(*)` alone only takes an
+ * ACCESS SHARE lock, which would let a concurrent writer commit a row (or a
+ * concurrent DDL session replace the table entirely) between the check and
+ * the DROP; holding the exclusive lock first makes the check-then-drop
+ * sequence atomic.
+ *
+ * Immediately before dropping anything, this re-verifies column shape,
+ * column type, and emptiness inside that same transaction — not just the
+ * row count `planFrameworkBaseTableDrop()` already checked. This uses raw
+ * `information_schema.columns` (PostgreSQL) / `PRAGMA table_info`
+ * (SQLite/DuckDB) queries rather than `getTableSchema()`: `@happyvertical/sql`
+ * does not expose that richer introspection method on the transaction-scoped
+ * connection this callback receives, only `query()`. Foreign keys are
+ * deliberately **not** re-scanned here — doing so would need a fresh
+ * full-catalog scan on every drop, and a foreign key that appeared after
+ * planning is still caught: PostgreSQL (and SQLite, with enforcement on)
+ * both refuse the `DROP TABLE` itself when a real dependent exists, exactly
+ * like the already-documented DuckDB introspection gap in
+ * {@link qualifyIdentifier}'s doc comment.
  */
 export async function dropFrameworkBaseTables(
   db: DatabaseInterface,
@@ -421,14 +621,14 @@ export async function dropFrameworkBaseTables(
     }
 
     // On PostgreSQL, a plain `SELECT COUNT(*)` takes only an ACCESS SHARE
-    // lock, which does not block a concurrent writer: a row could commit
-    // into a target table after this check passes but before the DROP
-    // below acquires its own exclusive lock, and that row would be dropped
-    // along with the table it landed in. Acquire ACCESS EXCLUSIVE on every
-    // target *before* re-checking emptiness so the check and the drop are
-    // atomic — once held, no other session can read or write the table
-    // until this transaction ends, and `SET LOCAL lock_timeout` above
-    // bounds the wait for it exactly as it bounds the DROP itself.
+    // lock, which does not block a concurrent writer or a concurrent DDL
+    // session dropping and recreating the same name as an unrelated table:
+    // either could land after this check passes but before the DROP below
+    // acquires its own exclusive lock. Acquire ACCESS EXCLUSIVE on every
+    // target *before* re-assessing it so the check and the drop are atomic —
+    // once held, no other session can read, write, or alter the table until
+    // this transaction ends, and `SET LOCAL lock_timeout` above bounds the
+    // wait for it exactly as it bounds the DROP itself.
     if (isPostgres) {
       for (const table of targets) {
         await tx.query(
@@ -437,15 +637,37 @@ export async function dropFrameworkBaseTables(
       }
     }
 
-    // Belt-and-suspenders on every engine: nothing should have written to
-    // these tables between the read-only plan and this transaction, but if
-    // it did, refuse the whole batch rather than drop a table that is no
-    // longer empty.
-    for (const table of targets) {
-      const rowCount = await countRows(tx, plan.engine, table.table);
+    // Re-verify shape, type, and emptiness inside this transaction (locked,
+    // on PostgreSQL) immediately before dropping anything — a table could
+    // have been rewritten, or (on PostgreSQL, before the locks above were
+    // acquired) dropped and replaced by an unrelated same-named table, since
+    // the read-only plan. Trusting the original plan's findings past that
+    // point would let the drop proceed against a table the plan never
+    // actually verified. See this function's own doc comment for why
+    // foreign keys are not re-scanned here.
+    for (const target of targets) {
+      const liveColumns = await inspectColumnTypes(
+        tx,
+        plan.engine,
+        target.table,
+      );
+      if (!liveColumns) {
+        throw new Error(
+          `Refusing to drop "${target.table}": it could not be re-verified inside the transaction (it may no longer exist). Nothing was dropped.`,
+        );
+      }
+
+      const mismatch = describeColumnMismatch(liveColumns);
+      if (mismatch) {
+        throw new Error(
+          `Refusing to drop "${target.table}": a fresh check inside the transaction found an ${mismatch}. Nothing was dropped.`,
+        );
+      }
+
+      const rowCount = await countRows(tx, plan.engine, target.table);
       if (rowCount > 0) {
         throw new Error(
-          `Refusing to drop "${table.table}": it now has ${rowCount} row(s) though it was empty when planned. Nothing was dropped.`,
+          `Refusing to drop "${target.table}": it now has ${rowCount} row(s) though it was empty when planned. Nothing was dropped.`,
         );
       }
     }

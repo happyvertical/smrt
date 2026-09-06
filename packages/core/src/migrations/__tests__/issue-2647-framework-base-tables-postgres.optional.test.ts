@@ -198,6 +198,32 @@ postgresDescribe(
       expect(await tableExists(db, 'smrt_classes')).toBe(true);
     });
 
+    it('refuses when every baseline column name is present but has the wrong type', async () => {
+      await createAllFrameworkBaseTables(db);
+      await db.query('DROP TABLE "smrt_hierarchicals"');
+      await db.query(
+        'CREATE TABLE "smrt_hierarchicals" (id INTEGER PRIMARY KEY, slug TEXT, context BOOLEAN, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)',
+      );
+
+      const plan = await planFrameworkBaseTableDrop(db, {
+        engineHint: 'postgres',
+      });
+      expect(plan.safe).toBe(false);
+      const report = plan.tables.find((t) => t.table === 'smrt_hierarchicals');
+      expect(report?.refusals).toContainEqual(
+        expect.objectContaining({
+          kind: 'unexpected-column-type',
+          mismatches: expect.arrayContaining([
+            expect.objectContaining({ column: 'id' }),
+            expect.objectContaining({ column: 'context' }),
+          ]),
+        }),
+      );
+
+      await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow();
+      expect(await tableExists(db, 'smrt_hierarchicals')).toBe(true);
+    });
+
     it('aborts on lock_timeout instead of waiting indefinitely for a blocking writer (#2362)', async () => {
       await createAllFrameworkBaseTables(db);
 

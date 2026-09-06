@@ -59,6 +59,13 @@ function describeRefusal(refusal: FrameworkBaseTableRefusal): string {
       }
       return `has an unexpected shape: ${parts.join('; ')} (actual columns: ${refusal.actualColumns.join(', ')})`;
     }
+    case 'unexpected-column-type':
+      return `has an unexpected column type: ${refusal.mismatches
+        .map(
+          (mismatch) =>
+            `${mismatch.column} is "${mismatch.actualType}" (expected ${mismatch.expectedBuckets.join(' or ')})`,
+        )
+        .join(', ')}`;
     case 'referenced-by-foreign-key':
       return `is referenced by foreign key(s) from: ${refusal.references
         .map((reference) => `${reference.table}.${reference.column}`)

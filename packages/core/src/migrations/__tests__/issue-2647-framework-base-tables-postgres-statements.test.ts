@@ -46,11 +46,22 @@ function mockPostgresDb(options: {
   let db: DatabaseInterface;
   db = {
     url: 'postgres://localhost/test',
-    query: async (sql: string) => {
+    query: async (sql: string, ...params: unknown[]) => {
       queries.push(sql);
       if (sql.includes('information_schema.tables')) {
         return {
           rows: options.existingTables.map((table_name) => ({ table_name })),
+        };
+      }
+      if (sql.includes('information_schema.columns')) {
+        const table = String(params[0] ?? '');
+        const fixture = options.tables[table];
+        if (!fixture) return { rows: [] };
+        return {
+          rows: Object.entries(fixture.columns).map(([column_name, def]) => ({
+            column_name,
+            data_type: def.type,
+          })),
         };
       }
       if (sql.startsWith('SELECT COUNT(*)')) {
@@ -182,17 +193,84 @@ describe('framework base-table remediation (#2647) — PostgreSQL statement gene
 
     // Simulate a row landing after the plan but before execution — the
     // re-check inside the transaction (issued against the qualified name)
-    // must still catch it.
-    (db as unknown as { query: (sql: string) => Promise<unknown> }).query =
-      async (sql: string) => {
-        if (sql.startsWith('SELECT COUNT(*)')) {
-          return { rows: [{ row_count: 1 }] };
-        }
-        return { rows: [] };
-      };
+    // must still catch it. The shape re-check still needs to see the
+    // genuine baseline columns so this test isolates the row-count path.
+    (
+      db as unknown as {
+        query: (sql: string, ...params: unknown[]) => Promise<unknown>;
+      }
+    ).query = async (sql: string, ...params: unknown[]) => {
+      if (sql.includes('information_schema.columns')) {
+        const table = String(params[0] ?? '');
+        const fixture = baselineTable(table);
+        return {
+          rows: Object.entries(fixture.columns).map(([column_name, def]) => ({
+            column_name,
+            data_type: def.type,
+          })),
+        };
+      }
+      if (sql.startsWith('SELECT COUNT(*)')) {
+        return { rows: [{ row_count: 1 }] };
+      }
+      return { rows: [] };
+    };
 
     await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow(
       /Refusing to drop "smrt_classes": it now has 1 row/,
+    );
+  });
+
+  /**
+   * Closes the gap an independent review found in the row-count-only
+   * re-check: a table can be swapped for an unrelated same-named,
+   * currently-empty table between the read-only plan and the locked
+   * transaction (most concretely, on PostgreSQL, a concurrent session
+   * dropping and recreating the name before this session's `LOCK TABLE`
+   * request is granted). The row count alone would not catch that — this
+   * proves the shape/type re-check, run from raw `information_schema.columns`
+   * inside the transaction (since `getTableSchema()` is unavailable there;
+   * see `dropFrameworkBaseTables`'s doc comment), does.
+   */
+  it('refuses via the re-check when the table shape itself changed between planning and the transaction, even though it is still empty', async () => {
+    const { db } = mockPostgresDb({
+      existingTables: ['smrt_classes'],
+      tables: { smrt_classes: baselineTable('smrt_classes') },
+      rowCounts: { smrt_classes: 0 },
+    });
+
+    const plan = await planFrameworkBaseTableDrop(db, {
+      engineHint: 'postgres',
+    });
+    expect(plan.safe).toBe(true);
+
+    // Simulate the object at this name having been replaced by an
+    // unrelated, still-empty table with a missing baseline column, after
+    // planning but before the transaction's re-check.
+    (
+      db as unknown as {
+        query: (sql: string, ...params: unknown[]) => Promise<unknown>;
+      }
+    ).query = async (sql: string) => {
+      if (sql.includes('information_schema.columns')) {
+        return {
+          rows: [
+            { column_name: 'id', data_type: 'uuid' },
+            { column_name: 'slug', data_type: 'text' },
+            // `context` is missing entirely — not the same object anymore.
+            { column_name: 'created_at', data_type: 'timestamptz' },
+            { column_name: 'updated_at', data_type: 'timestamptz' },
+          ],
+        };
+      }
+      if (sql.startsWith('SELECT COUNT(*)')) {
+        return { rows: [{ row_count: 0 }] };
+      }
+      return { rows: [] };
+    };
+
+    await expect(dropFrameworkBaseTables(db, plan)).rejects.toThrow(
+      /Refusing to drop "smrt_classes": a fresh check inside the transaction found an unexpected column shape/,
     );
   });
 });
