@@ -532,7 +532,10 @@ function selectEntriesQualifiedBy(
     // regardless of config (#2642).
     if (isFrameworkBaseClass(obj.className, obj.packageName)) continue;
 
-    const exposedActions = resolveApiActionSet(obj);
+    // Pass the manifest: without it the wire-ability heuristic cannot tell a
+    // model class from an options interface, and this selector would qualify a
+    // collection on an action the route emitters withhold (#2686).
+    const exposedActions = resolveApiActionSet(obj, manifest);
     if (!qualifies(exposedActions)) continue;
 
     const isStiChild = isStiChildModel(manifest, obj);

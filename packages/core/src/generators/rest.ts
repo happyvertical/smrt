@@ -54,7 +54,9 @@ import {
 import {
   buildCustomActionInvocationArgs,
   normalizeCustomActionFailure,
+  readMethodDecoratorConfig,
   resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
 import {
@@ -774,6 +776,43 @@ export class APIGenerator {
    * a returned `{ ok: false, ... }` failure becomes its requested non-2xx
    * status with a redacted payload, and success wraps as `{ action, result }`.
    */
+  /**
+   * Every action this transport treats as DECLARED for a collection route,
+   * paired with its manifest method definition when one is known.
+   *
+   * The union of two declaration sources, so migrating a route entry onto its
+   * method does not silently drop the route here (#2686):
+   *
+   * - a `api.routes[action]` entry, this transport's only source before;
+   * - a method whose `@method()` supplies route-shaping metadata
+   *   (`httpMethod`, `path`, or `scope`).
+   *
+   * Deliberately still DECLARATION-gated rather than adopting the generated
+   * transport's default-route heuristic: this router's URL shape supports only
+   * single-segment collection paths, and widening it to every wire-able public
+   * method would publish endpoints that have never existed here. That is a
+   * separate contract change, not a compatibility fix.
+   */
+  private declaredCollectionActions(
+    objectName: string,
+    apiConfig: { routes?: Record<string, ApiCustomRouteConfig> },
+  ): Array<[string, MethodDefinition | undefined]> {
+    const methods = ObjectRegistry.getMethods(objectName);
+    const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
+    for (const [name, methodDef] of methods ?? []) {
+      const declared = readMethodDecoratorConfig(methodDef);
+      if (!declared) continue;
+      if (
+        declared.httpMethod !== undefined ||
+        declared.path !== undefined ||
+        declared.scope !== undefined
+      ) {
+        names.add(name);
+      }
+    }
+    return [...names].map((name) => [name, methods?.get(name)]);
+  }
+
   private async dispatchCustomCollectionAction(
     req: Request,
     collection: SmrtCollection<SmrtObject>,
@@ -782,27 +821,42 @@ export class APIGenerator {
     objectName: string,
   ): Promise<Response | null> {
     const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-    if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+    if (!apiConfig || typeof apiConfig !== 'object') {
       return null;
     }
 
-    for (const [actionName, routeConfig] of Object.entries(
-      apiConfig.routes as Record<string, ApiCustomRouteConfig>,
-    )) {
-      const routePath = routeConfig?.path || actionName;
+    const declaredActions = this.declaredCollectionActions(
+      objectName,
+      apiConfig,
+    );
+    if (declaredActions.length === 0) {
+      return null;
+    }
+
+    for (const [actionName, methodDef] of declaredActions) {
+      const effective = resolveEffectiveActionMetadata({
+        actionName,
+        ...(methodDef ? { method: methodDef } : {}),
+        apiConfig,
+      });
+      const routePath = effective.path || actionName;
       if (routePath.includes('/') || routePath !== pathSegment) {
         continue;
       }
-      const routeMethod = (routeConfig?.method || 'POST').toUpperCase();
+      const routeMethod = (effective.httpMethod || 'POST').toUpperCase();
       if (routeMethod !== req.method.toUpperCase()) {
         continue;
       }
       // Explicit exposure only: same include/exclude gating as the SvelteKit
-      // generator applies to custom actions.
+      // generator applies to custom actions, plus `@method({ expose: false })`,
+      // which outranks a legacy route entry for the same method (#2686).
       if (apiConfig.include && !apiConfig.include.includes(actionName)) {
         continue;
       }
       if (apiConfig.exclude?.includes(actionName)) {
+        continue;
+      }
+      if (readMethodDecoratorConfig(methodDef)?.expose === false) {
         continue;
       }
 
@@ -822,7 +876,7 @@ export class APIGenerator {
         // Declared collection routes must not degrade into a CRUD write;
         // anything else (an item-scoped action reached at the collection URL,
         // or an unrelated segment) falls through unchanged.
-        if (routeConfig?.scope === 'collection') {
+        if (effective.scope === 'collection') {
           return this.createErrorResponse(
             501,
             `Custom action '${actionName}' is declared but not implemented`,
@@ -834,7 +888,7 @@ export class APIGenerator {
       const metadata = resolveCustomActionMetadata({
         actionName,
         apiConfig,
-        method: ObjectRegistry.getMethods(objectName)?.get(actionName),
+        ...(methodDef ? { method: methodDef } : {}),
         // A collection instance method is collection-hosted even when it is
         // not static; a static on the item class already defaults the same
         // way. Either receiver makes this route collection-targeted.

@@ -160,19 +160,55 @@ export interface FieldDefinition {
   exported?: boolean;
 }
 
+export interface MethodParameterDefinition {
+  name: string;
+  type: string;
+  optional: boolean;
+  default?: unknown;
+  /**
+   * The declared annotation -- or a member of an inline object literal inside
+   * it -- was syntax the scanner could not express as a string (intersection,
+   * tuple, conditional, mapped, `typeof`, indexed access).
+   *
+   * `type` still reads `'any'` for compatibility, so this flag is the ONLY
+   * thing separating "the author wrote `any`" from "the scanner gave up".
+   * Anything that must fail closed on an uncertain type -- notably the API
+   * wire-ability gate in `generators/custom-action.ts` -- reads this (#2686).
+   */
+  typeUnresolved?: boolean;
+  /**
+   * Resolved member types of an INLINE object-literal annotation, flattened
+   * across nested literals, arrays, unions, and type arguments.
+   *
+   * The manifest records an inline literal as the single string `'object'`,
+   * which hides exactly the members that decide whether the bag can cross a
+   * wire (a callback, a model instance). NAMED bags -- an interface, type
+   * alias, `Partial<>`/`Pick<>` -- are deliberately absent here and accepted
+   * heuristically instead; expanding them needs cross-file type resolution the
+   * AST scanner does not perform (#2686).
+   */
+  memberTypes?: string[];
+}
+
 export interface MethodDefinition {
   name: string;
   async: boolean;
-  parameters: Array<{
-    name: string;
-    type: string;
-    optional: boolean;
-    default?: unknown;
-  }>;
+  parameters: MethodParameterDefinition[];
   returnType: string;
   description?: string;
   isStatic: boolean;
   isPublic: boolean;
+  /**
+   * Config object of an `@method()` decorator declared on this method.
+   *
+   * `{}` for a bare `@method()`; absent when the method carries no `@method()`
+   * at all. Typed loosely on purpose: this is SCANNED config that reached the
+   * manifest as JSON, so consumers narrow it defensively through
+   * `readMethodDecoratorConfig` in `generators/custom-action.ts` rather than
+   * trusting a compile-time shape. The authoring type is `MethodOptions` in
+   * `decorators/index.ts` (#2686).
+   */
+  decoratorConfig?: Record<string, unknown>;
 }
 
 /**

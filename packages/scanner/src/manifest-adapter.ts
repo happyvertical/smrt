@@ -103,11 +103,17 @@ interface MethodDefinition {
     type: string;
     optional: boolean;
     default?: unknown;
+    /** See `RawParameterDefinition.typeUnresolved` (#2686). */
+    typeUnresolved?: boolean;
+    /** See `RawParameterDefinition.memberTypes` (#2686). */
+    memberTypes?: string[];
   }>;
   returnType: string;
   description?: string;
   isStatic: boolean;
   isPublic: boolean;
+  /** Config of an `@method()` decorator on this method (#2686). */
+  decoratorConfig?: Record<string, unknown>;
 }
 
 interface SmartObjectConfig {
@@ -1415,16 +1421,26 @@ export class ManifestAdapter {
       async: method.async,
       parameters: method.parameters.map((p) => ({
         name: p.name,
+        // A missing type becomes `any` for every existing consumer, but the
+        // provenance of that `any` is preserved alongside it: `typeUnresolved`
+        // separates an annotation the scanner could not express from one the
+        // author genuinely wrote (or omitted). Both keys are emitted only when
+        // set, so manifests for ordinary parameters are unchanged (#2686).
         type: p.type || 'any',
         optional: p.optional,
         default: p.defaultValue
           ? this.parseDefaultValue(p.defaultValue, 'string')
           : undefined,
+        ...(p.typeUnresolved ? { typeUnresolved: true } : {}),
+        ...(p.memberTypes ? { memberTypes: p.memberTypes } : {}),
       })),
       returnType: method.returnType || 'any',
       description: method.description || undefined,
       isStatic: method.isStatic,
       isPublic: true,
+      ...(method.decoratorConfig
+        ? { decoratorConfig: method.decoratorConfig }
+        : {}),
     };
   }
 

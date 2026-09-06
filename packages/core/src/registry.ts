@@ -37,7 +37,7 @@ import {
 } from './collection';
 import type { CollectionCacheConfig } from './collection-cache';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
-import type { FieldOptions } from './decorators/index.js';
+import type { FieldOptions, MethodOptions } from './decorators/index.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
@@ -125,6 +125,7 @@ import {
   getDiscoveryAttemptCache,
   getFieldDecorators,
   getInheritanceCache,
+  getMethodDecorators,
   getNextDbId,
   getStiSiblingsLoaded,
   setNextDbId,
@@ -246,6 +247,16 @@ interface FieldDecoratorOptions extends FieldOptions {
   __tenancy?: unknown;
   __report?: unknown;
 }
+
+/**
+ * Decorator-supplied method metadata bag, from `@method()` (#2686).
+ *
+ * `MethodOptions` is the authoring type; this is the registry-input alias, kept
+ * separate for the same reason {@link FieldDecoratorOptions} is: the registry
+ * stores and forwards the bag without interpreting it, and a future method
+ * decorator can add members here without widening the public authoring type.
+ */
+type MethodDecoratorOptions = MethodOptions;
 
 /**
  * Constructor shape for a registered collection class.
@@ -519,6 +530,27 @@ export class ObjectRegistry {
   }
 
   /**
+   * Storage for `@method()` decorator metadata (#2686).
+   * Maps className → Map<methodName, MethodOptions>.
+   *
+   * The manifest is the primary carrier of this metadata for BUILD-time
+   * consumers (the scanner reads `@method()` into
+   * `MethodDefinition.decoratorConfig`); this store serves the runtime paths
+   * that have a live class but no manifest entry for it.
+   */
+  private static get methodDecorators(): Map<
+    string,
+    Map<string, MethodDecoratorOptions>
+  > {
+    // Same documented narrowing cast as `fieldDecorators` above: shared state
+    // stores the looser `Record<string, unknown>`.
+    return getMethodDecorators() as Map<
+      string,
+      Map<string, MethodDecoratorOptions>
+    >;
+  }
+
+  /**
    * Track collections that have been processed for STI siblings
    * Prevents infinite recursion when loading siblings
    */
@@ -642,6 +674,45 @@ export class ObjectRegistry {
     className: string,
   ): Map<string, FieldDecoratorOptions> {
     return ObjectRegistry.fieldDecorators.get(className) || new Map();
+  }
+
+  /**
+   * Register `@method()` decorator metadata.
+   *
+   * Merges with any existing options for the same method, so repeated
+   * decoration (or HMR re-evaluation) accumulates rather than replacing —
+   * matching {@link registerFieldDecorator}.
+   */
+  static registerMethodDecorator(
+    className: string,
+    methodName: string,
+    options: MethodDecoratorOptions,
+  ): void {
+    let classDecorators = ObjectRegistry.methodDecorators.get(className);
+    if (!classDecorators) {
+      classDecorators = new Map();
+      ObjectRegistry.methodDecorators.set(className, classDecorators);
+    }
+    const existing = classDecorators.get(methodName);
+    classDecorators.set(
+      methodName,
+      existing ? { ...existing, ...options } : options,
+    );
+  }
+
+  /** `@method()` options for one method, or `undefined` when undecorated. */
+  static getMethodDecorator(
+    className: string,
+    methodName: string,
+  ): MethodDecoratorOptions | undefined {
+    return ObjectRegistry.methodDecorators.get(className)?.get(methodName);
+  }
+
+  /** All `@method()` options declared on a class, keyed by method name. */
+  static getMethodDecorators(
+    className: string,
+  ): Map<string, MethodDecoratorOptions> {
+    return ObjectRegistry.methodDecorators.get(className) ?? new Map();
   }
 
   /**

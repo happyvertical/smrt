@@ -74,6 +74,7 @@ export type {
   DomainKnowledgeSurfaceKind,
   DomainKnowledgeTenant,
   DomainKnowledgeViewIntent,
+  DomainKnowledgeWithheldSurface,
 } from './knowledge.js';
 export type {
   ModuleComponentType,

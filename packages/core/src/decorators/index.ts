@@ -5,14 +5,22 @@
  * Properties are typed as primitives with decorator metadata.
  */
 
+import type {
+  CustomActionScope,
+  ToolEffect,
+} from '../generators/custom-action.js';
+import type { ApiHttpMethod } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type { FieldUIHints } from '../scanner/types.js';
 import type { SQLDataType } from '../schema/types.js';
 import {
+  type CompatibleMethodDecorator,
+  type CompatibleMethodDecoratorContext,
   type CompatiblePropertyDecorator,
   type CompatiblePropertyDecoratorContext,
   type LegacyPropertyDecoratorTarget,
   registerCompatibleFieldDecorator,
+  registerCompatibleMethodDecorator,
 } from './compatibility.js';
 
 export type { FieldUIHints } from '../scanner/types.js';
@@ -771,4 +779,147 @@ export function meta(options: FieldOptions = {}) {
       },
     );
   }) as CompatiblePropertyDecorator;
+}
+
+/**
+ * Options for {@link method}.
+ *
+ * Every option is optional, and an omitted one falls back to the class-level
+ * `api.routes[methodName]` entry (or `ai.descriptions[methodName]` for
+ * `description`) when one exists. The merge is FIELD BY FIELD, so adding
+ * `@method({ description })` to a class that already declares a route verb and
+ * path does not reset them (#2686).
+ */
+export interface MethodOptions {
+  /**
+   * Override the default routing decision.
+   *
+   * Public methods are routed by default when they are WIRE-ABLE: every
+   * parameter can be built from a JSON request body or query string. Set
+   * `false` to withhold a method the heuristic accepted, `true` to expose one
+   * it rejected.
+   *
+   * `true` bypasses the heuristic and NOTHING else. It cannot manufacture a
+   * receiver, undo `api: false`, cross an `include`/`exclude` boundary, reach a
+   * non-public method, claim a CRUD verb, or hydrate a value the transport
+   * cannot build — a model-instance parameter still arrives as whatever JSON
+   * the caller sent.
+   */
+  expose?: boolean;
+
+  /**
+   * Why the method is withheld. Recorded in the knowledge artifact so
+   * `smrt doctor` and agents read an explanation instead of silence.
+   */
+  reason?: string;
+
+  /**
+   * HTTP verb for the generated route. Defaults to `POST`.
+   *
+   * Named `httpMethod`, not `method`: RFC 9110 calls this the request
+   * "method", so the protocol word is exactly the one that collides with the
+   * decorator's own name, and `@method({ method: 'POST' })` stutters.
+   * `httpMethod` is also already this framework's name for it — `ApiHttpMethod`
+   * is carried across the whole discovery/invoke path.
+   *
+   * Migrates from `api.routes[methodName].method`.
+   */
+  httpMethod?: ApiHttpMethod;
+
+  /**
+   * Route path segment(s), used verbatim and split on `/`.
+   * Defaults to the method name. Migrates from `api.routes[methodName].path`.
+   */
+  path?: string;
+
+  /**
+   * Declared receiver scope. Migrates from `api.routes[methodName].scope`.
+   *
+   * A DECLARATION checked against the method's executable receiver, not a
+   * relocation: an instance method is item-scoped and a static (or
+   * collection-class) method is collection-scoped, and no config can change
+   * that. A contradicting value is reported at build time and ignored.
+   */
+  scope?: CustomActionScope;
+
+  /**
+   * Agent-visible effect classification. Omitted actions are treated as
+   * `destructive`, so missing metadata can never widen browser capability
+   * exposure. Migrates from `api.routes[methodName].effect`.
+   */
+  effect?: ToolEffect;
+
+  /** Whether repeating the action with the same arguments is safe. */
+  idempotent?: boolean;
+
+  /** Whether the action may interact outside the SMRT application. */
+  openWorld?: boolean;
+
+  /**
+   * Description used by AI/tool surfaces, overriding the method's JSDoc.
+   * Migrates from `ai.descriptions[methodName]`.
+   */
+  description?: string;
+}
+
+/**
+ * Refines how a method is exposed on generated surfaces.
+ *
+ * The method counterpart of {@link field}, and symmetric with it: a manifest
+ * records exactly two collections per object, `fields` and `methods`. Neither
+ * decorator DECLARES its member — a property is a field because it is a
+ * property, and a method is a candidate action because it is public — both
+ * REFINE what the framework already inferred. `@field()` refines an inferred
+ * column type and constraints; `@method()` refines inferred exposure, its
+ * route shape, and its tool semantics.
+ *
+ * The name is `@method()` rather than `@action()` because of the negative
+ * case: withholding a method has to read correctly, and
+ * `@action({ expose: false })` contradicts itself — declaring something an
+ * action in order to say it is not one. "Action" keeps its established meaning
+ * in the generators (a non-CRUD method exposed on a surface); this decorator
+ * is how a method BECOMES one.
+ *
+ * Metadata only: the decorated method is not wrapped and keeps its identity,
+ * so it stays directly callable.
+ *
+ * @example Shape the generated route
+ * ```typescript
+ * @method({ httpMethod: 'POST', path: 'reviews', effect: 'write' })
+ * async runReview(options?: RunContentReviewOptions) { … }
+ * ```
+ *
+ * @example Withhold a method the heuristic would have routed
+ * ```typescript
+ * @method({ expose: false, reason: 'callback registration, not a wire operation' })
+ * static registerValidator(validator: ValidatorFunction) { … }
+ * ```
+ *
+ * @example Force a route the heuristic rejected
+ * ```typescript
+ * // `expose: true` bypasses the heuristic only — this method must still
+ * // accept whatever JSON the caller sends for `asset`.
+ * @method({ expose: true })
+ * async addAsset(asset: Asset) { … }
+ * ```
+ *
+ * @see {@link field} for the property-side refinement decorator
+ */
+export function method(options: MethodOptions = {}) {
+  return ((
+    targetOrValue: unknown,
+    propertyKeyOrContext: CompatibleMethodDecoratorContext<
+      unknown,
+      // biome-ignore lint/suspicious/noExplicitAny: mirrors the lib's own `ClassMethodDecoratorContext` constraint; see `AnyMethodOf` in `compatibility.ts`. S4 #1579.
+      (this: unknown, ...args: any) => any
+    >,
+  ) => {
+    registerCompatibleMethodDecorator(
+      targetOrValue as LegacyPropertyDecoratorTarget | undefined,
+      propertyKeyOrContext,
+      (className, methodName) => {
+        ObjectRegistry.registerMethodDecorator(className, methodName, options);
+      },
+    );
+  }) as CompatibleMethodDecorator;
 }

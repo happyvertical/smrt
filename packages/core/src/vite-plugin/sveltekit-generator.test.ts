@@ -1430,7 +1430,16 @@ describe('SvelteKit Route Generator', () => {
       expect(browseFactsRoute).toBeDefined();
       const content = browseFactsRoute?.[1] as string;
       expect(content).toContain('await item.browseFacts(options)');
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+      // The route stays exactly where the receiver puts it — under `[id]`, on
+      // the instance. What changed in #2686 is that the contradiction is no
+      // longer SILENT: an author who declared `scope: 'collection'` and got an
+      // item route now learns why, instead of finding nothing at the URL they
+      // expected and no explanation anywhere.
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(String(consoleWarnSpy.mock.calls[0][0])).toContain(
+        "Document.browseFacts declares scope 'collection'",
+      );
 
       consoleWarnSpy.mockRestore();
     });

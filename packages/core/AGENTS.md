@@ -52,6 +52,17 @@ and repository rules.
   constructor, explicit package, and isolated one-object manifest. Never infer
   ownership from paths, simple names, or table names; packages can share names.
   Consumer regression gate: `packages/bundle-gate/src/__tests__/registry-identity.spec.ts`.
+- API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
+  in `generators/custom-action.ts`: both SvelteKit route emitters,
+  `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too
+  — a local mirror is how a method gets reported unavailable while its route
+  file is still written. A public method routes by default only when every
+  parameter is JSON-shaped; `@method({ expose })` overrides in both directions,
+  `expose: true` bypasses the heuristic ALONE, and an explicit `api.include` or
+  `api.routes` entry keeps its pre-#2686 route. Fail closed on scanner
+  uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
+  substitutes. Accepting `Date` as wire-able and hydrating it
+  (`toCustomActionDate`) are one decision — changing either breaks the other.
 
 ## Gotchas
 

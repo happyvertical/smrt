@@ -33,7 +33,12 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import type { MethodDefinition } from '../scanner/types.js';
 import { PRIVATE_READ_CACHE_CONTROL } from './conditional-get.js';
+import {
+  readMethodDecoratorConfig,
+  resolveEffectiveActionMetadata,
+} from './custom-action.js';
 
 /** Path segment the preflight route is served at, under the API base path. */
 export const PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT = '_preflight';
@@ -153,12 +158,13 @@ export function resolveRegisteredObjectName(model: string): string | undefined {
  * The HTTP method a REST action is served by.
  *
  * CRUD actions map to their fixed verbs. A custom action is served under the
- * method its own route config declares (`api.routes[action].method`, defaulting
- * to `POST` exactly as `dispatchCustomCollectionAction` does), because guessing
- * `POST` for a declared `GET` action would make preflight report a false `deny`
- * on a `public: 'read'` model — hiding a playbook the caller can actually run,
- * which is the tool-listing case this exists to serve. Without an `objectName`
- * to read the declaration from, the fail-closed `POST` remains.
+ * method its own declaration supplies — `@method({ httpMethod })` first, then
+ * `api.routes[action].method`, defaulting to `POST` exactly as
+ * `dispatchCustomCollectionAction` does — because guessing `POST` for a
+ * declared `GET` action would make preflight report a false `deny` on a
+ * `public: 'read'` model, hiding a playbook the caller can actually run, which
+ * is the tool-listing case this exists to serve. Without an `objectName` to
+ * read the declaration from, the fail-closed `POST` remains.
  */
 export function restMethodForApiAction(
   action: string,
@@ -183,14 +189,26 @@ export function restMethodForApiAction(
   }
 
   const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+  if (!apiConfig || typeof apiConfig !== 'object') {
     return 'POST';
   }
 
-  const route = (apiConfig.routes as Record<string, { method?: string }>)[
-    action
-  ];
-  return (route?.method ?? 'POST').toUpperCase();
+  const effective = resolveEffectiveActionMetadata({
+    actionName: action,
+    ...(readRegisteredMethod(objectName, action)
+      ? { method: readRegisteredMethod(objectName, action) }
+      : {}),
+    apiConfig,
+  });
+  return (effective.httpMethod ?? 'POST').toUpperCase();
+}
+
+/** The manifest method definition backing `action`, when the registry has it. */
+function readRegisteredMethod(
+  objectName: string,
+  action: string,
+): MethodDefinition | undefined {
+  return ObjectRegistry.getMethods(objectName)?.get(action);
 }
 
 /**
@@ -237,13 +255,14 @@ export function isApiActionEnabledForObject(
  * Whether `action` names a route the generated REST surface can actually
  * dispatch on `objectName`.
  *
- * CRUD actions always have a route. A custom action exists only when the
- * decorator declares it in `api.routes` — `dispatchCustomCollectionAction`
- * iterates exactly that map, so an action absent from it can never execute no
+ * CRUD actions always have a route. A custom action exists only when it is
+ * DECLARED — historically an `api.routes` entry, and since #2686 also a
+ * `@method()` supplying route-shaping metadata. `dispatchCustomCollectionAction`
+ * iterates exactly that union, so an action outside it can never execute no
  * matter what `include`/`exclude` say. Exposure alone would report a typo'd or
  * removed custom action as `allow`, and an agent would then start the earlier
  * steps of a non-atomic playbook before dying on it — the failure preflight
- * exists to prevent.
+ * exists to prevent. This prediction and that dispatch must stay one rule.
  */
 export function isRestActionRoutable(
   objectName: string | undefined,
@@ -261,11 +280,26 @@ export function isRestActionRoutable(
   }
 
   const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+  if (!apiConfig || typeof apiConfig !== 'object') {
     return false;
   }
 
-  return Object.hasOwn(apiConfig.routes as Record<string, unknown>, action);
+  if (
+    apiConfig.routes &&
+    Object.hasOwn(apiConfig.routes as Record<string, unknown>, action)
+  ) {
+    return true;
+  }
+
+  const declared = readMethodDecoratorConfig(
+    readRegisteredMethod(objectName, action),
+  );
+  return (
+    declared !== undefined &&
+    (declared.httpMethod !== undefined ||
+      declared.path !== undefined ||
+      declared.scope !== undefined)
+  );
 }
 
 /**

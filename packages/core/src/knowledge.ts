@@ -18,13 +18,18 @@ import type {
   DomainKnowledgeObject,
   DomainKnowledgeSurface,
   DomainKnowledgeTenant,
+  DomainKnowledgeWithheldSurface,
 } from '@happyvertical/smrt-types';
 import {
+  type ApiMethodExposure,
   CRUD_OPERATIONS,
+  createManifestClassNamePredicate,
   isCrudOperation,
   isCrudToolAction,
   isFrameworkLifecycleMethod,
+  resolveApiMethodExposure,
   resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
 } from './generators/custom-action.js';
 import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import type {
@@ -352,6 +357,7 @@ function buildKnowledgeObject(
         ? conflictColumns
         : undefined,
     surfaces: objectSurfaces(object, manifest),
+    ...withheldApiSurfaces(object, manifest),
     relationshipFeatures: relationshipFeatures(object, fields),
     tags: knowledge.tags ?? [],
     summary: knowledge.summary,
@@ -467,6 +473,69 @@ function objectSurfaces(
     ...configuredSurfaces('mcp', object, manifest),
     ...aiSurfaces(object),
   ];
+}
+
+/**
+ * Every API-exposure decision for one object's methods, from the shared
+ * resolver the route emitters use — so a method reported here as exposed has a
+ * route file, and one reported as withheld has none.
+ *
+ * The whole point of routing this through `resolveApiMethodExposure` rather
+ * than a local mirror is that a fourth copy of the rule is a fourth chance to
+ * disagree with the emitters (#2686).
+ */
+function apiMethodDecisions(
+  object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): Array<[string, ApiMethodExposure]> {
+  const apiConfig = object.decoratorConfig?.api;
+  const isModelClassName = createManifestClassNamePredicate(manifest);
+  const collectionClass = isSurfaceCollectionClass(manifest, object);
+  return Object.entries(object.methods).map(([name, method]) => [
+    name,
+    resolveApiMethodExposure({
+      actionName: name,
+      method,
+      apiConfig,
+      isCollectionClass: collectionClass,
+      ...(isModelClassName ? { isModelClassName } : {}),
+    }),
+  ]);
+}
+
+/**
+ * The `withheldSurfaces` half of the artifact: every public method the API
+ * declined, with the reason.
+ *
+ * Reported for `api` only. `cli`/`mcp` gate on a much smaller, purely
+ * name-based rule set that a reader can already infer from the config, while
+ * the API's wire-ability heuristic rejects on a signature detail nothing else
+ * in the artifact shows — which is exactly the silence #2686 set out to close.
+ *
+ * CRUD-reserved and non-public methods are excluded: neither was ever a
+ * candidate custom action, so listing them would bury the actionable entries.
+ */
+function withheldApiSurfaces(
+  object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): { withheldSurfaces?: DomainKnowledgeWithheldSurface[] } {
+  if (isFrameworkBaseClass(object.className, object.packageName)) return {};
+  const withheld = apiMethodDecisions(object, manifest)
+    .filter(
+      ([, decision]) =>
+        !decision.exposed &&
+        decision.code !== 'crud-reserved' &&
+        decision.code !== 'not-public',
+    )
+    .map(([operation, decision]) => ({
+      kind: 'api' as const,
+      operation,
+      code: decision.code ?? 'unknown',
+      reason: decision.reason ?? '',
+      objectName: object.qualifiedName ?? object.className,
+    }))
+    .sort((a, b) => a.operation.localeCompare(b.operation));
+  return withheld.length > 0 ? { withheldSurfaces: withheld } : {};
 }
 
 function configuredSurfaces(
@@ -665,23 +734,24 @@ function configuredOperations(
   if (isFrameworkBaseClass(object.className, object.packageName)) return [];
   const collectionClass = isSurfaceCollectionClass(manifest, object);
   const crud = collectionClass ? [] : resolveCrudOperations(config);
+  // `api` delegates custom-method eligibility wholesale to the emitters' own
+  // resolver — CRUD reservation, framework lifecycle methods, include/exclude,
+  // `@method()` overrides, the wire-ability heuristic, and the receiver check
+  // are all decided there, once (#2686). `cli`/`mcp` keep their own projection
+  // of `CLIGenerator`/`MCPGenerator`, whose rules genuinely differ (case-folded
+  // tool ids, per-object dedup) and which #2692 owns.
+  if (kind === 'api') {
+    const custom = apiMethodDecisions(object, manifest)
+      .filter(([, decision]) => decision.exposed)
+      .map(([operation]) => operation);
+    return [...crud, ...custom];
+  }
   const custom = resolveCustomMethodNames(
     Object.entries(object.methods),
     config,
     kind,
   );
-  // REST additionally refuses a custom action whose receiver cannot exist —
-  // a collection class emits only collection-scoped routes, and a model class
-  // warns and skips a collection-scoped non-static method. Reporting one
-  // would advertise a route `generateRoutesForObject` never writes.
-  const eligible =
-    kind === 'api'
-      ? custom.filter(
-          (operation) =>
-            apiCustomRoute(object, operation, collectionClass) !== undefined,
-        )
-      : custom;
-  return [...crud, ...eligible];
+  return [...crud, ...custom];
 }
 
 function resolveCrudOperations(config: unknown): string[] {
@@ -835,10 +905,18 @@ function apiCustomRoute(
     return undefined;
   }
 
-  const route = customRouteConfig(apiConfig, operation);
+  // `@method({ path, httpMethod })` wins field by field over the legacy
+  // `api.routes[operation]` entry, exactly as `resolveApiActionRouteConfig`
+  // resolves it for the emitter — otherwise the artifact would report the
+  // pre-migration URL for a class that has moved to the decorator (#2686).
+  const effective = resolveEffectiveActionMetadata({
+    actionName: operation,
+    ...(method ? { method } : {}),
+    apiConfig,
+  });
   const overridden =
-    typeof route?.path === 'string'
-      ? route.path
+    typeof effective.path === 'string'
+      ? effective.path
           .split('/')
           .map((segment) => segment.trim())
           .filter(Boolean)
@@ -846,7 +924,7 @@ function apiCustomRoute(
   return {
     scope,
     segments: overridden.length > 0 ? overridden : [operation],
-    method: normalizeApiMethod(route?.method),
+    method: normalizeApiMethod(effective.httpMethod),
   };
 }
 
@@ -874,19 +952,6 @@ function resolveActionScope(
   } catch {
     return defaultScope;
   }
-}
-
-function customRouteConfig(
-  apiConfig: unknown,
-  operation: string,
-): { path?: unknown; method?: unknown } | undefined {
-  if (typeof apiConfig !== 'object' || apiConfig === null) return undefined;
-  const routes = (apiConfig as { routes?: unknown }).routes;
-  if (typeof routes !== 'object' || routes === null) return undefined;
-  const route = (routes as Record<string, unknown>)[operation];
-  return typeof route === 'object' && route !== null
-    ? (route as { path?: unknown; method?: unknown })
-    : undefined;
 }
 
 /** Mirrors `normalizeApiHttpMethod` in `vite-plugin/sveltekit-generator.ts`. */

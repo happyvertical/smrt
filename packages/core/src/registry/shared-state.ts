@@ -46,6 +46,10 @@ declare global {
     | Map<string, Map<string, Record<string, unknown>>>
     | undefined;
   // eslint-disable-next-line no-var
+  var __smrtRegistryMethodDecorators:
+    | Map<string, Map<string, Record<string, unknown>>>
+    | undefined;
+  // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
@@ -234,6 +238,26 @@ export function getFieldDecorators(): Map<
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;
+}
+
+/**
+ * `@method()` decorator metadata, `className -> methodName -> options`.
+ *
+ * Parallel to {@link getFieldDecorators} and stored on `globalThis` for the
+ * same reason: registration must survive HMR and multiple module instances
+ * (#2686).
+ */
+export function getMethodDecorators(): Map<
+  string,
+  Map<string, Record<string, unknown>>
+> {
+  if (!globalThis.__smrtRegistryMethodDecorators) {
+    globalThis.__smrtRegistryMethodDecorators = new Map<
+      string,
+      Map<string, Record<string, unknown>>
+    >();
+  }
+  return globalThis.__smrtRegistryMethodDecorators;
 }
 
 export function getStiSiblingsLoaded(): Set<string> {

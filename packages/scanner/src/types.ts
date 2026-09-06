@@ -168,6 +168,18 @@ export interface RawMethodDefinition {
   /** JSDoc description if present */
   description: string | null;
 
+  /**
+   * Config object of an `@method()` decorator on this method, when one is
+   * present. `{}` for a bare `@method()`; `undefined` when the method carries
+   * no `@method()` decorator at all — the two are distinct, because an
+   * explicit bare decorator still marks the method as deliberately reviewed.
+   *
+   * Values are extracted with the same literal-only rules the class-level
+   * `@smrt()` config uses, so an expression the scanner cannot resolve becomes
+   * a scan error rather than a silently dropped `expose: false`.
+   */
+  decoratorConfig?: Record<string, unknown>;
+
   /** Start line in source */
   line: number;
 }
@@ -187,6 +199,36 @@ export interface RawParameterDefinition {
 
   /** Default value as string */
   defaultValue: string | null;
+
+  /**
+   * True when the parameter carries a type annotation the scanner could not
+   * express as a string — an intersection, tuple, conditional, mapped,
+   * `typeof`, or indexed-access type — or when an inline object literal
+   * contains such a member.
+   *
+   * This is the provenance that separates "the author wrote `any`" from "the
+   * scanner gave up": both previously reached the manifest as the string
+   * `'any'`. Consumers that must fail closed on an uncertain type (the API
+   * wire-ability gate) read this rather than trusting `type`.
+   *
+   * `type: null` with `typeUnresolved` absent means the parameter simply has
+   * no annotation, which is an implicit — and genuinely authored — `any`.
+   */
+  typeUnresolved?: boolean;
+
+  /**
+   * Resolved member types of an INLINE object-literal annotation
+   * (`{ onDone: () => void; target: Content }` → `['Function', 'Content']`),
+   * flattened across nested literals, arrays, and unions.
+   *
+   * `extractTypeName` collapses every inline literal to the single string
+   * `'object'`, which erases exactly the members a caller needs to judge
+   * whether the bag can cross a wire. NAMED bags (an interface, type alias,
+   * `Partial<>`/`Pick<>`) are deliberately NOT expanded — resolving them needs
+   * cross-file type resolution this AST layer does not do, and they are
+   * accepted heuristically by the consumers that care.
+   */
+  memberTypes?: string[];
 }
 
 // ============================================================================

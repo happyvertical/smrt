@@ -218,6 +218,7 @@ interface MethodDefinition extends BaseNode {
   computed: boolean;
   static: boolean;
   accessibility?: 'public' | 'private' | 'protected';
+  decorators?: Decorator[];
 }
 
 interface FunctionExpression extends BaseNode {
@@ -370,6 +371,11 @@ type TSType =
   | TSNumberKeyword
   | TSBooleanKeyword
   | TSAnyKeyword
+  | TSUnknownKeyword
+  | TSNeverKeyword
+  | TSObjectKeyword
+  | TSBigIntKeyword
+  | TSSymbolKeyword
   | TSVoidKeyword
   | TSNullKeyword
   | TSUndefinedKeyword
@@ -404,6 +410,26 @@ interface TSBooleanKeyword extends BaseNode {
 
 interface TSAnyKeyword extends BaseNode {
   type: 'TSAnyKeyword';
+}
+
+interface TSUnknownKeyword extends BaseNode {
+  type: 'TSUnknownKeyword';
+}
+
+interface TSNeverKeyword extends BaseNode {
+  type: 'TSNeverKeyword';
+}
+
+interface TSObjectKeyword extends BaseNode {
+  type: 'TSObjectKeyword';
+}
+
+interface TSBigIntKeyword extends BaseNode {
+  type: 'TSBigIntKeyword';
+}
+
+interface TSSymbolKeyword extends BaseNode {
+  type: 'TSSymbolKeyword';
 }
 
 interface TSVoidKeyword extends BaseNode {
@@ -998,18 +1024,26 @@ function unwrapTypeAssertion(node: Expression | null): Expression | null {
 }
 
 /**
- * A spread inside an `@smrt()` config that could not be resolved statically.
+ * A spread inside an `@smrt()` or `@method()` config that could not be
+ * resolved statically.
  *
  * Recorded rather than silently dropped: an unresolvable spread may carry
  * `api`/`mcp`/`cli` keys, and because an absent surface key means *default
  * open* (full CRUD), dropping it silently turns a deliberate lockdown into a
- * public surface. See issue #2100.
+ * public surface. The same reasoning covers `@method({ expose: false })`,
+ * where a dropped key restores the default-routed behavior the author was
+ * withholding. See issues #2100 and #2686.
  */
 interface UnresolvedSpread {
   /** Source text of the spread, e.g. `...IMPORTED_SURFACE`. */
   expression: string;
   /** Byte offset of the spread node, for line/column resolution. */
   start?: number;
+  /**
+   * Decorator whose config the expression appeared in, for the diagnostic.
+   * Defaults to `@smrt()` when omitted.
+   */
+  decorator?: string;
 }
 
 /**
@@ -1536,11 +1570,11 @@ function reportUnresolvedSpreads(
         : getLineColumn(sourceText, spread.start);
     errors.push({
       message:
-        `Cannot statically resolve \`${spread.expression}\` while expanding a @smrt() config. ` +
+        `Cannot statically resolve \`${spread.expression}\` while expanding a ${spread.decorator ?? '@smrt()'} config. ` +
         `Only literal keys/values and unescaped module-scope \`const\` object literals ` +
         `in the same file are supported. Inline the keys or remove the mutation/alias — ` +
-        `an unresolved expression ` +
-        `would drop api/mcp/cli from the manifest, and an absent surface defaults to open.`,
+        `an unresolved expression would drop keys from the manifest, and every ` +
+        `absent exposure key defaults to open.`,
       filePath,
       line: loc?.line,
       column: loc?.column,
@@ -1662,7 +1696,7 @@ function extractClassDeclaration(
         fields.push(field);
       }
     } else if (member.type === 'MethodDefinition') {
-      const method = extractMethodDefinition(member, sourceText);
+      const method = extractMethodDefinition(member, sourceText, ctx);
       if (method) {
         methods.push(method);
       }
@@ -2167,6 +2201,25 @@ function extractTypeName(type: TSType): string | null {
       return 'boolean';
     case 'TSAnyKeyword':
       return 'any';
+    // `unknown` used to fall through to `null`, which every consumer then read
+    // as the string `'any'` -- indistinguishable from syntax the scanner
+    // genuinely could not express. It is an ordinary, resolvable annotation, so
+    // it is named here and `null` is left to mean "not resolved" (#2686).
+    case 'TSUnknownKeyword':
+      return 'unknown';
+    // NOTE: `TSObjectKeyword` is deliberately NOT resolved here, only in
+    // `describeParameterType`. `ManifestAdapter.inferFromAnnotation` gives an
+    // `object`-typed FIELD a `{}` column default, so naming the bare keyword
+    // here would add a DDL default to an existing nullable column
+    // (`VideoWorkflow.workflowJson: object | null = null`) that contradicts its
+    // own `= null` initializer -- a schema change, and a wrong one. Parameters
+    // run through no such inference, so the keyword is safe to name there.
+    case 'TSNeverKeyword':
+      return 'never';
+    case 'TSBigIntKeyword':
+      return 'bigint';
+    case 'TSSymbolKeyword':
+      return 'symbol';
     case 'TSVoidKeyword':
       return 'void';
     case 'TSNullKeyword':
@@ -2382,6 +2435,7 @@ function extractFieldDecorator(
 function extractMethodDefinition(
   node: MethodDefinition,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
 ): RawMethodDefinition | null {
   // Skip constructors, getters, setters
   if (node.kind !== 'method') return null;
@@ -2405,6 +2459,8 @@ function extractMethodDefinition(
     ? extractTypeName(func.returnType.typeAnnotation)
     : null;
 
+  const decoratorConfig = extractMethodDecoratorConfig(node, sourceText, ctx);
+
   return {
     name,
     async: func.async,
@@ -2413,8 +2469,164 @@ function extractMethodDefinition(
     parameters,
     returnType,
     description: null, // TODO: Extract JSDoc
+    ...(decoratorConfig ? { decoratorConfig } : {}),
     line: node.loc?.start.line || 0,
   };
+}
+
+/**
+ * Extract the config object of an `@method()` decorator on a class method.
+ *
+ * Read with `requireLiteralValues`, exactly like the class-level `@smrt()`
+ * config: an `@method({ expose: EXPOSE_CONST })` the scanner cannot resolve
+ * becomes a scan error rather than a dropped key. Dropping `expose: false`
+ * silently would restore the default-routed behavior the author was
+ * deliberately withholding — the same silent-widening failure mode #2100
+ * closed for class configs (#2686).
+ *
+ * Returns `undefined` for an undecorated method, and `{}` for a bare
+ * `@method()`; the two differ, so a bare decorator can still mark a method as
+ * deliberately reviewed.
+ */
+function extractMethodDecoratorConfig(
+  node: MethodDefinition,
+  sourceText: string,
+  ctx?: DecoratorConfigContext,
+): Record<string, unknown> | undefined {
+  const decorator = node.decorators?.find((d) => isNamedDecorator(d, 'method'));
+  if (!decorator) return undefined;
+
+  const unresolvedBefore = ctx?.unresolved.length ?? 0;
+  const config = extractDecoratorConfig(
+    decorator,
+    sourceText,
+    ctx ? { ...ctx, requireLiteralValues: true } : ctx,
+  );
+  // `extractDecoratorConfig` pushes into the SHARED collector, which carries no
+  // decorator identity of its own; label only what this call added so the
+  // diagnostic names `@method()` instead of `@smrt()`.
+  if (ctx) {
+    for (const entry of ctx.unresolved.slice(unresolvedBefore)) {
+      entry.decorator = '@method()';
+    }
+  }
+  return config ?? {};
+}
+
+/**
+ * Everything the manifest records about one parameter's declared type.
+ *
+ * `extractTypeName` answers a single question — "what string names this
+ * type?" — and answers `null` both for "there is no annotation" and for
+ * "there is one but I cannot express it". Consumers that must fail closed on
+ * an uncertain type (the #2686 API wire-ability gate) need those two apart,
+ * and they need the members of an inline object literal that the string
+ * `'object'` throws away. This wraps `extractTypeName` to supply both without
+ * changing what it returns anywhere else (return types, fields).
+ */
+interface ParameterTypeDescription {
+  type: string | null;
+  typeUnresolved: boolean;
+  memberTypes?: string[];
+}
+
+/** Depth bound for {@link collectInlineMemberTypes}'s literal recursion. */
+const INLINE_MEMBER_TYPE_MAX_DEPTH = 4;
+
+function describeParameterType(
+  annotation: TSTypeAnnotation | undefined,
+): ParameterTypeDescription {
+  // No annotation at all is an implicit `any` the author genuinely wrote by
+  // omission — not a scanner failure. Only an annotation that resolves to
+  // nothing is unresolved.
+  if (!annotation) return { type: null, typeUnresolved: false };
+
+  const node = annotation.typeAnnotation;
+  // The bare `object` keyword is resolvable for a parameter even though
+  // `extractTypeName` leaves it unnamed for fields -- see the note on its
+  // `TSNeverKeyword` case. An inline literal already reaches the manifest as
+  // `'object'`, so this simply makes the keyword agree with it.
+  if (node.type === 'TSObjectKeyword') {
+    return { type: 'object', typeUnresolved: false };
+  }
+  const type = extractTypeName(node);
+  if (type === null) return { type: null, typeUnresolved: true };
+
+  const members: string[] = [];
+  const memberUnresolved = collectInlineMemberTypes(node, members, 0);
+  return {
+    type,
+    typeUnresolved: memberUnresolved,
+    ...(members.length > 0 ? { memberTypes: [...new Set(members)] } : {}),
+  };
+}
+
+/**
+ * Flatten the member types of every INLINE object literal reachable from
+ * `node` into `out`, returning whether any member's own type was unresolvable.
+ *
+ * Only inline literals are expanded. A named interface, type alias, or
+ * `Partial<>`/`Pick<>` wrapper is left alone: resolving those needs cross-file
+ * type resolution this AST layer deliberately does not do.
+ */
+function collectInlineMemberTypes(
+  node: TSType,
+  out: string[],
+  depth: number,
+): boolean {
+  if (depth > INLINE_MEMBER_TYPE_MAX_DEPTH) return false;
+
+  switch (node.type) {
+    case 'TSTypeLiteral': {
+      let unresolved = false;
+      for (const member of node.members) {
+        // A method signature IS a callable member, the same hazard an
+        // explicit `() => void` property is.
+        if (member.type === 'TSMethodSignature') {
+          out.push('Function');
+          continue;
+        }
+        const memberAnnotation = member.typeAnnotation;
+        if (!memberAnnotation) continue;
+        const memberType = extractTypeName(memberAnnotation.typeAnnotation);
+        if (memberType === null) {
+          unresolved = true;
+          continue;
+        }
+        out.push(memberType);
+        if (
+          collectInlineMemberTypes(
+            memberAnnotation.typeAnnotation,
+            out,
+            depth + 1,
+          )
+        ) {
+          unresolved = true;
+        }
+      }
+      return unresolved;
+    }
+    case 'TSArrayType':
+      return collectInlineMemberTypes(node.elementType, out, depth + 1);
+    case 'TSUnionType': {
+      let unresolved = false;
+      for (const branch of node.types) {
+        if (collectInlineMemberTypes(branch, out, depth + 1)) unresolved = true;
+      }
+      return unresolved;
+    }
+    case 'TSTypeReference': {
+      let unresolved = false;
+      const typeParams =
+        node.typeArguments?.params || node.typeParameters?.params;
+      for (const param of typeParams ?? []) {
+        if (collectInlineMemberTypes(param, out, depth + 1)) unresolved = true;
+      }
+      return unresolved;
+    }
+    default:
+      return false;
+  }
 }
 
 /**
@@ -2430,9 +2642,7 @@ function extractParameter(
     if (left.type === 'Identifier') {
       return {
         name: left.name,
-        type: left.typeAnnotation
-          ? extractTypeName(left.typeAnnotation.typeAnnotation)
-          : null,
+        ...describeParameterTypeFields(left.typeAnnotation),
         optional: true,
         defaultValue: sliceSource(param.right, sourceText),
       };
@@ -2441,9 +2651,7 @@ function extractParameter(
     if (left.type === 'ObjectPattern' || left.type === 'ArrayPattern') {
       return {
         name: 'options',
-        type: left.typeAnnotation
-          ? extractTypeName(left.typeAnnotation.typeAnnotation)
-          : 'any',
+        ...describeParameterTypeFields(left.typeAnnotation, 'any'),
         optional: true,
         defaultValue: sliceSource(param.right, sourceText),
       };
@@ -2457,9 +2665,7 @@ function extractParameter(
     if (arg.type === 'Identifier') {
       return {
         name: `...${arg.name}`,
-        type: param.typeAnnotation
-          ? extractTypeName(param.typeAnnotation.typeAnnotation)
-          : null,
+        ...describeParameterTypeFields(param.typeAnnotation),
         optional: true,
         defaultValue: null,
       };
@@ -2471,9 +2677,7 @@ function extractParameter(
   if (param.type === 'Identifier') {
     return {
       name: param.name,
-      type: param.typeAnnotation
-        ? extractTypeName(param.typeAnnotation.typeAnnotation)
-        : null,
+      ...describeParameterTypeFields(param.typeAnnotation),
       optional: param.optional || false,
       defaultValue: null,
     };
@@ -2483,13 +2687,34 @@ function extractParameter(
   if (param.type === 'ObjectPattern') {
     return {
       name: 'options',
-      type: param.typeAnnotation
-        ? extractTypeName(param.typeAnnotation.typeAnnotation)
-        : 'any',
+      ...describeParameterTypeFields(param.typeAnnotation, 'any'),
       optional: false,
       defaultValue: null,
     };
   }
 
   return null;
+}
+
+/**
+ * The `type`/`typeUnresolved`/`memberTypes` triple for one parameter, with the
+ * optional keys omitted entirely when they carry no information -- keeping the
+ * emitted manifest byte-identical for the overwhelming majority of parameters
+ * that have a plain resolvable type.
+ *
+ * `missingAnnotationType` is the historical fallback the destructured-parameter
+ * branches use (`'any'` rather than `null`); an absent annotation is never
+ * "unresolved" in either branch.
+ */
+function describeParameterTypeFields(
+  annotation: TSTypeAnnotation | undefined,
+  missingAnnotationType: string | null = null,
+): Pick<RawParameterDefinition, 'type' | 'typeUnresolved' | 'memberTypes'> {
+  if (!annotation) return { type: missingAnnotationType };
+  const described = describeParameterType(annotation);
+  return {
+    type: described.type,
+    ...(described.typeUnresolved ? { typeUnresolved: true } : {}),
+    ...(described.memberTypes ? { memberTypes: described.memberTypes } : {}),
+  };
 }

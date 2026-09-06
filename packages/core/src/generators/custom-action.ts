@@ -7,8 +7,11 @@
  * route, but it cannot change a method's receiver.
  */
 
-import type { ToolEffect } from '../registry/types.js';
-import type { MethodDefinition } from '../scanner/types.js';
+import type { ApiHttpMethod, ToolEffect } from '../registry/types.js';
+import type {
+  MethodDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import { convertTypeToJsonSchema } from '../tools/tool-generator.js';
 
 export type CustomActionScope = 'item' | 'collection';
@@ -354,6 +357,11 @@ export interface ResolveCustomActionMetadataOptions {
   method?: {
     isStatic?: boolean;
     parameters?: MethodDefinition['parameters'];
+    /**
+     * The method's `@method()` config, whose options win field by field over
+     * the class-level `api.routes` entry for the same action (#2686).
+     */
+    decoratorConfig?: Record<string, unknown>;
   };
   apiConfig?: unknown;
   /** Collection-class actions have a collection receiver even when non-static. */
@@ -373,19 +381,16 @@ export function resolveCustomActionMetadata(
 ): ResolvedCustomActionMetadata {
   const defaultScope =
     options.defaultScope ?? (options.method?.isStatic ? 'collection' : 'item');
-  const requestedScope = readConfiguredScope(
-    options.apiConfig,
-    options.actionName,
-  );
-  // A route-only scope override cannot manufacture a receiver. A normal
-  // instance method is always item-targeted; a static model method and a
-  // recognized collection-class method are always collection-targeted. Keep
-  // a matching explicit value for diagnostics/config round-tripping only.
+  const requestedScope = readConfiguredScope(options);
+  // A DECLARED scope -- from `api.routes[action].scope` or `@method({ scope })`
+  // -- cannot manufacture a receiver. A normal instance method is always
+  // item-targeted; a static model method and a recognized collection-class
+  // method are always collection-targeted. A matching explicit value is kept
+  // for diagnostics/config round-tripping only; a contradicting one is
+  // reported by `resolveDeclaredScopeMismatch` at build time rather than
+  // relocating the method (#2686).
   const scope = requestedScope === defaultScope ? requestedScope : defaultScope;
-  const configured = readConfiguredToolMetadata(
-    options.apiConfig,
-    options.actionName,
-  );
+  const configured = readConfiguredToolMetadata(options);
   const effect = configured.effect ?? 'destructive';
 
   return {
@@ -405,6 +410,32 @@ export function resolveCustomActionMetadata(
     idempotent: configured.idempotent ?? false,
     openWorld: configured.openWorld ?? true,
   };
+}
+
+/**
+ * The declared scope, when it contradicts the receiver the method actually
+ * has; `undefined` when there is no declaration or it agrees.
+ *
+ * A scope is a DECLARATION about a method, not a relocation of it: nothing in
+ * a config can move an instance method onto the class. Silently ignoring a
+ * contradiction leaves an author believing a route exists at a collection URL
+ * that was never written, so the generators report this at build time
+ * (#2686).
+ */
+export function resolveDeclaredScopeMismatch(options: {
+  actionName: string;
+  method?: ExposableMethod;
+  apiConfig?: unknown;
+  /** The receiver-derived scope, as the emitter computed it. */
+  effectiveScope: CustomActionScope;
+}): CustomActionScope | undefined {
+  const declared = resolveEffectiveActionMetadata({
+    actionName: options.actionName,
+    ...(options.method ? { method: options.method } : {}),
+    apiConfig: options.apiConfig,
+  }).scope;
+  if (!declared || declared === options.effectiveScope) return undefined;
+  return declared;
 }
 
 /** Build the custom-action portion of an MCP/WebMCP JSON Schema. */
@@ -495,9 +526,11 @@ export function buildCustomActionInvocationArgs(
     // semantics. Legacy options bags still receive an empty object below.
     return [options];
   }
-  return metadata.parameters.map(
-    (parameter) =>
+  return metadata.parameters.map((parameter) =>
+    coerceCustomActionArgument(
       args[customActionParameterInputName(metadata, parameter.name)],
+      parameter.type,
+    ),
   );
 }
 
@@ -558,51 +591,46 @@ export function normalizeCustomActionFailure(
 }
 
 function readConfiguredScope(
-  apiConfig: unknown,
-  actionName: string,
+  options: ResolveCustomActionMetadataOptions,
 ): CustomActionScope | undefined {
-  if (!isRecord(apiConfig) || !isRecord(apiConfig.routes)) return undefined;
-  const route = apiConfig.routes[actionName];
-  return isRecord(route) &&
-    (route.scope === 'item' || route.scope === 'collection')
-    ? route.scope
-    : undefined;
+  return resolveEffectiveActionMetadata({
+    actionName: options.actionName,
+    ...(options.method ? { method: options.method } : {}),
+    apiConfig: options.apiConfig,
+  }).scope;
 }
 
 function readConfiguredToolMetadata(
-  apiConfig: unknown,
-  actionName: string,
+  options: ResolveCustomActionMetadataOptions,
 ): {
   effect?: ToolEffect;
   idempotent?: boolean;
   openWorld?: boolean;
 } {
-  if (!isRecord(apiConfig) || !isRecord(apiConfig.routes)) return {};
-  const route = apiConfig.routes[actionName];
-  if (!isRecord(route)) return {};
-  const effect =
-    route.effect === 'read' ||
-    route.effect === 'write' ||
-    route.effect === 'destructive'
-      ? route.effect
-      : undefined;
+  const effective = resolveEffectiveActionMetadata({
+    actionName: options.actionName,
+    ...(options.method ? { method: options.method } : {}),
+    apiConfig: options.apiConfig,
+  });
+  // Validated against the EFFECTIVE verb, so a `@method({ httpMethod })`
+  // override is checked the same way a legacy `routes[action].method` is.
   if (
-    effect === 'read' &&
-    (route.method === 'PUT' ||
-      route.method === 'PATCH' ||
-      route.method === 'DELETE')
+    effective.effect === 'read' &&
+    (effective.httpMethod === 'PUT' ||
+      effective.httpMethod === 'PATCH' ||
+      effective.httpMethod === 'DELETE')
   ) {
     throw new Error(
-      `Custom action ${actionName} cannot declare a read effect for a ${route.method} route`,
+      `Custom action ${options.actionName} cannot declare a read effect for a ${effective.httpMethod} route`,
     );
   }
   return {
-    ...(effect ? { effect } : {}),
-    ...(typeof route.idempotent === 'boolean'
-      ? { idempotent: route.idempotent }
+    ...(effective.effect ? { effect: effective.effect } : {}),
+    ...(effective.idempotent !== undefined
+      ? { idempotent: effective.idempotent }
       : {}),
-    ...(typeof route.openWorld === 'boolean'
-      ? { openWorld: route.openWorld }
+    ...(effective.openWorld !== undefined
+      ? { openWorld: effective.openWorld }
       : {}),
   };
 }
@@ -642,4 +670,863 @@ function isSensitiveKey(key: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/* ------------------------------------------------------------------------ *
+ * @method() metadata and the API wire-ability gate (#2686)
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The `@method()` decorator's options, as they reach a consumer.
+ *
+ * Narrowed from the manifest's untyped `MethodDefinition.decoratorConfig` by
+ * {@link readMethodDecoratorConfig}. The authoring type is `MethodOptions` in
+ * `decorators/index.ts`; this is the read side, and it is deliberately
+ * defensive — every field is validated, and a malformed one is dropped rather
+ * than trusted, the same stance `readConfiguredToolMetadata` takes for a
+ * scanned `api.routes` entry.
+ */
+export interface MethodDecoratorConfig {
+  /**
+   * `false` withholds a method the wire-ability heuristic accepted; `true`
+   * exposes one it rejected.
+   *
+   * `true` bypasses the HEURISTIC only. It cannot manufacture a receiver, undo
+   * `api: false`, escape an `include`/`exclude` boundary, reach a non-public
+   * method, or claim a CRUD verb the generated operation already owns — and it
+   * does not hydrate a parameter the transport cannot build (a model instance
+   * still arrives as whatever JSON the caller sent).
+   */
+  expose?: boolean;
+  /** Why the method is withheld. Reported by the knowledge artifact. */
+  reason?: string;
+  /** HTTP verb for the generated route. Migrates from `api.routes[m].method`. */
+  httpMethod?: ApiHttpMethod;
+  /** Route path segment(s). Migrates from `api.routes[m].path`. */
+  path?: string;
+  /**
+   * Declared receiver scope. Migrates from `api.routes[m].scope`.
+   *
+   * DECLARATIVE, not relocating: the executable receiver decides (an instance
+   * method is item-scoped, a static or collection-class method is
+   * collection-scoped), exactly as `api.routes[m].scope` already behaves. A
+   * mismatch keeps the receiver and reports a diagnostic.
+   */
+  scope?: CustomActionScope;
+  /** Browser/agent-visible effect. Migrates from `api.routes[m].effect`. */
+  effect?: ToolEffect;
+  /** Whether repeating the action with the same arguments is safe. */
+  idempotent?: boolean;
+  /** Whether the action may interact outside the SMRT application. */
+  openWorld?: boolean;
+  /** AI/tool description. Migrates from `ai.descriptions[m]`. */
+  description?: string;
+}
+
+/** Minimal method shape the exposure resolver reads. */
+export interface ExposableMethod {
+  isPublic?: boolean;
+  isStatic?: boolean;
+  parameters?: MethodDefinition['parameters'];
+  decoratorConfig?: Record<string, unknown>;
+}
+
+/**
+ * Read and validate the `@method()` config the scanner put on a manifest
+ * method. Returns `undefined` for an undecorated method.
+ */
+export function readMethodDecoratorConfig(
+  method: ExposableMethod | undefined,
+): MethodDecoratorConfig | undefined {
+  const raw = method?.decoratorConfig;
+  if (!isRecord(raw)) return undefined;
+
+  const scope =
+    raw.scope === 'item' || raw.scope === 'collection' ? raw.scope : undefined;
+  const effect =
+    raw.effect === 'read' ||
+    raw.effect === 'write' ||
+    raw.effect === 'destructive'
+      ? raw.effect
+      : undefined;
+
+  return {
+    ...(typeof raw.expose === 'boolean' ? { expose: raw.expose } : {}),
+    ...(typeof raw.reason === 'string' ? { reason: raw.reason } : {}),
+    ...(isApiHttpMethod(raw.httpMethod) ? { httpMethod: raw.httpMethod } : {}),
+    ...(typeof raw.path === 'string' ? { path: raw.path } : {}),
+    ...(scope ? { scope } : {}),
+    ...(effect ? { effect } : {}),
+    ...(typeof raw.idempotent === 'boolean'
+      ? { idempotent: raw.idempotent }
+      : {}),
+    ...(typeof raw.openWorld === 'boolean' ? { openWorld: raw.openWorld } : {}),
+    ...(typeof raw.description === 'string'
+      ? { description: raw.description }
+      : {}),
+  };
+}
+
+function isApiHttpMethod(value: unknown): value is ApiHttpMethod {
+  return (
+    value === 'GET' ||
+    value === 'POST' ||
+    value === 'PUT' ||
+    value === 'PATCH' ||
+    value === 'DELETE'
+  );
+}
+
+/**
+ * JavaScript values a JSON request body or query string cannot carry, keyed by
+ * the type NAME the manifest records for them.
+ *
+ * Deliberately a name list rather than "anything not primitive": the manifest
+ * cannot tell an interface from a class, so an unrecognized capitalized name
+ * is assumed to be a plain data bag (see {@link isWireableTypeName}). These are
+ * the well-known exceptions where that assumption is wrong for every project.
+ * Model classes are excluded separately, by asking the manifest.
+ */
+const NON_SERIALIZABLE_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'Function',
+  'Buffer',
+  'ArrayBuffer',
+  'SharedArrayBuffer',
+  'DataView',
+  'Uint8Array',
+  'Int8Array',
+  'Uint16Array',
+  'Int16Array',
+  'Uint32Array',
+  'Int32Array',
+  'Float32Array',
+  'Float64Array',
+  'BigInt64Array',
+  'BigUint64Array',
+  'Blob',
+  'File',
+  'FormData',
+  'ReadableStream',
+  'WritableStream',
+  'TransformStream',
+  'Stream',
+  'Readable',
+  'Writable',
+  'Request',
+  'Response',
+  'Headers',
+  'URL',
+  'URLSearchParams',
+  'AbortSignal',
+  'AbortController',
+  'Map',
+  'Set',
+  'WeakMap',
+  'WeakSet',
+  'RegExp',
+  'Error',
+  'Symbol',
+  'Promise',
+  'SmrtDatabase',
+  'DatabaseInterface',
+  'SmrtCollection',
+  'SmrtObject',
+]);
+
+/**
+ * Generic container names whose ARGUMENTS carry the payload. `Record` is
+ * included: its value type is checked, its key type is always a string-ish
+ * index and never a receiver.
+ */
+const JSON_CONTAINER_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'Array',
+  'ReadonlyArray',
+  'Record',
+  'Partial',
+  'Required',
+  'Readonly',
+  'Pick',
+  'Omit',
+  'NonNullable',
+]);
+
+/** Primitive/JSON-native type names a wire request can always carry. */
+const JSON_PRIMITIVE_TYPE_NAMES: ReadonlySet<string> = new Set([
+  'string',
+  'number',
+  'boolean',
+  'null',
+  'undefined',
+  'void',
+  'any',
+  'unknown',
+  'object',
+  // A Date-typed parameter is hydrated from its ISO string by the generated
+  // handler and by the runtime REST dispatcher -- see
+  // `coerceCustomActionArgument`. Without that hydration a Date parameter is
+  // NOT wire-able, so the two must stay together.
+  'Date',
+  'bigint',
+]);
+
+/** Options that let the wire-ability test consult the surrounding manifest. */
+export interface WireabilityOptions {
+  /**
+   * True when `name` identifies a class the manifest knows about — a model,
+   * collection, or junction. Such a parameter wants a live instance with
+   * methods and a database binding; JSON cannot produce one.
+   *
+   * OPTIONAL, and its absence is a documented widening: without a manifest
+   * (`resolveApiActionSet(objectDef)` with no second argument) the test cannot
+   * distinguish `Asset` from `AssetOptions`, so it accepts both. Every
+   * in-repo caller passes a manifest; the parameter stays optional only
+   * because `resolveApiActionSet`'s manifest argument is public API and
+   * optional there.
+   */
+  isModelClassName?: (name: string) => boolean;
+}
+
+/** Result of testing one method (or one parameter) for wire-ability. */
+export interface WireabilityVerdict {
+  wireable: boolean;
+  /** Present only when `wireable` is false. */
+  reason?: string;
+}
+
+const WIREABLE: WireabilityVerdict = { wireable: true };
+
+/**
+ * True when a manifest type NAME can be carried by a JSON request body.
+ *
+ * The default is ACCEPT: the manifest records types as strings and cannot tell
+ * `RunContentReviewOptions` (an interface — a plain bag) from `Content` (a
+ * model class). Rejecting every unrecognized capitalized name would withhold
+ * routes from the overwhelmingly common options-bag shape, so an unrecognized
+ * name is assumed to be a bag and rejection is driven by positive evidence:
+ * a known non-serializable runtime type, a manifest class, or a bare type
+ * parameter.
+ */
+function classifyTypeName(
+  typeName: string,
+  options: WireabilityOptions,
+  depth: number,
+): WireabilityVerdict {
+  const type = typeName.trim();
+  if (type === '') return WIREABLE;
+
+  // Union: one JSON-shaped member is enough, because the caller can always
+  // choose that branch. `addReference(content: Content | string)` already
+  // accepts an id string and is genuinely reachable over HTTP (#2686).
+  if (type.includes('|')) {
+    const branches = type
+      .split('|')
+      .map((branch) => branch.trim())
+      .filter((branch) => branch !== 'null' && branch !== 'undefined');
+    if (branches.length === 0) return WIREABLE;
+    const verdicts = branches.map((branch) =>
+      classifyTypeName(branch, options, depth + 1),
+    );
+    if (verdicts.some((verdict) => verdict.wireable)) return WIREABLE;
+    return {
+      wireable: false,
+      reason: `every branch of \`${type}\` is unreachable over HTTP (${verdicts[0]?.reason ?? 'not JSON-shaped'})`,
+    };
+  }
+
+  if (type.endsWith('[]')) {
+    return classifyTypeName(type.slice(0, -2), options, depth + 1);
+  }
+
+  // String/number/boolean literal types.
+  if (/^'.*'$/su.test(type) || /^-?\d/u.test(type)) return WIREABLE;
+
+  const generic = /^([\w$.]+)\s*<(.*)>$/su.exec(type);
+  if (generic) {
+    const base = generic[1];
+    if (JSON_CONTAINER_TYPE_NAMES.has(base)) {
+      // Depth-bounded: the manifest stores the type as flat text, and a deeply
+      // nested generic contributes nothing the gate can act on.
+      if (depth >= WIREABILITY_MAX_DEPTH) return WIREABLE;
+      const args = splitTypeArguments(generic[2]);
+      for (const arg of args) {
+        const verdict = classifyTypeName(arg, options, depth + 1);
+        if (!verdict.wireable) return verdict;
+      }
+      return WIREABLE;
+    }
+    return classifyTypeName(base, options, depth + 1);
+  }
+
+  if (NON_SERIALIZABLE_TYPE_NAMES.has(type)) {
+    return {
+      wireable: false,
+      reason: `\`${type}\` is a runtime value a JSON request cannot carry`,
+    };
+  }
+  if (JSON_PRIMITIVE_TYPE_NAMES.has(type)) return WIREABLE;
+
+  // A bare type parameter (`T`, `T1`, `TResult`) has no shape at all to
+  // validate or build, so it can never be certified wire-able.
+  if (/^T(?:[0-9]|[A-Z][A-Za-z0-9]*)?$/u.test(type) || /^[A-Z]$/u.test(type)) {
+    return {
+      wireable: false,
+      reason: `\`${type}\` is an unresolved type parameter`,
+    };
+  }
+
+  // Qualified names (`ns.Thing`) are judged on their final segment, which is
+  // what the manifest registers a class under.
+  const simpleName = type.includes('.')
+    ? (type.split('.').pop() as string)
+    : type;
+  if (options.isModelClassName?.(simpleName)) {
+    return {
+      wireable: false,
+      reason: `\`${simpleName}\` is a model class instance, not JSON data`,
+    };
+  }
+
+  return WIREABLE;
+}
+
+/** Recursion bound for generic type arguments. */
+const WIREABILITY_MAX_DEPTH = 6;
+
+/**
+ * Class names a manifest knows about, cached per manifest object.
+ *
+ * The manifest is rebuilt, never mutated in place, so identity is a safe cache
+ * key; a `WeakMap` keeps a discarded manifest's set collectable.
+ */
+const manifestClassNameCache = new WeakMap<
+  SmartObjectManifest,
+  ReadonlySet<string>
+>();
+
+/**
+ * Build the `isModelClassName` predicate {@link classifyMethodWireability}
+ * needs, from a manifest.
+ *
+ * Both the SIMPLE and QUALIFIED name of every manifest class are registered: a
+ * parameter is annotated with the simple name in source, but a qualified name
+ * can reach the predicate through a `TSQualifiedName` annotation.
+ *
+ * Returns `undefined` for a missing manifest, which widens the gate — see
+ * {@link WireabilityOptions.isModelClassName}.
+ */
+export function createManifestClassNamePredicate(
+  manifest: SmartObjectManifest | undefined,
+): ((name: string) => boolean) | undefined {
+  if (!manifest) return undefined;
+  let names = manifestClassNameCache.get(manifest);
+  if (!names) {
+    const collected = new Set<string>();
+    for (const [key, object] of Object.entries(manifest.objects ?? {})) {
+      collected.add(key);
+      if (object?.className) collected.add(object.className);
+      if (object?.qualifiedName) collected.add(object.qualifiedName);
+    }
+    names = collected;
+    manifestClassNameCache.set(manifest, names);
+  }
+  const resolved = names;
+  return (name: string) => resolved.has(name);
+}
+
+/** Split `A, Record<string, B>` on TOP-LEVEL commas only. */
+function splitTypeArguments(source: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '<' || char === '(' || char === '[' || char === '{')
+      depth += 1;
+    else if (char === '>' || char === ')' || char === ']' || char === '}')
+      depth -= 1;
+    else if (char === ',' && depth === 0) {
+      parts.push(source.slice(start, index));
+      start = index + 1;
+    }
+  }
+  parts.push(source.slice(start));
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/**
+ * Whether one declared parameter can be built from a JSON request body or
+ * query string.
+ */
+export function classifyParameterWireability(
+  parameter: MethodDefinition['parameters'][number],
+  options: WireabilityOptions = {},
+): WireabilityVerdict {
+  // A rest parameter has no stable name in a body (`options['...args']`), so
+  // no transport can project one. This is independent of its element type.
+  if (parameter.name.startsWith('...')) {
+    return {
+      wireable: false,
+      reason: `rest parameter \`${parameter.name}\` cannot be projected from a request body`,
+    };
+  }
+
+  // Fail closed on scanner uncertainty. `type` reads `'any'` for an
+  // intersection or tuple the scanner could not express, and treating that as
+  // the author's explicit `any` would route a method nobody certified (#2686).
+  if (parameter.typeUnresolved) {
+    return {
+      wireable: false,
+      reason: `the declared type of \`${parameter.name}\` could not be resolved by the scanner`,
+    };
+  }
+
+  for (const memberType of parameter.memberTypes ?? []) {
+    const verdict = classifyTypeName(memberType, options, 1);
+    if (!verdict.wireable) {
+      return {
+        wireable: false,
+        reason: `\`${parameter.name}\` contains a member where ${verdict.reason}`,
+      };
+    }
+  }
+
+  const verdict = classifyTypeName(parameter.type ?? 'any', options, 0);
+  if (verdict.wireable) return WIREABLE;
+  return {
+    wireable: false,
+    reason: `parameter \`${parameter.name}\`: ${verdict.reason}`,
+  };
+}
+
+/**
+ * Whether every declared parameter of a method can be built from a JSON
+ * request body or query string.
+ *
+ * A method with NO manifest parameter metadata is wire-able: that is the
+ * legacy options-bag contract every transport already supports, and absent
+ * metadata is not evidence of a hostile signature.
+ */
+export function classifyMethodWireability(
+  method: Pick<ExposableMethod, 'parameters'>,
+  options: WireabilityOptions = {},
+): WireabilityVerdict {
+  for (const parameter of method.parameters ?? []) {
+    const verdict = classifyParameterWireability(parameter, options);
+    if (!verdict.wireable) return verdict;
+  }
+  return WIREABLE;
+}
+
+/**
+ * Why a public method is not reachable as a generated API action.
+ *
+ * Machine-readable so callers can react differently per cause: the route
+ * emitters warn on `no-receiver` (a configuration mistake worth shouting
+ * about) and stay quiet on the rest, while the knowledge artifact reports the
+ * accompanying `reason` text for every one of them (#2686).
+ */
+export type ApiMethodRejectionCode =
+  | 'api-disabled'
+  | 'crud-reserved'
+  | 'not-public'
+  | 'lifecycle-method'
+  | 'excluded'
+  | 'not-included'
+  | 'withheld'
+  | 'not-wireable'
+  | 'no-receiver';
+
+/** Verdict of {@link resolveApiMethodExposure}. */
+export interface ApiMethodExposure {
+  exposed: boolean;
+  /** Present only when `exposed` is false. */
+  code?: ApiMethodRejectionCode;
+  /** Human-readable explanation, present only when `exposed` is false. */
+  reason?: string;
+}
+
+export interface ResolveApiMethodExposureOptions extends WireabilityOptions {
+  actionName: string;
+  method: ExposableMethod;
+  /** The class's scanned `api` config (`decoratorConfig.api`). */
+  apiConfig?: unknown;
+  /**
+   * True when the HOST is a collection class, which emits only
+   * collection-scoped routes. Drives the receiver check.
+   */
+  isCollectionClass?: boolean;
+}
+
+const EXPOSED: ApiMethodExposure = { exposed: true };
+
+/**
+ * The single decision every generated-API consumer asks: is this method
+ * reachable as a custom REST action, and if not, why?
+ *
+ * ONE resolver, four consumers — both SvelteKit route emitters
+ * (`generateRoutesForObject`, `generateCollectionRoutesForObject`), the
+ * cli↔api coherence resolver (`resolveApiActionSet`), and the knowledge
+ * artifact's API projection. They previously each re-derived a subset: the
+ * emitters filtered on `shouldIncludeInApi` plus their own receiver skip,
+ * `resolveApiActionSet` mirrored both, and `knowledge.ts` mirrored the
+ * receiver half a third time. A gate added to only one of them would report a
+ * method as unavailable while still writing its route file, which is the exact
+ * incoherence this issue exists to close (#2686).
+ *
+ * Order matters, and is the tested precedence contract:
+ *
+ * 1. `api: false` — the class has no REST surface at all.
+ * 2. A CRUD verb — the generated operation already owns the name (#2646).
+ * 3. Non-public — never a surface.
+ * 4. A framework lifecycle method (`save`, `initialize`, `toJSON`, ...) — the
+ *    mechanism behind generated CRUD, not a distinct operation, even when a
+ *    subclass declares its own override. `CLIGenerator` and `MCPGenerator`
+ *    already gate on this; REST did not, and this is where it joins them
+ *    (#2638, #2657).
+ * 5. `api.exclude` — an explicit withdrawal.
+ * 6. `api.include` — an explicit allowlist boundary.
+ * 7. `@method({ expose: false })` — an explicit withdrawal that outranks every
+ *    remaining rule, including a legacy `api.routes` entry for the same
+ *    method. This is why the decorator is `@method()` and not `@action()`:
+ *    declaring something an action in order to say it is not one contradicts
+ *    itself.
+ * 8. Explicit legacy exposure — a name listed in `api.include` or carrying an
+ *    `api.routes` entry is a DECLARATION that this method is a route, made
+ *    before the heuristic existed. It bypasses the heuristic. This is the
+ *    documented compatibility exception that makes "nothing breaks" true for
+ *    the 42 existing route entries; without it, migrating a class to the new
+ *    gate could silently drop a route its author had spelled out.
+ * 9. `@method({ expose: true })` — bypasses the heuristic, and NOTHING else.
+ *    It cannot manufacture a receiver (step 10 still applies), reach a
+ *    non-public method, or hydrate a parameter the transport cannot build.
+ * 10. Wire-ability — every parameter must be constructible from JSON.
+ * 11. Receiver — a collection class emits only collection-scoped routes, and a
+ *     model class cannot host a collection-scoped instance method.
+ */
+export function resolveApiMethodExposure(
+  options: ResolveApiMethodExposureOptions,
+): ApiMethodExposure {
+  const { actionName, method, apiConfig, isCollectionClass = false } = options;
+
+  if (apiConfig === false) {
+    return { exposed: false, code: 'api-disabled', reason: 'api is disabled' };
+  }
+  if (isCrudOperation(actionName)) {
+    return {
+      exposed: false,
+      code: 'crud-reserved',
+      reason: `\`${actionName}\` is reserved by the generated CRUD operation of the same name`,
+    };
+  }
+  if (method.isPublic === false) {
+    return {
+      exposed: false,
+      code: 'not-public',
+      reason: 'not a public method',
+    };
+  }
+  if (isFrameworkLifecycleMethod(actionName)) {
+    return {
+      exposed: false,
+      code: 'lifecycle-method',
+      reason: `\`${actionName}\` is a framework lifecycle method, not a distinct operation`,
+    };
+  }
+
+  const config = getIncludeExclude(apiConfig);
+  if (config.exclude?.includes(actionName)) {
+    return {
+      exposed: false,
+      code: 'excluded',
+      reason: 'listed in api.exclude',
+    };
+  }
+  const includedExplicitly = config.include?.includes(actionName) === true;
+  if (config.include !== undefined && !includedExplicitly) {
+    return {
+      exposed: false,
+      code: 'not-included',
+      reason: 'not listed in api.include',
+    };
+  }
+
+  const declared = readMethodDecoratorConfig(method);
+  if (declared?.expose === false) {
+    return {
+      exposed: false,
+      code: 'withheld',
+      reason: declared.reason ?? 'withheld by @method({ expose: false })',
+    };
+  }
+
+  const hasLegacyRoute =
+    readApiRouteConfig(apiConfig, actionName) !== undefined;
+  const bypassesHeuristic =
+    declared?.expose === true || includedExplicitly || hasLegacyRoute;
+
+  if (!bypassesHeuristic) {
+    const wireability = classifyMethodWireability(method, {
+      ...(options.isModelClassName
+        ? { isModelClassName: options.isModelClassName }
+        : {}),
+    });
+    if (!wireability.wireable) {
+      return {
+        exposed: false,
+        code: 'not-wireable',
+        reason: `not routed: ${wireability.reason}`,
+      };
+    }
+  }
+
+  const receiver = resolveActionReceiver(
+    actionName,
+    method,
+    apiConfig,
+    isCollectionClass,
+  );
+  if (!receiver.hosted) {
+    return { exposed: false, code: 'no-receiver', reason: receiver.reason };
+  }
+
+  return EXPOSED;
+}
+
+/**
+ * Whether the resolved scope has an executable receiver on this host, matching
+ * both route emitters' own skips exactly.
+ *
+ * UNREACHABLE BY CONSTRUCTION, and deliberately kept:
+ * {@link resolveCustomActionMetadata} already collapses a contradicting
+ * declared scope back to the receiver-derived one, so the resolved scope always
+ * equals `defaultScope` and neither branch below can fire. That was equally
+ * true of the two `console.warn` skips in `generateRoutesForObject` /
+ * `generateCollectionRoutesForObject` that this replaced — moving them here
+ * changed nothing about when they fire, and dropping them would remove the only
+ * structural guard should that collapse ever be relaxed.
+ *
+ * The signal a developer actually sees for a contradicting declaration is
+ * {@link resolveDeclaredScopeMismatch}, reported by the emitters at build time.
+ */
+function resolveActionReceiver(
+  actionName: string,
+  method: ExposableMethod,
+  apiConfig: unknown,
+  isCollectionClass: boolean,
+): { hosted: true } | { hosted: false; reason: string } {
+  const defaultScope: CustomActionScope = isCollectionClass
+    ? 'collection'
+    : method.isStatic
+      ? 'collection'
+      : 'item';
+  let scope: CustomActionScope;
+  try {
+    scope = resolveCustomActionMetadata({
+      actionName,
+      method,
+      apiConfig,
+      defaultScope,
+    }).scope;
+  } catch {
+    // The shared resolver validates as it resolves (a `read` effect on a
+    // PUT/PATCH/DELETE route throws). One malformed action must not fail a
+    // whole build or knowledge projection, and a route-only override cannot
+    // change the receiver anyway -- fall back to it.
+    scope = defaultScope;
+  }
+
+  if (isCollectionClass) {
+    if (scope !== 'collection') {
+      return {
+        hosted: false,
+        reason:
+          'collection class methods only support collection-scoped API routes',
+      };
+    }
+    return { hosted: true };
+  }
+  if (scope === 'collection' && method.isStatic !== true) {
+    return {
+      hosted: false,
+      reason: 'collection API routes require a static method',
+    };
+  }
+  return { hosted: true };
+}
+
+/**
+ * The effective route/tool metadata for one custom action, with `@method()`
+ * winning FIELD BY FIELD over the class-level `api.routes` map and
+ * `ai.descriptions`.
+ *
+ * Field-by-field, not wholesale: `@method({ description: '...' })` on a class
+ * that already declares `routes: { runReview: { method: 'POST', path:
+ * 'reviews' } }` must not silently reset that verb and path to their defaults.
+ * Only options the decorator actually supplies override their legacy
+ * counterparts (#2686).
+ */
+export interface EffectiveActionMetadata {
+  httpMethod?: ApiHttpMethod;
+  path?: string;
+  scope?: CustomActionScope;
+  effect?: ToolEffect;
+  idempotent?: boolean;
+  openWorld?: boolean;
+  description?: string;
+}
+
+export function resolveEffectiveActionMetadata(options: {
+  actionName: string;
+  method?: ExposableMethod;
+  apiConfig?: unknown;
+  aiConfig?: unknown;
+}): EffectiveActionMetadata {
+  const route = readApiRouteConfig(options.apiConfig, options.actionName);
+  const declared = readMethodDecoratorConfig(options.method);
+  const legacyDescription = readAiDescription(
+    options.aiConfig,
+    options.actionName,
+  );
+
+  const httpMethod =
+    declared?.httpMethod ?? normalizeRouteHttpMethod(route?.method);
+  const path =
+    declared?.path ??
+    (typeof route?.path === 'string' ? route.path : undefined);
+  const scope = declared?.scope ?? normalizeRouteScope(route?.scope);
+  const effect = declared?.effect ?? normalizeRouteEffect(route?.effect);
+  const idempotent =
+    declared?.idempotent ??
+    (typeof route?.idempotent === 'boolean' ? route.idempotent : undefined);
+  const openWorld =
+    declared?.openWorld ??
+    (typeof route?.openWorld === 'boolean' ? route.openWorld : undefined);
+  const description = declared?.description ?? legacyDescription;
+
+  return {
+    ...(httpMethod ? { httpMethod } : {}),
+    ...(path !== undefined ? { path } : {}),
+    ...(scope ? { scope } : {}),
+    ...(effect ? { effect } : {}),
+    ...(idempotent !== undefined ? { idempotent } : {}),
+    ...(openWorld !== undefined ? { openWorld } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
+}
+
+function normalizeRouteHttpMethod(value: unknown): ApiHttpMethod | undefined {
+  return isApiHttpMethod(value) ? value : undefined;
+}
+
+function normalizeRouteScope(value: unknown): CustomActionScope | undefined {
+  return value === 'item' || value === 'collection' ? value : undefined;
+}
+
+function normalizeRouteEffect(value: unknown): ToolEffect | undefined {
+  return value === 'read' || value === 'write' || value === 'destructive'
+    ? value
+    : undefined;
+}
+
+function readAiDescription(
+  aiConfig: unknown,
+  actionName: string,
+): string | undefined {
+  if (!isRecord(aiConfig) || !isRecord(aiConfig.descriptions)) return undefined;
+  const description = aiConfig.descriptions[actionName];
+  return typeof description === 'string' ? description : undefined;
+}
+
+function readApiRouteConfig(
+  apiConfig: unknown,
+  actionName: string,
+): Record<string, unknown> | undefined {
+  if (!isRecord(apiConfig) || !isRecord(apiConfig.routes)) return undefined;
+  const route = apiConfig.routes[actionName];
+  return isRecord(route) ? route : undefined;
+}
+
+/**
+ * Narrow a scanned transport config's `include`/`exclude`.
+ *
+ * A non-array value is treated as unset rather than throwing later on
+ * `.includes()` — the same defensive stance every other reader of scanned
+ * decorator config takes, because this data came from an AST, not a compiler.
+ */
+function getIncludeExclude(config: unknown): {
+  include?: string[];
+  exclude?: string[];
+} {
+  if (config === true || config === undefined || !isRecord(config)) return {};
+  return {
+    ...(Array.isArray(config.include) ? { include: config.include } : {}),
+    ...(Array.isArray(config.exclude) ? { exclude: config.exclude } : {}),
+  };
+}
+
+/**
+ * Coerce one transport-supplied argument into the runtime value the declared
+ * parameter type needs.
+ *
+ * Today that means exactly one conversion: a `Date` parameter, which the
+ * wire-ability heuristic accepts as JSON-shaped. JSON has no date type, so a
+ * caller can only send an ISO string (or an epoch number) and the receiving
+ * method — which calls `getTime()`, or hands the value to a query builder that
+ * expects a `Date` — would otherwise get a string. Accepting `Date` as
+ * wire-able and NOT hydrating it here would generate a route that 500s, so the
+ * two are one decision (#2686).
+ *
+ * Deliberately narrow:
+ * - Only a TOP-LEVEL declared parameter is converted. A `Date` nested inside a
+ *   named options bag is invisible to the manifest (the bag is accepted
+ *   heuristically, its members unresolved), so it is not hydrated and the
+ *   method must accept the string itself.
+ * - An already-`Date` value, and anything that is not a string or finite
+ *   number, passes through untouched, so a runtime caller invoking the same
+ *   helper is never degraded.
+ * - An unparseable string passes through as-is rather than becoming an
+ *   `Invalid Date`, leaving the method's own validation in charge of the error
+ *   message.
+ */
+export function coerceCustomActionArgument(
+  value: unknown,
+  declaredType: string | undefined,
+): unknown {
+  if (!declaredType || !declaredTypeAcceptsDate(declaredType)) return value;
+  return toCustomActionDate(value);
+}
+
+/**
+ * The `Date` half of {@link coerceCustomActionArgument}, exported on its own
+ * because generated SvelteKit route code calls it directly: the generator
+ * already knows at build time which parameters are `Date`-typed, so the
+ * emitted handler names the conversion rather than re-deriving it from a type
+ * string at runtime. Both paths share this one implementation so the two
+ * transports cannot drift.
+ */
+export function toCustomActionDate(value: unknown): unknown {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value);
+  }
+  if (typeof value !== 'string' || value.trim() === '') return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed;
+}
+
+/**
+ * True when the declared type is a `Date` and nothing else.
+ *
+ * `Date | null` and `Date | undefined` qualify — a nullish branch is not an
+ * alternative representation. `Date | string` deliberately does NOT: that
+ * signature already accepts the string a JSON caller sends, so the method's
+ * own handling is authoritative and converting behind its back would change
+ * which branch it takes.
+ */
+export function declaredTypeAcceptsDate(declaredType: string): boolean {
+  const branches = declaredType
+    .split('|')
+    .map((branch) => branch.trim())
+    .filter((branch) => branch !== 'null' && branch !== 'undefined');
+  return branches.length > 0 && branches.every((branch) => branch === 'Date');
 }
