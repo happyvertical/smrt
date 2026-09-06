@@ -24,6 +24,7 @@ import {
   customActionParameterInputName,
   isCrudOperation,
   isCrudToolAction,
+  isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
@@ -269,13 +270,21 @@ class CustomActionFailureError extends Error {
  * JavaScript method names retain their declared casing. Resolve a tool suffix
  * back to the registry's canonical method name before inspecting metadata or
  * invoking it.
+ *
+ * Always walks `methods` in iteration order and returns the FIRST
+ * case-insensitive match, even when an exact lowercase key exists — never a
+ * `methods.get(toolAction)` fast path. `generateTools()`'s per-object dedup
+ * (`emittedLower`, #2638) picks the tool's advertised schema/description the
+ * same way: first-declared wins when two names collide on one tool id (e.g.
+ * `Refresh`/`refresh`). An exact-match shortcut here would let dispatch
+ * invoke whichever declared name happens to equal the lowercase tool id,
+ * independent of iteration order — silently diverging from the method the
+ * catalog just described for that same tool.
  */
 function resolveCustomActionMethod(
   methods: Map<string, MethodDefinition>,
   toolAction: string,
 ): [methodName: string, method: MethodDefinition | undefined] {
-  const direct = methods.get(toolAction);
-  if (direct) return [toolAction, direct];
   for (const [methodName, method] of methods) {
     if (methodName.toLowerCase() === toolAction.toLowerCase()) {
       return [methodName, method];
@@ -486,6 +495,16 @@ export class MCPGenerator {
         typeof mcpConfig === 'object' && mcpConfig?.exclude
           ? mcpConfig.exclude
           : [];
+      // MCP tool identifiers are case-folded (`buildCustomActionTool`
+      // lowercases the whole `${lowerName}_${methodName}` string), but the
+      // methods map keys by declared casing. Comparing `exclude` entries
+      // exact-match let a cased entry silently exclude nothing —
+      // `exclude: ['Refresh']` against a manifest method keyed `refresh`
+      // failed open, the opposite of `include`'s fail-closed cased-entry
+      // handling above (#2638). Case-fold the comparison to match.
+      const excludedLower = new Set(
+        excluded.map((entry) => entry.toLowerCase()),
+      );
 
       // When an `include` list is present it is the COMPLETE allowlist for
       // this surface: a custom (non-CRUD) method is exposed ONLY if its name
@@ -524,12 +543,34 @@ export class MCPGenerator {
       const methods = await ObjectRegistry.getAllMethods(objectName);
       const methodNames = new Set(Array.from(methods.keys()));
 
+      // Tool identifiers already emitted for this object (the CRUD tools
+      // pushed above, plus every custom-action tool pushed below), tracked so
+      // two declared methods whose names differ only in case — e.g. `Refresh`
+      // and `refresh` — cannot both reach the catalog under the identical
+      // lowercased tool id `${lowerName}_refresh`. First declaration wins:
+      // `ObjectRegistry.getAllMethods` merges the inheritance chain base to
+      // child (parent methods first, keyed by exact declared casing), so two
+      // distinctly-cased method names on the SAME class iterate in that
+      // class's own source declaration order and the first one encountered
+      // here claims the tool id; a later cased collision is dropped rather
+      // than silently overwritten (#2638, moved from #2648).
+      const emittedToolNames = new Set<string>(tools.map((tool) => tool.name));
+
       // Strict mode: an include list is present, so only the custom methods it
       // names are generated (may be none, e.g. include: ['list', 'get']).
       if (hasIncludeList) {
         for (const methodName of customMethodsInInclude) {
-          // Skip if explicitly excluded
-          if (excluded.includes(methodName)) continue;
+          // Skip if explicitly excluded (case-folded, see `excludedLower`).
+          if (excludedLower.has(methodName.toLowerCase())) continue;
+
+          // A framework lifecycle method (save/initialize/... — see
+          // FRAMEWORK_LIFECYCLE_METHOD_NAMES) is never a custom action, even
+          // when named explicitly in `include`: it is the mechanism behind
+          // generated CRUD, not a distinct operation a caller should invoke
+          // (#2638). Mirrors core's now-retired `assertCommandExposed()`'s
+          // CLI-side rejection (#2664) -- the shipped local CLI
+          // (packages/cli/src/cli-generator.ts) has no equivalent gate today.
+          if (isFrameworkLifecycleMethod(methodName)) continue;
 
           // Check if method exists (in manifest or on class prototype)
           const existsInManifest = methodNames.has(methodName);
@@ -564,43 +605,68 @@ export class MCPGenerator {
           const methodDef = methods.get(methodName);
           if (methodDef && !methodDef.isPublic) continue;
 
-          tools.push(
-            this.buildCustomActionTool(
-              objectName,
-              lowerName,
-              methodName,
-              methodDef,
-              this.hasCollectionReceiver(classInfo),
-            ),
+          const tool = this.buildCustomActionTool(
+            objectName,
+            lowerName,
+            methodName,
+            methodDef,
+            this.hasCollectionReceiver(classInfo),
           );
+          // Two include entries differing only in case (or an include entry
+          // colliding with an already-emitted tool) fold onto the same
+          // lowercased tool id; keep the first one declared (#2638).
+          if (emittedToolNames.has(tool.name)) continue;
+          emittedToolNames.add(tool.name);
+          tools.push(tool);
         }
       } else {
         // No custom methods in include = show all discovered methods by default
         for (const [methodName, methodDef] of methods) {
           // A CRUD verb is already emitted above as the standard tool, so a
           // method sharing its name is not a custom action — generating one
-          // would emit a second tool under a name that is already claimed
-          // (`sortMCPTools` orders the catalog but does not dedupe). Case-folded
-          // because `buildCustomActionTool` lowercases the whole identifier, so
-          // `List` lands on `${lowerName}_list` too. Mirrors the strict branch
-          // above and `CLIGenerator.listCommands` (#2646).
+          // would emit a second tool under a name that is already claimed.
+          // Case-folded because `buildCustomActionTool` lowercases the whole
+          // identifier, so `List` lands on `${lowerName}_list` too. Mirrors
+          // the strict branch above. NOT the same rule as
+          // `packages/cli/src/cli-generator.ts`'s reserved-command-name skip
+          // in `generateObjectCommands()`: that skip is CONDITIONAL (only a
+          // command name actually pushed reserves anything), while this MCP
+          // skip is unconditional -- see
+          // `generators/custom-action.ts`'s #2646 audit list for why the two
+          // deliberately differ.
           if (isCrudToolAction(methodName)) continue;
+
+          // A framework lifecycle method (save/initialize/... — see
+          // FRAMEWORK_LIFECYCLE_METHOD_NAMES) is the mechanism behind
+          // generated CRUD, not a distinct operation, even when this class
+          // declares its own override. Never expose it as a custom tool
+          // (#2638). Mirrors the strict branch above and core's now-retired
+          // CLIGenerator's equivalent rule (#2664) -- the shipped local CLI
+          // (packages/cli/src/cli-generator.ts) has no lifecycle-method gate
+          // of its own today.
+          if (isFrameworkLifecycleMethod(methodName)) continue;
 
           // Skip if not public (private/protected methods shouldn't be in MCP)
           if (!methodDef.isPublic) continue;
 
-          // Always respect exclude list
-          if (excluded.includes(methodName)) continue;
+          // Always respect exclude list (case-folded, see `excludedLower`).
+          if (excludedLower.has(methodName.toLowerCase())) continue;
 
-          tools.push(
-            this.buildCustomActionTool(
-              objectName,
-              lowerName,
-              methodName,
-              methodDef,
-              this.hasCollectionReceiver(classInfo),
-            ),
+          const tool = this.buildCustomActionTool(
+            objectName,
+            lowerName,
+            methodName,
+            methodDef,
+            this.hasCollectionReceiver(classInfo),
           );
+          // Two discovered methods differing only in case — e.g. `Refresh`
+          // and `refresh` — both lowercase onto the same tool id
+          // (`sortMCPTools` orders the catalog but does not dedupe). Keep
+          // whichever was declared first and drop the later collision rather
+          // than emitting a duplicate tool name (#2638, moved from #2648).
+          if (emittedToolNames.has(tool.name)) continue;
+          emittedToolNames.add(tool.name);
+          tools.push(tool);
         }
       }
     }

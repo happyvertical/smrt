@@ -11,6 +11,7 @@ import {
   buildKnowledgeIndex,
   buildReviewContext,
   checkKnowledgeFreshness,
+  compactContextResult,
   diffKnowledgeIndex,
   type KnowledgeScope,
   renderFreshnessResult,
@@ -46,6 +47,7 @@ interface KnowledgeDiffOptions extends KnowledgeScopeOptions {
 }
 
 interface KnowledgeContextOptions extends KnowledgeScopeOptions {
+  complete?: boolean;
   format?: string;
   json?: boolean;
   focus?: string;
@@ -210,13 +212,20 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         focus: args.join(' ') || options.focus,
         scope: options.scope,
         package: options.package,
-        // CLI consumers keep the #2108 module-doc embedding contract; only MCP
-        // callers default to the budgeted summary bundle (#2143).
-        detail: 'full',
+        detail: options.complete ? 'complete' : 'full',
       });
       const format = options.json ? 'json' : options.format;
       if (format === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(
+          JSON.stringify(
+            compactContextResult(
+              result,
+              options.complete ? 'complete' : 'full',
+            ),
+            null,
+            2,
+          ),
+        );
         return;
       }
       console.log(renderContextMarkdown(result));
@@ -235,12 +244,20 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         focus: options.focus,
         scope: options.scope,
         package: options.package,
-        // See above: byte-for-byte unchanged CLI output (#2108, #2143).
-        detail: 'full',
+        detail: options.complete ? 'complete' : 'full',
       });
       const format = options.json ? 'json' : options.format;
       if (format === 'json') {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(
+          JSON.stringify(
+            compactContextResult(
+              result,
+              options.complete ? 'complete' : 'full',
+            ),
+            null,
+            2,
+          ),
+        );
         return;
       }
       console.log(renderContextMarkdown(result));
@@ -252,6 +269,11 @@ function contextOptions(
   defaultFormat: 'markdown' | 'json',
 ): NonNullable<CLICommand['options']> {
   return {
+    complete: {
+      type: 'boolean',
+      description: 'Include all module documentation for selected packages',
+      default: false,
+    },
     format: {
       type: 'string',
       description: 'Output format: markdown or json',

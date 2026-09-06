@@ -48,7 +48,7 @@ export function assertHttpTargetUrl(targetUrl: string): void {
   conflictColumns: ['code'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ReferralLink extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global links). */

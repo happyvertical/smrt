@@ -400,11 +400,6 @@ export function getWorkspaceViteAliases(
       );
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-core/generators/cli',
-        join(packageRoot, 'src/generators/cli.ts'),
-      );
-      addAliasIfPresent(
-        aliases,
         '@happyvertical/smrt-core/generators/mcp',
         join(packageRoot, 'src/generators/mcp.ts'),
       );
@@ -524,6 +519,26 @@ export function getWorkspaceViteAliases(
         aliases,
         '@happyvertical/smrt-ui/utils/import-optional.js',
         join(packageRoot, 'src/utils/import-optional.ts'),
+      );
+    }
+
+    if (packageName === '@happyvertical/smrt-web') {
+      // The document-global WebMCP tool-name lock (#2613) ships as its own
+      // dependency-free entry so a UI layer can reserve its fixed `smrt_ui_*`
+      // names without pulling the client-data engine. Without this alias a
+      // consumer test resolves it through the exports map to stale dist while
+      // resolving the package root to source — two copies of the module.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-web/webmcp-tool-names',
+        join(packageRoot, 'src/webmcp-tool-names.ts'),
+      );
+      // The declarative view-intent entry (#2588) is dependency-free for the
+      // same reason and has the same stale-dist hazard.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-web/intents',
+        join(packageRoot, 'src/intents.ts'),
       );
     }
 

@@ -4,7 +4,7 @@
  *
  * The per-virtual-module code generators (generateClientModule,
  * generateManifestModule, generateRoutesModule, generateMCPModule,
- * generateTypesModule, generateCLIModule, the default-UI
+ * generateTypesModule, the default-UI
  * loaders) are module-private. We reach them the way Vite does: through the
  * plugin's `resolveId` and `load` hooks. A small real project (two @smrt
  * classes) is scanned once via `configResolved` to seed a genuine manifest, and
@@ -49,9 +49,6 @@ describe('smrtPlugin resolveId', () => {
     );
     expect(resolveId.call(plugin, '@happyvertical/smrt-virt-manifest')).toBe(
       '\0smrt:manifest',
-    );
-    expect(resolveId.call(plugin, '@happyvertical/smrt-virt-cli')).toBe(
-      '\0smrt:cli',
     );
   });
 
@@ -118,11 +115,10 @@ export class Widget extends SmrtObject {
   async refresh(): Promise<void> {}
 
   // #2638: a locally overridden framework lifecycle method (mirroring
-  // User.save()) must never be emitted as a custom CLI command. Uses
-  // initialize() rather than save() deliberately: generateCLIModule's
-  // pre-#2638 code already hardcoded a 'save' exclusion (leaving every
-  // OTHER lifecycle method, e.g. initialize/getSlug/toJSON, unfiltered), so
-  // 'save' alone would not have caught the regression this test guards.
+  // User.save()) must never be emitted as a custom action. Retained as a
+  // manifest fixture (MCP still exercises this scanning path) even though
+  // the CLI-specific assertions this once fed were retired with
+  // generateCLIModule (#2664).
   override async initialize(): Promise<this> {
     return super.initialize();
   }
@@ -130,8 +126,8 @@ export class Widget extends SmrtObject {
   // #2638 final review (F1): the scanner records isPublic: true
   // unconditionally (no reliable private/protected signal survives into the
   // manifest), so an underscore-prefixed method is the one convention
-  // generateCLIModule can still filter on. Must never be advertised as a
-  // custom CLI command either.
+  // available to filter on. Must never be advertised as a custom action
+  // either.
   async _internalHelper(): Promise<void> {}
 }
 
@@ -206,31 +202,6 @@ export class Gizmo extends SmrtObject {
     expect(code).toContain('Widget');
   });
 
-  it('generates the CLI module honoring cli include/exclude config', async () => {
-    const code = await load('\0smrt:cli');
-    expect(code).toContain('export const cliCommands');
-    expect(code).toContain('export function setupCLI');
-    // Widget enables cli + has a custom method -> a widget command group exists.
-    expect(code).toContain('widget:list');
-    // Gizmo excludes delete -> no gizmo:delete command emitted.
-    expect(code).not.toContain('gizmo:delete');
-  });
-
-  it('never emits a locally overridden framework lifecycle method as a custom command (#2638)', async () => {
-    const code = await load('\0smrt:cli');
-    // Widget's genuine custom method is still advertised...
-    expect(code).toContain('widget:refresh');
-    // ...but its initialize() override -- the mechanism behind get/list
-    // hydration, not a distinct operation -- is not, even though `cli: true`
-    // has no include list to filter it out.
-    expect(code).not.toContain('widget:initialize');
-  });
-
-  it('never emits an underscore-prefixed method as a custom command (#2638 final review, F1)', async () => {
-    const code = await load('\0smrt:cli');
-    expect(code).not.toContain('widget:_internalHelper');
-  });
-
   it('loads the default UI module source', async () => {
     const code = await load('\0smrt:ui');
     expect(typeof code).toBe('string');
@@ -273,18 +244,6 @@ export class Gizmo extends SmrtObject {
       writeFileSync(file, code.replace(/^import .*?;$/gm, ''));
       return await import(pathToFileURL(file).href);
     }
-
-    it('emits a parseable CLI module keyed by simple class name', async () => {
-      const code = (await load('\0smrt:cli')) as string;
-      expectParses(code, 'cli');
-
-      const mod = await evaluate(code, 'cli');
-      // The manifest key is qualified (`mini-app:Widget`); the emitted key is
-      // the simple class name that matches the `widget:` command prefix.
-      expect(Object.keys(mod.cliCommands)).toContain('Widget');
-      expect(Object.keys(mod.cliCommands)).not.toContain('mini-app:Widget');
-      expect(mod.cliCommands.Widget.commands).toContain('widget:list');
-    });
 
     it('emits a parseable MCP module whose tools are objects with names', async () => {
       const code = (await load('\0smrt:mcp')) as string;

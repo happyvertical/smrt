@@ -11,7 +11,7 @@ import type { AssetMetafieldOptions } from './types';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AssetMetafield extends SmrtObject {
   // slug is inherited as an accessor from SmrtObject

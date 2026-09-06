@@ -34,7 +34,7 @@ import type { ContractLineItemOptions } from '../types/index.js';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContractLineItem extends SmrtObject {
   /**

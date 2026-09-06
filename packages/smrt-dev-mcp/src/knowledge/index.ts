@@ -14,14 +14,18 @@ import {
   dirname,
   isAbsolute,
   join,
+  matchesGlob,
   relative,
   resolve,
   sep,
 } from 'node:path';
 import {
   AGENT_SURFACE_HASH_PREFIX,
+  discoverScopedPackageDirectories,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
+  readPackageAgentDoc,
+  resolveAgentModuleDocPaths,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
@@ -79,9 +83,10 @@ export type KnowledgeObjectSource =
 
 /**
  * `summary` keeps prompt bundles inside tool-result budgets by listing authored
- * docs by path instead of embedding them; `full` restores embedding (#2143).
+ * docs by path; `full` embeds package docs and matching modules; `complete`
+ * embeds every module and preserves the complete authored reference.
  */
-export type KnowledgeDetail = 'summary' | 'full';
+export type KnowledgeDetail = 'summary' | 'full' | 'complete';
 
 /** Where the workspace package globs were read from. */
 export type WorkspaceGlobSource =
@@ -343,7 +348,7 @@ interface CheckKnowledgeFreshnessOptions extends BuildKnowledgeIndexOptions {
 
 /**
  * Signals used to narrow which module docs a prompt bundle embeds (#2108).
- * Absent or non-matching hints mean "embed everything" — see `selectModuleDocs`.
+ * Absent or non-matching hints leave module docs discoverable by path.
  */
 interface ModuleDocHints {
   changedFiles?: string[];
@@ -361,7 +366,7 @@ interface ContextSelectorOptions {
   packageName?: string;
   /**
    * Defaults to `summary` so MCP callers stay inside tool-result budgets. CLI
-   * consumers pass `full` to keep the #2108 module-doc embedding contract.
+   * consumers may request `complete` for the entire authored reference.
    */
   detail?: KnowledgeDetail;
 }
@@ -2064,28 +2069,10 @@ function discoverInstalledPackages(
   );
 
   const byRealPath = new Map<string, string>();
-  for (const scopeDir of new Set(scopeDirs)) {
-    if (!existsSync(scopeDir)) continue;
-    let entries: Dirent[];
-    try {
-      entries = readdirSync(scopeDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-      const entryPath = join(scopeDir, entry.name);
-      let resolved: string;
-      try {
-        resolved = realpathSync(entryPath);
-      } catch {
-        // A dangling link is not an installed package.
-        continue;
-      }
-      if (workspaceRealPaths.has(resolved)) continue;
-      if (byRealPath.has(resolved)) continue;
-      byRealPath.set(resolved, entryPath);
-    }
+  for (const entry of discoverScopedPackageDirectories(scopeDirs)) {
+    if (workspaceRealPaths.has(entry.realDirectory)) continue;
+    if (byRealPath.has(entry.realDirectory)) continue;
+    byRealPath.set(entry.realDirectory, entry.directory);
   }
 
   const packages: KnowledgePackage[] = [];
@@ -2151,14 +2138,10 @@ function readKnowledgePackage(
   const peerDependencies = stringRecord(packageJson.peerDependencies);
   const allDeps = { ...dependencies, ...devDependencies, ...peerDependencies };
   const name = String(packageJson.name ?? directory);
-  const agentsPath = join(directory, 'AGENTS.md');
-  const claudePath = join(directory, 'CLAUDE.md');
-  const hasAgentsMd = existsSync(agentsPath);
-  const hasClaudeMd = existsSync(claudePath);
-  const claudeContent = hasClaudeMd ? readFileSync(claudePath, 'utf8') : '';
-  const agentsContent = hasAgentsMd ? readFileSync(agentsPath, 'utf8') : '';
+  const agentDoc = readPackageAgentDoc(directory, { inspectAdapter: true });
+  const { hasAgentsMd, hasClaudeMd, agentsContent, claudeContent } = agentDoc;
   const fallbackClaudeDoc =
-    hasClaudeMd && claudeContent.trim() !== '@AGENTS.md' ? claudeContent : '';
+    hasClaudeMd && !agentDoc.hasClaudeShim ? claudeContent : '';
   const manifest = readManifest(directory);
   const discoveredDomainKnowledge = readDomainKnowledge(directory);
   const domainKnowledge = discoveredDomainKnowledge
@@ -2209,7 +2192,7 @@ function readKnowledgePackage(
     sdkDependencies,
     hasAgentsMd,
     hasClaudeMd,
-    hasClaudeShim: claudeContent.trim() === '@AGENTS.md',
+    hasClaudeShim: agentDoc.hasClaudeShim,
     docSource,
     agentDoc: includeDocs
       ? domainKnowledge?.content.agentDoc ||
@@ -4008,15 +3991,7 @@ function renderDiagnosticsSection(
   return lines;
 }
 
-/**
- * Which of a package's module docs to embed for this request (#2108).
- *
- * The moved prose is unregenerable, so the DEFAULT is to embed everything —
- * dropping a doc must never be the silent outcome. Hints only NARROW: when the
- * changed files or the focus/idea text point at specific modules, the rest are
- * still listed by path so an agent can open them on demand. If hints exist but
- * match nothing, fall open and embed all.
- */
+/** Select matching authored modules; unmatched modules remain listed by path. */
 function selectModuleDocs(
   pkg: KnowledgePackage,
   hints: ModuleDocHints | undefined,
@@ -4032,18 +4007,45 @@ function selectModuleDocs(
   );
   const text = hints?.text ?? '';
   if (packageFiles.length === 0 && text.trim() === '') {
-    return { embedded: all, scoped: false };
+    return { embedded: [], scoped: true };
+  }
+
+  const sourceMappings = new Map<string, string[]>();
+  for (const row of (pkg.agentDoc ?? '').split('\n')) {
+    if (!row.trimStart().startsWith('|')) continue;
+    const paths = resolveAgentModuleDocPaths(pkg.directory, row);
+    if (paths.length === 0) continue;
+    const sources = [...row.matchAll(/`([^`]+)`/g)]
+      .map((match) => match[1].replace(/^\.\//, ''))
+      .filter(
+        (source) =>
+          !source.startsWith('/') &&
+          !source.split('/').includes('..') &&
+          !/\s/.test(source) &&
+          (source.includes('/') || /\.[a-z0-9]+$/i.test(source)),
+      );
+    for (const path of paths) {
+      sourceMappings.set(path, [
+        ...(sourceMappings.get(path) ?? []),
+        ...sources,
+      ]);
+    }
   }
 
   const matched = all.filter((doc) => {
-    // A doc is relevant when its module name appears as a path segment of a
-    // changed file (`src/commissions/...` -> `agents/commissions.md`), when the
-    // doc itself changed, or when the request text names the module.
+    const mappedSources = sourceMappings.get(doc.path) ?? [];
     const segment = new RegExp(`(^|[/.])${escapeRegExp(doc.module)}([/.]|$)`);
     return (
       packageFiles.some(
         (file) =>
           segment.test(file.slice(prefix.length)) ||
+          mappedSources.some((source) => {
+            const relativeFile = file.slice(prefix.length);
+            return (
+              matchesGlob(relativeFile, source) ||
+              (source.endsWith('/') && relativeFile.startsWith(source))
+            );
+          }) ||
           file === packageRelativePath(pkg, doc.path),
       ) || includesToken(text, doc.module)
     );
@@ -4051,7 +4053,7 @@ function selectModuleDocs(
 
   return matched.length > 0
     ? { embedded: matched, scoped: true }
-    : { embedded: all, scoped: false };
+    : { embedded: [], scoped: true };
 }
 
 function escapeRegExp(value: string): string {
@@ -4063,7 +4065,10 @@ function renderPackageContext(
   hints?: ModuleDocHints,
   detail: KnowledgeDetail = 'full',
 ): string {
-  const { embedded, scoped } = selectModuleDocs(pkg, hints);
+  const { embedded, scoped } =
+    detail === 'complete'
+      ? { embedded: pkg.moduleDocs, scoped: false }
+      : selectModuleDocs(pkg, hints);
   const lines = [
     `### ${pkg.name}`,
     '',
@@ -4125,6 +4130,7 @@ function renderPackageContext(
         `> Module docs not loaded for this request (read on demand): ${omitted
           .map((doc) => packageRelativePath(pkg, doc.path))
           .join(', ')}`,
+        '> Request detail: "complete" to embed every module.',
       );
     }
   }
@@ -4347,4 +4353,60 @@ function sortJson(value: unknown): unknown {
     );
   }
   return value;
+}
+
+/**
+ * Shared MCP/CLI context projection: prose lives only in the prompt bundle.
+ *
+ * `selectedPackages` carries each package's whole authored `agentDoc`, its
+ * module-doc contents, and its full domain manifest. A three-package downstream
+ * product serialized to 329,003 characters that way, which is what made these
+ * tools unusable as planning aids. `detail: "complete"` returns the whole shape.
+ */
+export function compactContextResult(
+  result: object,
+  detail: string | undefined,
+): Record<string, unknown> {
+  const source = result as Record<string, unknown>;
+  if (detail === 'complete') return source;
+
+  const compact: Record<string, unknown> = {
+    ...source,
+    detail: detail === 'full' ? 'full' : 'summary',
+  };
+  for (const key of ['selectedPackages', 'selectedSdkPackages']) {
+    const packages = source[key];
+    if (!Array.isArray(packages)) continue;
+    compact[key] = (packages as KnowledgePackage[]).map(
+      compactKnowledgePackage,
+    );
+  }
+  return compact;
+}
+
+function compactKnowledgePackage(pkg: KnowledgePackage) {
+  return {
+    name: pkg.name,
+    version: pkg.version,
+    kind: pkg.kind,
+    directory: pkg.relativeDirectory,
+    objectSource: pkg.objectSource,
+    ...(pkg.objectSourceReason
+      ? { objectSourceReason: pkg.objectSourceReason }
+      : {}),
+    // Paths, not prose: the caller reads what it needs.
+    docs: packageDocPaths(pkg),
+    domainKnowledgePath: pkg.domainKnowledgePath,
+    relationshipFeatures: pkg.relationshipFeatures,
+    smrtDependencies: pkg.smrtDependencies,
+    sdkDependencies: pkg.sdkDependencies,
+    exportKeys: pkg.exportKeys,
+    objectCount: pkg.objects.length,
+    objects: pkg.objects.map((object) =>
+      object.tableName
+        ? `${object.qualifiedName ?? object.className} (${object.tableName})`
+        : (object.qualifiedName ?? object.className),
+    ),
+    mcpToolCount: pkg.mcpTools.length,
+  };
 }

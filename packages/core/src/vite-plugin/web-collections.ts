@@ -743,7 +743,8 @@ export function selectWebMcpToolEntries(
 
     // Same collection-level set as loop 1. A collection class's OWN action set
     // never contains an exact CRUD verb — `resolveApiActionSet` starts a
-    // collection class at an empty set and skips `STANDARD_API_ACTIONS` names —
+    // collection class at an empty set and skips the shared CRUD verb list
+    // (`isCrudOperation`, generators/custom-action.ts, #2665) —
     // so a per-host set here would always be empty and the guard dead.
     const collectionEmittedCrud =
       emittedCrudByCollection.get(collectionClass.collection) ??

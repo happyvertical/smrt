@@ -27,7 +27,7 @@ export interface ContentGovernancePolicyOptions extends SmrtObjectOptions {
   conflictColumns: ['key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentGovernancePolicy extends SmrtObject {
   @field({ required: true })

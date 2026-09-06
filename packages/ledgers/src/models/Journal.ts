@@ -23,7 +23,7 @@ import {
 @smrt({
   api: { include: ['list', 'get', 'create'] }, // No update/delete - immutable after posting
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Journal extends SmrtObject {
   /**

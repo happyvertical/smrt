@@ -88,7 +88,7 @@ export interface PermissionOptions extends SmrtObjectOptions {
   // permission-gated services, not auth-only generated CRUD.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Permission extends SmrtObject {
   /**

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-products",
-  "version": "0.45.1",
+  "version": "0.46.0",
   "smrtJsdoc": "strict",
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
   "author": "HappyVertical",

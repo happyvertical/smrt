@@ -93,7 +93,7 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Contract extends SmrtObject {
   /**

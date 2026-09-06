@@ -15,6 +15,8 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
+  CRUD_OPERATIONS,
+  isCrudOperation,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
 } from '../generators/custom-action.js';
@@ -99,7 +101,6 @@ export interface SvelteKitOptions {
 
 // Keep this aligned with biome.json formatter.lineWidth.
 const BIOME_LINE_WIDTH = 80;
-const STANDARD_API_ACTIONS = ['list', 'get', 'create', 'update', 'delete'];
 const GITIGNORE_MANAGED_BLOCK_START =
   '# BEGIN SMRT auto-generated routes (Vite plugin)';
 const GITIGNORE_MANAGED_BLOCK_END =
@@ -2056,7 +2057,7 @@ async function generateRoutesForObject(
   // Generate custom action routes
   const customActions = Object.entries(objectDef.methods).filter(
     ([name, method]) =>
-      !STANDARD_API_ACTIONS.includes(name) &&
+      !isCrudOperation(name) &&
       method.isPublic &&
       shouldIncludeInApi(name, apiConfig),
   );
@@ -2140,7 +2141,7 @@ async function generateCollectionRoutesForObject(
 
   const customActions = Object.entries(objectDef.methods).filter(
     ([name, method]) =>
-      !STANDARD_API_ACTIONS.includes(name) &&
+      !isCrudOperation(name) &&
       method.isPublic &&
       shouldIncludeInApi(name, apiConfig),
   );
@@ -2210,14 +2211,16 @@ async function generateCollectionRoutesForObject(
 function resolveStandardCrudActions(apiConfig: unknown): string[] {
   if (apiConfig === false) return [];
   if (apiConfig === true || apiConfig === undefined) {
-    return [...STANDARD_API_ACTIONS];
+    return [...CRUD_OPERATIONS];
   }
-  if (typeof apiConfig !== 'object') return [...STANDARD_API_ACTIONS];
+  if (typeof apiConfig !== 'object' || apiConfig === null) {
+    return [...CRUD_OPERATIONS];
+  }
 
   const config = apiConfig as { include?: string[]; exclude?: string[] };
-  let crud: string[] = config.include
-    ? config.include.filter((a) => STANDARD_API_ACTIONS.includes(a))
-    : [...STANDARD_API_ACTIONS];
+  let crud: string[] = Array.isArray(config.include)
+    ? config.include.filter((a) => isCrudOperation(a))
+    : [...CRUD_OPERATIONS];
   if (Array.isArray(config.exclude)) {
     const exclude = config.exclude;
     crud = crud.filter((a) => !exclude.includes(a));
@@ -2277,7 +2280,7 @@ export function resolveApiActionSet(
   // generateCollectionRoutesForObject). Otherwise the cli↔api coherence lint
   // would claim "reachable via API" for methods that produce no HTTP route.
   for (const [name, method] of Object.entries(objectDef.methods || {})) {
-    if (STANDARD_API_ACTIONS.includes(name)) continue;
+    if (isCrudOperation(name)) continue;
     if (!method.isPublic) continue;
     if (!shouldIncludeInApi(name, apiConfig)) continue;
 
@@ -2335,9 +2338,11 @@ export interface CliApiCoherenceViolation {
  *
  * **Bare `cli: true`/`cli: {}`** (#2638, the new case this lint now
  * inspects): every public custom method minus exclude, exactly the "every
- * public method minus exclude" resolution `CLIGenerator.listCommands()`
- * already applies (via `resolveCustomActionNames`, reused not
- * reimplemented) -- lifecycle methods excluded, same as everywhere else.
+ * public method minus exclude" resolution this function shares with
+ * `packages/core/src/generators/custom-action.ts`'s `resolveCustomActionNames`
+ * -- lifecycle methods excluded, same as everywhere else. (Pre-#2664, core's
+ * now-retired `CLIGenerator.listCommands()` applied the same resolution via
+ * that helper too.)
  * CRUD verbs are NOT checked in this branch: a class that closes its API
  * entirely (`api: false`) while keeping a default-open, CLI/MCP-only admin
  * surface (`cli: true`/omitted) is a common, intentional combination (see
@@ -2352,9 +2357,13 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
   if (cliConfig === false) return new Set();
 
   const included: string[] | undefined =
-    typeof cliConfig === 'object' ? cliConfig.include : undefined;
+    typeof cliConfig === 'object' && cliConfig !== null
+      ? cliConfig.include
+      : undefined;
   const excluded: string[] =
-    typeof cliConfig === 'object' && Array.isArray(cliConfig.exclude)
+    typeof cliConfig === 'object' &&
+    cliConfig !== null &&
+    Array.isArray(cliConfig.exclude)
       ? cliConfig.exclude
       : [];
 
@@ -2365,7 +2374,7 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
   return resolveCustomActionNames(
     Object.entries(objectDef.methods || {}),
     { include: undefined, exclude: excluded },
-    STANDARD_API_ACTIONS,
+    CRUD_OPERATIONS,
   );
 }
 
@@ -2388,7 +2397,13 @@ export function findCliApiCoherenceViolations(
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     const cliConfig = objectDef.decoratorConfig?.cli;
     if (cliConfig === false) continue;
-    if (typeof cliConfig === 'object' && cliConfig.skipApiCheck) continue;
+    if (
+      typeof cliConfig === 'object' &&
+      cliConfig !== null &&
+      cliConfig.skipApiCheck
+    ) {
+      continue;
+    }
 
     const effectiveCliCommands = resolveCliActionSet(objectDef);
     if (effectiveCliCommands.size === 0) continue;
@@ -2415,8 +2430,9 @@ export function findCliApiCoherenceViolations(
  * This is deliberately narrower than `findCliApiCoherenceViolations` above.
  * That function is now fully correct for the broader `cli: true`/`cli: {}`
  * default surface too (#2638: same "every public method minus exclude"
- * resolution `listCommands()` uses, so a bare `cli: true` is inspected the
- * same as an explicit `include`). But `smrtPlugin()`'s default
+ * resolution core's now-retired `CLIGenerator.listCommands()` used (#2664),
+ * so a bare `cli: true` is inspected the same as an explicit `include`).
+ * But `smrtPlugin()`'s default
  * `validateCliApiCoherence: true` calls this THROWING gate unconditionally
  * from every consuming package's own build (`configResolved`,
  * `vite-plugin/index.ts`) -- and a full-monorepo build during #2638
@@ -2443,6 +2459,7 @@ export function validateCliIncludeAgainstApi(
       const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
       return (
         typeof cliConfig === 'object' &&
+        cliConfig !== null &&
         Array.isArray(cliConfig.include) &&
         cliConfig.include.length > 0
       );

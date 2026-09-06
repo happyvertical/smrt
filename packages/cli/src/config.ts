@@ -8,6 +8,7 @@
 import type {
   MigrationsConfig,
   MigrationsPostgresConfig,
+  PostgresPermissionsConfig,
   SchemaContractConfig,
 } from '@happyvertical/smrt-config';
 
@@ -15,10 +16,12 @@ import type {
 export type {
   MigrationsConfig,
   MigrationsPostgresConfig,
+  PostgresPermissionsConfig,
   SchemaContractConfig,
 };
 
 export interface CLIConfig {
+  postgresPermissions?: PostgresPermissionsConfig;
   /**
    * Entry point file to load SMRT classes from.
    * If null, auto-detected from package.json (main or exports fields).
@@ -87,7 +90,10 @@ export interface CLIConfig {
 /**
  * Default CLI configuration values
  */
-export const DEFAULT_CLI_CONFIG: Required<CLIConfig> = {
+export const DEFAULT_CLI_CONFIG: Required<
+  Omit<CLIConfig, 'postgresPermissions'>
+> &
+  Pick<CLIConfig, 'postgresPermissions'> = {
   entryPoint: null, // Auto-detect from package.json
   database: {
     type: 'sqlite',

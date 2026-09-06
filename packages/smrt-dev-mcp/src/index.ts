@@ -22,7 +22,7 @@ import {
   buildReviewContext,
   checkKnowledgeFreshness,
   checkKnowledgeFreshnessFromIndex,
-  packageDocPaths,
+  compactContextResult,
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
@@ -814,59 +814,6 @@ function sanitizeKnowledgeIndex(index: KnowledgeIndexResult) {
     // Installed dependencies live outside the project root, so theirs are the
     // absolute host paths this projection exists to strip (#2275).
     installedPackages: packages.filter((pkg) => pkg.isInstalledDependency),
-  };
-}
-
-/**
- * Compact projection of a context result for MCP callers (#2143).
- *
- * `selectedPackages` carries each package's whole authored `agentDoc`, its
- * module-doc contents, and its full domain manifest. A three-package downstream
- * product serialized to 329,003 characters that way, which is what made these
- * tools unusable as planning aids. `detail: "full"` returns the whole shape.
- */
-function compactContextResult(
-  result: object,
-  detail: string | undefined,
-): Record<string, unknown> {
-  const source = result as Record<string, unknown>;
-  if (detail === 'full') return source;
-
-  const compact: Record<string, unknown> = { ...source, detail: 'summary' };
-  for (const key of ['selectedPackages', 'selectedSdkPackages']) {
-    const packages = source[key];
-    if (!Array.isArray(packages)) continue;
-    compact[key] = (packages as KnowledgePackageResult[]).map(
-      compactKnowledgePackage,
-    );
-  }
-  return compact;
-}
-
-function compactKnowledgePackage(pkg: KnowledgePackageResult) {
-  return {
-    name: pkg.name,
-    version: pkg.version,
-    kind: pkg.kind,
-    directory: pkg.relativeDirectory,
-    objectSource: pkg.objectSource,
-    ...(pkg.objectSourceReason
-      ? { objectSourceReason: pkg.objectSourceReason }
-      : {}),
-    // Paths, not prose: the caller reads what it needs.
-    docs: packageDocPaths(pkg),
-    domainKnowledgePath: pkg.domainKnowledgePath,
-    relationshipFeatures: pkg.relationshipFeatures,
-    smrtDependencies: pkg.smrtDependencies,
-    sdkDependencies: pkg.sdkDependencies,
-    exportKeys: pkg.exportKeys,
-    objectCount: pkg.objects.length,
-    objects: pkg.objects.map((object) =>
-      object.tableName
-        ? `${object.qualifiedName ?? object.className} (${object.tableName})`
-        : (object.qualifiedName ?? object.className),
-    ),
-    mcpToolCount: pkg.mcpTools.length,
   };
 }
 

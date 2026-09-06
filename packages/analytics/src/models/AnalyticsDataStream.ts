@@ -49,7 +49,7 @@ export interface AnalyticsDataStreamOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AnalyticsDataStream extends SmrtObject {
   /**

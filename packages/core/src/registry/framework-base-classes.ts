@@ -19,7 +19,6 @@
  * - `./schema-builder.ts` (skips table/DDL generation for these classes)
  * - `../knowledge.ts` (the `.smrt/smrt-knowledge.json` surface projection)
  * - `../generators/mcp.ts` (`MCPGenerator.generateTools()`)
- * - `../generators/cli.ts` (`CLIGenerator.listCommands()`)
  * - `../generators/rest.ts` (`APIGenerator.findClassByCollectionSegment()`)
  * - `../vite-plugin/sveltekit-generator.ts` (REST route generation)
  * - `../vite-plugin/sync-apply-route.ts` (`collectSyncApplyTargets()`)
@@ -27,6 +26,10 @@
  *   collection and WebMCP tool selectors)
  * - `@happyvertical/smrt-cli`'s `cli-generator.ts` (the live local `smrt`
  *   binary's object command generation), via core's public export
+ * - `../testing/database.ts` (`getTestDatabase()` skips table creation for
+ *   these classes, but only for an implicit `classes` list — an explicit
+ *   `classes: [...]` caller naming a framework base class is still honored,
+ *   unlike every unconditional filter above) (#2645)
  *
  * Do not add another hardcoded copy of this list at a new call site — import
  * from here instead.

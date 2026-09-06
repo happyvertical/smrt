@@ -5,7 +5,8 @@
  * `generateObjectTools` emits the five standard CRUD tools as
  * `${lowerName}_${verb}`, then walks the class's merged methods to emit custom
  * actions as `${lowerName}_${methodName}`. The strict (`include`) branch drops
- * CRUD verbs before that walk, and `CLIGenerator.listCommands` skips
+ * CRUD verbs before that walk, and core's now-retired `CLIGenerator.
+ * listCommands` (#2664) skipped
  * `CRUD_OPERATIONS` outright — but the non-strict branch (the default, no
  * `include` list) had no such filter, so a public merged method named after a
  * CRUD verb produced a SECOND tool under a name the CRUD tool already owned.
@@ -82,6 +83,30 @@ class Issue2646CasedVerb extends SmrtObject {
 
   async Refresh(): Promise<any> {
     return { ok: true };
+  }
+}
+
+// Two distinct, legitimate NON-CRUD methods differing only in case. Both
+// `Refresh` and `refresh` lowercase onto the identical tool id
+// `issue2638customcasecollision_refresh` — a collision `isCrudToolAction`
+// cannot catch, because neither name is a CRUD verb (#2638, moved from
+// #2648). `Refresh` is declared first, so it is the one whose tool survives.
+@smrt({ mcp: true })
+class Issue2638CustomCaseCollision extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async Refresh(): Promise<any> {
+    return { ok: true, via: 'Refresh' };
+  }
+
+  async refresh(): Promise<any> {
+    return { ok: true, via: 'refresh' };
   }
 }
 
@@ -195,6 +220,61 @@ describe('#2646 MCP CRUD-named custom actions', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('#2638: dedupes two non-CRUD methods that differ only in case, keeping the first declared', async () => {
+    const names = await toolNamesFor('issue2638customcasecollision');
+
+    // Exactly one `obj_refresh` tool reaches the catalog, not two.
+    expect(
+      names.filter((name) => name === 'issue2638customcasecollision_refresh'),
+    ).toEqual(['issue2638customcasecollision_refresh']);
+
+    const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+    const tools = await generator.generateTools();
+    const tool = tools.find(
+      (t) => t.name === 'issue2638customcasecollision_refresh',
+    );
+    // Tie-break: first-declared-wins. `Refresh` is declared before `refresh`
+    // on the fixture class, so its description (naming the exact declared
+    // method) is the one that survives.
+    expect(tool?.description).toContain('Refresh');
+  });
+
+  it('#2638: dispatches to the SAME method the catalog described, not whichever declared name equals the lowercase tool id', async () => {
+    // `resolveCustomActionMethod` previously tried an exact `methods.get(toolAction)`
+    // lookup first — `methods.get('refresh')` — before falling back to a
+    // case-insensitive scan. Since `refresh` (all-lowercase) is itself one of
+    // the two colliding declared names, that fast path always won, regardless
+    // of which method the catalog's first-declared-wins dedup had just
+    // described. A caller reading the `obj_refresh` tool's description
+    // (naming `Refresh`) would have every reason to expect `Refresh` runs,
+    // but `refresh` actually executed. Assert catalog and dispatch agree.
+    const mockObject = new Issue2638CustomCaseCollision({
+      db: null,
+      ai: null,
+      fs: null,
+      id: 'case-collision-id',
+    });
+    const mockCollection = { get: vi.fn().mockResolvedValue(mockObject) };
+    const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+    (generator as any).getCollection = vi.fn().mockReturnValue(mockCollection);
+    (generator as any).collections = new Map([
+      ['Issue2638CustomCaseCollision', mockCollection],
+    ]);
+
+    const response = await generator.handleToolCall({
+      method: 'tools/call',
+      params: {
+        name: 'issue2638customcasecollision_refresh',
+        arguments: { id: 'case-collision-id' },
+      },
+    });
+
+    const result = JSON.parse(response.content[0].text);
+    // Must match the catalog's advertised method, not the exact-lowercase
+    // declared name.
+    expect(result.via).toBe('Refresh');
   });
 
   it('produces no duplicate tool names across the whole registry', async () => {

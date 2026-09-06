@@ -8,7 +8,11 @@ import {
   type ControlSnapshot,
   createControlInteractionRegistry,
 } from '@happyvertical/smrt-ui/forms';
-import { describe, expect, it, vi } from 'vitest';
+import {
+  registerWebMcpBespokeTool,
+  WebMcpToolNameCollisionError,
+} from '@happyvertical/smrt-web';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebMcpToolSpec } from '../webmcp.svelte.js';
 import { registerWebMcpUiTools } from '../webmcp-ui.js';
 
@@ -733,5 +737,141 @@ describe('registerWebMcpUiTools', () => {
     expect(() =>
       registerWebMcpUiTools({ ...registries, document }),
     ).not.toThrow();
+  });
+});
+
+/**
+ * The fixed UI tools and a hand-written `useWebMcpTool` tool are derived on
+ * different paths and neither can see the other's runtime prefix, so before
+ * #2613 a bespoke name matching a custom-prefixed UI tool reached the host and
+ * one of the two was silently lost. Both paths now reserve through the
+ * document-global tool-name lock. These use the real jsdom `document` because
+ * that is the object both registrars key their reservations on in a page —
+ * `registerWebMcpBespokeTool` reads `globalThis.document` and has no injection
+ * seam.
+ */
+describe('cross-path tool-name lock (#2613)', () => {
+  const registries = () => ({
+    controlRegistry: createControlInteractionRegistry(),
+    dataSurfaceRegistry: createDataSurfaceRegistry(),
+  });
+
+  function installPageModelContext(): WebMcpToolSpec[] {
+    const registered: WebMcpToolSpec[] = [];
+    (document as { modelContext?: unknown }).modelContext = {
+      async registerTool(tool: WebMcpToolSpec) {
+        registered.push(tool);
+      },
+    };
+    return registered;
+  }
+
+  function bespoke(name: string): WebMcpToolSpec {
+    return {
+      name,
+      description: 'A component-owned tool',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      execute: () => 'ok',
+    };
+  }
+
+  afterEach(() => {
+    (document as { modelContext?: unknown }).modelContext = undefined;
+  });
+
+  it('refuses a bespoke tool named for a UI tool under a custom prefix', () => {
+    const registered = installPageModelContext();
+    const dispose = registerWebMcpUiTools({
+      ...registries(),
+      prefix: 'agent_ui_',
+    });
+    expect(registered).toHaveLength(6);
+
+    let thrown: unknown;
+    try {
+      registerWebMcpBespokeTool(bespoke('agent_ui_execute_form_control'));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(WebMcpToolNameCollisionError);
+    const collision = thrown as WebMcpToolNameCollisionError;
+    expect(collision.toolName).toBe('agent_ui_execute_form_control');
+    expect(collision.owner).toBe('ui');
+    expect(collision.requestedBy).toBe('bespoke');
+    expect(registered).toHaveLength(6);
+
+    // The default prefix was never mounted, so the same suffix is free there.
+    const other = registerWebMcpBespokeTool(
+      bespoke('smrt_ui_execute_form_control'),
+    );
+    expect(registered).toHaveLength(7);
+    other();
+    dispose();
+  });
+
+  it('refuses a UI prefix a live bespoke tool already occupies', () => {
+    const registered = installPageModelContext();
+    const held = registerWebMcpBespokeTool(
+      bespoke('agent_ui_inspect_form_control'),
+    );
+    expect(registered).toHaveLength(1);
+
+    let thrown: unknown;
+    try {
+      registerWebMcpUiTools({ ...registries(), prefix: 'agent_ui_' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(WebMcpToolNameCollisionError);
+    expect((thrown as WebMcpToolNameCollisionError).owner).toBe('bespoke');
+    // Atomic: not one of the six reached the host.
+    expect(registered).toHaveLength(1);
+
+    // And the refused mount released its own prefix lock, so the same prefix
+    // works once the bespoke tool goes away.
+    held();
+    const dispose = registerWebMcpUiTools({
+      ...registries(),
+      prefix: 'agent_ui_',
+    });
+    expect(registered).toHaveLength(7);
+    dispose();
+  });
+
+  it('frees the prefix and the names when the host swaps its model context', () => {
+    const registered = installPageModelContext();
+    // Deliberately never disposed: the adapter's six tools live in the old
+    // registry, which the host is about to throw away. Both the prefix lock
+    // and the name reservations must let go with it, or the same prefix stays
+    // permanently refused against a registry that never held it.
+    registerWebMcpUiTools({ ...registries(), prefix: 'agent_ui_' });
+    expect(registered).toHaveLength(6);
+
+    const rebound = installPageModelContext();
+    const dispose = registerWebMcpUiTools({
+      ...registries(),
+      prefix: 'agent_ui_',
+    });
+    expect(rebound).toHaveLength(6);
+    dispose();
+  });
+
+  it('frees the six names on dispose so a remount succeeds', () => {
+    const registered = installPageModelContext();
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      registerWebMcpUiTools({ ...registries(), prefix: 'agent_ui_' })();
+    }
+    expect(registered).toHaveLength(18);
+
+    const bespokeDisposer = registerWebMcpBespokeTool(
+      bespoke('agent_ui_execute_form_control'),
+    );
+    expect(registered).toHaveLength(19);
+    bespokeDisposer();
   });
 });

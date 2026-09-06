@@ -55,7 +55,8 @@ An app that installs the published packages authors none of them, so workspace
 discovery alone sees nothing. Every installed `@happyvertical/smrt-*` package,
 plus the known SDK packages, is resolved from the project's and each workspace
 package's `node_modules/@happyvertical` scope directory and marked
-`isInstalledDependency`. This is an enumeration, not a walk: pnpm materializes
+`isInstalledDependency`. The filesystem enumeration and canonical doc reader are shared with CLI snapshots
+through `smrt-core/knowledge`; enrichment stays here. This is an enumeration, not a walk: pnpm materializes
 a store whose entries link back out to their siblings, so a descent reads the
 same package once per path that reaches it. Real paths deduplicate the result;
 each package is still read through its `node_modules` path, because a realpath
@@ -195,9 +196,13 @@ launcher or a small wrapper script with an absolute Node path.
     the canonical `smrt-projects` model and changed the facts.
 - **Budgets are enforced at the transport boundary**: `KnowledgePackage` carries
   the full `agentDoc` and domain manifest, so the MCP handlers project a compact
-  package record unless `detail: 'full'`. Library callers (the CLI) still receive
-  the full objects. Structural object facts render into prompt Markdown only in
-  full detail; summary mode remains names/counts/paths.
+  package record for `summary` (default) and `full`. `full` embeds package docs,
+  structural facts, and modules selected by changed paths, focus, or Modules-table
+  source mappings (including globs); other module paths remain discoverable.
+  `complete` preserves full package records and embeds every module. CLI context
+  JSON uses the same projection; `--complete` opts into full export. Library
+  builders retain full objects. Snapshot commands list module paths by default
+  and accept `--complete` to embed bodies.
 - **Private packages skip packaging checks**: the `files` allowlist governs npm
   publication, so `private: true` packages are exempt; authored docs are still
   required. A workspace root is exempt from both — but **only when member

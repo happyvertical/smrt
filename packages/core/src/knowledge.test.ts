@@ -84,6 +84,8 @@ describe('buildDomainKnowledgeManifest', () => {
       'CasedIncludeItem',
       'MalformedConfigItem',
       'LifecycleOverrideOrder',
+      'CaseCollisionItem',
+      'ExcludeCaseItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -119,7 +121,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // OrderTree additionally declares two public custom methods (`archive`,
     // `findByReference`) and a non-public one (`internalRebalance`); only
     // the public methods are eligible, matching
-    // MCPGenerator/CLIGenerator/APIGenerator's own isPublic gate.
+    // MCPGenerator/APIGenerator's own isPublic gate (packages/cli's CLIGenerator shares it too).
     for (const kind of ['api', 'cli', 'mcp'] as const) {
       const names = orderTreeSurfaces
         .filter((surface) => surface.kind === kind)
@@ -146,7 +148,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // MCPGenerator's `buildCustomActionTool()` lowercases the WHOLE joined
     // `${lowerName}_${methodName}` tool name, not just the object-name
     // prefix, so a camelCase method name must be reported under its real
-    // (fully lowercased) tool id. CLIGenerator's `object:methodName` command
+    // (fully lowercased) tool id. packages/cli's CLIGenerator's `object:methodName` command
     // string does not lowercase the method half, so `cli` keeps it as
     // authored.
     const findByReferenceMcp = orderTreeSurfaces.find(
@@ -161,7 +163,7 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
   });
 
-  it('excludes a locally overridden framework lifecycle method from the cli surface only (#2657)', () => {
+  it('excludes a locally overridden framework lifecycle method from the cli and mcp surfaces (#2657, #2638)', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const surfaces = artifact.surfaces.filter(
       (surface) =>
@@ -169,36 +171,39 @@ describe('buildDomainKnowledgeManifest', () => {
     );
 
     // `save` is a framework lifecycle method (the mechanism behind generated
-    // create/update), so CLIGenerator.listCommands()/assertCommandExposed()
-    // refuse to expose or invoke it even when the class declares its own
-    // override -- this projection now mirrors that with the same
-    // isFrameworkLifecycleMethod() check, for cli only.
-    expect(
-      surfaces
-        .filter((surface) => surface.kind === 'cli')
-        .map((surface) => surface.operation)
-        .sort(),
-    ).toEqual(['create', 'delete', 'get', 'list', 'reconcile', 'update']);
-
-    // `api`/`mcp` are unaffected: neither generator gates on
-    // isFrameworkLifecycleMethod() today, so `save` still appears as a
-    // custom-method surface there, exactly like before #2657.
-    for (const kind of ['api', 'mcp'] as const) {
+    // create/update), so core's now-retired CLIGenerator.listCommands()/
+    // assertCommandExposed() (#2664) and MCPGenerator.generateTools() both
+    // refused/refuse to expose or invoke it even when the class declares its
+    // own override -- this projection mirrors that with the same
+    // isFrameworkLifecycleMethod() check, for cli and mcp. NOTE: the shipped
+    // local CLI (packages/cli/src/cli-generator.ts) does NOT apply this
+    // gate today -- see knowledge.ts's `configuredOperations()` docblock.
+    for (const kind of ['cli', 'mcp'] as const) {
       expect(
         surfaces
           .filter((surface) => surface.kind === kind)
           .map((surface) => surface.operation)
           .sort(),
-      ).toEqual([
-        'create',
-        'delete',
-        'get',
-        'list',
-        'reconcile',
-        'save',
-        'update',
-      ]);
+      ).toEqual(['create', 'delete', 'get', 'list', 'reconcile', 'update']);
     }
+
+    // `api` is unaffected: the generator does not gate on
+    // isFrameworkLifecycleMethod() today, so `save` still appears as a
+    // custom-method surface there.
+    expect(
+      surfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual([
+      'create',
+      'delete',
+      'get',
+      'list',
+      'reconcile',
+      'save',
+      'update',
+    ]);
   });
 
   it('never reports CRUD for an undecorated SmrtCollection subclass, but does report its public custom methods on every surface (#2642)', () => {
@@ -251,7 +256,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // same shape as a genuine bare `@smrt()`. #2619 excluded it on the false
     // premise that it "never registers with ObjectRegistry"; #2642 confirmed
     // `loadAllManifests()` registers it exactly like any genuine domain
-    // class, and fixed the real root cause — MCPGenerator/CLIGenerator/route
+    // class, and fixed the real root cause — MCPGenerator/route generation/packages/cli's CLIGenerator
     // generation now skip the framework's own abstract base classes by class
     // identity, independent of config. This projection mirrors that same
     // shared check (`isFrameworkBaseClass`), so it stays truthful rather
@@ -348,6 +353,61 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(operations('@example/orders:CasedVerbItem', 'api')).toContain(
       'List',
     );
+  });
+
+  it('reports one mcp operation for two methods that fold onto the same MCP tool id (#2638)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const surfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:CaseCollisionItem',
+    );
+
+    // `mcp` folds case, so `Refresh`/`refresh` collide on one tool id and the
+    // projection reports the operation once (first declared -- `Refresh`),
+    // alongside the standard CRUD operations this omitted-config class also
+    // gets.
+    expect(
+      surfaces
+        .filter((surface) => surface.kind === 'mcp')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['Refresh', 'create', 'delete', 'get', 'list', 'update']);
+
+    // `cli`/`api` keep declared casing, so both distinct methods are
+    // reported as separate operations there.
+    for (const kind of ['cli', 'api'] as const) {
+      expect(
+        surfaces
+          .filter((surface) => surface.kind === kind)
+          .map((surface) => surface.operation)
+          .sort(),
+      ).toEqual([
+        'Refresh',
+        'create',
+        'delete',
+        'get',
+        'list',
+        'refresh',
+        'update',
+      ]);
+    }
+  });
+
+  it('excludes an mcp operation via a case-mismatched `exclude` entry (#2638)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpOperations = artifact.surfaces
+      .filter(
+        (surface) =>
+          surface.objectName === '@example/orders:ExcludeCaseItem' &&
+          surface.kind === 'mcp',
+      )
+      .map((surface) => surface.operation);
+
+    // `exclude: ['refresh']` against a method declared `Refresh` still
+    // excludes it -- mcp's exclude comparison is case-folded, matching
+    // MCPGenerator's own fix for the asymmetry with `include`.
+    expect(mcpOperations).not.toContain('Refresh');
+    // An unrelated public method is unaffected.
+    expect(mcpOperations).toContain('syncNow');
   });
 
   it('reports no MCP surface when a strict include names only a cased verb (#2646)', () => {
@@ -1147,10 +1207,12 @@ function fixtureManifest(): SmartObjectManifest {
       },
       // A locally overridden framework lifecycle method (mirroring
       // User.save() at packages/users/src/models/User.ts) must not be
-      // reported as a `cli` custom-action surface, matching
-      // CLIGenerator.listCommands()'s isFrameworkLifecycleMethod() gate
-      // (#2657) -- but `api`/`mcp` are unaffected, since neither generator
-      // changed in #2650/#2638.
+      // reported as a `cli` or `mcp` custom-action surface, matching core's
+      // now-retired CLIGenerator.listCommands()'s (#2664) and
+      // MCPGenerator.generateTools()'s isFrameworkLifecycleMethod() gate
+      // (#2657, #2638) -- but `api` is unaffected, since that generator did
+      // not change. NOTE: the shipped local CLI
+      // (packages/cli/src/cli-generator.ts) does NOT apply this gate today.
       '@example/orders:LifecycleOverrideOrder': {
         className: 'LifecycleOverrideOrder',
         qualifiedName: '@example/orders:LifecycleOverrideOrder',
@@ -1176,6 +1238,66 @@ function fixtureManifest(): SmartObjectManifest {
         },
         decoratorConfig: {},
         extends: 'SmrtObject',
+      },
+      // Two distinct, legitimate non-CRUD methods differing only in case.
+      // `MCPGenerator` folds both onto the tool id
+      // `casecollisionitem_refresh` and reports it once, keeping whichever
+      // was declared first (#2638, moved from #2648) -- the projection must
+      // mirror that, not report both method names as separate `mcp`
+      // operations.
+      '@example/orders:CaseCollisionItem': {
+        className: 'CaseCollisionItem',
+        qualifiedName: '@example/orders:CaseCollisionItem',
+        collection: 'case_collision_items',
+        fields: {},
+        methods: {
+          Refresh: {
+            name: 'Refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          refresh: {
+            name: 'refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+      },
+      // `exclude` names the method in the OPPOSITE case from how it is
+      // declared. MCP tool ids are case-folded, so `MCPGenerator` now
+      // compares `exclude` case-insensitively too (#2638) -- the projection
+      // must not still advertise `Refresh` as an `mcp` operation here.
+      '@example/orders:ExcludeCaseItem': {
+        className: 'ExcludeCaseItem',
+        qualifiedName: '@example/orders:ExcludeCaseItem',
+        collection: 'exclude_case_items',
+        fields: {},
+        methods: {
+          Refresh: {
+            name: 'Refresh',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          syncNow: {
+            name: 'syncNow',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { exclude: ['refresh'] } },
       },
     },
   };

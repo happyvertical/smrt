@@ -19,7 +19,7 @@ import type { PropertyOptions, PropertyStatus } from '../types';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Property extends SmrtObject {
   /**

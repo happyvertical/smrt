@@ -15,6 +15,8 @@ smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:migrate-int8         # Explicitly widen pre-#2373 int4 columns after preflight
+smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
+smrt db:drop-framework-base-tables --dry-run # Print the drop plan without executing
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Roll back migrations by executing their recorded DOWN
 smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
@@ -154,6 +156,12 @@ to run a build.
 
 ## Live-schema parity (#2368)
 
+PostgreSQL role contracts also surface through read-only `doctor --db` and
+`db:validate`. Explicit repair uses `db:permissions` with a reviewed fingerprint;
+ordinary migrations never change ACLs. See the
+[permission guide](../../docs/content/postgres-permissions.md) for configuration,
+authority boundaries, and recovery.
+
 `doctor --db` and `db:status --parity` share `src/commands/db-parity.ts`, which
 runs core's `checkLiveSchemaParity()`. This answers a different question than
 `db:status`/`db:diff`: those compare the live database to the **manifest**, i.e.
@@ -257,6 +265,64 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
 - Deployments running a jobs `TaskRunner` already get the same sweep every six
   hours; this command is for those that do not, and for one-off operator runs.
 
+## `db:drop-framework-base-tables` is a one-time remediation (#2647)
+
+`db:migrate` no longer plans `smrt_objects`/`smrt_classes`/`smrt_collections`/
+`smrt_hierarchicals`/`smrt_polymorphic_associations` (#2644), but any
+deployment that ran `db:migrate` before that fix still has all five. This
+command, backed by `planFrameworkBaseTableDrop()` /
+`dropFrameworkBaseTables()` in `@happyvertical/smrt-core/migrations`, drops
+exactly those five hardcoded names and nothing else — **never** derived from
+`SchemaDiff.orphan_tables`, which would recreate the dangerous global orphan
+drop `includeDroppedTables` (default `false`, both call sites explicit —
+`differ.ts:450`, `db-diff.ts:210`) deliberately refuses to be.
+
+- Execute-or-refuse, like `db:rollback`: it refuses (non-zero exit, nothing
+  dropped) if any target table has rows, has anything but that table's own
+  expected columns and types, or is referenced by a foreign key anywhere in
+  the live database. A consumer's own unrelated table sharing one of these
+  five names is exactly what the shape check protects.
+- The expected shape is **per table, not one universal baseline**:
+  `smrt_objects`/`smrt_classes`/`smrt_collections` are exactly `id`/`slug`/
+  `context`/`created_at`/`updated_at`, but `smrt_hierarchicals` also
+  requires `parent_id` and `smrt_polymorphic_associations` also requires
+  `meta_type`/`meta_id`/`role`/`sort_order` — `SmrtHierarchical`'s and
+  `SmrtPolymorphicAssociation`'s own real fields, confirmed against a
+  genuine pre-#2644 `db:migrate` run. A table under either of those two
+  names with *only* the plain five columns is refused as unexpected shape,
+  not treated as safe.
+- Companion indexes are enumerated from each table's live schema (never
+  guessed). `smrt_hierarchicals`/`smrt_polymorphic_associations` do not
+  carry the `created_at` list-ordering index the other three do (also
+  empirically confirmed, not assumed).
+- Bounded PostgreSQL execution reuses the same `SET LOCAL lock_timeout` /
+  `statement_timeout` pattern as every other DDL path (#2362). Every target
+  is locked `IN ACCESS EXCLUSIVE MODE` before re-checking it — a plain
+  `SELECT COUNT(*)` alone would not block a concurrent writer — and shape,
+  type, and emptiness are all re-verified inside that transaction
+  immediately before dropping anything, via raw `information_schema.columns`
+  / `PRAGMA table_info` (`getTableSchema()` is not available on the
+  transaction-scoped connection). Only `DROP TABLE` is ever executed —
+  never a `DROP INDEX` by name — so `DROP TABLE`'s own cascade removes the
+  table's indexes identity-safely instead of trusting a possibly-stale
+  planned index name.
+- `--dry-run` prints the exact plan (which tables exist, their companion
+  indexes, and the DROP statements) without executing.
+- Skipping it is safe: a table left behind is inert and permanently orphaned,
+  never written to or read from again. Documented, narrow residual risk, all
+  schema-integrity (never data loss — the target is always verified empty
+  first): DuckDB's adapter does not report foreign keys through
+  `getTableSchema()` at all; this module's reverse-FK scan (like every other
+  PostgreSQL schema tool in this package) only looks at the `public` schema;
+  and foreign keys are checked at planning time only, not re-scanned inside
+  the execution transaction. On PostgreSQL a foreign key that appeared after
+  planning is still caught there — `DROP TABLE` refuses when a real
+  dependent exists, dependency-based, empty parent or not. **This does not
+  hold on SQLite**: its FK enforcement on `DROP TABLE` is row-based, so an
+  empty parent (this command's precondition) drops cleanly past a real
+  foreign key, verified directly. The plan-time scan is the only gate on
+  SQLite/DuckDB, narrower than PostgreSQL's.
+
 ## Architecture
 
 - **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
@@ -271,7 +337,7 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
 - `src/commands/` — individual command implementations
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
-- `src/commands/docs-claude.ts` — downstream AGENTS.md generation plus Claude compatibility alias
+- `src/commands/docs-claude.ts` — downstream AGENTS.md generation plus Claude compatibility alias; uses core knowledge discovery without object scanning
 
 ## Gotchas
 

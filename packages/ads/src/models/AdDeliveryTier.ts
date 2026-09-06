@@ -48,7 +48,7 @@ export interface AdDeliveryTierOptions extends SmrtObjectOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class AdDeliveryTier extends SmrtObject {
   /**

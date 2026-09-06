@@ -70,7 +70,7 @@ const loadedLeadStatus = new WeakMap<Lead, LeadStatus>();
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] }, // no delete — audit trail
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Lead extends SmrtObject {
   /**

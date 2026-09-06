@@ -47,10 +47,20 @@ The four snapshot options are atomic: supplying any one requires all four.
 | `smrt db:migrate` | Apply pending migrations |
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
+| `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |
+| `smrt db:drop-framework-base-tables` | One-time removal of the five framework-base tables (`smrt_objects`, `smrt_classes`, `smrt_collections`, `smrt_hierarchicals`, `smrt_polymorphic_associations`) orphaned by #2644; refuses if any target table has rows, an unexpected shape, or an inbound foreign key |
+| `smrt db:drop-framework-base-tables --dry-run` | Print the drop plan (tables and companion indexes) without executing |
 | `smrt db:diff` | Show schema differences without generating migration files |
 | `smrt db:rollback` | Roll back the last migration by executing its recorded DOWN script; refuses when no DOWN script exists |
 | `smrt db:rollback --mark-only` | Record-only: mark migrations rolled back without running any DOWN script (schema untouched) |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
+| `smrt db:permissions --dry-run` | Plan the declared PostgreSQL role permission contract |
+| `smrt db:permissions --apply --expected-fingerprint <hash>` | Explicitly apply a reviewed permission plan |
+| `smrt db:validate` | Validate configured PostgreSQL permissions or JSON database integrity |
+
+For separate migration-owner, runtime, and monitoring roles, see the
+[PostgreSQL permissions guide](../../docs/content/postgres-permissions.md).
+`doctor --db` includes read-only permission diagnostics when configured.
 
 File-backed SQL/TypeScript migration generation is not supported. s-m-r-t schema
 migrations are manifest-driven; model schema with s-m-r-t objects and apply changes
@@ -139,6 +149,18 @@ layout that means declaring them, not relying on the CLI's own dependencies.
 | `smrt dev:knowledge-diff --format markdown\|json` | Show changed files and affected package experts |
 | `smrt knowledge:review-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
 | `smrt knowledge:architecture-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain architecture prompt bundle |
+
+`docs:agents` includes package AGENTS guidance and lists linked module files by
+source path; it does not read or embed their bodies. Use
+`smrt docs:agents --complete` for a complete authored reference. The deprecated `docs:claude`
+alias supports the same flag and retains its historical output path.
+Regenerate snapshots after moving the project or updating dependencies so the
+local source paths remain current.
+
+Review and architecture prompt bundles include package guidance and modules
+matched by file or focus hints. Add `--complete` to either context command to
+include every module for the selected packages. These commands still build the
+knowledge index; documentation snapshots use lightweight package discovery.
 
 ### Configuration
 

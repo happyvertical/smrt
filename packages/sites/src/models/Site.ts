@@ -23,7 +23,7 @@ import type {
   tableName: 'sites',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
   conflictColumns: ['tenant_id', 'domain'],
 })
 export class Site extends SmrtObject {

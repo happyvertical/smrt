@@ -17,7 +17,7 @@ import {
 @smrt({
   tableName: '_smrt_tenant_subscriptions',
   api: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
   mcp: { include: ['list', 'get'] },
   // The conflict key includes the subscriber discriminator so an issuing tenant
   // can host many distinct external subscribers without collisions on the

@@ -157,7 +157,7 @@ function inferAssetTypeSlug(mimeType: string): string {
     },
   },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentContribution extends SmrtObject {
   @foreignKey('ContentContributor', { required: true })

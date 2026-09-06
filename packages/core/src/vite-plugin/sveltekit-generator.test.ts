@@ -2865,6 +2865,51 @@ describe('SvelteKit Route Generator', () => {
       expect(Array.from(set).sort()).toEqual(['discover', 'get', 'list']);
     });
 
+    it('resolveApiActionSet defaults to full CRUD for a null api config instead of throwing', () => {
+      // Drive-by regression (#2694 review): `typeof null === 'object'`, so a
+      // manifest carrying a literal `api: null` (e.g. round-tripped through
+      // JSON) previously fell into the object branch and threw reading
+      // `.include` off `null`.
+      const manifest = buildManifest({ api: null });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
+    it('resolveApiActionSet defaults to full CRUD when api.include is not an array', () => {
+      const manifest = buildManifest({
+        api: { include: 'list' as unknown as string[] },
+      });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual([
+        'audit',
+        'create',
+        'delete',
+        'discover',
+        'get',
+        'list',
+        'update',
+      ]);
+    });
+
+    it('findCliApiCoherenceViolations tolerates a null cli config instead of throwing', () => {
+      // Same drive-by class as the api:null fix above: typeof null ===
+      // 'object', so `cli: null` (e.g. round-tripped through JSON) must not
+      // throw reading `.skipApiCheck`/`.include` off `null` anywhere along
+      // this lint's cli-side branches (resolveCliActionSet,
+      // findCliApiCoherenceViolations, validateCliIncludeAgainstApi).
+      const manifest = buildManifest({ api: null, cli: null });
+      expect(() => findCliApiCoherenceViolations(manifest)).not.toThrow();
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+    });
+
     it('flags cli.include methods that are not in the resolved api set', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get', 'discover'] },
@@ -2937,9 +2982,15 @@ describe('SvelteKit Route Generator', () => {
     });
 
     it('honors cli.exclude when checking effective CLI commands', () => {
-      // Match generateCLIModule: a command in both cli.include AND cli.exclude
-      // is not actually registered as a CLI command, so the lint must not
-      // flag it as unreachable even if no API route exists.
+      // Match the shipped local CLI's own rule for a custom method (this
+      // fixture's `discover`/`audit` are scanned custom methods, not CRUD
+      // verbs): packages/cli/src/cli-generator.ts's `shouldIncludeMethod()`
+      // checks `excluded.includes(methodName)`, so a command in both
+      // cli.include AND cli.exclude is not actually registered, and the
+      // lint must not flag it as unreachable even if no API route exists.
+      // (The pre-#2664 `generateCLIModule()` virtual-module emitter applied
+      // the same rule; it was retired as unused public API, but the shipped
+      // binary's rule is unchanged.)
       const manifest = buildManifest({
         api: { include: ['discover'] }, // no 'audit' in API
         cli: { include: ['discover', 'audit'], exclude: ['audit'] },

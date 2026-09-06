@@ -32,7 +32,7 @@ import type { PipelineDefinitionOptions, PipelineStatus } from '../types.js';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
   conflictColumns: ['tenant_id', 'key'],
 })
 export class PipelineDefinition extends SmrtObject {

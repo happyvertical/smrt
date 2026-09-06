@@ -23,7 +23,7 @@ export interface CharacterAssetOptions extends AssetOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class CharacterAsset extends Asset {
   @foreignKey(() => Character)

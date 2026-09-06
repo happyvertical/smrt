@@ -24,7 +24,7 @@ import type { EventOptions, EventStatus } from '../types';
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Event extends SmrtHierarchical {
   @tenantId({ nullable: true })

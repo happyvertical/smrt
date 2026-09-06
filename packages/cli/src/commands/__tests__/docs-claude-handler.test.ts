@@ -14,6 +14,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -98,6 +99,83 @@ describe('docs:agents handler', () => {
     expect(printed).toContain('Content docs here.');
     // smrt-core has only the shim CLAUDE.md, so it reports no AGENTS.md.
     expect(printed).toContain('*No AGENTS.md found for this package.*');
+  });
+
+  it.each([
+    'docs:agents',
+    'docs:claude',
+  ] as const)('%s keeps module sources reachable and requires --complete for bodies', async (command) => {
+    for (const name of ['smrt-content', 'ai']) {
+      makePackage('@happyvertical', name, {
+        agents: '# Package\n\nOrientation. [Details](agents/details.md)',
+      });
+      const moduleDir = join(
+        tempDir,
+        'node_modules',
+        '@happyvertical',
+        name,
+        'agents',
+      );
+      mkdirSync(moduleDir);
+      writeFileSync(
+        join(moduleDir, 'details.md'),
+        `# Details\n\n${name} module body.`,
+      );
+    }
+
+    await docsCommands[command].handler([], { 'dry-run': true });
+    const selected = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    for (const name of ['smrt-content', 'ai']) {
+      expect(selected).toContain(
+        join(
+          tempDir,
+          'node_modules',
+          '@happyvertical',
+          name,
+          'agents/details.md',
+        ),
+      );
+      expect(selected).not.toContain(`${name} module body.`);
+    }
+    logSpy.mockClear();
+    await docsCommands[command].handler([], {
+      'dry-run': true,
+      complete: true,
+    });
+    const complete = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(complete).toContain('smrt-content module body.');
+    expect(complete).toContain('ai module body.');
+  });
+
+  it('keeps snapshot selection separate from MCP manifest-name and workspace policies', async () => {
+    makePackage('@happyvertical', 'smrt-installed', {
+      agents: 'Installed expertise',
+    });
+    makePackage('@happyvertical', 'custom-sdk', {
+      agents: 'Custom SDK expertise',
+    });
+    const workspace = join(tempDir, 'packages', 'local');
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      'packages: [packages/*]',
+    );
+    writeFileSync(
+      join(workspace, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-local', version: '1.0.0' }),
+    );
+    writeFileSync(join(workspace, 'AGENTS.md'), 'Local fallback expertise');
+    // The scope alias controls snapshot selection; both aliases remain visible.
+    symlinkSync(
+      join(tempDir, 'node_modules', '@happyvertical', 'smrt-installed'),
+      join(tempDir, 'node_modules', '@happyvertical', 'smrt-alias'),
+      'dir',
+    );
+    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Custom SDK expertise');
+    expect(output).not.toContain('Local fallback expertise');
+    expect(output.match(/Installed expertise/g)).toHaveLength(2);
   });
 
   it('writes the output file and reports package counts', async () => {

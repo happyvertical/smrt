@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-commerce",
-  "version": "0.45.1",
+  "version": "0.46.0",
   "smrtJsdoc": "strict",
   "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
   "type": "module",

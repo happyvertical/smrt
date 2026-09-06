@@ -32,7 +32,7 @@ export interface ContentGovernanceAssignmentOptions extends SmrtObjectOptions {
   conflictColumns: ['key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ContentGovernanceAssignment extends SmrtObject {
   @field({ required: true })

@@ -54,7 +54,7 @@ const loadedReferralStatus = new WeakMap<Referral, ReferralStatus>();
   // transition methods and the attribution/qualification services.
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Referral extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global referrals). */

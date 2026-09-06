@@ -64,7 +64,7 @@ const frozenAgreementSnapshot = new WeakMap<ReferralAgreement, string>();
   // through the guarded transition methods.
   api: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class ReferralAgreement extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global agreements). */

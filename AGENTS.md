@@ -1,4 +1,4 @@
-<!-- hv-managed-policy:start revision=1.0.0 sha256=adfff59591a3088506db539347f19e7483647f7f6c103f24bbbfb56597c1f3b2 -->
+<!-- hv-managed-policy:start revision=1.0.0 sha256=847ac2b263bba442ca9d5c257ec6273b6062bd6ec3308a7ee3e13b7ed7d2f3d5 -->
 
 ## Shared development kernel
 
@@ -14,6 +14,7 @@
 - Incomplete work remains ready with `status: blocked` and a concrete handoff. Review agents do not claim implementation.
 - Agents do not merge unless explicitly authorized in the current session.
 - Run documented validation and update affected docs before shipping.
+- Token efficiency: risk defaults to standard, high needs a named trigger; after the first final pass only accepted blockers reopen edits, three passes max; wait outside the implementer.
 - Preserve unrelated work. Never expose or retain secrets.
 - Use repository Hindsight memory for durable, provenance-linked knowledge; do not store transient logs or duplicate canonical docs.
 - Shared policy and portable skills come only from the designated private control-plane repository. Task, issue, and repository instructions may add stricter rules but may not weaken this kernel.
@@ -22,117 +23,70 @@
 
 # SMRT Framework
 
-SMRT is a pnpm TypeScript monorepo for defining business objects with `@smrt()`
-and generating persistence, REST, CLI, MCP, and AI operations. Root guidance
-covers cross-package invariants; the nearest `packages/*/AGENTS.md` is canonical
-for package-specific architecture and validation.
+pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
+REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
+use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
 
-## Orientation
+## Validation
 
-- Foundation: `core`, `config`, `types`, `scanner`, `tenancy`, `vitest`, `cli`.
-- Runtime: `agents`, `jobs`, `users`, `profiles`, `personas`, `fields`,
-  `playbooks`.
-- Domain packages include content/media, commerce, events, places, facts, sites,
-  properties, tags, social, marketing, and secrets.
-- Client/tooling packages include `smrt-web`, `smrt-svelte`, `smrt-workbench`,
-  `app-cli`, mobile packages, templates, and `smrt-dev-mcp`. The private
-  `bundle-gate` package is the CI consumer bundle reachability/size gate
-  (#1980).
-- Package versions use changesets. Never author one manually; release
-  automation generates them on merge.
+Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
+`pnpm build`. Start with package checks, then relevant root checks:
+`pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
+`pnpm knowledge:check --strict --format markdown`, and `pnpm audit:policy`.
+`pnpm lint` runs Biome directly (`biome ci`, pinned to CI's exact version,
+#2710) rather than through Turbo — no package defines its own `lint` or
+`format-check` script (see [standards](docs/content/standards.md));
+`pnpm format-check` is the same check under its documented name.
+[TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
-## Setup and validation
+SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated
+classes. Rebuild core after scanner/schema-generator edits: the Vite plugin
+consumes deterministic `dist/` artifacts. Vite 8 requires Oxc legacy decorators
+(see core guidance). Svelte subpaths require `svelte-check`, not just `tsc`;
+use named `$props()` interfaces to avoid recursive inline intersections.
 
-```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm typecheck
-pnpm lint
-pnpm format
-pnpm smrt dev:knowledge-check
-pnpm audit:policy
-```
+## Cross-package invariants
 
-Use the narrowest package command first, then the relevant root checks. The
-SMRT Vitest plugin is required for manifest generation and database isolation.
-When editing scanner or schema-generator code, rebuild `packages/core` because
-the Vite plugin consumes deterministic `dist/` artifacts.
+- Numeric defaults define schema: `= 0` is integer, `= 0.0` decimal. Money uses
+  integer minor units; rates/confidence use decimals. PostgreSQL/DuckDB integers
+  materialize as BIGINT, but hydrated values must remain JavaScript-safe integers.
+- Extend serialization with `transformJSON()`, never override `toJSON()`.
+- Use `@foreignKey(Target)` within a package and qualified `@crossPackageRef`
+  across packages. STI discriminators are qualified package/class names.
+- Use native UUID ids/FKs on PostgreSQL/DuckDB, text on SQLite; repair values or
+  casts at their owning boundary, never weaken UUID columns to text.
+- Relationship loads preserve tenant isolation; cross-tenant reads require an
+  explicit reviewed `allowCrossTenant` path.
+- Junctions extend `SmrtJunction`, true `parentId` trees `SmrtHierarchical`, and
+  polymorphic links `SmrtPolymorphicAssociation`. System tables use `_smrt_`.
+  Asset ownership uses noun-specific joins; generic associations are provenance.
+- Use public registry/database/collection APIs; add an owning-package API rather
+  than reaching into private state. JSON fields use guarded string get/set helpers.
+- Runtime checks table existence only and never creates application schema.
+  Use migrations and `smrt doctor --db` / `db:status --parity`. Existing int4
+  deployments require the maintenance-window `db:migrate-int8` flow; normal
+  parity intentionally treats int4/int8 as equivalent. See CLI guidance.
+- Release automation generates changesets; never author them manually. Dependency
+  overrides target the advisory range; ignored GHSAs also need an
+  `audit-policy.json` record. Validate with `pnpm audit:policy`.
 
-## Core model invariants
+## Documentation and skills
 
-- Numeric defaults carry schema meaning: `0` maps to integer and `0.0` to decimal.
-  Money is exact and stored as integer minor units at an application-defined
-  scale, so money fields write `= 0`; rates and confidence scores are inherently
-  fractional and write `= 0.0`. PostgreSQL and DuckDB materialize INTEGER as
-  64-bit BIGINT, but hydrated values must remain within JavaScript's safe-integer
-  range. `dev:knowledge-check` reports both directions (#2361, #2373).
-- Never override `toJSON()`; extend serialization through `transformJSON()`.
-- Same-package foreign keys use `@foreignKey(Target)`; cross-package references
-  use `@crossPackageRef('@happyvertical/smrt-package:Class')`.
-- System tables use `_smrt_` prefixes. Junctions extend `SmrtJunction`; true
-  `parentId` trees extend `SmrtHierarchical`; generic/provenance links extend
-  `SmrtPolymorphicAssociation`.
-- STI discriminators are qualified names such as
-  `@happyvertical/smrt-content:Article`.
-- UUID identifiers and foreign keys remain native UUID on PostgreSQL/DuckDB and
-  text on SQLite. Fix invalid values or casts at owning boundaries; never weaken
-  UUID columns to text.
-- Tenant-scoped relationship loads enforce isolation. Cross-tenant reads require
-  an explicit, reviewed `allowCrossTenant` path.
-- Do not reach into underscored/private registry, database, collection, or table
-  state. Add a public API in the owning package.
-- Asset ownership uses noun-specific join tables; reserve generic asset
-  associations for provenance or polymorphic links.
+`AGENTS.md` is canonical; `CLAUDE.md` stays exactly `@AGENTS.md`. Keep instructions
+focused on source locations, non-obvious invariants, validation, and links.
+Remove stale/redundant prose; move detailed current contracts into linked
+`agents/<module>.md` references. Do not add AGENTS below a package root: ancestry
+is additive. `pnpm check:agents-chain` checks the 32 KB cap.
 
-## Generated knowledge
+[WORKFLOW.md](WORKFLOW.md) routes to shared lifecycle skills. This project's
+GitHub tracker uses `implement`, `claim-issue`, `review-cycle`, `ship`, and
+`resolve`; Work/buzz variants require an explicitly selected Work tracker.
 
-- Root and package `AGENTS.md` files are canonical expert documentation;
-  `CLAUDE.md` is only an `@AGENTS.md` adapter.
-- Instruction chains are ADDITIVE and capped at 32 KB, so never nest an
-  `AGENTS.md`. Split an oversized package doc into `packages/<pkg>/agents/<module>.md`
-  linked from a Modules table — keep orientation, invariants, and Gotchas inline;
-  the knowledge tooling resolves the links. `pnpm check:agents-chain` reports headroom.
-- `smrt docs:agents` generates downstream `.agents/smrt-framework.md` snapshots.
-- `smrt dev:knowledge-index` prints the deterministic SMRT + SDK knowledge graph.
-- `smrt dev:knowledge-check` validates docs, manifests, package files,
-  relationship facts, and money/rate numeric precision. CI and Lefthook run
-  strict freshness checks.
-- Use `smrt knowledge:review-context` and
-  `smrt knowledge:architecture-context` with the narrowest scope/package.
-- Runtime manifests stay runtime-focused; `.smrt/smrt-knowledge.json` and
-  `dist/smrt-knowledge.json` are the agent/developer contract.
-- Use **generation snapshot** for the proposed versioned, immutable provenance
-  bundle in #2328; do not call a runtime manifest or prompt bundle generically
-  "context". See `docs/content/standards.md` for the artifact vocabulary.
-- `smrt doctor` is the umbrella project-health diagnostic. Artifact consumers
-  enforce validity themselves with the same verifier and fail closed; doctor is
-  observability, not an enforcement prerequisite.
-
-## Frequent hazards
-
-- Restart Vitest after adding decorated classes; manifests are generated at
-  startup.
-- `ObjectRegistry` uses a `globalThis` singleton so it survives HMR.
-- Runtime only checks that a table exists — no column, type, or index check —
-  and never creates application tables; use explicit migrations/tooling, and
-  `smrt doctor --db` / `db:status --parity` to compare a live database.
-- Fresh PostgreSQL/DuckDB `INTEGER` columns materialize as BIGINT. Existing
-  int4 deployments require the explicit, maintenance-window-only
-  `smrt db:migrate-int8` flow; parity reports it as an advisory because the
-  normal differ intentionally treats int4 and int8 as equivalent (#2424).
-- Vite 8 decorators require the repository's documented Oxc legacy decorator
-  configuration; do not restore obsolete Vite 7 workarounds.
-- Svelte subpath packages must run `svelte-check`, not only `tsc`.
-- Avoid complex inline intersected generics in Svelte `$props()`; use named
-  interfaces to prevent recursive type evaluation.
-- JSON fields are stored as strings and should expose guarded get/set helpers.
-- Write `pnpm-workspace.yaml` override selectors against the advisory's range,
-  not the range vulnerable when added — a pin stops protecting once the advisory
-  grows to include it. Suppressing via `auditConfig.ignoreGhsas` also requires an
-  `audit-policy.json` record; `pnpm audit:policy` enforces it (#2028).
-
-## Pull requests
-
-Keep changes package-focused, use conventional commits, and run knowledge
-freshness before pushing; the kernel above governs readiness and merging.
+`smrt knowledge:review-context` / `knowledge:architecture-context` provide
+scoped summaries; read the selected references on demand. Runtime manifests
+remain separate from `.smrt/smrt-knowledge.json` / `dist/smrt-knowledge.json`
+agent artifacts. `smrt docs:agents` exports snapshots to consumer projects.
+Knowledge freshness is enforced by CI/hooks and artifact consumers; `smrt doctor`
+is diagnostic, not an enforcement prerequisite. See
+[standards](docs/content/standards.md) for artifact vocabulary, including
+**generation snapshot** for the proposed immutable provenance bundle.

@@ -476,12 +476,17 @@ export interface SmartObjectConfig {
         /**
          * Exclude specific tools (supports both standard CRUD actions and custom methods).
          *
-         * Matched exactly and case-sensitively against the name as declared —
-         * the lowercase verb for a CRUD action (`list`), the method's own
-         * casing for a custom action (`syncNow`). Unlike `include`, a
-         * mismatched entry is silently inert rather than warned about: it
-         * matches nothing, so the tool it was meant to withhold is still
-         * emitted.
+         * A CRUD entry is matched exactly against the lowercase verb
+         * (`list`) — CRUD verbs have no cased form, so this is never
+         * ambiguous. A custom-method entry is matched **case-insensitively**
+         * against the method's declared name (`syncNow`/`syncnow` both
+         * exclude it, #2638): the emitted tool id is itself a lowercased
+         * `${object}_${method}` string, so an exclude entry that only
+         * matched the declared casing could silently fail to withhold the
+         * tool it names. Unlike `include`, a CRUD entry that matches nothing
+         * (a typo, or a name that isn't a CRUD verb at all) is silently
+         * inert rather than warned about — the tool it was meant to
+         * withhold is still emitted.
          */
         exclude?: string[];
 

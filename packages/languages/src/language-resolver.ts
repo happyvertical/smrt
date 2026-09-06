@@ -2,6 +2,7 @@ import { getPackageConfig } from '@happyvertical/smrt-config';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import {
   getCachedLanguage,
+  getLanguageCacheGeneration,
   invalidateLanguageCache,
   setCachedLanguage,
 } from './cache.js';
@@ -60,6 +61,12 @@ async function resolveBaseForLocale(
     };
   }
 
+  // Capture the invalidation generation before the asynchronous layer loads. A
+  // write that lands while they are in flight bumps it, and the cache write in
+  // `finalize` is then refused rather than repopulating the entry the write
+  // just invalidated with the pre-write value.
+  const loadedAtGeneration = getLanguageCacheGeneration(key, locale, cacheDb);
+
   // 1. Tenant override (highest precedence among stored layers).
   if (collection && tenantId) {
     const tenantOverride = await collection.getTenantOverride(
@@ -73,6 +80,7 @@ async function resolveBaseForLocale(
         locale,
         tenantId,
         db: cacheDb,
+        loadedAtGeneration,
         attempt: {
           template: tenantOverride.template,
           source: 'tenant',
@@ -91,6 +99,7 @@ async function resolveBaseForLocale(
         locale,
         tenantId,
         db: cacheDb,
+        loadedAtGeneration,
         attempt: {
           template: appOverride.template,
           source: 'app',
@@ -111,6 +120,7 @@ async function resolveBaseForLocale(
       locale,
       tenantId,
       db: cacheDb,
+      loadedAtGeneration,
       attempt: {
         template: configTemplate,
         source: 'config',
@@ -127,6 +137,7 @@ async function resolveBaseForLocale(
       locale,
       tenantId,
       db: cacheDb,
+      loadedAtGeneration,
       attempt: {
         template: definition.template,
         source: 'code',
@@ -163,6 +174,7 @@ function finalize(args: {
   tenantId: string | null;
   db: unknown;
   attempt: ResolutionAttempt;
+  loadedAtGeneration: number;
 }): ResolutionAttempt {
   if (args.attempt.template !== null) {
     const value: LanguageCacheValue = {
@@ -172,7 +184,14 @@ function finalize(args: {
       source: args.attempt.source,
       resolvedFromLocale: args.attempt.resolvedFromLocale,
     };
-    setCachedLanguage(args.key, args.locale, args.tenantId, args.db, value);
+    setCachedLanguage(
+      args.key,
+      args.locale,
+      args.tenantId,
+      args.db,
+      value,
+      args.loadedAtGeneration,
+    );
   }
   return args.attempt;
 }

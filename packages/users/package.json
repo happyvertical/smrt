@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.45.1",
+  "version": "0.46.0",
   "smrtJsdoc": "strict",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
@@ -44,7 +44,7 @@
     "dev": "npm run build:watch",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts src/__tests__/oidc-provisioning-postgres.test.ts src/__tests__/terminal-auth-postgres.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts src/__tests__/oidc-provisioning-postgres.test.ts src/__tests__/legacy-user-profile-backfill-postgres.test.ts src/__tests__/terminal-auth-postgres.test.ts",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

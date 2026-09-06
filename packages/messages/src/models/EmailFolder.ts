@@ -10,7 +10,7 @@ import type { EmailFolderOptions } from '../types';
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class EmailFolder extends SmrtObject {
   @tenantId({ nullable: true })

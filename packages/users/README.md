@@ -552,17 +552,27 @@ keys from a single deploy process:
 
 ```typescript
 import { backfillProfileEmailKeys } from '@happyvertical/smrt-profiles';
-import { backfillUserEmailKeys } from '@happyvertical/smrt-users';
+import {
+  backfillLegacyUserProfiles,
+  backfillUserEmailKeys,
+} from '@happyvertical/smrt-users';
 
 await backfillProfileEmailKeys(database);
 await backfillUserEmailKeys(database);
+await backfillLegacyUserProfiles(database);
 ```
 
 The supported backfills are transactional and idempotent. The User backfill
 fails without changing rows if legacy emails are still ambiguous; reconcile
-the reported normalized keys and rerun it. All OIDC paths require the Profile
+the reported normalized keys and rerun it. The legacy Profile backfill creates
+and links a canonical global Person for each User whose Profile link is still
+null or blank. It preserves the User ID and data, creates no OIDC identity, and
+never infers ownership from email: any same-email Profile, duplicate User email,
+or conflicting reservation must be reconciled explicitly before retrying. Its
+marker records a successful pass but does not hide Users imported later. All
+OIDC paths require the Profile
 marker; paths that create a User or arbitrate User email uniqueness also require
-the User marker. Run both before enabling OIDC provisioning. Pass the
+the User marker. Run all three before enabling OIDC provisioning. Pass the
 root database to provisioning on adapters such as DuckDB that do not support
 nested savepoints; root adapters must expose `beginTransaction`. A handle
 exposing only `transaction()` is ambiguous and fails closed before resolver
@@ -679,6 +689,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
 | `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
+| `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
 | `OidcProfileResolver` | Transaction-bound pre-provision hook for application identity reconciliation. |
 | `OidcProfileOwnerAuthorizer` | Transaction-bound application authorization for binding a first identity to an existing canonical Profile and its sole approved User owner. |

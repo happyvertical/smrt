@@ -180,7 +180,7 @@ export interface SceneOptions extends SmrtObjectOptions {
   mcp: {
     include: ['list', 'get'],
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Scene extends SmrtObject {
   @tenantId({ nullable: true })

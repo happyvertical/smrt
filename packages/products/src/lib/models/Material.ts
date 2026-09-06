@@ -48,7 +48,7 @@ export interface MaterialOptions extends ProductOptions {
   mcp: {
     include: ['list', 'get'], // read-only AI tools, matches Product
   },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class Material extends Product {
   override productType: ProductType = ProductType.MATERIAL;

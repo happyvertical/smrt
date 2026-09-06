@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-web",
-  "version": "0.45.1",
+  "version": "0.46.0",
   "description": "SMRT browser client data runtime: typed collection factory wrapping the client-data engine over generated REST clients",
   "author": "HappyVertical",
   "type": "module",
@@ -24,6 +24,10 @@
     "./intents": {
       "types": "./dist/intents.d.ts",
       "import": "./dist/intents.js"
+    },
+    "./webmcp-tool-names": {
+      "types": "./dist/webmcp-tool-names.d.ts",
+      "import": "./dist/webmcp-tool-names.js"
     }
   },
   "dependencies": {

@@ -25,6 +25,7 @@ import {
   resolveCollectionItemClassName,
   resolveRelatedRegistration,
 } from '../registry/collection-resolution.js';
+import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import {
@@ -331,7 +332,12 @@ function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
  * - Uses `SchemaGenerator.generateSQL()` - the single source of truth for DDL
  * - Handles STI (Single Table Inheritance) correctly
  * - Creates system tables for framework functionality
- * - Safe for parallel test execution (each call creates isolated instance)
+ * - Safe for parallel test execution: each call creates an isolated
+ *   in-memory instance with its own embedded write-queue identity, so
+ *   unrelated `:memory:` databases never serialize writes against each
+ *   other (#2707). A `cache=shared` URL is the deliberate exception: it
+ *   asks SQLite/DuckDB to genuinely share the underlying database, so it
+ *   keeps sharing one write-queue identity too.
  *
  * @param options - Configuration options
  * @returns Promise resolving to configured DatabaseInterface
@@ -387,7 +393,10 @@ export async function getTestDatabase(
     await initializeSystemTables(db);
   }
 
-  // Get class names to setup
+  // Get class names to setup. The framework-base filter below only applies
+  // when the caller left `classes` implicit: an explicit list naming a
+  // framework base class must still be honored (#2645).
+  const isImplicitClassList = classes === undefined;
   const classNames = resolveRequestedSchemaClassNames(
     classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
@@ -422,6 +431,21 @@ export async function getTestDatabase(
     // than raw strings, so it stays correct under R5-canon (getSTIBase returns
     // qualified names) while also handling collection/override registrations.
     if (isSTIChild(className)) {
+      continue;
+    }
+
+    // Framework abstract base classes (SmrtObject, SmrtClass, ...) are
+    // scaffolding, not resources, and produce phantom smrt_objects/
+    // smrt_classes/smrt_collections/smrt_hierarchicals/
+    // smrt_polymorphic_associations tables when the default registry
+    // snapshot happens to include them (#2645). Mirrors the production
+    // `buildMergedTableSchemas()` filter in `registry/schema-builder.ts`, but
+    // only for the implicit class list — an explicit `classes: [...]` caller
+    // that names a framework base class is still honored.
+    if (
+      isImplicitClassList &&
+      isFrameworkBaseClass(registered?.name, registered?.packageName)
+    ) {
       continue;
     }
 

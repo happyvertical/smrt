@@ -71,7 +71,7 @@ export function normalizeEmail(email: string): string {
   // profileId), provisioned via OIDC/magic-link, not arbitrary authed POST/PUT.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { skipApiCheck: true },
 })
 export class User extends SmrtObject implements UserContract {
   /**
