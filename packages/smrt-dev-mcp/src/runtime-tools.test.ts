@@ -146,7 +146,7 @@ async function seed(database: DatabaseInterface): Promise<void> {
     `INSERT INTO _smrt_schema_migrations
        (id, name, version, checksum, status, applied_at, error_message, package_name)
      VALUES
-       ('m1', '0001_init', '0.1.0', 'c8e1', 'applied', '2026-08-29T10:00:00.000Z', NULL, 'app'),
+       ('m1', '0001_init', '0.1.0', 'c8e1', 'completed', '2026-08-29T10:00:00.000Z', NULL, 'app'),
        ('m2', '0002_failed', '0.2.0', 'c8e2', 'failed', '2026-08-29T11:00:00.000Z', 'boom: password=hunter2', 'app')`,
   );
   await database.query(
@@ -356,6 +356,13 @@ describe('runtime diagnostics tools (#1824)', () => {
     expect(
       redactConnectionString('boom: password=hunter2 at connector'),
     ).not.toContain('hunter2');
+  });
+
+  it('masks a sensitive pair at the very start of a message', () => {
+    expect(redactConnectionString('password=hunter2 rejected')).not.toContain(
+      'hunter2',
+    );
+    expect(redactConnectionString('authToken=abc123')).toBe('authToken=***');
   });
 
   it('masks sensitive pairs preceded by comma or parenthesis', () => {

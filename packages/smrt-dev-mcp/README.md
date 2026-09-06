@@ -458,8 +458,9 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 
 ### `migration-status`
 
-Live migration status from the `_smrt_schema_migrations` system table: applied /
-pending / failed counts plus the latest and failed migrations. Runtime
+Live migration status from the `_smrt_schema_migrations` system table:
+completed / running / failed / rolled-back counts (the tracker's real status
+vocabulary) plus the latest completed and the failed migrations. Runtime
 provenance (`runtime (live DB)`); read-only. Without a configured connection it
 returns a successful static-only result.
 

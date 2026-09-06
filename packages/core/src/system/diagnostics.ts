@@ -68,12 +68,17 @@ export interface MigrationStatusRow {
   batch: number | null;
 }
 
+/**
+ * Counts use `MigrationTracker`'s real status vocabulary: `completed`
+ * (successfully applied), `running` (in flight), `failed`, and `rolled_back`.
+ */
 export interface MigrationStatusSummary {
   total: number;
   byStatus: Record<string, number>;
-  applied: number;
-  pending: number;
+  completed: number;
+  running: number;
   failed: number;
+  rolledBack: number;
 }
 
 export type MigrationStatusResult =
@@ -123,14 +128,15 @@ export async function readMigrationStatus(
       byStatus[status] = count;
       total += count;
     }
-    const applied = byStatus.applied ?? 0;
-    const pending = byStatus.pending ?? 0;
+    const completed = byStatus.completed ?? 0;
+    const running = byStatus.running ?? 0;
     const failed = byStatus.failed ?? 0;
+    const rolledBack = byStatus.rolled_back ?? 0;
 
     const latest = queryRows(
       await db.query(
         `SELECT ${MIGRATION_COLUMNS} FROM ${table}
-          WHERE status = 'applied'
+          WHERE status = 'completed'
           ORDER BY applied_at DESC, id ASC
           LIMIT ${p(1)}`,
         limit,
@@ -149,7 +155,7 @@ export async function readMigrationStatus(
 
     return {
       available: true,
-      summary: { total, byStatus, applied, pending, failed },
+      summary: { total, byStatus, completed, running, failed, rolledBack },
       latest,
       failed: failedRows,
     };
@@ -257,7 +263,10 @@ export type JobHealthResult =
 export interface JobHealthOptions {
   /** Row budget for `jobs` (default {@link DIAGNOSTICS_DEFAULT_LIMIT}). */
   limit?: number;
-  /** Heartbeat older than this (ms) marks a `running` job as stuck. */
+  /**
+   * Heartbeat older than this (ms) marks a `running` job as stuck — unless
+   * its owning worker still holds a fresh `_smrt_workers` lease.
+   */
   staleAfterMs?: number;
   /** Clock for staleness computations (defaults to `new Date()`). */
   now?: Date;
@@ -294,13 +303,33 @@ export async function readJobHealth(
     }
     const failed = byStatus.failed ?? 0;
 
+    // Mirror the runner's recovery rule (#1474): a stale per-job heartbeat is
+    // only telemetry. A running job whose worker still holds a fresh liveness
+    // lease in `_smrt_workers` (renewed off the handler event loop) is alive
+    // even while its handler blocks, so it is not stuck. Without the workers
+    // table liveness is unknowable and the heartbeat is the only signal.
+    const workersTable = SYSTEM_DIAGNOSTICS_TABLES.workers;
+    const workersAvailable = await tableExists(db, workersTable);
     const stuckRows = queryRows(
-      await db.query(
-        `SELECT COUNT(*) AS total FROM ${table}
-          WHERE status = 'running'
-            AND (worker_heartbeat IS NULL OR worker_heartbeat < ${p(1)})`,
-        staleCutoff.toISOString(),
-      ),
+      workersAvailable
+        ? await db.query(
+            `SELECT COUNT(*) AS total FROM ${table} AS j
+              WHERE j.status = 'running'
+                AND (j.worker_heartbeat IS NULL OR j.worker_heartbeat < ${p(1)})
+                AND NOT EXISTS (
+                  SELECT 1 FROM ${workersTable} AS w
+                   WHERE w.worker_id = j.worker_id
+                     AND w.lease_expires_at > ${p(2)}
+                )`,
+            staleCutoff.toISOString(),
+            now.toISOString(),
+          )
+        : await db.query(
+            `SELECT COUNT(*) AS total FROM ${table}
+              WHERE status = 'running'
+                AND (worker_heartbeat IS NULL OR worker_heartbeat < ${p(1)})`,
+            staleCutoff.toISOString(),
+          ),
     );
     const stuck = toCount(stuckRows[0]?.total);
 
@@ -314,8 +343,7 @@ export async function readJobHealth(
     ).map(toJobHealthRow);
 
     let workers: WorkerHealthRow[] = [];
-    const workersTable = SYSTEM_DIAGNOSTICS_TABLES.workers;
-    if (await tableExists(db, workersTable)) {
+    if (workersAvailable) {
       workers = queryRows(
         await db.query(
           `SELECT ${WORKER_COLUMNS} FROM ${workersTable}
@@ -815,9 +843,11 @@ export interface RecentChangesOptions {
 }
 
 /**
- * Read the recent change feed via the canonical SELECT-only
- * {@link getChangesSince} reader. A missing `_smrt_changes` table degrades to
- * category-unavailable.
+ * Read the recent change feed via the canonical {@link getChangesSince}
+ * reader with `drain: false`, so the PostgreSQL staged-entry drain (a write
+ * through `_smrt_drain_changes()`) never runs from a diagnostic. Entries still
+ * staged by an open caller transaction stay invisible until a writer drains
+ * them. A missing `_smrt_changes` table degrades to category-unavailable.
  */
 export async function readRecentChanges(
   db: DatabaseInterface,
@@ -830,6 +860,7 @@ export async function readRecentChanges(
   try {
     const page = await getChangesSince(db, {
       since: options.since ?? 0,
+      drain: false,
       tables: options.tables,
       tenantId: options.tenantId,
       limit: boundedLimit(options.limit, 200),

@@ -18,6 +18,7 @@
  *   never reach the MCP transport and never includes raw driver text or URLs.
  */
 
+import { createHash } from 'node:crypto';
 import {
   readDispatchHealth,
   readJobHealth,
@@ -64,19 +65,24 @@ type RuntimeRead = (db: DatabaseInterface) => Promise<RuntimeReadParts>;
  * calls never close a shared cached handle out from under each other.
  *
  * `@happyvertical/sql`'s `getDatabase` returns a cached handle per URL (no
- * opt-out in its public API), and `closeRuntimeConnection` evicts that cached
- * handle. Two concurrent diagnostics calls resolving the same URL would
- * otherwise share one handle, with the first finisher closing it mid-read for
- * the second. A per-key promise chain keeps each call's lifecycle private:
- * every call resolves its own view of the connection, performs its read, and
- * only then closes — the next queued call re-resolves a fresh handle.
+ * opt-out in its public API). `closeRuntimeConnection` only calls the handle's
+ * own `close`/`end`, but the SDK wraps those so a close also evicts the handle
+ * from its connection cache. Two concurrent diagnostics calls resolving the
+ * same URL would therefore share one handle, with the first finisher closing
+ * it mid-read for the second. A per-key promise chain keeps each call's
+ * lifecycle private: every call resolves its own view of the connection,
+ * performs its read, and only then closes — the next queued call re-resolves
+ * a fresh handle.
+ *
+ * The key is a digest of the resolved target, never the raw URL, so a
+ * credential-bearing connection string is not retained in this map.
  */
 const runtimeReadQueues = new Map<string, Promise<unknown>>();
 
 function connectionQueueKey(args: RuntimeDatabaseArgs): string {
-  return (
-    args.dbUrl?.trim() || process.env.SMRT_DEV_DB_URL?.trim() || 'cli.config'
-  );
+  const target =
+    args.dbUrl?.trim() || process.env.SMRT_DEV_DB_URL?.trim() || 'cli.config';
+  return createHash('sha256').update(target).digest('hex');
 }
 
 async function enqueueRuntimeRead<T>(

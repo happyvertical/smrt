@@ -141,7 +141,7 @@ const TS = '2026-08-30T10:00:00.000Z';
 
 describe('system diagnostics reader (#1824)', () => {
   describe('migration-status', () => {
-    it('reflects seeded applied and failed migrations with safe projections', async () => {
+    it('reflects seeded completed and failed migrations with safe projections', async () => {
       await db.query(
         `INSERT INTO _smrt_schema_migrations
            (id, name, version, checksum, status, applied_at, execution_time_ms,
@@ -152,7 +152,7 @@ describe('system diagnostics reader (#1824)', () => {
         'create_users',
         '1.0.0',
         'abc123',
-        'applied',
+        'completed',
         '2026-08-01T00:00:00.000Z',
         42,
         1,
@@ -181,13 +181,19 @@ describe('system diagnostics reader (#1824)', () => {
       expect(result.available).toBe(true);
       if (!result.available) return;
 
-      expect(result.summary).toMatchObject({ total: 2, applied: 1, failed: 1 });
-      expect(result.summary.byStatus).toEqual({ applied: 1, failed: 1 });
+      expect(result.summary).toMatchObject({
+        total: 2,
+        completed: 1,
+        running: 0,
+        failed: 1,
+        rolledBack: 0,
+      });
+      expect(result.summary.byStatus).toEqual({ completed: 1, failed: 1 });
       expect(result.latest).toHaveLength(1);
       expect(result.latest[0]).toMatchObject({
         name: 'create_users',
         version: '1.0.0',
-        status: 'applied',
+        status: 'completed',
         executionTimeMs: 42,
         packageName: '@happyvertical/smrt-core',
         isReversible: true,
@@ -226,7 +232,7 @@ describe('system diagnostics reader (#1824)', () => {
             return [{ '1': 1 }];
           }
           if (/GROUP BY status/.test(sql)) {
-            return [{ status: 'applied', total: 1 }];
+            return [{ status: 'completed', total: 1 }];
           }
           if (/LIMIT \$1/.test(sql)) {
             return [];
@@ -297,7 +303,7 @@ describe('system diagnostics reader (#1824)', () => {
         'host-a',
         TS,
         '2026-08-30T09:55:00.000Z',
-        '2026-08-30T10:05:00.000Z',
+        '2026-08-30T09:59:00.000Z',
         'running',
       );
 
@@ -308,6 +314,7 @@ describe('system diagnostics reader (#1824)', () => {
       expect(result.available).toBe(true);
       if (!result.available) return;
 
+      // job-1's heartbeat is stale AND worker-a's lease expired at 09:59.
       expect(result.summary).toMatchObject({
         total: 2,
         failed: 1,
@@ -322,6 +329,49 @@ describe('system diagnostics reader (#1824)', () => {
         hostname: 'host-a',
         status: 'running',
       });
+    });
+
+    it('does not count a stale-heartbeat job as stuck while its worker lease is fresh', async () => {
+      await db.query(
+        `INSERT INTO _smrt_jobs
+           (id, queue, object_type, method, run_at, status, attempts, max_attempts,
+            worker_id, worker_heartbeat, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        'job-blocked',
+        'default',
+        'ReportBuilder',
+        'build',
+        '2026-08-30T09:00:00.000Z',
+        'running',
+        1,
+        3,
+        'worker-b',
+        '2026-08-30T09:40:00.000Z',
+        TS,
+      );
+      await db.query(
+        `INSERT INTO _smrt_workers
+           (id, worker_id, pid, hostname, started_at, heartbeat_at, lease_expires_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        'w-2',
+        'worker-b',
+        4321,
+        'host-b',
+        TS,
+        '2026-08-30T09:59:30.000Z',
+        '2026-08-30T10:04:00.000Z',
+        'running',
+      );
+
+      const result = await readJobHealth(db, {
+        now: new Date('2026-08-30T10:00:00.000Z'),
+        staleAfterMs: 60_000,
+      });
+      expect(result.available).toBe(true);
+      if (!result.available) return;
+      // The handler may be blocking its loop, but the off-loop liveness lease
+      // is fresh: the runner would not recover this job, so it is not stuck.
+      expect(result.summary.stuck).toBe(0);
     });
 
     it('never projects job payload/result columns', async () => {
@@ -581,6 +631,30 @@ describe('system diagnostics reader (#1824)', () => {
   });
 
   describe('recent-changes', () => {
+    it('never drains the feed: only SELECT statements reach the database', async () => {
+      const queries: string[] = [];
+      const shaped: DatabaseInterface = {
+        ...db,
+        url: 'postgres://user:***@localhost:5432/app',
+        query: async (sql: string): Promise<any> => {
+          queries.push(sql);
+          if (/information_schema\.tables/.test(sql)) return [{ '1': 1 }];
+          if (/MIN\(seq\)/.test(sql)) {
+            return [{ floor: 1, horizon: 2, in_transaction: false }];
+          }
+          if (/FROM _smrt_changes WHERE/.test(sql)) return [];
+          throw new Error(`unexpected sql: ${sql}`);
+        },
+      };
+      const result = await readRecentChanges(shaped);
+      expect(result.available).toBe(true);
+      expect(queries.length).toBeGreaterThan(0);
+      for (const sql of queries) {
+        expect(sql).toMatch(/^\s*SELECT/i);
+        expect(sql).not.toMatch(/_smrt_drain_changes|INSERT|UPDATE|DELETE/i);
+      }
+    });
+
     it('returns seeded changes after a cursor with table filtering', async () => {
       await db.query(
         `INSERT INTO _smrt_changes (seq, table_name, row_id, operation, tenant_id, created_at)
@@ -671,7 +745,7 @@ describe('system diagnostics reader (#1824)', () => {
         'init',
         '1.0.0',
         'x',
-        'applied',
+        'completed',
         '2026-08-01T00:00:00.000Z',
         1,
       );
@@ -702,7 +776,7 @@ describe('system diagnostics reader (#1824)', () => {
         'init',
         '1.0.0',
         'x',
-        'applied',
+        'completed',
         '2026-08-01T00:00:00.000Z',
         1,
       );

@@ -19,7 +19,7 @@
  * that looks like a credential-bearing URL.
  */
 
-import { getPackageConfig } from '@happyvertical/smrt-config';
+import { getPackageConfig, loadConfig } from '@happyvertical/smrt-config';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 
@@ -103,7 +103,8 @@ const DEFAULT_CLI_DATABASE = {
  * so camelCase forms such as Turso/libsql's `?authToken=` mask exactly like
  * their snake_case forms. A final regex pass also masks `key=value` pairs
  * embedded in free text (driver error messages often quote the URL); it treats
- * `?`, `&`, `,`, `(`, and whitespace as the preceding boundary.
+ * the start of the string, `?`, `&`, `,`, `(`, and whitespace as the
+ * preceding boundary.
  */
 export function redactConnectionString(value: string): string {
   let redacted = value;
@@ -134,7 +135,7 @@ export function redactConnectionString(value: string): string {
   // parse above may have left intact (e.g. a URL quoted inside an error
   // message, where `?`/`&` boundaries do not delimit params for `new URL`).
   return redacted.replace(
-    /([?&,(\s]([a-z][a-z0-9_-]{0,30})=)([^&,\s)]+)/gi,
+    /((?:^|[?&,(\s])([a-z][a-z0-9_-]{0,30})=)([^&,\s)]+)/gi,
     (match, prefix: string, key: string) =>
       SENSITIVE_QUERY_PARAM_NAMES.has(normalizeQueryParamName(key))
         ? `${prefix}***`
@@ -214,7 +215,7 @@ export async function resolveRuntimeConnection(
     };
   }
 
-  const config = loadCliDatabaseConfig();
+  const config = await loadCliDatabaseConfig();
   const configUrl = config?.database?.url?.trim();
   if (configUrl && configUrl !== ':memory:') {
     const databaseType = toRuntimeDatabaseType(
@@ -239,10 +240,14 @@ interface DatabaseConfigLike {
   database?: { type?: string; url?: string };
 }
 
-function loadCliDatabaseConfig(): DatabaseConfigLike {
+async function loadCliDatabaseConfig(): Promise<DatabaseConfigLike> {
   try {
-    // Cosmiconfig is resolved from the server's cwd (the project the agent is
-    // working in); a missing or invalid config falls back to the defaults.
+    // `getPackageConfig` only reads the synchronous cache and answers with
+    // defaults until `loadConfig()` has run; nothing else in this server loads
+    // the project config, so load it here. Cosmiconfig is resolved from the
+    // server's cwd (the project the agent is working in); a missing or invalid
+    // config falls back to the defaults.
+    await loadConfig();
     const config = getPackageConfig(
       'cli',
       DEFAULT_CLI_DATABASE as unknown as Record<string, unknown>,

@@ -23,7 +23,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
-| `migration-status` | Live migration status from the `_smrt_schema_migrations` system table — applied/pending/failed counts, latest and failed migrations (runtime provenance; read-only; optional live DB, #1824) |
+| `migration-status` | Live migration status from the `_smrt_schema_migrations` system table — completed/running/failed/rolled_back counts, latest completed and failed migrations (runtime provenance; read-only; optional live DB, #1824) |
 | `job-health` | Live job queue health from the `_smrt_jobs`/`_smrt_workers` system tables — counts by status, stuck/failed jobs, worker liveness; payloads/results never read (runtime provenance; read-only, #1824) |
 | `schedule-health` | Live agent schedule health from the `_smrt_agent_schedules` system table — due/overdue/errored counts, last/next run; sensitive `agentConfig` never read (runtime provenance; read-only, #1824) |
 | `dispatch-health` | Live dispatch health from the `_smrt_dispatch`/`_smrt_dispatch_subscriptions` system tables — stuck/pending by type/status, subscription topology; payloads/metadata never read (runtime provenance; read-only, #1824) |

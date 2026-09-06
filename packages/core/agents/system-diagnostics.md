@@ -22,12 +22,17 @@ Sensitive columns are never selected, not selected-then-stripped: job
 dispatch `payload`/`metadata` stay in the database; short error texts
 (`last_error`, `error_message`) and statuses are surfaced for diagnosis, and
 smrt-dev-mcp runs every string in a live result through
-`redactConnectionString` before it reaches a client. A
-`running` job with a NULL `worker_heartbeat` counts as stale — the runner writes
-the heartbeat at claim time, so a running row without one is anomalous and
-worth surfacing. Row lists honor `DIAGNOSTICS_DEFAULT_LIMIT` (50) capped at 500;
-`readRecentChanges()` pages the `getChangesSince()` change feed (default 200)
-with the same cap.
+`redactConnectionString` before it reaches a client. Migration
+counts use `MigrationTracker`'s real vocabulary (`completed`, `running`,
+`failed`, `rolled_back`), never an invented `applied`/`pending`. A `running`
+job is stuck only when its `worker_heartbeat` is stale or NULL **and** its
+worker holds no fresh `_smrt_workers.lease_expires_at` — the same rule the
+runner's recovery uses (#1474), so a handler blocking its event loop under a
+live off-loop lease is not reported stuck; without the workers table the
+heartbeat is the only signal. Row lists honor `DIAGNOSTICS_DEFAULT_LIMIT` (50)
+capped at 500; `readRecentChanges()` pages `getChangesSince()` with
+`drain: false` (default 200, same cap) so the PostgreSQL staged-entry drain —
+a write — never runs from a diagnostic.
 
 Engine compatibility lives in one place: `placeholders(db)` resolves `$n`
 numbering (PostgreSQL) versus `?` (SQLite/DuckDB) via the shared
