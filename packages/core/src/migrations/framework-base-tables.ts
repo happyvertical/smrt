@@ -31,9 +31,11 @@
  *    unrelated table that happens to share one of these five names — is
  *    reported as unsafe and dropped nothing.
  * 3. {@link dropFrameworkBaseTables} refuses to run against a plan that is
- *    not `safe`, and re-verifies emptiness a second time inside the bounded
- *    transaction immediately before dropping anything, so a write that lands
- *    between planning and execution still stops the drop.
+ *    not `safe`, locks every PostgreSQL target `IN ACCESS EXCLUSIVE MODE`
+ *    before re-checking it (a plain `SELECT COUNT(*)` alone would not block
+ *    a concurrent writer), and re-verifies emptiness a second time inside
+ *    the bounded transaction immediately before dropping anything, so a
+ *    write that lands between planning and execution still stops the drop.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -135,6 +137,25 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
   return db.url || dbWithConfig.config?.url || '';
 }
 
+/**
+ * Qualify a table or index identifier so execution resolves to exactly the
+ * object inspection looked at.
+ *
+ * `getExistingTableNames()` and `getTableSchema()` both scope PostgreSQL
+ * discovery to the `public` schema, but a plain `quoteIdentifier(name)` in a
+ * `SELECT`/`DROP` statement resolves through the session's `search_path`
+ * instead — which can list another schema before `public`. An empty,
+ * unrelated same-named table or index earlier on that path would otherwise
+ * satisfy every safety check yet let the DROP hit a different object than
+ * the one just verified. SQLite and DuckDB have no equivalent search-path
+ * ambiguity for this module's purposes, so only PostgreSQL is schema-qualified.
+ */
+function qualifyIdentifier(engine: DatabaseEngine, name: string): string {
+  return engine === 'postgres'
+    ? `"public".${quoteIdentifier(name)}`
+    : quoteIdentifier(name);
+}
+
 async function getExistingTableNames(
   db: DatabaseInterface,
   engine: DatabaseEngine,
@@ -156,10 +177,11 @@ async function getExistingTableNames(
 
 async function countRows(
   db: DatabaseInterface,
+  engine: DatabaseEngine,
   table: string,
 ): Promise<number> {
   const result = await db.query(
-    `SELECT COUNT(*) AS row_count FROM ${quoteIdentifier(table)}`,
+    `SELECT COUNT(*) AS row_count FROM ${qualifyIdentifier(engine, table)}`,
   );
   return toSafeInteger(
     result.rows?.[0]?.row_count ?? 0,
@@ -300,7 +322,7 @@ export async function planFrameworkBaseTableDrop(
       refusals.push({ kind: 'referenced-by-foreign-key', references });
     }
 
-    const rowCount = await countRows(db, name);
+    const rowCount = await countRows(db, engine, name);
     if (rowCount > 0) {
       refusals.push({ kind: 'not-empty', rowCount });
     }
@@ -317,9 +339,13 @@ export async function planFrameworkBaseTableDrop(
     for (const table of tables) {
       if (!table.exists) continue;
       for (const indexName of table.indexNames) {
-        statements.push(`DROP INDEX IF EXISTS ${quoteIdentifier(indexName)}`);
+        statements.push(
+          `DROP INDEX IF EXISTS ${qualifyIdentifier(engine, indexName)}`,
+        );
       }
-      statements.push(`DROP TABLE IF EXISTS ${quoteIdentifier(table.table)}`);
+      statements.push(
+        `DROP TABLE IF EXISTS ${qualifyIdentifier(engine, table.table)}`,
+      );
     }
   }
 
@@ -348,9 +374,13 @@ export interface DropFrameworkBaseTablesResult {
  * On PostgreSQL the whole batch runs in one transaction bounded by
  * `SET LOCAL lock_timeout` / `SET LOCAL statement_timeout` (#2362), so a
  * batch that queues behind a long-running writer fails fast and rolls back
- * instead of holding locks against every writer. Immediately before issuing
- * any DDL, every target table's row count is re-checked inside that same
- * transaction: if anything wrote to a table between planning and this call,
+ * instead of holding locks against every writer. Every target is then
+ * locked `IN ACCESS EXCLUSIVE MODE` — a plain `SELECT COUNT(*)` alone only
+ * takes an ACCESS SHARE lock, which would let a concurrent writer commit a
+ * row between the check and the DROP; holding the exclusive lock first
+ * makes the check-then-drop sequence atomic. Only then is every target
+ * table's row count re-checked (inside that same transaction, on all
+ * engines): if anything wrote to a table between planning and this call,
  * the whole batch is refused and nothing is dropped.
  */
 export async function dropFrameworkBaseTables(
@@ -390,12 +420,29 @@ export async function dropFrameworkBaseTables(
       );
     }
 
-    // Belt-and-suspenders: nothing should have written to these tables
-    // between the read-only plan and this transaction, but if it did,
-    // refuse the whole batch rather than drop a table that is no longer
-    // empty.
+    // On PostgreSQL, a plain `SELECT COUNT(*)` takes only an ACCESS SHARE
+    // lock, which does not block a concurrent writer: a row could commit
+    // into a target table after this check passes but before the DROP
+    // below acquires its own exclusive lock, and that row would be dropped
+    // along with the table it landed in. Acquire ACCESS EXCLUSIVE on every
+    // target *before* re-checking emptiness so the check and the drop are
+    // atomic — once held, no other session can read or write the table
+    // until this transaction ends, and `SET LOCAL lock_timeout` above
+    // bounds the wait for it exactly as it bounds the DROP itself.
+    if (isPostgres) {
+      for (const table of targets) {
+        await tx.query(
+          `LOCK TABLE ${qualifyIdentifier(plan.engine, table.table)} IN ACCESS EXCLUSIVE MODE`,
+        );
+      }
+    }
+
+    // Belt-and-suspenders on every engine: nothing should have written to
+    // these tables between the read-only plan and this transaction, but if
+    // it did, refuse the whole batch rather than drop a table that is no
+    // longer empty.
     for (const table of targets) {
-      const rowCount = await countRows(tx, table.table);
+      const rowCount = await countRows(tx, plan.engine, table.table);
       if (rowCount > 0) {
         throw new Error(
           `Refusing to drop "${table.table}": it now has ${rowCount} row(s) though it was empty when planned. Nothing was dropped.`,
