@@ -364,6 +364,88 @@ describe('#2686 wire-ability gate at the route emitter', () => {
     expect(widgets?.customMethods.map((m) => m.name)).toEqual(['runReview']);
   });
 
+  it('routes a union whose OTHER branch is JSON-shaped past a callback branch', async () => {
+    // The flattened `memberTypes` list reported a bare `Function` for
+    // `{ callback: () => void } | string` and rejected the parameter before
+    // the union was ever considered — withholding a route every caller can
+    // reach through the string branch, against the stated rule that a union
+    // with a JSON-shaped member is wire-able.
+    await generate(
+      manifestWith({
+        handle: method({
+          name: 'handle',
+          parameters: [
+            {
+              name: 'value',
+              type: 'object | string',
+              optional: false,
+              memberTypes: ['Function'],
+              unionBranches: [
+                { type: 'object', memberTypes: ['Function'] },
+                { type: 'string' },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+    expect(writtenRoutes()).toContain(
+      '/test/project/src/routes/api/widgets/[id]/handle/+server.ts',
+    );
+  });
+
+  it('withholds a union where NO branch can be built from JSON', async () => {
+    // The other direction of the same fix: `Asset` is a manifest class needing
+    // a live instance and the object branch hides a callback, so neither
+    // branch is reachable and the route must stay withheld.
+    await generate(
+      manifestWith({
+        handle: method({
+          name: 'handle',
+          parameters: [
+            {
+              name: 'value',
+              type: 'object | Asset',
+              optional: false,
+              memberTypes: ['Function'],
+              unionBranches: [
+                { type: 'object', memberTypes: ['Function'] },
+                { type: 'Asset' },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+    expect(writtenRoutes()).not.toContain(
+      '/test/project/src/routes/api/widgets/[id]/handle/+server.ts',
+    );
+  });
+
+  it('still fails closed on a pre-#2686 manifest with no branch data', async () => {
+    // An older manifest carries only the flattened list. Without branches the
+    // resolver must keep its conservative behaviour rather than assume the
+    // union was safe.
+    await generate(
+      manifestWith({
+        handle: method({
+          name: 'handle',
+          parameters: [
+            {
+              name: 'value',
+              type: 'object | string',
+              optional: false,
+              memberTypes: ['Function'],
+            },
+          ],
+        }),
+      }),
+    );
+    expect(writtenRoutes()).not.toContain(
+      '/test/project/src/routes/api/widgets/[id]/handle/+server.ts',
+    );
+  });
+
   it('withholds a method whose inline options bag hides a callback', async () => {
     await generate(
       manifestWith({

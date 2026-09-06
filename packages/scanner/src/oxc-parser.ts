@@ -572,6 +572,7 @@ export function parseFile(filePath: string): FileScanResult {
       const ctx: DecoratorConfigContext = {
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
+        importAliases,
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -749,6 +750,7 @@ export function parseSource(
       const ctx: DecoratorConfigContext = {
         constants: extractModuleObjectConstants(program.body, sourceText),
         unresolved: [],
+        importAliases,
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -1084,6 +1086,14 @@ interface DecoratorConfigContext {
   dependencies?: ModuleConstant['dependencies'];
   /** Require values to be statically literal for security-sensitive @smrt config. */
   requireLiteralValues?: boolean;
+  /**
+   * Local-name -> imported-name for this file's renamed named imports, so a
+   * decorator reached through an alias is still recognized. Without it
+   * `import { method as action }` made `@action({ expose: false })` invisible
+   * to the scanner while the runtime decorator still ran — a withheld method
+   * would silently keep its generated route (#2686).
+   */
+  importAliases?: Map<string, string>;
 }
 
 /**
@@ -1646,10 +1656,14 @@ function extractClassDeclaration(
 
   // Extract decorators
   const decorators = node.decorators || [];
-  const smrtDecorator = decorators.find((d) => isSmrtDecorator(d));
-  const reportDecorator = decorators.find((d) => isNamedDecorator(d, 'report'));
+  const smrtDecorator = decorators.find((d) =>
+    isSmrtDecorator(d, importAliases),
+  );
+  const reportDecorator = decorators.find((d) =>
+    isNamedDecorator(d, 'report', importAliases),
+  );
   const tenantScopedDecorator = decorators.find((d) =>
-    isNamedDecorator(d, 'TenantScoped'),
+    isNamedDecorator(d, 'TenantScoped', importAliases),
   );
   const hasSmartDecorator = !!smrtDecorator;
   const smrtConfig = smrtDecorator
@@ -1725,23 +1739,33 @@ function extractClassDeclaration(
 /**
  * Check if a decorator is @smrt()
  */
-function isSmrtDecorator(decorator: Decorator): boolean {
-  return isNamedDecorator(decorator, 'smrt');
+function isSmrtDecorator(
+  decorator: Decorator,
+  importAliases?: Map<string, string>,
+): boolean {
+  return isNamedDecorator(decorator, 'smrt', importAliases);
 }
 
-function isNamedDecorator(decorator: Decorator, name: string): boolean {
+function isNamedDecorator(
+  decorator: Decorator,
+  name: string,
+  importAliases?: Map<string, string>,
+): boolean {
   const expr = decorator.expression;
+  // A renamed import binds the decorator to a different local identifier;
+  // compare against the name it was imported UNDER, not the local one.
+  const resolve = (local: string): string => importAliases?.get(local) ?? local;
 
   // @decoratorName() - CallExpression
   if (expr.type === 'CallExpression') {
     const callee = expr.callee;
-    if (callee.type === 'Identifier' && callee.name === name) {
+    if (callee.type === 'Identifier' && resolve(callee.name) === name) {
       return true;
     }
   }
 
   // @decoratorName - Identifier (no parentheses)
-  if (expr.type === 'Identifier' && expr.name === name) {
+  if (expr.type === 'Identifier' && resolve(expr.name) === name) {
     return true;
   }
 
@@ -2512,7 +2536,9 @@ function extractMethodDecoratorConfig(
   sourceText: string,
   ctx?: DecoratorConfigContext,
 ): Record<string, unknown> | undefined {
-  const decorator = node.decorators?.find((d) => isNamedDecorator(d, 'method'));
+  const decorator = node.decorators?.find((d) =>
+    isNamedDecorator(d, 'method', ctx?.importAliases),
+  );
   if (!decorator) return undefined;
 
   const unresolvedBefore = ctx?.unresolved.length ?? 0;
@@ -2547,6 +2573,13 @@ interface ParameterTypeDescription {
   type: string | null;
   typeUnresolved: boolean;
   memberTypes?: string[];
+  unionBranches?: ParameterTypeBranch[];
+}
+
+/** One branch of a top-level union, with the members IT declared (#2686). */
+interface ParameterTypeBranch {
+  type: string;
+  memberTypes?: string[];
 }
 
 /** Depth bound for {@link collectInlineMemberTypes}'s literal recursion. */
@@ -2573,10 +2606,43 @@ function describeParameterType(
 
   const members: string[] = [];
   const memberUnresolved = collectInlineMemberTypes(node, members, 0);
+
+  // A union's member restrictions belong to the BRANCH that declared them.
+  // `collectInlineMemberTypes` flattens across branches, which lets a callback
+  // in one branch veto another branch that is perfectly JSON-shaped:
+  // `{ callback: () => void } | string` lost its route even though every
+  // caller can pass the string. Describe each branch separately so the
+  // resolver can apply "any branch is wire-able" as documented (#2686).
+  //
+  // Only emitted when every branch resolves; an unresolvable branch already
+  // makes `extractTypeName` return null above, so this loop never sees one.
+  let unionBranches: ParameterTypeBranch[] | undefined;
+  if (node.type === 'TSUnionType') {
+    const branches: ParameterTypeBranch[] = [];
+    for (const branch of node.types) {
+      const branchType =
+        branch.type === 'TSObjectKeyword' ? 'object' : extractTypeName(branch);
+      if (branchType === null) {
+        // Fail closed rather than describe a union we cannot fully express.
+        return { type, typeUnresolved: true };
+      }
+      const branchMembers: string[] = [];
+      collectInlineMemberTypes(branch, branchMembers, 0);
+      branches.push({
+        type: branchType,
+        ...(branchMembers.length > 0
+          ? { memberTypes: [...new Set(branchMembers)] }
+          : {}),
+      });
+    }
+    if (branches.length > 0) unionBranches = branches;
+  }
+
   return {
     type,
     typeUnresolved: memberUnresolved,
     ...(members.length > 0 ? { memberTypes: [...new Set(members)] } : {}),
+    ...(unionBranches ? { unionBranches } : {}),
   };
 }
 
@@ -2728,12 +2794,18 @@ function extractParameter(
 function describeParameterTypeFields(
   annotation: TSTypeAnnotation | undefined,
   missingAnnotationType: string | null = null,
-): Pick<RawParameterDefinition, 'type' | 'typeUnresolved' | 'memberTypes'> {
+): Pick<
+  RawParameterDefinition,
+  'type' | 'typeUnresolved' | 'memberTypes' | 'unionBranches'
+> {
   if (!annotation) return { type: missingAnnotationType };
   const described = describeParameterType(annotation);
   return {
     type: described.type,
     ...(described.typeUnresolved ? { typeUnresolved: true } : {}),
     ...(described.memberTypes ? { memberTypes: described.memberTypes } : {}),
+    ...(described.unionBranches
+      ? { unionBranches: described.unionBranches }
+      : {}),
   };
 }

@@ -33,6 +33,7 @@ import {
 } from './sveltekit-generator.js';
 
 const SOURCE = `import { field, method, smrt, SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
+import { method as action } from '@happyvertical/smrt-core';
 
 @smrt({ api: { public: true } })
 export class Gadget extends SmrtObject {
@@ -57,6 +58,24 @@ export class Gadget extends SmrtObject {
   @method({ expose: true, httpMethod: 'PUT', path: 'thumbnail' })
   async setThumbnail(widget: Widget): Promise<void> {
     void widget;
+  }
+
+  /**
+   * Withheld through an ALIASED decorator import. Matching the local
+   * identifier made this scan as undecorated, so \`expose: false\` never
+   * reached the manifest and the route was written anyway.
+   */
+  @action({ expose: false, reason: 'internal bookkeeping' })
+  async concealed(kind: string): Promise<string> {
+    return kind;
+  }
+
+  /**
+   * A union whose object branch hides a callback and whose other branch is a
+   * plain string. Flattening the branches' members rejected it outright.
+   */
+  async handle(value: { callback: () => void } | string): Promise<void> {
+    void value;
   }
 
   /** Static: collection-scoped by receiver. */
@@ -234,11 +253,40 @@ describe('#2686 source → manifest → emitted route', () => {
         'delete',
         'findRecent',
         'get',
+        'handle',
         'list',
         'runReview',
         'setThumbnail',
         'update',
       ].sort(),
     );
+  });
+
+  it('honors @method() reached through a renamed import', () => {
+    // The end-to-end form of the scanner regression: real source, real
+    // manifest, real emitter. `concealed` is public and takes a string, so
+    // every other rule routes it — only the aliased `expose: false` withholds
+    // it, which is exactly what made the miss silent.
+    expect(
+      manifest.objects['gadget-app:Gadget']?.methods?.concealed
+        ?.decoratorConfig,
+    ).toEqual({ expose: false, reason: 'internal bookkeeping' });
+    expect(hasRoute('gadgets/[id]/concealed')).toBe(false);
+    expect(
+      resolveApiActionSet(
+        manifest.objects['gadget-app:Gadget'] as never,
+        manifest,
+      ),
+    ).not.toContain('concealed');
+  });
+
+  it('routes a union past its callback branch, from source', () => {
+    expect(hasRoute('gadgets/[id]/handle')).toBe(true);
+    expect(
+      resolveApiActionSet(
+        manifest.objects['gadget-app:Gadget'] as never,
+        manifest,
+      ),
+    ).toContain('handle');
   });
 });

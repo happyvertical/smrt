@@ -302,3 +302,94 @@ describe('#2686 parameter type provenance', () => {
     ]);
   });
 });
+
+describe('#2686 a decorator reached through a renamed import', () => {
+  // `method` is a very ordinary identifier, so aliasing it around a local
+  // collision is realistic. Matching the LOCAL name meant `@action(...)`
+  // scanned as an undecorated method while the runtime decorator still ran:
+  // `expose: false` vanished from the manifest and the emitter wrote the route
+  // the author was withholding. Silent widening is the failure #2686 exists to
+  // close, so this is the one direction that must never regress.
+  const source = `
+    import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+    import { method as action } from '@happyvertical/smrt-core';
+
+    @smrt()
+    class Widget extends SmrtObject {
+      @action({ expose: false, reason: 'internal bookkeeping' })
+      async concealed(name: string): Promise<void> {}
+
+      @action()
+      async bare(name: string): Promise<void> {}
+    }
+  `;
+
+  it('records the config of an aliased @method()', () => {
+    const widget = parseSource(source).classes[0];
+    expect(methodNamed(widget.methods, 'concealed').decoratorConfig).toEqual({
+      expose: false,
+      reason: 'internal bookkeeping',
+    });
+  });
+
+  it('still distinguishes a bare aliased @method() from no decorator', () => {
+    const widget = parseSource(source).classes[0];
+    // `{}` and `undefined` differ: a bare decorator marks a method as
+    // deliberately reviewed, so the alias must not collapse them.
+    expect(methodNamed(widget.methods, 'bare').decoratorConfig).toEqual({});
+  });
+
+  it('recognizes an aliased @smrt() on the class itself', () => {
+    const aliased = parseSource(`
+      import { SmrtObject, smrt as entity } from '@happyvertical/smrt-core';
+
+      @entity({ api: { include: ['list'] } })
+      class Widget extends SmrtObject {}
+    `);
+    expect(aliased.classes[0]?.decoratorConfig).toEqual({
+      api: { include: ['list'] },
+    });
+  });
+});
+
+describe('#2686 union branches keep their own inline members', () => {
+  // The flattened `memberTypes` list cannot say WHICH branch declared a
+  // member, so one branch's callback rejected a parameter every caller can
+  // satisfy through another branch. `unionBranches` keeps them attached.
+  it('splits a union into per-branch member lists', () => {
+    const { widget } = parseClass(`
+      async handle(value: { callback: () => void } | string): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'handle').parameters;
+
+    expect(parameter.type).toBe('object | string');
+    expect(parameter.unionBranches).toEqual([
+      { type: 'object', memberTypes: ['Function'] },
+      { type: 'string' },
+    ]);
+    // The flat list stays for consumers that predate the field, and still
+    // reports the callback so those consumers keep failing closed.
+    expect(parameter.memberTypes).toEqual(['Function']);
+  });
+
+  it('leaves a non-union parameter without branches', () => {
+    const { widget } = parseClass(`
+      async handle(value: { callback: () => void }): Promise<void> {}
+    `);
+    const [parameter] = methodNamed(widget.methods, 'handle').parameters;
+    expect(parameter.unionBranches).toBeUndefined();
+    expect(parameter.memberTypes).toEqual(['Function']);
+  });
+
+  it('carries branches through the manifest adapter', () => {
+    const { widget } = parseClass(`
+      async handle(value: { callback: () => void } | string): Promise<void> {}
+    `);
+    const manifest = new ManifestAdapter().toManifest([resolved(widget)]);
+    const object = Object.values(manifest.objects)[0];
+    expect(object?.methods?.handle?.parameters?.[0]?.unionBranches).toEqual([
+      { type: 'object', memberTypes: ['Function'] },
+      { type: 'string' },
+    ]);
+  });
+});

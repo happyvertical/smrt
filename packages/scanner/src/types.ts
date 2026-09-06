@@ -229,6 +229,25 @@ export interface RawParameterDefinition {
    * accepted heuristically by the consumers that care.
    */
   memberTypes?: string[];
+  /**
+   * For a top-level UNION, each branch with the inline members IT declared.
+   *
+   * `memberTypes` above flattens across branches, which lets one branch veto
+   * another: `{ callback: () => void } | string` is wire-able through its
+   * string branch, but the flattened `Function` rejected the whole parameter.
+   * A consumer that understands this field MUST prefer it over `memberTypes`
+   * for unions. Absent on a non-union parameter and on manifests generated
+   * before #2686.
+   */
+  unionBranches?: ParameterTypeBranch[];
+}
+
+/** One branch of a top-level union parameter type (#2686). */
+export interface ParameterTypeBranch {
+  /** The branch's own type name, e.g. `string` or `object`. */
+  type: string;
+  /** Inline object members declared by THIS branch only. */
+  memberTypes?: string[];
 }
 
 // ============================================================================

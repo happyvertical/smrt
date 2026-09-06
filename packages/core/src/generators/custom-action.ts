@@ -740,6 +740,17 @@ export interface WireableParameter {
   typeUnresolved?: boolean | undefined;
   /** See `MethodParameterDefinition.memberTypes`. */
   memberTypes?: readonly string[] | undefined;
+  /**
+   * See `MethodParameterDefinition.unionBranches`. Preferred over
+   * `memberTypes` when present: it keeps each union branch's members attached
+   * to that branch instead of flattening them together (#2686).
+   */
+  unionBranches?:
+    | readonly {
+        type: string;
+        memberTypes?: readonly string[] | undefined;
+      }[]
+    | undefined;
 }
 
 /** Minimal method shape the exposure resolver reads. */
@@ -1140,6 +1151,27 @@ export function classifyParameterWireability(
     return {
       wireable: false,
       reason: `the declared type of \`${parameter.name}\` could not be resolved by the scanner`,
+    };
+  }
+
+  // A top-level union is wire-able when ANY branch is, and each branch's
+  // inline members belong to THAT branch. The flattened `memberTypes` below
+  // cannot express this: for `{ callback: () => void } | string` it reports a
+  // bare `Function` and rejects a parameter every caller can satisfy with the
+  // string branch. Prefer the per-branch view whenever the scanner supplied
+  // one; manifests generated before #2686 have none and fall through (#2686).
+  const unionBranches = parameter.unionBranches;
+  if (unionBranches && unionBranches.length > 0) {
+    for (const branch of unionBranches) {
+      const rejectedMember = (branch.memberTypes ?? []).find(
+        (memberType) => !classifyTypeName(memberType, options, 1).wireable,
+      );
+      if (rejectedMember !== undefined) continue;
+      if (classifyTypeName(branch.type, options, 0).wireable) return WIREABLE;
+    }
+    return {
+      wireable: false,
+      reason: `parameter \`${parameter.name}\`: no branch of \`${parameter.type ?? 'any'}\` can be built from a JSON request`,
     };
   }
 

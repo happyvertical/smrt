@@ -9,6 +9,7 @@ import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
+  ParameterTypeBranch,
   RawFieldDefinition,
   RawMethodDefinition,
   ResolvedClassDefinition,
@@ -107,6 +108,8 @@ interface MethodDefinition {
     typeUnresolved?: boolean;
     /** See `RawParameterDefinition.memberTypes` (#2686). */
     memberTypes?: string[];
+    /** See `RawParameterDefinition.unionBranches` (#2686). */
+    unionBranches?: ParameterTypeBranch[];
   }>;
   returnType: string;
   description?: string;
@@ -1433,6 +1436,7 @@ export class ManifestAdapter {
           : undefined,
         ...(p.typeUnresolved ? { typeUnresolved: true } : {}),
         ...(p.memberTypes ? { memberTypes: p.memberTypes } : {}),
+        ...(p.unionBranches ? { unionBranches: p.unionBranches } : {}),
       })),
       returnType: method.returnType || 'any',
       description: method.description || undefined,
