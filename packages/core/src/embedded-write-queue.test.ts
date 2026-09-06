@@ -15,9 +15,12 @@
  *
  * These tests exercise `withEmbeddedWriteQueue()` (the public surface)
  * rather than the private `queueKey()`/`isPerConnectionMemoryUrl()`
- * helpers directly, using ordering rather than a fixed number of
- * microtask-tick waits so they aren't sensitive to internal `Promise`
- * chaining depth.
+ * helpers directly. Every case resolves its gate BEFORE awaiting either
+ * operation and asserts on relative push order, rather than racing a
+ * still-pending operation against the Vitest global test timeout: a
+ * regression here still fails fast and deterministically (no dangling
+ * `urlQueues`/`handleQueues` entry left pending past the end of the test),
+ * it just fails on a wrong `order` array instead of a slow timeout.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -32,96 +35,60 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
+/**
+ * Queue `dbA`'s operation first, holding it open on `gate`, then queue
+ * `dbB`'s operation (a single synchronous push), resolve the gate
+ * immediately, and return the settled push order for both.
+ *
+ * Independent queue identities interleave as `['A-start', 'B', 'A-end']`
+ * (B's synchronous push runs before A's held operation resumes). A shared
+ * queue identity serializes as `['A-start', 'A-end', 'B']` (B's `run` is
+ * chained onto A's still-pending tail and only fires once it settles).
+ */
+async function raceTwoWrites(
+  dbA: { url: string },
+  dbB: { url: string },
+): Promise<string[]> {
+  const gate = deferred();
+  const order: string[] = [];
+
+  const opA = withEmbeddedWriteQueue(dbA, true, async () => {
+    order.push('A-start');
+    await gate.promise;
+    order.push('A-end');
+  });
+  const opB = withEmbeddedWriteQueue(dbB, true, async () => {
+    order.push('B');
+  });
+
+  gate.resolve();
+  await Promise.all([opA, opB]);
+  return order;
+}
+
 describe('withEmbeddedWriteQueue', () => {
   it('does not serialize two independent `:memory:` instances', async () => {
-    const dbA = { url: ':memory:' };
-    const dbB = { url: ':memory:' };
-    const gate = deferred();
-    const order: string[] = [];
+    const order = await raceTwoWrites({ url: ':memory:' }, { url: ':memory:' });
+    expect(order).toEqual(['A-start', 'B', 'A-end']);
+  });
 
-    const opA = withEmbeddedWriteQueue(dbA, true, async () => {
-      order.push('A-start');
-      await gate.promise;
-      order.push('A-end');
-    });
-
-    const opB = withEmbeddedWriteQueue(dbB, true, async () => {
-      order.push('B');
-    });
-
-    // If dbA and dbB shared a queue key, opB would be queued behind opA's
-    // still-pending operation and this await would hang until gate.resolve()
-    // -- it must settle on its own, with A still pending, because the two
-    // instances are unrelated.
-    await opB;
-    expect(order).toEqual(['A-start', 'B']);
-
-    gate.resolve();
-    await opA;
+  it('treats a bare `file::memory:` URL (no query string) as per-instance', async () => {
+    const order = await raceTwoWrites(
+      { url: 'file::memory:' },
+      { url: 'file::memory:' },
+    );
     expect(order).toEqual(['A-start', 'B', 'A-end']);
   });
 
   it('serializes two instances sharing a `cache=shared` URL', async () => {
     const url = 'file::memory:?cache=shared';
-    const dbA = { url };
-    const dbB = { url };
-    const gate = deferred();
-    const order: string[] = [];
-
-    const opA = withEmbeddedWriteQueue(dbA, true, async () => {
-      order.push('A-start');
-      await gate.promise;
-      order.push('A-end');
-    });
-    const opB = withEmbeddedWriteQueue(dbB, true, async () => {
-      order.push('B');
-    });
-
-    // dbA and dbB carry the identical cache=shared URL, so opB must queue
-    // behind opA and only run once gate resolves and opA settles.
-    gate.resolve();
-    await Promise.all([opA, opB]);
-
+    const order = await raceTwoWrites({ url }, { url });
     expect(order).toEqual(['A-start', 'A-end', 'B']);
   });
 
   it('serializes two instances sharing a file-backed URL', async () => {
     const url = '/tmp/embedded-write-queue-test.db';
-    const dbA = { url };
-    const dbB = { url };
-    const gate = deferred();
-    const order: string[] = [];
-
-    const opA = withEmbeddedWriteQueue(dbA, true, async () => {
-      order.push('A-start');
-      await gate.promise;
-      order.push('A-end');
-    });
-    const opB = withEmbeddedWriteQueue(dbB, true, async () => {
-      order.push('B');
-    });
-
-    gate.resolve();
-    await Promise.all([opA, opB]);
-
+    const order = await raceTwoWrites({ url }, { url });
     expect(order).toEqual(['A-start', 'A-end', 'B']);
-  });
-
-  it('treats a bare `file::memory:` URL (no query string) as per-instance', async () => {
-    const dbA = { url: 'file::memory:' };
-    const dbB = { url: 'file::memory:' };
-    const gate = deferred();
-
-    const opA = withEmbeddedWriteQueue(dbA, true, () => gate.promise);
-    let bCompleted = false;
-    const opB = withEmbeddedWriteQueue(dbB, true, async () => {
-      bCompleted = true;
-    });
-
-    await opB;
-    expect(bCompleted).toBe(true);
-
-    gate.resolve();
-    await opA;
   });
 });
