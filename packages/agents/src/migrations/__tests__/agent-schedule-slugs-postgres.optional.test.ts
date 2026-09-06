@@ -61,15 +61,19 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
     await db.query(
       `INSERT INTO "${table}" (id, slug, context, agent_type, cron, enabled, status, run_count, payload)
        VALUES (?, NULL, '', 'Agent', '0 * * * *', true, 'paused', 7, '{"preserve":true}'),
-              (?, 'custom legacy value', 'ops', 'Agent', '1 * * * *', false, 'disabled', 2, '{"preserve":false}')`,
+              (?, 'custom legacy value', 'ops', 'Agent', '1 * * * *', false, 'disabled', 2, '{"preserve":false}'),
+              (?, ' ', '', 'Agent', '2 * * * *', false, 'disabled', 3, '{"preserve":"whitespace"}')`,
       'Schedule Alpha!',
       'existing-id',
+      'whitespace-id',
     );
 
     await expect(planAgentScheduleSlugMigration(db)).resolves.toEqual({
       pending: 1,
     });
-    await expect(migrateAgentScheduleSlugs(db)).resolves.toEqual({
+    await expect(
+      migrateAgentScheduleSlugs(db, { lockTimeout: 0, statementTimeout: 0 }),
+    ).resolves.toEqual({
       ran: true,
       updated: 1,
     });
@@ -101,6 +105,17 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
         status: 'paused',
         run_count: 7,
         payload: '{"preserve":true}',
+      },
+      {
+        id: 'whitespace-id',
+        slug: ' ',
+        context: '',
+        agent_type: 'Agent',
+        cron: '2 * * * *',
+        enabled: false,
+        status: 'disabled',
+        run_count: 3,
+        payload: '{"preserve":"whitespace"}',
       },
     ]);
     const column = await db.query(

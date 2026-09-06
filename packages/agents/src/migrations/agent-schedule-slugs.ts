@@ -47,7 +47,9 @@ export function canonicalScheduleSlug(value: unknown): string | null {
 }
 
 function isPresentSlug(value: unknown): value is string {
-  return typeof value === 'string' && value.trim() !== '';
+  // Preserve every nonempty persisted value. Only SQL NULL and the actual
+  // empty string are legacy gaps; normalizing whitespace would rewrite data.
+  return typeof value === 'string' && value !== '';
 }
 
 function normalizeRows(rows: readonly ScheduleIdentityRow[]): Candidate[] {
@@ -101,7 +103,7 @@ async function assertSupportedShape(db: DatabaseInterface): Promise<void> {
 
 function timeout(value: number | undefined, fallback: number): string {
   const milliseconds = value ?? fallback;
-  if (!Number.isInteger(milliseconds) || milliseconds <= 0) {
+  if (!Number.isInteger(milliseconds) || milliseconds < 0) {
     throw new AgentScheduleSlugBackfillError(
       'Migration timeout must be a positive integer',
     );
