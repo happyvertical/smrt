@@ -1097,8 +1097,18 @@ describe('SvelteKit Route Generator', () => {
       expect(searchContent).toContain(
         'new URL(request.url).searchParams.entries(),',
       );
+      // `limit: number` on a GET route: `URLSearchParams` hands the handler
+      // the string '2', so the generated call decodes it. `query: string`
+      // needs no decoding and is passed straight through (#2686).
+      expect(searchContent).toContain('ClassRef.searchFacts(');
+      expect(searchContent).toContain('toCustomActionNumber(options.limit)');
+      // `query: string` needs no decoding and is passed straight through.
+      expect(searchContent).toContain('options.query');
+      expect(searchContent).not.toContain(
+        'toCustomActionNumber(options.query)',
+      );
       expect(searchContent).toContain(
-        'await ClassRef.searchFacts(options.query, options.limit)',
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi

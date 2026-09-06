@@ -20,6 +20,7 @@ import {
   createManifestClassNamePredicate,
   declaredTypeAcceptsDate,
   isCrudOperation,
+  queryStringDecoderFor,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
@@ -1041,6 +1042,7 @@ function hasSingleOptionsParameter(actionDef: MethodDefinition): boolean {
 function buildActionInvocationArgs(
   actionDef: MethodDefinition,
   optionsIdentifier = 'options',
+  httpMethod?: string,
 ): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
@@ -1062,9 +1064,17 @@ function buildActionInvocationArgs(
     // other must go too, or the generator writes a route that 500s on the
     // first `getTime()` (#2686). The cast restores the declared parameter
     // type, which the runtime helper widens to `unknown`.
-    return declaredTypeAcceptsDate(parameter.type)
-      ? `toCustomActionDate(${access}) as ActionArgs[${index}]`
-      : access;
+    // A GET handler builds its options from `URLSearchParams`, so EVERY value
+    // is a string and `limit: number` reached the method as `'2'`. A JSON body
+    // carries real numbers and booleans, so decode only on GET; `Date` is
+    // hydrated on both because a JSON body cannot carry one either (#2686).
+    const decoder =
+      httpMethod === 'GET'
+        ? queryStringDecoderFor(parameter.type)
+        : declaredTypeAcceptsDate(parameter.type)
+          ? 'toCustomActionDate'
+          : undefined;
+    return decoder ? `${decoder}(${access}) as ActionArgs[${index}]` : access;
   });
 }
 
@@ -2355,8 +2365,9 @@ function warnDeclaredScopeMismatch(
   if (!declared) return;
   console.warn(
     `[smrt] ${className}.${actionName} declares scope '${declared}' but its receiver is ` +
-      `${effectiveScope}-scoped; the declared scope is ignored. A scope declares a method's ` +
-      'receiver, it cannot change it.',
+      `${effectiveScope}-scoped, so the declared scope is ignored. A scope describes where a ` +
+      `method already lives; it cannot move it. Make ${actionName} static to reach it on the ` +
+      'collection, or drop the scope option.',
   );
 }
 
@@ -3053,21 +3064,31 @@ function generateActionRouteTemplate(
     );
   }
 
-  // Only import the Date hydrator when a handler in this file actually takes a
-  // `Date` parameter -- an unconditional import would leave an unused symbol
-  // in every generated action route.
-  const needsDateHydration = routeSpecs.some((spec) =>
-    (spec.actionDef.parameters ?? []).some(
-      (parameter) =>
-        !hasSingleOptionsParameter(spec.actionDef) &&
-        declaredTypeAcceptsDate(parameter.type),
-    ),
-  );
+  // Import only the decoders a handler in this file actually calls -- an
+  // unconditional import would leave unused symbols in every generated action
+  // route. A GET handler may need the number/boolean query-string decoders too,
+  // since `URLSearchParams` hands it strings for both (#2686).
+  const decoderImports = new Set<string>();
+  for (const spec of routeSpecs) {
+    if (hasSingleOptionsParameter(spec.actionDef)) continue;
+    for (const parameter of spec.actionDef.parameters ?? []) {
+      const decoder =
+        spec.routeConfig?.method === 'GET'
+          ? queryStringDecoderFor(parameter.type)
+          : declaredTypeAcceptsDate(parameter.type)
+            ? 'toCustomActionDate'
+            : undefined;
+      if (decoder) decoderImports.add(decoder);
+    }
+  }
+  const coreImports = [
+    'normalizeCustomActionFailure',
+    'normalizeTypedHttpError',
+    ...[...decoderImports].sort(),
+  ].join(', ');
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
-    needsDateHydration
-      ? "import { normalizeCustomActionFailure, normalizeTypedHttpError, toCustomActionDate } from '@happyvertical/smrt-core';"
-      : "import { normalizeCustomActionFailure, normalizeTypedHttpError } from '@happyvertical/smrt-core';",
+    `import { ${coreImports} } from '@happyvertical/smrt-core';`,
     hostType === 'collection' || routeConfig.scope !== 'collection'
       ? "import { getCollection } from '$lib/server/smrt';"
       : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
@@ -3165,6 +3186,7 @@ function generateActionRouteHandler(
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
       scopedOptions.optionsIdentifier,
+      routeConfig.method,
     );
 
     return `// Custom collection method: ${actionName}
@@ -3216,6 +3238,7 @@ ${optionsLoad}${scopedOptions.source}  let result: unknown;
     const invocationArgs = buildActionInvocationArgs(
       actionDef,
       scopedOptions.optionsIdentifier,
+      routeConfig.method,
     );
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
@@ -3263,7 +3286,11 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     readScope ? { id: params.id, ...readScope } : params.id,
   );`
       : '  const item = await collection.get(params.id);';
-  const invocationArgs = buildActionInvocationArgs(actionDef);
+  const invocationArgs = buildActionInvocationArgs(
+    actionDef,
+    'options',
+    routeConfig.method,
+  );
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}

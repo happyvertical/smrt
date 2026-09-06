@@ -819,6 +819,13 @@ function isApiHttpMethod(value: unknown): value is ApiHttpMethod {
  */
 const NON_SERIALIZABLE_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Function',
+  // Lowercase PRIMITIVES that JSON still cannot carry. `isWireableTypeName`
+  // accepts an unrecognized name as a data bag, which silently swept these in:
+  // `JSON.stringify` throws on a bigint and drops a symbol, and neither
+  // invocation path converts one, so a routed method received a string or
+  // `undefined` where it declared `bigint` (#2686).
+  'bigint',
+  'symbol',
   'Buffer',
   'ArrayBuffer',
   'SharedArrayBuffer',
@@ -896,7 +903,6 @@ const JSON_PRIMITIVE_TYPE_NAMES: ReadonlySet<string> = new Set([
   // `coerceCustomActionArgument`. Without that hydration a Date parameter is
   // NOT wire-able, so the two must stay together.
   'Date',
-  'bigint',
 ]);
 
 /** Options that let the wire-ability test consult the surrounding manifest. */
@@ -946,6 +952,20 @@ function classifyTypeName(
   const type = typeName.trim();
   if (type === '') return WIREABLE;
 
+  // `Date` is wire-able only where something hydrates it, and both invocation
+  // paths hydrate the TOP-LEVEL parameter alone (`declaredTypeAcceptsDate` over
+  // `parameter.type`). A nested `options: { start: Date }` passed the gate on
+  // its `memberTypes` and then reached the method as the raw ISO string, so the
+  // first `start.getTime()` threw. Accepting `Date` and hydrating it is one
+  // decision; at a depth nothing hydrates, the answer has to be no (#2686).
+  if (type === 'Date' && depth > 0) {
+    return {
+      wireable: false,
+      reason:
+        '`Date` is only hydrated as a top-level parameter, so a nested one arrives as a string',
+    };
+  }
+
   // Union: one JSON-shaped member is enough, because the caller can always
   // choose that branch. `addReference(content: Content | string)` already
   // accepts an id string and is genuinely reachable over HTTP (#2686).
@@ -962,7 +982,11 @@ function classifyTypeName(
     );
     if (branches.length === 0) return WIREABLE;
     const verdicts = branches.map((branch) =>
-      classifyTypeName(branch, options, depth + 1),
+      // Same depth, not depth + 1: a union branch occupies the SAME syntactic
+      // position as the union, so `Date | null` is still the top-level
+      // parameter that `declaredTypeAcceptsDate` hydrates. Only an array
+      // element or type argument is genuinely nested (#2686).
+      classifyTypeName(branch, options, depth),
     );
     if (verdicts.some((verdict) => verdict.wireable)) return WIREABLE;
     return {
@@ -1679,6 +1703,70 @@ export function toCustomActionDate(value: unknown): unknown {
   if (typeof value !== 'string' || value.trim() === '') return value;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed;
+}
+
+/**
+ * Decode a `number`-typed action argument that arrived over a QUERY STRING.
+ *
+ * A GET handler builds its options from `URLSearchParams`, so every value is a
+ * string: `limit: number` reached the method as `'2'` and any arithmetic on it
+ * silently produced string concatenation or `NaN` (#2686). A JSON body needs no
+ * such repair, which is why this is emitted only on GET routes.
+ *
+ * Leaves anything it cannot decode alone, so a malformed value reaches the
+ * method's own validation rather than becoming a silent `NaN`.
+ */
+export function toCustomActionNumber(value: unknown): unknown {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string' || value.trim() === '') return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
+}
+
+/**
+ * The `boolean` counterpart to {@link toCustomActionNumber}. A query string
+ * carries `?active=false`, and the bare string `'false'` is TRUTHY — the most
+ * dangerous of these coercions, since it inverts a guard rather than degrading
+ * it. Only the four canonical spellings decode; anything else is left for the
+ * method's own validation.
+ */
+export function toCustomActionBoolean(value: unknown): unknown {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1') return true;
+  if (normalized === 'false' || normalized === '0') return false;
+  return value;
+}
+
+/**
+ * The query-string decoder a GET route should apply to one parameter, or
+ * `undefined` when the value passes through untouched.
+ *
+ * Mirrors {@link declaredTypeAcceptsDate}: a nullish branch does not change the
+ * representation, but a genuine alternative (`number | string`) means the
+ * method already accepts what the query string sends, so nothing is decoded.
+ */
+export function queryStringDecoderFor(
+  declaredType: string | undefined,
+):
+  | 'toCustomActionDate'
+  | 'toCustomActionNumber'
+  | 'toCustomActionBoolean'
+  | undefined {
+  if (!declaredType) return undefined;
+  if (declaredTypeAcceptsDate(declaredType)) return 'toCustomActionDate';
+  const branches = splitTopLevel(declaredType, '|')
+    .map((branch) => branch.trim())
+    .filter((branch) => branch !== 'null' && branch !== 'undefined');
+  if (branches.length === 0) return undefined;
+  if (branches.every((branch) => branch === 'number')) {
+    return 'toCustomActionNumber';
+  }
+  if (branches.every((branch) => branch === 'boolean')) {
+    return 'toCustomActionBoolean';
+  }
+  return undefined;
 }
 
 /**

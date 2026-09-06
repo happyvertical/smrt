@@ -31,11 +31,14 @@ import {
   declaredTypeAcceptsDate,
   declaresRuntimeRestRoute,
   declaresRuntimeRestRouteShape,
+  queryStringDecoderFor,
   readMethodDecoratorConfig,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveDeclaredScopeMismatch,
   resolveEffectiveActionMetadata,
+  toCustomActionBoolean,
+  toCustomActionNumber,
 } from './custom-action.js';
 
 function method(
@@ -706,5 +709,92 @@ describe('#2686 Date hydration', () => {
     );
     expect(args[0]).toBeInstanceOf(Date);
     expect(args[1]).toBe('Q3');
+  });
+});
+
+describe('#2686 values a JSON request cannot actually carry', () => {
+  // All four found by review on PR #2712. Each was accepted by the gate and
+  // routed, then failed at the method: the heuristic promised "every parameter
+  // can be built from JSON" and these cannot.
+  const isModelClassName = (name: string) => name === 'Asset';
+
+  it.each([
+    // `isWireableTypeName` treats an unrecognized name as a plain data bag,
+    // which quietly swept in two primitives: JSON.stringify throws on a bigint
+    // and drops a symbol, and no invocation path converts either.
+    ['bigint', param('total', 'bigint')],
+    ['symbol', param('key', 'symbol')],
+    // `Date` is wire-able BECAUSE `toCustomActionDate` hydrates it, and both
+    // invocation paths hydrate the top-level parameter only. A nested one
+    // reached the method as the raw ISO string.
+    [
+      'a nested Date member',
+      { ...param('options', 'object'), memberTypes: ['Date'] },
+    ],
+    ['a Date inside an array', param('days', 'Array<Date>')],
+  ])('withholds %s', (_label, parameter) => {
+    expect(
+      classifyMethodWireability(
+        { parameters: [parameter] },
+        { isModelClassName },
+      ).wireable,
+    ).toBe(false);
+  });
+
+  it.each([
+    // The top-level positions that ARE hydrated must keep routing.
+    ['Date', param('at', 'Date')],
+    ['Date | null', param('at', 'Date | null')],
+    ['Date | undefined', param('at', 'Date | undefined')],
+    // A union branch is the same syntactic position as the union, not a
+    // nesting level -- getting that wrong withheld `Date | null`.
+    ['Date | string', param('at', 'Date | string')],
+    ['number', param('limit', 'number')],
+  ])('still accepts %s', (_label, parameter) => {
+    expect(
+      classifyMethodWireability(
+        { parameters: [parameter] },
+        { isModelClassName },
+      ).wireable,
+    ).toBe(true);
+  });
+});
+
+describe('#2686 query-string decoding for GET routes', () => {
+  // A GET handler builds options from URLSearchParams, so every value is a
+  // string: `limit: number` reached the method as '2'.
+  it.each([
+    ['number', 'toCustomActionNumber'],
+    ['number | null', 'toCustomActionNumber'],
+    ['boolean', 'toCustomActionBoolean'],
+    ['Date', 'toCustomActionDate'],
+    ['Date | null', 'toCustomActionDate'],
+  ])('decodes %s with %s', (declared, expected) => {
+    expect(queryStringDecoderFor(declared)).toBe(expected);
+  });
+
+  it.each([
+    // Already a string on the wire, or a signature that already accepts the
+    // string form -- decoding would change what the method was promised.
+    ['string'],
+    ['number | string'],
+    ['boolean | string'],
+    ['object'],
+    ['Asset'],
+  ])('leaves %s alone', (declared) => {
+    expect(queryStringDecoderFor(declared)).toBeUndefined();
+  });
+
+  it('decodes the query-string spellings and leaves the rest for validation', () => {
+    expect(toCustomActionNumber('2')).toBe(2);
+    expect(toCustomActionNumber('')).toBe('');
+    // Not NaN: a malformed value reaches the method's own validation.
+    expect(toCustomActionNumber('abc')).toBe('abc');
+    // The dangerous one: the bare string 'false' is TRUTHY, so failing to
+    // decode it inverts a guard rather than degrading it.
+    expect(toCustomActionBoolean('false')).toBe(false);
+    expect(toCustomActionBoolean('true')).toBe(true);
+    expect(toCustomActionBoolean('0')).toBe(false);
+    expect(toCustomActionBoolean('maybe')).toBe('maybe');
   });
 });
