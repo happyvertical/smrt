@@ -34,6 +34,7 @@ import {
   quoteIdentifier,
 } from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
+import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
@@ -3357,6 +3358,7 @@ export default testManifest;
   'db:generate': dbGenerateCommand,
   'db:migrate-uuid': dbMigrateUuidCommand,
   'db:migrate-int8': dbMigrateInt8Command,
+  'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:prune': dbPruneCommand,
   'db:permissions': dbPermissionsCommand,
 

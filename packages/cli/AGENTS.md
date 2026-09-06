@@ -15,6 +15,8 @@ smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:migrate-int8         # Explicitly widen pre-#2373 int4 columns after preflight
+smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
+smrt db:drop-framework-base-tables --dry-run # Print the drop plan without executing
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Roll back migrations by executing their recorded DOWN
 smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
@@ -262,6 +264,38 @@ sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
   looks clean to cron. Individual task failures never abort the others.
 - Deployments running a jobs `TaskRunner` already get the same sweep every six
   hours; this command is for those that do not, and for one-off operator runs.
+
+## `db:drop-framework-base-tables` is a one-time remediation (#2647)
+
+`db:migrate` no longer plans `smrt_objects`/`smrt_classes`/`smrt_collections`/
+`smrt_hierarchicals`/`smrt_polymorphic_associations` (#2644), but any
+deployment that ran `db:migrate` before that fix still has all five. This
+command, backed by `planFrameworkBaseTableDrop()` /
+`dropFrameworkBaseTables()` in `@happyvertical/smrt-core/migrations`, drops
+exactly those five hardcoded names and nothing else — **never** derived from
+`SchemaDiff.orphan_tables`, which would recreate the dangerous global orphan
+drop `includeDroppedTables` (default `false`, both call sites explicit —
+`differ.ts:450`, `db-diff.ts:210`) deliberately refuses to be.
+
+- Execute-or-refuse, like `db:rollback`: it refuses (non-zero exit, nothing
+  dropped) if any target table has rows, has anything but the baseline
+  `id`/`slug`/`context`/`created_at`/`updated_at` columns, or is referenced by
+  a foreign key anywhere in the live database. A consumer's own unrelated
+  table sharing one of these five names is exactly what the shape check
+  protects.
+- Companion indexes are enumerated from each table's live schema (never
+  guessed) and dropped alongside it.
+- Bounded PostgreSQL execution reuses the same `SET LOCAL lock_timeout` /
+  `statement_timeout` pattern as every other DDL path (#2362), and
+  re-verifies each table is still empty inside that transaction immediately
+  before dropping anything.
+- `--dry-run` prints the exact plan (which tables exist, their companion
+  indexes, and the DROP statements) without executing.
+- Skipping it is safe: a table left behind is inert and permanently orphaned,
+  never written to or read from again. DuckDB's adapter does not report
+  foreign keys through `getTableSchema()`, so an inbound reference there
+  surfaces as a DuckDB catalog error at execution instead of a pre-flight
+  refusal — the drop still does not happen.
 
 ## Architecture
 

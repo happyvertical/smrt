@@ -36,6 +36,19 @@ export {
   SchemaComparer,
   uniqueColumnIndexName,
 } from './differ.js';
+// One-time drop of the five orphaned framework-base tables (#2647)
+export {
+  type DropFrameworkBaseTablesOptions,
+  type DropFrameworkBaseTablesResult,
+  dropFrameworkBaseTables,
+  FRAMEWORK_BASE_TABLE_NAMES,
+  type FrameworkBaseTableName,
+  type FrameworkBaseTableRefusal,
+  type FrameworkBaseTableReport,
+  type FrameworkBaseTablesPlan,
+  type PlanFrameworkBaseTableDropOptions,
+  planFrameworkBaseTableDrop,
+} from './framework-base-tables.js';
 export type {
   GeneratedMigration,
   GenerateMigrationOptions,
