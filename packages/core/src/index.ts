@@ -12,7 +12,7 @@
  *
  * Generators:
  * - APIGenerator: Generate REST APIs for SMRT objects
- * - CLI: local `smrt` binary transport lives in `@happyvertical/cli`
+ * - CLI: local `smrt` binary transport lives in `@happyvertical/smrt-cli`
  *   (`packages/cli/src/cli-generator.ts`), not in this package.
  * - MCPGenerator: Create MCP servers for AI model integration
  */

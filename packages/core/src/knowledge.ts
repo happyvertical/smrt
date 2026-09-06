@@ -476,9 +476,9 @@ function configuredSurfaces(
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
   // NOTE: the `cli` projection models the reservation rule core's
-  // `CLIGenerator` used to apply (retired by #2664 -- see
-  // `packages/core/src/generators/custom-action.ts` git history for the
-  // deleted `generators/cli.ts`), which reserves a CRUD verb unconditionally.
+  // `CLIGenerator` used to apply (retired by #2664 -- see git history for
+  // the deleted `packages/core/src/generators/cli.ts`), which reserves a
+  // CRUD verb unconditionally.
   // That is NOT the shipped local CLI: `packages/cli/src/cli-generator.ts`'s
   // generator reserves one only where the CRUD command is emitted (each of
   // its commands carries its own handler), so with
@@ -535,12 +535,20 @@ function surfaceName(
  * A hand-written `SmrtCollection` subclass (`class WidgetCollection extends
  * SmrtCollection<Widget>`) is discovered structurally by the scanner and
  * lands in the manifest even without its own `@smrt()` decorator, so it never
- * registers with `ObjectRegistry`. `MCPGenerator`/`packages/cli/src/
- * cli-generator.ts`'s `CLIGenerator` iterate `ObjectRegistry`, not the
- * manifest, so such a class never gets its own MCP tools or CLI commands — only its collection-scoped custom actions get
- * REST routes. Reporting full CRUD for it here would over-report a surface
- * that does not exist, trading the #2619 under-report for a new false
- * positive.
+ * registers with `ObjectRegistry` by decoration. `MCPGenerator` (and,
+ * historically, core's now-retired `CLIGenerator`, #2664) iterate the
+ * decoration-populated `ObjectRegistry` directly, not the manifest, so such a
+ * class never gets its own MCP tools there — only its collection-scoped
+ * custom actions get REST routes. The shipped local CLI
+ * (`packages/cli/src/cli-generator.ts`) is a documented exception: its
+ * `ensureManifestLoaded()` pre-registers every manifest entry into
+ * `ObjectRegistry` via `registerFromManifest()` before generating commands,
+ * with no collection-class filter, so a manifest-only collection class IS
+ * reachable there (e.g. `smrt itemcollection:list`) even though this
+ * projection reports none. Reporting full CRUD for it here would over-report
+ * the projection's own (registry-scoped) surface, trading the #2619
+ * under-report for a new false positive there -- it does not claim the
+ * shipped CLI binary lacks the surface too.
  *
  * A deeper subclass (`SpecialCollection extends WidgetCollection`) carries no
  * `extendsTypeArg` of its own, so this walks the extends chain through the
