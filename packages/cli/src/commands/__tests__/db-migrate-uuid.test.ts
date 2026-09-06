@@ -1723,6 +1723,9 @@ describePostgres(
     const shadowSchema = `${stem}_schema`;
     const parent = `${stem}_parent`;
     const child = `${stem}_child`;
+    const bridgeIndex = `${parent}_bridge_uidx`;
+    const publicBridgeComment = 'public generated bridge index';
+    const shadowBridgeComment = 'shadow generated bridge index';
     const publicFk = `${child}_parent_fkey`;
     const shadowFk = `${child}_shadow_parent_fkey`;
 
@@ -1741,7 +1744,7 @@ describePostgres(
 
     async function snapshot(): Promise<Record<string, unknown>> {
       const db = await baseDb();
-      const [data, columns, foreignKeys] = await Promise.all([
+      const [data, columns, foreignKeys, indexes] = await Promise.all([
         db.query(
           `SELECT 'public_parent' AS source, to_jsonb(parent) AS row FROM public."${parent}" parent
            UNION ALL SELECT 'public_child', to_jsonb(child) FROM public."${child}" child
@@ -1773,11 +1776,27 @@ describePostgres(
           shadowSchema,
           child,
         ),
+        db.query(
+          `SELECT table_ns.nspname AS table_schema, index_rel.relname AS index_name,
+                  pg_get_indexdef(idx.indexrelid) AS definition,
+                  obj_description(idx.indexrelid, 'pg_class') AS comment
+             FROM pg_index idx
+             JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
+             JOIN pg_namespace table_ns ON table_ns.oid = table_rel.relnamespace
+             JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+            WHERE table_ns.nspname IN ('public', $1) AND table_rel.relname = $2
+              AND index_rel.relname = $3
+            ORDER BY table_schema, index_name`,
+          shadowSchema,
+          parent,
+          bridgeIndex,
+        ),
       ]);
       return {
         data: data.rows,
         columns: columns.rows,
         foreignKeys: foreignKeys.rows,
+        indexes: indexes.rows,
       };
     }
 
@@ -1792,8 +1811,15 @@ describePostgres(
         `CREATE TABLE public."${parent}" (
            id text PRIMARY KEY,
            old_ref text NOT NULL,
-           new_ref text
+           new_ref text,
+           _integrity_id_text text GENERATED ALWAYS AS ((id)::text) STORED
          )`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${bridgeIndex}" ON public."${parent}" (_integrity_id_text)`,
+      );
+      await db.query(
+        `COMMENT ON INDEX public."${bridgeIndex}" IS '${publicBridgeComment}'`,
       );
       await db.query(
         `CREATE TABLE public."${child}" (
@@ -1805,8 +1831,15 @@ describePostgres(
         `CREATE TABLE "${shadowSchema}"."${parent}" (
            id text PRIMARY KEY,
            old_ref text NOT NULL,
-           new_ref text
+           new_ref text,
+           _integrity_id_text text GENERATED ALWAYS AS ((id)::text) STORED
          )`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${bridgeIndex}" ON "${shadowSchema}"."${parent}" (_integrity_id_text)`,
+      );
+      await db.query(
+        `COMMENT ON INDEX "${shadowSchema}"."${bridgeIndex}" IS '${shadowBridgeComment}'`,
       );
       await db.query(
         `CREATE TABLE "${shadowSchema}"."${child}" (
@@ -1911,6 +1944,9 @@ describePostgres(
         foreignKeys: (before.foreignKeys as any[]).filter(
           (row) => row.child_schema === shadowSchema,
         ),
+        indexes: (before.indexes as any[]).filter(
+          (row) => row.table_schema === shadowSchema,
+        ),
       };
       const shadowAfter = {
         data: (after.data as any[]).filter((row) =>
@@ -1921,6 +1957,9 @@ describePostgres(
         ),
         foreignKeys: (after.foreignKeys as any[]).filter(
           (row) => row.child_schema === shadowSchema,
+        ),
+        indexes: (after.indexes as any[]).filter(
+          (row) => row.table_schema === shadowSchema,
         ),
       };
       expect(shadowAfter).toEqual(shadowBefore);
@@ -1946,6 +1985,7 @@ describePostgres(
         row: {
           id: '11111111-1111-1111-1111-111111111111',
           new_ref: 'public-rename',
+          _integrity_id_text: '11111111-1111-1111-1111-111111111111',
         },
       });
       expect(
@@ -1957,6 +1997,12 @@ describePostgres(
         parent_schema: 'public',
         parent_table: parent,
       });
+      expect(
+        (after.indexes as any[]).find(
+          (row) =>
+            row.table_schema === 'public' && row.index_name === bridgeIndex,
+        ),
+      ).toMatchObject({ comment: publicBridgeComment });
     }, 30_000);
   },
 );
