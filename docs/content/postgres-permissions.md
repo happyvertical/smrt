@@ -56,8 +56,9 @@ application-managed tables outside that registry. Use
 `retainedTables: ['operator_audit']` only for existing operator-owned tables
 that must remain in the dedicated schema but are outside the application runtime
 surface. A retained table must be owned by the migration owner, cannot also be
-managed or monitored, cannot be connected to a managed table by inheritance or
-foreign keys, and receives no runtime or monitor table, column, or sequence privileges.
+managed or monitored, cannot be connected to a managed table by inheritance,
+foreign keys, or rewrite rules, and receives no runtime or monitor table,
+column, or sequence privileges.
 Unknown tables and sequences still refuse qualification.
 Declared and retained tables and monitoring columns must already exist.
 `packages.cli.postgresPermissions` can override the global contract using the

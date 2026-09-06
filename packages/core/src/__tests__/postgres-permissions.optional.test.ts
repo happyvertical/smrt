@@ -558,6 +558,22 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses managed rewrite rules that could write a retained table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE items_to_audit AS ON INSERT TO app.items DO ALSO INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_audit)',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
