@@ -456,3 +456,23 @@ For the full exported API, read the package sources: [`packages/agents/README.md
 ## License
 
 This package is part of the SMRT Framework and is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+## Migrating legacy AgentSchedule slugs
+
+Older deployments can contain framework-owned `_smrt_agent_schedules` rows that
+predate the inherited `slug` requirement. Run the ordinary schema migration
+first, then preview and apply the explicit PostgreSQL repair:
+
+```sh
+smrt db:migrate
+smrt db:migrate-agent-schedule-slugs --dry-run
+smrt db:migrate-agent-schedule-slugs
+smrt db:migrate
+```
+
+The repair derives a missing slug from the persisted id with the same lowercase
+normalization used by `SmrtObject`. It preserves nonempty legacy slugs and all
+schedule state, refuses malformed identities or `(slug, context)` collisions,
+and records its completion atomically with the data update. It takes an
+exclusive lock on the schedule table and never evaluates, enables, or runs a
+schedule; plan it as a short PostgreSQL maintenance operation.
