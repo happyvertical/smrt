@@ -126,16 +126,6 @@
       "cache": false,
       "persistent": true
     },
-    "lint:fix": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "biome.json"
-      ],
-      "cache": false
-    },
     "test:postgres": {
       "dependsOn": [
         "build",
@@ -163,18 +153,6 @@
         "TEST_DB_URL",
         "TEST_DB_ADAPTER",
         "SMRT_TEST_POSTGRES_URL"
-      ],
-      "cache": false
-    },
-    "format": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "**/*.json",
-        "**/*.md",
-        "biome.json"
       ],
       "cache": false
     },
