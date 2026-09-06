@@ -6,6 +6,33 @@
 
 - ### Breaking Changes
 
+  - document-global WebMCP tool-name lock across all registration paths (#2717) (smrt-web)
+
+  ### Features
+
+  - @method() decorator + wire-ability heuristic gate for generated API routes (#2712) (core)
+
+  ### Bug Fixes
+
+  - reconcile managed PostgreSQL routines (#2722) (core)
+  - guard cache writes with an invalidation generation (#2719) (prompts,languages)
+
+  ### Other Changes
+
+  - test: skip duckdb rollback-isolation variant pending sdk#1231 (#2721) (subscriptions)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
   - retire unused CLIGenerator and smrt-virt-cli module (#2704) (core)
 
   ### Features

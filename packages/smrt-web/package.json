@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-web",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "SMRT browser client data runtime: typed collection factory wrapping the client-data engine over generated REST clients",
   "author": "HappyVertical",
   "type": "module",
