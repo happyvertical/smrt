@@ -40,6 +40,7 @@ module you are editing. This file keeps what holds in every module.
 | `sse-client.ts` | the client half of live cache invalidation — the app-wide subscriber, the wire contract it consumes, and SSE-vs-polling behaviour | [agents/live-invalidation.md](agents/live-invalidation.md) |
 | `webmcp.ts` | framework-agnostic WebMCP registrar; validates an optionally bounded/namespaced, effect-filtered prospective set atomically, keeps legacy list-backed tools on collection state, and executes canonical tool-only definitions directly through REST fetchers. `registerWebMcpBespokeTool` is the single-tool sibling a UI layer's hand-written component tool routes through (`useWebMcpTool` in smrt-svelte, #2586): same fail-closed effect classification and `effects` policy, no `namespace`/`maxTools` | — |
 | `persistence/` + `update-state.ts` | the read-cache rehydrate capability and the framework-free `updateAvailable` primitive (bundle + contract signals) | [agents/version-persistence.md](agents/version-persistence.md) |
+| `webmcp-tool-names.ts` | the document-global tool-name lock every registration path reserves through (#2613). Dependency-free; ships as `@happyvertical/smrt-web/webmcp-tool-names` | see below |
 | `intents.ts` + `capability-classification.ts` | the framework-agnostic declarative view-intent contract, its declaration registry, and the one capability classification rule both it and `webmcp.ts` apply (#2587, #2588). Ships as the dependency-free `@happyvertical/smrt-web/intents` entry — importing it pulls no client-data engine | — |
 | `data-query.ts` | dependency-free browser mirror and defensive response normalizer for the canonical bounded data-query envelope (#2444) | — |
 | `remote-query.ts` | query-shaped remote pages over a `SmrtWebCollection`, with keyed stale cache, execution modes, cancellation/latest-query-wins, and optional query-scoped live subscriptions (#2445) | — |
@@ -172,15 +173,13 @@ declared intent derives, at the one place both are visible. Two such intents
 would otherwise fight over a single WebMCP tool name at mount, where the
 failure is a shadowed or rejected registration rather than a clear error.
 
-**Gotcha — that check covers intents only.** A derived name can still collide
-with a GENERATED model tool (`${model}_${action}`) or, under a custom
-`webmcp.ui.prefix`, with one of the six fixed UI tools. Neither is knowable at
-declaration time, because both depend on a runtime `namespace`/`prefix` the
-declaration never sees, and there is no document-global tool-name lock for
-bespoke registrations to participate in. Nothing escalates — an intent stays
-browser-only and fail-closed either way — but one registration silently
-shadows or loses to the other. Keep an intent's first id segment out of your
-model names, or give `registerWebMcpTools` a `namespace`.
+**That check covers intents only** — a derived name can still collide with a
+GENERATED model tool (`${model}_${action}`) or, under a custom
+`webmcp.ui.prefix`, with one of the six fixed UI tools, and neither is
+knowable at declaration time because both depend on a runtime
+`namespace`/`prefix` the declaration never sees. Those cross-path collisions
+are caught at REGISTRATION instead, by the document-global tool-name lock
+below (#2613).
 
 ### The no-REST invariant
 
@@ -194,6 +193,59 @@ tool's `execute` is then CONSTRUCTED by `compileViewIntentToolSpec` from
 `src/intents.test.ts` ("the no-REST invariant"). If you add a field to the
 declaration, it must be data, and it must be reachable by the scanner without
 evaluation.
+
+## The document-global tool-name lock (#2613)
+
+`webmcp-tool-names.ts` is the reservation table the three name-deriving paths
+coordinate through, and ships as the dependency-free
+`@happyvertical/smrt-web/webmcp-tool-names` entry so a UI layer can reserve
+its own names without pulling the client-data engine.
+
+The three paths do NOT share one registrar — verify this before assuming a
+funnel. `registerWebMcpTools` and `registerWebMcpUiTools` (in
+`@happyvertical/smrt-svelte`) each call `document.modelContext.registerTool`
+directly; only intents and `useWebMcpTool` route through
+`registerWebMcpBespokeTool`. So each path reserves for itself:
+
+| Path | Owner | Reserves in |
+|---|---|---|
+| generated model tools | `generated` | `registerWebMcpTools`, after selection/budget validation, before the first `registerTool` |
+| the six fixed `smrt_ui_*` tools | `ui` | `registerWebMcpUiTools` (`smrt-svelte`), after the prefix lock |
+| declared view intents | `intent` | `registerWebMcpBespokeTool`'s shared body — via `registerViewIntent`, or via `registerWebMcpBespokeTool` with `owner: 'intent'` |
+| bespoke `useWebMcpTool` tools | `bespoke` | the same shared body (the default owner) |
+
+Reservation is all-or-nothing and rejects a duplicate SYNCHRONOUSLY with
+`WebMcpToolNameCollisionError`, which carries the colliding name plus the
+owner holding it and the owner that asked. Previously the host rejected the
+later registration and the tool was silently absent. **This is a behavior
+change**: `registerWebMcpBespokeTool` and `registerViewIntent` now throw where
+they used to succeed-then-lose-the-tool.
+
+Rules for anything that adds a fourth path or edits an existing one:
+
+- **The table is keyed on the `document`, not on module state.** A registrar
+  with an injectable document must pass the SAME object it reads
+  `modelContext` from, or its reservations land in a different table. Module
+  state would fragment across bundle chunks, a duplicated dependency, and HMR;
+  the table is stored on the document under a `Symbol.for` key so every copy
+  of the module resolves to one slot. It is stamped with the `modelContext` it
+  was built for and resets when the host installs a new one, so tools the old
+  registry held never strand their names.
+- **Dispose must release**, or a mount/unmount cycle wedges the name
+  permanently — the failure mode #2595 already hit as a re-registration race.
+  A reservation releases only names it still holds.
+- **A tool the effects policy excluded reserves nothing**: it was never
+  registered, so its name stays available.
+- **A binding that compiles an intent itself must pass `owner: 'intent'`.**
+  `registerViewIntent` is not the shipped intent path: `useViewIntent` in
+  `@happyvertical/smrt-svelte` compiles the spec and hands it to
+  `useWebMcpTool`, because that package must not duplicate the WebMCP
+  lifecycle. Without the explicit owner every intent collision would report
+  `bespoke` and send an author looking for a `useWebMcpTool` call that does
+  not exist. The label is a diagnostic only — it grants nothing.
+- Consumer app code that registers directly against `document.modelContext`
+  (for example `packages/template-sveltekit`'s runtime-diagnostics tools) does
+  not participate and can still collide at the host.
 
 ## Reference consumer
 
