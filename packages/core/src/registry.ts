@@ -932,11 +932,50 @@ export class ObjectRegistry {
       if (method.decoratorConfig) names.add(name);
     }
     for (const source of ObjectRegistry.methodDecoratorSources(objectName)) {
+      // The scanner DROPS a `private`/`protected` method, but TypeScript
+      // visibility is erased at runtime, so its `@method()` still ran and
+      // registered here. Unioning the live store in unconditionally therefore
+      // resurrected exactly what the scanner withheld, and the standalone
+      // `APIGenerator` then found the method on the constructor and dispatched
+      // it -- letting `@method({ expose: true })` publish a non-public
+      // operation, which inverts the documented precedence where non-public
+      // outranks an explicit expose (#2686).
+      //
+      // Where this source's own manifest entry is available it is
+      // authoritative: a name it omits was omitted deliberately. Where there is
+      // none -- `startRestServer([Product], { db })`, the unscanned posture
+      // this store exists for -- the decorator is the only signal there is, and
+      // an empty method map is how that case presents.
+      const manifestMethods =
+        ObjectRegistry.manifestMethodsForConstructor(source);
       for (const name of ObjectRegistry.getMethodDecorators(source).keys()) {
+        if (manifestMethods && !manifestMethods.has(name)) continue;
         names.add(name);
       }
     }
     return [...names];
+  }
+
+  /**
+   * The manifest-derived method map for the class registered under EXACTLY
+   * `source`, or `undefined` when no manifest described it.
+   *
+   * Matched on constructor identity, never on name: `Account` exists in both
+   * `smrt-ledgers` and `smrt-messages`, and one package's manifest must not
+   * decide what the other's live decorators may expose.
+   */
+  private static manifestMethodsForConstructor(
+    source: Function,
+  ): Map<string, MethodDefinition> | undefined {
+    for (const registered of getClasses().values()) {
+      if (registered.constructor !== source) continue;
+      // `methods` is populated from the manifest; empty means unscanned. A
+      // scanned class whose ONLY decorated methods are non-public also lands
+      // here and stays permissive -- narrower than the unconditional union it
+      // replaces, and it needs a manifest-presence flag to close properly.
+      return registered.methods.size > 0 ? registered.methods : undefined;
+    }
+    return undefined;
   }
 
   /**

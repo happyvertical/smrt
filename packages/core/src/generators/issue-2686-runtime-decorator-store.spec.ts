@@ -239,3 +239,76 @@ describe('#2686 @method() is honored without a manifest', () => {
     expect(await rowCount()).toBe(before);
   });
 });
+
+describe('#2686 the live store never resurrects a non-public method', () => {
+  // TypeScript visibility is erased at runtime, so a `private`/`protected`
+  // method's `@method()` still executes and registers here — while the scanner
+  // DROPS that method from the manifest entirely. Unioning the two therefore
+  // handed the transport back exactly what the scanner withheld, and the
+  // standalone APIGenerator finds the erased method on the constructor and
+  // dispatches it. That lets `@method({ expose: true })` publish a non-public
+  // operation, inverting the documented precedence where non-public outranks
+  // an explicit expose.
+  class Ledger extends SmrtObject {
+    @method({ expose: true })
+    async publicAction(): Promise<void> {}
+
+    @method({ expose: true })
+    private async privateAction(): Promise<void> {}
+
+    @method({ expose: true })
+    protected async protectedAction(): Promise<void> {}
+  }
+
+  it('drops names the class manifest omits, and keeps the public one', () => {
+    // The manifest the scanner would produce: only the public method survives.
+    ObjectRegistry.register(
+      Ledger as never,
+      {
+        name: 'LedgerScanned',
+        packageName: '@test/smrt',
+        _manifest: {
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            '@test/smrt:LedgerScanned': {
+              name: 'ledgerscanned',
+              className: 'LedgerScanned',
+              qualifiedName: '@test/smrt:LedgerScanned',
+              collection: 'ledgerscanneds',
+              packageName: '@test/smrt',
+              fields: {},
+              methods: {
+                publicAction: {
+                  name: 'publicAction',
+                  async: true,
+                  parameters: [],
+                  returnType: 'Promise<void>',
+                  isStatic: false,
+                  isPublic: true,
+                  decoratorConfig: { expose: true },
+                },
+              },
+              decoratorConfig: {},
+            },
+          },
+        },
+        _manifestKey: '@test/smrt:LedgerScanned',
+      } as never,
+    );
+
+    const names = ObjectRegistry.listDecoratedMethodNames('LedgerScanned');
+    expect(names).toContain('publicAction');
+    expect(names).not.toContain('privateAction');
+    expect(names).not.toContain('protectedAction');
+  });
+
+  it('still enumerates every decorated method with NO manifest', () => {
+    // The unscanned posture this store exists for: `startRestServer([X], {db})`
+    // has no manifest at all, so the decorator is the only signal there is.
+    // Tightening the scanned case must not close that door.
+    const names = ObjectRegistry.listDecoratedMethodNames('UnscannedWidget');
+    expect(names).toContain('concealed');
+    expect(names).toContain('shaped');
+  });
+});
