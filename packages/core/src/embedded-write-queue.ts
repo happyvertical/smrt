@@ -79,8 +79,28 @@ export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
   return isEmbeddedDatabase(db) && !/^(?:https?|libsql):\/\//iu.test(url);
 }
 
+/**
+ * Whether `url` identifies a SQLite/DuckDB in-memory database that is
+ * private to its own connection, as opposed to shared state.
+ *
+ * Bare `:memory:` and `file::memory:` (no query string) each mint a fresh,
+ * connection-private database -- `resolveDuckDBUrl(':memory:')` returns it
+ * unchanged, with no per-instance suffix -- so two independent handles that
+ * both happen to carry this literal string are NOT the same database and
+ * must not share a write-queue identity (#2707). A `cache=shared` query
+ * parameter (e.g. `file::memory:?cache=shared`) is the opposite case: it is
+ * SQLite's own mechanism for making an in-memory database genuinely shared
+ * across connections in the process, so a URL carrying it must keep the
+ * ordinary string-keyed (shared) behavior.
+ */
+function isPerConnectionMemoryUrl(url: string): boolean {
+  if (url.includes('cache=shared')) return false;
+  return url === ':memory:' || url === 'file::memory:';
+}
+
 function queueKey(db: QueueableDatabase): string | object {
-  return typeof db?.url === 'string' && db.url.length > 0 ? db.url : db;
+  if (typeof db?.url !== 'string' || db.url.length === 0) return db;
+  return isPerConnectionMemoryUrl(db.url) ? db : db.url;
 }
 
 /**

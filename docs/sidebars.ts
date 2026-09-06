@@ -10,6 +10,7 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: 'doc', id: 'app-cli' },
         { type: 'doc', id: 'data-compartmentalization' },
+        { type: 'doc', id: 'data-surface-conformance' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },
         { type: 'doc', id: 'm5-reference-fixture' },
