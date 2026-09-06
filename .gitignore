@@ -141,6 +141,7 @@ ci-debug-*.log
 
 # Package artifacts
 *.tgz
+.artifacts/
 
 **/.claude/settings.local.json
 **/.claude/mcp-config.json
