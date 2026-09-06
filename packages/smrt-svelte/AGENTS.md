@@ -29,6 +29,14 @@ all registrations abort when their owning component unmounts. It also covers
 an undeclared bespoke tool being excluded under the default read-only policy
 (#2586) — never remove that assertion when editing the fixture.
 
+The app-level data-surface parity/security gate is
+`src/web/__tests__/data-surface-conformance.integration.svelte.test.ts`. Keep
+it production-backed: the fixture uses a real SQLite collection, generated
+REST auth, mounted DataTable/controller snapshots, authenticated bridge ACKs,
+principal tools, opaque action preview/apply, and ContentList/report adapters.
+When changing a data-surface wire field or refusal reason, update the
+versioned normalizers and the conformance fixture together.
+
 ## The UI split — primitive-adoption contract (#1589)
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the

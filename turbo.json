@@ -126,26 +126,6 @@
       "cache": false,
       "persistent": true
     },
-    "lint": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "biome.json"
-      ],
-      "cache": true
-    },
-    "lint:fix": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "biome.json"
-      ],
-      "cache": false
-    },
     "test:postgres": {
       "dependsOn": [
         "build",
@@ -175,30 +155,6 @@
         "SMRT_TEST_POSTGRES_URL"
       ],
       "cache": false
-    },
-    "format": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "**/*.json",
-        "**/*.md",
-        "biome.json"
-      ],
-      "cache": false
-    },
-    "format-check": {
-      "inputs": [
-        "src/**",
-        "test/**",
-        "**/*.ts",
-        "**/*.js",
-        "**/*.json",
-        "**/*.md",
-        "biome.json"
-      ],
-      "cache": true
     },
     "typecheck": {
       "dependsOn": [

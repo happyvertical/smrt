@@ -123,7 +123,7 @@ format are **root-level Biome tasks, not per-package scripts** (per `standards.m
 `type: "module"`; `exports` map orders the `types` condition before `import`; `files`
 allowlist includes `dist`, `AGENTS.md`, **and** `CLAUDE.md` (all three enforced by
 `check-standards.mjs`); `tsconfig.json` is `composite` with correct project `references`.
-**Proof:** `node scripts/check-standards.mjs` · `pnpm --filter <pkg> typecheck` · lint/format via root `turbo lint` / `npm run format-check`
+**Proof:** `node scripts/check-standards.mjs` · `pnpm --filter <pkg> typecheck` · lint/format via root `pnpm lint` / `pnpm format-check`
 **Tiers:** T1 ✅ · T2 ✅ · T3 ✅ · T4 ✅
 
 ### 2. Type safety
@@ -242,7 +242,7 @@ checks in hooks/CI — see AGENTS.md):
 
 - **Packaging/scripts** → assert in `scripts/check-standards.mjs` (runs in CI).
 - **Typecheck presence** → require a per-package `typecheck` script in `check-standards.mjs`; run `turbo typecheck` as a PR gate.
-- **Lint/format** → root-level Biome only (no per-package `lint`/`format` scripts — `check-standards.mjs` should forbid them); `turbo lint` + `biome ci` + `npm run format-check` as PR gates.
+- **Lint/format** → root-level Biome only (no per-package `lint`/`format` scripts — `check-standards.mjs` should forbid them); `pnpm lint` (`biome ci`) + `pnpm format-check` as PR gates.
 - **Type safety / lint rules** → flip the Biome `packages/*/src/**` overrides
   off → warn → error, package by package, until the blanket override is deleted.
 - **Design tokens** → add a Biome (root) lint rule banning raw color literals in
