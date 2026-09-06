@@ -566,6 +566,7 @@ describePostgres(
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      expect(errorSpy).not.toHaveBeenCalled();
       logSpy.mockRestore();
       errorSpy.mockRestore();
       const db = await freshDb();

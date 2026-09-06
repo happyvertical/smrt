@@ -664,8 +664,7 @@ async function snapshotGeneratedBridges(
     columns.map((column) => declaredUuidKey(column.table, column.column)),
   );
   const { rows } = await db.query(
-    `SELECT source.relname AS source_table, source_attr.attname AS source_column,
-            generated.relname AS table_name, generated_attr.attname AS column_name,
+    `SELECT generated.relname AS table_name, generated_attr.attname AS column_name,
             pg_get_expr(def.adbin, def.adrelid) AS expression,
             format_type(generated_attr.atttypid, generated_attr.atttypmod) AS type_name,
             generated_attr.attnotnull AS not_null, generated_attr.attstorage AS storage,
@@ -673,26 +672,37 @@ async function snapshotGeneratedBridges(
             col_description(generated_attr.attrelid, generated_attr.attnum) AS column_comment,
             generated.relispartition AS partitioned,
             EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhrelid = generated.oid OR i.inhparent = generated.oid) AS inherited
-       FROM pg_depend dep
-       JOIN pg_attrdef def ON def.oid = dep.objid
+       FROM pg_attrdef def
        JOIN pg_class generated ON generated.oid = def.adrelid
        JOIN pg_namespace generated_ns ON generated_ns.oid = generated.relnamespace
        JOIN pg_attribute generated_attr ON generated_attr.attrelid = generated.oid AND generated_attr.attnum = def.adnum
-       JOIN pg_class source ON source.oid = dep.refobjid
-       JOIN pg_attribute source_attr ON source_attr.attrelid = source.oid AND source_attr.attnum = dep.refobjsubid
-      WHERE dep.classid = 'pg_attrdef'::regclass
-        AND dep.refclassid = 'pg_class'::regclass
-        AND generated_ns.nspname = 'public'
+      WHERE generated_ns.nspname = 'public'
         AND generated.relkind = 'r' AND generated_attr.attgenerated = 's'`,
   );
   const bridges: GeneratedBridgeSnapshot[] = [];
   for (const row of rows as Array<Record<string, unknown>>) {
-    const table = String(row.source_table);
-    const sourceColumn = String(row.source_column);
-    if (!requested.has(declaredUuidKey(table, sourceColumn))) continue;
     const bridgeTable = String(row.table_name);
     const bridgeColumn = String(row.column_name);
     const expression = String(row.expression).replaceAll(' ', '');
+    const sourceColumn = columns.find(
+      (column) =>
+        column.table === bridgeTable &&
+        ['id', `${column.column}::text`, `(${column.column})::text`].includes(
+          expression,
+        ),
+    )?.column;
+    if (!sourceColumn) {
+      if (columns.some((column) => column.table === bridgeTable)) {
+        throw new Error(
+          `Unsupported generated dependency ${bridgeTable}.${bridgeColumn}; only a plain stored TEXT id::text bridge can coexist with a converted UUID column.`,
+        );
+      }
+      continue;
+    }
+    if (!requested.has(declaredUuidKey(bridgeTable, sourceColumn))) {
+      continue;
+    }
+    const table = bridgeTable;
     if (
       bridgeTable !== table ||
       String(row.type_name) !== 'text' ||
