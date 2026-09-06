@@ -574,6 +574,16 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('allows rewrite rules that do not reference a retained table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE items_notify AS ON UPDATE TO app.items DO ALSO NOTIFY items_updated',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply, JSON.stringify(plan.diagnostics)).toBe(true);
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
