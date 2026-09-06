@@ -85,9 +85,12 @@ and repository rules.
   receiver from. `isRestActionRoutable` ANDs "declared" with that receiver, so
   it never predicts `allow` for an action dispatch refuses. A declared action
   with no receiver is refused (501 collection-scoped, 404 item-scoped), never
-  allowed to fall through into `create`. The one consumer
-  NOT migrated is `packages/smrt-workbench/src/discovery.ts`, which has no
-  dependency on this package (#2709).
+  allowed to fall through into `create`. All eight consumers read the resolver,
+  including `packages/smrt-workbench/src/discovery.ts`; it imports the
+  `./generators/custom-action` LEAF subpath, not `./generators`, because that
+  barrel value-re-exports `MCPGenerator` and so drags `@happyvertical/ai` and
+  `@happyvertical/sql` into a build-time helper (2 modules vs 109). Keep
+  `custom-action.ts` free of value imports outside `tools/tool-generator`.
 
 ## Gotchas
 
