@@ -21,7 +21,7 @@ import {
   type LocalApplicationRuntime,
 } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { isFrameworkBaseClass, ObjectRegistry } from '@happyvertical/smrt-core';
 import { buildWebMcpToolDefinitions } from '@happyvertical/smrt-core/vite-plugin';
 import {
   type SmartObjectManifest,
@@ -324,14 +324,26 @@ export async function prepareReferenceFixtureDatabase(
     type: engine,
     // Framework dependencies use their normal registry schemas; the two
     // application tables below must come exclusively from the copied app's
-    // generated manifest.
-    classes: ObjectRegistry.getQualifiedClassNames().filter(
-      (className) =>
-        className !== 'ReferenceWorkItem' &&
-        className !== 'ReferenceWorkItemAsset' &&
-        !className.endsWith(':ReferenceWorkItem') &&
-        !className.endsWith(':ReferenceWorkItemAsset'),
-    ),
+    // generated manifest. This is an implicit-shaped request ("every
+    // framework-registered class") expressed as an explicit filter only to
+    // exclude those two app classes, so it must also drop the framework's
+    // own abstract base classes (SmrtObject, SmrtClass, ...) the way
+    // getTestDatabase()'s implicit path does (#2645) -- otherwise this
+    // fixture creates phantom smrt_objects/smrt_classes/smrt_collections/
+    // smrt_hierarchicals/smrt_polymorphic_associations tables that
+    // buildMergedTableSchemas() never creates in production (#2708).
+    classes: ObjectRegistry.getQualifiedClassNames().filter((className) => {
+      if (
+        className === 'ReferenceWorkItem' ||
+        className === 'ReferenceWorkItemAsset' ||
+        className.endsWith(':ReferenceWorkItem') ||
+        className.endsWith(':ReferenceWorkItemAsset')
+      ) {
+        return false;
+      }
+      const registered = ObjectRegistry.getClass(className);
+      return !isFrameworkBaseClass(registered?.name, registered?.packageName);
+    }),
   });
   await migrateReferenceFixtureSchema(db, manifest, engine);
 }

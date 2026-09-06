@@ -68,6 +68,10 @@ Use Node/pnpm versions from `package.json`. Install with `pnpm install`, then
 `pnpm build`. Start with package checks, then relevant root checks:
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
 `pnpm knowledge:check --strict --format markdown`, and `pnpm audit:policy`.
+`pnpm lint` runs Biome directly (`biome ci`, pinned to CI's exact version,
+#2710) rather than through Turbo — no package defines its own `lint` or
+`format-check` script (see [standards](docs/content/standards.md));
+`pnpm format-check` is the same check under its documented name.
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
 SMRT tests require `smrtVitestPlugin()`. Restart Vitest after adding decorated
