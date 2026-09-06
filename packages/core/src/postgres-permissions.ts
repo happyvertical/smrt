@@ -16,6 +16,8 @@ export interface PostgresPermissionContract {
   migrationOwner: string;
   runtimeRole: string;
   managedTables: string[];
+  /** Existing operator-owned tables retained outside the runtime data surface. */
+  retainedTables?: string[];
   /** Exact zero-argument trigger functions bound only to managed tables. */
   managedTriggerFunctions?: string[];
   monitor?: { role: string; tables: Record<string, string[]> };
@@ -40,6 +42,7 @@ export interface PostgresPermissionPlan {
 
 type NormalizedPostgresPermissionContract = PostgresPermissionContract & {
   managedTriggerFunctions: string[];
+  retainedTables: string[];
 };
 
 type Executor = Pick<DatabaseInterface, 'query'>;
@@ -76,6 +79,7 @@ interface Row {
   member: string;
   parent: string;
   relation: string;
+  parent_table: string | null;
   version: string;
   executor: string;
   superuser: boolean;
@@ -200,6 +204,7 @@ export function validatePostgresPermissionContract(
       'migrationOwner',
       'runtimeRole',
       'managedTables',
+      'retainedTables',
       'managedTriggerFunctions',
       'monitor',
     ],
@@ -221,6 +226,21 @@ export function validatePostgresPermissionContract(
       input.managedTables.map((table) => name(table, 'managedTables entry')),
     ),
   ].sort();
+  if (
+    input.retainedTables !== undefined &&
+    !Array.isArray(input.retainedTables)
+  )
+    throw new Error('retainedTables must be an array.');
+  const retainedTables = [
+    ...new Set(
+      (input.retainedTables ?? []).map((table) =>
+        name(table, 'retainedTables entry'),
+      ),
+    ),
+  ].sort();
+  const overlap = retainedTables.find((table) => managedTables.includes(table));
+  if (overlap)
+    throw new Error(`Table ${overlap} cannot be both managed and retained.`);
   if (
     input.managedTriggerFunctions !== undefined &&
     !Array.isArray(input.managedTriggerFunctions)
@@ -278,6 +298,7 @@ export function validatePostgresPermissionContract(
     migrationOwner,
     runtimeRole,
     managedTables,
+    retainedTables,
     managedTriggerFunctions,
     ...(monitor ? { monitor } : {}),
   };
@@ -327,7 +348,7 @@ async function snapshot(
     memberships: `SELECT pg_get_userbyid(member) AS member, pg_get_userbyid(roleid) AS parent FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) OR roleid IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) ORDER BY member, roleid`,
     database: `SELECT datname AS name, pg_get_userbyid(datdba) AS owner, ${acl("COALESCE(datacl, acldefault('d',datdba))")} AS acl FROM pg_database WHERE datname=current_database()`,
     schemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3) <> 'pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
-    relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
+    relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, (SELECT parent.relname FROM pg_depend d JOIN pg_class parent ON parent.oid=d.refobjid JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i') AND parent_schema.oid=n.oid LIMIT 1) AS parent_table, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
     routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)) AS identity, oidvectortypes(p.proargtypes) AS argument_types, pg_get_expr(p.proargdefaults,0) AS argument_defaults, p.prokind AS kind, p.prorettype::regtype::text AS return_type, pg_get_function_result(p.oid) AS result, p.procost::text AS cost, p.prorows::text AS rows, p.prosupport::regproc::text AS support, p.pronargs::text AS argument_count, l.lanname AS language, p.prosecdef AS security_definer, p.provolatile::text AS volatility, p.proparallel::text AS parallel, p.proleakproof AS leakproof, p.proisstrict AS strict, COALESCE(to_json(p.proconfig),'[]'::json) AS config, p.prosrc AS source, CASE WHEN p.prokind='f' THEN pg_get_functiondef(p.oid) END AS definition, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
     triggers: `SELECT t.oid::text, n.nspname AS schema, c.relname AS table_name, t.tgname AS name, t.tgfoid::text AS function_oid, t.tgenabled AS enabled, t.tgisinternal AS internal, t.tgtype::text AS type, encode(t.tgargs,'hex') AS arguments, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,c.oid,t.oid`,
@@ -772,9 +793,17 @@ async function plan(
     }
   }
   const declared = new Set(contract.managedTables);
+  const retained = new Set(contract.retainedTables);
   // Framework feature tables are owned by SMRT even when absent from manifests.
   for (const table of tables)
     if (table.name.startsWith('_smrt_')) declared.add(table.name);
+  for (const table of retained)
+    if (declared.has(table))
+      unsupported(
+        'retained-managed-table',
+        qualified(contract.schema, table),
+        'Retained tables must be outside the managed and framework table surfaces.',
+      );
   for (const table of declared)
     if (!tables.some((entry) => entry.name === table))
       unsupported(
@@ -782,15 +811,22 @@ async function plan(
         qualified(contract.schema, table),
         'Run supported schema migrations before reconciling permissions.',
       );
+  for (const table of retained)
+    if (!tables.some((entry) => entry.name === table))
+      unsupported(
+        'missing-retained-table',
+        qualified(contract.schema, table),
+        'Retained tables must already exist before permission reconciliation.',
+      );
   for (const [table, columns] of Object.entries(
     contract.monitor?.tables ?? {},
   )) {
     const relation = tables.find((entry) => entry.name === table);
-    if (!declared.has(table) || !relation)
+    if (!declared.has(table) || retained.has(table) || !relation)
       unsupported(
         'monitor-table',
         table,
-        'Monitor tables must exist and belong to managedTables or framework tables.',
+        'Monitor tables must exist and belong to the managed or framework table surface, never retained tables.',
       );
     for (const column of columns)
       if (
@@ -831,11 +867,26 @@ async function plan(
         resource,
         `Managed resources must be owned by ${contract.migrationOwner}; ownership is never changed.`,
       );
-    if (relation.kind !== 'S' && !declared.has(relation.name))
+    if (
+      relation.kind !== 'S' &&
+      !declared.has(relation.name) &&
+      !retained.has(relation.name)
+    )
       unsupported(
         'undeclared-table',
         resource,
         'The dedicated schema contains an undeclared table; defaults cannot safely cover a mixed schema.',
+      );
+    if (
+      relation.kind === 'S' &&
+      (!relation.parent_table ||
+        (!declared.has(relation.parent_table) &&
+          !retained.has(relation.parent_table)))
+    )
+      unsupported(
+        'undeclared-sequence',
+        resource,
+        'Sequences must belong to a declared managed or retained table before permission reconciliation.',
       );
     if (!['r', 'p', 'S'].includes(relation.kind))
       unsupported(
@@ -853,10 +904,14 @@ async function plan(
       const isRuntime = role === contract.runtimeRole;
       const desired = isRuntime
         ? relation.kind === 'S'
-          ? ['USAGE']
-          : bookkeeping.has(relation.name)
-            ? ['SELECT']
-            : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+          ? retained.has(relation.parent_table ?? '')
+            ? []
+            : ['USAGE']
+          : retained.has(relation.name)
+            ? []
+            : bookkeeping.has(relation.name)
+              ? ['SELECT']
+              : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
         : [];
       reconcile(
         relation.kind === 'S' ? 'SEQUENCE' : 'TABLE',
@@ -868,6 +923,7 @@ async function plan(
       for (const column of columns) {
         const wanted =
           !isRuntime &&
+          !retained.has(relation.name) &&
           (contract.monitor?.tables[relation.name] ?? []).includes(column.name)
             ? ['SELECT']
             : [];
@@ -1143,6 +1199,7 @@ async function plan(
       'Future user-defined routines and types are unsupported. PostgreSQL implicit global defaults grant PUBLIC EXECUTE/USAGE; rerun diagnostics after every migration before activating runtime roles.',
       'Pause migrations and external ACL/role writers during planning and apply. The advisory lock coordinates SMRT permission writers only.',
       'All framework bookkeeping tables must exist before setup. Stop runtime and monitor access throughout migrations, restores and repair: recreated bookkeeping tables temporarily receive creator CRUD defaults and require explicit reconciliation before either role is reactivated.',
+      'Retained tables are operator-owned data outside the runtime and monitor surfaces. Creator defaults initially grant runtime access to every new table and sequence, so create or restore every retained table first, then apply its reviewed plan and verify access is revoked before reactivating restricted roles.',
     ],
     statements: [...new Set(statements)],
     canApply: !diagnostics.some((entry) => entry.severity === 'unsupported'),

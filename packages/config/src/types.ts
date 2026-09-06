@@ -10,6 +10,8 @@ export interface PostgresPermissionsConfig {
   runtimeRole: string;
   /** Additional managed tables beyond discovered models and present system tables. */
   managedTables?: string[];
+  /** Existing operator-owned tables retained outside the runtime data surface. */
+  retainedTables?: string[];
   /** Exact zero-argument trigger functions bound only to managed tables. */
   managedTriggerFunctions?: string[];
   /** Explicit safe monitoring columns; there is no default table-wide access. */

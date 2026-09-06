@@ -434,6 +434,83 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       [],
     );
   });
+  it('revokes creator defaults from declared retained tables and their sequences without changing retained data', async () => {
+    await apply();
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (id bigserial PRIMARY KEY, evidence text NOT NULL)',
+    );
+    await as(
+      owner,
+      "INSERT INTO app.operator_audit(evidence) VALUES ('preserve this')",
+    );
+    expect(
+      (await as(runtime, 'SELECT evidence FROM app.operator_audit')).rows,
+    ).toEqual([{ evidence: 'preserve this' }]);
+    contract.retainedTables = ['operator_audit'];
+    const stale = await planPostgresPermissions(db, contract);
+    await db.query(
+      `GRANT SELECT(evidence) ON app.operator_audit TO ${q(monitor)}`,
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: stale.fingerprint,
+      }),
+    ).rejects.toThrow('stale');
+    const before = await planPostgresPermissions(db, contract);
+    expect(before.canApply, JSON.stringify(before.diagnostics)).toBe(true);
+    expect(before.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'excessive-privilege',
+        role: runtime,
+        resource: '"app"."operator_audit"',
+      }),
+    );
+    expect(before.statements).toContain(
+      `REVOKE ALL PRIVILEGES ON TABLE "app"."operator_audit" FROM ${q(runtime)}`,
+    );
+    expect(before.statements).toContain(
+      `REVOKE ALL PRIVILEGES ON SEQUENCE "app"."operator_audit_id_seq" FROM ${q(runtime)}`,
+    );
+    const result = await applyPostgresPermissions(db, contract, {
+      expectedFingerprint: before.fingerprint,
+    });
+    expect(result.diagnostics).toEqual([]);
+    await expect(
+      as(runtime, 'SELECT evidence FROM app.operator_audit'),
+    ).rejects.toThrow();
+    await expect(
+      as(runtime, "SELECT nextval('app.operator_audit_id_seq')"),
+    ).rejects.toThrow();
+    await expect(
+      as(monitor, 'SELECT evidence FROM app.operator_audit'),
+    ).rejects.toThrow();
+    expect(
+      (await as(owner, 'SELECT evidence FROM app.operator_audit')).rows,
+    ).toEqual([{ evidence: 'preserve this' }]);
+    expect((await apply()).statements).toEqual([]);
+  });
+  it('fails closed for undeclared tables and retained monitoring declarations', async () => {
+    await as(owner, 'CREATE TABLE app.unknown_table (id integer)');
+    let plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'undeclared-table' }),
+    );
+    await as(owner, 'DROP TABLE app.unknown_table');
+    await as(owner, 'CREATE TABLE app.operator_audit (id integer)');
+    contract.retainedTables = ['operator_audit'];
+    if (!contract.monitor) throw new Error('Expected test monitor role.');
+    contract.monitor.tables.operator_audit = ['id'];
+    plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'monitor-table',
+        resource: 'operator_audit',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
