@@ -12,6 +12,23 @@ import {
 } from '../db-migrate-uuid.js';
 import { utilityCommands } from '../utilities.js';
 
+const sqlTestHarness = vi.hoisted(() => ({
+  interceptor: undefined as undefined | ((...args: any[]) => Promise<unknown>),
+  realGetDatabase: undefined as any,
+}));
+
+vi.mock('@happyvertical/sql', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@happyvertical/sql')>();
+  sqlTestHarness.realGetDatabase = actual.getDatabase;
+  return {
+    ...actual,
+    getDatabase: (...args: any[]) =>
+      sqlTestHarness.interceptor
+        ? sqlTestHarness.interceptor(...args)
+        : actual.getDatabase(...args),
+  };
+});
+
 describe('db:migrate-uuid command', () => {
   it('is registered in the utility command map', () => {
     expect(utilityCommands['db:migrate-uuid']).toBe(dbMigrateUuidCommand);
@@ -669,6 +686,452 @@ describePostgres(
           `INSERT INTO "${child}" (id, parent_id) VALUES ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000')`,
         ),
       ).rejects.toThrow();
+    }, 30_000);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// #2740: PostgreSQL dependency migrations must execute every mutation through
+// the transaction callback executor.  This fixture observes its real backend
+// PID, lets the first TYPE uuid ALTER succeed, then injects a late failure.
+// PostgreSQL must roll every prior DDL/data change back, including the optional
+// rename and catalog-driven generated-bridge/FK recreation work.
+// ---------------------------------------------------------------------------
+describePostgres(
+  'db:migrate-uuid callback executor affinity and late rollback (real Postgres)',
+  () => {
+    const stem = `mu_callback_${Math.random().toString(36).slice(2, 8)}`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const junction = `${stem}_junction`;
+    const parentBridgeIndex = `${parent}_bridge_uidx`;
+    const childParentFk = `${child}_parent_fkey`;
+    const junctionBridgeFk = `${junction}_bridge_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function snapshot(): Promise<Record<string, unknown>> {
+      const db = await freshDb();
+      const [parentRows, childRows, junctionRows, columns, indexes, fks] =
+        await Promise.all([
+          db.query(
+            `SELECT to_jsonb(parent) AS row FROM "${parent}" parent ORDER BY id`,
+          ),
+          db.query(`SELECT id, parent_id FROM "${child}" ORDER BY id`),
+          db.query(
+            `SELECT parent_text FROM "${junction}" ORDER BY parent_text`,
+          ),
+          db.query(
+            `SELECT table_name, column_name, data_type, is_generated, generation_expression
+               FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name IN ($1, $2, $3)
+              ORDER BY table_name, ordinal_position`,
+            parent,
+            child,
+            junction,
+          ),
+          db.query(
+            `SELECT indexrelid::regclass::text AS name, pg_get_indexdef(indexrelid) AS definition
+               FROM pg_index
+              WHERE indexrelid = $1::regclass`,
+            parentBridgeIndex,
+          ),
+          db.query(
+            `SELECT conname, convalidated, pg_get_constraintdef(oid) AS definition
+               FROM pg_constraint
+              WHERE conname IN ($1, $2)
+              ORDER BY conname`,
+            childParentFk,
+            junctionBridgeFk,
+          ),
+        ]);
+      return {
+        parentRows: parentRows.rows,
+        childRows: childRows.rows,
+        junctionRows: junctionRows.rows,
+        columns: columns.rows,
+        indexes: indexes.rows,
+        fks: fks.rows,
+      };
+    }
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(
+        `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+      );
+      await db.query(
+        `CREATE TABLE "${parent}" (
+           id text PRIMARY KEY,
+           old_ref text NOT NULL,
+           new_ref text,
+           _integrity_id_text text GENERATED ALWAYS AS (id) STORED
+         )`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${parentBridgeIndex}" ON "${parent}" USING btree (_integrity_id_text)`,
+      );
+      await db.query(
+        `CREATE TABLE "${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${childParentFk}"
+             REFERENCES "${parent}"(id) ON UPDATE CASCADE ON DELETE RESTRICT
+             DEFERRABLE INITIALLY DEFERRED
+         )`,
+      );
+      await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
+      await db.query(
+        `ALTER TABLE "${junction}" ADD CONSTRAINT "${junctionBridgeFk}"
+           FOREIGN KEY (parent_text) REFERENCES "${parent}"(_integrity_id_text)
+           ON UPDATE CASCADE ON DELETE CASCADE NOT VALID`,
+      );
+      await db.query(
+        `INSERT INTO "${parent}" (id, old_ref) VALUES ($1, $2)`,
+        '11111111-1111-1111-1111-111111111111',
+        'rename-value',
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+        '22222222-2222-2222-2222-222222222222',
+        '11111111-1111-1111-1111-111111111111',
+      );
+      await db.query(
+        `INSERT INTO "${junction}" (parent_text) VALUES ($1)`,
+        '11111111-1111-1111-1111-111111111111',
+      );
+
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+        );
+      } catch {
+        // The command closes its pool; teardown always reacquires a handle.
+      }
+      clearCache();
+    });
+
+    it('uses one callback backend and rolls every prior mutation back after a late failure', async () => {
+      const before = await snapshot();
+      const callbackPids: number[] = [];
+      let injected = false;
+      sqlTestHarness.interceptor = async (...args: any[]) => {
+        const realDb: any = await sqlTestHarness.realGetDatabase(...args);
+        return new Proxy(realDb, {
+          get(target, property, receiver) {
+            if (property === 'transaction') {
+              return async (callback: (tx: any) => Promise<unknown>) =>
+                target.transaction(async (tx: any) => {
+                  const callbackTx = new Proxy(tx, {
+                    get(transactionTarget, transactionProperty, txReceiver) {
+                      if (transactionProperty === 'query') {
+                        return async (...queryArgs: any[]) => {
+                          const pid = await transactionTarget.query(
+                            'SELECT pg_backend_pid() AS backend_pid',
+                          );
+                          callbackPids.push(
+                            Number((pid.rows as any[])[0].backend_pid),
+                          );
+                          const result = await transactionTarget.query(
+                            ...queryArgs,
+                          );
+                          const sql = String(queryArgs[0]);
+                          if (
+                            !injected &&
+                            /^ALTER TABLE .* ALTER COLUMN .* TYPE uuid /i.test(
+                              sql,
+                            )
+                          ) {
+                            injected = true;
+                            throw new Error(
+                              'injected late failure after successful TYPE uuid ALTER',
+                            );
+                          }
+                          return result;
+                        };
+                      }
+                      const value = Reflect.get(
+                        transactionTarget,
+                        transactionProperty,
+                        txReceiver,
+                      );
+                      return typeof value === 'function'
+                        ? value.bind(transactionTarget)
+                        : value;
+                    },
+                  });
+                  return callback(callbackTx);
+                });
+            }
+            const value = Reflect.get(target, property, receiver);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      };
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], {
+        rename: `${parent}.old_ref:new_ref`,
+      });
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      sqlTestHarness.interceptor = undefined;
+      logSpy.mockRestore();
+
+      expect(injected).toBe(true);
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'injected late failure after successful TYPE uuid ALTER',
+        ),
+      );
+      errorSpy.mockRestore();
+      expect(callbackPids.length).toBeGreaterThan(1);
+      expect(new Set(callbackPids)).toHaveLength(1);
+
+      // The failing mutation happened after a real ALTER TYPE succeeded. All
+      // observable state must nevertheless exactly match the pre-run fixture:
+      // data, TEXT types, rename source/destination, stored bridge, its unique
+      // index, and both inbound catalog FKs.
+      expect(await snapshot()).toEqual(before);
+
+      const retryLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const retryErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], {
+        rename: `${parent}.old_ref:new_ref`,
+      });
+      expect(retryErrorSpy).not.toHaveBeenCalled();
+      retryLogSpy.mockRestore();
+      retryErrorSpy.mockRestore();
+
+      const afterRetry = await snapshot();
+      expect(
+        (afterRetry.columns as Array<Record<string, string>>)
+          .filter(
+            (column) =>
+              [parent, child].includes(column.table_name) &&
+              ['id', 'parent_id'].includes(column.column_name),
+          )
+          .every((column) => column.data_type === 'uuid'),
+      ).toBe(true);
+      expect(
+        (afterRetry.columns as Array<Record<string, string>>).some(
+          (column) =>
+            column.table_name === parent && column.column_name === 'old_ref',
+        ),
+      ).toBe(false);
+      expect(afterRetry.parentRows).toEqual([
+        {
+          row: {
+            id: '11111111-1111-1111-1111-111111111111',
+            new_ref: 'rename-value',
+            _integrity_id_text: '11111111-1111-1111-1111-111111111111',
+          },
+        },
+      ]);
+    }, 30_000);
+  },
+);
+
+// A schema can already have a native UUID id while retaining a stored TEXT
+// bridge for legacy consumers.  The catalog includes both `id` and `(id)::text`
+// expressions in real deployments; this representative parenthesized form
+// must stay out of a component that only converts a different TEXT UUID field.
+describePostgres(
+  'db:migrate-uuid leaves an unrelated native-id TEXT bridge intact (real Postgres)',
+  () => {
+    const stem = `mu_native_bridge_${Math.random().toString(36).slice(2, 8)}`;
+    const parent = `${stem}_parent`;
+    const consumer = `${stem}_consumer`;
+    const bridgeIndex = `${parent}_bridge_uidx`;
+    const bridgeFk = `${consumer}_bridge_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(`DROP TABLE IF EXISTS "${consumer}", "${parent}" CASCADE`);
+      await db.query(
+        `CREATE TABLE "${parent}" (
+           id uuid PRIMARY KEY,
+           owner_id text NOT NULL,
+           _integrity_id_text text GENERATED ALWAYS AS ((id)::text) STORED
+         )`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${bridgeIndex}" ON "${parent}" (_integrity_id_text)`,
+      );
+      await db.query(
+        `CREATE TABLE "${consumer}" (
+           parent_text text NOT NULL CONSTRAINT "${bridgeFk}"
+             REFERENCES "${parent}"(_integrity_id_text)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${parent}" (id, owner_id) VALUES ($1::uuid, $2)`,
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      );
+      await db.query(
+        `INSERT INTO "${consumer}" (parent_text) VALUES ($1)`,
+        '11111111-1111-1111-1111-111111111111',
+      );
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, owner_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${consumer}", "${parent}" CASCADE`,
+        );
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('converts the declared TEXT UUID field without rebuilding the native-id bridge, index, or incoming TEXT FK', async () => {
+      const db = await freshDb();
+      const before = await Promise.all([
+        db.query(
+          `SELECT pg_get_indexdef($1::regclass) AS definition`,
+          bridgeIndex,
+        ),
+        db.query(
+          `SELECT convalidated, pg_get_constraintdef(oid) AS definition
+             FROM pg_constraint WHERE conname = $1`,
+          bridgeFk,
+        ),
+      ]);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+      const after = await freshDb();
+      const [types, bridge, index, fk] = await Promise.all([
+        after.query(
+          `SELECT column_name, data_type, is_generated, generation_expression
+             FROM information_schema.columns
+            WHERE table_name = $1 AND column_name IN ('id', 'owner_id', '_integrity_id_text')
+            ORDER BY column_name`,
+          parent,
+        ),
+        after.query(`SELECT _integrity_id_text FROM "${parent}"`),
+        after.query(
+          `SELECT pg_get_indexdef($1::regclass) AS definition`,
+          bridgeIndex,
+        ),
+        after.query(
+          `SELECT convalidated, pg_get_constraintdef(oid) AS definition
+             FROM pg_constraint WHERE conname = $1`,
+          bridgeFk,
+        ),
+      ]);
+      expect(types.rows).toEqual([
+        {
+          column_name: '_integrity_id_text',
+          data_type: 'text',
+          is_generated: 'ALWAYS',
+          generation_expression: '(id)::text',
+        },
+        {
+          column_name: 'id',
+          data_type: 'uuid',
+          is_generated: 'NEVER',
+          generation_expression: null,
+        },
+        {
+          column_name: 'owner_id',
+          data_type: 'uuid',
+          is_generated: 'NEVER',
+          generation_expression: null,
+        },
+      ]);
+      expect(bridge.rows).toEqual([
+        { _integrity_id_text: '11111111-1111-1111-1111-111111111111' },
+      ]);
+      expect(index.rows).toEqual(before[0].rows);
+      expect(fk.rows).toEqual(before[1].rows);
     }, 30_000);
   },
 );
