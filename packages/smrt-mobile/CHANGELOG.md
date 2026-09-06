@@ -1,5 +1,7 @@
 # @happyvertical/smrt-mobile
 
+## 1.0.0
+
 ## 0.45.3
 
 ## 0.45.2
