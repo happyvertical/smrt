@@ -53,6 +53,44 @@ and repository rules.
   constructor, explicit package, and isolated one-object manifest. Never infer
   ownership from paths, simple names, or table names; packages can share names.
   Consumer regression gate: `packages/bundle-gate/src/__tests__/registry-identity.spec.ts`.
+- API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
+  in `generators/custom-action.ts`: both SvelteKit route emitters,
+  `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too
+  — a local mirror is how a method gets reported unavailable while its route
+  file is still written. A public method routes by default only when every
+  parameter is JSON-shaped; `@method({ expose })` overrides in both directions,
+  `expose: true` bypasses the heuristic ALONE, and an explicit `api.include` or
+  `api.routes` entry keeps its pre-#2686 route. Fail closed on scanner
+  uncertainty: read `parameters[].typeUnresolved`, never the `'any'` it
+  substitutes. Accepting `Date` as wire-able and hydrating it
+  (`toCustomActionDate`) are one decision — changing either breaks the other.
+  The runtime `APIGenerator` transport stays declaration-gated: `rest.ts`
+  dispatch and `preflight-route.ts` prediction both read
+  `declaresRuntimeRestRoute()`, which must accept every `ApiCustomRouteConfig`
+  option so a sweep moving one onto its method cannot delete the endpoint. Its
+  twin `declaresRuntimeRestRouteShape()` deliberately ignores `expose: false`:
+  the dispatcher must still SEE a withheld declaration to answer 404, because
+  `POST /<collection>/<segment>` resolves to `create` when nothing claims the
+  segment. Split unions and type arguments with `splitTopLevel()` — a naive
+  `split('|')` truncates `Record<string, Asset | null>` into fragments that
+  match no rule and are then accepted, widening the gate. `extractTypeName`
+  returns `null` for a generic with an unresolvable ARGUMENT or a union with an
+  unresolvable BRANCH so those reach that fail-closed path instead of arriving
+  as a bare `'Array'`. Runtime transports read
+  `ObjectRegistry.resolveRuntimeMethod()`, which tries the item class's manifest
+  entry, then the COLLECTION class's (where a collection-hosted action's
+  parameters live), then the live `@method()` store — keyed by CONSTRUCTOR,
+  never by simple name (`Account` exists in two packages), and recording
+  `isStatic` because an unscanned runtime has no manifest to recover the
+  receiver from. `isRestActionRoutable` ANDs "declared" with that receiver, so
+  it never predicts `allow` for an action dispatch refuses. A declared action
+  with no receiver is refused (501 collection-scoped, 404 item-scoped), never
+  allowed to fall through into `create`. All eight consumers read the resolver,
+  including `packages/smrt-workbench/src/discovery.ts`; it imports the
+  `./generators/custom-action` LEAF subpath, not `./generators`, because that
+  barrel value-re-exports `MCPGenerator` and so drags `@happyvertical/ai` and
+  `@happyvertical/sql` into a build-time helper (2 modules vs 109). Keep
+  `custom-action.ts` free of value imports outside `tools/tool-generator`.
 
 ## Gotchas
 

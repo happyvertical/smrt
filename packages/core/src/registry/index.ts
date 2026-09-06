@@ -48,6 +48,7 @@ export {
   getFieldDecorators,
   getInheritanceCache,
   getInheritanceConfig,
+  getMethodDecorators,
   getNextDbId,
   getSchemasInitialized,
   getSourceFileFromStack,

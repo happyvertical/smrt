@@ -46,6 +46,13 @@ declare global {
     | Map<string, Map<string, Record<string, unknown>>>
     | undefined;
   // eslint-disable-next-line no-var
+  var __smrtRegistryMethodDecorators:
+    | WeakMap<
+        Function,
+        Map<string, { options: Record<string, unknown>; isStatic: boolean }>
+      >
+    | undefined;
+  // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
@@ -234,6 +241,30 @@ export function getFieldDecorators(): Map<
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;
+}
+
+/**
+ * `@method()` decorator metadata,
+ * `constructor -> methodName -> { options, isStatic }`.
+ *
+ * Stored on `globalThis` for the same reason as {@link getFieldDecorators}:
+ * registration must survive HMR and multiple module instances. Keyed by the
+ * CONSTRUCTOR rather than the class name, unlike the field store, because two
+ * packages may declare the same simple name and the kernel forbids inferring
+ * ownership from one; a `WeakMap` also lets a discarded class's metadata be
+ * collected (#2686).
+ */
+export function getMethodDecorators(): WeakMap<
+  Function,
+  Map<string, { options: Record<string, unknown>; isStatic: boolean }>
+> {
+  if (!globalThis.__smrtRegistryMethodDecorators) {
+    globalThis.__smrtRegistryMethodDecorators = new WeakMap<
+      Function,
+      Map<string, { options: Record<string, unknown>; isStatic: boolean }>
+    >();
+  }
+  return globalThis.__smrtRegistryMethodDecorators;
 }
 
 export function getStiSiblingsLoaded(): Set<string> {

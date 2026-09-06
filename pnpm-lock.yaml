@@ -125,7 +125,7 @@ importers:
         version: 0.28.1
       express:
         specifier: ^5.2.1
-        version: 5.2.1
+        version: 5.2.1(supports-color@8.1.1)
       lefthook:
         specifier: 2.1.10
         version: 2.1.10
@@ -149,10 +149,10 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: 4.5.4
-        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/ads:
     dependencies:
@@ -186,7 +186,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/affiliates:
     dependencies:
@@ -208,16 +208,16 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/agents:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -251,7 +251,7 @@ importers:
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -260,7 +260,7 @@ importers:
         version: 0.89.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sentry/node':
         specifier: 'catalog:'
-        version: 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))
+        version: 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
@@ -293,7 +293,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/analytics:
     dependencies:
@@ -342,7 +342,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/app-cli:
     dependencies:
@@ -370,10 +370,10 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: 4.5.4
-        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/app-runtime:
     dependencies:
@@ -413,19 +413,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/assets:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -486,7 +486,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/assets-ergot:
     dependencies:
@@ -508,7 +508,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/assets-local:
     dependencies:
@@ -533,7 +533,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/bundle-gate:
     devDependencies:
@@ -566,13 +566,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/chat:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -636,19 +636,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/cli:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -697,10 +697,10 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: 4.5.4
-        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/commerce:
     dependencies:
@@ -749,7 +749,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/config:
     dependencies:
@@ -774,34 +774,34 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/content:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/documents':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/geo':
         specifier: ^0.89.6
-        version: 0.89.6(@opentelemetry/api@1.9.1)
+        version: 0.89.6(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       '@happyvertical/images':
         specifier: ^0.89.6
-        version: 0.89.6(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
+        version: 0.89.6(jimp@1.6.1(supports-color@8.1.1))(sharp@0.35.3(@types/node@24.13.2))
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/ocr':
         specifier: ^0.61.4
-        version: 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/pdf':
         specifier: ^0.65.9
-        version: 0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+        version: 0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -840,7 +840,7 @@ importers:
         version: link:../smrt-ui
       '@happyvertical/spider':
         specifier: ^1.1.13
-        version: 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)
+        version: 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@8.1.1)
       '@happyvertical/sql':
         specifier: ^0.89.6
         version: 0.89.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -889,22 +889,22 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/core:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/json':
         specifier: ^0.89.6
         version: 0.89.6
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -977,22 +977,22 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: 4.5.4
-        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/events:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1050,19 +1050,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/facts:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1093,7 +1093,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/features:
     dependencies:
@@ -1121,7 +1121,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/fields:
     dependencies:
@@ -1173,19 +1173,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1207,16 +1207,16 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/images:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/images':
         specifier: ^0.89.6
-        version: 0.89.6(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
+        version: 0.89.6(jimp@1.6.1(supports-color@8.1.1))(sharp@0.35.3(@types/node@24.13.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1240,7 +1240,7 @@ importers:
         version: 0.89.6
       jimp:
         specifier: 'catalog:'
-        version: 1.6.1
+        version: 1.6.1(supports-color@8.1.1)
       sharp:
         specifier: 'catalog:'
         version: 0.35.3(@types/node@24.13.2)
@@ -1280,13 +1280,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/inventory:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1311,16 +1311,16 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/jobs:
     dependencies:
       '@happyvertical/jobs':
         specifier: ^0.89.6
-        version: 0.89.6(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)
+        version: 0.89.6(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@8.1.1))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@8.1.1))(bullmq@5.76.4(supports-color@8.1.1))
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1369,16 +1369,16 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/languages:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1418,7 +1418,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/ledgers:
     dependencies:
@@ -1449,13 +1449,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/manufacturing:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1483,7 +1483,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/marketing:
     dependencies:
@@ -1520,7 +1520,7 @@ importers:
         version: 24.13.2
       jsdom:
         specifier: ^26.1.0
-        version: 26.1.0
+        version: 26.1.0(supports-color@8.1.1)
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -1535,7 +1535,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/mcp-conformance-fixture:
     dependencies:
@@ -1560,7 +1560,7 @@ importers:
         version: 2.0.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.10
-        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)
+        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
@@ -1575,25 +1575,25 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/messages:
     dependencies:
       '@happyvertical/email':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(supports-color@8.1.1)
       '@happyvertical/encryption':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(@types/node@24.13.2)(typescript@5.9.3)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/messages':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1645,7 +1645,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/personas:
     dependencies:
@@ -1700,25 +1700,25 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/places:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/cache':
         specifier: ^0.89.6
         version: 0.89.6(@opentelemetry/api@1.9.1)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/geo':
         specifier: ^0.89.6
-        version: 0.89.6(@opentelemetry/api@1.9.1)
+        version: 0.89.6(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1752,7 +1752,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/playbooks:
     dependencies:
@@ -1786,19 +1786,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/products:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1831,7 +1831,7 @@ importers:
         version: 2.8.6
       express:
         specifier: ^5.2.1
-        version: 5.2.1
+        version: 5.2.1(supports-color@8.1.1)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1871,19 +1871,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1929,16 +1929,16 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/projects:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/projects':
         specifier: ^0.89.6
         version: 0.89.6(typescript@5.9.3)
@@ -2008,7 +2008,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/prompts:
     dependencies:
@@ -2039,7 +2039,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/properties:
     dependencies:
@@ -2076,7 +2076,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/reports:
     dependencies:
@@ -2110,7 +2110,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/sales:
     dependencies:
@@ -2159,7 +2159,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/scanner:
     dependencies:
@@ -2187,13 +2187,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/secrets:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/secrets':
         specifier: ^0.89.6
         version: 0.89.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -2224,7 +2224,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/sites:
     dependencies:
@@ -2258,7 +2258,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-android: {}
 
@@ -2282,7 +2282,7 @@ importers:
         version: 2.0.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.10
-        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)
+        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
@@ -2297,7 +2297,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-dev-mcp:
     dependencies:
@@ -2319,7 +2319,7 @@ importers:
         version: 2.0.0
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.10
-        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)
+        version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
@@ -2337,10 +2337,10 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vite-plugin-dts:
         specifier: ^4.5.4
-        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-ios: {}
 
@@ -2362,7 +2362,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-playground:
     dependencies:
@@ -2423,7 +2423,7 @@ importers:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-languages':
         specifier: workspace:*
         version: link:../languages
@@ -2520,7 +2520,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-ui:
     dependencies:
@@ -2566,7 +2566,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-web:
     dependencies:
@@ -2600,10 +2600,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-workbench:
     dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
@@ -2649,7 +2652,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.9
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/smrt-workbench/host:
     devDependencies:
@@ -2701,7 +2704,7 @@ importers:
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -2728,7 +2731,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/subscriptions:
     dependencies:
@@ -2768,13 +2771,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/support:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
@@ -2829,19 +2832,19 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/tags:
     dependencies:
       '@happyvertical/ai':
         specifier: ^0.89.6
-        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        version: 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
         specifier: ^0.89.6
-        version: 0.89.6
+        version: 0.89.6(supports-color@8.1.1)
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2866,7 +2869,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/template-site-static-json:
     dependencies:
@@ -2954,13 +2957,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/tenancy:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3003,7 +3006,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/types:
     devDependencies:
@@ -3018,13 +3021,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/users:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -3082,13 +3085,13 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/video:
     dependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -3134,7 +3137,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/vitest:
     dependencies:
@@ -3158,7 +3161,7 @@ importers:
         version: 4.12.1
       jsdom:
         specifier: ^26.1.0
-        version: 26.1.0
+        version: 26.1.0(supports-color@8.1.1)
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
@@ -3174,7 +3177,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/voice:
     dependencies:
@@ -3205,7 +3208,7 @@ importers:
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.89.6
-        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        version: 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -3223,7 +3226,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 4.1.10
-        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
 packages:
 
@@ -6588,6 +6591,11 @@ packages:
 
   '@volar/typescript@2.4.28':
     resolution: {integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==}
+    peerDependencies:
+      typescript: '*'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@vue/compiler-core@3.5.29':
     resolution: {integrity: sha512-cuzPhD8fwRHk8IGfmYaR4eEe4cAyJEL66Ove/WZL7yWNL134nqLddSLwNRIsFlnnW1kK+p8Ck3viFnC0chXCXw==}
@@ -10366,10 +10374,10 @@ snapshots:
       semifies: 1.0.0
       source-map: 0.6.1
 
-  '@apm-js-collab/tracing-hooks@0.10.0':
+  '@apm-js-collab/tracing-hooks@0.10.0(supports-color@8.1.1)':
     dependencies:
       '@apm-js-collab/code-transformer': 0.15.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       module-details-from-path: 1.0.4
     transitivePeerDependencies:
       - supports-color
@@ -11283,14 +11291,14 @@ snapshots:
     optionalDependencies:
       conventional-commits-parser: 6.4.0
 
-  '@crawlee/basic@3.17.0':
+  '@crawlee/basic@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/log': 2.5.41
       '@apify/timeout': 0.3.5
       '@apify/utilities': 2.32.2
-      '@crawlee/core': 3.17.0
+      '@crawlee/core': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       csv-stringify: 6.7.0
       fs-extra: 11.3.5
       got-scraping: 4.2.1
@@ -11301,11 +11309,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@crawlee/browser-pool@3.17.0(playwright@1.61.1)':
+  '@crawlee/browser-pool@3.17.0(playwright@1.61.1)(supports-color@8.1.1)':
     dependencies:
       '@apify/log': 2.5.41
       '@apify/timeout': 0.3.5
-      '@crawlee/core': 3.17.0
+      '@crawlee/core': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
       fingerprint-generator: 2.1.82
       fingerprint-injector: 2.1.82(playwright@1.61.1)
@@ -11313,7 +11321,7 @@ snapshots:
       nanoid: 3.3.18
       ow: 0.28.2
       p-limit: 3.1.0
-      proxy-chain: 2.7.1
+      proxy-chain: 2.7.1(supports-color@8.1.1)
       quick-lru: 5.1.1
       tiny-typed-emitter: 2.1.0
       tslib: 2.8.1
@@ -11322,13 +11330,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@crawlee/browser@3.17.0(playwright@1.61.1)':
+  '@crawlee/browser@3.17.0(playwright@1.61.1)(supports-color@8.1.1)':
     dependencies:
       '@apify/timeout': 0.3.5
-      '@crawlee/basic': 3.17.0
-      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)
+      '@crawlee/basic': 3.17.0(supports-color@8.1.1)
+      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       ow: 0.28.2
       tslib: 2.8.1
       type-fest: 4.41.0
@@ -11337,11 +11345,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@crawlee/cheerio@3.17.0':
+  '@crawlee/cheerio@3.17.0(supports-color@8.1.1)':
     dependencies:
-      '@crawlee/http': 3.17.0
+      '@crawlee/http': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       cheerio: 1.0.0-rc.12
       htmlparser2: 9.1.0
       tslib: 2.8.1
@@ -11360,7 +11368,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  '@crawlee/core@3.17.0':
+  '@crawlee/core@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/consts': 2.53.3
       '@apify/datastructures': 2.0.6
@@ -11370,7 +11378,7 @@ snapshots:
       '@apify/utilities': 2.32.2
       '@crawlee/memory-storage': 3.17.0
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       '@sapphire/async-queue': 1.5.5
       '@vladfrangu/async_event_emitter': 2.4.7
       csv-stringify: 6.7.0
@@ -11387,13 +11395,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@crawlee/http@3.17.0':
+  '@crawlee/http@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/timeout': 0.3.5
       '@apify/utilities': 2.32.2
-      '@crawlee/basic': 3.17.0
+      '@crawlee/basic': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       '@types/content-type': 1.1.9
       cheerio: 1.0.0-rc.12
       content-type: 1.0.5
@@ -11406,16 +11414,16 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@crawlee/jsdom@3.17.0':
+  '@crawlee/jsdom@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/timeout': 0.3.5
       '@apify/utilities': 2.32.2
-      '@crawlee/http': 3.17.0
+      '@crawlee/http': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       '@types/jsdom': 21.1.7
       cheerio: 1.0.0-rc.12
-      jsdom: 26.1.0
+      jsdom: 26.1.0(supports-color@8.1.1)
       ow: 0.28.2
       tslib: 2.8.1
     transitivePeerDependencies:
@@ -11424,11 +11432,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@crawlee/linkedom@3.17.0':
+  '@crawlee/linkedom@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/timeout': 0.3.5
       '@apify/utilities': 2.32.2
-      '@crawlee/http': 3.17.0
+      '@crawlee/http': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
       linkedom: 0.18.12
       ow: 0.28.2
@@ -11451,16 +11459,16 @@ snapshots:
       proper-lockfile: 4.1.2
       tslib: 2.8.1
 
-  '@crawlee/playwright@3.17.0(playwright@1.61.1)':
+  '@crawlee/playwright@3.17.0(playwright@1.61.1)(supports-color@8.1.1)':
     dependencies:
       '@apify/datastructures': 2.0.6
       '@apify/log': 2.5.41
       '@apify/timeout': 0.3.5
-      '@crawlee/browser': 3.17.0(playwright@1.61.1)
-      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)
-      '@crawlee/core': 3.17.0
+      '@crawlee/browser': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/core': 3.17.0(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       cheerio: 1.0.0-rc.12
       jquery: 3.7.1
       lodash.isequal: 4.5.0
@@ -11475,14 +11483,14 @@ snapshots:
       - puppeteer
       - supports-color
 
-  '@crawlee/puppeteer@3.17.0(playwright@1.61.1)':
+  '@crawlee/puppeteer@3.17.0(playwright@1.61.1)(supports-color@8.1.1)':
     dependencies:
       '@apify/datastructures': 2.0.6
       '@apify/log': 2.5.41
-      '@crawlee/browser': 3.17.0(playwright@1.61.1)
-      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)
+      '@crawlee/browser': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
       '@crawlee/types': 3.17.0
-      '@crawlee/utils': 3.17.0
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       cheerio: 1.0.0-rc.12
       devtools-protocol: 0.0.1643702
       jquery: 3.7.1
@@ -11506,14 +11514,14 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@crawlee/utils@3.17.0':
+  '@crawlee/utils@3.17.0(supports-color@8.1.1)':
     dependencies:
       '@apify/log': 2.5.41
       '@apify/ps-tree': 1.2.0
       '@crawlee/types': 3.17.0
       '@types/sax': 1.2.7
       cheerio: 1.0.0-rc.12
-      file-type: 21.3.4
+      file-type: 21.3.4(supports-color@8.1.1)
       got-scraping: 4.2.1
       ow: 0.28.2
       robots-parser: 3.0.1
@@ -11706,33 +11714,33 @@ snapshots:
 
   '@faker-js/faker@10.5.0': {}
 
-  '@google-cloud/tasks@6.2.1':
+  '@google-cloud/tasks@6.2.1(supports-color@8.1.1)':
     dependencies:
-      google-gax: 5.0.7
+      google-gax: 5.0.7(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
     optional: true
 
-  '@google/genai@1.50.1(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))':
+  '@google/genai@1.50.1(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)':
     dependencies:
-      google-auth-library: 10.7.0
+      google-auth-library: 10.7.0(supports-color@8.1.1)
       p-retry: 4.6.2
       protobufjs: 7.6.5
       ws: 8.21.0
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  '@googlemaps/google-maps-services-js@3.4.2':
+  '@googlemaps/google-maps-services-js@3.4.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)':
     dependencies:
       '@googlemaps/url-signature': 1.0.40
       agentkeepalive: 4.6.0
-      axios: 1.18.0
+      axios: 1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       query-string: 7.1.3
-      retry-axios: 2.6.0(axios@1.18.0)
+      retry-axios: 2.6.0(axios@1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1))
     transitivePeerDependencies:
       - debug
       - supports-color
@@ -11763,11 +11771,11 @@ snapshots:
 
   '@gutenye/ocr-models@1.4.2': {}
 
-  '@happyvertical/ai@0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ai@0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.90.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1034.0
-      '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))
+      '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)
       '@happyvertical/utils': 0.89.6
       openai: 6.34.0(ws@8.21.0)(zod@4.3.6)
     transitivePeerDependencies:
@@ -11788,12 +11796,12 @@ snapshots:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
 
-  '@happyvertical/documents@0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/documents@0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/files': 0.89.6
-      '@happyvertical/ocr': 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/pdf': 0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/spider': 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)
+      '@happyvertical/files': 0.89.6(supports-color@8.1.1)
+      '@happyvertical/ocr': 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/pdf': 0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/spider': 1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@8.1.1)
       '@happyvertical/utils': 0.89.6
       uuid: 13.0.2
     transitivePeerDependencies:
@@ -11814,12 +11822,12 @@ snapshots:
       - yauzl
       - zod
 
-  '@happyvertical/email@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/email@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(supports-color@8.1.1)':
     dependencies:
-      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/utils': 0.89.6
-      google-auth-library: 10.7.0
-      googleapis: 170.1.0
+      google-auth-library: 10.7.0(supports-color@8.1.1)
+      googleapis: 170.1.0(supports-color@8.1.1)
       imapflow: 1.4.0
       mailparser: 3.9.9
       node-pop3: 0.11.0
@@ -11828,9 +11836,9 @@ snapshots:
       - '@sentry/node'
       - supports-color
 
-  '@happyvertical/encryption@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)':
+  '@happyvertical/encryption@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(@types/node@24.13.2)(typescript@5.9.3)':
     dependencies:
-      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/utils': 0.89.6
       '@openpgp/web-stream-tools': 0.3.1(@types/node@24.13.2)(typescript@5.9.3)
       openpgp: 6.3.0
@@ -11841,19 +11849,19 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.89.6':
+  '@happyvertical/files@0.89.6(supports-color@8.1.1)':
     dependencies:
       '@aws-sdk/client-s3': 3.1066.0
       '@happyvertical/utils': 0.89.6
-      google-auth-library: 9.15.1
-      googleapis: 144.0.0
+      google-auth-library: 9.15.1(supports-color@8.1.1)
+      googleapis: 144.0.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  '@happyvertical/geo@0.89.6(@opentelemetry/api@1.9.1)':
+  '@happyvertical/geo@0.89.6(@opentelemetry/api@1.9.1)(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)':
     dependencies:
-      '@googlemaps/google-maps-services-js': 3.4.2
+      '@googlemaps/google-maps-services-js': 3.4.2(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       '@happyvertical/cache': 0.89.6(@opentelemetry/api@1.9.1)
       '@happyvertical/utils': 0.89.6
     transitivePeerDependencies:
@@ -11864,23 +11872,23 @@ snapshots:
 
   '@happyvertical/graphql@0.89.6': {}
 
-  '@happyvertical/images@0.89.6(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))':
+  '@happyvertical/images@0.89.6(jimp@1.6.1(supports-color@8.1.1))(sharp@0.35.3(@types/node@24.13.2))':
     dependencies:
       '@resvg/resvg-js': 2.6.2
       satori: 0.26.0
     optionalDependencies:
-      jimp: 1.6.1
+      jimp: 1.6.1(supports-color@8.1.1)
       sharp: 0.35.3(@types/node@24.13.2)
 
-  '@happyvertical/jobs@0.89.6(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)':
+  '@happyvertical/jobs@0.89.6(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1(supports-color@8.1.1))(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5(supports-color@8.1.1))(bullmq@5.76.4(supports-color@8.1.1))':
     dependencies:
       '@happyvertical/sql': 0.89.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils': 0.89.6
     optionalDependencies:
       '@aws-sdk/client-sqs': 3.1038.0
-      '@google-cloud/tasks': 6.2.1
-      bull: 4.16.5
-      bullmq: 5.76.4
+      '@google-cloud/tasks': 6.2.1(supports-color@8.1.1)
+      bull: 4.16.5(supports-color@8.1.1)
+      bullmq: 5.76.4(supports-color@8.1.1)
     transitivePeerDependencies:
       - '@russellthehippo/honker-node'
       - '@sqliteai/sqlite-vector'
@@ -11891,28 +11899,28 @@ snapshots:
 
   '@happyvertical/json@0.89.6': {}
 
-  '@happyvertical/logger@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/logger@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))':
     dependencies:
       '@happyvertical/utils': 0.89.6
     optionalDependencies:
-      '@sentry/node': 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))
+      '@sentry/node': 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1)
 
-  '@happyvertical/messages@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/messages@0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)':
     dependencies:
-      '@happyvertical/email': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
-      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/email': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))(supports-color@8.1.1)
+      '@happyvertical/logger': 0.89.6(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1))
       '@happyvertical/utils': 0.89.6
-      '@slack/web-api': 7.16.0
+      '@slack/web-api': 7.16.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
     transitivePeerDependencies:
       - '@sentry/node'
       - debug
       - supports-color
 
-  '@happyvertical/ocr@0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ocr@0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@gutenye/ocr-common': 1.4.8
       '@gutenye/ocr-models': 1.4.2
-      '@happyvertical/ai': 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ai': 0.89.6(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/utils': 0.89.6
       onnxruntime-common: 1.27.0
       onnxruntime-node: 1.27.0
@@ -11928,9 +11936,9 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/pdf@0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/pdf@0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/ocr': 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/ocr': 0.61.4(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6))(@types/node@24.13.2)(supports-color@8.1.1)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/utils': 0.89.6
       '@napi-rs/canvas': 0.1.100
       marked: 18.0.7
@@ -11983,12 +11991,12 @@ snapshots:
 
   '@happyvertical/speech@0.89.6': {}
 
-  '@happyvertical/spider@1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)':
+  '@happyvertical/spider@1.1.13(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(supports-color@8.1.1)':
     dependencies:
       '@happyvertical/cache': 0.89.6(@opentelemetry/api@1.9.1)
       '@happyvertical/utils': 0.89.6
       cheerio: 1.2.0
-      crawlee: 3.17.0(@types/node@24.13.2)(playwright@1.61.1)
+      crawlee: 3.17.0(@types/node@24.13.2)(playwright@1.61.1)(supports-color@8.1.1)
       happy-dom: 20.10.6
       playwright: 1.61.1
       undici: 8.9.0
@@ -12177,21 +12185,21 @@ snapshots:
     dependencies:
       minipass: 7.1.3
 
-  '@jimp/core@1.6.1':
+  '@jimp/core@1.6.1(supports-color@8.1.1)':
     dependencies:
       '@jimp/file-ops': 1.6.1
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       await-to-js: 3.0.0
       exif-parser: 0.1.12
-      file-type: 21.3.4
+      file-type: 21.3.4(supports-color@8.1.1)
       mime: 3.0.0
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/diff@1.6.1':
+  '@jimp/diff@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/plugin-resize': 1.6.1
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       pixelmatch: 5.3.0
@@ -12200,43 +12208,43 @@ snapshots:
 
   '@jimp/file-ops@1.6.1': {}
 
-  '@jimp/js-bmp@1.6.1':
+  '@jimp/js-bmp@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       bmp-ts: 1.0.9
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/js-gif@1.6.1':
+  '@jimp/js-gif@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       gifwrap: 0.10.1
       omggif: 1.0.10
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/js-jpeg@1.6.1':
+  '@jimp/js-jpeg@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       jpeg-js: 0.4.4
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/js-png@1.6.1':
+  '@jimp/js-png@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       pngjs: 7.0.0
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/js-tiff@1.6.1':
+  '@jimp/js-tiff@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       utif2: 4.1.0
     transitivePeerDependencies:
@@ -12248,9 +12256,9 @@ snapshots:
       '@jimp/utils': 1.6.1
       zod: 3.25.76
 
-  '@jimp/plugin-blur@1.6.1':
+  '@jimp/plugin-blur@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/utils': 1.6.1
     transitivePeerDependencies:
       - supports-color
@@ -12260,9 +12268,9 @@ snapshots:
       '@jimp/types': 1.6.1
       zod: 3.25.76
 
-  '@jimp/plugin-color@1.6.1':
+  '@jimp/plugin-color@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       tinycolor2: 1.6.0
@@ -12270,30 +12278,30 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/plugin-contain@1.6.1':
+  '@jimp/plugin-contain@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-blit': 1.6.1
-      '@jimp/plugin-resize': 1.6.1
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/plugin-cover@1.6.1':
+  '@jimp/plugin-cover@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/plugin-crop': 1.6.1
-      '@jimp/plugin-resize': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-crop': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/plugin-crop@1.6.1':
+  '@jimp/plugin-crop@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
@@ -12321,15 +12329,15 @@ snapshots:
       '@jimp/types': 1.6.1
       zod: 3.25.76
 
-  '@jimp/plugin-hash@1.6.1':
+  '@jimp/plugin-hash@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/js-bmp': 1.6.1
-      '@jimp/js-jpeg': 1.6.1
-      '@jimp/js-png': 1.6.1
-      '@jimp/js-tiff': 1.6.1
-      '@jimp/plugin-color': 1.6.1
-      '@jimp/plugin-resize': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-bmp': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-jpeg': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-png': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-tiff': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-color': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       any-base: 1.1.0
@@ -12341,11 +12349,11 @@ snapshots:
       '@jimp/types': 1.6.1
       zod: 3.25.76
 
-  '@jimp/plugin-print@1.6.1':
+  '@jimp/plugin-print@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/js-jpeg': 1.6.1
-      '@jimp/js-png': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-jpeg': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-png': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-blit': 1.6.1
       '@jimp/types': 1.6.1
       parse-bmfont-ascii: 1.0.6
@@ -12361,30 +12369,30 @@ snapshots:
       image-q: 4.0.0
       zod: 3.25.76
 
-  '@jimp/plugin-resize@1.6.1':
+  '@jimp/plugin-resize@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/plugin-rotate@1.6.1':
+  '@jimp/plugin-rotate@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/plugin-crop': 1.6.1
-      '@jimp/plugin-resize': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-crop': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
 
-  '@jimp/plugin-threshold@1.6.1':
+  '@jimp/plugin-threshold@1.6.1(supports-color@8.1.1)':
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/plugin-color': 1.6.1
-      '@jimp/plugin-hash': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-color': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-hash': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
@@ -12575,13 +12583,13 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.3.6
 
-  '@modelcontextprotocol/conformance@0.2.0-alpha.10(@cfworker/json-schema@4.1.1)':
+  '@modelcontextprotocol/conformance@0.2.0-alpha.10(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)':
     dependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@modelcontextprotocol/sdk': 1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6)
       '@octokit/rest': 22.0.1
       commander: 14.0.3
       eventsource-parser: 3.1.0
-      express: 5.2.1
+      express: 5.2.1(supports-color@8.1.1)
       jose: 6.2.3
       undici: 7.29.0
       yaml: 2.9.0
@@ -12601,7 +12609,7 @@ snapshots:
     optionalDependencies:
       hono: 4.12.27
 
-  '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)':
+  '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)(zod@4.3.6)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.27)
       ajv: 8.18.0
@@ -12611,8 +12619,8 @@ snapshots:
       cross-spawn: 7.0.6
       eventsource: 3.0.7
       eventsource-parser: 3.1.0
-      express: 5.2.1
-      express-rate-limit: 8.5.2(express@5.2.1)
+      express: 5.2.1(supports-color@8.1.1)
+      express-rate-limit: 8.5.2(express@5.2.1(supports-color@8.1.1))
       hono: 4.12.27
       jose: 6.2.3
       json-schema-typed: 8.0.2
@@ -12867,12 +12875,12 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.40.0
 
-  '@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.214.0
       import-in-the-middle: 3.0.1
-      require-in-the-middle: 8.0.1
+      require-in-the-middle: 8.0.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -13478,7 +13486,7 @@ snapshots:
 
   '@sentry/core@10.63.0': {}
 
-  '@sentry/node-core@10.63.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))':
+  '@sentry/node-core@10.63.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@sentry/conventions': 0.12.0
       '@sentry/core': 10.63.0
@@ -13487,20 +13495,20 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.7.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
       '@opentelemetry/sdk-trace-base': 2.7.0(@opentelemetry/api@1.9.1)
 
-  '@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))':
+  '@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(supports-color@8.1.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation': 0.214.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1)
       '@opentelemetry/sdk-trace-base': 2.7.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
       '@sentry/conventions': 0.12.0
       '@sentry/core': 10.63.0
-      '@sentry/node-core': 10.63.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))
+      '@sentry/node-core': 10.63.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.214.0(@opentelemetry/api@1.9.1)(supports-color@8.1.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))
       '@sentry/opentelemetry': 10.63.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.7.0(@opentelemetry/api@1.9.1))
-      '@sentry/server-utils': 10.63.0
+      '@sentry/server-utils': 10.63.0(supports-color@8.1.1)
       import-in-the-middle: 3.0.1
     transitivePeerDependencies:
       - '@opentelemetry/core'
@@ -13515,11 +13523,11 @@ snapshots:
       '@sentry/conventions': 0.12.0
       '@sentry/core': 10.63.0
 
-  '@sentry/server-utils@10.63.0':
+  '@sentry/server-utils@10.63.0(supports-color@8.1.1)':
     dependencies:
       '@apm-js-collab/code-transformer': 0.15.0
       '@apm-js-collab/code-transformer-bundler-plugins': 0.5.0
-      '@apm-js-collab/tracing-hooks': 0.10.0
+      '@apm-js-collab/tracing-hooks': 0.10.0(supports-color@8.1.1)
       '@sentry/conventions': 0.12.0
       '@sentry/core': 10.63.0
       magic-string: 0.30.21
@@ -13549,13 +13557,13 @@ snapshots:
 
   '@slack/types@2.21.1': {}
 
-  '@slack/web-api@7.16.0':
+  '@slack/web-api@7.16.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)':
     dependencies:
       '@slack/logger': 4.0.1
       '@slack/types': 2.21.1
       '@types/node': 24.13.2
       '@types/retry': 0.12.0
-      axios: 1.18.0
+      axios: 1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       eventemitter3: 5.0.4
       form-data: 4.0.6
       is-electron: 2.2.2
@@ -13962,15 +13970,15 @@ snapshots:
       svelte: 5.56.4
     optionalDependencies:
       vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
-      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   '@testing-library/user-event@14.6.1(@testing-library/dom@10.4.1)':
     dependencies:
       '@testing-library/dom': 10.4.1
 
-  '@tokenizer/inflate@0.4.1':
+  '@tokenizer/inflate@0.4.1(supports-color@8.1.1)':
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       token-types: 6.1.2
     transitivePeerDependencies:
       - supports-color
@@ -14102,7 +14110,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
+      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.10':
     dependencies:
@@ -14153,11 +14161,13 @@ snapshots:
 
   '@volar/source-map@2.4.28': {}
 
-  '@volar/typescript@2.4.28':
+  '@volar/typescript@2.4.28(typescript@5.9.3)':
     dependencies:
       '@volar/language-core': 2.4.28
       path-browserify: 1.0.1
       vscode-uri: 3.1.0
+    optionalDependencies:
+      typescript: 5.9.3
 
   '@vue/compiler-core@3.5.29':
     dependencies:
@@ -14237,9 +14247,9 @@ snapshots:
 
   adm-zip@0.6.0: {}
 
-  agent-base@6.0.2:
+  agent-base@6.0.2(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -14326,11 +14336,11 @@ snapshots:
 
   axe-core@4.12.1: {}
 
-  axios@1.18.0:
+  axios@1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1):
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.0(debug@4.4.3(supports-color@8.1.1))
       form-data: 4.0.6
-      https-proxy-agent: 5.0.1
+      https-proxy-agent: 5.0.1(supports-color@8.1.1)
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
       - debug
@@ -14371,11 +14381,11 @@ snapshots:
 
   bmp-ts@1.0.9: {}
 
-  body-parser@2.3.0:
+  body-parser@2.3.0(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       content-type: 2.0.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       http-errors: 2.0.1
       iconv-lite: 0.7.2
       on-finished: 2.4.1
@@ -14418,11 +14428,11 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bull@4.16.5:
+  bull@4.16.5(supports-color@8.1.1):
     dependencies:
       cron-parser: 4.9.0
       get-port: 5.1.1
-      ioredis: 5.11.1
+      ioredis: 5.11.1(supports-color@8.1.1)
       lodash: 4.18.1
       msgpackr: 1.12.1
       semver: 7.8.5
@@ -14431,10 +14441,10 @@ snapshots:
       - supports-color
     optional: true
 
-  bullmq@5.76.4:
+  bullmq@5.76.4(supports-color@8.1.1):
     dependencies:
       cron-parser: 4.9.0
-      ioredis: 5.10.1
+      ioredis: 5.10.1(supports-color@8.1.1)
       msgpackr: 1.11.5
       node-abort-controller: 3.1.1
       semver: 7.7.4
@@ -14660,20 +14670,20 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  crawlee@3.17.0(@types/node@24.13.2)(playwright@1.61.1):
+  crawlee@3.17.0(@types/node@24.13.2)(playwright@1.61.1)(supports-color@8.1.1):
     dependencies:
-      '@crawlee/basic': 3.17.0
-      '@crawlee/browser': 3.17.0(playwright@1.61.1)
-      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)
-      '@crawlee/cheerio': 3.17.0
+      '@crawlee/basic': 3.17.0(supports-color@8.1.1)
+      '@crawlee/browser': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/browser-pool': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/cheerio': 3.17.0(supports-color@8.1.1)
       '@crawlee/cli': 3.17.0(@types/node@24.13.2)
-      '@crawlee/core': 3.17.0
-      '@crawlee/http': 3.17.0
-      '@crawlee/jsdom': 3.17.0
-      '@crawlee/linkedom': 3.17.0
-      '@crawlee/playwright': 3.17.0(playwright@1.61.1)
-      '@crawlee/puppeteer': 3.17.0(playwright@1.61.1)
-      '@crawlee/utils': 3.17.0
+      '@crawlee/core': 3.17.0(supports-color@8.1.1)
+      '@crawlee/http': 3.17.0(supports-color@8.1.1)
+      '@crawlee/jsdom': 3.17.0(supports-color@8.1.1)
+      '@crawlee/linkedom': 3.17.0(supports-color@8.1.1)
+      '@crawlee/playwright': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/puppeteer': 3.17.0(playwright@1.61.1)(supports-color@8.1.1)
+      '@crawlee/utils': 3.17.0(supports-color@8.1.1)
       import-local: 3.2.0
       tslib: 2.8.1
     optionalDependencies:
@@ -14770,9 +14780,11 @@ snapshots:
 
   de-indent@1.0.2: {}
 
-  debug@4.4.3:
+  debug@4.4.3(supports-color@8.1.1):
     dependencies:
       ms: 2.1.3
+    optionalDependencies:
+      supports-color: 8.1.1
 
   decimal.js@10.6.0: {}
 
@@ -15067,25 +15079,25 @@ snapshots:
 
   expect-type@1.3.0: {}
 
-  express-rate-limit@8.5.2(express@5.2.1):
+  express-rate-limit@8.5.2(express@5.2.1(supports-color@8.1.1)):
     dependencies:
-      express: 5.2.1
+      express: 5.2.1(supports-color@8.1.1)
       ip-address: 10.3.1
 
-  express@5.2.1:
+  express@5.2.1(supports-color@8.1.1):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.3.0
+      body-parser: 2.3.0(supports-color@8.1.1)
       content-disposition: 1.0.1
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.1
+      finalhandler: 2.1.1(supports-color@8.1.1)
       fresh: 2.0.0
       http-errors: 2.0.1
       merge-descriptors: 2.0.0
@@ -15096,9 +15108,9 @@ snapshots:
       proxy-addr: 2.0.7
       qs: 6.15.2
       range-parser: 1.2.1
-      router: 2.2.0
-      send: 1.2.1
-      serve-static: 2.2.1
+      router: 2.2.0(supports-color@8.1.1)
+      send: 1.2.1(supports-color@8.1.1)
+      serve-static: 2.2.1(supports-color@8.1.1)
       statuses: 2.0.2
       type-is: 2.0.1
       vary: 1.1.2
@@ -15162,9 +15174,9 @@ snapshots:
     dependencies:
       escape-string-regexp: 1.0.5
 
-  file-type@21.3.4:
+  file-type@21.3.4(supports-color@8.1.1):
     dependencies:
-      '@tokenizer/inflate': 0.4.1
+      '@tokenizer/inflate': 0.4.1(supports-color@8.1.1)
       strtok3: 10.3.4
       token-types: 6.1.2
       uint8array-extras: 1.5.0
@@ -15177,9 +15189,9 @@ snapshots:
 
   filter-obj@1.1.0: {}
 
-  finalhandler@2.1.1:
+  finalhandler@2.1.1(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -15210,7 +15222,9 @@ snapshots:
 
   flatbuffers@25.9.23: {}
 
-  follow-redirects@1.16.0: {}
+  follow-redirects@1.16.0(debug@4.4.3(supports-color@8.1.1)):
+    optionalDependencies:
+      debug: 4.4.3(supports-color@8.1.1)
 
   foreground-child@3.3.1:
     dependencies:
@@ -15265,10 +15279,10 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  gaxios@6.7.1:
+  gaxios@6.7.1(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       is-stream: 2.0.1
       node-fetch: 2.7.0
       uuid: 9.0.1
@@ -15276,43 +15290,43 @@ snapshots:
       - encoding
       - supports-color
 
-  gaxios@7.1.3:
+  gaxios@7.1.3(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       node-fetch: 3.3.2
       rimraf: 5.0.10
     transitivePeerDependencies:
       - supports-color
 
-  gaxios@7.1.5:
+  gaxios@7.1.5(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       node-fetch: 3.3.2
     transitivePeerDependencies:
       - supports-color
 
-  gcp-metadata@6.1.1:
+  gcp-metadata@6.1.1(supports-color@8.1.1):
     dependencies:
-      gaxios: 6.7.1
+      gaxios: 6.7.1(supports-color@8.1.1)
       google-logging-utils: 0.0.2
       json-bigint: 1.0.0
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  gcp-metadata@8.1.2:
+  gcp-metadata@8.1.2(supports-color@8.1.1):
     dependencies:
-      gaxios: 7.1.5
+      gaxios: 7.1.5(supports-color@8.1.1)
       google-logging-utils: 1.1.3
       json-bigint: 1.0.0
     transitivePeerDependencies:
       - supports-color
 
-  gcp-metadata@8.1.3:
+  gcp-metadata@8.1.3(supports-color@8.1.1):
     dependencies:
-      gaxios: 7.1.3
+      gaxios: 7.1.3(supports-color@8.1.1)
       google-logging-utils: 1.1.3
       json-bigint: 1.0.0
     transitivePeerDependencies:
@@ -15417,53 +15431,53 @@ snapshots:
       merge2: 1.4.1
       slash: 3.0.0
 
-  google-auth-library@10.5.0:
+  google-auth-library@10.5.0(supports-color@8.1.1):
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 7.1.5
-      gcp-metadata: 8.1.3
+      gaxios: 7.1.5(supports-color@8.1.1)
+      gcp-metadata: 8.1.3(supports-color@8.1.1)
       google-logging-utils: 1.1.3
-      gtoken: 8.0.0
+      gtoken: 8.0.0(supports-color@8.1.1)
       jws: 4.0.1
     transitivePeerDependencies:
       - supports-color
 
-  google-auth-library@10.7.0:
+  google-auth-library@10.7.0(supports-color@8.1.1):
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 7.1.5
-      gcp-metadata: 8.1.2
+      gaxios: 7.1.5(supports-color@8.1.1)
+      gcp-metadata: 8.1.2(supports-color@8.1.1)
       google-logging-utils: 1.1.3
       jws: 4.0.1
     transitivePeerDependencies:
       - supports-color
 
-  google-auth-library@9.15.1:
+  google-auth-library@9.15.1(supports-color@8.1.1):
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 6.7.1
-      gcp-metadata: 6.1.1
-      gtoken: 7.1.0
+      gaxios: 6.7.1(supports-color@8.1.1)
+      gcp-metadata: 6.1.1(supports-color@8.1.1)
+      gtoken: 7.1.0(supports-color@8.1.1)
       jws: 4.0.1
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  google-gax@5.0.7:
+  google-gax@5.0.7(supports-color@8.1.1):
     dependencies:
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.8.1
       duplexify: 4.1.3
-      google-auth-library: 10.5.0
+      google-auth-library: 10.5.0(supports-color@8.1.1)
       google-logging-utils: 1.1.3
       node-fetch: 3.3.2
       object-hash: 3.0.0
       proto3-json-serializer: 3.0.4
       protobufjs: 7.6.5
-      retry-request: 8.0.3
+      retry-request: 8.0.3(supports-color@8.1.1)
       rimraf: 5.0.10
     transitivePeerDependencies:
       - supports-color
@@ -15473,11 +15487,11 @@ snapshots:
 
   google-logging-utils@1.1.3: {}
 
-  googleapis-common@7.2.0:
+  googleapis-common@7.2.0(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      gaxios: 6.7.1
-      google-auth-library: 9.15.1
+      gaxios: 6.7.1(supports-color@8.1.1)
+      google-auth-library: 9.15.1(supports-color@8.1.1)
       qs: 6.15.2
       url-template: 2.0.8
       uuid: 9.0.1
@@ -15485,29 +15499,29 @@ snapshots:
       - encoding
       - supports-color
 
-  googleapis-common@8.0.2:
+  googleapis-common@8.0.2(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      gaxios: 7.1.3
-      google-auth-library: 10.5.0
+      gaxios: 7.1.3(supports-color@8.1.1)
+      google-auth-library: 10.5.0(supports-color@8.1.1)
       google-logging-utils: 1.1.3
       qs: 6.15.2
       url-template: 2.0.8
     transitivePeerDependencies:
       - supports-color
 
-  googleapis@144.0.0:
+  googleapis@144.0.0(supports-color@8.1.1):
     dependencies:
-      google-auth-library: 9.15.1
-      googleapis-common: 7.2.0
+      google-auth-library: 9.15.1(supports-color@8.1.1)
+      googleapis-common: 7.2.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  googleapis@170.1.0:
+  googleapis@170.1.0(supports-color@8.1.1):
     dependencies:
-      google-auth-library: 10.7.0
-      googleapis-common: 8.0.2
+      google-auth-library: 10.7.0(supports-color@8.1.1)
+      googleapis-common: 8.0.2(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -15540,17 +15554,17 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  gtoken@7.1.0:
+  gtoken@7.1.0(supports-color@8.1.1):
     dependencies:
-      gaxios: 6.7.1
+      gaxios: 6.7.1(supports-color@8.1.1)
       jws: 4.0.1
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  gtoken@8.0.0:
+  gtoken@8.0.0(supports-color@8.1.1):
     dependencies:
-      gaxios: 7.1.5
+      gaxios: 7.1.5(supports-color@8.1.1)
       jws: 4.0.1
     transitivePeerDependencies:
       - supports-color
@@ -15657,10 +15671,10 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  http-proxy-agent@7.0.2:
+  http-proxy-agent@7.0.2(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -15669,17 +15683,17 @@ snapshots:
       quick-lru: 5.1.1
       resolve-alpn: 1.2.1
 
-  https-proxy-agent@5.0.1:
+  https-proxy-agent@5.0.1(supports-color@8.1.1):
     dependencies:
-      agent-base: 6.0.2
-      debug: 4.4.3
+      agent-base: 6.0.2(supports-color@8.1.1)
+      debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
-  https-proxy-agent@7.0.6:
+  https-proxy-agent@7.0.6(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -15789,11 +15803,11 @@ snapshots:
 
   interpret@3.1.1: {}
 
-  ioredis@5.10.1:
+  ioredis@5.10.1(supports-color@8.1.1):
     dependencies:
       '@ioredis/commands': 1.5.1
       cluster-key-slot: 1.1.2
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       denque: 2.1.0
       lodash.defaults: 4.2.0
       lodash.isarguments: 3.1.0
@@ -15804,11 +15818,11 @@ snapshots:
       - supports-color
     optional: true
 
-  ioredis@5.11.1:
+  ioredis@5.11.1(supports-color@8.1.1):
     dependencies:
       '@ioredis/commands': 1.10.0
       cluster-key-slot: 1.1.1
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       denque: 2.1.0
       redis-errors: 1.2.0
       redis-parser: 3.0.0
@@ -15908,33 +15922,33 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
-  jimp@1.6.1:
+  jimp@1.6.1(supports-color@8.1.1):
     dependencies:
-      '@jimp/core': 1.6.1
-      '@jimp/diff': 1.6.1
-      '@jimp/js-bmp': 1.6.1
-      '@jimp/js-gif': 1.6.1
-      '@jimp/js-jpeg': 1.6.1
-      '@jimp/js-png': 1.6.1
-      '@jimp/js-tiff': 1.6.1
+      '@jimp/core': 1.6.1(supports-color@8.1.1)
+      '@jimp/diff': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-bmp': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-gif': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-jpeg': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-png': 1.6.1(supports-color@8.1.1)
+      '@jimp/js-tiff': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-blit': 1.6.1
-      '@jimp/plugin-blur': 1.6.1
+      '@jimp/plugin-blur': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-circle': 1.6.1
-      '@jimp/plugin-color': 1.6.1
-      '@jimp/plugin-contain': 1.6.1
-      '@jimp/plugin-cover': 1.6.1
-      '@jimp/plugin-crop': 1.6.1
+      '@jimp/plugin-color': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-contain': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-cover': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-crop': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-displace': 1.6.1
       '@jimp/plugin-dither': 1.6.1
       '@jimp/plugin-fisheye': 1.6.1
       '@jimp/plugin-flip': 1.6.1
-      '@jimp/plugin-hash': 1.6.1
+      '@jimp/plugin-hash': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-mask': 1.6.1
-      '@jimp/plugin-print': 1.6.1
+      '@jimp/plugin-print': 1.6.1(supports-color@8.1.1)
       '@jimp/plugin-quantize': 1.6.1
-      '@jimp/plugin-resize': 1.6.1
-      '@jimp/plugin-rotate': 1.6.1
-      '@jimp/plugin-threshold': 1.6.1
+      '@jimp/plugin-resize': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-rotate': 1.6.1(supports-color@8.1.1)
+      '@jimp/plugin-threshold': 1.6.1(supports-color@8.1.1)
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
     transitivePeerDependencies:
@@ -15967,14 +15981,14 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  jsdom@26.1.0:
+  jsdom@26.1.0(supports-color@8.1.1):
     dependencies:
       cssstyle: 4.6.0
       data-urls: 5.0.0
       decimal.js: 10.6.0
       html-encoding-sniffer: 4.0.0
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@8.1.1)
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       is-potential-custom-element-name: 1.0.1
       nwsapi: 2.2.24
       parse5: 7.3.0
@@ -15994,7 +16008,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  jsdom@27.4.0(@noble/hashes@2.2.0):
+  jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1):
     dependencies:
       '@acemir/cssom': 0.9.31
       '@asamuzakjp/dom-selector': 6.8.1
@@ -16003,8 +16017,8 @@ snapshots:
       data-urls: 6.0.1
       decimal.js: 10.6.0
       html-encoding-sniffer: 6.0.0(@noble/hashes@2.2.0)
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@8.1.1)
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       is-potential-custom-element-name: 1.0.1
       parse5: 8.0.1
       saxes: 6.0.0
@@ -16994,10 +17008,10 @@ snapshots:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
 
-  proxy-chain@2.7.1:
+  proxy-chain@2.7.1(supports-color@8.1.1):
     dependencies:
       socks: 2.8.9
-      socks-proxy-agent: 8.0.5
+      socks-proxy-agent: 8.0.5(supports-color@8.1.1)
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
@@ -17111,9 +17125,9 @@ snapshots:
 
   require-from-string@2.0.2: {}
 
-  require-in-the-middle@8.0.1:
+  require-in-the-middle@8.0.1(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       module-details-from-path: 1.0.4
     transitivePeerDependencies:
       - supports-color
@@ -17143,14 +17157,14 @@ snapshots:
       onetime: 5.1.2
       signal-exit: 3.0.7
 
-  retry-axios@2.6.0(axios@1.18.0):
+  retry-axios@2.6.0(axios@1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)):
     dependencies:
-      axios: 1.18.0
+      axios: 1.18.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
 
-  retry-request@8.0.3:
+  retry-request@8.0.3(supports-color@8.1.1):
     dependencies:
       extend: 3.0.2
-      teeny-request: 10.1.3
+      teeny-request: 10.1.3(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
     optional: true
@@ -17228,9 +17242,9 @@ snapshots:
       '@rollup/rollup-win32-x64-msvc': 4.59.0
       fsevents: 2.3.3
 
-  router@2.2.0:
+  router@2.2.0(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -17309,9 +17323,9 @@ snapshots:
 
   semver@7.8.5: {}
 
-  send@1.2.1:
+  send@1.2.1(supports-color@8.1.1):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
@@ -17333,12 +17347,12 @@ snapshots:
     dependencies:
       type-fest: 0.20.2
 
-  serve-static@2.2.1:
+  serve-static@2.2.1(supports-color@8.1.1):
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 1.2.1
+      send: 1.2.1(supports-color@8.1.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -17435,10 +17449,10 @@ snapshots:
 
   smart-buffer@4.2.0: {}
 
-  socks-proxy-agent@8.0.5:
+  socks-proxy-agent@8.0.5(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       socks: 2.8.9
     transitivePeerDependencies:
       - supports-color
@@ -17650,10 +17664,10 @@ snapshots:
       minizlib: 3.1.0
       yallist: 5.0.0
 
-  teeny-request@10.1.3:
+  teeny-request@10.1.3(supports-color@8.1.1):
     dependencies:
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@8.1.1)
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       node-fetch: 3.3.2
       stream-events: 1.0.5
     transitivePeerDependencies:
@@ -17874,14 +17888,14 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite-plugin-dts@4.5.4(@types/node@24.13.2)(rollup@4.59.0)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
+  vite-plugin-dts@4.5.4(@types/node@24.13.2)(rollup@4.59.0)(supports-color@8.1.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
       '@microsoft/api-extractor': 7.57.6(@types/node@24.13.2)
       '@rollup/pluginutils': 5.3.0(rollup@4.59.0)
-      '@volar/typescript': 2.4.28
+      '@volar/typescript': 2.4.28(typescript@5.9.3)
       '@vue/language-core': 2.2.0(typescript@5.9.3)
       compare-versions: 6.1.1
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@8.1.1)
       kolorist: 1.8.0
       local-pkg: 1.1.2
       magic-string: 0.30.21
@@ -17912,7 +17926,7 @@ snapshots:
     optionalDependencies:
       vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
-  vitest@4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
+  vitest@4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@26.1.0(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -17939,11 +17953,11 @@ snapshots:
       '@types/node': 24.13.2
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
       happy-dom: 20.10.6
-      jsdom: 26.1.0
+      jsdom: 26.1.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
+  vitest@4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -17970,7 +17984,7 @@ snapshots:
       '@types/node': 24.13.2
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
       happy-dom: 20.10.6
-      jsdom: 27.4.0(@noble/hashes@2.2.0)
+      jsdom: 27.4.0(@noble/hashes@2.2.0)(supports-color@8.1.1)
     transitivePeerDependencies:
       - msw
 

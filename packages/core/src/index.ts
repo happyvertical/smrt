@@ -141,10 +141,13 @@ export {
 } from './db-errors';
 export {
   applyPendingDecoratorRegistrations,
+  type CompatibleMethodDecorator,
+  type CompatibleMethodDecoratorContext,
   type CompatiblePropertyDecorator,
   type CompatiblePropertyDecoratorContext,
   type LegacyPropertyDecoratorTarget,
   registerCompatibleFieldDecorator,
+  registerCompatibleMethodDecorator,
 } from './decorators/compatibility';
 // Property decorators for field definition
 // Re-export decorator versions with priority over field helpers
@@ -156,8 +159,10 @@ export {
   field,
   foreignKey,
   type Meta,
+  type MethodOptions,
   manyToMany,
   meta,
+  method,
   type NumericFieldOptions,
   oneToMany,
   type RelationshipFieldOptions,
