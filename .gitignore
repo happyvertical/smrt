@@ -27,6 +27,7 @@ docs/build/
 docs/.docusaurus/
 docs/node_modules/
 docs/content/packages/
+docs/content/data-surface-conformance.md
 
 # Auto-generated documentation
 packages/*/docs/
