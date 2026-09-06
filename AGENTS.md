@@ -48,13 +48,15 @@ never the answer, and a reflex issue usually is not either.
   someone else's" are. Issue proliferation is not thoroughness — it is
   unreviewed debt plus the cost of rediscovering the context — so an issue you
   cannot justify in one sentence is a fix you should be making.
-- **Only the owner can put a larger fix in the PR anyway**, and only in writing.
-  The kernel is precedence-bound: a repository instruction may add stricter
-  rules, never weaker ones, so this file cannot raise the ten-line bound. When
-  the owner decides a bigger fix belongs in the branch, record the decision and
-  its scope in the PR body next to the commit it authorizes. Wanting that to be
-  the standing default is a change to the control-plane kernel, not to this
-  file.
+- **This file grants no exception to the bound above, and cannot.** The kernel
+  is precedence-bound — a repository instruction may add stricter rules, never
+  weaker ones — and a task or issue instruction is bound the same way, so
+  neither this file nor an in-session request can raise the ten-line envelope.
+  An owner who overrides that routing is acting outside the kernel, not under a
+  rule this file supplies; when it happens, log the override and its scope in
+  the PR body next to the commit it covers so the exception is auditable rather
+  than invisible. Making it the standing default means changing the
+  control-plane kernel, which is the only place with the precedence to do it.
 
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
 REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
