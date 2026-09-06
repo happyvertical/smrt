@@ -51,6 +51,13 @@ The four snapshot options are atomic: supplying any one requires all four.
 | `smrt db:rollback` | Roll back the last migration by executing its recorded DOWN script; refuses when no DOWN script exists |
 | `smrt db:rollback --mark-only` | Record-only: mark migrations rolled back without running any DOWN script (schema untouched) |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
+| `smrt db:permissions --dry-run` | Plan the declared PostgreSQL role permission contract |
+| `smrt db:permissions --apply --expected-fingerprint <hash>` | Explicitly apply a reviewed permission plan |
+| `smrt db:validate` | Validate configured PostgreSQL permissions or JSON database integrity |
+
+For separate migration-owner, runtime, and monitoring roles, see the
+[PostgreSQL permissions guide](../../docs/content/postgres-permissions.md).
+`doctor --db` includes read-only permission diagnostics when configured.
 
 File-backed SQL/TypeScript migration generation is not supported. s-m-r-t schema
 migrations are manifest-driven; model schema with s-m-r-t objects and apply changes

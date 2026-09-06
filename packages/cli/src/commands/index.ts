@@ -8,6 +8,7 @@ export { configExportCommand } from './config-export.js';
 export { dbDiffCommand } from './db-diff.js';
 export { dbGenerateCommand } from './db-generate.js';
 export { dbHistoryCommand } from './db-history.js';
+export { dbPermissionsCommand } from './db-permissions.js';
 export { dbPruneCommand } from './db-prune.js';
 export { dbRollbackCommand } from './db-rollback.js';
 export { dbStatusCommand } from './db-status.js';

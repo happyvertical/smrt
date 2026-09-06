@@ -74,6 +74,7 @@ export type {
   LoadConfigOptions,
   MigrationsConfig,
   MigrationsPostgresConfig,
+  PostgresPermissionsConfig,
   SchemaContractConfig,
   // Site configuration types
   SiteConfig,

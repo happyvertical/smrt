@@ -1,6 +1,19 @@
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type { ApplicationRuntimeConfig } from './runtime-profile.js';
 
+/** PostgreSQL ACL contract. Applied only through explicit db:permissions. */
+export interface PostgresPermissionsConfig {
+  schema: string;
+  /** Assert this schema is dedicated to the managed application. */
+  schemaExclusive: true;
+  migrationOwner: string;
+  runtimeRole: string;
+  /** Additional managed tables beyond discovered models and present system tables. */
+  managedTables?: string[];
+  /** Explicit safe monitoring columns; there is no default table-wide access. */
+  monitor?: { role: string; tables: Record<string, string[]> };
+}
+
 /**
  * Global SMRT framework options that apply to all modules unless overridden.
  *
@@ -25,6 +38,7 @@ import type { ApplicationRuntimeConfig } from './runtime-profile.js';
  * @see {@link getPackageConfig}
  */
 export interface SmrtGlobalConfig {
+  postgresPermissions?: PostgresPermissionsConfig;
   cacheDir?: string;
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
   environment?: 'development' | 'production' | 'test';

@@ -154,6 +154,12 @@ to run a build.
 
 ## Live-schema parity (#2368)
 
+PostgreSQL role contracts also surface through read-only `doctor --db` and
+`db:validate`. Explicit repair uses `db:permissions` with a reviewed fingerprint;
+ordinary migrations never change ACLs. See the
+[permission guide](../../docs/content/postgres-permissions.md) for configuration,
+authority boundaries, and recovery.
+
 `doctor --db` and `db:status --parity` share `src/commands/db-parity.ts`, which
 runs core's `checkLiveSchemaParity()`. This answers a different question than
 `db:status`/`db:diff`: those compare the live database to the **manifest**, i.e.
