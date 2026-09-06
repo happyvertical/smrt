@@ -45,9 +45,32 @@ describe('database validation permissions routing', () => {
     const outcome = { skipped: false, plan: null, error: 'Missing contract' };
     mocks.run.mockResolvedValue(outcome);
     await utilityCommands['db:validate'].handler([], { json: true, fix: true });
-    expect(mocks.run).toHaveBeenCalledWith();
+    expect(mocks.run).toHaveBeenCalledWith({}, true);
     expect(mocks.output).toHaveBeenCalledWith(outcome, true);
     expect(mocks.resolveData).not.toHaveBeenCalled();
+  });
+  it('preserves auto-detected JSON validation when PostgreSQL permissions are unconfigured', async () => {
+    setConfig({
+      packages: {
+        cli: {
+          database: { type: 'postgres', url: 'postgres://localhost/app' },
+        },
+      },
+    });
+    mocks.run.mockResolvedValue({ skipped: true, plan: null, error: null });
+    mocks.resolveData.mockRejectedValue(
+      new Error('JSON validation path reached'),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    await utilityCommands['db:validate']
+      .handler([], { quick: true })
+      .catch(() => undefined);
+    expect(mocks.resolveData).toHaveBeenCalledWith(undefined);
+    expect(mocks.run).toHaveBeenCalledWith({}, true);
+    expect(mocks.output).not.toHaveBeenCalled();
   });
   it('retains the JSON validator when an explicit data directory is supplied', async () => {
     setConfig({

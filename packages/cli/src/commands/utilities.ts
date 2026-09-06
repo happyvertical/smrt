@@ -1367,8 +1367,11 @@ export default testManifest;
       const { DEFAULT_CLI_CONFIG } = await import('../config.js');
       const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
       if (!options.data && config.database?.type === 'postgres') {
-        outputPermissionsOutcome(await runPostgresPermissions(), options.json);
-        return;
+        const permissions = await runPostgresPermissions({}, true);
+        if (!permissions.skipped) {
+          outputPermissionsOutcome(permissions, options.json);
+          return;
+        }
       }
 
       try {
