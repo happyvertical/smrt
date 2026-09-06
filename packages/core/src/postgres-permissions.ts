@@ -83,6 +83,8 @@ interface Row {
   child_schema: string;
   child_table: string;
   parent_schema: string;
+  delete_action: string;
+  update_action: string;
   version: string;
   executor: string;
   superuser: boolean;
@@ -353,6 +355,7 @@ async function snapshot(
     schemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3) <> 'pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
     relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, (SELECT parent.relname FROM pg_depend d JOIN pg_class parent ON parent.oid=d.refobjid JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i') AND parent_schema.oid=n.oid LIMIT 1) AS parent_table, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
     inherits: `SELECT child_schema.nspname AS child_schema, child.relname AS child_table, parent_schema.nspname AS parent_schema, parent.relname AS parent_table FROM pg_inherits i JOIN pg_class child ON child.oid=i.inhrelid JOIN pg_namespace child_schema ON child_schema.oid=child.relnamespace JOIN pg_class parent ON parent.oid=i.inhparent JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace ORDER BY child_schema.nspname,child.relname,parent_schema.nspname,parent.relname`,
+    foreignKeys: `SELECT child_schema.nspname AS child_schema, child.relname AS child_table, parent_schema.nspname AS parent_schema, parent.relname AS parent_table, con.confdeltype::text AS delete_action, con.confupdtype::text AS update_action FROM pg_constraint con JOIN pg_class child ON child.oid=con.conrelid JOIN pg_namespace child_schema ON child_schema.oid=child.relnamespace JOIN pg_class parent ON parent.oid=con.confrelid JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace WHERE con.contype='f' ORDER BY child_schema.nspname,child.relname,parent_schema.nspname,parent.relname,con.conname`,
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
     routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)) AS identity, oidvectortypes(p.proargtypes) AS argument_types, pg_get_expr(p.proargdefaults,0) AS argument_defaults, p.prokind AS kind, p.prorettype::regtype::text AS return_type, pg_get_function_result(p.oid) AS result, p.procost::text AS cost, p.prorows::text AS rows, p.prosupport::regproc::text AS support, p.pronargs::text AS argument_count, l.lanname AS language, p.prosecdef AS security_definer, p.provolatile::text AS volatility, p.proparallel::text AS parallel, p.proleakproof AS leakproof, p.proisstrict AS strict, COALESCE(to_json(p.proconfig),'[]'::json) AS config, p.prosrc AS source, CASE WHEN p.prokind='f' THEN pg_get_functiondef(p.oid) END AS definition, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
     triggers: `SELECT t.oid::text, n.nspname AS schema, c.relname AS table_name, t.tgname AS name, t.tgfoid::text AS function_oid, t.tgenabled AS enabled, t.tgisinternal AS internal, t.tgtype::text AS type, encode(t.tgargs,'hex') AS arguments, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,c.oid,t.oid`,
@@ -836,6 +839,20 @@ async function plan(
         qualified(relation.child_schema, relation.child_table),
         'Retained tables may inherit only from retained tables in the dedicated schema; an accessible parent can otherwise expose retained rows.',
       );
+  }
+  for (const relation of state.foreignKeys) {
+    const childRetained =
+      relation.child_schema === contract.schema &&
+      retained.has(relation.child_table);
+    const parentRetained =
+      relation.parent_schema === contract.schema &&
+      retained.has(relation.parent_table ?? '');
+    if (childRetained === parentRetained) continue;
+    unsupported(
+      'retained-foreign-key',
+      `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
+      'Retained tables may reference only retained tables; referential actions from an accessible table can otherwise mutate retained rows.',
+    );
   }
   for (const [table, columns] of Object.entries(
     contract.monitor?.tables ?? {},

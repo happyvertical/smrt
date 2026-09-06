@@ -523,6 +523,21 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses retained foreign keys to a managed table', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (item_id bigint REFERENCES app.items(id) ON DELETE CASCADE)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-foreign-key',
+        resource: '"app"."operator_audit" -> "app"."items"',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(
