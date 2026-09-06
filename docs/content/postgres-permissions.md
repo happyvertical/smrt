@@ -131,6 +131,13 @@ cases fail closed instead of revoking unrelated permissions or declaring the
 roles safe. Infrastructure must resolve privilege sources outside the supported
 remediation scope before retrying.
 
+PostgreSQL 14 (and databases upgraded from older defaults) grants PUBLIC
+`CREATE` on the `public` schema. Infrastructure must remove that DDL authority
+with `REVOKE CREATE ON SCHEMA public FROM PUBLIC` before qualification, even
+when the application uses another dedicated schema. The planner reports this as
+`outside-schema-create`; scoped permission apply does not modify unrelated
+schema grants.
+
 For example, PUBLIC `TEMPORARY` on the database must be removed by infrastructure
 before a runtime-without-temporary-tables contract can pass. PUBLIC access to
 managed schemas, tables, columns, sequences, or their defaults also requires
@@ -140,12 +147,33 @@ directly, so the contract does not rely on PUBLIC access. Direct PostgreSQL
 parameter privileges such as `ALTER SYSTEM` also require infrastructure review;
 SMRT never revokes global parameter authority as part of schema repair.
 
-Exceptional grants on PostgreSQL system relations, columns, and routines are
+Exceptional grants on PostgreSQL system relations, columns, routines, and types are
 compared with the initial catalog ACLs and reported as unsupported. This checks
 privilege metadata only; diagnostics never read credential-bearing catalog rows.
 Stock `information_schema` views without initial ACL records use a versioned
 list of PostgreSQL's public metadata views and reserved system object IDs;
 private internal views and extension ACLs are not trusted by that exception.
+Unrecorded custom system-schema routines and types do not inherit the trusted
+built-in PUBLIC baseline. Runtime or monitoring ownership of a system relation,
+sequence, routine, or standalone type is independently unsupported: revoking an
+owner's ordinary grants does not remove its alteration, drop, or grant authority.
+Infrastructure must restore separate ownership before requalification.
+
+Large objects are outside the declared table/column access surface. Diagnostics
+read only `pg_largeobject_metadata` identifiers, ownership, and ACLs; they never
+read large-object payloads. Runtime or monitoring ownership, direct grants, and
+PUBLIC `SELECT` or `UPDATE` grants are unsupported and require infrastructure
+review. Permission apply does not alter large-object ownership or ACLs.
+
+Keep `lo_compat_privileges` off: enabling it bypasses large-object ACL checks.
+Qualification checks the operator setting and its reset value plus the named
+role/database defaults relevant to the configured identities. An operator-only
+session, client, or role override cannot establish the deployed roles' baseline,
+even when that override says `off`; remove it and reconnect before planning.
+Correct enabled deployment defaults while roles are inactive, then reconnect
+runtime and monitoring sessions after successful qualification. See PostgreSQL's
+[large-object privileges](https://www.postgresql.org/docs/17/lo-implementation.html)
+and [compatibility settings](https://www.postgresql.org/docs/17/runtime-config-compatible.html).
 Ordinary built-in catalog access is not a general PostgreSQL sandbox guarantee.
 
 ## Deployment qualification

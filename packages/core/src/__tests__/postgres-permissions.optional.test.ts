@@ -54,6 +54,9 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       { dbid: database },
     );
     await db.query(`REVOKE TEMPORARY ON DATABASE ${q(database)} FROM PUBLIC`);
+    // PostgreSQL 14 grants PUBLIC CREATE here by default. Infrastructure must
+    // remove that unrelated schema authority before the app contract can pass.
+    await db.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
     await db.query(`CREATE SCHEMA app AUTHORIZATION ${q(owner)}`);
     await as(
       owner,
@@ -706,6 +709,291 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     expect((await planPostgresPermissions(db, contract)).diagnostics).toEqual(
       [],
     );
+  });
+  it('refuses system object ownership after ordinary owner ACLs are revoked', async () => {
+    await apply();
+    for (const role of [runtime, monitor]) {
+      for (const kind of ['TABLE', 'SEQUENCE', 'FUNCTION', 'TYPE']) {
+        const resource = `information_schema.${q(`synthetic_${kind.toLowerCase()}`)}`;
+        const target = kind === 'FUNCTION' ? `${resource}()` : resource;
+        const create =
+          kind === 'TABLE'
+            ? `CREATE TABLE ${resource}(id int)`
+            : kind === 'SEQUENCE'
+              ? `CREATE SEQUENCE ${resource}`
+              : kind === 'FUNCTION'
+                ? `CREATE FUNCTION ${target} RETURNS integer LANGUAGE sql AS 'SELECT 1'`
+                : `CREATE TYPE ${resource} AS ENUM ('initial')`;
+        await db.query(create);
+        try {
+          await db.query(`ALTER ${kind} ${target} OWNER TO ${q(role)}`);
+          await db.query(
+            `REVOKE ALL PRIVILEGES ON ${kind} ${target} FROM PUBLIC, ${q(role)}`,
+          );
+          const alter =
+            kind === 'TABLE'
+              ? `ALTER TABLE ${resource} ADD COLUMN synthetic int`
+              : kind === 'SEQUENCE'
+                ? `ALTER SEQUENCE ${resource} INCREMENT BY 2`
+                : kind === 'FUNCTION'
+                  ? `ALTER FUNCTION ${target} COST 2`
+                  : `ALTER TYPE ${resource} ADD VALUE 'changed'`;
+          // Synthetic owner-only DDL remains possible despite revoked ACLs.
+          await as(role, alter);
+          const plan = await planPostgresPermissions(db, contract);
+          expect(plan.canApply, `${kind} owner ${role}`).toBe(false);
+          expect(
+            plan.diagnostics.some(
+              (entry) =>
+                entry.code === 'system-object-owner' && entry.role === role,
+            ),
+          ).toBe(true);
+          await expect(
+            applyPostgresPermissions(db, contract, {
+              expectedFingerprint: plan.fingerprint,
+            }),
+          ).rejects.toThrow('unsupported');
+          expect(
+            (await planPostgresPermissions(db, contract)).fingerprint,
+          ).toBe(plan.fingerprint);
+        } finally {
+          await db.query(`DROP ${kind} ${target}`);
+        }
+      }
+    }
+  });
+  it('refuses unrecorded custom system routines', async () => {
+    await apply();
+    await as(
+      owner,
+      "INSERT INTO app.items(visible,secret) VALUES ('test','synthetic-private')",
+    );
+    for (const schema of ['pg_catalog', 'information_schema']) {
+      const routine = `${q(schema)}.synthetic_private_2701()`;
+      await db.query(
+        `CREATE FUNCTION ${routine} RETURNS text LANGUAGE sql SECURITY DEFINER AS 'SELECT secret FROM app.items LIMIT 1'`,
+      );
+      try {
+        expect((await as(monitor, `SELECT ${routine} AS value`)).rows).toEqual([
+          { value: 'synthetic-private' },
+        ]);
+        const exposed = await planPostgresPermissions(db, contract);
+        expect(exposed.canApply).toBe(false);
+        expect(
+          exposed.diagnostics.some(
+            (entry) => entry.code === 'system-privilege-delta',
+          ),
+        ).toBe(true);
+      } finally {
+        await db.query(`DROP FUNCTION ${routine}`);
+      }
+    }
+  });
+  it('refuses exceptional system type grants', async () => {
+    await apply();
+    await db.query(
+      `GRANT USAGE ON TYPE pg_catalog.int4 TO ${q(runtime)} WITH GRANT OPTION`,
+    );
+    try {
+      const exposed = await planPostgresPermissions(db, contract);
+      expect(exposed.canApply).toBe(false);
+      expect(
+        exposed.diagnostics.some(
+          (entry) =>
+            entry.code === 'system-privilege-delta' && entry.role === runtime,
+        ),
+      ).toBe(true);
+      await expect(
+        applyPostgresPermissions(db, contract, {
+          expectedFingerprint: exposed.fingerprint,
+        }),
+      ).rejects.toThrow('unsupported');
+      expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+        exposed.fingerprint,
+      );
+    } finally {
+      await db.query(`REVOKE USAGE ON TYPE pg_catalog.int4 FROM ${q(runtime)}`);
+    }
+  });
+  it('refuses large-object owners and direct or PUBLIC access without reading payloads in diagnostics', async () => {
+    await apply();
+    const oid = Number(
+      (
+        await db.query(
+          "SELECT lo_from_bytea(0, convert_to('synthetic-only', 'UTF8')) AS oid",
+        )
+      ).rows[0].oid,
+    );
+    try {
+      for (const role of [runtime, monitor]) {
+        await expect(
+          as(role, `SELECT octet_length(lo_get(${oid}))`),
+        ).rejects.toThrow();
+        await expect(
+          as(role, `SELECT lo_put(${oid}, 0, decode('01', 'hex'))`),
+        ).rejects.toThrow();
+      }
+      for (const grantee of [q(runtime), q(monitor), 'PUBLIC']) {
+        for (const privilege of ['SELECT', 'UPDATE']) {
+          await db.query(
+            `GRANT ${privilege} ON LARGE OBJECT ${oid} TO ${grantee}`,
+          );
+          try {
+            const actor = grantee === q(monitor) ? monitor : runtime;
+            if (privilege === 'SELECT') {
+              await as(actor, `SELECT octet_length(lo_get(${oid}))`);
+            } else {
+              // PostgreSQL's write descriptor also needs SELECT. Prove the
+              // actual write with both grants, then diagnose UPDATE alone.
+              await db.query(
+                `GRANT SELECT ON LARGE OBJECT ${oid} TO ${grantee}`,
+              );
+              try {
+                await as(
+                  actor,
+                  `SELECT lo_put(${oid}, 0, decode('01', 'hex'))`,
+                );
+              } finally {
+                await db.query(
+                  `REVOKE SELECT ON LARGE OBJECT ${oid} FROM ${grantee}`,
+                );
+              }
+            }
+            const exposed = await planPostgresPermissions(db, contract);
+            expect(exposed.canApply, `${grantee} ${privilege}`).toBe(false);
+            expect(
+              exposed.diagnostics.some(
+                (entry) => entry.code === 'large-object-privilege',
+              ),
+            ).toBe(true);
+            await expect(
+              applyPostgresPermissions(db, contract, {
+                expectedFingerprint: exposed.fingerprint,
+              }),
+            ).rejects.toThrow('unsupported');
+            expect(
+              (await planPostgresPermissions(db, contract)).fingerprint,
+            ).toBe(exposed.fingerprint);
+          } finally {
+            await db.query(
+              `REVOKE ${privilege} ON LARGE OBJECT ${oid} FROM ${grantee}`,
+            );
+          }
+        }
+      }
+      for (const role of [runtime, monitor]) {
+        await db.query(`ALTER LARGE OBJECT ${oid} OWNER TO ${q(role)}`);
+        await db.query(`REVOKE ALL ON LARGE OBJECT ${oid} FROM ${q(role)}`);
+        const exposed = await planPostgresPermissions(db, contract);
+        expect(exposed.canApply).toBe(false);
+        expect(
+          exposed.diagnostics.some(
+            (entry) =>
+              entry.code === 'large-object-owner' && entry.role === role,
+          ),
+        ).toBe(true);
+        await expect(
+          applyPostgresPermissions(db, contract, {
+            expectedFingerprint: exposed.fingerprint,
+          }),
+        ).rejects.toThrow('unsupported');
+        expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+          exposed.fingerprint,
+        );
+      }
+    } finally {
+      await db.query(`SELECT lo_unlink(${oid})`);
+    }
+  });
+  it('refuses large-object compatibility mode and configured role/database overrides', async () => {
+    await apply();
+    const oid = Number(
+      (
+        await db.query(
+          "SELECT lo_from_bytea(0, convert_to('synthetic-only', 'UTF8')) AS oid",
+        )
+      ).rows[0].oid,
+    );
+    try {
+      await db.transaction?.(async (tx) => {
+        await tx.query('SET LOCAL lo_compat_privileges = on');
+        await tx.query(`SET LOCAL ROLE ${q(runtime)}`);
+        await tx.query(`SELECT octet_length(lo_get(${oid}))`);
+        await tx.query('RESET ROLE');
+        const exposed = await planPostgresPermissions(tx, contract);
+        expect(exposed.canApply).toBe(false);
+        expect(
+          exposed.diagnostics.some(
+            (entry) => entry.code === 'large-object-compatibility',
+          ),
+        ).toBe(true);
+      });
+      await db.transaction?.(async (tx) => {
+        await tx.query('SET LOCAL lo_compat_privileges = off');
+        const obscured = await planPostgresPermissions(tx, contract);
+        expect(obscured.canApply).toBe(false);
+        expect(
+          obscured.diagnostics.some(
+            (entry) => entry.code === 'large-object-compatibility',
+          ),
+        ).toBe(true);
+      });
+      for (const target of [
+        `ROLE ${q(runtime)}`,
+        `ROLE ${q(monitor)} IN DATABASE ${q(database)}`,
+        `DATABASE ${q(database)}`,
+      ]) {
+        await db.query(`ALTER ${target} SET lo_compat_privileges = on`);
+        try {
+          const exposed = await planPostgresPermissions(db, contract);
+          expect(exposed.canApply, target).toBe(false);
+          expect(
+            exposed.diagnostics.some(
+              (entry) => entry.code === 'large-object-compatibility',
+            ),
+          ).toBe(true);
+          await expect(
+            applyPostgresPermissions(db, contract, {
+              expectedFingerprint: exposed.fingerprint,
+            }),
+          ).rejects.toThrow('unsupported');
+          expect(
+            (await planPostgresPermissions(db, contract)).fingerprint,
+          ).toBe(exposed.fingerprint);
+        } finally {
+          await db.query(`ALTER ${target} RESET lo_compat_privileges`);
+        }
+      }
+      await expect(
+        as(runtime, `SELECT octet_length(lo_get(${oid}))`),
+      ).rejects.toThrow();
+    } finally {
+      await db.query(`SELECT lo_unlink(${oid})`);
+    }
+  });
+  it('reports legacy PUBLIC CREATE on public as an infrastructure prerequisite', async () => {
+    await db.query('GRANT CREATE ON SCHEMA public TO PUBLIC');
+    try {
+      const exposed = await planPostgresPermissions(db, contract);
+      expect(exposed.canApply).toBe(false);
+      expect(
+        exposed.diagnostics.some(
+          (entry) =>
+            entry.code === 'outside-schema-create' &&
+            entry.resource === 'public',
+        ),
+      ).toBe(true);
+      await expect(
+        applyPostgresPermissions(db, contract, {
+          expectedFingerprint: exposed.fingerprint,
+        }),
+      ).rejects.toThrow('unsupported');
+      expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+        exposed.fingerprint,
+      );
+    } finally {
+      await db.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
+    }
   });
   it('refuses user routines and standalone composite types after schema evolution', async () => {
     await apply();

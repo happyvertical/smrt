@@ -219,24 +219,29 @@ async function snapshot(
     types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
     systemSchemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3)='pg_' OR nspname='information_schema' ORDER BY nspname`,
     systemPrivileges: `WITH resources AS (
-      SELECT n.nspname AS schema, c.relname AS name, c.oid::text AS oid, 'relation' AS kind,
+      SELECT n.nspname AS schema, c.relname AS name, c.oid::text AS oid, CASE WHEN c.relkind='S' THEN 'sequence' ELSE 'relation' END AS kind, pg_get_userbyid(c.relowner) AS owner,
         COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)) AS current_acl,
         CASE WHEN i.objoid IS NULL AND n.nspname='information_schema' AND c.oid<16384 AND c.relname IN (${informationSchemaPublicSelect}) THEN ARRAY[makeaclitem(0,c.relowner,'SELECT',false)] ELSE ${initialAcl("acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner)")} END AS initial_acl
       FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
       LEFT JOIN pg_init_privs i ON i.objoid=c.oid AND i.classoid='pg_class'::regclass AND i.objsubid=0
       WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND c.relkind IN ('r','p','v','m','f','S')
       UNION ALL
-      SELECT n.nspname, c.relname || '.' || a.attname, c.oid::text || ':' || a.attnum::text, 'column',
+      SELECT n.nspname, c.relname || '.' || a.attname, c.oid::text || ':' || a.attnum::text, 'column', pg_get_userbyid(c.relowner),
         a.attacl, ${initialAcl('NULL::aclitem[]')}
       FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
       LEFT JOIN pg_init_privs i ON i.objoid=c.oid AND i.classoid='pg_class'::regclass AND i.objsubid=a.attnum
       WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND a.attnum>0 AND NOT a.attisdropped
       UNION ALL
-      SELECT n.nspname, p.proname, p.oid::text, 'routine', COALESCE(p.proacl,acldefault('f',p.proowner)), ${initialAcl("acldefault('f',p.proowner)")}
+      SELECT n.nspname, p.proname, p.oid::text, 'routine', pg_get_userbyid(p.proowner), COALESCE(p.proacl,acldefault('f',p.proowner)), ${initialAcl("CASE WHEN p.oid<16384 THEN acldefault('f',p.proowner) ELSE NULL::aclitem[] END")}
       FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
       LEFT JOIN pg_init_privs i ON i.objoid=p.oid AND i.classoid='pg_proc'::regclass AND i.objsubid=0
       WHERE left(n.nspname,3)='pg_' OR n.nspname='information_schema'
-    ) SELECT r.schema,r.name,r.oid,r.kind,d.acl FROM resources r
+      UNION ALL
+      SELECT n.nspname, t.typname, t.oid::text, 'type', pg_get_userbyid(t.typowner), COALESCE(t.typacl,acldefault('T',t.typowner)), ${initialAcl("CASE WHEN t.oid<16384 THEN acldefault('T',t.typowner) ELSE NULL::aclitem[] END")}
+      FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid
+      LEFT JOIN pg_init_privs i ON i.objoid=t.oid AND i.classoid='pg_type'::regclass AND i.objsubid=0
+      WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c')
+    ) SELECT r.schema,r.name,r.oid,r.kind,r.owner,COALESCE(d.acl,'[]'::json) AS acl FROM resources r
     CROSS JOIN LATERAL (
       SELECT json_agg(json_build_object('grantee', CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
         'grantor',pg_get_userbyid(a.grantor),'privilege',a.privilege_type,'grantable',a.is_grantable)
@@ -244,7 +249,10 @@ async function snapshot(
       FROM aclexplode(r.current_acl) a
       WHERE a.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN (${restrictedRoleNames}))
         OR (a.grantee=0 AND NOT EXISTS (SELECT 1 FROM aclexplode(r.initial_acl) b WHERE b.grantee=0 AND b.privilege_type=a.privilege_type AND (b.is_grantable OR NOT a.is_grantable)))
-    ) d WHERE d.acl IS NOT NULL ORDER BY r.schema,r.kind,r.name,r.oid`,
+    ) d WHERE d.acl IS NOT NULL OR (r.kind<>'column' AND r.owner IN (${restrictedRoleNames})) ORDER BY r.schema,r.kind,r.name,r.oid`,
+    largeObjects: `SELECT oid::text, pg_get_userbyid(lomowner) AS owner, ${acl("COALESCE(lomacl, acldefault('L',lomowner))")} AS acl FROM pg_largeobject_metadata ORDER BY oid`,
+    largeObjectSettings: `SELECT setting,reset_val,source FROM pg_settings WHERE name='lo_compat_privileges'`,
+    largeObjectRoleSettings: `SELECT s.setdatabase::text AS database, CASE WHEN s.setrole=0 THEN 'ALL ROLES' ELSE pg_get_userbyid(s.setrole) END AS role, split_part(config.value,'=',2) AS setting FROM pg_db_role_setting s CROSS JOIN LATERAL unnest(s.setconfig) config(value) WHERE s.setdatabase IN (0,(SELECT oid FROM pg_database WHERE datname=current_database())) AND (s.setrole=0 OR s.setrole IN (SELECT oid FROM pg_roles WHERE rolname IN (${restrictedRoleNames}))) AND split_part(config.value,'=',1)='lo_compat_privileges' ORDER BY s.setdatabase,s.setrole,config.value`,
     parameters: `SELECT parname AS name, ${acl('paracl')} AS acl FROM pg_parameter_acl ORDER BY parname`,
     defaults: `SELECT pg_get_userbyid(d.defaclrole) AS owner, COALESCE(n.nspname,'') AS schema, d.defaclobjtype AS kind, ${acl('d.defaclacl')} AS acl FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace ORDER BY d.defaclrole,d.defaclnamespace,d.defaclobjtype`,
   };
@@ -484,12 +492,74 @@ async function plan(
     }
   }
   for (const resource of state.systemPrivileges) {
+    if (resource.kind !== 'column' && roles.includes(resource.owner)) {
+      unsupported(
+        'system-object-owner',
+        qualified(resource.schema, resource.name),
+        `Configured role owns a system ${resource.kind}; ownership retains implicit alteration and grant authority even when its ordinary ACLs are revoked. Infrastructure must restore ownership; SMRT never changes it.`,
+        resource.owner,
+      );
+    }
     for (const grant of resource.acl) {
       unsupported(
         'system-privilege-delta',
         qualified(resource.schema, resource.name),
         `${grant.grantee} has exceptional ${grant.privilege}${grant.grantable ? ' WITH GRANT OPTION' : ''} on a system ${resource.kind}; review infrastructure grants against PostgreSQL initial ACLs. System ACLs are never modified.`,
         grant.grantee === 'PUBLIC' ? undefined : grant.grantee,
+      );
+    }
+  }
+  for (const resource of state.largeObjects) {
+    if (roles.includes(resource.owner)) {
+      unsupported(
+        'large-object-owner',
+        `large object ${resource.oid}`,
+        'Configured role owns a large object outside the declared table/column contract. Infrastructure must review ownership; SMRT never changes it.',
+        resource.owner,
+      );
+    }
+    for (const grant of resource.acl) {
+      if (roles.includes(grant.grantee) || grant.grantee === 'PUBLIC') {
+        unsupported(
+          'large-object-privilege',
+          `large object ${resource.oid}`,
+          `${grant.grantee} has ${grant.privilege}${grant.grantable ? ' WITH GRANT OPTION' : ''} outside the declared table/column contract. Infrastructure must review this ACL; SMRT neither reads payloads nor changes large-object permissions.`,
+          grant.grantee === 'PUBLIC' ? undefined : grant.grantee,
+        );
+      }
+    }
+  }
+  const explicitlyOff = (value: unknown) =>
+    ['off', 'false', 'no', '0'].includes(String(value).toLowerCase());
+  if (state.largeObjectSettings.length !== 1) {
+    unsupported(
+      'large-object-compatibility',
+      'lo_compat_privileges',
+      'The large-object ACL compatibility setting could not be established; qualification requires an observable disabled setting.',
+    );
+  }
+  for (const settings of state.largeObjectSettings) {
+    if (
+      !explicitlyOff(settings.setting) ||
+      !explicitlyOff(settings.reset_val) ||
+      !['default', 'configuration file', 'command line', 'database'].includes(
+        String(settings.source),
+      )
+    ) {
+      unsupported(
+        'large-object-compatibility',
+        'lo_compat_privileges',
+        'Large-object ACL checks must be enabled for every configured role. An enabled or operator-specific lo_compat_privileges override cannot establish that baseline; review deployment settings and reconnect without an operator-specific override.',
+      );
+    }
+  }
+  for (const settings of state.largeObjectRoleSettings) {
+    if (!explicitlyOff(settings.setting)) {
+      unsupported(
+        'large-object-compatibility',
+        'lo_compat_privileges',
+        `Role/database defaults enable or do not establish large-object ACL checks (${String(settings.role)}, database OID ${String(settings.database)}). Infrastructure must disable compatibility mode before qualification.`,
+        settings.role === 'ALL ROLES' ? undefined : String(settings.role),
       );
     }
   }
@@ -794,7 +864,7 @@ async function plan(
     contract,
     diagnostics,
     limitations: [
-      'Only PostgreSQL table, column, sequence, schema and database ACLs are qualified; application authorization and RLS are separate.',
+      'Only PostgreSQL table, column, sequence, schema and database ACLs are qualified; application authorization and RLS are separate. Large-object ownership/access is unsupported, and lo_compat_privileges must remain off for deployed roles.',
       'Future user-defined routines and types are unsupported. PostgreSQL implicit global defaults grant PUBLIC EXECUTE/USAGE; rerun diagnostics after every migration before activating runtime roles.',
       'Pause migrations and external ACL/role writers during planning and apply. The advisory lock coordinates SMRT permission writers only.',
       'All framework bookkeeping tables must exist before setup. Stop runtime and monitor access throughout migrations, restores and repair: recreated bookkeeping tables temporarily receive creator CRUD defaults and require explicit reconciliation before either role is reactivated.',
