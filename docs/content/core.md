@@ -523,10 +523,20 @@ Every withheld method is reported **with its reason** in
 `.smrt/smrt-knowledge.json` under `withheldSurfaces`, so a missing route is
 explained rather than silent.
 
-**Compatibility.** A method named in `api.include`, or carrying an
+**Compatibility, precisely.** A method named in `api.include`, or carrying an
 `api.routes[method]` entry, is an explicit declaration made before this gate
-existed and bypasses the heuristic entirely. Nothing that had a route loses one
-for signature reasons.
+existed and bypasses the heuristic entirely — those routes are preserved
+unchanged. A **default-routed** method (public, no declaration) can lose its
+route on signature, and across this monorepo 88 did. Audit before upgrading:
+every withheld method is listed with its reason in `.smrt/smrt-knowledge.json`
+under `withheldSurfaces`, and `@method({ expose: true })` restores any one of
+them.
+
+One case fails the build rather than the request: `cli.include` naming a method
+the heuristic now withholds trips the cli↔api coherence check, because the CLI
+would be advertising a command whose route no longer exists. The error lists its
+remedies; `@method({ expose: true })` is usually the one you want, since it keeps
+the route without widening `api.include`.
 
 ### The `@method()` decorator
 
