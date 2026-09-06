@@ -242,6 +242,14 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
+export {
+  applyPostgresPermissions,
+  type PostgresPermissionContract,
+  type PostgresPermissionDiagnostic,
+  type PostgresPermissionPlan,
+  planPostgresPermissions,
+  validatePostgresPermissionContract,
+} from './postgres-permissions.js';
 // Runtime PostgreSQL pool timeouts (#2377). Deliberately narrow: this is what
 // another package needs to bound a pool it builds itself, and nothing more.
 // The URL rewriter and the engine predicate stay internal, and the parser is

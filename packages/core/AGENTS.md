@@ -14,6 +14,7 @@ and repository rules.
 | `src/collection.ts` | Limits, sort whitelist, generated list order | [agents/query-bounds.md](agents/query-bounds.md) |
 | `src/data-query.ts` | Transport-neutral bounded query normalization | [agents/data-query.md](agents/data-query.md) |
 | `src/schema/`, `src/migrations/`, `src/cascade.ts`, `src/system/` | DDL parity, indexes, migrations, delete integrity, retention | [agents/schema-paths.md](agents/schema-paths.md) |
+| `src/postgres-permissions.ts` | Explicit PostgreSQL ACL plans and atomic reconciliation | [deployment permission contract](../../docs/content/postgres-permissions.md) |
 | `src/change-feed.ts` | Durable changes, cursors, table versions, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` | Signal bus, replica fan-out, SSE | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/`, `src/vite-plugin/web-collections.ts` | REST/CLI/MCP generation, manifest hashes, ETags | [agents/generators.md](agents/generators.md) |
