@@ -12,9 +12,13 @@
  * migration never drops a table just because it is absent from the manifest.
  * This command drops **only** the five hardcoded names above, and only after
  * verifying each one is empty, has no foreign keys pointing at it, and has
- * nothing but the universal baseline columns (`id`, `slug`, `context`,
- * `created_at`, `updated_at`) — see `@happyvertical/smrt-core/migrations`'
- * `planFrameworkBaseTableDrop()` for the full safety model.
+ * exactly that table's own expected columns — the universal `id`/`slug`/
+ * `context`/`created_at`/`updated_at` base for `smrt_objects`/`smrt_classes`/
+ * `smrt_collections`, extended with `parent_id` for `smrt_hierarchicals` and
+ * `meta_type`/`meta_id`/`role`/`sort_order` for
+ * `smrt_polymorphic_associations` (their own real fields, not the plain
+ * baseline — see `@happyvertical/smrt-core/migrations`'
+ * `planFrameworkBaseTableDrop()` for the full per-table safety model).
  *
  * Skipping this command is safe: a table left behind here is inert and
  * permanently orphaned, never written to or read from again.

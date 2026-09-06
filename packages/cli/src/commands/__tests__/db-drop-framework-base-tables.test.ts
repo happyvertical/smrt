@@ -19,18 +19,41 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dbDropFrameworkBaseTablesCommand } from '../db-drop-framework-base-tables.js';
 import { utilityCommands } from '../utilities.js';
 
+/**
+ * DDL matching the real generator's actual output per table — verified
+ * directly against a genuine pre-#2644 `db:migrate` run (a real installed
+ * multi-package consumer). `smrt_hierarchicals` and
+ * `smrt_polymorphic_associations` are not plain aliases of the universal
+ * baseline: they carry `SmrtHierarchical` / `SmrtPolymorphicAssociation`'s
+ * own real fields (a true parent-id tree; the meta/role/sort columns
+ * generic associations need), and neither carries the `created_at`
+ * list-ordering index the other three do.
+ */
 function createFrameworkBaseTableDDL(table: string): string[] {
-  return [
+  const extraColumns: Record<string, string> = {
+    smrt_hierarchicals: `,\n      "parent_id" TEXT`,
+    smrt_polymorphic_associations: `,
+      "meta_type" TEXT NOT NULL,
+      "meta_id" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "sort_order" INTEGER DEFAULT 0`,
+  };
+  const statements = [
     `CREATE TABLE "${table}" (
       "id" TEXT PRIMARY KEY,
       "slug" TEXT NOT NULL,
       "context" TEXT NOT NULL DEFAULT '',
       "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updated_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      "updated_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP${extraColumns[table] ?? ''}
     )`,
     `CREATE UNIQUE INDEX "${table}_slug_context_idx" ON "${table}" ("slug", "context")`,
-    `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
   ];
+  if (!(table in extraColumns)) {
+    statements.push(
+      `CREATE INDEX "${table}_created_at_idx" ON "${table}" ("created_at")`,
+    );
+  }
+  return statements;
 }
 
 describe('db:drop-framework-base-tables command', () => {
@@ -135,7 +158,12 @@ describe('db:drop-framework-base-tables command', () => {
       await dbDropFrameworkBaseTablesCommand.handler([], { 'dry-run': true });
 
       expect(process.exitCode).toBeUndefined();
-      expect(output()).toContain('DRY RUN — would execute 15 statement(s)');
+      // (2 indexes + 1 table) × 3 plain-baseline tables, (1 index + 1
+      // table) × 2 tables without a created_at index (smrt_hierarchicals,
+      // smrt_polymorphic_associations).
+      expect(output()).toContain(
+        `DRY RUN — would execute ${3 * 3 + 2 * 2} statement(s)`,
+      );
       expect(output()).toContain('Dry run complete');
       expect(output()).toContain('DROP TABLE IF EXISTS "smrt_classes"');
 
@@ -158,8 +186,10 @@ describe('db:drop-framework-base-tables command', () => {
       await dbDropFrameworkBaseTablesCommand.handler([], {});
 
       expect(process.exitCode).toBeUndefined();
+      // 2 indexes × 3 plain-baseline tables + 1 index × 2 tables without a
+      // created_at index.
       expect(output()).toContain(
-        'Dropped 5 table(s) and 10 companion index(es)',
+        `Dropped 5 table(s) and ${3 * 2 + 2 * 1} companion index(es)`,
       );
 
       for (const table of FRAMEWORK_BASE_TABLE_NAMES) {
