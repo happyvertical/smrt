@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-languages",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Code-first language strings with config + tenant overrides and AI auto-translation for SMRT",
   "type": "module",
   "main": "./dist/index.js",

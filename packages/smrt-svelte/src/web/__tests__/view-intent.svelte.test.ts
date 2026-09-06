@@ -10,6 +10,10 @@
 
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
+import {
+  WebMcpToolNameCollisionError,
+  webMcpToolNameOwner,
+} from '@happyvertical/smrt-web';
 import { render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -155,7 +159,12 @@ describe('useViewIntent', () => {
     });
 
     await vi.waitFor(() => expect(registerBespokeSpy).toHaveBeenCalledTimes(1));
-    expect(registerBespokeSpy.mock.calls[0][1]).toEqual({ effects: ['read'] });
+    // `owner: 'intent'` rides along on every intent registration so the
+    // tool-name lock blames the intent, not a bespoke tool (#2613).
+    expect(registerBespokeSpy.mock.calls[0][1]).toEqual({
+      effects: ['read'],
+      owner: 'intent',
+    });
     // The six fixed `smrt_ui_*` tools register alongside it; only the intent
     // must be absent.
     expect(toolNamed(registered, 'fixture_clear_notes')).toBeUndefined();
@@ -235,6 +244,47 @@ describe('useViewIntent', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(registered).toHaveLength(0);
     expect(registerBespokeSpy).not.toHaveBeenCalled();
+  });
+
+  it('reserves its tool name as `intent`, not `bespoke` (#2613)', async () => {
+    // This binding is the only shipped intent path — it reuses
+    // `useWebMcpTool` rather than calling `registerViewIntent`, because the
+    // WebMCP lifecycle must not be duplicated. A collision against a mounted
+    // intent must still blame the INTENT, or an author goes looking for a
+    // `useWebMcpTool` call that does not exist.
+    const registered = installModelContext();
+    const view = render(Fixture, {
+      props: {
+        intent: revealNotesIntent,
+        identity: { formId: 'order-form', controlId: 'notes' },
+        controlRegistry: mountedControlRegistry(),
+      },
+    });
+    await vi.waitFor(() => expect(registered).toHaveLength(1));
+    expect(registered[0].name).toBe('fixture_reveal_notes');
+    expect(webMcpToolNameOwner('fixture_reveal_notes')).toBe('intent');
+
+    let thrown: unknown;
+    try {
+      // What a generated model tool named `fixture_reveal_notes` would hit.
+      const { registerWebMcpBespokeTool } = await import(
+        '@happyvertical/smrt-web'
+      );
+      registerWebMcpBespokeTool({
+        name: 'fixture_reveal_notes',
+        description: 'x',
+        inputSchema: { type: 'object' },
+        annotations: { readOnlyHint: true },
+        execute: () => 'ok',
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(WebMcpToolNameCollisionError);
+    expect((thrown as WebMcpToolNameCollisionError).owner).toBe('intent');
+
+    view.unmount();
+    expect(webMcpToolNameOwner('fixture_reveal_notes')).toBeUndefined();
   });
 
   it('rejects an identity that does not match the declared target registry', () => {

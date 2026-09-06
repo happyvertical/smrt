@@ -4,6 +4,16 @@
 
 ### Patch Changes
 
+- Updated dependencies
+  - @happyvertical/smrt-core@1.0.0
+  - @happyvertical/smrt-svelte@1.0.0
+  - @happyvertical/smrt-playground@1.0.0
+  - @happyvertical/smrt-ui@1.0.0
+
+## 1.0.0
+
+### Patch Changes
+
 - @happyvertical/smrt-svelte@1.0.0
 - @happyvertical/smrt-playground@1.0.0
 - @happyvertical/smrt-ui@1.0.0

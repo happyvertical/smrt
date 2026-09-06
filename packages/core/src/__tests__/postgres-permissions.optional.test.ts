@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  appendChange,
+  drainChangeFeed,
+  ensureChangeFeedTable,
+} from '../change-feed.js';
 import { resolveDatabase } from '../database.js';
 import { MigrationTracker } from '../migrations/tracker.js';
 import {
@@ -11,6 +16,7 @@ import {
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const pgDescribe = pgUrl ? describe.sequential : describe.skip;
+const rolePassword = 'smrt-test-password';
 
 pgDescribe('PostgreSQL permission contract (#2701)', () => {
   let admin: DatabaseInterface;
@@ -45,7 +51,9 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       { dbid: `admin-${suffix}` },
     );
     for (const role of [owner, runtime, monitor])
-      await admin.query(`CREATE ROLE ${q(role)} LOGIN`);
+      await admin.query(
+        `CREATE ROLE ${q(role)} LOGIN PASSWORD '${rolePassword}'`,
+      );
     await admin.query(`CREATE DATABASE ${q(database)} OWNER ${q(owner)}`);
     const url = new URL(pgUrl!);
     url.pathname = `/${database}`;
@@ -75,6 +83,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       migrationOwner: owner,
       runtimeRole: runtime,
       managedTables: ['items'],
+      managedTriggerFunctions: [],
       monitor: { role: monitor, tables: { items: ['id', 'visible'] } },
     };
   });
@@ -113,6 +122,267 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       as(runtime, "INSERT INTO app._smrt_schema_migrations VALUES ('fake')"),
     ).rejects.toThrow();
     await as(runtime, 'DELETE FROM app.items WHERE id=1');
+  });
+  it('reconciles canonical change-feed routines and executes them as runtime', async () => {
+    await db.transaction?.(async (tx) => {
+      await tx.query(`SET LOCAL ROLE ${q(owner)}`);
+      await tx.query('SET LOCAL search_path TO app');
+      await ensureChangeFeedTable(tx);
+    });
+    const before = await planPostgresPermissions(db, contract);
+    expect(before.canApply, JSON.stringify(before.diagnostics)).toBe(true);
+    expect(
+      before.diagnostics.some(
+        (entry) =>
+          entry.code === 'missing-routine-privilege' &&
+          entry.role === runtime &&
+          entry.resource.includes('_smrt_append_change'),
+      ),
+    ).toBe(true);
+    await applyPostgresPermissions(db, contract, {
+      expectedFingerprint: before.fingerprint,
+    });
+    const runtimeUrl = new URL(pgUrl!);
+    runtimeUrl.pathname = `/${database}`;
+    runtimeUrl.username = runtime;
+    runtimeUrl.password = rolePassword;
+    const runtimeDb = await resolveDatabase(
+      { type: 'postgres', url: runtimeUrl.toString() },
+      { dbid: `${database}-${runtime}-change-feed` },
+    );
+    try {
+      await runtimeDb.query('SET search_path TO app');
+      const seq = await appendChange(runtimeDb, {
+        table: 'items',
+        rowId: 'runtime-change',
+        operation: 'update',
+      });
+      expect(seq).not.toBeNull();
+      await drainChangeFeed(runtimeDb);
+      await expect(
+        runtimeDb.query(
+          'CREATE TABLE app.runtime_changefeed_forbidden(id int)',
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await runtimeDb.close();
+    }
+    await expect(
+      as(monitor, 'SELECT * FROM app._smrt_drain_changes()'),
+    ).rejects.toThrow();
+    expect(
+      (
+        await as(
+          monitor,
+          "SELECT has_function_privilege(current_user, 'app._smrt_append_change(text,text,text,text,timestamp with time zone)', 'EXECUTE') AS allowed",
+        )
+      ).rows[0]?.allowed,
+    ).toBe(false);
+  });
+  it('supports declared invoker trigger routines without direct EXECUTE', async () => {
+    contract.managedTriggerFunctions = ['integrity_guard'];
+    await as(
+      owner,
+      `CREATE FUNCTION app.integrity_guard() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$
+        BEGIN
+          IF NEW.visible = 'forbidden' THEN RAISE EXCEPTION 'integrity guard'; END IF;
+          RETURN NEW;
+        END;
+      $$`,
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER integrity_guard BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION app.integrity_guard()',
+    );
+    await apply();
+    await as(
+      owner,
+      'ALTER TABLE app.items ENABLE ALWAYS TRIGGER integrity_guard',
+    );
+    await apply();
+    expect(
+      (
+        await as(
+          runtime,
+          "SELECT has_function_privilege(current_user, 'app.integrity_guard()', 'EXECUTE') AS allowed",
+        )
+      ).rows[0]?.allowed,
+    ).toBe(false);
+    await as(
+      runtime,
+      "INSERT INTO app.items(visible,secret) VALUES ('allowed','private')",
+    );
+    await expect(
+      as(
+        runtime,
+        "INSERT INTO app.items(visible,secret) VALUES ('forbidden','private')",
+      ),
+    ).rejects.toThrow('integrity guard');
+    expect(
+      (
+        await as(
+          monitor,
+          "SELECT has_function_privilege(current_user, 'app.integrity_guard()', 'EXECUTE') AS allowed",
+        )
+      ).rows[0]?.allowed,
+    ).toBe(false);
+  });
+  it('rejects a stale plan after a canonical framework routine definition changes', async () => {
+    await db.transaction?.(async (tx) => {
+      await tx.query(`SET LOCAL ROLE ${q(owner)}`);
+      await tx.query('SET LOCAL search_path TO app');
+      await ensureChangeFeedTable(tx);
+    });
+    const before = await planPostgresPermissions(db, contract);
+    expect(before.canApply, JSON.stringify(before.diagnostics)).toBe(true);
+    await as(
+      owner,
+      `CREATE OR REPLACE FUNCTION app._smrt_append_change(
+        p_table_name TEXT, p_row_id TEXT, p_operation TEXT, p_tenant_id TEXT, p_created_at TIMESTAMPTZ
+      ) RETURNS TABLE(allocated_seq BIGINT, error_code TEXT, error_message TEXT)
+      LANGUAGE plpgsql SECURITY INVOKER AS $$ BEGIN RETURN; END $$`,
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: before.fingerprint,
+      }),
+    ).rejects.toThrow('stale');
+    expect((await planPostgresPermissions(db, contract)).canApply).toBe(false);
+  });
+  it('rejects canonical framework routines with changed execution properties', async () => {
+    await db.transaction?.(async (tx) => {
+      await tx.query(`SET LOCAL ROLE ${q(owner)}`);
+      await tx.query('SET LOCAL search_path TO app');
+      await ensureChangeFeedTable(tx);
+    });
+    await as(
+      owner,
+      'ALTER FUNCTION app._smrt_append_change(text,text,text,text,timestamp with time zone) COST 101',
+    );
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'framework-routine-definition' }),
+    );
+  });
+  it('rejects SECURITY DEFINER canonical framework routines', async () => {
+    await db.transaction?.(async (tx) => {
+      await tx.query(`SET LOCAL ROLE ${q(owner)}`);
+      await tx.query('SET LOCAL search_path TO app');
+      await ensureChangeFeedTable(tx);
+    });
+    await as(
+      owner,
+      'ALTER FUNCTION app._smrt_append_change(text,text,text,text,timestamp with time zone) SECURITY DEFINER',
+    );
+    await as(
+      owner,
+      'ALTER FUNCTION app._smrt_drain_changes(integer) SECURITY DEFINER',
+    );
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(
+      plan.diagnostics.filter(
+        (entry) => entry.code === 'framework-routine-definition',
+      ),
+    ).toHaveLength(2);
+  });
+  it('rejects overloads beside canonical framework routines', async () => {
+    await db.transaction?.(async (tx) => {
+      await tx.query(`SET LOCAL ROLE ${q(owner)}`);
+      await tx.query('SET LOCAL search_path TO app');
+      await ensureChangeFeedTable(tx);
+    });
+    await as(
+      owner,
+      'CREATE FUNCTION app._smrt_append_change(p_extra text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN END $$',
+    );
+    await as(
+      owner,
+      'CREATE FUNCTION app._smrt_drain_changes(p_extra text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN END $$',
+    );
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    for (const name of ['_smrt_append_change', '_smrt_drain_changes'])
+      expect(plan.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: 'unsupported-routines',
+          resource: `"app"."${name}"`,
+        }),
+      );
+  });
+  it('rejects configured trigger routines when their security or binding contract changes', async () => {
+    contract.managedTriggerFunctions = ['integrity_guard'];
+    await as(
+      owner,
+      'CREATE FUNCTION app.integrity_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN RETURN NEW; END $$',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER integrity_guard BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION app.integrity_guard()',
+    );
+    const result = await planPostgresPermissions(db, contract);
+    expect(result.canApply).toBe(false);
+    expect(
+      result.diagnostics.some(
+        (entry) =>
+          entry.code === 'unsupported-routines' &&
+          entry.resource === '"app"."integrity_guard"',
+      ),
+    ).toBe(true);
+  });
+  it('rejects declared trigger functions without an enabled managed-table-only binding', async () => {
+    contract.managedTriggerFunctions = ['integrity_guard'];
+    await as(
+      owner,
+      'CREATE FUNCTION app.integrity_guard() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$ BEGIN RETURN NEW; END $$',
+    );
+    let result = await planPostgresPermissions(db, contract);
+    expect(result.canApply).toBe(false);
+    expect(
+      result.diagnostics.some(
+        (entry) => entry.code === 'missing-managed-trigger-function',
+      ),
+    ).toBe(true);
+    await as(owner, 'CREATE SCHEMA other');
+    await as(owner, 'CREATE TABLE other.unmanaged(id integer)');
+    await as(
+      owner,
+      'CREATE TRIGGER integrity_guard BEFORE INSERT ON other.unmanaged FOR EACH ROW EXECUTE FUNCTION app.integrity_guard()',
+    );
+    result = await planPostgresPermissions(db, contract);
+    expect(result.canApply).toBe(false);
+    expect(
+      result.diagnostics.some(
+        (entry) =>
+          entry.code === 'unsupported-routines' &&
+          entry.resource === '"app"."integrity_guard"',
+      ),
+    ).toBe(true);
+  });
+  it('rejects an overload alongside an otherwise declared trigger function', async () => {
+    contract.managedTriggerFunctions = ['integrity_guard'];
+    await as(
+      owner,
+      'CREATE FUNCTION app.integrity_guard() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$ BEGIN RETURN NEW; END $$',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER integrity_guard BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION app.integrity_guard()',
+    );
+    await as(
+      owner,
+      "CREATE FUNCTION app.integrity_guard(value text) RETURNS integer LANGUAGE sql AS 'SELECT 1'",
+    );
+    const result = await planPostgresPermissions(db, contract);
+    expect(result.canApply).toBe(false);
+    expect(
+      result.diagnostics.filter(
+        (entry) =>
+          entry.code === 'unsupported-routines' &&
+          entry.resource === '"app"."integrity_guard"',
+      ),
+    ).not.toHaveLength(0);
   });
   it('repairs restored direct table/column grants and preserves unrelated role ACLs', async () => {
     await db.query(`GRANT ALL ON app.items TO ${q(monitor)} WITH GRANT OPTION`);
@@ -172,7 +442,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     const url = new URL(pgUrl!);
     url.pathname = `/${database}`;
     url.username = owner;
-    url.password = '';
+    url.password = rolePassword;
     const migrationDb = await resolveDatabase(
       { type: 'postgres', url: url.toString() },
       { dbid: `${database}-supported-migration` },
@@ -359,7 +629,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         const url = new URL(pgUrl!);
         url.pathname = `/${database}`;
         url.username = role;
-        url.password = '';
+        url.password = rolePassword;
         const connection = await resolveDatabase(
           { type: 'postgres', url: url.toString() },
           { dbid: `${database}-${role}` },
@@ -1077,5 +1347,20 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     expect(
       result.diagnostics.some((entry) => entry.code === 'unsupported-routines'),
     ).toBe(true);
+  });
+  it('reports user aggregates as unsupported instead of aborting catalog inspection', async () => {
+    await as(
+      owner,
+      "CREATE FUNCTION app.aggregate_state(state integer, value integer) RETURNS integer LANGUAGE sql AS 'SELECT state + value'",
+    );
+    await as(
+      owner,
+      'CREATE AGGREGATE app.aggregate_sum(integer) (SFUNC = app.aggregate_state, STYPE = integer)',
+    );
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'unsupported-routines' }),
+    );
   });
 });

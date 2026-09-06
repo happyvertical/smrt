@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-workbench",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "smrtJsdoc": "strict",
   "description": "Shared SMRT package and project workbench",
   "type": "module",
@@ -54,6 +54,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",

@@ -7,7 +7,11 @@
  * payloads, so a populated model always wins the shared collection key.
  */
 
-import { CRUD_OPERATIONS } from '../generators/custom-action.js';
+import {
+  CRUD_OPERATIONS,
+  createManifestClassNamePredicate,
+  resolveApiMethodExposure,
+} from '../generators/custom-action.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -179,16 +183,27 @@ function resolveGeneratedClientCustomMethods(
   const apiConfig = obj.decoratorConfig?.api;
   if (apiConfig === false) return [];
 
-  const config =
-    typeof apiConfig === 'object' && apiConfig !== null ? apiConfig : undefined;
-  const included = Array.isArray(config?.include) ? config.include : undefined;
-  const excluded = Array.isArray(config?.exclude) ? config.exclude : undefined;
   const isCollection = isCollectionManifestClass(manifest, obj);
+  const isModelClassName = createManifestClassNamePredicate(manifest);
 
   return Object.entries(obj.methods ?? {}).flatMap(([name, method]) => {
-    if (CRUD_OPERATION_SET.has(name) || !method.isPublic) return [];
-    if (included && !included.includes(name)) return [];
-    if (excluded?.includes(name)) return [];
+    // The client's whole contract is "methods whose routes the server actually
+    // emits", so it reads the SAME resolver the emitters do rather than its own
+    // include/exclude copy. Before #2686 that copy was equivalent; once the
+    // wire-ability gate and `@method()` joined the decision, a local copy would
+    // hand callers a typed `client.assets.createNewVersion(...)` pointing at a
+    // route that is no longer written.
+    if (
+      !resolveApiMethodExposure({
+        actionName: name,
+        method,
+        apiConfig,
+        isCollectionClass: isCollection,
+        ...(isModelClassName ? { isModelClassName } : {}),
+      }).exposed
+    ) {
+      return [];
+    }
 
     const routeConfig = resolveApiActionRouteConfig(
       name,

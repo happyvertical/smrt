@@ -36,7 +36,7 @@ cache, tenancy, and lifecycle surface.
 ## Requirements
 
 - Node.js 24.18 or newer
-- pnpm 11.13 or newer
+- pnpm 11.13.1 or newer (11.13.0 is a broken release pnpm itself refuses)
 - A supported database adapter (SQLite is convenient for local development; PostgreSQL and DuckDB are supported where documented)
 
 ## Quick start

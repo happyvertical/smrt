@@ -53,8 +53,11 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
+  declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
+  readMethodDecoratorConfig,
   resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
 import {
@@ -774,6 +777,88 @@ export class APIGenerator {
    * a returned `{ ok: false, ... }` failure becomes its requested non-2xx
    * status with a redacted payload, and success wraps as `{ action, result }`.
    */
+  /**
+   * Every action this transport treats as DECLARED for a collection route,
+   * paired with its manifest method definition when one is known.
+   *
+   * The union of two declaration sources, so migrating a route entry onto its
+   * method does not silently drop the route here (#2686):
+   *
+   * - a `api.routes[action]` entry, this transport's only source before;
+   * - a method whose `@method()` supplies route-shaping metadata
+   *   (`httpMethod`, `path`, or `scope`).
+   *
+   * Deliberately still DECLARATION-gated rather than adopting the generated
+   * transport's default-route heuristic: this router's URL shape supports only
+   * single-segment collection paths, and widening it to every wire-able public
+   * method would publish endpoints that have never existed here. That is a
+   * separate contract change, not a compatibility fix.
+   *
+   * `declaresRuntimeRestRoute` is shared with `isRestActionRoutable`, the
+   * browser-plane preflight prediction of this same dispatch, so the route and
+   * the prediction of the route cannot drift.
+   */
+  private declaredCollectionActions(
+    objectName: string,
+    apiConfig: { routes?: Record<string, ApiCustomRouteConfig> },
+  ): Array<[string, MethodDefinition | undefined]> {
+    const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
+    // `listDecoratedMethodNames` reads the manifest AND the live decorator
+    // store, so a decorator-declared route survives in an unscanned project
+    // where `getMethods()` is empty (#2686).
+    for (const name of ObjectRegistry.listDecoratedMethodNames(objectName)) {
+      // The SHAPE predicate, not the routable one: a withheld declaration must
+      // stay a candidate so the loop can refuse it with a 404 instead of
+      // letting the segment fall through into `create`.
+      if (declaresRuntimeRestRouteShape(this.runtimeMethod(objectName, name))) {
+        names.add(name);
+      }
+    }
+    return [...names].map((name) => [
+      name,
+      this.runtimeMethod(objectName, name),
+    ]);
+  }
+
+  /**
+   * The method view a RUNTIME transport should read for one action: the
+   * manifest entry when the project was scanned, with its `@method()` config
+   * backfilled from the live decorator store when it is not.
+   */
+  private runtimeMethod(
+    objectName: string,
+    methodName: string,
+  ): MethodDefinition | undefined {
+    return ObjectRegistry.resolveRuntimeMethod(objectName, methodName).method;
+  }
+
+  /**
+   * Refuse a request that matched a DECLARED action's own path and verb but
+   * whose action is withheld — or return `null` to let it fall through.
+   *
+   * Only `POST` is refused, and the asymmetry is the whole point.
+   * `getCrudAction` maps `POST` to `create` and DISCARDS the path segment, so
+   * falling through writes a row and answers 201 for a request aimed at an
+   * operation the author withheld: silent, mutating, and the opposite of what
+   * the generated SvelteKit surface does for the same URL, which 404s because
+   * it wrote no route file. Every other verb carries the segment into a by-id
+   * operation that 404s on its own when the segment is not an id — and that
+   * fall-through is load-bearing, because an object's id may legitimately equal
+   * a declared action's path, and `GET /<collection>/<id>` must keep resolving
+   * to that object (#2686).
+   */
+  private refuseWithheldAction(
+    req: Request,
+    actionName: string,
+    withheldBy: string,
+  ): Response | null {
+    if (req.method.toUpperCase() !== 'POST') return null;
+    return this.createErrorResponse(
+      404,
+      `Custom action '${actionName}' is not exposed (${withheldBy})`,
+    );
+  }
+
   private async dispatchCustomCollectionAction(
     req: Request,
     collection: SmrtCollection<SmrtObject>,
@@ -782,27 +867,66 @@ export class APIGenerator {
     objectName: string,
   ): Promise<Response | null> {
     const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-    if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+    if (!apiConfig || typeof apiConfig !== 'object') {
       return null;
     }
 
-    for (const [actionName, routeConfig] of Object.entries(
-      apiConfig.routes as Record<string, ApiCustomRouteConfig>,
-    )) {
-      const routePath = routeConfig?.path || actionName;
+    const declaredActions = this.declaredCollectionActions(
+      objectName,
+      apiConfig,
+    );
+    if (declaredActions.length === 0) {
+      return null;
+    }
+
+    for (const [actionName, declaredMethod] of declaredActions) {
+      // One view of the method for the whole loop: the item class's manifest
+      // entry, else the collection class's (where a collection-hosted action's
+      // parameters live), else the live `@method()` store.
+      const effective = resolveEffectiveActionMetadata({
+        actionName,
+        ...(declaredMethod ? { method: declaredMethod } : {}),
+        apiConfig,
+      });
+      const routePath = effective.path || actionName;
       if (routePath.includes('/') || routePath !== pathSegment) {
         continue;
       }
-      const routeMethod = (routeConfig?.method || 'POST').toUpperCase();
+      const routeMethod = (effective.httpMethod || 'POST').toUpperCase();
       if (routeMethod !== req.method.toUpperCase()) {
         continue;
       }
-      // Explicit exposure only: same include/exclude gating as the SvelteKit
-      // generator applies to custom actions.
+      // Past this point the request matched a DECLARATION's own path and verb,
+      // so it was aimed at that action and nothing else. Withholding it must
+      // not silently become a CRUD write -- see `refuseWithheldAction` (#2686).
+      // Explicit exposure only: the same include/exclude gating the SvelteKit
+      // generator applies, plus `@method({ expose: false })`, which outranks a
+      // legacy route entry for the same method.
       if (apiConfig.include && !apiConfig.include.includes(actionName)) {
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'api.include',
+        );
+        if (refusal) return refusal;
         continue;
       }
       if (apiConfig.exclude?.includes(actionName)) {
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'api.exclude',
+        );
+        if (refusal) return refusal;
+        continue;
+      }
+      if (readMethodDecoratorConfig(declaredMethod)?.expose === false) {
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          '@method({ expose: false })',
+        );
+        if (refusal) return refusal;
         continue;
       }
 
@@ -819,22 +943,44 @@ export class APIGenerator {
         !isCollectionHosted && typeof staticMethod === 'function';
 
       if (!isCollectionHosted && !isStaticHosted) {
-        // Declared collection routes must not degrade into a CRUD write;
-        // anything else (an item-scoped action reached at the collection URL,
-        // or an unrelated segment) falls through unchanged.
-        if (routeConfig?.scope === 'collection') {
+        // A DECLARED action must never degrade into a CRUD write. The segment
+        // matched a declaration's own path and verb, so `POST` on it resolving
+        // to `create` silently inserts a row and answers 201 for a request
+        // aimed at an action -- the #2047 failure this dispatch exists to
+        // prevent, and the same argument the `expose: false` 404 above rests
+        // on.
+        //
+        // Split by cause so the caller can tell them apart: a
+        // collection-scoped declaration with no receiver is a 501 (declared but
+        // not implemented, the historical message), while an ITEM-scoped one is
+        // a 404 -- this transport only serves collection-scoped custom actions,
+        // so that URL genuinely has no route here even though the generated
+        // SvelteKit surface writes one under `[id]`. #2686 widened the
+        // population reaching this branch by admitting `@method()`
+        // declarations, and the item-scoped shape is the decorator's most
+        // common one.
+        if (effective.scope === 'collection') {
+          // Declared-but-unimplemented is a server-side defect, reported on
+          // every verb: unlike the withheld cases, there is no reading of this
+          // request under which falling through was the caller's intent.
           return this.createErrorResponse(
             501,
             `Custom action '${actionName}' is declared but not implemented`,
           );
         }
+        const refusal = this.refuseWithheldAction(
+          req,
+          actionName,
+          'an item-scoped declaration, which this transport does not serve',
+        );
+        if (refusal) return refusal;
         continue;
       }
 
       const metadata = resolveCustomActionMetadata({
         actionName,
         apiConfig,
-        method: ObjectRegistry.getMethods(objectName)?.get(actionName),
+        ...(declaredMethod ? { method: declaredMethod } : {}),
         // A collection instance method is collection-hosted even when it is
         // not static; a static on the item class already defaults the same
         // way. Either receiver makes this route collection-targeted.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { discoverWorkspaces } from '../../scripts/workspaces.mjs';
@@ -9,6 +9,7 @@ import { discoverWorkspaces } from '../../scripts/workspaces.mjs';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, '../..');
 const outputDir = join(scriptDir, '../content/packages');
+const authoredGuideSources = ['data-surface-conformance.md'];
 
 export function markdownDestinations(markdown) {
   const destinations = [];
@@ -254,6 +255,9 @@ export async function copyPackageReadmes(options = {}) {
     }
     throw error;
   }
+
+  for (const source of authoredGuideSources)
+    await copyFile(join(scriptDir, '..', source), join(scriptDir, '../content', source));
 
   return packages.length;
 }

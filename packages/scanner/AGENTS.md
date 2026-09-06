@@ -283,6 +283,21 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   printed by the Vite plugin, carried into `smrt-knowledge.json`, reported by
   `smrt doctor`, and surfaced by `dev:knowledge-check` as
   `agent-surface-not-static`.
+- **A parameter carries type PROVENANCE, a field does not.**
+  `RawParameterDefinition.typeUnresolved` marks an annotation the scanner could
+  not express (intersection, tuple, conditional, mapped, `typeof`, indexed
+  access) — `type` still reads `'any'` for compatibility, so that flag is the
+  only thing separating it from an authored `any`. `memberTypes` carries the
+  members of an INLINE object literal, which `extractTypeName` otherwise
+  flattens to `'object'`; NAMED bags stay unexpanded on purpose. Core's API
+  wire-ability gate fails closed on both (#2686). The bare `object` keyword is
+  resolved for parameters only — `ManifestAdapter.inferFromAnnotation` gives an
+  `object`-typed FIELD a `{}` column default, so naming it in `extractTypeName`
+  would silently change DDL.
+- **`@method()` config is read with `requireLiteralValues`**, like `@smrt()`: an
+  unresolvable value is a scan error, because a dropped `expose: false` restores
+  the routing the author was withholding. `decoratorConfig` is `undefined` for
+  an undecorated method and `{}` for a bare `@method()`; the two differ.
 - **Relationship targets are resolved, not copied**: `@foreignKey`,
   `@oneToMany` and `@manyToMany` arguments arrive as raw source text.
   `'Target'`/`Target` pass through and a forward-reference thunk

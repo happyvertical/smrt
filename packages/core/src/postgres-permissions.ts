@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_DRAIN_BATCH,
+  POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
+} from './system/schema.js';
 
 /** PostgreSQL ACLs only; this is not application authorization or RLS. */
 export interface PostgresPermissionContract {
@@ -9,6 +16,8 @@ export interface PostgresPermissionContract {
   migrationOwner: string;
   runtimeRole: string;
   managedTables: string[];
+  /** Exact zero-argument trigger functions bound only to managed tables. */
+  managedTriggerFunctions?: string[];
   monitor?: { role: string; tables: Record<string, string[]> };
 }
 
@@ -29,12 +38,37 @@ export interface PostgresPermissionPlan {
   limitations: string[];
 }
 
+type NormalizedPostgresPermissionContract = PostgresPermissionContract & {
+  managedTriggerFunctions: string[];
+};
+
 type Executor = Pick<DatabaseInterface, 'query'>;
 interface Row {
   [key: string]: unknown;
   oid: string;
   name: string;
   schema: string;
+  identity: string;
+  argument_types: string;
+  argument_count: string;
+  argument_defaults: string | null;
+  return_type: string;
+  result: string;
+  cost: string;
+  rows: string;
+  support: string;
+  language: string;
+  security_definer: boolean;
+  config: unknown;
+  source: string;
+  volatility: string;
+  parallel: string;
+  leakproof: boolean;
+  strict: boolean;
+  function_oid: string;
+  table_name: string;
+  enabled: string;
+  internal: boolean;
   owner: string;
   acl: Acl[];
   kind: string;
@@ -63,6 +97,69 @@ const literal = (value: string) =>
   `E'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`;
 const qualified = (schema: string, name: string) =>
   `${identifier(schema)}.${identifier(name)}`;
+
+const normalizeFunctionSource = (value: string) =>
+  value.replaceAll('\r\n', '\n').trim();
+const normalizeArgumentTypes = (value: string) =>
+  value.replaceAll(/\s*,\s*/g, ',');
+const normalizeFunctionResult = (value: string) =>
+  value
+    .replaceAll(/\s+/g, ' ')
+    .replaceAll(/\s*,\s*/g, ',')
+    .replaceAll(/\(\s*/g, '(')
+    .replaceAll(/\s*\)/g, ')')
+    .trim()
+    .toLowerCase();
+
+function sourceFromFunctionDdl(ddl: string): string {
+  const match = ddl.match(
+    /\bAS\s+\$([A-Za-z_][A-Za-z0-9_]*)\$\n([\s\S]*?)\n\$\1\$;/,
+  );
+  if (!match)
+    throw new Error('Framework function DDL has no dollar-quoted body.');
+  return normalizeFunctionSource(match[2]);
+}
+
+function resultFromFunctionDdl(ddl: string): string {
+  const match = ddl.match(/\bRETURNS\s+([\s\S]*?)\nLANGUAGE\s+/);
+  if (!match) throw new Error('Framework function DDL has no return result.');
+  return normalizeFunctionResult(match[1]);
+}
+
+type FrameworkRoutine = {
+  name: string;
+  argumentTypes: string;
+  argumentDefaults: string | null;
+  result: string;
+  source: string;
+};
+
+function frameworkRoutine(identity: string, ddl: string): FrameworkRoutine {
+  const match = identity.match(/^([^()]+)\((.*)\)$/);
+  if (!match)
+    throw new Error(`Invalid framework function identity: ${identity}`);
+  return {
+    name: match[1],
+    argumentTypes: normalizeArgumentTypes(match[2]),
+    argumentDefaults:
+      match[1] === '_smrt_drain_changes'
+        ? String(POSTGRES_CHANGE_FEED_DRAIN_BATCH)
+        : null,
+    result: resultFromFunctionDdl(ddl),
+    source: sourceFromFunctionDdl(ddl),
+  };
+}
+
+const frameworkRoutines = [
+  frameworkRoutine(
+    POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+    CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  ),
+  frameworkRoutine(
+    POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
+    CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  ),
+];
 
 function object(
   value: unknown,
@@ -94,7 +191,7 @@ function name(value: unknown, label: string): string {
 /** Validate configuration before opening a connection; unknown options fail closed. */
 export function validatePostgresPermissionContract(
   value: unknown,
-): PostgresPermissionContract {
+): NormalizedPostgresPermissionContract {
   const input = object(
     value,
     [
@@ -103,6 +200,7 @@ export function validatePostgresPermissionContract(
       'migrationOwner',
       'runtimeRole',
       'managedTables',
+      'managedTriggerFunctions',
       'monitor',
     ],
     'postgresPermissions',
@@ -121,6 +219,18 @@ export function validatePostgresPermissionContract(
   const managedTables = [
     ...new Set(
       input.managedTables.map((table) => name(table, 'managedTables entry')),
+    ),
+  ].sort();
+  if (
+    input.managedTriggerFunctions !== undefined &&
+    !Array.isArray(input.managedTriggerFunctions)
+  )
+    throw new Error('managedTriggerFunctions must be an array.');
+  const managedTriggerFunctions = [
+    ...new Set(
+      (input.managedTriggerFunctions ?? []).map((routine) =>
+        name(routine, 'managedTriggerFunctions entry'),
+      ),
     ),
   ].sort();
   let monitor: PostgresPermissionContract['monitor'];
@@ -168,6 +278,7 @@ export function validatePostgresPermissionContract(
     migrationOwner,
     runtimeRole,
     managedTables,
+    managedTriggerFunctions,
     ...(monitor ? { monitor } : {}),
   };
 }
@@ -177,7 +288,7 @@ const acl = (expression: string) =>
 
 async function snapshot(
   db: Executor,
-  contract: PostgresPermissionContract,
+  contract: NormalizedPostgresPermissionContract,
 ): Promise<Record<string, Row[]>> {
   const roleNames = [
     contract.migrationOwner,
@@ -218,7 +329,8 @@ async function snapshot(
     schemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3) <> 'pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
     relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
-    routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
+    routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)) AS identity, oidvectortypes(p.proargtypes) AS argument_types, pg_get_expr(p.proargdefaults,0) AS argument_defaults, p.prokind AS kind, p.prorettype::regtype::text AS return_type, pg_get_function_result(p.oid) AS result, p.procost::text AS cost, p.prorows::text AS rows, p.prosupport::regproc::text AS support, p.pronargs::text AS argument_count, l.lanname AS language, p.prosecdef AS security_definer, p.provolatile::text AS volatility, p.proparallel::text AS parallel, p.proleakproof AS leakproof, p.proisstrict AS strict, COALESCE(to_json(p.proconfig),'[]'::json) AS config, p.prosrc AS source, CASE WHEN p.prokind='f' THEN pg_get_functiondef(p.oid) END AS definition, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
+    triggers: `SELECT t.oid::text, n.nspname AS schema, c.relname AS table_name, t.tgname AS name, t.tgfoid::text AS function_oid, t.tgenabled AS enabled, t.tgisinternal AS internal, t.tgtype::text AS type, encode(t.tgargs,'hex') AS arguments, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,c.oid,t.oid`,
     types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND NOT EXISTS (SELECT 1 FROM pg_type element WHERE element.typarray=t.oid) AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
     systemSchemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3)='pg_' OR nspname='information_schema' ORDER BY nspname`,
     systemPrivileges: `WITH resources AS (
@@ -446,6 +558,75 @@ async function plan(
       statements.push(
         `GRANT ${desired.join(', ')}${suffix} ON ${kind} ${resource} TO ${identifier(role)}`,
       );
+  }
+  function reconcileRoutine(
+    resource: string,
+    entries: Acl[],
+    desiredByRole: ReadonlyMap<string, readonly string[]>,
+  ) {
+    const grantee = (role: string) =>
+      role === 'PUBLIC' ? 'PUBLIC' : identifier(role);
+    for (const entry of entries)
+      if (
+        roles.includes(entry.grantor ?? '') &&
+        entry.grantee !== entry.grantor
+      )
+        unsupported(
+          'dependent-routine-grant',
+          resource,
+          `Configured role granted ${entry.privilege} to ${entry.grantee}; grant chains require infrastructure review to preserve other roles.`,
+          entry.grantor,
+        );
+    const managedGrantees = new Set([
+      contract.migrationOwner,
+      ...roles,
+      'PUBLIC',
+    ]);
+    for (const entry of entries)
+      if (!managedGrantees.has(entry.grantee))
+        unsupported(
+          'outside-routine-grant',
+          resource,
+          `${entry.grantee} has ${entry.privilege}; direct routine access outside the declared roles requires infrastructure review.`,
+          entry.grantee,
+        );
+    for (const role of [...roles, 'PUBLIC']) {
+      const desired = desiredByRole.get(role) ?? [];
+      const effective = entries.filter((entry) => entry.grantee === role);
+      const excess = effective.filter(
+        (entry) => !desired.includes(entry.privilege) || entry.grantable,
+      );
+      const missing = desired.filter(
+        (privilege) =>
+          !entries.some(
+            (entry) => entry.grantee === role && entry.privilege === privilege,
+          ),
+      );
+      for (const entry of excess)
+        add(
+          'excessive',
+          'excessive-routine-privilege',
+          resource,
+          `${entry.privilege}${entry.grantable ? ' WITH GRANT OPTION' : ''} is not declared.`,
+          role,
+        );
+      for (const privilege of missing)
+        add(
+          'missing',
+          'missing-routine-privilege',
+          resource,
+          `${privilege} is required.`,
+          role,
+        );
+      if (!excess.length && !missing.length) continue;
+      statements.push(
+        `REVOKE ALL PRIVILEGES ON FUNCTION ${resource} FROM ${grantee(role)}`,
+      );
+      if (desired.length)
+        statements.push(
+          `GRANT ${desired.join(', ')} ON FUNCTION ${resource} TO ${grantee(role)}`,
+        );
+    }
   }
   for (const role of roles) {
     reconcile('DATABASE', identifier(database.name), database.acl, role, [
@@ -701,21 +882,112 @@ async function plan(
       }
     }
   }
-  for (const category of ['routines', 'types'] as const)
-    for (const resource of state[category]) {
-      for (const role of roles)
-        if (
-          resource.schema === contract.schema ||
-          resource.owner === role ||
-          relevant(resource.acl, role).length
-        )
-          unsupported(
-            `unsupported-${category}`,
-            qualified(resource.schema, resource.name),
-            `User-defined ${category} are outside the supported table/sequence contract; review their effective privileges explicitly.`,
-            role,
-          );
+  const triggerRoutineNames = new Set(contract.managedTriggerFunctions);
+  const acceptedTriggerRoutineNames = new Set<string>();
+  const routineConfigIsEmpty = (value: unknown) =>
+    (Array.isArray(value) && value.length === 0) || value === '[]';
+  for (const resource of state.routines) {
+    const resourceName = qualified(resource.schema, resource.name);
+    const framework = frameworkRoutines.find(
+      (expected) =>
+        resource.schema === contract.schema &&
+        resource.name === expected.name &&
+        normalizeArgumentTypes(resource.argument_types) ===
+          expected.argumentTypes,
+    );
+    if (framework) {
+      const valid =
+        resource.owner === contract.migrationOwner &&
+        resource.kind === 'f' &&
+        resource.language === 'plpgsql' &&
+        resource.security_definer === false &&
+        resource.argument_defaults === framework.argumentDefaults &&
+        normalizeFunctionResult(resource.result) === framework.result &&
+        resource.cost === '100' &&
+        resource.rows === '1000' &&
+        resource.support === '-' &&
+        resource.volatility === 'v' &&
+        resource.parallel === 'u' &&
+        resource.leakproof === false &&
+        resource.strict === false &&
+        routineConfigIsEmpty(resource.config) &&
+        normalizeFunctionSource(String(resource.source)) === framework.source;
+      if (!valid)
+        unsupported(
+          'framework-routine-definition',
+          resourceName,
+          'Framework routine must retain its canonical identity, owner, invoker security, defaults, execution properties, settings and generated body.',
+        );
+      else
+        reconcileRoutine(
+          resource.identity,
+          resource.acl,
+          new Map([[contract.runtimeRole, ['EXECUTE']]]),
+        );
+      continue;
     }
+    const bindings = state.triggers.filter(
+      (trigger) => trigger.function_oid === resource.oid,
+    );
+    const triggerRoutine =
+      resource.schema === contract.schema &&
+      triggerRoutineNames.has(resource.name) &&
+      resource.kind === 'f' &&
+      resource.return_type === 'trigger' &&
+      resource.argument_types === '' &&
+      resource.argument_count === '0' &&
+      resource.owner === contract.migrationOwner &&
+      resource.language === 'plpgsql' &&
+      resource.security_definer === false &&
+      routineConfigIsEmpty(resource.config) &&
+      bindings.length > 0 &&
+      bindings.every(
+        (trigger) =>
+          trigger.schema === contract.schema &&
+          trigger.internal === false &&
+          (trigger.enabled === 'O' || trigger.enabled === 'A') &&
+          declared.has(trigger.table_name),
+      );
+    if (triggerRoutine) {
+      acceptedTriggerRoutineNames.add(resource.name);
+      reconcileRoutine(resource.identity, resource.acl, new Map());
+      continue;
+    }
+    for (const role of roles)
+      if (
+        resource.schema === contract.schema ||
+        resource.owner === role ||
+        relevant(resource.acl, role).length
+      )
+        unsupported(
+          'unsupported-routines',
+          resourceName,
+          triggerRoutineNames.has(resource.name)
+            ? 'Declared trigger routines must be migration-owner invoker PL/pgSQL functions returning trigger with no declared arguments, no function settings, and enabled non-internal bindings only to declared managed tables.'
+            : 'User-defined routines are outside the supported table/sequence and declared trigger contract; review their effective privileges explicitly.',
+          role,
+        );
+  }
+  for (const name of triggerRoutineNames)
+    if (!acceptedTriggerRoutineNames.has(name))
+      unsupported(
+        'missing-managed-trigger-function',
+        qualified(contract.schema, name),
+        'Run the migration that creates this exact managed trigger function and its enabled binding before reconciling permissions.',
+      );
+  for (const resource of state.types)
+    for (const role of roles)
+      if (
+        resource.schema === contract.schema ||
+        resource.owner === role ||
+        relevant(resource.acl, role).length
+      )
+        unsupported(
+          'unsupported-types',
+          qualified(resource.schema, resource.name),
+          'User-defined types are outside the supported table/sequence contract; review their effective privileges explicitly.',
+          role,
+        );
   // Global grants combine with schema grants: a schema REVOKE cannot cancel them.
   for (const defaults of state.defaults) {
     const resource = `DEFAULT ${defaults.kind} (${defaults.schema || 'global'})`;
@@ -894,7 +1166,7 @@ export async function applyPostgresPermissions(
   contract: PostgresPermissionContract,
   options: { expectedFingerprint: string },
 ): Promise<PostgresPermissionPlan> {
-  validatePostgresPermissionContract(contract);
+  const normalizedContract = validatePostgresPermissionContract(contract);
   if (!options || !/^[a-f0-9]{64}$/.test(options.expectedFingerprint))
     throw new Error(
       'An expectedFingerprint from a reviewed permission plan is required.',
@@ -908,9 +1180,9 @@ export async function applyPostgresPermissions(
     await tx.query("SET LOCAL statement_timeout = '30s'");
     // Cooperating permission writers serialize; operators must quiesce migrations.
     await tx.query(
-      `SELECT pg_advisory_xact_lock(hashtext(${literal(`smrt-permissions:${contract.schema}`)}))`,
+      `SELECT pg_advisory_xact_lock(hashtext(${literal(`smrt-permissions:${normalizedContract.schema}`)}))`,
     );
-    const before = await plan(tx, contract);
+    const before = await plan(tx, normalizedContract);
     if (before.fingerprint !== options.expectedFingerprint)
       throw new Error(
         'Permission plan is stale; generate and review a new plan.',
@@ -924,12 +1196,15 @@ export async function applyPostgresPermissions(
         'SELECT current_user AS name, rolsuper FROM pg_roles WHERE rolname=current_user',
       )
     ).rows[0];
-    if (!executor.rolsuper && executor.name !== contract.migrationOwner)
+    if (
+      !executor.rolsuper &&
+      executor.name !== normalizedContract.migrationOwner
+    )
       throw new Error(
         'Apply must execute as the migration owner or a PostgreSQL superuser.',
       );
     for (const statement of before.statements) await tx.query(statement);
-    const after = await plan(tx, contract);
+    const after = await plan(tx, normalizedContract);
     if (!after.canApply || after.diagnostics.length)
       throw new Error(
         'Permission verification failed; all permission changes have been rolled back.',

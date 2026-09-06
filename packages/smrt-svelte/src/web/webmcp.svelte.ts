@@ -1,4 +1,5 @@
 import type {
+  RegisterWebMcpBespokeToolOptions,
   WebMcpBespokeToolSpec,
   WebMcpRegistrationDisposer,
   WebMcpToolEffect,
@@ -18,6 +19,15 @@ export interface UseWebMcpToolOptions {
    * registrar's own read-only default as the no-Provider fallback.
    */
   effects?: readonly WebMcpToolEffect[];
+  /**
+   * Which path this tool belongs to, for the tool-name lock's collision
+   * diagnostic only (#2613). Defaults to `bespoke`, which is right for every
+   * hand-written component tool. `useViewIntent` passes `intent` because it
+   * routes a declared view intent through this same hook rather than
+   * duplicating the WebMCP lifecycle — see
+   * `RegisterWebMcpBespokeToolOptions['owner']`. It grants nothing.
+   */
+  owner?: RegisterWebMcpBespokeToolOptions['owner'];
 }
 
 // Keep the ambient contract on the public hook declaration too, so consumers
@@ -65,6 +75,9 @@ function getModelContext(): WebMcpModelContext | undefined {
  *
  * @param options.effects a fallback exposure policy applied only when no
  * Provider ancestor declares one — see {@link UseWebMcpToolOptions}.
+ * @param options.owner the tool-name lock's diagnostic label for this
+ * registration (#2613); `useViewIntent` passes `intent`, everything else
+ * leaves the `bespoke` default.
  */
 export function useWebMcpTool(
   factory: () => WebMcpToolSpec | null | undefined,
@@ -111,20 +124,24 @@ export function useWebMcpTool(
     let cancelled = false;
     let dispose: () => void = () => {};
 
+    function reportRegistrationFailure(error: unknown): void {
+      if (cancelled) return;
+      console.warn(
+        '[smrt-svelte] bespoke WebMCP tool registration failed',
+        spec.name,
+        error,
+      );
+    }
+
     async function register(): Promise<void> {
       // The dynamic import failing to load is expected in bundle profiles
       // without `@happyvertical/smrt-web` — treat it like WebMCP being
       // unavailable and no-op, silently. Only THIS statement's failure is
-      // caught: a synchronous throw from `registerWebMcpBespokeTool` below
-      // (e.g. an invalid `effects` policy) happens outside this try block
-      // and is deliberately left to propagate as an unhandled rejection of
-      // `register()`'s own promise, rather than being swallowed alongside
-      // the load-failure case.
-      let registerWebMcpBespokeTool: typeof import('@happyvertical/smrt-web')['registerWebMcpBespokeTool'];
+      // caught here; a synchronous throw from `registerWebMcpBespokeTool`
+      // below is handled by its own narrower catch.
+      let smrtWeb: typeof import('@happyvertical/smrt-web');
       try {
-        ({ registerWebMcpBespokeTool } = await import(
-          '@happyvertical/smrt-web'
-        ));
+        smrtWeb = await import('@happyvertical/smrt-web');
       } catch {
         return;
       }
@@ -135,18 +152,34 @@ export function useWebMcpTool(
         // was pending; re-check before registering under this run's name.
         if (cancelled) return;
       }
-      const registration = registerWebMcpBespokeTool(spec, { effects });
+      let registration: ReturnType<typeof smrtWeb.registerWebMcpBespokeTool>;
+      try {
+        registration = smrtWeb.registerWebMcpBespokeTool(spec, {
+          effects,
+          ...(options.owner ? { owner: options.owner } : {}),
+        });
+      } catch (error) {
+        // A tool-name collision (#2613) is a RUNTIME condition — a generated
+        // model tool, a fixed `smrt_ui_*` tool, or another live component
+        // already holds this name — not an authoring error in this call, and
+        // it is exactly what the lock exists to report. Route it to the same
+        // warning a host rejection of `ready` produces, so a losing bespoke
+        // registrant gets a diagnostic naming the tool and its owner instead
+        // of a global unhandled rejection: `register()` is fire-and-forget
+        // (`void register()` below), so nothing observes this promise. Both
+        // Provider-owned paths already catch their registrar's throw the same
+        // way. Every other synchronous throw — an invalid `effects` policy is
+        // the one that exists — still propagates, because that is an author
+        // bug the page should surface loudly.
+        if (error instanceof smrtWeb.WebMcpToolNameCollisionError) {
+          reportRegistrationFailure(error);
+          return;
+        }
+        throw error;
+      }
       dispose = registration;
       previousDisposer = registration;
-      void registration.ready.catch((error: unknown) => {
-        if (!cancelled) {
-          console.warn(
-            '[smrt-svelte] bespoke WebMCP tool registration failed',
-            spec.name,
-            error,
-          );
-        }
-      });
+      void registration.ready.catch(reportRegistrationFailure);
     }
 
     void register();

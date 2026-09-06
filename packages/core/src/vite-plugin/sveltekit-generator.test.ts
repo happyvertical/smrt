@@ -1097,8 +1097,18 @@ describe('SvelteKit Route Generator', () => {
       expect(searchContent).toContain(
         'new URL(request.url).searchParams.entries(),',
       );
+      // `limit: number` on a GET route: `URLSearchParams` hands the handler
+      // the string '2', so the generated call decodes it. `query: string`
+      // needs no decoding and is passed straight through (#2686).
+      expect(searchContent).toContain('ClassRef.searchFacts(');
+      expect(searchContent).toContain('toCustomActionNumber(options.limit)');
+      // `query: string` needs no decoding and is passed straight through.
+      expect(searchContent).toContain('options.query');
+      expect(searchContent).not.toContain(
+        'toCustomActionNumber(options.query)',
+      );
       expect(searchContent).toContain(
-        'await ClassRef.searchFacts(options.query, options.limit)',
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi
@@ -1430,7 +1440,16 @@ describe('SvelteKit Route Generator', () => {
       expect(browseFactsRoute).toBeDefined();
       const content = browseFactsRoute?.[1] as string;
       expect(content).toContain('await item.browseFacts(options)');
-      expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+      // The route stays exactly where the receiver puts it — under `[id]`, on
+      // the instance. What changed in #2686 is that the contradiction is no
+      // longer SILENT: an author who declared `scope: 'collection'` and got an
+      // item route now learns why, instead of finding nothing at the URL they
+      // expected and no explanation anywhere.
+      expect(consoleWarnSpy).toHaveBeenCalledTimes(1);
+      expect(String(consoleWarnSpy.mock.calls[0][0])).toContain(
+        "Document.browseFacts declares scope 'collection'",
+      );
 
       consoleWarnSpy.mockRestore();
     });

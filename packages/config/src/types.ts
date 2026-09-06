@@ -10,6 +10,8 @@ export interface PostgresPermissionsConfig {
   runtimeRole: string;
   /** Additional managed tables beyond discovered models and present system tables. */
   managedTables?: string[];
+  /** Exact zero-argument trigger functions bound only to managed tables. */
+  managedTriggerFunctions?: string[];
   /** Explicit safe monitoring columns; there is no default table-wide access. */
   monitor?: { role: string; tables: Record<string, string[]> };
 }

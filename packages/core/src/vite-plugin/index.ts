@@ -450,9 +450,13 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
               ? ' Build will fail until this is resolved.\n'
               : ' (Not yet build-blocking for this cli:true/{} class -- see #2638.)\n') +
             `  Either:\n` +
+            `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
             `    - Add '${action}' to api.include, or\n` +
             `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
             `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+            `  A public method is routed by default only when every parameter can be\n` +
+            `  built from JSON; see withheldSurfaces in the knowledge artifact for the\n` +
+            `  reason this one was withheld (#2686).\n` +
             `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
             `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
         );

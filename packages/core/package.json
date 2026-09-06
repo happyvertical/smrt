@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "HappyVertical",
   "type": "module",
@@ -55,6 +55,11 @@
       "types": "./dist/generators.d.ts",
       "import": "./dist/generators.js",
       "default": "./dist/generators.js"
+    },
+    "./generators/custom-action": {
+      "types": "./dist/generators/custom-action.d.ts",
+      "import": "./dist/generators/custom-action.js",
+      "default": "./dist/generators/custom-action.js"
     },
     "./generators/rest": {
       "types": "./dist/generators/rest.d.ts",
