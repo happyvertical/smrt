@@ -20,7 +20,9 @@ Every read is a bounded `SELECT` with an explicit safe-column projection.
 Sensitive columns are never selected, not selected-then-stripped: job
 `args`/`result_pointer`/task payloads, schedule `agentConfig`/`methodArgs`, and
 dispatch `payload`/`metadata` stay in the database; short error texts
-(`last_error`, `error_message`) and statuses are surfaced for diagnosis. A
+(`last_error`, `error_message`) and statuses are surfaced for diagnosis, and
+smrt-dev-mcp runs every string in a live result through
+`redactConnectionString` before it reaches a client. A
 `running` job with a NULL `worker_heartbeat` counts as stale — the runner writes
 the heartbeat at claim time, so a running row without one is anomalous and
 worth surfacing. Row lists honor `DIAGNOSTICS_DEFAULT_LIMIT` (50) capped at 500;

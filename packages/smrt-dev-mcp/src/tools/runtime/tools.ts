@@ -30,6 +30,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   closeRuntimeConnection,
   type RuntimeDatabaseArgs,
+  redactConnectionString,
   resolveRuntimeConnection,
   safeErrorMessage,
 } from './connection.js';
@@ -204,11 +205,37 @@ async function runWithRuntimeConnection(
   }
 }
 
+/**
+ * Stored error columns (`error_message`, `last_error`) are free text written
+ * at failure time and routinely quote connection URLs or credentials. Every
+ * string in a live result passes through {@link redactConnectionString}
+ * before it reaches an MCP client; structure and non-string values are kept.
+ */
+function redactStrings<T>(value: T): T {
+  if (typeof value === 'string') {
+    return redactConnectionString(value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactStrings(item)) as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      out[key] = redactStrings(item);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /** Convert a reader result into envelope data + diagnostics. */
-function toEnvelopeParts(result: unknown): {
+function toEnvelopeParts(rawResult: unknown): {
   data: Record<string, unknown>;
   diagnostics: RuntimeDiagnostic[];
 } {
+  const result = redactStrings(rawResult);
   if (
     result !== null &&
     typeof result === 'object' &&

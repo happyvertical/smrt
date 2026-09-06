@@ -153,7 +153,7 @@ async function seed(database: DatabaseInterface): Promise<void> {
     `INSERT INTO _smrt_jobs
        (id, queue, object_type, method, run_at, status, attempts, last_error, worker_heartbeat)
      VALUES
-       ('j1', 'default', 'Article', 'refresh', '2026-08-29T10:05:00.000Z', 'failed', 3, 'task exploded', NULL),
+       ('j1', 'default', 'Article', 'refresh', '2026-08-29T10:05:00.000Z', 'failed', 3, 'task exploded: postgres://u:hunter2@db/app', NULL),
        ('j2', 'default', 'Article', 'refresh', '2026-08-29T10:06:00.000Z', 'running', 1, NULL, '2026-08-29T10:06:30.000Z')`,
   );
   await database.query(
@@ -285,7 +285,11 @@ describe('runtime diagnostics tools (#1824)', () => {
     ]);
     for (const envelope of envelopes) {
       assertNoSensitiveKeys(envelope);
+      // Seeded error columns quote a credential; values must be redacted too.
+      expect(JSON.stringify(envelope)).not.toContain('hunter2');
     }
+    const migrations = envelopes[0];
+    expect(JSON.stringify(migrations.data)).toContain('password=***');
   });
 
   it('degrades to a successful static-only envelope with no connection', async () => {
