@@ -186,6 +186,27 @@ async function snapshot(
   ]
     .map(literal)
     .join(',');
+  const restrictedRoleNames = [
+    contract.runtimeRole,
+    ...(contract.monitor ? [contract.monitor.role] : []),
+  ]
+    .map(literal)
+    .join(',');
+  // information_schema.sql runs after initial ACL recording. Trust only its
+  // explicitly PUBLIC-readable stock relations, never internal metadata views.
+  // Normal-operation OIDs start at 16384:
+  // https://www.postgresql.org/docs/16/system-catalog-initial-data.html
+  // Source: postgres/postgres REL_14_STABLE..REL_18_STABLE,
+  // GRANT SELECT [ON TABLE] ... TO PUBLIC in:
+  // https://github.com/postgres/postgres/blob/REL_14_STABLE/src/backend/catalog/information_schema.sql
+  // https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/catalog/information_schema.sql
+  const informationSchemaPublicSelect =
+    "'administrable_role_authorizations','applicable_roles','attributes','character_sets','check_constraint_routine_usage','check_constraints','collation_character_set_applicability','collations','column_column_usage','column_domain_usage','column_options','column_privileges','column_udt_usage','columns','constraint_column_usage','constraint_table_usage','data_type_privileges','domain_constraints','domain_udt_usage','domains','element_types','enabled_roles','foreign_data_wrapper_options','foreign_data_wrappers','foreign_server_options','foreign_servers','foreign_table_options','foreign_tables','information_schema_catalog_name','key_column_usage','parameters','referential_constraints','role_column_grants','role_routine_grants','role_table_grants','role_udt_grants','role_usage_grants','routine_column_usage','routine_privileges','routine_routine_usage','routine_sequence_usage','routine_table_usage','routines','schemata','sequences','sql_features','sql_implementation_info','sql_sizing','table_constraints','table_privileges','tables','triggered_update_columns','triggers','udt_privileges','usage_privileges','user_defined_types','user_mapping_options','user_mappings','view_column_usage','view_routine_usage','view_table_usage','views'";
+  // pg_init_privs records non-default initial ACLs. Missing entries use the
+  // PostgreSQL object-kind default; extension-provided ACLs are not stock trust.
+  // https://www.postgresql.org/docs/current/catalog-pg-init-privs.html
+  const initialAcl = (fallback: string) =>
+    `CASE WHEN i.privtype='i' THEN i.initprivs WHEN i.privtype='e' THEN NULL::aclitem[] ELSE ${fallback} END`;
   const queries: Record<string, string> = {
     server: `SELECT current_setting('server_version_num') AS version, current_database() AS database, current_user AS executor, (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser`,
     roles: `SELECT oid::text, rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN (${roleNames}) ORDER BY rolname`,
@@ -196,6 +217,33 @@ async function snapshot(
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
     routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
     types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
+    systemPrivileges: `WITH resources AS (
+      SELECT n.nspname AS schema, c.relname AS name, c.oid::text AS oid, 'relation' AS kind,
+        COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)) AS current_acl,
+        CASE WHEN i.objoid IS NULL AND n.nspname='information_schema' AND c.oid<16384 AND c.relname IN (${informationSchemaPublicSelect}) THEN ARRAY[makeaclitem(0,c.relowner,'SELECT',false)] ELSE ${initialAcl("acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner)")} END AS initial_acl
+      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      LEFT JOIN pg_init_privs i ON i.objoid=c.oid AND i.classoid='pg_class'::regclass AND i.objsubid=0
+      WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND c.relkind IN ('r','p','v','m','f','S')
+      UNION ALL
+      SELECT n.nspname, c.relname || '.' || a.attname, c.oid::text || ':' || a.attnum::text, 'column',
+        a.attacl, ${initialAcl('NULL::aclitem[]')}
+      FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+      LEFT JOIN pg_init_privs i ON i.objoid=c.oid AND i.classoid='pg_class'::regclass AND i.objsubid=a.attnum
+      WHERE (left(n.nspname,3)='pg_' OR n.nspname='information_schema') AND a.attnum>0 AND NOT a.attisdropped
+      UNION ALL
+      SELECT n.nspname, p.proname, p.oid::text, 'routine', COALESCE(p.proacl,acldefault('f',p.proowner)), ${initialAcl("acldefault('f',p.proowner)")}
+      FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+      LEFT JOIN pg_init_privs i ON i.objoid=p.oid AND i.classoid='pg_proc'::regclass AND i.objsubid=0
+      WHERE left(n.nspname,3)='pg_' OR n.nspname='information_schema'
+    ) SELECT r.schema,r.name,r.oid,r.kind,d.acl FROM resources r
+    CROSS JOIN LATERAL (
+      SELECT json_agg(json_build_object('grantee', CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,
+        'grantor',pg_get_userbyid(a.grantor),'privilege',a.privilege_type,'grantable',a.is_grantable)
+        ORDER BY a.grantee,a.privilege_type,a.grantor) AS acl
+      FROM aclexplode(r.current_acl) a
+      WHERE a.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN (${restrictedRoleNames}))
+        OR (a.grantee=0 AND NOT EXISTS (SELECT 1 FROM aclexplode(r.initial_acl) b WHERE b.grantee=0 AND b.privilege_type=a.privilege_type AND (b.is_grantable OR NOT a.is_grantable)))
+    ) d WHERE d.acl IS NOT NULL ORDER BY r.schema,r.kind,r.name,r.oid`,
     parameters: `SELECT parname AS name, ${acl('paracl')} AS acl FROM pg_parameter_acl ORDER BY parname`,
     defaults: `SELECT pg_get_userbyid(d.defaclrole) AS owner, COALESCE(n.nspname,'') AS schema, d.defaclobjtype AS kind, ${acl('d.defaclacl')} AS acl FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace ORDER BY d.defaclrole,d.defaclnamespace,d.defaclobjtype`,
   };
@@ -327,12 +375,32 @@ async function plan(
           `Configured role granted ${entry.privilege} to ${entry.grantee}; grant chains require infrastructure review to preserve other roles.`,
           role,
         );
+    for (const entry of entries) {
+      if (
+        entry.grantee === 'PUBLIC' &&
+        !(
+          kind === 'DATABASE' &&
+          entry.privilege === 'CONNECT' &&
+          !entry.grantable
+        )
+      ) {
+        unsupported(
+          'public-privilege',
+          resource,
+          `PUBLIC ${entry.privilege} is outside the explicit role contract; infrastructure must review it without changing unrelated access.`,
+          role,
+        );
+      }
+    }
     const effective = relevant(entries, role);
     const excess = effective.filter(
       (entry) => !desired.includes(entry.privilege) || entry.grantable,
     );
     const missing = desired.filter(
-      (privilege) => !effective.some((entry) => entry.privilege === privilege),
+      (privilege) =>
+        !entries.some(
+          (entry) => entry.grantee === role && entry.privilege === privilege,
+        ),
     );
     for (const entry of excess) {
       add(
@@ -390,6 +458,16 @@ async function plan(
           'Effective CREATE outside the dedicated schema requires infrastructure repair.',
           role,
         );
+    }
+  }
+  for (const resource of state.systemPrivileges) {
+    for (const grant of resource.acl) {
+      unsupported(
+        'system-privilege-delta',
+        qualified(resource.schema, resource.name),
+        `${grant.grantee} has exceptional ${grant.privilege}${grant.grantable ? ' WITH GRANT OPTION' : ''} on a system ${resource.kind}; review infrastructure grants against PostgreSQL initial ACLs. System ACLs are never modified.`,
+        grant.grantee === 'PUBLIC' ? undefined : grant.grantee,
+      );
     }
   }
   for (const parameter of state.parameters) {
@@ -614,6 +692,13 @@ async function plan(
         item.owner === contract.migrationOwner &&
         item.kind === kind,
     );
+    if (entry?.acl.some((grant) => grant.grantee === 'PUBLIC')) {
+      unsupported(
+        'public-default',
+        `${contract.schema} ${sqlKind}`,
+        'PUBLIC creator defaults are outside the explicit role contract and require infrastructure review.',
+      );
+    }
     for (const role of roles) {
       const desired: readonly string[] =
         role === contract.runtimeRole ? runtime : [];
@@ -623,7 +708,9 @@ async function plan(
       );
       const missing = desired.filter(
         (privilege) =>
-          !effective.some((grant) => grant.privilege === privilege),
+          !(entry?.acl ?? []).some(
+            (grant) => grant.grantee === role && grant.privilege === privilege,
+          ),
       );
       if (!extra.length && !missing.length) continue;
       for (const grant of extra) {

@@ -525,6 +525,117 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       as(monitor, 'SELECT * FROM app._smrt_backfills'),
     ).rejects.toThrow();
   });
+  it('refuses historical system table, column and privileged routine ACL deltas', async () => {
+    const cases = [
+      [
+        'GRANT SELECT ON information_schema._pg_user_mappings TO PUBLIC',
+        'REVOKE SELECT ON information_schema._pg_user_mappings FROM PUBLIC',
+      ],
+      [
+        `GRANT SELECT ON pg_catalog.pg_authid TO ${q(monitor)}`,
+        `REVOKE SELECT ON pg_catalog.pg_authid FROM ${q(monitor)}`,
+      ],
+      [
+        `GRANT SELECT(rolpassword) ON pg_catalog.pg_authid TO ${q(monitor)}`,
+        `REVOKE SELECT(rolpassword) ON pg_catalog.pg_authid FROM ${q(monitor)}`,
+      ],
+      [
+        'GRANT SELECT ON pg_catalog.pg_authid TO PUBLIC',
+        'REVOKE SELECT ON pg_catalog.pg_authid FROM PUBLIC',
+      ],
+      [
+        `GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) TO ${q(runtime)}`,
+        `REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) FROM ${q(runtime)}`,
+      ],
+      [
+        'GRANT EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) TO PUBLIC',
+        'REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) FROM PUBLIC',
+      ],
+    ];
+    for (const [grant, revoke] of cases) {
+      await db.query(grant);
+      try {
+        // Inspect ACL metadata only; never query credential/catalog record values.
+        const plan = await planPostgresPermissions(db, contract);
+        expect(plan.canApply).toBe(false);
+        expect(
+          plan.diagnostics.some(
+            (entry) => entry.code === 'system-privilege-delta',
+          ),
+        ).toBe(true);
+        await expect(
+          applyPostgresPermissions(db, contract, {
+            expectedFingerprint: plan.fingerprint,
+          }),
+        ).rejects.toThrow('unsupported');
+        expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+          plan.fingerprint,
+        );
+      } finally {
+        await db.query(revoke);
+      }
+    }
+  });
+  it('refuses PUBLIC managed access without a monitor and grants explicit database CONNECT', async () => {
+    contract = { ...contract, monitor: undefined };
+    const cases = [
+      [
+        'GRANT SELECT,INSERT,UPDATE,DELETE ON app.items TO PUBLIC',
+        'REVOKE SELECT,INSERT,UPDATE,DELETE ON app.items FROM PUBLIC',
+      ],
+      [
+        'GRANT SELECT(visible) ON app.items TO PUBLIC',
+        'REVOKE SELECT(visible) ON app.items FROM PUBLIC',
+      ],
+      [
+        'GRANT USAGE ON SCHEMA app TO PUBLIC',
+        'REVOKE USAGE ON SCHEMA app FROM PUBLIC',
+      ],
+      [
+        'GRANT USAGE ON SEQUENCE app.items_id_seq TO PUBLIC',
+        'REVOKE USAGE ON SEQUENCE app.items_id_seq FROM PUBLIC',
+      ],
+      [
+        `GRANT TEMPORARY,CREATE ON DATABASE ${q(database)} TO PUBLIC`,
+        `REVOKE TEMPORARY,CREATE ON DATABASE ${q(database)} FROM PUBLIC`,
+      ],
+      [
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA app GRANT SELECT ON TABLES TO PUBLIC`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${q(owner)} IN SCHEMA app REVOKE SELECT ON TABLES FROM PUBLIC`,
+      ],
+    ];
+    for (const [grant, revoke] of cases) {
+      await db.query(grant);
+      try {
+        const plan = await planPostgresPermissions(db, contract);
+        expect(plan.canApply, grant).toBe(false);
+        await expect(
+          applyPostgresPermissions(db, contract, {
+            expectedFingerprint: plan.fingerprint,
+          }),
+        ).rejects.toThrow('unsupported');
+        expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+          plan.fingerprint,
+        );
+      } finally {
+        await db.query(revoke);
+      }
+    }
+    const clean = await planPostgresPermissions(db, contract);
+    expect(clean.statements).toContain(
+      `GRANT CONNECT ON DATABASE ${q(database)} TO ${q(runtime)}`,
+    );
+    await applyPostgresPermissions(db, contract, {
+      expectedFingerprint: clean.fingerprint,
+    });
+    const grants = (
+      await db.query(
+        "SELECT a.grantee::text, a.privilege_type FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) a WHERE d.datname=current_database() AND a.privilege_type='CONNECT' AND (a.grantee=0 OR a.grantee=(SELECT oid FROM pg_roles WHERE rolname=$1))",
+        runtime,
+      )
+    ).rows;
+    expect(grants).toHaveLength(2);
+  });
   it('refuses user routines and standalone composite types after schema evolution', async () => {
     await apply();
     await as(owner, 'CREATE TYPE app.custom AS (value text)');

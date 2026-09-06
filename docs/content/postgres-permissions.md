@@ -132,9 +132,21 @@ roles safe. Infrastructure must resolve privilege sources outside the supported
 remediation scope before retrying.
 
 For example, PUBLIC `TEMPORARY` on the database must be removed by infrastructure
-before a runtime-without-temporary-tables contract can pass. Direct PostgreSQL
+before a runtime-without-temporary-tables contract can pass. PUBLIC access to
+managed schemas, tables, columns, sequences, or their defaults also requires
+infrastructure remediation, even when no monitor is configured. The database's
+baseline PUBLIC `CONNECT` may remain; required role grants are established
+directly, so the contract does not rely on PUBLIC access. Direct PostgreSQL
 parameter privileges such as `ALTER SYSTEM` also require infrastructure review;
 SMRT never revokes global parameter authority as part of schema repair.
+
+Exceptional grants on PostgreSQL system relations, columns, and routines are
+compared with the initial catalog ACLs and reported as unsupported. This checks
+privilege metadata only; diagnostics never read credential-bearing catalog rows.
+Stock `information_schema` views without initial ACL records use a versioned
+list of PostgreSQL's public metadata views and reserved system object IDs;
+private internal views and extension ACLs are not trusted by that exception.
+Ordinary built-in catalog access is not a general PostgreSQL sandbox guarantee.
 
 ## Deployment qualification
 
