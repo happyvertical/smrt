@@ -1,8 +1,3 @@
-import {
-  AGENT_SCHEDULE_SLUG_BACKFILL,
-  migrateAgentScheduleSlugs,
-  planAgentScheduleSlugMigration,
-} from '@happyvertical/smrt-agents';
 import { parsePostgresTimeoutMs } from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
@@ -49,6 +44,11 @@ export const dbMigrateAgentScheduleSlugsCommand: CLICommand = {
         );
       }
       const { getDatabase } = await import('@happyvertical/sql');
+      const {
+        AGENT_SCHEDULE_SLUG_BACKFILL,
+        migrateAgentScheduleSlugs,
+        planAgentScheduleSlugMigration,
+      } = await import('@happyvertical/smrt-agents');
       db = await getDatabase({ type: dbType, url: config.database.url });
       console.log('\n🗓️  AgentSchedule slug migration\n');
       console.log(
