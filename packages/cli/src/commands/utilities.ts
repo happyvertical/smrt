@@ -552,6 +552,20 @@ export interface AgentSurfaceReport {
   playbooks: AgentSurfaceEntry[];
   /** Declarations the scanner recognized but could not emit. */
   notStatic: Array<{ sourceFile: string; message: string }>;
+  /**
+   * Emitted intents whose derived WebMCP tool name something else also claims
+   * (#2725).
+   *
+   * Kept apart from {@link AgentSurfaceReport.notStatic} because the whole
+   * point of this report is which operations are present, and these ARE
+   * present — they appear in `intents` above. Listing them as "not statically
+   * emittable" would contradict the lines directly above them.
+   *
+   * "Also claimed", not "already taken": a build cannot see the provider's
+   * WebMCP `namespace`, and one dissolves a generated-tool collision entirely.
+   * Each message states that condition; this header must not assert past it.
+   */
+  toolNameCollisions: Array<{ sourceFile: string; message: string }>;
 }
 
 /**
@@ -653,17 +667,31 @@ export async function readAgentSurfaceReport(
           name: String(playbook.key),
           detail: `${playbook.steps.length} step(s) · ${playbook.planes.join('+')} · ${playbook.sourceFile}`,
         })),
-        notStatic: (surface?.diagnostics ?? []).map((diagnostic) => ({
-          sourceFile: diagnostic.line
-            ? `${diagnostic.sourceFile}:${diagnostic.line}`
-            : String(diagnostic.sourceFile),
-          message: String(diagnostic.message),
-        })),
+        notStatic: (surface?.diagnostics ?? [])
+          .filter((diagnostic) => diagnostic.code !== 'tool-name-collision')
+          .map(describeAgentSurfaceDiagnostic),
+        toolNameCollisions: (surface?.diagnostics ?? [])
+          .filter((diagnostic) => diagnostic.code === 'tool-name-collision')
+          .map(describeAgentSurfaceDiagnostic),
       };
     } catch {}
   }
 
   return undefined;
+}
+
+/** Where a diagnostic points, and what it says, in one printable pair. */
+function describeAgentSurfaceDiagnostic(diagnostic: {
+  sourceFile: string;
+  message: string;
+  line?: number;
+}): { sourceFile: string; message: string } {
+  return {
+    sourceFile: diagnostic.line
+      ? `${diagnostic.sourceFile}:${diagnostic.line}`
+      : String(diagnostic.sourceFile),
+    message: String(diagnostic.message),
+  };
 }
 
 /** Render the surface report as the lines `smrt doctor` prints. */
@@ -691,6 +719,15 @@ export function renderAgentSurfaceReport(
   if (report.notStatic.length > 0) {
     lines.push(`  ⚠️  Not statically emittable: ${report.notStatic.length}`);
     for (const entry of report.notStatic) {
+      lines.push(`    - ${entry.sourceFile}: ${entry.message}`);
+    }
+  }
+
+  if (report.toolNameCollisions.length > 0) {
+    lines.push(
+      `  ⚠️  Tool name also claimed: ${report.toolNameCollisions.length}`,
+    );
+    for (const entry of report.toolNameCollisions) {
       lines.push(`    - ${entry.sourceFile}: ${entry.message}`);
     }
   }
@@ -3140,6 +3177,17 @@ export default testManifest;
             false,
             undefined,
             `${agentSurfaceReport.notStatic.length} declaration(s) could not be read statically and were excluded — use useWebMcpTool for a computed tool set`,
+          );
+        }
+        // Counted in `total` above, because they ARE reported operations
+        // (#2725). The warning is that one of them may lose its name at mount,
+        // not that it is missing.
+        if (agentSurfaceReport.toolNameCollisions.length > 0) {
+          check(
+            'Declared intents own their WebMCP tool names',
+            false,
+            undefined,
+            `${agentSurfaceReport.toolNameCollisions.length} intent(s) derive a tool name a generated or fixed UI tool also claims — namespace the generated tools, reprefix the UI tools, or rename the intent; each message says the runtime condition it assumes`,
           );
         }
       } else {

@@ -96,4 +96,23 @@ export interface ScannerModule {
     exclude: string[];
     followSymbolicLinks?: boolean;
   }): Promise<string[]>;
+  /**
+   * Report an emitted intent whose derived WebMCP tool name a generated model
+   * tool or a fixed UI tool also claims (#2725).
+   *
+   * The scanner owns the rule because it owns the tool-name derivation; core
+   * owns the INPUT because only core resolves the exposure policy. Names are
+   * passed rather than re-derived, so the scanner never becomes a second place
+   * that decides what a generated tool is called.
+   */
+  checkAgentSurfaceToolNames(
+    surface: ScannerAgentSurface,
+    options: {
+      generatedToolNames?: ReadonlyArray<{
+        name: string;
+        declaredBy?: string;
+      }>;
+      uiToolPrefixes?: readonly string[];
+    },
+  ): ScannerAgentSurface['diagnostics'];
 }

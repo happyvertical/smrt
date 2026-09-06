@@ -87,7 +87,61 @@ const MAX_LITERAL_DEPTH = 32;
 const INTENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9_]*)+$/;
 const INTENT_ID_MAX_LENGTH = 128;
 const DESCRIPTION_MAX_LENGTH = 1024;
+
+/**
+ * The prefix `defineIntent` itself refuses, mirrored here as a HARD rejection.
+ *
+ * It stays a literal on purpose, and the reason is the direction of the
+ * mirror. The fixed UI tools do register under a configurable
+ * `webmcp.ui.prefix`, but this constant does not mirror the UI registrar — it
+ * mirrors `RESERVED_TOOL_NAME_PREFIX` in `defineIntent`
+ * (`@happyvertical/smrt-web/intents`), which is itself the literal `smrt_ui_`
+ * and rejects such an id no matter where an app moved its UI tools. Making
+ * this configurable would let the scanner emit an intent the runtime refuses
+ * to construct, which is strictly worse than refusing it here: the artifact
+ * would advertise an operation that can never register.
+ *
+ * The configurable half of the same hazard — an intent that collides with the
+ * fixed UI tools under a CUSTOM prefix, which `defineIntent` accepts — is not
+ * an identity failure at all and is reported by
+ * {@link checkAgentSurfaceToolNames} as an advisory collision instead.
+ */
 const RESERVED_TOOL_NAME_PREFIX = 'smrt_ui_';
+
+/**
+ * Suffixes of the six fixed UI tools, from `registerWebMcpUiTools`
+ * (`packages/smrt-svelte/src/web/webmcp-ui.ts`). Each registers as
+ * `${prefix}${suffix}`.
+ *
+ * The suffixes are framework-owned and fixed; the prefix is the app's, so a
+ * fixed UI tool's name is only knowable once the prefix is. Hence
+ * {@link AgentSurfaceToolNameOptions.uiToolPrefixes} rather than a guess: a
+ * name is compared against the six tools an app WILL register, never against
+ * every name some prefix could have produced.
+ */
+const FIXED_UI_TOOL_SUFFIXES = [
+  'execute_data_surface_control',
+  'execute_form_control',
+  'inspect_data_surface',
+  'inspect_form_control',
+  'list_data_surfaces',
+  'list_form_controls',
+] as const;
+
+/**
+ * Prefixes `registerWebMcpUiTools` accepts, mirrored from its own
+ * `PREFIX_PATTERN`. A prefix it would reject registers no UI tools at all, so
+ * nothing can collide with it.
+ */
+const UI_TOOL_PREFIX_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * The prefix `registerWebMcpUiTools` uses when an app configures none. Named
+ * separately from {@link RESERVED_TOOL_NAME_PREFIX} even though the two
+ * strings match today: one is the UI registrar's default, the other is
+ * `defineIntent`'s hard rejection, and they answer to different owners.
+ */
+const DEFAULT_UI_TOOL_PREFIX = 'smrt_ui_';
 
 /** Keys `defineIntent` accepts; anything else is a hard failure there. */
 const INTENT_DECLARATION_KEYS = new Set([
@@ -1398,6 +1452,192 @@ export function mergeAgentSurfaces(
         compareStrings(a.message, b.message),
     ),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Collisions with names this pass does not own (#2725)
+// ---------------------------------------------------------------------------
+
+/**
+ * One WebMCP tool name the build will register for a generated model action,
+ * supplied by the caller that knows the exposure policy.
+ */
+export interface GeneratedModelToolName {
+  /**
+   * The tool name EXACTLY as it will be registered.
+   *
+   * This pass never derives a generated name and never applies a namespace of
+   * its own: it compares the strings it is handed. That is deliberate. The
+   * WebMCP `namespace` is a runtime `<Provider webmcp={{ namespace }}>` value
+   * that no build artifact records, so inventing a build-time declaration of
+   * it here would create a second place to say what the provider already says,
+   * free to disagree with it silently. Taking names instead means a caller
+   * that ever does know the namespace qualifies them itself and nothing in
+   * this module changes.
+   */
+  name: string;
+  /** What owns that name, for the message — e.g. `Product.list`. */
+  declaredBy?: string;
+}
+
+export interface AgentSurfaceToolNameOptions {
+  /**
+   * Generated model tool names for the SAME manifest, already filtered by the
+   * exposure policy.
+   *
+   * Filtered, not enumerated: comparing against every verb a class COULD
+   * expose would report collisions with tools that are never registered.
+   * `buildWebMcpToolDefinitions` in `@happyvertical/smrt-core/vite-plugin` is
+   * the function that emits the runtime definitions, so its output is the only
+   * honest input here.
+   */
+  generatedToolNames?: readonly GeneratedModelToolName[];
+  /**
+   * Prefixes the fixed UI tools are mounted under, defaulting to the
+   * registrar's own `smrt_ui_`.
+   *
+   * Supplied for the same reason `generatedToolNames` is: a name is compared
+   * against tools that will really register. Quantifying over every prefix an
+   * app COULD have configured — deriving the would-be prefix from the name —
+   * looks like more coverage and is the opposite. Under the default it has no
+   * true positive at all, because an id flattening to `smrt_ui_*` is rejected
+   * by {@link intentIdentityProblem} before it can become an entry, so every
+   * diagnostic such a rule emits for a default-configured app is false. A
+   * warning that is always wrong where it fires is worse than silence: it is
+   * persisted into the knowledge artifact, counted by `smrt doctor`, and
+   * clearable only by renaming an intent that was correct.
+   *
+   * There is no build-time source for this today — `ui.prefix` is a runtime
+   * `<Provider webmcp={{ ui: { prefix } }}>` prop — so the default leaves this
+   * half dormant. That is the honest state of it, and the seam is ready for
+   * the caller that can fill it.
+   */
+  uiToolPrefixes?: readonly string[];
+}
+
+/**
+ * Report an emitted intent whose derived WebMCP tool name is already spoken
+ * for by something OUTSIDE the declared surface (#2725).
+ *
+ * `mergeAgentSurfaces` resolves the collisions it can see on its own —
+ * intent vs intent, where `intentToolName` is not injective. It cannot see the
+ * two sources that live outside the declaration set:
+ *
+ * - **generated model tools**, `${className.toLowerCase()}_${action}`, so
+ *   `defineIntent({ id: 'product.list' })` lands exactly on `Product.list`;
+ * - **the six fixed UI tools** under a CUSTOM `webmcp.ui.prefix`. The default
+ *   `smrt_ui_` is already a hard rejection in {@link intentIdentityProblem},
+ *   mirroring `defineIntent`; a custom prefix is not, because `defineIntent`
+ *   accepts such an id and the intent really does register.
+ *
+ * ### These are warnings, not drops — unlike intent vs intent
+ *
+ * The asymmetry is real and it is the whole reason this is a separate pass.
+ * Two colliding intents are a closed question: `defineIntent` REJECTS the
+ * second declaration, so only one can exist and emitting both would overstate
+ * the surface by an entry that cannot be. Neither collision here is closed:
+ *
+ * - `defineIntent` accepts the intent, so the declaration is real and the
+ *   entry belongs in the artifact. Dropping it would make the emitted surface
+ *   disagree with the source, which is the failure this module exists to
+ *   prevent;
+ * - nothing decides a winner. As `packages/smrt-web/AGENTS.md` puts it, there
+ *   is no document-global tool-name lock for these registrations to
+ *   participate in: both register under one name and one silently shadows or
+ *   loses to the other. Which one is not defined, and there is no error to
+ *   catch — which is exactly why the notice has to come at build time;
+ * - and whether it happens at all depends on runtime values no artifact
+ *   records: a WebMCP `namespace` moves every generated tool out of the way,
+ *   an `effects` policy can exclude the action, and a page need not mount
+ *   both. A build-time drop would be a guess about all three.
+ *
+ * So the entry stays and the report is advisory. The message names both sides,
+ * the consequence, and — because those runtime values are unknowable here and
+ * a `namespace` genuinely dissolves the collision — the precondition under
+ * which it holds. Without that last part a namespaced app gets a notice that
+ * is always wrong where it fires, recommending the very remedy it already
+ * applied, with renaming a correct intent as the only clearing action. That is
+ * the standard `uiToolPrefixes` exists to meet; the generated half has to meet
+ * it too, and it does so in the message because the caller CAN supply
+ * namespaced names when it knows them.
+ *
+ * @param surface - A MERGED surface; intent-vs-intent losers are already gone.
+ * @returns Diagnostics only. The caller appends them; nothing is removed.
+ */
+export function checkAgentSurfaceToolNames(
+  surface: AgentSurface,
+  options: AgentSurfaceToolNameOptions = {},
+): AgentSurfaceDiagnostic[] {
+  const diagnostics: AgentSurfaceDiagnostic[] = [];
+  const generated = new Map<string, GeneratedModelToolName>();
+  for (const tool of options.generatedToolNames ?? []) {
+    if (!generated.has(tool.name)) generated.set(tool.name, tool);
+  }
+  // A prefix `registerWebMcpUiTools` would refuse mounts no UI tools, so it
+  // owns no names. Skipped rather than thrown: an advisory pass must not be
+  // the thing that fails a build over a malformed diagnostic input.
+  const uiTools = new Map<string, string>();
+  for (const prefix of options.uiToolPrefixes ?? [DEFAULT_UI_TOOL_PREFIX]) {
+    if (!UI_TOOL_PREFIX_PATTERN.test(prefix)) continue;
+    for (const suffix of FIXED_UI_TOOL_SUFFIXES) {
+      if (!uiTools.has(`${prefix}${suffix}`)) {
+        uiTools.set(`${prefix}${suffix}`, prefix);
+      }
+    }
+  }
+
+  for (const intent of surface.intents) {
+    const toolName = intentToolName(intent.id);
+
+    const collidingTool = generated.get(toolName);
+    if (collidingTool) {
+      const owner = collidingTool.declaredBy
+        ? `\`${collidingTool.declaredBy}\``
+        : 'a generated model action';
+      diagnostics.push({
+        code: 'tool-name-collision',
+        helper: 'defineIntent',
+        message:
+          `view intent \`${intent.id}\` derives the WebMCP tool name \`${toolName}\`, which is ` +
+          `also the generated model tool for ${owner}. Both are emitted — \`defineIntent\` ` +
+          'accepts the id, so the declaration is real. On a page that mounts both with no ' +
+          'WebMCP `namespace`, they register under one name and one silently shadows or loses ' +
+          "to the other. A build cannot see the provider's `namespace` or `effects` policy, so " +
+          'if either already separates this pair, disregard this. Otherwise set a `namespace`, ' +
+          'which prefixes the generated tools and leaves intents alone, or rename the intent.',
+        filePath: intent.filePath,
+      });
+    }
+
+    const uiPrefix = uiTools.get(toolName);
+    if (uiPrefix !== undefined) {
+      diagnostics.push({
+        code: 'tool-name-collision',
+        helper: 'defineIntent',
+        message:
+          `view intent \`${intent.id}\` derives the WebMCP tool name \`${toolName}\`, which is ` +
+          `also one of the six fixed UI tools mounted under \`ui.prefix\` \`${uiPrefix}\`. ` +
+          '`defineIntent` accepts the id because it reserves only the default `smrt_ui_` prefix, ' +
+          'so both are registered under one name and one silently shadows or loses to the other. ' +
+          'Rename the intent, or give the fixed UI tools a different `ui.prefix`.',
+        filePath: intent.filePath,
+      });
+    }
+  }
+
+  // Path, code, message — deliberately WITHOUT the `line`/`column` keys
+  // `mergeAgentSurfaces` sorts on. A collision is a property of an emitted
+  // ENTRY, and `AgentSurfaceIntent` records only `filePath`; nothing here has a
+  // source offset to resolve, so those keys would be provably constant and the
+  // reader would be left wondering which caller sets them. What remains is
+  // still a total order: the message embeds the intent id, which is unique
+  // across the merged surface, so two diagnostics can never tie.
+  return diagnostics.sort(
+    (a, b) =>
+      compareStrings(a.filePath, b.filePath) ||
+      compareStrings(a.code, b.code) ||
+      compareStrings(a.message, b.message),
+  );
 }
 
 /** An empty surface, for callers that skipped the scan. */

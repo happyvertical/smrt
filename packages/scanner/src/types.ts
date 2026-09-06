@@ -295,13 +295,19 @@ export type AgentSurfaceDiagnosticCode =
   | 'incomplete-declaration'
   | 'invalid-identity'
   | 'svelte-declaration'
-  | 'duplicate-identity';
+  | 'duplicate-identity'
+  | 'tool-name-collision';
 
 /**
- * A recognized declaration that is not emittable.
+ * Something a reader of the emitted surface has to know about a declaration.
  *
- * Never a silent omission: every message names `useWebMcpTool`, the escape
- * hatch for a genuinely computed tool set.
+ * Two kinds, and the difference is whether the entry survived. Every code but
+ * `tool-name-collision` reports a declaration that is NOT emitted — never a
+ * silent omission, so each of those messages names `useWebMcpTool`, the escape
+ * hatch for a genuinely computed tool set. A `tool-name-collision` is
+ * advisory: the declaration IS emitted, and the diagnostic records that its
+ * derived WebMCP tool name is already spoken for by something outside the
+ * declared surface.
  */
 export interface AgentSurfaceDiagnostic {
   code: AgentSurfaceDiagnosticCode;

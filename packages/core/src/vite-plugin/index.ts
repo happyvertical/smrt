@@ -237,6 +237,103 @@ function reportAgentSurfaceDiagnostics(
   }
 }
 
+/**
+ * Compare the emitted intents against the tool names this build will really
+ * register, and project the result into the knowledge-artifact shape (#2725).
+ *
+ * The rule lives in the scanner, which owns the tool-name derivation. The INPUT
+ * lives here, because only core resolves the exposure policy:
+ * {@link buildWebMcpToolDefinitions} is the function that emits the runtime
+ * `webMcpToolDefinitions`, so its output is the set that actually registers.
+ * Handing the scanner every verb a class COULD expose would report collisions
+ * with tools nobody mounts.
+ *
+ * The check is passed in rather than imported: core reaches the scanner through
+ * {@link importScanner}, which resolves src or dist depending on how core itself
+ * was built, and a static import here would defeat that.
+ *
+ * `declaredBy` is `Class.action` — the same identity `smrt doctor` prints beside
+ * a generated model tool — so a reader can find the other side of the collision
+ * without cross-referencing anything.
+ */
+export function collectAgentSurfaceToolNameCollisions(input: {
+  surface: ScannerAgentSurface;
+  manifest: SmartObjectManifest;
+  checkAgentSurfaceToolNames: ScannerModule['checkAgentSurfaceToolNames'];
+  kebabRoutes?: boolean;
+  /**
+   * Prefixes the fixed UI tools mount under. Nothing in a build knows this —
+   * `ui.prefix` is a runtime `<Provider webmcp={{ ui: { prefix } }}>` prop, and
+   * the scanner's default of `smrt_ui_` is correct for every app that leaves it
+   * alone. Threaded anyway so the seam is complete: the day a build-time source
+   * exists, only this call site changes.
+   */
+  uiToolPrefixes?: readonly string[];
+}): DomainKnowledgeAgentSurface['diagnostics'] {
+  return input
+    .checkAgentSurfaceToolNames(input.surface, {
+      generatedToolNames: buildWebMcpToolDefinitions(input.manifest, {
+        kebabRoutes: input.kebabRoutes ?? false,
+      }).map((definition) => ({
+        name: definition.name,
+        declaredBy: `${definition.className}.${definition.action}`,
+      })),
+      ...(input.uiToolPrefixes ? { uiToolPrefixes: input.uiToolPrefixes } : {}),
+    })
+    .map(({ filePath, ...rest }) => ({ ...rest, sourceFile: filePath }));
+}
+
+/**
+ * Print every emitted intent whose WebMCP tool name something else also claims
+ * (#2725).
+ *
+ * "Also claims", not "is already taken", for the same reason `smrt doctor`'s
+ * header says so: a build cannot see the provider's WebMCP `namespace` or
+ * `effects` policy, either of which separates the pair outright. This line runs
+ * on every build and every watch rebuild, so it is the surface an author sees
+ * most; each message beneath states the condition, and the header must not
+ * assert past it.
+ *
+ * Separate from {@link reportAgentSurfaceDiagnostics} because it says
+ * something different: those declarations were EXCLUDED, these are emitted and
+ * merely at risk. Folding them into that header would tell an author their
+ * intent had been dropped when it had not.
+ */
+function reportAgentSurfaceToolNameCollisions(
+  diagnostics: readonly DomainKnowledgeAgentSurface['diagnostics'][number][],
+): void {
+  if (diagnostics.length === 0) return;
+  console.warn(
+    `[smrt] ⚠️  ${diagnostics.length} declared intent(s) derive a WebMCP tool name something else also claims:`,
+  );
+  for (const diagnostic of diagnostics) {
+    const where = diagnostic.line
+      ? `${diagnostic.sourceFile}:${diagnostic.line}`
+      : diagnostic.sourceFile;
+    console.warn(`  ${where} — ${diagnostic.message}`);
+  }
+}
+
+/**
+ * Order the emitted diagnostics the way the scanner's own merge does, so
+ * appending the manifest-derived collisions cannot make the artifact depend on
+ * when they were computed.
+ */
+function sortKnowledgeAgentSurfaceDiagnostics(
+  diagnostics: DomainKnowledgeAgentSurface['diagnostics'],
+): DomainKnowledgeAgentSurface['diagnostics'] {
+  const compare = (a: string, b: string): number =>
+    a < b ? -1 : a > b ? 1 : 0;
+  return [...diagnostics].sort(
+    (a, b) =>
+      compare(a.sourceFile, b.sourceFile) ||
+      (a.line ?? 0) - (b.line ?? 0) ||
+      (a.column ?? 0) - (b.column ?? 0) ||
+      compare(a.code, b.code) ||
+      compare(a.message, b.message),
+  );
+}
+
 async function importScanner() {
   return importWorkspaceModule<ScannerModule>({
     packageName: '@happyvertical/smrt-scanner',
@@ -1189,7 +1286,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
     try {
       // Import the OXC scanner package
-      const { OxcScanner, ManifestAdapter } = await importScanner();
+      const scannerModule = await importScanner();
+      const { OxcScanner, ManifestAdapter } = scannerModule;
 
       console.log(`[smrt] Using experimental OXC scanner for faster builds`);
 
@@ -1284,6 +1382,40 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         packageName,
         packageJson,
       });
+
+      // The declared surface and the generated one are only comparable once
+      // the manifest exists, which is why this runs here and not beside the
+      // scan (#2725). `buildWebMcpToolDefinitions` is the same function that
+      // emits `webMcpToolDefinitions` into the `smrt:web` virtual module, so
+      // the comparison is against the exposure-policy-filtered set that will
+      // really register — not against every verb a class could expose, which
+      // would invent collisions with tools nobody mounts.
+      if (agentSurface && results.agentSurface) {
+        try {
+          const collisions = collectAgentSurfaceToolNameCollisions({
+            surface: results.agentSurface,
+            manifest: newManifest,
+            checkAgentSurfaceToolNames:
+              scannerModule.checkAgentSurfaceToolNames,
+            kebabRoutes: svelteKit.kebabRoutes ?? false,
+          });
+          if (collisions.length > 0) {
+            reportAgentSurfaceToolNameCollisions(collisions);
+            agentSurface.diagnostics = sortKnowledgeAgentSurfaceDiagnostics([
+              ...agentSurface.diagnostics,
+              ...collisions,
+            ]);
+          }
+        } catch (error) {
+          // Advisory only. A manifest this cannot build definitions for fails
+          // loudly where they are actually emitted; losing a warning must
+          // never be the thing that breaks a build.
+          console.warn(
+            '[smrt] Skipped the agent-surface tool-name collision check:',
+            error,
+          );
+        }
+      }
 
       const elapsed = performance.now() - startTime;
 

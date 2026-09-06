@@ -147,6 +147,14 @@ A declaration the scanner recognized but could not read is listed under
 raises a doctor **warning**, not an issue — a computed tool set is a legitimate
 choice, but it must never vanish unremarked.
 
+An emitted intent whose derived tool name a generated model tool or fixed UI
+tool also claims (#2725) warns under a SEPARATE `⚠️  Tool name also claimed`:
+that declaration is present — counted in the total, printed under `Declared view
+intents` — so listing it as "not statically emittable" would contradict the
+lines above it. "Also claimed", not "already taken": a build cannot see the
+provider's WebMCP `namespace`, which dissolves a generated-tool collision, so
+the header must not assert past what each message states.
+
 Reading an artifact validates its shape, not just its JSON: `{}` parses cleanly
 and would otherwise render as a healthy zero-operation surface while suppressing
 the fallback to a good `dist/` artifact, and `{ "surfaces": {} }` would throw
