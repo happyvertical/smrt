@@ -1135,3 +1135,179 @@ describePostgres(
     }, 30_000);
   },
 );
+
+// A generated TEXT bridge preserves the exact source spelling. PostgreSQL's
+// UUID cast would normalize upper-case text, so an otherwise UUID-shaped but
+// noncanonical source must refuse the entire connected conversion component.
+describePostgres(
+  'db:migrate-uuid refuses noncanonical generated bridge sources atomically (real Postgres)',
+  () => {
+    const stem = `mu_noncanonical_${Math.random().toString(36).slice(2, 8)}`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const junction = `${stem}_junction`;
+    const bridgeIndex = `${parent}_bridge_uidx`;
+    const childParentFk = `${child}_parent_fkey`;
+    const junctionBridgeFk = `${junction}_bridge_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function snapshot(): Promise<Record<string, unknown>> {
+      const db = await freshDb();
+      const [data, columns, indexes, constraints] = await Promise.all([
+        db.query(
+          `SELECT 'parent' AS source, to_jsonb(parent) AS row FROM "${parent}" parent
+           UNION ALL SELECT 'child', to_jsonb(child) FROM "${child}" child
+           UNION ALL SELECT 'junction', to_jsonb(junction) FROM "${junction}" junction
+           ORDER BY source`,
+        ),
+        db.query(
+          `SELECT table_name, column_name, data_type, is_generated, generation_expression
+             FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name IN ($1, $2, $3)
+            ORDER BY table_name, ordinal_position`,
+          parent,
+          child,
+          junction,
+        ),
+        db.query(
+          `SELECT indexrelid::regclass::text AS name, pg_get_indexdef(indexrelid) AS definition
+             FROM pg_index WHERE indexrelid = $1::regclass`,
+          bridgeIndex,
+        ),
+        db.query(
+          `SELECT conname, convalidated, pg_get_constraintdef(oid) AS definition
+             FROM pg_constraint
+            WHERE conname IN ($1, $2)
+            ORDER BY conname`,
+          childParentFk,
+          junctionBridgeFk,
+        ),
+      ]);
+      return {
+        data: data.rows,
+        columns: columns.rows,
+        indexes: indexes.rows,
+        constraints: constraints.rows,
+      };
+    }
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(
+        `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+      );
+      await db.query(
+        `CREATE TABLE "${parent}" (
+           id text PRIMARY KEY,
+           _integrity_id_text text GENERATED ALWAYS AS ((id)::text) STORED
+         )`,
+      );
+      await db.query(
+        `CREATE UNIQUE INDEX "${bridgeIndex}" ON "${parent}" (_integrity_id_text)`,
+      );
+      await db.query(
+        `CREATE TABLE "${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${childParentFk}"
+             REFERENCES "${parent}"(id)
+         )`,
+      );
+      await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
+      await db.query(
+        `ALTER TABLE "${junction}" ADD CONSTRAINT "${junctionBridgeFk}"
+           FOREIGN KEY (parent_text) REFERENCES "${parent}"(_integrity_id_text)`,
+      );
+      // This remains UUID-shaped under PostgreSQL's case-insensitive cast and
+      // planning probe, but it cannot be normalized while TEXT consumers hold
+      // the original spelling through the generated bridge.
+      const noncanonicalId = 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA';
+      await db.query(
+        `INSERT INTO "${parent}" (id) VALUES ($1)`,
+        noncanonicalId,
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+        '22222222-2222-2222-2222-222222222222',
+        noncanonicalId,
+      );
+      await db.query(
+        `INSERT INTO "${junction}" (parent_text) VALUES ($1)`,
+        noncanonicalId,
+      );
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [parent]: {
+            tableName: parent,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${junction}", "${child}", "${parent}" CASCADE`,
+        );
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('reports refusal and leaves data, TEXT columns, bridge index, and both FKs untouched', async () => {
+      const before = await snapshot();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`Refusing ${parent}.id`),
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('canonical lower-case UUID text'),
+      );
+      errorSpy.mockRestore();
+      expect(await snapshot()).toEqual(before);
+    }, 30_000);
+  },
+);
