@@ -31,13 +31,13 @@
   },
   "dependencies": {
     "fast-glob": "3.3.3",
-    "minimatch": "10.2.5",
-    "oxc-parser": "^0.138.0",
-    "oxc-resolver": "^11.23.0"
+    "minimatch": "10.2.6",
+    "oxc-parser": "^0.148.0",
+    "oxc-resolver": "^11.24.2"
   },
   "devDependencies": {
-    "@types/node": "24.13.2",
-    "tsx": "^4.23.0",
+    "@types/node": "24.13.3",
+    "tsx": "^4.23.13",
     "vite": "8.1.4",
     "vitest": "4.1.10"
   },

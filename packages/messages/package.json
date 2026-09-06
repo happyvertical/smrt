@@ -85,7 +85,7 @@
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*",
-    "svelte": "^5.56.4"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/encryption": {
@@ -98,10 +98,10 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.3",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

@@ -5,15 +5,15 @@
 [versions]
 android-compile-sdk = "36"
 android-min-sdk = "26"
-agp = "9.2.1"
-kotlin = "2.4.0"
-kotlinx-coroutines = "1.10.2"
+agp = "9.4.0"
+kotlin = "2.4.10"
+kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0-0.6.x-compat"
 kotlinx-serialization = "1.11.0"
 # 3.2.0 cannot be dexed into Android apps (a `use streaming syntax` field
 # name breaks D8 below DEX 040 — fixed upstream); keep ≥3.3.
-ktor = "3.5.1"
-sqldelight = "2.1.0"
+ktor = "3.5.2"
+sqldelight = "2.3.2"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }

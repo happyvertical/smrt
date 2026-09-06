@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.4",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
     "node": ">=24.18.0",
-    "pnpm": "10.34.4"
+    "pnpm": "11.11.0"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
@@ -29,14 +29,14 @@
     "worker:schedule": "node scripts/smrt-worker.mjs schedule"
   },
   "devDependencies": {
-    "@sveltejs/adapter-node": "^5.5.4",
-    "@sveltejs/kit": "^2.69.2",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@types/node": "^24.13.3",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.2",
-    "typescript": "^6.0.3",
-    "vite": "^8.1.4",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.2.2",
     "@happyvertical/smrt-cli": "^0.45.3"
   },
   "dependencies": {
@@ -50,7 +50,7 @@
     "@happyvertical/smrt-ui": "^0.45.3",
     "@happyvertical/smrt-users": "^0.45.3",
     "@happyvertical/smrt-web": "^0.45.3",
-    "@happyvertical/sql": "^0.89.4",
+    "@happyvertical/sql": "^0.89.6",
     "@modelcontextprotocol/server": "^2.0.0"
   }
 }

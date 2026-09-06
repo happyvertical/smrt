@@ -61,7 +61,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -88,13 +88,13 @@
     "@happyvertical/sql": "catalog:",
     "@sentry/node": "catalog:",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "24.13.2",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "24.13.3",
     "fast-glob": "3.3.3",
-    "svelte-check": "^4.7.1",
-    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.6",
+    "svelte": "^5.57.0",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

@@ -154,13 +154,13 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@oxc-project/runtime": "^0.138.0",
+    "@oxc-project/runtime": "^0.148.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",
-    "minimatch": "10.2.5",
-    "oxc-transform": "0.138.0",
+    "minimatch": "10.2.6",
+    "oxc-transform": "0.148.0",
     "pluralize": "^8.0.0",
-    "tsx": "^4.23.0",
+    "tsx": "^4.23.13",
     "yaml": "^2.9.0"
   },
   "scripts": {
@@ -181,7 +181,7 @@
     "prepack": "node scripts/prepack.js"
   },
   "peerDependencies": {
-    "@huggingface/transformers": ">=3.0.0 <4.0.0",
+    "@huggingface/transformers": ">=3.0.0 <5.0.0",
     "@xenova/transformers": "^2.17.2"
   },
   "peerDependenciesMeta": {
@@ -193,17 +193,17 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.5.0",
-    "@huggingface/transformers": "^3.8.1",
-    "@sveltejs/kit": "^2.69.1",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
+    "@faker-js/faker": "^10.6.0",
+    "@huggingface/transformers": "^4.2.0",
+    "@sveltejs/kit": "2.69.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.3",
     "@types/pluralize": "^0.0.33",
     "@xenova/transformers": "^2.17.2",
-    "svelte": "^5.56.4",
+    "svelte": "^5.57.0",
     "typescript": "5.9.3",
     "vite": "8.1.4",
-    "vite-plugin-dts": "4.5.4",
+    "vite-plugin-dts": "5.1.0",
     "vitest": "4.1.10"
   },
   "publishConfig": {

@@ -41,7 +41,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -60,11 +60,11 @@
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@testing-library/svelte": "^5.4.2",
-    "@types/node": "24.13.2",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.1",
+    "@types/node": "24.13.3",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"
