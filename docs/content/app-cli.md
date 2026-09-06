@@ -12,14 +12,15 @@ invokes them as Bearer-authed REST calls. It has no dependency on a build
 step, a local database, or the application's source — it is a thin client
 that could run on a laptop that has never seen the app's repository.
 
-> **Three different "CLI"s.** SMRT's docs and source use "CLI" for three
-> distinct things. Keep them apart:
+> **Two live "CLI"s.** SMRT's docs and source used to describe three; a
+> third — `CLIGenerator` (`@happyvertical/smrt-core/generators`), an
+> in-process, per-object admin CLI builder with zero consumers — was retired
+> (#2664). Keep the remaining two apart:
 >
 > | Package | What it is | Who runs it |
 > | --- | --- | --- |
 > | [`@happyvertical/smrt-cli`](https://github.com/happyvertical/smrt/tree/main/packages/cli) (`smrt`) | Framework developer/ops commands (`db:migrate`, `db:diff`, `init`, `export`, `doctor`) **and** a live, in-process `smrt <object>:<action>` admin CLI, auto-discovered from the manifest — e.g. `smrt product:list` | Framework contributors and app maintainers, on a machine with direct database access |
 > | `@happyvertical/smrt-app-cli` (this page) | The branded CLI an application ships to its own users — `<app> <resource> <command>` | End users and operators of a deployed app, over HTTP, with no database access |
-> | `CLIGenerator` (`@happyvertical/smrt-core/generators`) | An in-process, per-object admin CLI builder — a different implementation of the same idea as `smrt-cli`'s object commands | Nothing in the SMRT ecosystem currently consumes it — see [Code Generation](./core.md#code-generation) in the core guide |
 
 `smrt-cli`'s object commands and `smrt-app-cli` are both live, correctly used
 transports for the same underlying idea (run a command against a `@smrt()`

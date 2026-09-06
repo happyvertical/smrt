@@ -16,10 +16,6 @@ import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
-import {
-  CRUD_OPERATIONS,
-  resolveCustomActionNames,
-} from '../generators/custom-action.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
@@ -185,7 +181,6 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-types': 'smrt:types',
   '@happyvertical/smrt-virt-manifest': 'smrt:manifest',
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
-  '@happyvertical/smrt-virt-cli': 'smrt:cli',
   '@happyvertical/smrt-virt-web': 'smrt:web',
 };
 
@@ -1043,10 +1038,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         case 'smrt:index-html':
           // Virtual index.html for projects without one
           return await loadDefaultHTML();
-
-        case 'smrt:cli':
-          // CLI module for command-line interface generation
-          return await generateCLIModule(manifest);
 
         case 'smrt:web':
           // Web collection definitions for the browser client data runtime
@@ -2078,44 +2069,7 @@ ${webCollectionInterface}
   export const manifestHash: string;
   export default collectionDefinitions;
 }
-
-// CLI module - Auto-generated command-line interface
-declare module '@happyvertical/smrt-virt-cli' {
-  export interface CLIConfig {
-    name?: string;
-    version?: string;
-    description?: string;
-    prompt?: boolean;
-    colors?: boolean;
-  }
-
-  export interface CLIContext {
-    db?: any;
-    ai?: any;
-    user?: {
-      id: string;
-      roles?: string[];
-    };
-  }
-
-  export interface CLICommandMap {
-    [objectName: string]: {
-      collection: string;
-      commands: string[];
-    };
-  }
-
-  export const cliCommands: CLICommandMap;
-
-  export function setupCLI(config?: CLIConfig, context?: CLIContext): {
-    run: (argv: string[]) => Promise<void>;
-    generator: any;
-  };
-
-  export function getCLIHandler(config?: CLIConfig, context?: CLIContext): (argv: string[]) => Promise<void>;
-
-  export default setupCLI;
-}`;
+`;
 
     // Write the declarations file
     writeFileSync(declarationsFile, typeDeclarations);
@@ -2330,184 +2284,4 @@ async function loadDefaultHTML(): Promise<string> {
  */
 async function loadDefaultUI(): Promise<string> {
   return getDefaultUIModule();
-}
-
-/**
- * Generate virtual CLI module
- */
-async function generateCLIModule(
-  manifest: SmartObjectManifest,
-): Promise<string> {
-  try {
-    // Import CLI types
-    const commands: string[] = [];
-    const objectImports: string[] = [];
-
-    // Generate CLI setup code for each object
-    for (const [className, objectDef] of Object.entries(manifest.objects)) {
-      const config = objectDef.decoratorConfig;
-      const cliConfig = config?.cli;
-
-      // Skip if CLI is disabled
-      if (cliConfig === false) continue;
-
-      // Determine which operations to include
-      const excluded =
-        (typeof cliConfig === 'object' && cliConfig !== null
-          ? cliConfig.exclude
-          : []) || [];
-      const included =
-        typeof cliConfig === 'object' && cliConfig !== null
-          ? cliConfig.include
-          : null;
-
-      const shouldInclude = (command: string) => {
-        if (included && !included.includes(command)) return false;
-        if (excluded.includes(command)) return false;
-        return true;
-      };
-
-      // Collection name (metadata) and the command segment. Commands are keyed
-      // by the simple class name (e.g. `document:list`) to match what
-      // `CLIGenerator` resolves and the dev `smrt` CLI convention — NOT the
-      // plural collection name, which the runtime resolver does not accept.
-      const collectionName = objectDef.collection;
-      const simpleClassName = objectDef.className || className;
-      const commandName = simpleClassName.toLowerCase();
-
-      // Generate import statement for the object class. Comment on the simple
-      // class name: manifest keys are qualified (`<package>:<Class>`) and
-      // collection classes already end in `Collection`.
-      objectImports.push(`// Import ${simpleClassName} for CLI operations`);
-
-      // Generate command registration
-      const availableCommands: string[] = [];
-
-      // Standard CRUD commands
-      if (shouldInclude('list'))
-        availableCommands.push(`'${commandName}:list'`);
-      if (shouldInclude('get')) availableCommands.push(`'${commandName}:get'`);
-      if (shouldInclude('create'))
-        availableCommands.push(`'${commandName}:create'`);
-      if (shouldInclude('update'))
-        availableCommands.push(`'${commandName}:update'`);
-      if (shouldInclude('delete'))
-        availableCommands.push(`'${commandName}:delete'`);
-
-      // Custom action methods. Resolved through the same shared rule
-      // CLIGenerator.listCommands() and the cli↔api coherence lint use
-      // (packages/core/src/generators/custom-action.ts, #2638) so this
-      // generated static metadata can never advertise a command that the
-      // real CLIGenerator refuses to invoke -- framework lifecycle methods
-      // (save, initialize, getSlug, ...) included, not just `save`.
-      //
-      // The pre-#2638 loop this replaced also skipped a leading `_` by
-      // naming convention (scanned manifest methods have no reliable
-      // private/protected signal of their own -- the scanner records
-      // `isPublic: true` unconditionally, see manifest-adapter.ts -- so
-      // `_`-prefix is the only signal generateCLIModule ever had). Keep
-      // that filter here explicitly: resolveCustomActionNames() only gates
-      // on the manifest's (unreliable) isPublic flag, so dropping this
-      // would newly advertise internal-by-convention methods such as
-      // SmrtObject._setLoadedRelationship (final review, #2638).
-      for (const methodName of resolveCustomActionNames(
-        Object.entries(objectDef.methods),
-        { include: included ?? undefined, exclude: excluded },
-        CRUD_OPERATIONS,
-      )) {
-        if (methodName.startsWith('_')) continue;
-        if (shouldInclude(methodName)) {
-          availableCommands.push(`'${commandName}:${methodName}'`);
-        }
-      }
-
-      if (availableCommands.length > 0) {
-        // Key by the simple class name, quoted: the manifest key is the
-        // qualified name (`my-app:Item`, `@scope/pkg:Item`), which is not a
-        // valid bare object key (#2631).
-        commands.push(`
-  // ${simpleClassName} commands
-  ${JSON.stringify(simpleClassName)}: {
-    collection: ${JSON.stringify(collectionName)},
-    commands: [${availableCommands.join(', ')}]
-  }`);
-      }
-    }
-
-    return `
-// Auto-generated CLI module from SMRT objects
-// This file is generated automatically - do not edit
-
-import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
-
-/**
- * @typedef {import('@happyvertical/smrt-core/generators/cli').CLIConfig} CLIConfig
- * @typedef {import('@happyvertical/smrt-core/generators/cli').CLIContext} CLIContext
- */
-
-${objectImports.join('\n')}
-
-/**
- * Available CLI commands by object
- */
-export const cliCommands = {${commands.join(',\n')}
-};
-
-/**
- * Setup CLI with auto-generated commands
- *
- * @param {CLIConfig} [config={}] - CLI configuration
- * @param {CLIContext} [context={}] - CLI context
- * @returns {{run: function(string[]): Promise<void>, generator: *}}
- *
- * @example
- * import { setupCLI } from '@happyvertical/smrt-virt-cli';
- *
- * const cli = setupCLI({
- *   name: 'my-app',
- *   version: '1.0.0'
- * });
- *
- * cli.run(process.argv);
- */
-export function setupCLI(config = {}, context = {}) {
-  const generator = new CLIGenerator(config, context);
-  return {
-    run: async (argv) => {
-      const handler = generator.generateHandler();
-      await handler(argv.slice(2)); // Remove 'node' and script name
-    },
-    generator
-  };
-}
-
-/**
- * Get CLI handler directly
- *
- * @param {CLIConfig} [config={}] - CLI configuration
- * @param {CLIContext} [context={}] - CLI context
- * @returns {function(string[]): Promise<void>}
- */
-export function getCLIHandler(config = {}, context = {}) {
-  const generator = new CLIGenerator(config, context);
-  return generator.generateHandler();
-}
-
-export default setupCLI;
-`;
-  } catch (error) {
-    console.warn('[smrt] Error generating CLI module:', error);
-    return `
-// Error generating CLI module
-export const cliCommands = {};
-export function setupCLI() {
-  console.warn("CLI generation failed");
-  return { run: async () => {} };
-}
-export function getCLIHandler() {
-  return async () => console.warn("CLI generation failed");
-}
-export default setupCLI;
-`;
-  }
 }

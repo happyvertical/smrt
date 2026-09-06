@@ -92,7 +92,8 @@ export {
   tenantId,
 } from './decorators.js';
 // ─────────────────────────────────────────────────────────────────────────────
-// Fail-closed entry-point gate for generated CLI/MCP surfaces (#1554)
+// Fail-closed entry-point gate for generated in-process surfaces (MCP today
+// -- core's CLIGenerator was retired, #2664; see entry-point.ts) (#1554)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   runTenantScopedEntryPoint,

@@ -3,15 +3,23 @@
  *
  * The SvelteKit/Express adapters establish tenant context from the authenticated
  * request principal, so the web surface of a `@TenantScoped({ mode: 'optional' })`
- * model never reads across tenants without an active context. The generated
- * **CLI** and **MCP** entry points have no request principal, so an invocation
- * with no active context would fall through the interceptor's optional-mode
+ * model never reads across tenants without an active context. A generated
+ * in-process entry point has no request principal, so an invocation with no
+ * active context would fall through the interceptor's optional-mode
  * pass-through and return rows across **all** tenants.
  *
- * `runTenantScopedEntryPoint()` closes that gap. It is the single fail-closed
- * gate both generated surfaces wrap their per-command/per-tool execution in.
+ * `runTenantScopedEntryPoint()` closes that gap. `@happyvertical/smrt-core`'s
+ * `MCPGenerator` is the only in-repo generated surface that wraps its
+ * per-tool execution in this gate today (via `setTenantEntryPointRunner`
+ * below). Core's `CLIGenerator`, which used to wrap its per-command execution
+ * in the same gate, was retired as unused public API (#2664); the live local
+ * CLI transport (`packages/cli/src/cli-generator.ts`, the shipped `smrt
+ * <object>:<action>` binary) has never called this gate and is not
+ * tenant-isolation fail-closed today.
  *
- * @see createCliContext for the richer CLI runner (resolveTenantId, super-admin).
+ * @see createCliContext for a hand-wired CLI runner (resolveTenantId,
+ *   super-admin) a consuming application can use directly — independent of
+ *   the generated-surface gate above and unaffected by #2664.
  */
 
 import {
@@ -72,9 +80,9 @@ export interface TenantEntryPointOptions {
 }
 
 /**
- * Run `fn` inside an appropriate tenant context for a generated CLI/MCP entry
- * point, failing closed for tenant-scoped models when no authorized context can
- * be established.
+ * Run `fn` inside an appropriate tenant context for a generated in-process
+ * entry point (MCP today, see the module docblock above), failing closed for
+ * tenant-scoped models when no authorized context can be established.
  *
  * Resolution order (tenant-scoped models only):
  * 1. A tenant context is already active, or an explicit `withSystemContext()`

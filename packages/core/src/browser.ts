@@ -6,7 +6,8 @@
  * builds, federation, and client-side applications.
  *
  * Excluded:
- * - Code generators (CLIGenerator, APIGenerator, MCPGenerator)
+ * - Code generators (APIGenerator, MCPGenerator; the local CLI transport
+ *   lives outside core in packages/cli/src/cli-generator.ts)
  * - Runtime manifest utilities (Node.js-only)
  * - Prebuild utilities (Node.js-only)
  *

@@ -4,18 +4,19 @@
  * These helpers exist so that "the generated surface is identical under every
  * runtime profile" can be asserted as a byte-for-byte comparison instead of a
  * pile of per-field expectations. They read only PUBLIC generator output —
- * the real Vite plugin's emitted SvelteKit routes, `CLIGenerator`,
- * `MCPGenerator`, `generateOpenAPISpec()`, and `buildWebMcpToolDefinitions()`.
+ * the real Vite plugin's emitted SvelteKit routes, `MCPGenerator`,
+ * `generateOpenAPISpec()`, and `buildWebMcpToolDefinitions()`.
  * Nothing here reaches into registry or database private fields, and nothing
  * here re-implements a generator: a divergence in generated output has to
  * show up as a divergence in the canonical snapshot.
  *
- * The CLI inventory is read out of the plugin's own emitted
- * `@happyvertical/smrt-virt-cli` module TEXT rather than by importing it.
- * The module is valid JavaScript again as of #2631, but importing it would
- * need its bare workspace specifiers resolved; extracting the emitted command
- * literals still compares the real generated artifact, while re-deriving the
- * command set in test code would not.
+ * There is no CLI inventory leg here: it used to read the plugin's emitted
+ * `@happyvertical/smrt-virt-cli` module TEXT, which #2664 retired along with
+ * core's `CLIGenerator` (unused public API, zero importers). The `cli` key in
+ * each domain tool's `exposure` map is unaffected — it still reflects the
+ * `@smrt()` decorator's `cli` config, which the live local transport
+ * (`packages/cli/src/cli-generator.ts`) reads directly, independent of the
+ * removed virtual module.
  * MCP is captured twice on purpose. `mcpToolNames` comes from the plugin's
  * per-copy emitted `smrt:mcp` module, so it is derived from THAT profile's
  * generation pass and would catch a copied-app divergence. `mcpToolSchemas`
@@ -136,7 +137,6 @@ export interface RuntimeProfileSurfaces {
   };
   readonly rest: readonly CanonicalRestRoute[];
   readonly openApiOperations: readonly string[];
-  readonly cliCommands: readonly string[];
   /** Per-copy MCP tool names, from this profile's emitted `smrt:mcp` module. */
   readonly mcpToolNames: readonly string[];
   /** Full MCP tool schemas from `MCPGenerator` (registry-scoped). */
@@ -241,8 +241,6 @@ function transportIncludes(
  */
 interface GenerationPass {
   readonly manifest: SmartObjectManifest;
-  /** Raw emitted `@happyvertical/smrt-virt-cli` module source. */
-  readonly cliModule: string;
   /** Raw emitted `@happyvertical/smrt-virt-mcp` module source. */
   readonly mcpModule: string;
 }
@@ -274,7 +272,6 @@ async function runGenerationPass(appRoot: string): Promise<GenerationPass> {
     manifest: JSON.parse(
       readFileSync(join(appRoot, '.smrt', 'manifest.json'), 'utf8'),
     ) as SmartObjectManifest,
-    cliModule: await plugin.load('\0smrt:cli'),
     mcpModule: await plugin.load('\0smrt:mcp'),
   };
 }
@@ -301,23 +298,6 @@ function extractMcpToolNames(mcpModule: string): string[] {
 }
 
 /**
- * Extract the generated CLI command inventory from the emitted module text.
- *
- * The emitter writes one `commands: ['x:list', …]` array per exposed class.
- * Reading the literals back is a faithful view of what was generated, and it
- * survives the module being unparseable (#2631).
- */
-function extractCliCommands(cliModule: string): string[] {
-  const commands = new Set<string>();
-  for (const block of cliModule.matchAll(/commands:\s*\[([^\]]*)\]/g)) {
-    for (const literal of (block[1] ?? '').matchAll(/'([^']+)'/g)) {
-      commands.add(literal[1] as string);
-    }
-  }
-  return [...commands].sort();
-}
-
-/**
  * Copy the reference application, select `profile`, and capture every
  * generated surface it emits.
  *
@@ -334,9 +314,7 @@ export async function captureRuntimeProfileSurfaces(
   try {
     const resolved = resolveApplicationRuntime({ profile });
     const fixture = copyRuntimeProfileReference(appRoot);
-    const { manifest, cliModule, mcpModule } = await runGenerationPass(
-      fixture.root,
-    );
+    const { manifest, mcpModule } = await runGenerationPass(fixture.root);
 
     const domainClasses = domainClassNames(manifest);
     const domainPrefixes = new Set(
@@ -362,10 +340,6 @@ export async function captureRuntimeProfileSurfaces(
           operation.includes(`/${prefix}s`),
         ),
       )
-      .sort();
-
-    const cliCommands = extractCliCommands(cliModule)
-      .filter((command) => domainPrefixes.has(command.split(':')[0] ?? ''))
       .sort();
 
     const mcpToolNames = extractMcpToolNames(mcpModule).filter((name) =>
@@ -445,7 +419,6 @@ export async function captureRuntimeProfileSurfaces(
       },
       rest,
       openApiOperations,
-      cliCommands,
       mcpToolNames,
       mcpToolSchemas,
       webMcpTools: webMcpDefinitions,
@@ -489,7 +462,6 @@ export function canonicalizeRuntimeProfileSurfaces(
         (entry) => entry.route !== OPERATIONAL_DIAGNOSTIC_ROUTE,
       ),
       openApiOperations: surfaces.openApiOperations,
-      cliCommands: surfaces.cliCommands,
       mcpToolNames: surfaces.mcpToolNames,
       mcpToolSchemas: surfaces.mcpToolSchemas,
       webMcpTools: surfaces.webMcpTools,

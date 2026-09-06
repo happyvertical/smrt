@@ -400,11 +400,6 @@ export function getWorkspaceViteAliases(
       );
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-core/generators/cli',
-        join(packageRoot, 'src/generators/cli.ts'),
-      );
-      addAliasIfPresent(
-        aliases,
         '@happyvertical/smrt-core/generators/mcp',
         join(packageRoot, 'src/generators/mcp.ts'),
       );

@@ -7,10 +7,14 @@ import { CRUD_OPERATIONS } from './custom-action.js';
 /**
  * #2665: four vite-plugin emitters each carried their own copy of the
  * standard CRUD verb list (`STANDARD_API_ACTIONS` / `STANDARD_API_ACTION_SET`
- * / inline literals). Three of them (`sveltekit-generator.ts`,
- * `api-client-entries.ts`, `index.ts`) now import {@link CRUD_OPERATIONS} (or
- * the `isCrudOperation()` collision test built on it) from
- * `generators/custom-action.ts` instead.
+ * / inline literals). Two of them (`sveltekit-generator.ts`,
+ * `api-client-entries.ts`) now import {@link CRUD_OPERATIONS} (or the
+ * `isCrudOperation()` collision test built on it) from
+ * `generators/custom-action.ts` instead. `index.ts`'s copy backed
+ * `generateCLIModule()`'s command-list emission, which #2664 retired along
+ * with the rest of the unused `@happyvertical/smrt-virt-cli` virtual module
+ * -- `index.ts` no longer needs the shared vocabulary at all, so it is no
+ * longer one of the importing sites this spec checks.
  *
  * `vite-plugin/templates/default-ui.ts` deliberately keeps a local literal:
  * `src/vite-plugin/templates/**` is excluded from both tsconfigs and the
@@ -41,7 +45,6 @@ describe('CRUD verb list consolidation (#2665)', () => {
   const importingSites = [
     'vite-plugin/sveltekit-generator.ts',
     'vite-plugin/api-client-entries.ts',
-    'vite-plugin/index.ts',
   ];
 
   for (const relativePath of importingSites) {
