@@ -804,13 +804,40 @@ export class APIGenerator {
   ): Array<[string, MethodDefinition | undefined]> {
     const methods = ObjectRegistry.getMethods(objectName);
     const names = new Set<string>(Object.keys(apiConfig.routes ?? {}));
-    for (const [name, methodDef] of methods ?? []) {
+    // `listDecoratedMethodNames` reads the manifest AND the live decorator
+    // store, so a decorator-declared route survives in an unscanned project
+    // where `getMethods()` is empty (#2686).
+    for (const name of ObjectRegistry.listDecoratedMethodNames(objectName)) {
       // The SHAPE predicate, not the routable one: a withheld declaration must
       // stay a candidate so the loop can refuse it with a 404 instead of
       // letting the segment fall through into `create`.
-      if (declaresRuntimeRestRouteShape(methodDef)) names.add(name);
+      if (declaresRuntimeRestRouteShape(this.runtimeMethod(objectName, name))) {
+        names.add(name);
+      }
     }
     return [...names].map((name) => [name, methods?.get(name)]);
+  }
+
+  /**
+   * The method view a RUNTIME transport should read for one action: the
+   * manifest entry when the project was scanned, with its `@method()` config
+   * backfilled from the live decorator store when it is not.
+   */
+  private runtimeMethod(
+    objectName: string,
+    methodName: string,
+  ):
+    | MethodDefinition
+    | { decoratorConfig: Record<string, unknown> }
+    | undefined {
+    const methodDef = ObjectRegistry.getMethods(objectName)?.get(methodName);
+    if (methodDef?.decoratorConfig) return methodDef;
+    const decoratorConfig = ObjectRegistry.resolveRuntimeMethodDecoratorConfig(
+      objectName,
+      methodName,
+    );
+    if (!decoratorConfig) return methodDef;
+    return methodDef ? { ...methodDef, decoratorConfig } : { decoratorConfig };
   }
 
   private async dispatchCustomCollectionAction(
@@ -834,9 +861,13 @@ export class APIGenerator {
     }
 
     for (const [actionName, methodDef] of declaredActions) {
+      // One view of the method for the whole loop: manifest metadata where the
+      // project was scanned, `@method()` config from the live decorator store
+      // where it was not.
+      const declaredMethod = this.runtimeMethod(objectName, actionName);
       const effective = resolveEffectiveActionMetadata({
         actionName,
-        ...(methodDef ? { method: methodDef } : {}),
+        ...(declaredMethod ? { method: declaredMethod } : {}),
         apiConfig,
       });
       const routePath = effective.path || actionName;
@@ -863,7 +894,7 @@ export class APIGenerator {
       // row insert. Same no-degradation rule as the 501 branch below, and the
       // same 404 the generated SvelteKit surface returns for a route it never
       // wrote (#2686).
-      if (readMethodDecoratorConfig(methodDef)?.expose === false) {
+      if (readMethodDecoratorConfig(declaredMethod)?.expose === false) {
         return this.createErrorResponse(
           404,
           `Custom action '${actionName}' is not exposed`,
@@ -898,7 +929,7 @@ export class APIGenerator {
       const metadata = resolveCustomActionMetadata({
         actionName,
         apiConfig,
-        ...(methodDef ? { method: methodDef } : {}),
+        ...(declaredMethod ? { method: declaredMethod } : {}),
         // A collection instance method is collection-hosted even when it is
         // not static; a static on the item class already defaults the same
         // way. Either receiver makes this route collection-targeted.

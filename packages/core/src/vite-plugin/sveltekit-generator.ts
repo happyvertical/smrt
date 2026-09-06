@@ -25,6 +25,7 @@ import {
   resolveCustomActionNames,
   resolveDeclaredScopeMismatch,
   resolveEffectiveActionMetadata,
+  type WireabilityOptions,
 } from '../generators/custom-action.js';
 import {
   buildDefaultListOrderBy,
@@ -2266,12 +2267,14 @@ export function resolveApiCustomActions(
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest | undefined,
   objectIsCollectionClass: boolean,
+  wireability: WireabilityOptions = {},
 ): {
   exposed: Array<[string, MethodDefinition]>;
   rejected: Array<[string, ApiMethodExposure]>;
 } {
   const apiConfig = objectDef.decoratorConfig?.api;
-  const isModelClassName = createManifestClassNamePredicate(manifest);
+  const isModelClassName =
+    wireability.isModelClassName ?? createManifestClassNamePredicate(manifest);
   const exposed: Array<[string, MethodDefinition]> = [];
   const rejected: Array<[string, ApiMethodExposure]> = [];
 
@@ -2363,14 +2366,19 @@ function warnDeclaredScopeMismatch(
  * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
  * can ask "what does the API expose?" without re-implementing the logic.
  *
- * `manifest` stays optional for backwards compatibility, but pass it: without
- * it the wire-ability heuristic cannot tell a model class from an options
- * interface and therefore accepts both (see
- * `WireabilityOptions.isModelClassName`). Every in-repo caller passes it.
+ * Pass a class inventory: without one the wire-ability heuristic cannot tell a
+ * model class from an options interface and therefore accepts both, so the
+ * caller silently disagrees with the emitters on the LARGEST group of withheld
+ * methods (see `WireabilityOptions.isModelClassName`). Supply either
+ * `manifest`, or `wireability.isModelClassName` when the caller's inventory is
+ * the live registry rather than a manifest — `@happyvertical/smrt-users`' CLI
+ * resource listing is the second kind. Both stay optional only because this is
+ * public API.
  */
 export function resolveApiActionSet(
   objectDef: SmartObjectDefinition,
   manifest?: SmartObjectManifest,
+  wireability: WireabilityOptions = {},
 ): Set<string> {
   const apiConfig = objectDef.decoratorConfig?.api;
   if (apiConfig === false) return new Set();
@@ -2386,6 +2394,7 @@ export function resolveApiActionSet(
     objectDef,
     manifest,
     objectIsCollectionClass,
+    wireability,
   ).exposed) {
     actions.add(name);
   }

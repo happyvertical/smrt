@@ -30,6 +30,7 @@ export {
   classifyMethodWireability,
   classifyParameterWireability,
   coerceCustomActionArgument,
+  createClassNamePredicate,
   createManifestClassNamePredicate,
   customActionParameterInputName,
   declaredTypeAcceptsDate,
@@ -54,6 +55,7 @@ export {
   toCustomActionDate,
   type WireabilityOptions,
   type WireabilityVerdict,
+  type WireableParameter,
 } from './custom-action';
 // Live `_events` SSE route (#1763). The generated SvelteKit route imports
 // `buildChangeEventStream` from the package root, so the stream lifecycle is

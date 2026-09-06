@@ -725,11 +725,28 @@ export interface MethodDecoratorConfig {
   description?: string;
 }
 
+/**
+ * The only parameter facts the wire-ability test reads.
+ *
+ * Deliberately looser than the manifest's `MethodParameterDefinition`: callers
+ * outside the vite plugin hold their own structural view of a registered
+ * method (`@happyvertical/smrt-users`' `MethodLike`, for one) and must be able
+ * to ask this question without first widening their type to the manifest's.
+ */
+export interface WireableParameter {
+  name: string;
+  type?: string | undefined;
+  /** See `MethodParameterDefinition.typeUnresolved`. */
+  typeUnresolved?: boolean | undefined;
+  /** See `MethodParameterDefinition.memberTypes`. */
+  memberTypes?: readonly string[] | undefined;
+}
+
 /** Minimal method shape the exposure resolver reads. */
 export interface ExposableMethod {
   isPublic?: boolean;
   isStatic?: boolean;
-  parameters?: MethodDefinition['parameters'];
+  parameters?: readonly WireableParameter[] | undefined;
   decoratorConfig?: Record<string, unknown>;
 }
 
@@ -878,12 +895,14 @@ export interface WireabilityOptions {
    * collection, or junction. Such a parameter wants a live instance with
    * methods and a database binding; JSON cannot produce one.
    *
-   * OPTIONAL, and its absence is a documented widening: without a manifest
-   * (`resolveApiActionSet(objectDef)` with no second argument) the test cannot
-   * distinguish `Asset` from `AssetOptions`, so it accepts both. Every
-   * in-repo caller passes a manifest; the parameter stays optional only
-   * because `resolveApiActionSet`'s manifest argument is public API and
-   * optional there.
+   * OPTIONAL, and its absence is a documented widening: without a class
+   * inventory the test cannot distinguish `Asset` from `AssetOptions`, so it
+   * accepts both — and because every OTHER rejection still applies, the caller
+   * then disagrees with the emitters on exactly the largest group of withheld
+   * methods. Build it with {@link createManifestClassNamePredicate} from a
+   * manifest, or {@link createClassNamePredicate} from a live registry's class
+   * names. The parameter stays optional only because `resolveApiActionSet`'s
+   * arguments are public API and optional there.
    */
   isModelClassName?: (name: string) => boolean;
 }
@@ -1037,7 +1056,24 @@ export function createManifestClassNamePredicate(
     names = collected;
     manifestClassNameCache.set(manifest, names);
   }
-  const resolved = names;
+  return createClassNamePredicate(names);
+}
+
+/**
+ * The same predicate from a bare name list, for a caller whose class inventory
+ * is the live `ObjectRegistry` rather than a manifest — notably
+ * `@happyvertical/smrt-users`' CLI resource listing, which iterates
+ * `ObjectRegistry.getAllClasses()` and has no manifest to hand.
+ *
+ * Exported so that caller does not grow its own copy: without a predicate the
+ * gate half-applies (every rejection EXCEPT model instances), which is worse
+ * than either extreme because the consumer then disagrees with the emitters on
+ * exactly the largest group of withheld methods.
+ */
+export function createClassNamePredicate(
+  names: Iterable<string>,
+): (name: string) => boolean {
+  const resolved = names instanceof Set ? names : new Set(names);
   return (name: string) => resolved.has(name);
 }
 
@@ -1075,7 +1111,7 @@ function splitTopLevel(source: string, delimiter: ',' | '|'): string[] {
  * query string.
  */
 export function classifyParameterWireability(
-  parameter: MethodDefinition['parameters'][number],
+  parameter: WireableParameter,
   options: WireabilityOptions = {},
 ): WireabilityVerdict {
   // A rest parameter has no stable name in a body (`options['...args']`), so
@@ -1340,7 +1376,16 @@ function resolveActionReceiver(
   try {
     scope = resolveCustomActionMetadata({
       actionName,
-      method,
+      // Only `isStatic` and `decoratorConfig` decide the receiver; the
+      // parameter list is irrelevant here, and forwarding this module's looser
+      // `WireableParameter[]` view into the manifest-shaped option would force
+      // every caller to widen its own method type for no benefit.
+      method: {
+        ...(method.isStatic !== undefined ? { isStatic: method.isStatic } : {}),
+        ...(method.decoratorConfig
+          ? { decoratorConfig: method.decoratorConfig }
+          : {}),
+      },
       apiConfig,
       defaultScope,
     }).scope;

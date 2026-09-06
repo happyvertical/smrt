@@ -72,7 +72,12 @@ and repository rules.
   `POST /<collection>/<segment>` resolves to `create` when nothing claims the
   segment. Split unions and type arguments with `splitTopLevel()` — a naive
   `split('|')` truncates `Record<string, Asset | null>` into fragments that
-  match no rule and are then accepted, widening the gate.
+  match no rule and are then accepted, widening the gate. Runtime transports
+  read `ObjectRegistry.resolveRuntimeMethodDecoratorConfig()` /
+  `listDecoratedMethodNames()`, which fall back to the live `@method()` store
+  for an unscanned project where `getMethods()` is empty. The one consumer NOT
+  migrated is `packages/smrt-workbench/src/discovery.ts`, which has no
+  dependency on this package (#2709).
 
 ## Gotchas
 

@@ -204,12 +204,25 @@ export function restMethodForApiAction(
   return (effective.httpMethod ?? 'POST').toUpperCase();
 }
 
-/** The manifest method definition backing `action`, when the registry has it. */
+/**
+ * The method view backing `action`: the manifest entry when the registry has
+ * one, with its `@method()` config backfilled from the live decorator store
+ * when it does not — the unscanned-runtime posture, where reading only the
+ * manifest would silently ignore `@method({ expose: false })` (#2686). Mirrors
+ * `APIGenerator.runtimeMethod`, which decides the dispatch this predicts.
+ */
 function readRegisteredMethod(
   objectName: string,
   action: string,
-): MethodDefinition | undefined {
-  return ObjectRegistry.getMethods(objectName)?.get(action);
+): MethodDefinition | { decoratorConfig: Record<string, unknown> } | undefined {
+  const methodDef = ObjectRegistry.getMethods(objectName)?.get(action);
+  if (methodDef?.decoratorConfig) return methodDef;
+  const decoratorConfig = ObjectRegistry.resolveRuntimeMethodDecoratorConfig(
+    objectName,
+    action,
+  );
+  if (!decoratorConfig) return methodDef;
+  return methodDef ? { ...methodDef, decoratorConfig } : { decoratorConfig };
 }
 
 /**

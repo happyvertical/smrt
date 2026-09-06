@@ -716,6 +716,76 @@ export class ObjectRegistry {
   }
 
   /**
+   * Class names whose `@method()` decorators can govern `objectName`'s runtime
+   * REST surface: the model itself and its registered collection class, which
+   * is where a collection-hosted custom action's decorator actually lands.
+   */
+  private static methodDecoratorSources(objectName: string): string[] {
+    const sources = new Set<string>([objectName]);
+    // Runtime callers pass the QUALIFIED name
+    // (`@happyvertical/smrt-core:Widget`), while decorators register under the
+    // class's simple name and collections are keyed by the item class's simple
+    // name. Resolve through the registry rather than slicing the string.
+    const registered =
+      ObjectRegistry.classes.get(objectName) ??
+      (() => {
+        const canonical = ObjectRegistry.getCanonicalClassName(objectName);
+        return canonical ? ObjectRegistry.classes.get(canonical) : undefined;
+      })();
+    if (registered?.name) sources.add(registered.name);
+    for (const key of [...sources]) {
+      const collectionConstructor = ObjectRegistry.collections.get(key);
+      if (collectionConstructor?.name) sources.add(collectionConstructor.name);
+    }
+    return [...sources];
+  }
+
+  /**
+   * The `@method()` config a RUNTIME transport must honor for
+   * `objectName.methodName`.
+   *
+   * The manifest is the primary carrier, and in a scanned project it is the
+   * only one that matters. But `startRestServer([Product], { db })` is a
+   * supported posture with no manifest at all: there, `getMethods()` is empty
+   * while the decorators DID run, so reading only the manifest silently drops
+   * `@method({ expose: false })` and a legacy `api.routes` entry alone would
+   * still route the withheld action. Absent exposure metadata defaults OPEN in
+   * this framework, so that drop is a widening (#2686).
+   */
+  static resolveRuntimeMethodDecoratorConfig(
+    objectName: string,
+    methodName: string,
+  ): Record<string, unknown> | undefined {
+    const fromManifest =
+      ObjectRegistry.getMethods(objectName)?.get(methodName)?.decoratorConfig;
+    if (fromManifest) return fromManifest;
+    for (const source of ObjectRegistry.methodDecoratorSources(objectName)) {
+      const declared = ObjectRegistry.getMethodDecorator(source, methodName);
+      if (declared) return declared as Record<string, unknown>;
+    }
+    return undefined;
+  }
+
+  /**
+   * Every method name carrying a `@method()` declaration for `objectName`,
+   * from the manifest and the live decorator store together. Runtime
+   * transports enumerate this so a decorator-declared route survives in an
+   * unscanned project.
+   */
+  static listDecoratedMethodNames(objectName: string): string[] {
+    const names = new Set<string>();
+    for (const [name, method] of ObjectRegistry.getMethods(objectName) ?? []) {
+      if (method.decoratorConfig) names.add(name);
+    }
+    for (const source of ObjectRegistry.methodDecoratorSources(objectName)) {
+      for (const name of ObjectRegistry.getMethodDecorators(source).keys()) {
+        names.add(name);
+      }
+    }
+    return [...names];
+  }
+
+  /**
    * Check if a class has any field decorators registered
    *
    * @param className - Name of the class
