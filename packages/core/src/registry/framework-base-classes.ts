@@ -26,6 +26,10 @@
  *   collection and WebMCP tool selectors)
  * - `@happyvertical/smrt-cli`'s `cli-generator.ts` (the live local `smrt`
  *   binary's object command generation), via core's public export
+ * - `../testing/database.ts` (`getTestDatabase()` skips table creation for
+ *   these classes, but only for an implicit `classes` list — an explicit
+ *   `classes: [...]` caller naming a framework base class is still honored,
+ *   unlike every unconditional filter above) (#2645)
  *
  * Do not add another hardcoded copy of this list at a new call site — import
  * from here instead.
