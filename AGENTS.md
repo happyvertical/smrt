@@ -23,6 +23,33 @@
 
 # SMRT Framework
 
+## Fix it here; do not work around it, do not file it away
+
+When something in this repository is broken — a pin, a hook, a gate, a stale
+generated file, a rule a package quietly disagrees with — **fix it in the branch
+you are already on**, as its own commit under `Drive-by fixes`. A workaround is
+never the answer, and neither is a new issue.
+
+- **No workarounds.** A shim, a skipped hook, a disabled gate, a `--no-verify`,
+  a pinned-around version, an "unrelated environment artifact" — every one of
+  these hides the defect and silently changes what your validation evidence
+  means. If a documented validation command cannot run as documented, that is
+  the bug; repair it or stop and report a blocker. Do not proceed on a
+  substitute toolchain and then call the result green.
+- **Prefer a drive-by over an issue.** An issue is for work that genuinely needs
+  its own review — a schema change, a contract break, a design decision someone
+  has to make. Everything else belongs in the PR that found it. Issue
+  proliferation is not thoroughness; it is unreviewed debt plus the cost of
+  rediscovering the context.
+- **The size bound is a floor, not a ceiling.** The kernel's ten-line drive-by
+  rule protects a reviewer from surprise, not a contributor from work. A larger
+  fix stays in the PR when it is what the branch's own change made necessary —
+  list it under `Drive-by fixes` with its files and commit so the diff is
+  legible.
+- **File an issue only when you can name why it cannot ship here**, and put that
+  reason in the issue. "Out of scope" is not a reason; "needs a migration
+  window" or "changes a published contract" is.
+
 pnpm/TypeScript monorepo: `@smrt()` business objects generate persistence,
 REST, CLI, MCP, and AI operations. Read the affected package's `AGENTS.md`;
 use [CONTEXT-MAP.md](CONTEXT-MAP.md) for cross-package orientation.
