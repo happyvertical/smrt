@@ -290,11 +290,14 @@ export class BaseGenerator {
 
 ### Generator-Specific Usage
 
-**CLIGenerator** (`src/generators/cli.ts` — this in-process generator was
-retired as unused public API, #2664; the live local CLI transport is
-`packages/cli/src/cli-generator.ts`'s `CLIGenerator`, kept here for
-historical shape only):
+**CLIGenerator (HISTORICAL — retired, #2664).** Core no longer ships a
+`CLIGenerator` or a `src/generators/cli.ts` file; both were removed as unused
+public API. The snippet below is kept only to show the shape of the deleted
+class's `listCommands()` method — do not copy it, and do not look for this
+file in the current source tree. The live local CLI transport is
+`packages/cli/src/cli-generator.ts`'s (differently-implemented) `CLIGenerator`.
 ```typescript
+// HISTORICAL: this method existed on core's now-deleted CLIGenerator.
 async listCommands(): Promise<string[]> {
   const commands: string[] = [];
   const registeredClasses = ObjectRegistry.getAllClasses();
