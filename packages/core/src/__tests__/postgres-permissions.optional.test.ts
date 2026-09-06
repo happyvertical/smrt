@@ -636,6 +636,77 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
     ).rows;
     expect(grants).toHaveLength(2);
   });
+  it('refuses system schema CREATE authority and ownership without modifying ACLs', async () => {
+    await apply();
+    const baseline = await planPostgresPermissions(db, contract);
+    for (const schema of ['pg_catalog', 'information_schema']) {
+      for (const grantee of [q(runtime), q(monitor), 'PUBLIC']) {
+        await db.query(`GRANT CREATE ON SCHEMA ${q(schema)} TO ${grantee}`);
+        try {
+          const exposed = await planPostgresPermissions(db, contract);
+          expect(exposed.canApply).toBe(false);
+          expect(exposed.fingerprint).not.toBe(baseline.fingerprint);
+          expect(
+            exposed.diagnostics.some(
+              (entry) =>
+                entry.code === 'system-schema-authority' &&
+                entry.resource === schema,
+            ),
+          ).toBe(true);
+          await expect(
+            applyPostgresPermissions(db, contract, {
+              expectedFingerprint: exposed.fingerprint,
+            }),
+          ).rejects.toThrow('unsupported');
+          expect(
+            (await planPostgresPermissions(db, contract)).fingerprint,
+          ).toBe(exposed.fingerprint);
+        } finally {
+          await db.query(
+            `REVOKE CREATE ON SCHEMA ${q(schema)} FROM ${grantee}`,
+          );
+        }
+        expect(
+          (await planPostgresPermissions(db, contract)).diagnostics,
+        ).toEqual([]);
+      }
+    }
+    const originalOwner = String(
+      (
+        await db.query(
+          "SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='information_schema'",
+        )
+      ).rows[0].owner,
+    );
+    for (const role of [runtime, monitor]) {
+      await db.query(`ALTER SCHEMA information_schema OWNER TO ${q(role)}`);
+      try {
+        const exposed = await planPostgresPermissions(db, contract);
+        expect(exposed.canApply).toBe(false);
+        expect(
+          exposed.diagnostics.some(
+            (entry) =>
+              entry.code === 'system-schema-owner' && entry.role === role,
+          ),
+        ).toBe(true);
+        await expect(
+          applyPostgresPermissions(db, contract, {
+            expectedFingerprint: exposed.fingerprint,
+          }),
+        ).rejects.toThrow('unsupported');
+        expect((await planPostgresPermissions(db, contract)).fingerprint).toBe(
+          exposed.fingerprint,
+        );
+      } finally {
+        await db.query(
+          `ALTER SCHEMA information_schema OWNER TO ${q(originalOwner)}`,
+        );
+      }
+    }
+    expect((await planPostgresPermissions(db, contract)).diagnostics).toEqual(
+      [],
+    );
+  });
   it('refuses user routines and standalone composite types after schema evolution', async () => {
     await apply();
     await as(owner, 'CREATE TYPE app.custom AS (value text)');

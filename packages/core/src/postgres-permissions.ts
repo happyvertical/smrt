@@ -217,6 +217,7 @@ async function snapshot(
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
     routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
     types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND t.typelem=0 AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
+    systemSchemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3)='pg_' OR nspname='information_schema' ORDER BY nspname`,
     systemPrivileges: `WITH resources AS (
       SELECT n.nspname AS schema, c.relname AS name, c.oid::text AS oid, 'relation' AS kind,
         COALESCE(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner)) AS current_acl,
@@ -458,6 +459,28 @@ async function plan(
           'Effective CREATE outside the dedicated schema requires infrastructure repair.',
           role,
         );
+    }
+  }
+  for (const schema of state.systemSchemas) {
+    for (const role of roles) {
+      if (schema.owner === role) {
+        unsupported(
+          'system-schema-owner',
+          schema.name,
+          'Configured roles must not own system schemas; infrastructure must restore separate ownership. System schema ownership is never modified.',
+          role,
+        );
+      }
+      for (const grant of relevant(schema.acl, role)) {
+        if (grant.privilege === 'CREATE') {
+          unsupported(
+            'system-schema-authority',
+            schema.name,
+            `Effective CREATE on a system schema (source: ${grant.grantee}) gives DDL authority and requires infrastructure repair. System schema ACLs are never modified.`,
+            role,
+          );
+        }
+      }
     }
   }
   for (const resource of state.systemPrivileges) {
