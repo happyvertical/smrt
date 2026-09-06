@@ -588,6 +588,9 @@ describePostgres(
         `CREATE UNIQUE INDEX "${parent}_bridge_uidx" ON "${parent}" USING btree (_integrity_id_text)`,
       );
       await db.query(
+        `ALTER TABLE "${parent}" CLUSTER ON "${parent}_bridge_uidx"`,
+      );
+      await db.query(
         `CREATE TABLE "${child}" (id text PRIMARY KEY, parent_id text NOT NULL CONSTRAINT "${child}_parent_fkey" REFERENCES "${parent}"(id) ON UPDATE CASCADE ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED)`,
       );
       await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
@@ -672,6 +675,14 @@ describePostgres(
       expect((bridge as any[])[0]._integrity_id_text).toBe(
         '11111111-1111-1111-1111-111111111111',
       );
+      const { rows: bridgeIndex } = await db.query(
+        `SELECT idx.indisclustered AS clustered
+           FROM pg_index idx
+           JOIN pg_class index_rel ON index_rel.oid = idx.indexrelid
+          WHERE index_rel.relname = $1`,
+        `${parent}_bridge_uidx`,
+      );
+      expect((bridgeIndex as any[])[0].clustered).toBe(true);
       const { rows: constraints } = await db.query(
         `SELECT conname, convalidated FROM pg_constraint WHERE conname IN ($1, $2) ORDER BY conname`,
         `${child}_parent_fkey`,

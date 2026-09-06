@@ -413,6 +413,7 @@ interface GeneratedBridgeSnapshot {
     name: string;
     definition: string;
     comment: string | null;
+    clustered: boolean;
   }>;
 }
 
@@ -580,6 +581,10 @@ async function convertPostgresUuidColumns(
       if (index.comment)
         await db.query(
           `COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)}`,
+        );
+      if (index.clustered)
+        await db.query(
+          `ALTER TABLE ${pgTable(bridge.table)} CLUSTER ON ${quoteIdentifier(index.name)}`,
         );
     }
   }
@@ -785,6 +790,7 @@ async function snapshotBridgeIndexes(
             obj_description(index_rel.oid, 'pg_class') AS comment,
             idx.indnkeyatts AS key_count, idx.indpred IS NOT NULL AS partial,
             idx.indexprs IS NOT NULL AS expression_index, idx.indisvalid AS valid,
+            idx.indisclustered AS clustered,
             am.amname AS method
        FROM pg_index idx
        JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
@@ -814,6 +820,7 @@ async function snapshotBridgeIndexes(
       name: String(row.index_name),
       definition: String(row.definition),
       comment: row.comment == null ? null : String(row.comment),
+      clustered: Boolean(row.clustered),
     };
   });
 }
