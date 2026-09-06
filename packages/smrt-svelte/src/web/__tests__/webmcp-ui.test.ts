@@ -843,6 +843,24 @@ describe('cross-path tool-name lock (#2613)', () => {
     dispose();
   });
 
+  it('frees the prefix and the names when the host swaps its model context', () => {
+    const registered = installPageModelContext();
+    // Deliberately never disposed: the adapter's six tools live in the old
+    // registry, which the host is about to throw away. Both the prefix lock
+    // and the name reservations must let go with it, or the same prefix stays
+    // permanently refused against a registry that never held it.
+    registerWebMcpUiTools({ ...registries(), prefix: 'agent_ui_' });
+    expect(registered).toHaveLength(6);
+
+    const rebound = installPageModelContext();
+    const dispose = registerWebMcpUiTools({
+      ...registries(),
+      prefix: 'agent_ui_',
+    });
+    expect(rebound).toHaveLength(6);
+    dispose();
+  });
+
   it('frees the six names on dispose so a remount succeeds', () => {
     const registered = installPageModelContext();
     for (let cycle = 0; cycle < 3; cycle += 1) {

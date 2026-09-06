@@ -114,7 +114,10 @@ tool-name lock (`@happyvertical/smrt-web/webmcp-tool-names`, #2613), so a
 generated model tool, a view intent, or a `useWebMcpTool` tool that would
 occupy one of them under the configured prefix fails at registration with the
 owner named instead of losing a tool at the host. Reserve before the first
-`registerTool` and release on dispose.
+`registerTool` and release on dispose. Both locks here — the per-document
+prefix set and the shared name table — are stamped with the `modelContext`
+they were taken against and reset when a host installs a new one; keep them in
+step, or a prefix stays refused against a registry that never held its tools.
 
 ## Hooks
 

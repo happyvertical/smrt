@@ -50,7 +50,19 @@ const PUBLIC_CONTROL_RESULT_REASONS = new Set([
   'nothing_to_undo',
   'denied',
 ]);
-const documentLocks = new WeakMap<object, Set<string>>();
+/**
+ * Active UI prefixes per document, stamped with the model context they were
+ * taken against. The stamp matters for the same reason smrt-web's tool-name
+ * table carries one (#2613): when a host installs a new `modelContext`, every
+ * tool the old registry held is gone, so a prefix must not stay locked against
+ * the new one. Without it the two locks in `registerWebMcpUiTools` would
+ * disagree — the names would be free while the prefix stayed permanently
+ * refused.
+ */
+const documentLocks = new WeakMap<
+  object,
+  { modelContext: unknown; prefixes: Set<string> }
+>();
 
 class PublicToolError extends Error {
   constructor(
@@ -605,10 +617,13 @@ export function registerWebMcpUiTools(
     return () => {};
   }
 
-  let locks = documentLocks.get(documentLike);
-  if (!locks) {
+  const entry = documentLocks.get(documentLike);
+  let locks: Set<string>;
+  if (entry && entry.modelContext === modelContext) {
+    locks = entry.prefixes;
+  } else {
     locks = new Set();
-    documentLocks.set(documentLike, locks);
+    documentLocks.set(documentLike, { modelContext, prefixes: locks });
   }
   if (locks.has(prefix)) {
     throw new Error(`WebMCP UI prefix is already registered: ${prefix}`);
