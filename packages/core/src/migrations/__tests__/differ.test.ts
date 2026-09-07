@@ -1475,7 +1475,7 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     };
   }
 
-  it('emits an idempotent copy-then-drop advisory for a same-type (text) rename on SQLite', async () => {
+  it('emits an operator-mediated copy-then-drop advisory for a same-type (text) rename on SQLite', async () => {
     db = await getDatabase({ type: 'sqlite', url: ':memory:' });
     await db.query(
       `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_slug TEXT, old_slug TEXT)`,
@@ -1689,6 +1689,120 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(
       diff.changes.find((c) => c.type === 'rename_data_pending'),
     ).toBeUndefined();
+  });
+
+  it('does not flag a logical-UUID column on SQLite when the orphan text column is not UUID-shaped (#2767 review)', async () => {
+    // SQLite has no native uuid type, so `mapType('UUID')` maps a manifest
+    // UUID column down to physical TEXT — same as any other declared TEXT
+    // column. Before the #2767 fix, `declaredNormalized` alone could not
+    // tell these apart, so a logical UUID column matched any TEXT-typed
+    // orphan as `same-type` and skipped the UUID shape probe entirely,
+    // suggesting a repair that copies arbitrary non-UUID text into a
+    // logically UUID column. This asserts no advisory is emitted for an
+    // orphan column whose data is plainly not UUID-shaped.
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_id TEXT, old_id TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_id, old_id) VALUES ('1', NULL, 'not-a-uuid')`,
+    );
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_id: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    expect(
+      diff.changes.find((c) => c.type === 'rename_data_pending'),
+    ).toBeUndefined();
+  });
+
+  it('flags a logical-UUID column on SQLite when the orphan text column is UUID-shaped', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_id TEXT, old_id TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_id, old_id) VALUES ('1', NULL, '123e4567-e89b-12d3-a456-426614174000')`,
+    );
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_id: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    const change = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_id',
+    );
+    expect(change).toBeDefined();
+  });
+
+  it('withholds repair SQL and lists every candidate when the rename source is ambiguous (#2767 review)', async () => {
+    // Two undeclared columns are both populated and type-compatible with
+    // the same empty declared column: the rename source cannot be inferred,
+    // so this must not emit a separate destructive advisory per candidate
+    // (which an operator could run all of, merging data in output order and
+    // dropping every candidate column).
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_slug TEXT, old_slug TEXT, older_slug TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_slug, old_slug, older_slug) VALUES ('1', NULL, 'hello', 'world')`,
+    );
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_slug: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    const matches = diff.changes.filter(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_slug',
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0].advisory?.suggestedSql).toBeUndefined();
+    expect(matches[0].mismatch?.actual).toContain('old_slug');
+    expect(matches[0].mismatch?.actual).toContain('older_slug');
   });
 });
 

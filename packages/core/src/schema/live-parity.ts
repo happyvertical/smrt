@@ -36,7 +36,10 @@ import type { DatabaseEngine } from './ddl/types.js';
 // tests the same pattern (the orphan probe, the FK provisioning guard, the
 // uuid convergence planner). Reused here rather than duplicated so a rename
 // candidate and a uuid-convergence candidate never disagree about "shaped".
-import { CANONICAL_UUID_PATTERN } from './foreign-key-ddl.js';
+import {
+  CANONICAL_UUID_PATTERN,
+  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
+} from './foreign-key-ddl.js';
 import { quoteIdentifier } from './sql-identifiers.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
@@ -643,8 +646,6 @@ function renameCompatibility(
   return null;
 }
 
-const UUID_SHAPE_REGEX = new RegExp(CANONICAL_UUID_PATTERN, 'i');
-
 async function columnHasNonEmptyValue(
   db: DatabaseInterface,
   table: string,
@@ -667,11 +668,12 @@ async function allNonEmptyValuesUuidShaped(
 ): Promise<boolean> {
   const quotedTable = quoteIdentifier(table);
   const quotedColumn = quoteIdentifier(column);
+  const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
 
   if (engine === 'postgres') {
     const result = await db.query(
       `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
-        `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' ` +
+        `WHERE ${nonEmptyPredicate} ` +
         `AND CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
     );
     const row = result?.rows?.[0] as Record<string, unknown> | undefined;
@@ -679,16 +681,20 @@ async function allNonEmptyValuesUuidShaped(
   }
 
   // SQLite (the only other engine this detector runs against) has no
-  // server-side regex operator, so fetch every non-empty value and test it
-  // in JS. Unlike PostgreSQL's pushed-down count, this is not aggregated —
-  // but it still scans the whole column rather than a bounded sample, so it
-  // can never miss a non-UUID-shaped value and produce a false positive.
+  // regex operator, but its case-sensitive `GLOB` can still express the
+  // fixed 36-character canonical shape (against `LOWER(...)`, guarded by an
+  // exact `LENGTH(...) = 36`), so this runs one server-side aggregate
+  // `count(*)` too rather than fetching every non-empty value into JS to
+  // test in a loop — important on a production table with many rows
+  // (#2767 review).
   const result = await db.query(
-    `SELECT CAST(${quotedColumn} AS TEXT) AS value FROM ${quotedTable} ` +
-      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`,
+    `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+      `WHERE ${nonEmptyPredicate} ` +
+      `AND NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
+      `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`,
   );
-  const rows = (result?.rows ?? []) as { value?: unknown }[];
-  return rows.every((row) => UUID_SHAPE_REGEX.test(String(row.value ?? '')));
+  const row = result?.rows?.[0] as Record<string, unknown> | undefined;
+  return Number(row?.invalid_count ?? 0) === 0;
 }
 
 function buildRenameDataPendingFinding(

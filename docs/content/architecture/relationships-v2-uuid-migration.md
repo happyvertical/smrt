@@ -136,11 +136,17 @@ or `TEXT` → `TEXT`) holds at least one. It is `warning` severity and names bot
 columns; when several undeclared columns qualify it lists all of them rather
 than guessing which one holds the pre-rename data.
 
-`smrt db:diff` (and `db:migrate`, via the same advisory) prints the repair for
-each such pair as a commented, never-executed advisory — the same copy-then-
-drop shape the anytown backfill scripts hand-wrote, casting to `uuid` when the
-new column is native uuid and doing a plain copy otherwise (SQLite has no
-`uuid` type). The two engines differ in how safely it can be rerun:
+`smrt db:diff` (and `db:migrate`, via the same advisory) prints the repair as
+a commented, never-executed advisory — the same copy-then-drop shape the
+anytown backfill scripts hand-wrote, casting to `uuid` when the new column is
+native uuid and doing a plain copy otherwise (SQLite has no `uuid` type).
+When exactly one undeclared column qualifies as the rename source, it prints
+that column's repair SQL; when several qualify, it mirrors `db:status
+--parity`'s ambiguity handling and prints one advisory that lists every
+candidate with no suggested SQL, rather than emitting a separate destructive
+repair per candidate that an operator could run all of and merge or drop data
+in output order. The two engines differ in how safely a single-candidate
+repair can be rerun:
 
 - **PostgreSQL** gets one genuinely idempotent statement: an anonymous
   `DO $$ ... $$` block that checks `information_schema.columns` and only runs

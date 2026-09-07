@@ -10,6 +10,7 @@ import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   CANONICAL_UUID_PATTERN,
+  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
@@ -1375,8 +1376,12 @@ export class SchemaComparer {
    * live column of a compatible type that does hold data — the shape a
    * framework field rename leaves behind when `db:migrate` adds the new
    * column additively and never moves data into it. For each such pair,
-   * emit the idempotent copy-then-drop repair as an advisory: never
-   * executed, PostgreSQL and SQLite only (DuckDB/JSON are out of scope).
+   * emit the copy-then-drop repair as an advisory: never executed,
+   * PostgreSQL and SQLite only (DuckDB/JSON are out of scope). The repair
+   * is genuinely idempotent SQL on PostgreSQL (a self-guarding
+   * `DO $$ ... $$` block); SQLite has no conditional-DDL construct, so its
+   * repair is operator-mediated instead — a guard query plus instructions,
+   * not a blind-rerun-safe statement. See {@link describeRenameDataPending}.
    */
   private async detectRenameDataPending(
     tableName: string,
@@ -1409,22 +1414,43 @@ export class SchemaComparer {
       const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
         ? colDef.type
         : 'TEXT';
+      // Branch on the manifest's *logical* type, not the engine-mapped one:
+      // SQLite has no native uuid type, so `mapType('UUID')` collapses to
+      // TEXT there and `declaredNormalized` alone can no longer distinguish
+      // "this is logically a UUID column" from "this is plain text" (#2767
+      // review). Checking `isLogicalUuid` directly keeps the shape probe
+      // (`allNonEmptyValuesUuidShaped`) in the loop for SQLite too, instead
+      // of silently downgrading to an unvalidated same-type text copy.
+      const isLogicalUuid = validatedType === 'UUID';
       const declaredNormalized = this.normalizeType(
         this.ddlStrategy.mapType(validatedType),
       );
+
+      // Collect every qualifying orphan candidate for this declared column
+      // before emitting anything: when more than one orphan column is a
+      // populated, type-compatible match, the source of the rename is
+      // genuinely ambiguous and running every pair's suggested repair could
+      // merge values in output order and drop every candidate column (#2767
+      // review). Only a single unambiguous candidate gets destructive
+      // repair SQL; multiple candidates get one advisory that lists them
+      // and withholds SQL until an operator picks the real source.
+      const candidates: { orphanName: string; isUuidCast: boolean }[] = [];
 
       for (const orphanName of orphanColumnNames) {
         const orphanCol = dbSchema.columns[orphanName];
         const orphanNormalized = this.normalizeType(orphanCol.type);
 
         let mode: 'same-type' | 'text-to-uuid' | null = null;
-        if (orphanNormalized === declaredNormalized) {
-          mode = 'same-type';
-        } else if (
-          declaredNormalized === 'UUID' &&
-          orphanNormalized === 'TEXT'
-        ) {
+        if (isLogicalUuid && orphanNormalized === 'TEXT') {
+          // Any text-typed orphan paired with a logical UUID column needs
+          // shape validation — whether the declared column's own physical
+          // type is TEXT (SQLite) or native uuid (PostgreSQL/DuckDB).
           mode = 'text-to-uuid';
+        } else if (orphanNormalized === declaredNormalized) {
+          // Not a logical-UUID pairing needing a shape probe (or the orphan
+          // is already a native uuid column, which the engine itself
+          // validated) — a same-type copy is safe as-is.
+          mode = 'same-type';
         }
         if (!mode) continue;
 
@@ -1452,12 +1478,24 @@ export class SchemaComparer {
           if (!shaped) continue;
         }
 
+        candidates.push({ orphanName, isUuidCast: mode === 'text-to-uuid' });
+      }
+
+      if (candidates.length === 1) {
         changes.push(
           this.describeRenameDataPending(
             tableName,
             colName,
-            orphanName,
-            mode === 'text-to-uuid',
+            candidates[0].orphanName,
+            candidates[0].isUuidCast,
+          ),
+        );
+      } else if (candidates.length > 1) {
+        changes.push(
+          this.describeRenameDataPendingAmbiguous(
+            tableName,
+            colName,
+            candidates.map((c) => c.orphanName),
           ),
         );
       }
@@ -1487,10 +1525,13 @@ export class SchemaComparer {
   /**
    * Live-data probe: are every one of a column's non-empty values
    * UUID-shaped ({@link CANONICAL_UUID_PATTERN})? PostgreSQL pushes the
-   * check into the query and scans every row; SQLite has no server-side
-   * regex operator, so it fetches every non-empty value and tests them all
-   * in JS — still exhaustive, just not aggregated, so it can never miss a
-   * non-UUID-shaped value and produce a false positive.
+   * check into the query with its regex operator; SQLite has no regex
+   * operator, but its case-sensitive `GLOB` can still express the fixed
+   * 36-character canonical shape ({@link CANONICAL_UUID_SQLITE_GLOB_PATTERN}
+   * against `LOWER(...)`, guarded by an exact `LENGTH(...) = 36` check), so
+   * both engines run one server-side aggregate `count(*)` rather than
+   * fetching every non-empty value into JS to test in a loop — important on
+   * a production table with many rows (#2767 review).
    */
   private async allNonEmptyValuesUuidShaped(
     tableName: string,
@@ -1498,11 +1539,12 @@ export class SchemaComparer {
   ): Promise<boolean> {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
+    const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
 
     if (this.engine === 'postgres') {
       const result = await this.db.query(
         `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
-          `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> '' ` +
+          `WHERE ${nonEmptyPredicate} ` +
           `AND CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
       );
       const row = result.rows?.[0] as Record<string, unknown> | undefined;
@@ -1510,12 +1552,13 @@ export class SchemaComparer {
     }
 
     const result = await this.db.query(
-      `SELECT CAST(${quotedCol} AS TEXT) AS value FROM ${quotedTable} ` +
-        `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`,
+      `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+        `WHERE ${nonEmptyPredicate} ` +
+        `AND NOT (LENGTH(CAST(${quotedCol} AS TEXT)) = 36 ` +
+        `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`,
     );
-    const rows = (result.rows ?? []) as { value?: unknown }[];
-    const pattern = new RegExp(CANONICAL_UUID_PATTERN, 'i');
-    return rows.every((row) => pattern.test(String(row.value ?? '')));
+    const row = result.rows?.[0] as Record<string, unknown> | undefined;
+    return Number(row?.invalid_count ?? 0) === 0;
   }
 
   /**
@@ -1629,6 +1672,42 @@ export class SchemaComparer {
           'holds data of a compatible type. This looks like a framework field rename whose data was never ' +
           `moved (db:migrate adds columns additively and never drops the old one). ${dropIdempotencyNote}`,
         suggestedSql,
+      },
+    };
+  }
+
+  /**
+   * Render the advisory for an ambiguous rename-data-pending match (#2767
+   * review): more than one orphan column is a populated, type-compatible
+   * candidate for the same empty declared column, so the real rename source
+   * cannot be inferred. Unlike {@link describeRenameDataPending}, this
+   * carries no `suggestedSql` — running a per-candidate copy-and-drop would
+   * let output order decide which candidate's data wins and then drop every
+   * one of them, which is not a repair an advisory should suggest blindly.
+   */
+  private describeRenameDataPendingAmbiguous(
+    tableName: string,
+    newColumn: string,
+    candidateColumns: string[],
+  ): SchemaChange {
+    const candidateList = candidateColumns
+      .map((name) => `${tableName}.${name}`)
+      .join(', ');
+    return {
+      type: 'rename_data_pending',
+      table: tableName,
+      name: newColumn,
+      mismatch: {
+        expected: `data in ${newColumn}`,
+        actual: `data appears to still be in one of several columns: ${candidateList}`,
+      },
+      advisory: {
+        severity: 'warning',
+        message:
+          `${tableName}.${newColumn} is declared but empty, while ${candidateColumns.length} undeclared ` +
+          `columns of a compatible type hold data (${candidateList}). This looks like a framework field ` +
+          'rename, but which column is the actual rename source is ambiguous — no suggested repair SQL is ' +
+          'printed. An operator must identify the correct source column and write its own targeted copy-then-drop.',
       },
     };
   }

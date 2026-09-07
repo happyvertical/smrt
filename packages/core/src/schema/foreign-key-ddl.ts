@@ -134,6 +134,23 @@ const FOREIGN_KEY_PARENT_ALIAS = 'smrt_fk_parent';
 export const CANONICAL_UUID_PATTERN =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
+/**
+ * The same canonical UUID shape as {@link CANONICAL_UUID_PATTERN}, expressed
+ * as a SQLite `GLOB` pattern instead of a regex — SQLite has no built-in
+ * regex operator, so a shape probe there cannot push a regex predicate down
+ * to the server. `GLOB` is case-sensitive, so callers must `LOWER()` the
+ * value first; combine with a `LENGTH(...) = 36` check (`GLOB` alone allows
+ * a shorter/longer value to still match a middle substring) so this can run
+ * as a whole-table server-side aggregate instead of fetching every row into
+ * JS to test in a loop (#2767 review).
+ */
+export const CANONICAL_UUID_SQLITE_GLOB_PATTERN =
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]';
+
 function foreignKeyOrphanParts(
   tableName: string,
   foreignKey: ForeignKeyDefinition,

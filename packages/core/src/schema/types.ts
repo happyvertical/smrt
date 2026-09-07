@@ -354,7 +354,10 @@ export interface SchemaChange {
      * A declared column exists live and holds no data while an undeclared
      * column of a compatible type does (#2752) — advisory only, printed by
      * `db:diff`/`db:migrate`, never executed. See `mismatch` and
-     * `advisory.suggestedSql` for the idempotent copy-then-drop repair.
+     * `advisory.suggestedSql` for the copy-then-drop repair: it is
+     * genuinely idempotent SQL on PostgreSQL, but on SQLite (no
+     * conditional-DDL construct) it is operator-mediated — a guard query
+     * plus instructions, not a statement safe to blind-rerun.
      */
     | 'rename_data_pending';
   /** Affected table name */
