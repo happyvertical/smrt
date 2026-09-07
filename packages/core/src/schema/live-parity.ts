@@ -506,6 +506,7 @@ function compareColumns(
           details: { expected: column.type, actual: live.type },
         });
       } else if (
+        engine === 'postgres' &&
         expectedBucket === 'UUID' &&
         actualBucket === 'TEXT' &&
         isStructuralReference(column)
@@ -516,6 +517,13 @@ function compareColumns(
         // structural columns is an intentional, long-supported compatibility
         // shape, not a bug, so this is a pointer to the optional convergence
         // path rather than a warning.
+        //
+        // Engine-gated to `postgres` to match `db:migrate-uuid`'s own repair
+        // gate (`cli/src/commands/db-migrate-uuid.ts`, `runConvert = ... &&
+        // isPostgres`): on DuckDB there is no native-uuid conversion path for
+        // this pairing, so flagging it here would be a permanent, unclearable
+        // finding (review finding — the same class already fixed for the
+        // jsonb and float-width checks above).
         findings.push({
           kind: 'column_type_drift',
           severity: 'info',

@@ -1200,3 +1200,57 @@ describe('checkLiveSchemaParity JSON-vs-TEXT warning is engine-gated (#2772)', (
     ).toBeUndefined();
   });
 });
+
+/**
+ * #2772 review follow-up (final full-diff pass 4) — the uuid/text `info`
+ * finding's only repair path is `smrt db:migrate-uuid`, which is gated
+ * PostgreSQL-only (`cli/src/commands/db-migrate-uuid.ts`, `runConvert = ... &&
+ * isPostgres`). On DuckDB there is no conversion path for this pairing, so
+ * the finding must stay silent there — the same class of fix already applied
+ * to the jsonb (#2772) and float-width (#2770) checks above.
+ */
+describe('checkLiveSchemaParity uuid/text info finding is engine-gated (#2772)', () => {
+  it('does not flag a structural id column on DuckDB, which has no db:migrate-uuid repair path', async () => {
+    const duckDb = {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'widgets' }] };
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('duckdb_constraints')) return { rows: [] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+
+    const schema: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const report = await checkLiveSchemaParity({
+      db: duckDb,
+      schemas: schema,
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'id')).toBeUndefined();
+  });
+});
