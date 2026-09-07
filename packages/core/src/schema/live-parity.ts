@@ -522,8 +522,8 @@ function compareColumns(
         // drift never reaches the `!typesAreEquivalent` branch — the same
         // way int4-vs-int8 drift hides behind the shared 'INTEGER' bucket
         // (see `legacy_integer_width` below). Detect it here instead.
-        const expectedPrecision = floatPrecisionOf(column.type);
-        const actualPrecision = floatPrecisionOf(live.type);
+        const expectedPrecision = floatPrecisionOf(column.type, engine);
+        const actualPrecision = floatPrecisionOf(live.type, engine);
         if (
           expectedPrecision &&
           actualPrecision &&
@@ -651,13 +651,29 @@ function typesAreEquivalent(
  * Single- vs double-precision float classification for #2770's float-width
  * drift detection. `null` for anything that isn't unambiguously one or the
  * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
+ *
+ * Bare `FLOAT` is engine-ambiguous and must be classified per `engine`:
+ * PostgreSQL's `information_schema` reports `float4`/`real` as `real` and
+ * `float8`/`double precision` as `double precision` — `FLOAT` alone never
+ * appears there, so treating it as double-precision was previously safe.
+ * DuckDB is different: `information_schema.columns.data_type` normalizes
+ * *both* spellings of its single-precision type (`REAL`, `FLOAT4`) to the
+ * bare string `FLOAT`, and reports its double-precision type as `DOUBLE`
+ * (never `FLOAT`). Classifying DuckDB's `FLOAT` as double-precision — as a
+ * shared, engine-unaware regex previously did — made every converged DuckDB
+ * `REAL` column permanently misreport as narrowing drift with no
+ * `db:migrate` able to clear it (review finding on #2770).
  */
-function floatPrecisionOf(type: string): 'single' | 'double' | null {
+function floatPrecisionOf(
+  type: string,
+  engine: DatabaseEngine,
+): 'single' | 'double' | null {
   const upper = String(type ?? '')
     .toUpperCase()
     .trim()
     .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
   if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  if (engine === 'duckdb' && upper === 'FLOAT') return 'single';
   if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
   return null;
 }

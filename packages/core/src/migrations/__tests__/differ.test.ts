@@ -2165,6 +2165,35 @@ describe('SchemaComparer float-width drift (#2770)', () => {
     expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
     expect(diff.has_changes).toBe(false);
   });
+
+  it('is a no-op on DuckDB when a converged REAL column reports live type FLOAT', async () => {
+    // Review finding: DuckDB's information_schema normalizes REAL/FLOAT4 to
+    // the bare string "FLOAT" (never "REAL"), and reports its
+    // double-precision type as "DOUBLE" (never "FLOAT"). floatPrecisionOf
+    // previously classified bare FLOAT as double-precision unconditionally
+    // (correct for PostgreSQL, where FLOAT never appears live), which made
+    // every already-converged DuckDB REAL column permanently misreport as
+    // narrowing drift with no `db:migrate` able to clear it.
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'VARCHAR', notnull: true },
+          price: { type: 'FLOAT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
 });
 
 /**

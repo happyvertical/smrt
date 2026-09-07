@@ -191,6 +191,68 @@ describe.skipIf(!pgUrl)(
         );
         expect(jsonResult.status).toBe('clean');
       });
+
+      // Review finding on the fix above: a bare real-cast attempt alone
+      // accepts PostgreSQL's session-dependent naive timestamps and its
+      // "special" relative date/time keywords, since both cast successfully
+      // -- but the resulting instant depends on the *casting session's*
+      // TimeZone or is evaluated at cast time, so `USING col::timestamptz`
+      // would silently corrupt or reinterpret the data. The probe must
+      // reject both, routing them to the explicit `--legacy-timezone=UTC`
+      // opt-in instead of auto-converging.
+      it('rejects session-dependent naive timestamps and PostgreSQL special values', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, value text)`,
+        );
+        const naiveAndSpecialValues = [
+          '2023-01-15 10:00:00',
+          '2023-01-15',
+          '01/02/2023',
+          'now',
+          'today',
+          'yesterday',
+          'tomorrow',
+          'epoch',
+          'infinity',
+          '-infinity',
+          'allballs',
+        ];
+        for (const [index, value] of naiveAndSpecialValues.entries()) {
+          await db.query(
+            `INSERT INTO "${table}" (id, value) VALUES ('r${index}', $1)`,
+            [value],
+          );
+        }
+
+        const result = await probeCastSafety(db, table, 'value', 'timestamptz');
+        expect(result.status).toBe('dirty');
+        if (result.status === 'dirty') {
+          expect(result.count).toBe(naiveAndSpecialValues.length);
+        }
+      });
+
+      it('still accepts explicit-offset timestamps of every supported shape', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, value text)`,
+        );
+        const explicitOffsetValues = [
+          '2023-01-15T10:00:00.000Z',
+          '2023-01-15T10:00:00+05:00',
+          '2023-01-15T10:00:00-05:30',
+          '2023-01-15 10:00:00Z',
+        ];
+        for (const [index, value] of explicitOffsetValues.entries()) {
+          await db.query(
+            `INSERT INTO "${table}" (id, value) VALUES ('r${index}', $1)`,
+            [value],
+          );
+        }
+
+        const result = await probeCastSafety(db, table, 'value', 'timestamptz');
+        expect(result.status).toBe('clean');
+      });
     });
 
     describe('#2771/#2772 reproduction fixture (tag_aliases)', () => {
@@ -336,6 +398,90 @@ describe.skipIf(!pgUrl)(
           '2023-01-15T10:00:00.000Z',
         );
         expect(first._meta_data).toEqual({ source: 'legacy-import' });
+      });
+    });
+
+    describe('column default is restored after conversion (review finding)', () => {
+      // Review finding: PostgreSQL requires DROP DEFAULT before ALTER
+      // COLUMN ... TYPE, and the new probe-based conversion helpers emitted
+      // that DROP but never the compensating SET DEFAULT, unlike the
+      // pre-existing generateTypeUpgradeSQL path. A column with a manifest
+      // default (SMRT's own generator emits exactly this for created_at/
+      // updated_at: `current_timestamp`) would come out of a successful
+      // `db:migrate` NOT NULL with no live default, breaking any writer
+      // that relies on the database to supply it.
+      const table = `i2771_2772_default_restore_${suffix}`;
+
+      const schema = (): Record<string, SchemaDefinition> => ({
+        [table]: {
+          tableName: table,
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              defaultValue: 'current_timestamp',
+            },
+            meta: { type: 'JSON', defaultValue: '{}' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '2771-default',
+        },
+      });
+
+      afterAll(async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+      });
+
+      it('restores SET DEFAULT for both timestamptz and jsonb conversions', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(`
+          CREATE TABLE "${table}" (
+            id text PRIMARY KEY,
+            created_at text NOT NULL DEFAULT current_timestamp::text,
+            meta text NOT NULL DEFAULT '{}'
+          )
+        `);
+        await db.query(
+          `INSERT INTO "${table}" (id, created_at, meta) VALUES ` +
+            `('r1', '2023-01-15T10:00:00.000Z', '{"a":1}')`,
+        );
+
+        const diff = await new SchemaComparer(db, {
+          ignoreTypeMismatches: false,
+        }).compare(schema());
+        for (const statement of getSQLFromDiff(diff)) {
+          await db.query(statement);
+        }
+
+        const liveDefaults = await db.query(
+          `SELECT column_name, column_default FROM information_schema.columns ` +
+            `WHERE table_name = $1 AND column_name IN ('created_at', 'meta')`,
+          [table],
+        );
+        const defaultsByColumn = new Map(
+          (
+            liveDefaults.rows as {
+              column_name: string;
+              column_default: string | null;
+            }[]
+          ).map((row) => [row.column_name, row.column_default]),
+        );
+        expect(defaultsByColumn.get('created_at')).not.toBeNull();
+        expect(defaultsByColumn.get('meta')).not.toBeNull();
+        expect(defaultsByColumn.get('meta')).toContain('jsonb');
+
+        // A writer that omits both columns must still get a value from the
+        // live database default, not a NOT NULL violation.
+        await db.query(`INSERT INTO "${table}" (id) VALUES ('r2')`);
+        const inserted = await db.query(
+          `SELECT created_at, meta FROM "${table}" WHERE id = 'r2'`,
+        );
+        expect(inserted.rows?.[0]?.created_at).toBeTruthy();
+        expect(inserted.rows?.[0]?.meta).toEqual({});
       });
     });
   },

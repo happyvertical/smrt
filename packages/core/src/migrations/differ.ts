@@ -189,12 +189,23 @@ export function uniqueColumnIndexName(
  * drift detection. `null` for anything that isn't unambiguously one or the
  * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
  */
-function floatPrecisionOf(type: string): 'single' | 'double' | null {
+function floatPrecisionOf(
+  type: string,
+  engine: 'postgres' | 'duckdb',
+): 'single' | 'double' | null {
   const upper = type
     .toUpperCase()
     .trim()
     .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
   if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  // DuckDB's information_schema normalizes REAL/FLOAT4 to the bare string
+  // `FLOAT` (never `REAL`) and reports its double-precision type as
+  // `DOUBLE` (never `FLOAT`) — the opposite of PostgreSQL, where bare
+  // `FLOAT` never appears live and previously defaulted safely to
+  // double-precision. Treating DuckDB's `FLOAT` as double-precision made
+  // every converged DuckDB REAL column permanently misreport as narrowing
+  // drift (review finding on #2770).
+  if (engine === 'duckdb' && upper === 'FLOAT') return 'single';
   if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
   return null;
 }
@@ -1297,8 +1308,11 @@ export class SchemaComparer {
           normalizedExpected === 'REAL' &&
           normalizedActual === 'REAL'
         ) {
-          const expectedPrecision = floatPrecisionOf(expectedEngineType);
-          const actualPrecision = floatPrecisionOf(dbCol.type);
+          const expectedPrecision = floatPrecisionOf(
+            expectedEngineType,
+            this.engine,
+          );
+          const actualPrecision = floatPrecisionOf(dbCol.type, this.engine);
           if (
             expectedPrecision &&
             actualPrecision &&
@@ -1439,11 +1453,17 @@ export class SchemaComparer {
           typeDrifted = true;
 
           const hasDefault = colDef.defaultValue !== undefined;
+          const conversionOptions = {
+            hasDefault,
+            defaultValue: colDef.defaultValue,
+          };
 
           if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
-            const statements = renderJsonbColumnConversion(tableName, colName, {
-              hasDefault,
-            });
+            const statements = renderJsonbColumnConversion(
+              tableName,
+              colName,
+              conversionOptions,
+            );
             changes.push({
               type: 'type_upgrade',
               table: tableName,
@@ -1470,9 +1490,11 @@ export class SchemaComparer {
                       : 'unavailable'
                   }). Repair or clear the offending value(s), then rerun ` +
                   '`smrt db:migrate`.',
-                suggestedSql: renderJsonbColumnConversion(tableName, colName, {
-                  hasDefault,
-                }),
+                suggestedSql: renderJsonbColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
               },
             });
           } else if (
@@ -1482,7 +1504,7 @@ export class SchemaComparer {
             const statements = renderTimestamptzColumnConversion(
               tableName,
               colName,
-              { hasDefault },
+              conversionOptions,
             );
             changes.push({
               type: 'type_upgrade',
@@ -1516,7 +1538,7 @@ export class SchemaComparer {
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
-                  { hasDefault },
+                  conversionOptions,
                 ),
               },
             });

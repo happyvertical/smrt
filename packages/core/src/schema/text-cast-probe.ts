@@ -23,7 +23,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { quoteIdentifier } from './sql-identifiers.js';
+import { formatDefaultValue, quoteIdentifier } from './sql-identifiers.js';
 
 /** Outcome of a server-side cast-safety probe over one column's non-null values. */
 export type ShapeProbeResult =
@@ -47,16 +47,60 @@ export function maskSampleValue(value: string): string {
 const PROBE_FUNCTION = 'pg_temp.smrt_probe_cast_ok';
 
 /**
+ * PostgreSQL's "special" date/time input values (see the "Special Values"
+ * table in the PostgreSQL docs). Every one of these parses successfully to
+ * `timestamptz` — `probeCastSafety`'s real-cast test alone would call a text
+ * column literally holding the string `now` or `infinity` "clean" — but
+ * casting them evaluates to the *migration's* execution time or an infinite
+ * sentinel, silently destroying the original value with no error and no
+ * advisory. They must never be treated as safe, regardless of what a bare
+ * cast attempt reports.
+ */
+const TIMESTAMPTZ_SPECIAL_VALUES = new Set([
+  'epoch',
+  'infinity',
+  '-infinity',
+  'now',
+  'today',
+  'tomorrow',
+  'yesterday',
+  'allballs',
+]);
+
+/**
+ * A `timestamptz` cast is only safe to apply unattended when the source text
+ * already carries an explicit UTC offset (`Z` or `+HH[:MM]`/`-HH[:MM]`) —
+ * without one, PostgreSQL interprets the value under the *migrating
+ * session's* `TimeZone` setting, so the exact same text can cast to a
+ * different instant on a different run/server. That ambiguity is exactly
+ * what `--legacy-timezone=UTC` exists to resolve explicitly; the probe must
+ * fail closed (not silently guess UTC) so naive values route to that opt-in
+ * path instead of being auto-converged.
+ */
+// PostgreSQL's ARE ("advanced regular expression") dialect, matched with the
+// case-insensitive `~*` operator server-side — not a JS RegExp, and not
+// derived from one, since the two dialects diverge on escaping/anchoring.
+const TIMESTAMPTZ_EXPLICIT_OFFSET_SQL_PATTERN =
+  '^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}(:[0-9]{2}(\\.[0-9]+)?)?)?[[:space:]]*(Z|[+-][0-9]{2}(:?[0-9]{2})?)$';
+
+/**
  * `target` is one of this module's own literal type names — never data —
  * so building the DDL by interpolation is safe; there is no column, table,
  * or row value in this string.
  */
 function renderCreateProbeFunctionSql(): string {
+  const specialValuesArray = [...TIMESTAMPTZ_SPECIAL_VALUES]
+    .map((value) => `'${value}'`)
+    .join(',');
   return (
     `CREATE OR REPLACE FUNCTION ${PROBE_FUNCTION}(value text, target_type text) ` +
     'RETURNS boolean LANGUAGE plpgsql AS $$ ' +
     'BEGIN ' +
     'IF value IS NULL THEN RETURN true; END IF; ' +
+    "IF target_type = 'timestamptz' THEN " +
+    `IF lower(trim(value)) = ANY (ARRAY[${specialValuesArray}]) THEN RETURN false; END IF; ` +
+    `IF trim(value) !~* '${TIMESTAMPTZ_EXPLICIT_OFFSET_SQL_PATTERN}' THEN RETURN false; END IF; ` +
+    'END IF; ' +
     "EXECUTE format('SELECT %L::%s', value, target_type); " +
     'RETURN true; ' +
     'EXCEPTION WHEN OTHERS THEN RETURN false; ' +
@@ -142,6 +186,24 @@ export async function probeCastSafety(
 }
 
 /**
+ * Column-conversion options shared by {@link renderTimestamptzColumnConversion}
+ * and {@link renderJsonbColumnConversion}.
+ *
+ * `defaultValue` must be passed whenever `hasDefault` is true: PostgreSQL
+ * requires `DROP DEFAULT` before `ALTER COLUMN ... TYPE` can run (the old
+ * default is rarely valid syntax for the new type), but the manifest still
+ * declares a default for this column — omitting the matching `SET DEFAULT`
+ * would leave the live column permanently defaultless, silently breaking any
+ * writer that relies on the database to supply it (see #2771/#2772 review
+ * finding: this mirrors the DROP/TYPE/SET DEFAULT sequence the pre-existing
+ * `generateTypeUpgradeSQL` path already uses).
+ */
+interface ColumnConversionOptions {
+  hasDefault?: boolean;
+  defaultValue?: unknown;
+}
+
+/**
  * Render the one-time PostgreSQL conversion of a legacy `text` column to
  * native `timestamptz`, once {@link probeCastSafety} has confirmed every
  * non-null value casts safely.
@@ -149,7 +211,7 @@ export async function probeCastSafety(
 export function renderTimestamptzColumnConversion(
   tableName: string,
   columnName: string,
-  options: { hasDefault?: boolean } = {},
+  options: ColumnConversionOptions = {},
 ): string[] {
   const table = quoteIdentifier(tableName);
   const column = quoteIdentifier(columnName);
@@ -160,6 +222,15 @@ export function renderTimestamptzColumnConversion(
   statements.push(
     `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE timestamptz USING ${column}::timestamptz`,
   );
+  if (options.hasDefault) {
+    const formattedDefault = formatDefaultValue(
+      options.defaultValue,
+      'TIMESTAMP',
+    );
+    statements.push(
+      `ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT ${formattedDefault}`,
+    );
+  }
   return statements;
 }
 
@@ -171,7 +242,7 @@ export function renderTimestamptzColumnConversion(
 export function renderJsonbColumnConversion(
   tableName: string,
   columnName: string,
-  options: { hasDefault?: boolean } = {},
+  options: ColumnConversionOptions = {},
 ): string[] {
   const table = quoteIdentifier(tableName);
   const column = quoteIdentifier(columnName);
@@ -182,5 +253,11 @@ export function renderJsonbColumnConversion(
   statements.push(
     `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE jsonb USING ${column}::jsonb`,
   );
+  if (options.hasDefault) {
+    const formattedDefault = formatDefaultValue(options.defaultValue, 'JSON');
+    statements.push(
+      `ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT ${formattedDefault}::jsonb`,
+    );
+  }
   return statements;
 }
