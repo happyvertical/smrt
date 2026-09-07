@@ -1733,23 +1733,36 @@ export class ManifestGenerator {
             obj.collection = itemClass.collection;
           }
 
-          // Inherit route-visibility flags (api/mcp/cli) from the item class
-          // unless the collection class explicitly overrides them itself.
-          // Decorator-only registration never gives an undecorated collection
-          // its own independent route surface, so an item class that opts
-          // out of generated routes (e.g. api: false for a tenant-isolation
-          // fail-closed class such as SmrtJob, #2750) must not leave its
-          // collection independently advertised in the manifest path.
+          // Inherit a full route opt-out (api/mcp/cli === false) from the
+          // item class unless the collection class explicitly overrides it
+          // itself. Decorator-only registration never gives an undecorated
+          // collection its own independent route surface, so an item class
+          // that fully opts out of generated routes (e.g. api: false for a
+          // tenant-isolation fail-closed class such as SmrtJob, #2750) must
+          // not leave its collection independently advertised in the
+          // manifest path.
+          //
+          // Deliberately scoped to the boolean `false` opt-out only, never
+          // to an object-form config (e.g. `{ include: [...] }`): those
+          // configs list method names specific to the ITEM class's own
+          // instance methods, which do not correspond 1:1 to the
+          // COLLECTION class's methods of the same name (different
+          // signatures, e.g. a bulk/collection `create` vs. a single-record
+          // `create`) -- copying them verbatim previously broke unrelated
+          // packages whose item class narrows its own api/cli/mcp surface
+          // with an include list (e.g. @happyvertical/smrt-subscriptions's
+          // TenantUsageMetric), producing a spurious "CLI command not
+          // exposed via the api" build error on the collection.
           for (const key of ['api', 'mcp', 'cli'] as const) {
             const itemValue = itemClass.decoratorConfig?.[key];
             if (
-              itemValue !== undefined &&
+              itemValue === false &&
               obj.decoratorConfig?.[key] === undefined
             ) {
               obj.decoratorConfig = obj.decoratorConfig || {};
-              obj.decoratorConfig[key] = itemValue;
+              obj.decoratorConfig[key] = false;
               logger.info(
-                `[manifest-generator] ${obj.className} inherits ${key}: ${JSON.stringify(itemValue)} from item class ${itemClass.className}`,
+                `[manifest-generator] ${obj.className} inherits ${key}: false from item class ${itemClass.className}`,
               );
             }
           }
