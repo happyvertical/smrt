@@ -43,14 +43,19 @@ either input to the same canonical hyphenated `uuid` value, so a foreign key
 between a hyphenated-form column and a bare-hex-form column still converts and
 recreates correctly. Braces and partially-hyphenated values are never accepted.
 It deliberately skips dirty columns instead of coercing slug-shaped data.
-Because the hyphenated and bare-hex forms are accepted as the same value,
-TEXT→uuid is many-to-one: a column that holds BOTH forms of the identical
-uuid as two distinct rows (a re-import or dedupe artifact) is detected before
-conversion and skipped as dirty — reported as "N duplicate value(s) after
-normalization" — rather than reaching `ALTER COLUMN … TYPE uuid` and failing
-the whole transaction on a duplicate-key error from the column's PK/unique
-index. That skip also propagates to its foreign-key partners exactly like a
-non-uuid-shaped skip does.
+Because the hyphenated and bare-hex forms — and, for the shape probe, upper
+and lower case — are accepted as the same value, TEXT→uuid is many-to-one.
+That is only a hazard for a column carrying a PK/unique index: a column
+covered by one that holds two distinct TEXT rows normalizing to the same
+uuid (a re-import or dedupe artifact) is detected before conversion and
+skipped as dirty — reported as "N duplicate value(s) after normalization" —
+rather than reaching `ALTER COLUMN … TYPE uuid` and failing the whole
+transaction on a duplicate-key error when that index is rebuilt. That skip
+also propagates to its foreign-key partners exactly like a non-uuid-shaped
+skip does. A column with no PK/unique index normalizing several rows to the
+same value is the intended, harmless outcome (e.g. an ordinary FK column
+with mixed-case or mixed-hyphenation spellings across rows) and is never
+flagged.
 A generated TEXT bridge column (below) is narrower: it stays TEXT and is
 regenerated as `sourceColumn::text` over the now-native column, and
 `uuid::text` always renders the canonical hyphenated form — so a bare-hex

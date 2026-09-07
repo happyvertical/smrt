@@ -3794,12 +3794,17 @@ describePostgres(
     // `USING NULLIF(btrim(...), '')::uuid` clause btrims before casting).
     // Counting DISTINCT *trimmed* forms would hide this collision.
     const whitespaceTable = `${stem}_whitespace`;
+    // A non-unique declared-UUID column (no PK/unique index on ref_id) whose
+    // rows spell the SAME uuid two different ways (hyphenated vs bare-hex).
+    // Normalizing them to one value at ALTER time is harmless — no unique
+    // index is rebuilt — so this must NOT be treated as a collision.
+    const nonUniqueMixedTable = `${stem}_nonunique_mixed`;
     let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     beforeEach(async () => {
       const db = await freshDb();
       await db.query(
-        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}"`,
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}"`,
       );
       await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
       await db.query(
@@ -3824,6 +3829,14 @@ describePostgres(
         `INSERT INTO "${whitespaceTable}" (id) VALUES ($1), ($2)`,
         'dddddddd-dddd-dddd-dddd-dddddddddddd',
         ' dddddddd-dddd-dddd-dddd-dddddddddddd',
+      );
+      await db.query(
+        `CREATE TABLE "${nonUniqueMixedTable}" (row_id serial PRIMARY KEY, ref_id text)`,
+      );
+      await db.query(
+        `INSERT INTO "${nonUniqueMixedTable}" (ref_id) VALUES ($1), ($2)`,
+        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
       );
 
       clearCache();
@@ -3877,6 +3890,16 @@ describePostgres(
             version: '',
             dependencies: [],
           },
+          [nonUniqueMixedTable]: {
+            tableName: nonUniqueMixedTable,
+            ddl: '',
+            columns: { ref_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
         } as any);
     });
 
@@ -3885,7 +3908,7 @@ describePostgres(
       try {
         const db = await freshDb();
         await db.query(
-          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}"`,
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}"`,
         );
       } catch {
         // Handler cleanup closes pooled handles; reacquire before teardown.
@@ -3893,7 +3916,7 @@ describePostgres(
       clearCache();
     });
 
-    it('skips the colliding column, converts the unrelated clean and repeated-value columns, and reports the collision', async () => {
+    it('skips only unique-indexed collisions; converts the unrelated clean, repeated-value, and non-unique mixed-spelling columns', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -3913,9 +3936,14 @@ describePostgres(
       // An ordinary non-unique column repeating the SAME raw TEXT value
       // across rows is NOT a collision and must still convert.
       expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
-      // A whitespace-only difference is ALSO a collision (the conversion
-      // trims before casting) — must be caught, not silently aborted.
+      // A whitespace-only difference is ALSO a collision on a unique/PK
+      // column (the conversion trims before casting) — must be caught, not
+      // silently aborted.
       expect(await dataType(whitespaceTable, 'id')).toBe('text');
+      // A non-unique column with two DIFFERENT spellings of the same uuid
+      // has no unique index to violate — normalizing to one value is
+      // harmless, so it must still convert, not be flagged as dirty.
+      expect(await dataType(nonUniqueMixedTable, 'ref_id')).toBe('uuid');
       expect(output).toContain(
         `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
       );
@@ -3923,6 +3951,7 @@ describePostgres(
         `SKIP ${whitespaceTable}.id: 1 duplicate value(s) after normalization`,
       );
       expect(output).not.toContain(`${repeatedTable}.parent_id`);
+      expect(output).not.toContain(`${nonUniqueMixedTable}.ref_id`);
     }, 30_000);
 
     it('is a no-op on a second run', async () => {
@@ -3943,6 +3972,7 @@ describePostgres(
       expect(await dataType(cleanTable, 'id')).toBe('uuid');
       expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
       expect(await dataType(whitespaceTable, 'id')).toBe('text');
+      expect(await dataType(nonUniqueMixedTable, 'ref_id')).toBe('uuid');
     }, 30_000);
   },
 );

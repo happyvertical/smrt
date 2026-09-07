@@ -658,7 +658,12 @@ async function convertPostgresUuidColumns(
   const { rows: candidateRows } = await db.query(
     `SELECT cols.table_name, cols.column_name, cols.column_default,
               relation.oid::text AS relation_oid, attribute.attnum AS attribute_number,
-              format_type(attribute.atttypid, attribute.atttypmod) AS type_name
+              format_type(attribute.atttypid, attribute.atttypmod) AS type_name,
+              EXISTS (
+                SELECT 1 FROM pg_index idx
+                 WHERE idx.indrelid = relation.oid AND idx.indisunique
+                   AND idx.indnkeyatts = 1 AND idx.indkey[0] = attribute.attnum
+              ) AS unique_covered
          FROM information_schema.columns cols
          JOIN pg_namespace namespace ON namespace.nspname = cols.table_schema
          JOIN pg_class relation ON relation.relnamespace = namespace.oid AND relation.relname = cols.table_name
@@ -691,37 +696,42 @@ async function convertPostgresUuidColumns(
       // TEXT→uuid is many-to-one: the widened shape probe now accepts both
       // the hyphenated and bare-hex forms of the SAME value, so two
       // DIFFERENT, individually-valid TEXT strings can normalize to the same
-      // uuid. A PK/unique index on this column would then fail
-      // `ALTER COLUMN … TYPE uuid` with a duplicate-key error, aborting the
-      // whole transaction. Detect that BEFORE conversion and route it
-      // through the same skip path as dirty data, so it degrades to a
-      // per-column skip instead of a whole-run abort.
-      //
-      // This must count DISTINCT RAW (un-trimmed) TEXT forms per normalized
-      // group, not rows and not trimmed forms:
-      //   - not rows: an ordinary non-unique FK column legitimately repeats
-      //     the same (identical) TEXT value across many rows — e.g. every
-      //     child row referencing the same parent — and that is not a
-      //     collision at all, since no unique index is violated by rows
-      //     that were already byte-identical TEXT.
-      //   - not trimmed forms: the conversion's own `USING` clause also
-      //     btrims before casting, so two rows differing only by leading or
-      //     trailing whitespace (' <uuid>' vs '<uuid>') are just as
-      //     collision-prone as a hyphen/bare-hex pair, and counting on the
-      //     trimmed value would hide exactly that case.
-      const { rows: dupRows } = await db.query(
-        `SELECT count(*)::text AS n FROM (
-             SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
-               FROM ${pgTable(table)}
-              WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
-                AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
-              GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
-             HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
-           ) collisions`,
-      );
-      duplicateNormalized = Number(
-        (dupRows[0] as Record<string, unknown> | undefined)?.n ?? 0,
-      );
+      // uuid. That is only a problem for a column with a PK/unique index —
+      // `ALTER COLUMN … TYPE uuid` rebuilds that index and fails with a
+      // duplicate-key error, aborting the whole transaction. A non-unique
+      // column normalizing several rows to the same value is the intended,
+      // harmless outcome (e.g. an ordinary FK column with mixed-case or
+      // mixed hyphenation across rows), so only probe columns actually
+      // covered by a single-key unique/PK index — flagging every declared-
+      // UUID column would itself falsely block otherwise-clean, unindexed
+      // data (and propagate that false block to FK partners).
+      if (row.unique_covered) {
+        // This must count DISTINCT RAW (un-trimmed) TEXT forms per
+        // normalized group, not rows and not trimmed forms:
+        //   - not rows: an ordinary repeat of the same (identical) TEXT
+        //     value across many rows under the SAME unique key cannot
+        //     happen (the unique index already forbids it), but guard it
+        //     anyway rather than assume — no unique index is violated by
+        //     rows that were already byte-identical TEXT.
+        //   - not trimmed forms: the conversion's own `USING` clause also
+        //     btrims before casting, so two rows differing only by leading
+        //     or trailing whitespace (' <uuid>' vs '<uuid>') are just as
+        //     collision-prone as a hyphen/bare-hex pair, and counting on
+        //     the trimmed value would hide exactly that case.
+        const { rows: dupRows } = await db.query(
+          `SELECT count(*)::text AS n FROM (
+               SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
+                 FROM ${pgTable(table)}
+                WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
+                  AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
+                GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
+               HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
+             ) collisions`,
+        );
+        duplicateNormalized = Number(
+          (dupRows[0] as Record<string, unknown> | undefined)?.n ?? 0,
+        );
+      }
     }
     liveColumns.push({
       table,
