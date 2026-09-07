@@ -25,6 +25,7 @@ import {
   resolveCollectionItemClassName,
   resolveRelatedRegistration,
 } from '../registry/collection-resolution.js';
+import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine } from '../schema/ddl/index.js';
@@ -401,8 +402,28 @@ export async function getTestDatabase(
     classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
 
-  // Skip if no classes registered
+  // Skip if no classes registered. When the caller left `classes` implicit,
+  // an empty registry usually means registration never reached this
+  // process/module instance of ObjectRegistry (e.g. a Vitest plugin hook
+  // registering manifests in a different worker/process than the test code
+  // — #2750) rather than a deliberate "system tables only" setup. Warn (never
+  // throw by default) so that failure surfaces here instead of as a much
+  // later, harder-to-diagnose "no such table" error. An explicit empty
+  // `classes: []` array is a deliberate choice and stays silent.
   if (classNames.length === 0) {
+    if (isImplicitClassList) {
+      recordRegistryDiagnostic(
+        'warn',
+        'TEST_DATABASE_EMPTY_IMPLICIT_REGISTRY',
+        'getTestDatabase() found zero registered classes in ObjectRegistry and ' +
+          'created only system tables. If you expected model tables, the ' +
+          'registry is likely empty in this process — for smrt-vitest ' +
+          'consumers, confirm registration (smrtVitestPlugin() manifest ' +
+          'loading, or your setupFiles) actually runs in the same process ' +
+          'as your test code, or pass an explicit `classes` list to ' +
+          'getTestDatabase() to opt out of this check.',
+      );
+    }
     return db;
   }
 

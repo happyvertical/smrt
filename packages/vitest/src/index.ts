@@ -33,6 +33,32 @@ import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vitest/config';
 
 /**
+ * Environment variable carrying this plugin's manifest-registration options
+ * (`packages`, `root`, `verbose`) from the Vitest orchestrator process to
+ * every pool worker process (#2750).
+ *
+ * `configResolved()` below registers manifests into `ObjectRegistry`, but it
+ * only ever runs in Vitest's main/orchestrator process. Test files execute
+ * in separate pool worker processes (`forks`) or worker threads (`threads`)
+ * that resolve `@happyvertical/smrt-core` independently — `globalThis` (and
+ * so the `ObjectRegistry` singleton it backs) is not shared across OS
+ * processes, and worker threads get their own JS realm too. Registration
+ * done only in `configResolved()` is therefore invisible to the test code
+ * that actually calls `getTestDatabase()` — it registers into a copy of the
+ * registry the test never sees.
+ *
+ * `config()` below sets this env var as early as possible (before Vitest
+ * spawns any pool worker); `./setup.ts`, which runs inside every worker via
+ * `setupFiles`, reads it and re-runs the exact same registration
+ * (`setupSmrtManifests`) in that worker's own process/realm. Node's
+ * `child_process.fork` (the `forks` pool) and `worker_threads` (the
+ * `threads` pool) both inherit `process.env` from the parent at spawn time,
+ * so the option payload reaches every worker without any new public API.
+ */
+export const SMRT_VITEST_SETUP_OPTIONS_ENV_KEY =
+  '__SMRT_VITEST_SETUP_OPTIONS__';
+
+/**
  * Configuration options for {@link smrtVitestPlugin} and
  * {@link setupSmrtManifests}.
  *
@@ -1152,6 +1178,15 @@ export function smrtVitestPlugin(
     name: 'smrt-vitest',
 
     config(userConfig) {
+      // Propagate manifest-registration options to every worker process this
+      // early — before Vitest spawns any pool worker — so ./setup.ts can
+      // re-run registration inside the worker's own process/realm (#2750).
+      process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify({
+        packages,
+        root,
+        verbose,
+      } satisfies SmrtVitestPluginOptions);
+
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
       applyTestDefaultsToProjects(userConfig.test?.projects, rootRetry);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);

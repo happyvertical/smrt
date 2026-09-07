@@ -24,10 +24,70 @@ import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
 import {
+  SMRT_VITEST_SETUP_OPTIONS_ENV_KEY,
+  type SmrtVitestPluginOptions,
+  setupSmrtManifests,
+} from './index.js';
+import {
   applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtVitestSetupManifestsRegistered: boolean | undefined;
+}
+
+/**
+ * Re-run `smrtVitestPlugin()`'s manifest registration inside THIS worker
+ * process (#2750). `configResolved()` in `./index.ts` only ever runs in
+ * Vitest's main/orchestrator process; `ObjectRegistry` is a `globalThis`
+ * singleton, which is not shared across the OS processes/worker threads
+ * that actually execute test files. Without this, test code sees an empty
+ * registry even though the plugin logged classes as loaded.
+ *
+ * Guarded by a `globalThis` flag (not a module-scoped one — this module may
+ * be freshly re-evaluated per test file under `isolate: true`) so repeated
+ * filesystem/manifest work only happens once per worker process. A no-op
+ * when the env var is absent — i.e. this setup file used standalone,
+ * without `smrtVitestPlugin()` in `plugins`.
+ *
+ * Run from a `beforeAll` hook rather than a module-top-level `await`: a
+ * top-level `await` in a `setupFiles` entry changes how Vitest sequences
+ * module loading and shifted the async call-stack frames
+ * `getSourceFileFromStack()` (`packages/core/src/registry/shared-state.ts`)
+ * relies on to attribute a `@smrt()` class to its declaring package —
+ * observed as spurious `@vitest/runner:<Class>` qualified names in core's
+ * own test suite. `beforeAll` still runs before every test in the file (and
+ * before the mocked `getDatabase()` is first exercised), without disturbing
+ * module-load-time stack shape.
+ */
+async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
+  if (globalThis.__smrtVitestSetupManifestsRegistered) {
+    return;
+  }
+  globalThis.__smrtVitestSetupManifestsRegistered = true;
+
+  const raw = process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY];
+  if (!raw) {
+    return;
+  }
+
+  try {
+    const options = JSON.parse(raw) as SmrtVitestPluginOptions;
+    await setupSmrtManifests(options);
+  } catch (error) {
+    console.warn(
+      '[smrt-vitest] setup: failed to register manifests in this test process:',
+      error,
+    );
+  }
+}
+
+beforeAll(async () => {
+  await ensureManifestsRegisteredInThisProcess();
+});
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
 type CacheState = unknown;
