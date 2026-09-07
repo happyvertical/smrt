@@ -1732,6 +1732,27 @@ export class ManifestGenerator {
             );
             obj.collection = itemClass.collection;
           }
+
+          // Inherit route-visibility flags (api/mcp/cli) from the item class
+          // unless the collection class explicitly overrides them itself.
+          // Decorator-only registration never gives an undecorated collection
+          // its own independent route surface, so an item class that opts
+          // out of generated routes (e.g. api: false for a tenant-isolation
+          // fail-closed class such as SmrtJob, #2750) must not leave its
+          // collection independently advertised in the manifest path.
+          for (const key of ['api', 'mcp', 'cli'] as const) {
+            const itemValue = itemClass.decoratorConfig?.[key];
+            if (
+              itemValue !== undefined &&
+              obj.decoratorConfig?.[key] === undefined
+            ) {
+              obj.decoratorConfig = obj.decoratorConfig || {};
+              obj.decoratorConfig[key] = itemValue;
+              logger.info(
+                `[manifest-generator] ${obj.className} inherits ${key}: ${JSON.stringify(itemValue)} from item class ${itemClass.className}`,
+              );
+            }
+          }
         }
       }
     }
