@@ -16,7 +16,7 @@
  *     drop the old column.
  *
  *  2. **TEXT → native uuid conversion**. Most existing `id`/FK columns already
- *     hold canonical UUID strings in TEXT columns and can be promoted to native
+ *     hold UUID-shaped strings in TEXT columns and can be promoted to native
  *     `uuid`. Conversion is gated on TWO independent checks, BOTH of which must
  *     pass for a column to be converted:
  *
@@ -31,7 +31,7 @@
  *           Tables not present in the manifest (non-SMRT tables in the `public`
  *           schema) drop out automatically.
  *
- *       (b) **Data-shape** — every non-empty value is already a canonical UUID.
+ *       (b) **Data-shape** — every non-empty value is already UUID-shaped.
  *           A declared-UUID column that still holds genuine non-uuid values
  *           (legacy unhyphenated ids, partially-migrated data, …) is SKIPPED and
  *           reported so the operator can clean it before re-running.
@@ -84,7 +84,23 @@ interface DbMigrateUuidOptions {
   verbose?: boolean;
 }
 
+// PostgreSQL's `::uuid` cast also accepts the bare 32-hex form (no hyphens) as
+// the identical value to its canonical hyphenated form — but NOT braces or
+// partial hyphenation. Accept both forms at the shape probes that gate a
+// TEXT→uuid TYPE conversion (candidate shape probe, rename-source probe): the
+// column becomes a native `uuid` either way, and both input forms normalize
+// to the same value.
 const UUID_RE =
+  '^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$';
+
+// The generated TEXT bridge stays TEXT — it is re-added as `sourceColumn::text`
+// over the now-native-uuid column, and `uuid::text` always renders the
+// canonical HYPHENATED form. A bridge column that held the bare-hex form
+// would therefore come back re-hyphenated: a silent, irreversible rewrite of
+// the exact literal the bridge exists to preserve for TEXT FK children. So
+// the bridge sample probe stays canonical-hyphenated-only (case-sensitive,
+// lower-case), never the widened alternation.
+const CANONICAL_UUID_RE =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 /**
@@ -132,14 +148,21 @@ interface ConvertCandidate {
 
 /**
  * A live TEXT `id`/FK column discovered in the database, annotated with how
- * many of its non-empty values are NOT canonical UUIDs.
+ * many of its non-empty values are NOT UUID-shaped.
  */
 export interface LiveTextColumn {
   table: string;
   column: string;
   hasDefault: boolean;
-  /** Count of non-empty values that are not canonical UUIDs. */
+  /** Count of non-empty values that are not UUID-shaped. */
   nonUuid: number;
+  /**
+   * Count of normalized-value groups with more than one distinct TEXT row
+   * mapping to the same uuid (e.g. one hyphenated, one bare-hex row for the
+   * same value) — a many-to-one collision the widened shape probe admits.
+   * Optional/defaults to 0 so existing call sites need not set it.
+   */
+  duplicateNormalized?: number;
 }
 
 /**
@@ -147,10 +170,145 @@ export interface LiveTextColumn {
  */
 export interface ConversionPlan {
   convert: ConvertCandidate[];
-  /** Declared-UUID columns whose data still has non-uuid values. */
-  skipDirtyData: Array<{ table: string; column: string; nonUuid: number }>;
+  /**
+   * Declared-UUID columns whose data still has non-uuid values, and/or two or
+   * more TEXT rows that normalize to the same uuid (a post-normalization
+   * collision — `duplicateNormalized` is present only when > 0).
+   */
+  skipDirtyData: Array<{
+    table: string;
+    column: string;
+    nonUuid: number;
+    duplicateNormalized?: number;
+  }>;
   /** Live TEXT columns the schema does NOT declare as UUID (left as TEXT). */
   skipNotDeclared: Array<{ table: string; column: string }>;
+  /**
+   * Otherwise-convertible columns blocked because a foreign-key partner
+   * (transitively) will not convert. Populated by
+   * `propagateBlockedForeignKeyPartners`; absent/empty before that step runs.
+   */
+  skipBlockedPartner?: Array<{ table: string; column: string; reason: string }>;
+}
+
+/** A single-column foreign key edge between two candidate columns. */
+export interface ForeignKeyEdge {
+  name: string;
+  childTable: string;
+  childColumn: string;
+  parentTable: string;
+  parentColumn: string;
+}
+
+/**
+ * Propagate skips across foreign-key edges to a fixpoint.
+ *
+ * `db:migrate-uuid` converts a column only when BOTH its declared-UUID/clean
+ * data gates pass (see `planUuidConversions`) AND every foreign-key partner
+ * of it will also convert — otherwise `ALTER TABLE … ADD CONSTRAINT` at
+ * recreation time would fail with a text/uuid type mismatch. Rather than
+ * aborting the whole run, block the convertible partner too: a column
+ * skipped for dirty data or because the schema intentionally keeps it TEXT
+ * blocks every foreign-key partner of it, and that block propagates
+ * transitively (a two-hop chain blocks both hops).
+ *
+ * Pure and DB-independent: `edges` is the full set of single-column foreign
+ * keys touching the candidate columns, discovered separately. Multi-column
+ * foreign keys are out of scope here and stay a hard refusal downstream.
+ */
+/** Human-readable reason for one `skipDirtyData` entry — shared by dry-run/apply logging and FK-block-propagation reasons. */
+function dirtyDataReason(
+  item: ConversionPlan['skipDirtyData'][number],
+): string {
+  const parts: string[] = [];
+  if (item.nonUuid > 0) parts.push(`${item.nonUuid} non-uuid value(s)`);
+  if (item.duplicateNormalized)
+    parts.push(
+      `${item.duplicateNormalized} duplicate value(s) after normalization`,
+    );
+  return parts.join(', ');
+}
+
+export function propagateBlockedForeignKeyPartners(
+  plan: ConversionPlan,
+  edges: ForeignKeyEdge[],
+): ConversionPlan {
+  const convertByKey = new Map(
+    plan.convert.map((candidate) => [
+      declaredUuidKey(candidate.table, candidate.column),
+      candidate,
+    ]),
+  );
+  const blockedReason = new Map<string, string>();
+  for (const item of plan.skipDirtyData) {
+    blockedReason.set(
+      declaredUuidKey(item.table, item.column),
+      dirtyDataReason(item),
+    );
+  }
+  for (const item of plan.skipNotDeclared) {
+    blockedReason.set(
+      declaredUuidKey(item.table, item.column),
+      'not schema-declared UUID',
+    );
+  }
+
+  const skipBlockedPartner: NonNullable<ConversionPlan['skipBlockedPartner']> =
+    [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      const childKey = declaredUuidKey(edge.childTable, edge.childColumn);
+      const parentKey = declaredUuidKey(edge.parentTable, edge.parentColumn);
+      const childBlockedReason = blockedReason.get(childKey);
+      const parentBlockedReason = blockedReason.get(parentKey);
+
+      if (
+        childBlockedReason !== undefined &&
+        parentBlockedReason === undefined &&
+        convertByKey.has(parentKey)
+      ) {
+        const candidate = convertByKey.get(parentKey);
+        if (!candidate) continue;
+        const reason = `blocked by foreign key ${edge.name} to ${edge.childTable}.${edge.childColumn} (${childBlockedReason})`;
+        blockedReason.set(parentKey, reason);
+        convertByKey.delete(parentKey);
+        skipBlockedPartner.push({
+          table: candidate.table,
+          column: candidate.column,
+          reason,
+        });
+        changed = true;
+        continue;
+      }
+
+      if (
+        parentBlockedReason !== undefined &&
+        childBlockedReason === undefined &&
+        convertByKey.has(childKey)
+      ) {
+        const candidate = convertByKey.get(childKey);
+        if (!candidate) continue;
+        const reason = `blocked by foreign key ${edge.name} to ${edge.parentTable}.${edge.parentColumn} (${parentBlockedReason})`;
+        blockedReason.set(childKey, reason);
+        convertByKey.delete(childKey);
+        skipBlockedPartner.push({
+          table: candidate.table,
+          column: candidate.column,
+          reason,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  return {
+    convert: [...convertByKey.values()],
+    skipDirtyData: plan.skipDirtyData,
+    skipNotDeclared: plan.skipNotDeclared,
+    skipBlockedPartner,
+  };
 }
 
 /**
@@ -158,7 +316,7 @@ export interface ConversionPlan {
  *
  * A column is converted ONLY if BOTH gates pass:
  *   1. it is in the schema-declared-UUID set, AND
- *   2. all of its non-empty values are already canonical UUIDs.
+ *   2. all of its non-empty values are already UUID-shaped.
  *
  * Declared-UUID columns with dirty data are reported in `skipDirtyData`;
  * undeclared columns (schema-intentional TEXT, or non-SMRT tables) are reported
@@ -178,12 +336,16 @@ export function planUuidConversions(
       skipNotDeclared.push({ table: col.table, column: col.column });
       continue;
     }
-    if (col.nonUuid > 0) {
-      // Gate 2 failed: declared UUID but data is not all-uuid. Operator cleans.
+    const duplicateNormalized = col.duplicateNormalized ?? 0;
+    if (col.nonUuid > 0 || duplicateNormalized > 0) {
+      // Gate 2 failed: declared UUID but data is not all-uuid, OR two+ TEXT
+      // rows normalize to the same uuid (a PK/unique conflict waiting to
+      // happen at ALTER time). Operator cleans/dedupes.
       skipDirtyData.push({
         table: col.table,
         column: col.column,
         nonUuid: col.nonUuid,
+        ...(duplicateNormalized > 0 ? { duplicateNormalized } : {}),
       });
       continue;
     }
@@ -516,6 +678,7 @@ async function convertPostgresUuidColumns(
     // that apply can never execute.
     if (excludedColumns.has(declaredUuidKey(table, column))) continue;
     let nonUuid = 0;
+    let duplicateNormalized = 0;
     if (declaredUuid.has(declaredUuidKey(table, column))) {
       const { rows } = await db.query(
         `SELECT count(*)::text AS n FROM ${pgTable(table)}
@@ -525,12 +688,115 @@ async function convertPostgresUuidColumns(
       nonUuid = Number(
         (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
       );
+      // TEXT→uuid is many-to-one: the widened shape probe now accepts both
+      // the hyphenated and bare-hex forms of the SAME value, so two
+      // DIFFERENT, individually-valid TEXT strings can normalize to the same
+      // uuid. That is only a problem for a column covered by a unique/PK
+      // index (single-key OR composite — SMRT itself generates composite
+      // UNIQUE(tenant_id, slug, context) indexes on tenant-scoped tables) —
+      // `ALTER COLUMN … TYPE uuid` rebuilds every such index and fails with
+      // a duplicate-key error, aborting the whole transaction. A column with
+      // no unique index at all normalizing several rows to the same value is
+      // the intended, harmless outcome (e.g. an ordinary FK column with
+      // mixed-case or mixed hyphenation across rows), so only probe columns
+      // actually covered by SOME unique index — flagging every declared-
+      // UUID column would itself falsely block otherwise-clean, unindexed
+      // data (and propagate that false block to FK partners).
+      const uniqueIndexes = await findUniqueIndexKeyColumns(
+        db,
+        String(row.relation_oid),
+        Number(row.attribute_number),
+      );
+      for (const { keyColumns, nullsNotDistinct } of uniqueIndexes) {
+        const otherColumns = keyColumns.filter((c) => c.name !== column);
+        // Build each other key column's GROUP BY expression:
+        //   - a column that is ITSELF a declared-UUID candidate converting
+        //     in the SAME run (e.g. UNIQUE(source_id, target_id) where both
+        //     are declared UUID) must be grouped on its normalized value
+        //     too, not its raw TEXT — otherwise two rows that collide only
+        //     AFTER both columns convert (one hyphenated, one bare-hex on
+        //     EACH side) stay in different groups and the collision is
+        //     missed, reintroducing the whole-run abort this probe exists
+        //     to prevent. Guarded with CASE so a row whose other-column
+        //     value is not itself uuid-shaped (dirty data on that column)
+        //     falls back to its raw text rather than erroring the cast.
+        //   - a column already native `uuid` (e.g. converted in an earlier
+        //     run) needs no cast at all.
+        //   - anything else (a column that will never convert, e.g. `slug`)
+        //     groups on its raw value, unchanged.
+        const otherColumnExpr = (other: UniqueIndexKeyColumn): string => {
+          const quoted = quoteIdentifier(other.name);
+          if (other.typeName === 'uuid') return quoted;
+          if (declaredUuid.has(declaredUuidKey(table, other.name))) {
+            return `CASE WHEN btrim(${quoted}) ~* '${UUID_RE}' THEN NULLIF(btrim(${quoted}), '')::uuid::text ELSE ${quoted} END`;
+          }
+          return quoted;
+        };
+        // PostgreSQL's default NULLS DISTINCT means a NULL in an other key
+        // column can never collide with anything, however the rest of the
+        // row compares — exclude those rows from the group entirely rather
+        // than let a shared NULL falsely group two otherwise-unrelated rows
+        // together (a false collision that would needlessly skip, and
+        // propagate-block, an otherwise-clean column).
+        const nullGuards = nullsNotDistinct
+          ? []
+          : otherColumns.map(
+              (other) => `${quoteIdentifier(other.name)} IS NOT NULL`,
+            );
+        // This must count DISTINCT RAW (un-trimmed) TEXT forms of THIS
+        // column per group, not rows and not trimmed forms:
+        //   - grouping by the index's OTHER key columns too (composite
+        //     case): a collision only violates THIS index when every other
+        //     key column also matches — two rows that share a normalized
+        //     `tenant_id` but differ in `slug` never collide on
+        //     UNIQUE(tenant_id, slug, context). Empty for a single-key
+        //     index, which degenerates to grouping on the normalized value
+        //     alone.
+        //   - not rows: an ordinary repeat of the same (identical) TEXT
+        //     value across many rows under the SAME unique key cannot
+        //     happen (the unique index already forbids it), but guard it
+        //     anyway rather than assume — no unique index is violated by
+        //     rows that were already byte-identical TEXT.
+        //   - not trimmed forms: the conversion's own `USING` clause also
+        //     btrims before casting, so two rows differing only by leading
+        //     or trailing whitespace (' <uuid>' vs '<uuid>') are just as
+        //     collision-prone as a hyphen/bare-hex pair, and counting on
+        //     the trimmed value would hide exactly that case.
+        const groupBy = [
+          ...otherColumns.map(otherColumnExpr),
+          `NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid`,
+        ].join(', ');
+        const whereClause = [
+          `nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL`,
+          `btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'`,
+          ...nullGuards,
+        ].join(' AND ');
+        const { rows: dupRows } = await db.query(
+          `SELECT count(*)::text AS n FROM (
+               SELECT 1
+                 FROM ${pgTable(table)}
+                WHERE ${whereClause}
+                GROUP BY ${groupBy}
+               HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
+             ) collisions`,
+        );
+        const found = Number(
+          (dupRows[0] as Record<string, unknown> | undefined)?.n ?? 0,
+        );
+        if (found > 0) {
+          duplicateNormalized += found;
+          // One flagged unique index is enough to force the skip; other
+          // covering indexes would only add noise to the reported count.
+          break;
+        }
+      }
     }
     liveColumns.push({
       table,
       column,
       hasDefault: row.column_default != null,
       nonUuid,
+      duplicateNormalized,
     });
     defaults.set(
       declaredUuidKey(table, column),
@@ -565,21 +831,47 @@ async function convertPostgresUuidColumns(
       (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
     );
   }
-  const { convert, skipDirtyData, skipNotDeclared } = planUuidConversions(
-    liveColumns,
-    declaredUuid,
+  const initialPlan = planUuidConversions(liveColumns, declaredUuid);
+  const { skipDirtyData, skipNotDeclared } = initialPlan;
+  // A convertible column whose foreign-key partner will not convert (dirty
+  // data, or a column the schema deliberately keeps TEXT) must be blocked
+  // too, transitively, or the FK recreation step below fails with a
+  // text/uuid mismatch instead of the conversion being safely skipped.
+  // Fail closed before the (public-only) edge discovery below can silently
+  // miss, or a table/column name collision could silently mis-attribute, a
+  // real cross-schema FK partner of a schema-declared-UUID column.
+  //
+  // `relevant` is deliberately narrower than the full manifest-wide
+  // `declaredUuid` set: it is exactly the live TEXT columns
+  // `propagateBlockedForeignKeyPartners` reasons about below (the ones that
+  // will convert, plus the ones blocked only for dirty data — see its
+  // `blockedReason` map). An already-native-`uuid` declared column, or a
+  // declared column that does not currently exist as live TEXT, is neither
+  // — this run touches neither its type nor its constraints — so a
+  // legitimate cross-schema FK on it must never abort an otherwise
+  // unrelated, idempotent re-run.
+  const relevantForCrossSchemaCheck = new Set(
+    [...initialPlan.convert, ...skipDirtyData].map((candidate) =>
+      declaredUuidKey(candidate.table, candidate.column),
+    ),
   );
+  await assertNoCrossSchemaForeignKeyPartners(db, relevantForCrossSchemaCheck);
+  const foreignKeyEdges = await fetchSingleColumnForeignKeyEdges(db);
+  const { convert, skipBlockedPartner = [] } =
+    propagateBlockedForeignKeyPartners(initialPlan, foreignKeyEdges);
   console.log(
-    `Found ${candidateRows.length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length} skipped.`,
+    `Found ${candidateRows.length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length + skipBlockedPartner.length} skipped.`,
   );
   for (const item of skipDirtyData)
     console.log(
-      `  SKIP ${item.table}.${item.column}: ${item.nonUuid} non-uuid value(s)`,
+      `  SKIP ${item.table}.${item.column}: ${dirtyDataReason(item)}`,
     );
   for (const item of skipNotDeclared)
     console.log(
       `  SKIP ${item.table}.${item.column}: not schema-declared UUID`,
     );
+  for (const item of skipBlockedPartner)
+    console.log(`  SKIP ${item.table}.${item.column}: ${item.reason}`);
   if (convert.length === 0) {
     console.log('\nNothing to convert. Done.\n');
     return;
@@ -966,12 +1258,14 @@ async function snapshotGeneratedBridges(
       );
     }
     // UUID casts normalize input. A text bridge must keep its values exactly,
-    // so accepting upper-case/space-padded legacy values would break TEXT FK
-    // children after recreation.
+    // so accepting upper-case/space-padded legacy values — or the bare-hex
+    // shape, which would come back re-hyphenated by `uuid::text` — would
+    // break TEXT FK children after recreation. Canonical-hyphenated-only,
+    // deliberately narrower than the shape probes above.
     const { rows: nonCanonical } = await db.query(
       `SELECT count(*)::text AS n FROM ${pgTable(table)}
         WHERE ${quoteIdentifier(sourceColumn)} IS NOT NULL
-          AND ${quoteIdentifier(sourceColumn)} !~ '${UUID_RE}'`,
+          AND ${quoteIdentifier(sourceColumn)} !~ '${CANONICAL_UUID_RE}'`,
     );
     if (
       Number((nonCanonical[0] as Record<string, unknown> | undefined)?.n ?? 0) >
@@ -1074,6 +1368,203 @@ async function snapshotBridgeIndexes(
   });
 }
 
+/**
+ * Discover every single-column foreign key in the `public` schema, keyed by
+ * child/parent table+column. Used purely to feed
+ * `propagateBlockedForeignKeyPartners` before the convert set is finalized;
+ * multi-column foreign keys are excluded here and remain a hard refusal in
+ * `snapshotForeignKeys` once the (reduced) convert set is known.
+ */
+/** One key column of a covering unique/PK index, with enough type info to
+ * build a correct collision-detection GROUP BY over it. */
+interface UniqueIndexKeyColumn {
+  name: string;
+  /** `format_type()` output, e.g. `text`, `uuid`. */
+  typeName: string;
+}
+
+interface UniqueIndexCoverage {
+  keyColumns: UniqueIndexKeyColumn[];
+  /**
+   * PostgreSQL's default is `NULLS DISTINCT`: two rows with NULL in the same
+   * key column never collide, however their other columns compare. `false`
+   * unless the index was declared `NULLS NOT DISTINCT` (PG 15+).
+   */
+  nullsNotDistinct: boolean;
+}
+
+/**
+ * Every unique or primary-key index that covers `attnum` as a key column
+ * (single-key or composite; INCLUDE-only columns are excluded via
+ * `indnkeyatts`), returned as one entry per covering index — the probed
+ * column included in `keyColumns`, so callers can filter it out to get the
+ * index's "other" key columns for a composite collision check.
+ *
+ * A key column that is itself an expression (not a plain column reference)
+ * has no `pg_attribute` row and is silently dropped from `keyColumns` by the
+ * inner join below — the resulting collision check under-specifies that
+ * index's true key, which only widens (never narrows) what it flags, so it
+ * cannot hide a real collision; documented as a known imprecision rather
+ * than fully modeled here.
+ */
+async function findUniqueIndexKeyColumns(
+  db: QueryExecutor,
+  relationOid: string,
+  attnum: number,
+): Promise<UniqueIndexCoverage[]> {
+  // `indkey` is `int2vector`, whose cast to `int2[]` keeps its ORIGINAL
+  // zero-based lower bound (unlike a normal array literal) — slicing it with
+  // a one-based `[1:n]` silently returns empty. Slice `[0:n-1]` instead.
+  //
+  // `to_json(...)` (not bare `array_agg`/columns): this driver returns a raw
+  // Postgres `{a,b}` array literal or scalar as an opaque string, not
+  // parsed JS values — wrapping in `to_json` gets them parsed for us.
+  //
+  // `indnullsnotdistinct` only exists on PostgreSQL 15+ (this project's
+  // documented floor is 14); a plain `idx.indnullsnotdistinct` reference —
+  // in the SELECT list OR the GROUP BY — is a parse-time "column does not
+  // exist" error on 14, not a NULL, so it would hard-fail every
+  // db:migrate-uuid run there. Read it through `to_jsonb(idx)`, which only
+  // ever exposes columns that exist on the connected server and yields NULL
+  // (→ coalesced to `false`, PostgreSQL's own NULLS DISTINCT default) when
+  // the key is absent — wrapped in an aggregate so it never needs to appear
+  // in GROUP BY itself.
+  const { rows } = await db.query(
+    `SELECT to_json(array_agg(json_build_object(
+                'name', key_attr.attname,
+                'type', format_type(key_attr.atttypid, key_attr.atttypmod)
+              ) ORDER BY key_order.ord)) AS key_columns,
+              to_json(coalesce(
+                bool_or((to_jsonb(idx) ->> 'indnullsnotdistinct')::boolean),
+                false
+              )) AS nulls_not_distinct
+         FROM pg_index idx
+         CROSS JOIN LATERAL unnest((idx.indkey::int2[])[0:idx.indnkeyatts - 1]) WITH ORDINALITY AS key_order(attnum, ord)
+         JOIN pg_attribute key_attr
+           ON key_attr.attrelid = idx.indrelid AND key_attr.attnum = key_order.attnum
+        WHERE idx.indrelid = ${quoteLiteral(relationOid)}::oid AND idx.indisunique
+          AND ${attnum} = ANY((idx.indkey::int2[])[0:idx.indnkeyatts - 1])
+        GROUP BY idx.indexrelid`,
+  );
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    keyColumns: (row.key_columns as Array<{ name: string; type: string }>).map(
+      (col) => ({ name: String(col.name), typeName: String(col.type) }),
+    ),
+    nullsNotDistinct: Boolean(row.nulls_not_distinct),
+  }));
+}
+
+/**
+ * Discover every single-column foreign key with BOTH endpoints in the public
+ * schema — the only schema `db:migrate-uuid` ever converts or recreates DDL
+ * against (see `pgTable`). Both `child_ns` and `parent_ns` are filtered to
+ * `public` so a same-named table or column living in another schema can
+ * never be silently treated as a candidate's FK partner by `declaredUuidKey`,
+ * which keys purely on `table|column` with no schema qualifier. A
+ * cross-schema partner that actually matters to a converting column is
+ * caught separately, and fails closed, by
+ * `assertNoCrossSchemaForeignKeyPartners`.
+ */
+async function fetchSingleColumnForeignKeyEdges(
+  db: QueryExecutor,
+): Promise<ForeignKeyEdge[]> {
+  const { rows } = await db.query(
+    `SELECT con.conname AS name, child.relname AS child_table,
+            child_attr.attname AS child_column,
+            parent.relname AS parent_table, parent_attr.attname AS parent_column
+       FROM pg_constraint con
+       JOIN pg_class child ON child.oid = con.conrelid
+       JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+       JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = con.conkey[1]
+       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = con.confkey[1]
+      WHERE con.contype = 'f' AND child_ns.nspname = 'public' AND parent_ns.nspname = 'public'
+        AND array_length(con.conkey, 1) = 1`,
+  );
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    name: String(row.name),
+    childTable: String(row.child_table),
+    childColumn: String(row.child_column),
+    parentTable: String(row.parent_table),
+    parentColumn: String(row.parent_column),
+  }));
+}
+
+/**
+ * Fail closed when a (single- OR multi-column) foreign key has exactly one
+ * endpoint in the public schema and at least one of the public-side key
+ * columns is in `relevant` (a schema-declared-UUID column this run treats
+ * as a real conversion candidate/participant).
+ *
+ * `db:migrate-uuid` never converts or recreates DDL outside `public` (see
+ * `pgTable`), and `declaredUuidKey` keys purely on `table|column` with no
+ * schema — so a same-named table/column pair living in another schema could
+ * otherwise be silently mistaken for that candidate's real FK partner
+ * (making `propagateBlockedForeignKeyPartners` or `snapshotForeignKeys`
+ * reason about the wrong table), or a genuine cross-schema partner could go
+ * entirely undiscovered because the edge queries only ever look at
+ * public-to-public constraints. Both are correctness bugs, not merely
+ * documentation gaps, so this check runs independently of `declaredUuidKey`
+ * lookups and fails the whole run with a specific, actionable message
+ * instead of silently mis-propagating or mis-recreating a constraint.
+ *
+ * Deliberately not restricted to single-column FKs: `snapshotForeignKeys`
+ * only refuses an unsupported multi-column FK once it has already matched
+ * an in-`public` participant via `converted`/`bridgeColumns`, which this
+ * cross-schema check runs ahead of and independently from. A composite FK
+ * whose public-side key touches a converting column, but whose other
+ * endpoint lives outside `public`, must fail closed here at preflight —
+ * before `--dry-run` reports a plan `apply` cannot actually execute — the
+ * same as the single-column case.
+ */
+async function assertNoCrossSchemaForeignKeyPartners(
+  db: QueryExecutor,
+  relevant: Set<string>,
+): Promise<void> {
+  const { rows } = await db.query(
+    `SELECT con.conname AS name,
+            child_ns.nspname AS child_schema, child.relname AS child_table,
+            to_json(array_agg(child_attr.attname ORDER BY child_key.ord)) AS child_columns,
+            parent_ns.nspname AS parent_schema, parent.relname AS parent_table,
+            to_json(array_agg(parent_attr.attname ORDER BY child_key.ord)) AS parent_columns
+       FROM pg_constraint con
+       JOIN pg_class child ON child.oid = con.conrelid
+       JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+       JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+       JOIN unnest(con.conkey) WITH ORDINALITY child_key(attnum, ord) ON true
+       JOIN unnest(con.confkey) WITH ORDINALITY parent_key(attnum, ord) ON parent_key.ord = child_key.ord
+       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = child_key.attnum
+       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = parent_key.attnum
+      WHERE con.contype = 'f'
+        AND (child_ns.nspname = 'public') <> (parent_ns.nspname = 'public')
+      GROUP BY con.oid, con.conname, child_ns.nspname, child.relname,
+               parent_ns.nspname, parent.relname`,
+  );
+  for (const row of rows as Array<Record<string, unknown>>) {
+    const childSchema = String(row.child_schema);
+    const parentSchema = String(row.parent_schema);
+    const childTable = String(row.child_table);
+    const parentTable = String(row.parent_table);
+    const childColumns = row.child_columns as string[];
+    const parentColumns = row.parent_columns as string[];
+    const childOnPublic = childSchema === 'public';
+    const publicTable = childOnPublic ? childTable : parentTable;
+    const publicColumns = childOnPublic ? childColumns : parentColumns;
+    const touchesRelevant = publicColumns.some((column) =>
+      relevant.has(declaredUuidKey(publicTable, column)),
+    );
+    if (!touchesRelevant) continue;
+    throw new Error(
+      `Foreign key ${String(row.name)} crosses the public schema boundary ` +
+        `(${childSchema}.${childTable}(${childColumns.join(', ')}) → ` +
+        `${parentSchema}.${parentTable}(${parentColumns.join(', ')})); ` +
+        'db:migrate-uuid only ever converts or recreates constraints in the public schema.',
+    );
+  }
+}
+
 async function snapshotForeignKeys(
   db: QueryExecutor,
   columns: PostgresColumn[],
@@ -1084,6 +1575,14 @@ async function snapshotForeignKeys(
   );
   const bridgeColumns = new Set(
     bridges.map((bridge) => declaredUuidKey(bridge.table, bridge.column)),
+  );
+  // Fail closed before the per-row `converted`/`bridgeColumns` membership
+  // checks below, which key purely on `table|column` with no schema and so
+  // could otherwise be fooled by a same-named table/column living outside
+  // public into treating a genuine cross-schema FK as an in-component edge.
+  await assertNoCrossSchemaForeignKeyPartners(
+    db,
+    new Set([...converted, ...bridgeColumns]),
   );
   const { rows } = await db.query(
     `SELECT con.oid, child.relname AS child_table, con.conname AS name,
@@ -1102,11 +1601,12 @@ async function snapshotForeignKeys(
        JOIN pg_class child ON child.oid = con.conrelid
        JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
        JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
        JOIN unnest(con.conkey) WITH ORDINALITY child_key(attnum, ord) ON true
        JOIN unnest(con.confkey) WITH ORDINALITY parent_key(attnum, ord) ON parent_key.ord = child_key.ord
        JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = child_key.attnum
        JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = parent_key.attnum
-      WHERE con.contype = 'f' AND child_ns.nspname = 'public'`,
+      WHERE con.contype = 'f' AND child_ns.nspname = 'public' AND parent_ns.nspname = 'public'`,
   );
   const participating: ForeignKeySnapshot[] = [];
   for (const row of rows as Array<Record<string, unknown>>) {
