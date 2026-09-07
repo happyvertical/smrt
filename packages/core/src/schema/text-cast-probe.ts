@@ -189,18 +189,23 @@ export async function probeCastSafety(
  * Column-conversion options shared by {@link renderTimestamptzColumnConversion}
  * and {@link renderJsonbColumnConversion}.
  *
- * `defaultValue` must be passed whenever `hasDefault` is true: PostgreSQL
- * requires `DROP DEFAULT` before `ALTER COLUMN ... TYPE` can run (the old
- * default is rarely valid syntax for the new type), but the manifest still
- * declares a default for this column — omitting the matching `SET DEFAULT`
- * would leave the live column permanently defaultless, silently breaking any
- * writer that relies on the database to supply it (see #2771/#2772 review
- * finding: this mirrors the DROP/TYPE/SET DEFAULT sequence the pre-existing
- * `generateTypeUpgradeSQL` path already uses).
+ * `hasLiveDefault` and `manifestDefaultValue` are independent: PostgreSQL
+ * rejects `ALTER COLUMN ... TYPE` outright whenever the column has *any*
+ * existing default that cannot be auto-cast to the target type — this is
+ * true whether or not the manifest itself declares a default (a legacy
+ * `text` column with `DEFAULT ''` blocks the ALTER exactly the same as one
+ * the manifest also wants a default on), so `DROP DEFAULT` must be gated on
+ * the *live* default. `SET DEFAULT` afterward must be gated on the
+ * *manifest* default instead: re-establishing a live-only default the
+ * manifest no longer declares would silently resurrect drift
+ * `compareColumnConstraints` is supposed to report and let an operator
+ * choose to drop (see #2771/#2772 review findings: DROP/TYPE/SET DEFAULT
+ * mirrors the pre-existing `generateTypeUpgradeSQL` path, and the DROP gate
+ * must key off live state PostgreSQL itself enforces, not manifest intent).
  */
 interface ColumnConversionOptions {
-  hasDefault?: boolean;
-  defaultValue?: unknown;
+  hasLiveDefault?: boolean;
+  manifestDefaultValue?: unknown;
 }
 
 /**
@@ -215,16 +220,17 @@ export function renderTimestamptzColumnConversion(
 ): string[] {
   const table = quoteIdentifier(tableName);
   const column = quoteIdentifier(columnName);
+  const hasManifestDefault = options.manifestDefaultValue !== undefined;
   const statements: string[] = [];
-  if (options.hasDefault) {
+  if (options.hasLiveDefault || hasManifestDefault) {
     statements.push(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
   }
   statements.push(
     `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE timestamptz USING ${column}::timestamptz`,
   );
-  if (options.hasDefault) {
+  if (hasManifestDefault) {
     const formattedDefault = formatDefaultValue(
-      options.defaultValue,
+      options.manifestDefaultValue,
       'TIMESTAMP',
     );
     statements.push(
@@ -246,15 +252,19 @@ export function renderJsonbColumnConversion(
 ): string[] {
   const table = quoteIdentifier(tableName);
   const column = quoteIdentifier(columnName);
+  const hasManifestDefault = options.manifestDefaultValue !== undefined;
   const statements: string[] = [];
-  if (options.hasDefault) {
+  if (options.hasLiveDefault || hasManifestDefault) {
     statements.push(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
   }
   statements.push(
     `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE jsonb USING ${column}::jsonb`,
   );
-  if (options.hasDefault) {
-    const formattedDefault = formatDefaultValue(options.defaultValue, 'JSON');
+  if (hasManifestDefault) {
+    const formattedDefault = formatDefaultValue(
+      options.manifestDefaultValue,
+      'JSON',
+    );
     statements.push(
       `ALTER TABLE ${table} ALTER COLUMN ${column} SET DEFAULT ${formattedDefault}::jsonb`,
     );

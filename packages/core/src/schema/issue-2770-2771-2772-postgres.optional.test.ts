@@ -484,5 +484,74 @@ describe.skipIf(!pgUrl)(
         expect(inserted.rows?.[0]?.meta).toEqual({});
       });
     });
+
+    describe('live-only default (not declared by the manifest) is dropped, not resurrected (review finding F6)', () => {
+      // Review finding (F6, second final full-diff pass): DROP DEFAULT was
+      // gated on the *manifest* default only. PostgreSQL rejects
+      // `ALTER COLUMN ... TYPE` whenever the column has ANY existing
+      // default that can't auto-cast to the target type, regardless of
+      // manifest intent -- so a legacy text column with a live default the
+      // manifest does NOT declare (a common residue: a field whose default
+      // was dropped from the model, or simply never modeled) previously
+      // aborted the whole migration batch with "default for column ...
+      // cannot be cast automatically to type jsonb/timestamptz".
+      const liveOnlyTable = `i2771_2772_live_default_only_${suffix}`;
+      const liveOnlySchema = (): Record<string, SchemaDefinition> => ({
+        [liveOnlyTable]: {
+          tableName: liveOnlyTable,
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            // No `defaultValue` here -- the manifest does not want a
+            // default -- but the live column below has one anyway.
+            tags: { type: 'JSON' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '2771-live-default-only',
+        },
+      });
+
+      afterAll(async () => {
+        await db.query(`DROP TABLE IF EXISTS "${liveOnlyTable}"`);
+      });
+
+      it('drops a live-only default (not declared by the manifest) so the ALTER does not abort the batch', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${liveOnlyTable}"`);
+        await db.query(`
+          CREATE TABLE "${liveOnlyTable}" (
+            id text PRIMARY KEY,
+            tags text DEFAULT ''
+          )
+        `);
+        await db.query(
+          `INSERT INTO "${liveOnlyTable}" (id, tags) VALUES ('r1', '{"a":1}')`,
+        );
+
+        const diff = await new SchemaComparer(db, {
+          ignoreTypeMismatches: false,
+        }).compare(liveOnlySchema());
+        const statements = getSQLFromDiff(diff);
+        expect(statements.length).toBeGreaterThan(0);
+        // Must not throw "default for column ... cannot be cast
+        // automatically to type jsonb" -- this is the regression itself.
+        for (const statement of statements) {
+          await db.query(statement);
+        }
+
+        const liveDefault = await db.query(
+          `SELECT column_default FROM information_schema.columns ` +
+            `WHERE table_name = $1 AND column_name = 'tags'`,
+          [liveOnlyTable],
+        );
+        expect(liveDefault.rows?.[0]?.column_default).toBeNull();
+
+        const row = await db.query(
+          `SELECT tags FROM "${liveOnlyTable}" WHERE id = 'r1'`,
+        );
+        expect(row.rows?.[0]?.tags).toEqual({ a: 1 });
+      });
+    });
   },
 );

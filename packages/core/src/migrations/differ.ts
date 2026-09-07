@@ -1452,10 +1452,19 @@ export class SchemaComparer {
         ) {
           typeDrifted = true;
 
-          const hasDefault = colDef.defaultValue !== undefined;
+          // #2771/#2772 review finding: PostgreSQL rejects `ALTER COLUMN
+          // ... TYPE` outright whenever the column has ANY existing default
+          // that can't auto-cast to the target type -- regardless of
+          // whether the manifest itself wants a default -- so DROP DEFAULT
+          // must be gated on the LIVE default, not the manifest's. SET
+          // DEFAULT afterward stays gated on the manifest default only: a
+          // live-only default the manifest no longer declares must not be
+          // silently resurrected.
+          const hasLiveDefault =
+            dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
           const conversionOptions = {
-            hasDefault,
-            defaultValue: colDef.defaultValue,
+            hasLiveDefault,
+            manifestDefaultValue: colDef.defaultValue,
           };
 
           if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
