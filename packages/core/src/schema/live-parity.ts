@@ -773,13 +773,15 @@ function compareIndexes(
 
   // 5. Live indexes nothing declares. Informational: an operator may have
   //    hand-added them, and nothing will recreate them after a rebuild.
-  //    Indexes that exist because rule 4 demands them are explained, even
-  //    though the manifest does not declare them.
-  const policyLeadColumns = new Set(
-    table.columns
-      .filter((column) => column.reference && column.reference !== 'id')
-      .map((column) => column.name),
-  );
+  //
+  //    An undeclared index whose lead column is a reference column
+  //    (tenantId, foreignKey, crossPackageRef) used to be silently exempted
+  //    here as deliberate policy. `migrations/differ.ts` disagreed and would
+  //    drop the same index under `--drop-indexes`, so an operator following
+  //    that command could remove something this check claimed to protect.
+  //    Decision (#2751): treat it as drift and report it — the recommendation
+  //    below already reads correctly ("declare it ... or drop it if it is
+  //    obsolete"), and an `info` finding costs nothing.
   const declaredNames = new Set(table.indexes.map((index) => index.name));
   const declaredSignatures = new Set(
     table.indexes.map((index) => indexSignature(index.columns, index.unique)),
@@ -790,7 +792,6 @@ function compareIndexes(
     // `*_pkey`) exist because of a table constraint, not because anyone
     // declared an index; reporting them as undeclared is pure noise.
     if (isConstraintOwnedIndexName(index.name)) continue;
-    if (policyLeadColumns.has(index.columns[0])) continue;
     if (declaredNames.has(index.name)) continue;
     if (declaredSignatures.has(indexSignature(index.columns, index.unique)))
       continue;

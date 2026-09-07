@@ -968,6 +968,31 @@ describe('selectWebCollectionEntries', () => {
     expect(entries[0].obj.className).toBe('Product');
   });
 
+  it('picks the same winner regardless of scan order when two unrelated models share a collection (#2749)', () => {
+    // Neither model is an STI child of the other, so the STI-base
+    // precedence rule doesn't apply — the tie used to be broken by whichever
+    // arrived first in manifest scan order.
+    const alpha = obj({
+      className: 'AlphaProduct',
+      collection: 'products',
+      qualifiedName: '@a/pkg:AlphaProduct',
+    });
+    const zulu = obj({
+      className: 'ZuluProduct',
+      collection: 'products',
+      qualifiedName: '@z/pkg:ZuluProduct',
+    });
+
+    const forward = selectWebCollectionEntries(manifest(alpha, zulu));
+    const reversed = selectWebCollectionEntries(manifest(zulu, alpha));
+
+    expect(forward).toHaveLength(1);
+    expect(reversed).toHaveLength(1);
+    expect(reversed[0].obj.qualifiedName).toBe(forward[0].obj.qualifiedName);
+    // Deterministic by qualified name: '@a/pkg:AlphaProduct' sorts first.
+    expect(forward[0].obj.qualifiedName).toBe('@a/pkg:AlphaProduct');
+  });
+
   it('emits one entry per REST collection across many models', () => {
     const entries = selectWebCollectionEntries(
       manifest(

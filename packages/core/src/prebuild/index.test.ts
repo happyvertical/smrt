@@ -333,6 +333,61 @@ describe('generateDeclarations', () => {
     );
   });
 
+  it('emits byte-identical declarations regardless of manifest object insertion order (#2749)', async () => {
+    // Regression for a discovery-order-dependent codegen: two manifests with
+    // the same objects inserted in reversed key order must produce
+    // byte-identical smrt-objects.d.ts, smrt-types.d.ts, and smrt-web.d.ts,
+    // not just semantically-equivalent output.
+    //
+    // Known remaining scope (#2754): smrt-client.d.ts is NOT covered here.
+    // Its per-collection CRUD method set can still differ across runs when
+    // two non-collection models share one `collection` with different
+    // `api.include` configs — resolveGeneratedEndpointCrudMethods()
+    // (vite-plugin/api-client-entries.ts) deliberately mirrors real
+    // SvelteKit route-file emission's insertion-order last-writer-wins
+    // semantics for that case, so sorting only the declaration would make it
+    // describe methods that were never actually emitted. See #2754 for why
+    // that needs a route-generation-determinism fix, not a codegen-ordering
+    // one, and is out of this patch-class train's scope.
+    const forwardManifest = buildManifest();
+    const forwardEntries = Object.entries(forwardManifest.objects);
+    const reversedManifest: SmartObjectManifest = {
+      ...forwardManifest,
+      objects: Object.fromEntries([...forwardEntries].reverse()),
+    };
+
+    const forwardDir = join(outDir, 'forward-order');
+    const reversedDir = join(outDir, 'reversed-order');
+
+    await generateDeclarations({
+      manifest: forwardManifest,
+      outDir: forwardDir,
+    });
+    await generateDeclarations({
+      manifest: reversedManifest,
+      outDir: reversedDir,
+    });
+
+    for (const file of [
+      'smrt-objects.d.ts',
+      'smrt-types.d.ts',
+      'smrt-web.d.ts',
+    ]) {
+      const forwardContent = readFileSync(join(forwardDir, file), 'utf-8');
+      const reversedContent = readFileSync(join(reversedDir, file), 'utf-8');
+      expect(reversedContent).toBe(forwardContent);
+    }
+
+    // Sanity: the fixture really does declare more than one object, so a
+    // non-deterministic ordering bug would actually be exercised here.
+    const objectsContent = readFileSync(
+      join(forwardDir, 'smrt-objects.d.ts'),
+      'utf-8',
+    );
+    expect(objectsContent).toContain('export interface ArticleData {');
+    expect(objectsContent).toContain('export interface AuthorData {');
+  });
+
   it('declares a hidden item companion as custom-only without phantom CRUD', async () => {
     const manifest = {
       version: '1.0.0',

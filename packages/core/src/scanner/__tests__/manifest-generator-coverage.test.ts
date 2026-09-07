@@ -601,6 +601,30 @@ describe('ManifestGenerator coverage', () => {
       expect(ts).toContain('link?: string;'); // foreignKey
     });
 
+    it('emits byte-identical type definitions regardless of manifest object insertion order (#2749)', () => {
+      // generateTypeDefinitions() backs the vite-plugin's server-mode
+      // `@smrt/types` resolution (generateTypesModule in vite-plugin/index.ts)
+      // directly, independent of the prebuild/client-mode paths — it needs
+      // its own determinism guarantee.
+      const manifest = baseManifest();
+      manifest.objects.Other = def('Other', {
+        fields: { label: { type: 'text' } },
+      });
+      const forwardEntries = Object.entries(manifest.objects);
+      const reversedManifest: SmartObjectManifest = {
+        ...manifest,
+        objects: Object.fromEntries([...forwardEntries].reverse()),
+      };
+
+      const gen = new ManifestGenerator();
+      const forward = gen.generateTypeDefinitions(manifest);
+      const reversed = gen.generateTypeDefinitions(reversedManifest);
+
+      expect(reversed).toBe(forward);
+      expect(forward).toContain('export interface NoteData');
+      expect(forward).toContain('export interface OtherData');
+    });
+
     it('generates REST endpoint code and respects api: false', () => {
       const gen = new ManifestGenerator();
       const code = gen.generateRestEndpointCode(baseManifest());

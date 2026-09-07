@@ -47,6 +47,7 @@ import {
   buildWebCollectionDefinition,
   buildWebMcpToolDefinitions,
   buildWebToolDescriptors,
+  compareText,
   computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -1670,8 +1671,19 @@ export function createMCPServer(options = {}) {
 function generateClientModeTypes(manifest: SmartObjectManifest): string {
   const typeDefinitions: string[] = [];
 
-  // Generate interfaces for each object in the manifest
-  for (const objectMeta of Object.values(manifest.objects)) {
+  // Generate interfaces for each object in the manifest. Manifest key order
+  // follows scan/discovery order, which is not stable across runs (#2749),
+  // so sort deterministically before emitting.
+  const sortedClientModeObjects = Object.entries(manifest.objects)
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    )
+    .map(([, obj]) => obj);
+  for (const objectMeta of sortedClientModeObjects) {
     // Manifest keys are qualified names; only the simple class name is a valid
     // TypeScript identifier (#2631). `className` is required on
     // `SmartObjectDefinition`, so there is deliberately no manifest-key
@@ -1824,8 +1836,16 @@ export async function generateTypeDeclarationFile(
       mkdirSync(declarationsDir, { recursive: true });
     }
 
-    // Generate interface definitions for each discovered SMRT object
+    // Generate interface definitions for each discovered SMRT object. Sorted
+    // for the same reason as generateClientModeTypes (#2749).
     const objectInterfaces = Object.entries(manifest.objects)
+      .sort(
+        ([leftKey, left], [rightKey, right]) =>
+          compareText(
+            left.qualifiedName || leftKey,
+            right.qualifiedName || rightKey,
+          ) || compareText(leftKey, rightKey),
+      )
       .map(([_name, obj]) => {
         const interfaceName = `${obj.className}Data`;
         const fields = Object.entries(obj.fields)
