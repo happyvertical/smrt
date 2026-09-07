@@ -75,7 +75,22 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
   }
 
   try {
-    const options = JSON.parse(raw) as SmrtVitestPluginOptions;
+    const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
+    // The plugin's `config()` keys its entry by its resolved `root`
+    // (default `process.cwd()` at the time it ran, in the same project).
+    // This worker's own `process.cwd()` is the same project's directory in
+    // the common single-project case, so look that up first. When a
+    // consumer passed a custom non-default `root` there is no key to match
+    // on directly; fall back to the map's one entry only when it is
+    // unambiguous (exactly one project registered in this process) rather
+    // than guessing among several.
+    const entries = Object.entries(byRoot);
+    const options =
+      byRoot[process.cwd()] ??
+      (entries.length === 1 ? entries[0][1] : undefined);
+    if (!options) {
+      return;
+    }
     await setupSmrtManifests(options);
   } catch (error) {
     console.warn(
