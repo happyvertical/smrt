@@ -907,6 +907,36 @@ async function loadAndRegisterManifest(
   }
 }
 
+/**
+ * Patterns identifying a manifest object as declared INLINE inside a test
+ * file itself (`some-behavior.test.ts` decorating a throwaway class in the
+ * same file), not merely located somewhere under a test-ish directory.
+ * Deliberately narrower than `packages/core/src/scanner/test-file-patterns.ts`'s
+ * `isTestFile()` (used there for a lower-stakes purpose, documentation/
+ * API-surface visibility inference): a broader directory-based heuristic
+ * (`__tests__/`, `fixtures?/`, `/test/`, `/mocks?/`) over-fires here and
+ * wrongly excludes legitimate non-test model files that merely happen to
+ * live under a `fixtures/`-named directory, such as
+ * `packages/vitest/src/__tests__/fixtures/issue-2750-registry-fixture/src/models/widget.ts`
+ * -- a full consumer-shaped fixture PROJECT (this very package's own #2750
+ * regression test), not an inline test double. Matching only the file's own
+ * `.test.`/`.spec.` suffix keeps the exclusion scoped to what it's actually
+ * for: a class decorated directly inside test code (see
+ * `registerManifestObjects` below).
+ */
+const TEST_FILE_PATTERNS = [
+  /\.test\.(ts|tsx|js|jsx)$/,
+  /\.spec\.(ts|tsx|js|jsx)$/,
+];
+
+function isManifestEntryFromTestFile(objectDef: unknown): boolean {
+  const filePath = (objectDef as { filePath?: unknown } | null)?.filePath;
+  return (
+    typeof filePath === 'string' &&
+    TEST_FILE_PATTERNS.some((pattern) => pattern.test(filePath))
+  );
+}
+
 function registerManifestObjects(
   ObjectRegistry: {
     hasClass(name: string): boolean;
@@ -923,8 +953,30 @@ function registerManifestObjects(
     return 0;
   }
 
+  // Skip manifest entries declared inside test files (#2750 follow-up): a
+  // class decorated inline in a `*.test.ts`/`__tests__/` fixture (e.g. a
+  // throwaway model used only by that one test file) is captured by the
+  // package-wide manifest scan just like any production model, but it was
+  // never meant to be visible outside the file that declares it -- on the
+  // pre-#2750 decorator-only registration path, it simply never was, since
+  // only classes reached by the currently-running test file's own import
+  // graph got registered. #2750's worker-side re-registration (this file's
+  // `setupSmrtManifests`, invoked from every worker via
+  // `packages/vitest/src/setup.ts`) bulk-registers every manifest entry for
+  // the package regardless of which test file is running, so a fixture
+  // class now leaks into every other test file in the same package/worker
+  // -- reproduced by `packages/chat`'s `chat-security.test.ts` (a
+  // registry-wide audit of "every registered @happyvertical/smrt-chat
+  // model") tripping over `ConvNote`, a full-CRUD test double declared in
+  // `persona-conversation.test.ts`, once that file's manifest entry became
+  // visible package-wide. The fixture's OWN file still registers it
+  // correctly via ordinary decorator-import execution when that file
+  // itself runs; only the manifest-driven BULK path is scoped down here.
   let registered = 0;
   for (const [name, objectDef] of Object.entries(manifest.objects)) {
+    if (isManifestEntryFromTestFile(objectDef)) {
+      continue;
+    }
     if (!ObjectRegistry.hasClass(name)) {
       ObjectRegistry.registerFromManifest(name, objectDef, packageName);
       registered++;
