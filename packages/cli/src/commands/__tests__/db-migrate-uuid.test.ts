@@ -799,7 +799,7 @@ describePostgres(
       );
       await db.query(
         `CREATE TABLE "${parent}" (
-           id text PRIMARY KEY,
+           id text PRIMARY KEY DEFAULT '11111111-1111-1111-1111-111111111111',
            old_ref text NOT NULL,
            new_ref text,
            _integrity_id_text text GENERATED ALWAYS AS (id) STORED
@@ -1005,6 +1005,82 @@ describePostgres(
             new_ref: 'rename-value',
             _integrity_id_text: '11111111-1111-1111-1111-111111111111',
           },
+        },
+      ]);
+    }, 30_000);
+
+    it('refuses a source default changed after planning and before locks', async () => {
+      let changedDefault = false;
+      sqlTestHarness.interceptor = async (...args: any[]) => {
+        const realDb: any = await sqlTestHarness.realGetDatabase(...args);
+        return new Proxy(realDb, {
+          get(target, property, receiver) {
+            if (property === 'transaction') {
+              return async (callback: (tx: any) => Promise<unknown>) =>
+                target.transaction(async (tx: any) => {
+                  const callbackTx = new Proxy(tx, {
+                    get(transactionTarget, transactionProperty, txReceiver) {
+                      if (transactionProperty === 'query') {
+                        return async (...queryArgs: any[]) => {
+                          const sql = String(queryArgs[0]);
+                          if (!changedDefault && /^LOCK TABLE /i.test(sql)) {
+                            changedDefault = true;
+                            // Inject the catalog change at the exact race
+                            // boundary. An external session can commit the
+                            // same ALTER between the pre-plan read and lock;
+                            // keeping it on this transaction avoids a test
+                            // harness lock deadlock while exercising the
+                            // stale-default guard.
+                            await transactionTarget.query(
+                              `ALTER TABLE "${parent}" ALTER COLUMN id SET DEFAULT '22222222-2222-2222-2222-222222222222'`,
+                            );
+                          }
+                          return transactionTarget.query(...queryArgs);
+                        };
+                      }
+                      const value = Reflect.get(
+                        transactionTarget,
+                        transactionProperty,
+                        txReceiver,
+                      );
+                      return typeof value === 'function'
+                        ? value.bind(transactionTarget)
+                        : value;
+                    },
+                  });
+                  return callback(callbackTx);
+                });
+            }
+            const value = Reflect.get(target, property, receiver);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      };
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      sqlTestHarness.interceptor = undefined;
+      expect(changedDefault).toBe(true);
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'source default changed while locks were acquired',
+        ),
+      );
+      errorSpy.mockRestore();
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='id'`,
+        parent,
+      );
+      expect(rows).toEqual([
+        {
+          data_type: 'text',
+          column_default: "'11111111-1111-1111-1111-111111111111'::text",
         },
       ]);
     }, 30_000);
