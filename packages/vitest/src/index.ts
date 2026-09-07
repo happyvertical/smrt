@@ -26,7 +26,7 @@
  * @packageDocumentation
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,16 +69,38 @@ export const SMRT_VITEST_SETUP_OPTIONS_ENV_KEY =
   '__SMRT_VITEST_SETUP_OPTIONS__';
 
 /**
+ * Normalize a project root to a stable key for
+ * {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY}: resolves symlinks
+ * (`fs.realpathSync`) so the write side (this plugin, running in the
+ * orchestrator process) and the read side (`setup.ts`'s `process.cwd()`,
+ * running in a pool worker) agree on the same key even when the two differ
+ * only by a symlink — e.g. macOS's `/var` → `/private/var` (`os.tmpdir()`
+ * and some CI checkouts live under it), or Linux's `/tmp` → `/private/tmp`
+ * equivalents. Falls back to the raw path (still trimmed of a trailing
+ * separator) when the path does not exist yet or `realpathSync` otherwise
+ * fails, so this never throws.
+ */
+export function normalizeRootKey(root: string): string {
+  try {
+    return realpathSync(root);
+  } catch {
+    return root.replace(/[/\\]+$/, '') || root;
+  }
+}
+
+/**
  * Merge `options` for `root` into {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY},
  * preserving any other roots' entries already present (from an earlier
  * `smrtVitestPlugin()` instance in the same process — see the env var's
- * doc comment). Exported so `setup.ts` and tests can reason about the exact
- * payload shape without duplicating the parse/merge logic.
+ * doc comment). `root` is normalized through {@link normalizeRootKey}
+ * before use as the map key. Exported so `setup.ts` and tests can reason
+ * about the exact payload shape without duplicating the parse/merge logic.
  */
 export function setManifestRegistrationOptionsForRoot(
   root: string,
   options: SmrtVitestPluginOptions,
 ): void {
+  const key = normalizeRootKey(root);
   let byRoot: Record<string, SmrtVitestPluginOptions> = {};
   const raw = process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY];
   if (raw) {
@@ -92,7 +114,7 @@ export function setManifestRegistrationOptionsForRoot(
     }
   }
 
-  byRoot[root] = options;
+  byRoot[key] = options;
   process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify(byRoot);
 }
 
@@ -1219,18 +1241,40 @@ export function smrtVitestPlugin(
       // Propagate manifest-registration options to every worker process this
       // early — before Vitest spawns any pool worker — so ./setup.ts can
       // re-run registration inside the worker's own process/realm (#2750).
+      // Must happen in `config()`, not `configResolved()`: Vitest begins
+      // spawning/pre-warming pool workers (which snapshot `process.env` at
+      // `child_process.fork()`/`worker_threads` spawn time) concurrently
+      // with plugin config resolution, and `configResolved()` running later
+      // than that spawn left already-forked workers with a stale (missing)
+      // env var — confirmed empirically: moving this call to
+      // `configResolved()` broke the fixture regression test even though
+      // `configResolved()` is still awaited before the FIRST test file runs.
+      // `config()` is the earliest hook available and keeps the working
+      // behavior from #2750's original fix.
       //
       // Keyed by `root` (merged into any existing payload, never
-      // overwritten) rather than a single flat value: a Vitest multi-project
-      // config (`test.projects`) can run several `smrtVitestPlugin()`
-      // instances -- with different `root`/`packages`/`verbose` options, or
-      // none at all alongside one that does -- inside the SAME orchestrator
-      // process, and `process.env` is process-global. A flat value let the
-      // last project's `config()` call silently overwrite every earlier
-      // project's options, contaminating unrelated projects' worker
-      // registration (and a bare-`setup.ts` project with no plugin at all
-      // would inherit a stale prior run's options in a long-lived process).
-      // `setup.ts` looks its own `process.cwd()` up in this map.
+      // overwritten, normalized through `normalizeRootKey` to resolve
+      // symlinks) rather than a single flat value: several
+      // `smrtVitestPlugin()` instances -- with different options, or none at
+      // all next to one that has options -- can run inside the SAME
+      // orchestrator process (e.g. a Vitest multi-project `test.projects`
+      // run), and `process.env` is process-global. A flat value let the
+      // last project's call silently overwrite every earlier project's
+      // options, contaminating unrelated projects' worker registration.
+      // `setup.ts` looks its own (`normalizeRootKey`-d) `process.cwd()` up
+      // in this map.
+      //
+      // Known residual limitation: `root` here is this closure's
+      // construction-time value (`options.root ?? process.cwd()`), not a
+      // per-project Vite-resolved root -- Vite never `chdir`s while loading
+      // project configs, so every `smrtVitestPlugin()` instance in one
+      // `test.projects` array that leaves `root` at its default computes the
+      // identical key regardless of which project subdirectory it actually
+      // lives in, and the last one to call `config()` wins for all of them.
+      // Bounded by `registerManifestObjects()`'s `hasClass()` guard to extra
+      // additive registrations (never corruption) plus extra `verbose`
+      // logging; a project needing distinct isolation in that shape should
+      // pass an explicit, distinct `root` to `smrtVitestPlugin()`.
       setManifestRegistrationOptionsForRoot(root, { packages, root, verbose });
 
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
@@ -1269,7 +1313,39 @@ export function smrtVitestPlugin(
     },
 
     // Run during config resolution to ensure manifests are loaded before tests
-    async configResolved() {
+    async configResolved(resolvedConfig?: { root?: string }) {
+      // Propagate manifest-registration options to every worker process this
+      // early — before Vitest spawns any pool worker — so ./setup.ts can
+      // re-run registration inside the worker's own process/realm (#2750).
+      // Runs unconditionally (ahead of the `manifestsLoaded` guard below,
+      // which only short-circuits the rest of this hook): Vitest awaits
+      // every plugin's `configResolved()` before spawning any pool worker,
+      // and `resolvedConfig.root` -- Vite's own per-project resolved root,
+      // available only here, never at `config()` time or from this
+      // closure's constructor-time `root` variable -- is what actually
+      // distinguishes one project from another in a Vitest multi-project
+      // (`test.projects`) run: Vite never `chdir`s while loading project
+      // configs, so every `smrtVitestPlugin()` instance's own `process.cwd()`
+      // is identical (the orchestrator's cwd), which used to collapse every
+      // project sharing the plugin's default `root` onto the same env-var
+      // key. Falls back to the closure's `root` only if Vite ever omits
+      // `resolvedConfig.root` (defensive; not expected in practice).
+      //
+      // Keyed by the resolved root (merged into any existing payload, never
+      // overwritten) rather than a single flat value: several
+      // `smrtVitestPlugin()` instances -- with different options, or none at
+      // all next to one that has options -- can run inside the SAME
+      // orchestrator process, and `process.env` is process-global. A flat
+      // value let the last project's call silently overwrite every earlier
+      // project's options, contaminating unrelated projects' worker
+      // registration. `setup.ts` looks its own (`normalizeRootKey`-d)
+      // `process.cwd()` up in this map.
+      setManifestRegistrationOptionsForRoot(resolvedConfig?.root ?? root, {
+        packages,
+        root,
+        verbose,
+      });
+
       if (manifestsLoaded) return;
 
       // Step 1: Generate local manifest if enabled (default: true)
