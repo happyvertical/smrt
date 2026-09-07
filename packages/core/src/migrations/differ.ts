@@ -1522,15 +1522,36 @@ export class SchemaComparer {
    * Render the repair for one rename-data-pending pair (#2752): copy
    * non-empty `oldColumn` into `newColumn` only where `newColumn` is still
    * empty (casting to `uuid` when the new column is native uuid, otherwise a
-   * plain copy), then drop `oldColumn`. The `UPDATE` is idempotent on every
-   * engine (its own `WHERE` clause already re-checks emptiness, so a rerun
-   * after `oldColumn` is dropped just copies nothing). The `DROP COLUMN` is
-   * idempotent on PostgreSQL via `IF EXISTS`; SQLite has no `IF EXISTS` on
-   * `DROP COLUMN` (verified: `ALTER TABLE t DROP COLUMN IF EXISTS c` raises
-   * a syntax error there), so on SQLite a rerun of that one statement after
-   * the column is already gone fails — the advisory message says so rather
-   * than claiming a no-op it cannot deliver. This is report-only either way:
-   * `db:migrate` never executes it.
+   * plain copy), then drop `oldColumn`.
+   *
+   * Idempotency review findings and the fix:
+   *
+   * - (P1) The `newColumn`-is-empty predicate previously compared any
+   *   non-uuid destination to `''` (`col IS NULL OR col = ''`), which is
+   *   only valid for text-affinity types — PostgreSQL rejects `col = ''`
+   *   for `integer`/`boolean`/`timestamp`/etc. before a same-type rename
+   *   pair of one of those types ever copies anything. Fixed by comparing
+   *   `CAST(col AS TEXT) = ''` instead, mirroring the same portable
+   *   emptiness check {@link columnHasNonEmptyValue} already uses for
+   *   detection, so the predicate is valid for every column type.
+   * - (P2) An `UPDATE` unconditionally naming `oldColumn` fails once that
+   *   column is gone, on either engine, regardless of the DROP's own
+   *   idempotency — a guard query placed before the DROP (or even before
+   *   the UPDATE) still leaves a human decision between "run" and "don't",
+   *   which is not genuine SQL-level idempotency. PostgreSQL CAN express a
+   *   truly self-contained, unconditionally-safe-to-rerun statement here:
+   *   an anonymous `DO $$ ... $$` block (the same idiom this file already
+   *   uses for `generatePostgresIntegerPreflightSQL`) that checks
+   *   `information_schema.columns` and only runs the UPDATE + DROP when the
+   *   old column still exists — one executable statement, no operator
+   *   judgment required, safe to rerun any number of times. SQLite has no
+   *   procedural block or conditional-DDL construct at all (confirmed
+   *   against a real connection), so there the contract is explicitly
+   *   downgraded from "idempotent SQL" to "operator-mediated": a guard
+   *   query plus instructions, not a single statement that is itself safe
+   *   to blindly rerun.
+   *
+   * This is report-only either way: `db:migrate` never executes it.
    */
   private describeRenameDataPending(
     tableName: string,
@@ -1544,30 +1565,46 @@ export class SchemaComparer {
     const oldValue = newIsNativeUuid ? `${quotedOld}::uuid` : quotedOld;
     const newEmptyPredicate = newIsNativeUuid
       ? `${quotedNew} IS NULL`
-      : `(${quotedNew} IS NULL OR ${quotedNew} = '')`;
+      : `(${quotedNew} IS NULL OR CAST(${quotedNew} AS TEXT) = '')`;
     const copySql =
       `UPDATE ${quotedTable} SET ${quotedNew} = ${oldValue} ` +
       `WHERE ${newEmptyPredicate} AND ${quotedOld} IS NOT NULL AND CAST(${quotedOld} AS TEXT) <> ''`;
-    const dropSql =
-      this.engine === 'postgres'
-        ? `ALTER TABLE ${quotedTable} DROP COLUMN IF EXISTS ${quotedOld}`
-        : this.generateDropColumnSQL(tableName, oldColumn);
-    // PostgreSQL's `DROP COLUMN IF EXISTS` is genuinely idempotent SQL.
-    // SQLite has no `IF EXISTS` variant on `DROP COLUMN` at all (verified
-    // against a real SQLite connection: `ALTER TABLE t DROP COLUMN IF
-    // EXISTS c` raises SQLITE_ERROR) and no way to make DDL conditional in
-    // plain SQL, so an unconditional rerun of that one statement after the
-    // column is already gone WILL error. A `pragma_table_info` guard query
-    // is offered instead, so a re-run is idempotent in effect: the operator
-    // (or a script) checks it before deciding whether to run the DROP.
-    const dropGuardSql =
-      this.engine === 'sqlite'
-        ? `SELECT count(*) AS old_column_still_present FROM pragma_table_info(${this.quoteLiteral(tableName)}) WHERE name = ${this.quoteLiteral(oldColumn)}`
-        : undefined;
-    const dropIdempotencyNote =
-      this.engine === 'postgres'
-        ? `This is a no-op once ${oldColumn} is gone (the DROP uses IF EXISTS).`
-        : `The UPDATE is a no-op once ${oldColumn} is gone; SQLite has no DROP COLUMN IF EXISTS, so run the guard query first and only run the DROP when it returns a nonzero count — that makes the overall repair a no-op once ${oldColumn} is gone, without an unconditional rerun erroring.`;
+
+    let suggestedSql: string[];
+    let dropIdempotencyNote: string;
+
+    if (this.engine === 'postgres') {
+      // A single anonymous block: checks the old column's existence once
+      // and only then runs the UPDATE and the DROP, inside the same
+      // condition — genuinely idempotent, safe to rerun any number of
+      // times with no operator judgment involved.
+      const existsCheck =
+        `EXISTS (SELECT 1 FROM information_schema.columns ` +
+        `WHERE table_name = ${this.quoteLiteral(tableName)} AND column_name = ${this.quoteLiteral(oldColumn)})`;
+      const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedOld}`;
+      suggestedSql = [
+        `DO $$ BEGIN IF ${existsCheck} THEN ${copySql}; ${dropSql}; END IF; END $$`,
+      ];
+      dropIdempotencyNote =
+        'This single statement is idempotent: rerunning it after the ' +
+        `rename is complete is a genuine no-op, because it only touches ` +
+        `${oldColumn} when the block finds it still exists.`;
+    } else {
+      // SQLite has no procedural block or conditional-DDL construct at
+      // all, so true statement-level idempotency is not achievable in
+      // plain SQL here. The contract is explicitly operator-mediated
+      // instead: a guard query, then the two statements to run only when
+      // it reports the old column present.
+      const guardSql =
+        `SELECT count(*) AS old_column_still_present ` +
+        `FROM pragma_table_info(${this.quoteLiteral(tableName)}) WHERE name = ${this.quoteLiteral(oldColumn)}`;
+      const dropSql = this.generateDropColumnSQL(tableName, oldColumn);
+      suggestedSql = [guardSql, copySql, dropSql];
+      dropIdempotencyNote =
+        'SQLite has no conditional-DDL construct, so this is operator-mediated, ' +
+        `not self-contained idempotent SQL: run the guard query first, and only run ` +
+        `the UPDATE and DROP below when it reports ${oldColumn} still present.`;
+    }
 
     return {
       type: 'rename_data_pending',
@@ -1583,9 +1620,7 @@ export class SchemaComparer {
           `${tableName}.${newColumn} is declared but empty, while undeclared column ${tableName}.${oldColumn} ` +
           'holds data of a compatible type. This looks like a framework field rename whose data was never ' +
           `moved (db:migrate adds columns additively and never drops the old one). ${dropIdempotencyNote}`,
-        suggestedSql: dropGuardSql
-          ? [copySql, dropGuardSql, dropSql]
-          : [copySql, dropSql],
+        suggestedSql,
       },
     };
   }

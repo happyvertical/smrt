@@ -1495,19 +1495,64 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(change?.sql).toBeUndefined();
     expect(change?.sqlStatements).toBeUndefined();
 
-    // SQLite has no `DROP COLUMN IF EXISTS`, so a genuinely idempotent
-    // repair needs a guard query before the (unconditional) DROP rather than
-    // an unconditional rerun of the DROP itself (#2752 review finding).
+    // Neither engine can make an UPDATE naming a specific column
+    // conditional on that column's existence in plain SQL, so the guard
+    // query runs FIRST and covers the whole repair (UPDATE + DROP), not
+    // just the DROP (#2752 review findings P1/P2).
     const suggested = change?.advisory?.suggestedSql ?? [];
     expect(suggested).toHaveLength(3);
-    expect(suggested[0]).toContain(
+    expect(suggested[0]).toContain('pragma_table_info');
+    expect(suggested[0]).toContain("'old_slug'");
+    expect(suggested[1]).toContain(
       'UPDATE "widgets" SET "new_slug" = "old_slug"',
     );
-    expect(suggested[0]).toContain('"new_slug" IS NULL OR "new_slug" = \'\'');
-    expect(suggested[0]).toContain('"old_slug" IS NOT NULL');
-    expect(suggested[1]).toContain('pragma_table_info');
-    expect(suggested[1]).toContain("'old_slug'");
+    expect(suggested[1]).toContain(
+      '"new_slug" IS NULL OR CAST("new_slug" AS TEXT) = \'\'',
+    );
+    expect(suggested[1]).toContain('"old_slug" IS NOT NULL');
     expect(suggested[2]).toBe('ALTER TABLE "widgets" DROP COLUMN "old_slug"');
+  });
+
+  it('uses a CAST-based emptiness predicate for a same-type non-text rename (#2752 review finding P1)', async () => {
+    // A raw `col = ''` predicate is invalid SQL for a non-text column type
+    // (PostgreSQL rejects it before any row is even considered); the
+    // predicate must go through CAST(... AS TEXT) instead, matching the
+    // detection probe.
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_count INTEGER, old_count INTEGER)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_count, old_count) VALUES ('1', NULL, 7)`,
+    );
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_count: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    const change = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_count',
+    );
+    expect(change).toBeDefined();
+    const suggested = change?.advisory?.suggestedSql ?? [];
+    expect(suggested[1]).toContain(
+      '"new_count" IS NULL OR CAST("new_count" AS TEXT) = \'\'',
+    );
+    expect(suggested[1]).not.toContain('"new_count" = \'\'');
   });
 
   it('does not flag it when the declared column already holds data', async () => {
@@ -1576,12 +1621,21 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       (c) => c.type === 'rename_data_pending' && c.name === 'new_id',
     );
     expect(change).toBeDefined();
+    // PostgreSQL gets a single, genuinely idempotent `DO $$ ... $$` block
+    // (#2752 review finding P2): the existence check and both the UPDATE
+    // and the DROP live inside the same conditional, so rerunning the one
+    // statement after the rename is complete is a real no-op.
     const suggested = change?.advisory?.suggestedSql ?? [];
+    expect(suggested).toHaveLength(1);
+    expect(suggested[0]).toContain('DO $$ BEGIN IF EXISTS');
+    expect(suggested[0]).toContain('information_schema.columns');
+    expect(suggested[0]).toContain("'old_id'");
     expect(suggested[0]).toContain('"new_id" = "old_id"::uuid');
     expect(suggested[0]).toContain('"new_id" IS NULL');
-    expect(suggested[1]).toBe(
-      'ALTER TABLE "widgets" DROP COLUMN IF EXISTS "old_id"',
+    expect(suggested[0]).toContain(
+      'ALTER TABLE "widgets" DROP COLUMN "old_id"',
     );
+    expect(suggested[0]).toContain('END IF; END $$');
   });
 
   it('does not emit an advisory when the old column has non-UUID-shaped values', async () => {
