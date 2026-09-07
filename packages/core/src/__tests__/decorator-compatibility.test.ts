@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
-import { field, method } from '../decorators/index.js';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  manyToMany,
+  meta,
+  method,
+  oneToMany,
+} from '../decorators/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 
@@ -50,6 +58,35 @@ function createClassContext(
     metadata,
   };
 }
+
+const structuralFieldDecorators = [
+  {
+    name: 'field',
+    decorator: field({ required: true }),
+    expectedType: 'text',
+  },
+  {
+    name: 'foreignKey',
+    decorator: foreignKey('Target'),
+    expectedType: 'foreignKey',
+  },
+  {
+    name: 'crossPackageRef',
+    decorator: crossPackageRef('@fixture/target:Target'),
+    expectedType: 'crossPackageRef',
+  },
+  {
+    name: 'oneToMany',
+    decorator: oneToMany('Target'),
+    expectedType: 'oneToMany',
+  },
+  {
+    name: 'manyToMany',
+    decorator: manyToMany('Target'),
+    expectedType: 'manyToMany',
+  },
+  { name: 'meta', decorator: meta(), expectedType: 'meta' },
+] as const;
 
 describe('decorator compatibility helpers', () => {
   beforeEach(() => {
@@ -136,5 +173,53 @@ describe('decorator compatibility helpers', () => {
     ).toMatchObject({
       required: true,
     });
+  });
+
+  it.each([
+    'legacy',
+    'standard',
+  ] as const)('keeps every structural decorator constructor-scoped through the %s path', (style) => {
+    for (const { name, decorator, expectedType } of structuralFieldDecorators) {
+      const Owner = class Record extends SmrtObject {};
+      const Peer = class Record extends SmrtObject {};
+      const ownerDecorator = decorator as unknown as (
+        targetOrValue: unknown,
+        propertyKeyOrContext: unknown,
+      ) => void;
+      const peerDecorator = field({
+        type: 'text',
+        nullable: true,
+      }) as unknown as (
+        targetOrValue: unknown,
+        propertyKeyOrContext: unknown,
+      ) => void;
+
+      if (style === 'legacy') {
+        ownerDecorator(Owner.prototype, 'value');
+        peerDecorator(Peer.prototype, 'value');
+        smrt({ packageName: `@fixture/${name}-owner` })(Owner);
+        smrt({ packageName: `@fixture/${name}-peer` })(Peer);
+      } else {
+        const ownerMetadata: Record<PropertyKey, unknown> = {};
+        const peerMetadata: Record<PropertyKey, unknown> = {};
+        ownerDecorator(undefined, createFieldContext('value', ownerMetadata));
+        peerDecorator(undefined, createFieldContext('value', peerMetadata));
+        smrt({ packageName: `@fixture/${name}-owner` })(
+          Owner,
+          createClassContext(Owner, ownerMetadata),
+        );
+        smrt({ packageName: `@fixture/${name}-peer` })(
+          Peer,
+          createClassContext(Peer, peerMetadata),
+        );
+      }
+
+      expect(
+        ObjectRegistry.getClassByConstructor(Owner)?.fields.get('value')?.type,
+      ).toBe(expectedType);
+      expect(
+        ObjectRegistry.getClassByConstructor(Peer)?.fields.get('value'),
+      ).toMatchObject({ type: 'text' });
+    }
   });
 });

@@ -1,4 +1,9 @@
-import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { TenantContextError } from '../context.js';
 import { TenantScoped, tenantId } from '../decorators.js';
@@ -128,6 +133,44 @@ describe('tenantId decorator compatibility', () => {
         },
       ),
     ).toThrow(TenantContextError);
+  });
+
+  it('does not give an ordinary same-name peer a tenant marker', () => {
+    {
+      @smrt({
+        packageName: '@fixture/tenant-owner',
+        tableName: 'tenant_owner_record_2763',
+      })
+      @TenantScoped({ mode: 'required' })
+      class Record extends SmrtObject {
+        @tenantId()
+        tenantId = '';
+      }
+    }
+
+    {
+      @smrt({
+        packageName: '@fixture/global-peer',
+        tableName: 'global_peer_record_2763',
+      })
+      class Record extends SmrtObject {
+        @field({ type: 'text', nullable: true })
+        tenantId: string | null = null;
+      }
+    }
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('@fixture/tenant-owner:Record'),
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
+    expect(
+      ObjectRegistry.getConflictColumns('@fixture/tenant-owner:Record'),
+    ).toEqual(['tenant_id', 'slug', 'context']);
+    expect(
+      ObjectRegistry.getTenantScopedConfig('@fixture/global-peer:Record'),
+    ).toBeUndefined();
+    expect(
+      ObjectRegistry.getConflictColumns('@fixture/global-peer:Record'),
+    ).toEqual(['slug', 'context']);
   });
 
   it('keeps a silent manifest authoritative in either real class-decorator order', () => {
