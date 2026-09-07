@@ -15,6 +15,7 @@
 import {
   type ConflictTargetInput,
   checkLiveSchemaParity,
+  isSmrtCollectionExtendsName,
   type LiveParityFinding,
   type LiveParitySeverity,
   type LiveSchemaParityReport,
@@ -49,11 +50,14 @@ export interface LiveSchemaParityOutcome {
 /**
  * Collect every declared upsert conflict target, keyed by table name.
  *
- * The conflict target is a registry property, not a manifest one: a class may
- * declare `conflictColumns` explicitly, inherit the CTI `(slug, context)`
- * default, or get the STI `(slug, context, _meta_type)` triple. Whatever it
- * resolves to, the live database needs a matching UNIQUE index or every upsert
- * against that table either errors (PostgreSQL) or duplicates rows.
+ * The conflict target is a registry property of a persisted object, not a
+ * manifest one: an object may declare `conflictColumns` explicitly, inherit
+ * the CTI `(slug, context)` default, or get the STI
+ * `(slug, context, _meta_type)` triple. Collections share their item table,
+ * but never persist through their own conflict target, so they must not add a
+ * synthetic default target to the parity check. Every collected target needs a
+ * matching UNIQUE index or its object upsert either errors (PostgreSQL) or
+ * duplicates rows.
  */
 export function collectRegistryConflictTargets(): Record<
   string,
@@ -62,6 +66,8 @@ export function collectRegistryConflictTargets(): Record<
   const targets: Record<string, ConflictTargetInput[]> = {};
 
   for (const className of ObjectRegistry.getQualifiedClassNames()) {
+    if (isCollectionRegistration(className)) continue;
+
     const tableName = ObjectRegistry.getTableName(className);
     if (!tableName) continue;
 
@@ -74,6 +80,26 @@ export function collectRegistryConflictTargets(): Record<
   }
 
   return targets;
+}
+
+/**
+ * Matches core's collection classification, including a registered collection
+ * subclass whose immediate parent is another collection class. Unknown
+ * registrations stay included so a malformed registry cannot hide a real
+ * persistence target from a fail-closed parity check.
+ */
+function isCollectionRegistration(className: string): boolean {
+  for (const name of [
+    className,
+    ...ObjectRegistry.getInheritanceChain(className),
+  ]) {
+    const registered = ObjectRegistry.getClass(name);
+    if (registered && isSmrtCollectionExtendsName(registered.extends)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
