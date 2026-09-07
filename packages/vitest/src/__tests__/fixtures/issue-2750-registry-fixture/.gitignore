@@ -1,3 +1,4 @@
 .smrt/
 dist/
 node_modules/
+vitest-report.json
