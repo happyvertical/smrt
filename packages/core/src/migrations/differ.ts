@@ -9,6 +9,7 @@ import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
+  CANONICAL_UUID_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
@@ -1361,7 +1362,232 @@ export class SchemaComparer {
       changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
     }
 
+    changes.push(
+      ...(await this.detectRenameDataPending(tableName, manifest, dbSchema)),
+    );
+
     return changes;
+  }
+
+  /**
+   * Detect a pending rename backfill (#2752): a manifest-declared column
+   * that exists live but holds no data, paired with an orphan (undeclared)
+   * live column of a compatible type that does hold data — the shape a
+   * framework field rename leaves behind when `db:migrate` adds the new
+   * column additively and never moves data into it. For each such pair,
+   * emit the idempotent copy-then-drop repair as an advisory: never
+   * executed, PostgreSQL and SQLite only (DuckDB/JSON are out of scope).
+   */
+  private async detectRenameDataPending(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+  ): Promise<SchemaChange[]> {
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite') return [];
+
+    const dbColumnNames = new Set(Object.keys(dbSchema.columns));
+    const manifestColumnNames = new Set(Object.keys(manifest.columns));
+    const orphanColumnNames = [...dbColumnNames].filter(
+      (name) => !manifestColumnNames.has(name),
+    );
+    if (orphanColumnNames.length === 0) return [];
+
+    const changes: SchemaChange[] = [];
+
+    for (const [colName, colDef] of Object.entries(manifest.columns)) {
+      const dbCol = dbSchema.columns[colName];
+      if (!dbCol) continue; // add_column already covers a missing declared column
+
+      let declaredHasData: boolean;
+      try {
+        declaredHasData = await this.columnHasNonEmptyValue(tableName, colName);
+      } catch {
+        continue;
+      }
+      if (declaredHasData) continue;
+
+      const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
+        ? colDef.type
+        : 'TEXT';
+      const declaredNormalized = this.normalizeType(
+        this.ddlStrategy.mapType(validatedType),
+      );
+
+      for (const orphanName of orphanColumnNames) {
+        const orphanCol = dbSchema.columns[orphanName];
+        const orphanNormalized = this.normalizeType(orphanCol.type);
+
+        let mode: 'same-type' | 'text-to-uuid' | null = null;
+        if (orphanNormalized === declaredNormalized) {
+          mode = 'same-type';
+        } else if (
+          declaredNormalized === 'UUID' &&
+          orphanNormalized === 'TEXT'
+        ) {
+          mode = 'text-to-uuid';
+        }
+        if (!mode) continue;
+
+        let orphanHasData: boolean;
+        try {
+          orphanHasData = await this.columnHasNonEmptyValue(
+            tableName,
+            orphanName,
+          );
+        } catch {
+          continue;
+        }
+        if (!orphanHasData) continue;
+
+        if (mode === 'text-to-uuid') {
+          let shaped: boolean;
+          try {
+            shaped = await this.allNonEmptyValuesUuidShaped(
+              tableName,
+              orphanName,
+            );
+          } catch {
+            continue;
+          }
+          if (!shaped) continue;
+        }
+
+        changes.push(
+          this.describeRenameDataPending(
+            tableName,
+            colName,
+            orphanName,
+            mode === 'text-to-uuid',
+          ),
+        );
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Live-data probe: does the column hold any non-null, non-empty value?
+   * Used by {@link detectRenameDataPending}. Errors propagate to the
+   * caller, which skips the pair rather than guessing (#2752).
+   */
+  private async columnHasNonEmptyValue(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const result = await this.db.query(
+      `SELECT 1 AS present FROM ${quotedTable} ` +
+        `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1`,
+    );
+    return (result.rows?.length ?? 0) > 0;
+  }
+
+  /**
+   * Live-data probe: are every one of a column's non-empty values
+   * UUID-shaped ({@link CANONICAL_UUID_PATTERN})? PostgreSQL pushes the
+   * check into the query and scans every row; SQLite has no server-side
+   * regex operator, so it fetches every non-empty value and tests them all
+   * in JS — still exhaustive, just not aggregated, so it can never miss a
+   * non-UUID-shaped value and produce a false positive.
+   */
+  private async allNonEmptyValuesUuidShaped(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+
+    if (this.engine === 'postgres') {
+      const result = await this.db.query(
+        `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+          `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> '' ` +
+          `AND CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
+      );
+      const row = result.rows?.[0] as Record<string, unknown> | undefined;
+      return Number(row?.invalid_count ?? 0) === 0;
+    }
+
+    const result = await this.db.query(
+      `SELECT CAST(${quotedCol} AS TEXT) AS value FROM ${quotedTable} ` +
+        `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`,
+    );
+    const rows = (result.rows ?? []) as { value?: unknown }[];
+    const pattern = new RegExp(CANONICAL_UUID_PATTERN, 'i');
+    return rows.every((row) => pattern.test(String(row.value ?? '')));
+  }
+
+  /**
+   * Render the repair for one rename-data-pending pair (#2752): copy
+   * non-empty `oldColumn` into `newColumn` only where `newColumn` is still
+   * empty (casting to `uuid` when the new column is native uuid, otherwise a
+   * plain copy), then drop `oldColumn`. The `UPDATE` is idempotent on every
+   * engine (its own `WHERE` clause already re-checks emptiness, so a rerun
+   * after `oldColumn` is dropped just copies nothing). The `DROP COLUMN` is
+   * idempotent on PostgreSQL via `IF EXISTS`; SQLite has no `IF EXISTS` on
+   * `DROP COLUMN` (verified: `ALTER TABLE t DROP COLUMN IF EXISTS c` raises
+   * a syntax error there), so on SQLite a rerun of that one statement after
+   * the column is already gone fails — the advisory message says so rather
+   * than claiming a no-op it cannot deliver. This is report-only either way:
+   * `db:migrate` never executes it.
+   */
+  private describeRenameDataPending(
+    tableName: string,
+    newColumn: string,
+    oldColumn: string,
+    newIsNativeUuid: boolean,
+  ): SchemaChange {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedNew = this.quoteIdentifier(newColumn);
+    const quotedOld = this.quoteIdentifier(oldColumn);
+    const oldValue = newIsNativeUuid ? `${quotedOld}::uuid` : quotedOld;
+    const newEmptyPredicate = newIsNativeUuid
+      ? `${quotedNew} IS NULL`
+      : `(${quotedNew} IS NULL OR ${quotedNew} = '')`;
+    const copySql =
+      `UPDATE ${quotedTable} SET ${quotedNew} = ${oldValue} ` +
+      `WHERE ${newEmptyPredicate} AND ${quotedOld} IS NOT NULL AND CAST(${quotedOld} AS TEXT) <> ''`;
+    const dropSql =
+      this.engine === 'postgres'
+        ? `ALTER TABLE ${quotedTable} DROP COLUMN IF EXISTS ${quotedOld}`
+        : this.generateDropColumnSQL(tableName, oldColumn);
+    // PostgreSQL's `DROP COLUMN IF EXISTS` is genuinely idempotent SQL.
+    // SQLite has no `IF EXISTS` variant on `DROP COLUMN` at all (verified
+    // against a real SQLite connection: `ALTER TABLE t DROP COLUMN IF
+    // EXISTS c` raises SQLITE_ERROR) and no way to make DDL conditional in
+    // plain SQL, so an unconditional rerun of that one statement after the
+    // column is already gone WILL error. A `pragma_table_info` guard query
+    // is offered instead, so a re-run is idempotent in effect: the operator
+    // (or a script) checks it before deciding whether to run the DROP.
+    const dropGuardSql =
+      this.engine === 'sqlite'
+        ? `SELECT count(*) AS old_column_still_present FROM pragma_table_info(${this.quoteLiteral(tableName)}) WHERE name = ${this.quoteLiteral(oldColumn)}`
+        : undefined;
+    const dropIdempotencyNote =
+      this.engine === 'postgres'
+        ? `This is a no-op once ${oldColumn} is gone (the DROP uses IF EXISTS).`
+        : `The UPDATE is a no-op once ${oldColumn} is gone; SQLite has no DROP COLUMN IF EXISTS, so run the guard query first and only run the DROP when it returns a nonzero count — that makes the overall repair a no-op once ${oldColumn} is gone, without an unconditional rerun erroring.`;
+
+    return {
+      type: 'rename_data_pending',
+      table: tableName,
+      name: newColumn,
+      mismatch: {
+        expected: `data in ${newColumn}`,
+        actual: `data appears to still be in ${oldColumn}`,
+      },
+      advisory: {
+        severity: 'warning',
+        message:
+          `${tableName}.${newColumn} is declared but empty, while undeclared column ${tableName}.${oldColumn} ` +
+          'holds data of a compatible type. This looks like a framework field rename whose data was never ' +
+          `moved (db:migrate adds columns additively and never drops the old one). ${dropIdempotencyNote}`,
+        suggestedSql: dropGuardSql
+          ? [copySql, dropGuardSql, dropSql]
+          : [copySql, dropSql],
+      },
+    };
   }
 
   /**

@@ -488,6 +488,265 @@ describe('checkLiveSchemaParity (application tables)', () => {
   });
 });
 
+describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
+  async function createRenameTable(
+    database: DatabaseProvider,
+    extraColumns: string,
+  ): Promise<void> {
+    await database.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        new_slug TEXT
+        ${extraColumns}
+      )`);
+  }
+
+  it('flags a same-type (text -> text) pending rename', async () => {
+    const database = await openDatabase();
+    await createRenameTable(database, ', old_slug TEXT');
+    await database.query(
+      `INSERT INTO widgets (id, new_slug, old_slug) VALUES ('1', NULL, 'hello')`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            new_slug: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    const finding = find(report.findings, 'rename_data_pending', 'new_slug');
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.details).toEqual({ candidates: ['old_slug'] });
+    expect(finding?.message).toContain('old_slug');
+  });
+
+  it('does not flag when the declared column already holds data', async () => {
+    const database = await openDatabase();
+    await createRenameTable(database, ', old_slug TEXT');
+    await database.query(
+      `INSERT INTO widgets (id, new_slug, old_slug) VALUES ('1', 'already-set', 'hello')`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            new_slug: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
+  });
+
+  it('does not flag when the candidate (old) column is also empty', async () => {
+    const database = await openDatabase();
+    await createRenameTable(database, ', old_slug TEXT');
+    await database.query(
+      `INSERT INTO widgets (id, new_slug, old_slug) VALUES ('1', NULL, NULL)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            new_slug: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
+  });
+
+  it('lists every candidate rather than guessing when several columns qualify', async () => {
+    const database = await openDatabase();
+    await createRenameTable(database, ', old_slug_a TEXT, old_slug_b TEXT');
+    await database.query(
+      `INSERT INTO widgets (id, new_slug, old_slug_a, old_slug_b) VALUES ('1', NULL, 'a-value', 'b-value')`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            new_slug: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    const finding = find(report.findings, 'rename_data_pending', 'new_slug');
+    expect(finding).toBeDefined();
+    expect(finding?.details).toEqual({
+      candidates: ['old_slug_a', 'old_slug_b'],
+    });
+    expect(finding?.message).toContain('ambiguous');
+    expect(finding?.recommendation).toContain('will not guess');
+  });
+
+  it('does not flag an incompatible type as a rename candidate', async () => {
+    const database = await openDatabase();
+    await createRenameTable(database, ', old_count INTEGER');
+    await database.query(
+      `INSERT INTO widgets (id, new_slug, old_count) VALUES ('1', NULL, 7)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            new_slug: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
+  });
+
+  // SQLite has no native `uuid` type (a manifest UUID column maps to TEXT
+  // there), so the text->uuid shape-gated branch only ever exercises on
+  // PostgreSQL. Drive it with a mocked PostgreSQL adapter, matching the
+  // `legacy_integer_width` test above.
+  function postgresRenameDatabase(options: {
+    oldColumnEmpty?: boolean;
+    invalidUuidCount?: number;
+  }): DatabaseProvider {
+    const { oldColumnEmpty = false, invalidUuidCount = 0 } = options;
+    return {
+      url: 'postgres://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'widgets' }] };
+        }
+        if (sql.includes('FROM pg_index')) {
+          return { rows: [] };
+        }
+        if (sql.includes('SELECT 1 AS present')) {
+          if (sql.includes('"new_id"')) return { rows: [] };
+          if (sql.includes('"old_id"')) {
+            return oldColumnEmpty ? { rows: [] } : { rows: [{ present: 1 }] };
+          }
+          return { rows: [] };
+        }
+        if (sql.includes('invalid_count')) {
+          return { rows: [{ invalid_count: invalidUuidCount }] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notNull: true, primaryKey: true },
+          new_id: { type: 'uuid', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+      }),
+    } as unknown as DatabaseProvider;
+  }
+
+  function renameSchema(): Record<string, SchemaDefinition> {
+    return {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          new_id: { type: 'UUID', referenceKind: 'foreignKey' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+  }
+
+  it('flags a text -> uuid pending rename when every value is UUID-shaped', async () => {
+    const database = postgresRenameDatabase({ invalidUuidCount: 0 });
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: renameSchema(),
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    const finding = find(report.findings, 'rename_data_pending', 'new_id');
+    expect(finding).toBeDefined();
+    expect(finding?.details).toEqual({ candidates: ['old_id'] });
+  });
+
+  it('does not flag a text -> uuid rename when the old column has non-UUID-shaped values', async () => {
+    const database = postgresRenameDatabase({ invalidUuidCount: 3 });
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: renameSchema(),
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
+  });
+});
+
 describe('checkLiveSchemaParity (system tables)', () => {
   async function createSystemTables(database: DatabaseProvider): Promise<void> {
     for (const ddl of getSystemTableDDL('sqlite')) {

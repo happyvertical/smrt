@@ -82,7 +82,12 @@ export interface MigrationAction {
  * db:status; never turned into a tracker migration.
  */
 export interface SchemaAdvisory {
-  type: 'orphan_column' | 'orphan_index' | 'alter_column' | 'type_upgrade';
+  type:
+    | 'orphan_column'
+    | 'orphan_index'
+    | 'alter_column'
+    | 'type_upgrade'
+    | 'rename_data_pending';
   tableName: string;
   className: string;
   name: string;
@@ -105,7 +110,8 @@ export interface SchemaChangeLike {
     | 'drop_index'
     | 'orphan_index'
     | 'type_mismatch'
-    | 'type_upgrade';
+    | 'type_upgrade'
+    | 'rename_data_pending';
   table: string;
   name?: string;
   column?: {
@@ -609,7 +615,8 @@ export function partitionSchemaChanges(
 
     switch (change.type) {
       case 'orphan_column':
-      case 'orphan_index': {
+      case 'orphan_index':
+      case 'rename_data_pending': {
         if (!change.name || !change.advisory) continue;
         advisories.push({
           type: change.type,
@@ -920,6 +927,8 @@ function describeAdvisory(item: SchemaAdvisory): string {
       return `${item.tableName}.${item.name}: unique constraint not in manifest${item.actual ? ` (${item.actual})` : ''}`;
     case 'type_upgrade':
       return `${item.tableName}.${item.name}: type upgrade blocked${item.actual ? ` (live: ${item.actual})` : ''}`;
+    case 'rename_data_pending':
+      return `${item.tableName}.${item.name}: rename data pending${item.actual ? ` (${item.actual})` : ''}`;
     default:
       return `${item.tableName}.${item.name}: ${item.alteration ?? 'alter_column'}${item.actual ? ` (live: ${item.actual})` : ''}`;
   }

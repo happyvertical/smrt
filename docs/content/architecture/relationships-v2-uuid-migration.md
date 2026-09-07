@@ -119,6 +119,32 @@ keys that mix a converted endpoint with a retained TEXT bridge, and foreign keys
 with nondefault PostgreSQL trigger enforcement; use `--dry-run` to inspect the
 exact plan.
 
+## Detecting a pending rename backfill (#2752)
+
+A field rename like the ones above is additive by construction: `smrt
+db:migrate` adds the new column and never moves data into it or drops the old
+one, because additive migrations never drop. Every consumer that took
+relationships-v2 (`events.parent_event_id` → `events.parent_id`,
+`assets.parent_id` → `assets.source_asset_id`) had to hand-write a backfill
+script for a rename the framework itself authored.
+
+As of #2752, `smrt db:status --parity` reports a `rename_data_pending` finding
+when, on one table, a manifest-declared column exists live and holds no
+non-null/non-empty values while an undeclared live column of a compatible type
+(same type, `TEXT` → `UUID` when every non-empty value is already UUID-shaped,
+or `TEXT` → `TEXT`) holds at least one. It is `warning` severity and names both
+columns; when several undeclared columns qualify it lists all of them rather
+than guessing which one holds the pre-rename data.
+
+`smrt db:diff` (and `db:migrate`, via the same advisory) prints the idempotent
+repair for each such pair as a commented, never-executed advisory — the same
+`UPDATE ... WHERE <new> IS NULL ... THEN DROP COLUMN <old>` shape the anytown
+backfill scripts hand-wrote, casting to `uuid` when the new column is native
+uuid (PostgreSQL) and doing a plain copy otherwise (SQLite has no `uuid`
+type). Review the suggested SQL before running it — this is detection and a
+printed repair, not an automatic one; see #2764 for carrying rename intent
+through the manifest so `db:migrate` could execute it directly.
+
 ## Validation
 
 Run `smrt db:status` after migration. The command now reports a compatibility

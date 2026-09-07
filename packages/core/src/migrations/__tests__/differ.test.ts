@@ -1445,6 +1445,196 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
   });
 });
 
+describe('SchemaComparer rename_data_pending (#2752)', () => {
+  let db: DatabaseProvider;
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      try {
+        await db.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
+  });
+
+  function widgetManifest(): Record<string, SchemaDefinition> {
+    return {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_slug: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+  }
+
+  it('emits an idempotent copy-then-drop advisory for a same-type (text) rename on SQLite', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_slug TEXT, old_slug TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_slug, old_slug) VALUES ('1', NULL, 'hello')`,
+    );
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(widgetManifest());
+
+    const change = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_slug',
+    );
+    expect(change).toBeDefined();
+    expect(change?.advisory?.severity).toBe('warning');
+    expect(change?.sql).toBeUndefined();
+    expect(change?.sqlStatements).toBeUndefined();
+
+    // SQLite has no `DROP COLUMN IF EXISTS`, so a genuinely idempotent
+    // repair needs a guard query before the (unconditional) DROP rather than
+    // an unconditional rerun of the DROP itself (#2752 review finding).
+    const suggested = change?.advisory?.suggestedSql ?? [];
+    expect(suggested).toHaveLength(3);
+    expect(suggested[0]).toContain(
+      'UPDATE "widgets" SET "new_slug" = "old_slug"',
+    );
+    expect(suggested[0]).toContain('"new_slug" IS NULL OR "new_slug" = \'\'');
+    expect(suggested[0]).toContain('"old_slug" IS NOT NULL');
+    expect(suggested[1]).toContain('pragma_table_info');
+    expect(suggested[1]).toContain("'old_slug'");
+    expect(suggested[2]).toBe('ALTER TABLE "widgets" DROP COLUMN "old_slug"');
+  });
+
+  it('does not flag it when the declared column already holds data', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, new_slug TEXT, old_slug TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO widgets (id, new_slug, old_slug) VALUES ('1', 'already-set', 'hello')`,
+    );
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(widgetManifest());
+
+    expect(
+      diff.changes.find((c) => c.type === 'rename_data_pending'),
+    ).toBeUndefined();
+  });
+
+  it('casts old -> new with ::uuid when the declared column is native uuid (PostgreSQL)', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'widgets' }] };
+        }
+        if (sql.includes('SELECT 1 AS present')) {
+          if (sql.includes('"new_id"')) return { rows: [] };
+          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
+          return { rows: [] };
+        }
+        if (sql.includes('invalid_count')) {
+          return { rows: [{ invalid_count: 0 }] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notNull: true, primaryKey: true },
+          new_id: { type: 'uuid', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          new_id: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+    const diff = await pgComparer.compare(manifest);
+
+    const change = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_id',
+    );
+    expect(change).toBeDefined();
+    const suggested = change?.advisory?.suggestedSql ?? [];
+    expect(suggested[0]).toContain('"new_id" = "old_id"::uuid');
+    expect(suggested[0]).toContain('"new_id" IS NULL');
+    expect(suggested[1]).toBe(
+      'ALTER TABLE "widgets" DROP COLUMN IF EXISTS "old_id"',
+    );
+  });
+
+  it('does not emit an advisory when the old column has non-UUID-shaped values', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'widgets' }] };
+        }
+        if (sql.includes('SELECT 1 AS present')) {
+          if (sql.includes('"new_id"')) return { rows: [] };
+          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
+          return { rows: [] };
+        }
+        if (sql.includes('invalid_count')) {
+          return { rows: [{ invalid_count: 2 }] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notNull: true, primaryKey: true },
+          new_id: { type: 'uuid', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          new_id: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+    const diff = await pgComparer.compare(manifest);
+
+    expect(
+      diff.changes.find((c) => c.type === 'rename_data_pending'),
+    ).toBeUndefined();
+  });
+});
+
 describe('hasActionableChanges', () => {
   it('should return true when there are added tables', () => {
     const diff: SchemaDiff = {

@@ -392,6 +392,18 @@ export function summarizeSchemaDiff(diff: {
             'Run `smrt db:migrate --drop-columns` to drop this orphan column (destructive).',
         });
         break;
+
+      case 'rename_data_pending':
+        // Advisory-only (#2752): report-only, warning severity.
+        if (change.advisory?.severity !== 'warning') break;
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'rename_data_pending',
+          recommendation:
+            change.advisory?.message ??
+            'A declared column is empty while an undeclared column of a compatible type holds data — data appears to still live in the old column after a field rename. Run `smrt db:diff` for the suggested backfill SQL.',
+        });
+        break;
     }
   }
 

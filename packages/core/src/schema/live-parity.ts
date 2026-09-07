@@ -31,6 +31,13 @@ import {
 import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
+// The canonical PostgreSQL uuid-text shape probe (#2608): every framework
+// guard that decides whether a `text` column can be reinterpreted as `uuid`
+// tests the same pattern (the orphan probe, the FK provisioning guard, the
+// uuid convergence planner). Reused here rather than duplicated so a rename
+// candidate and a uuid-convergence candidate never disagree about "shaped".
+import { CANONICAL_UUID_PATTERN } from './foreign-key-ddl.js';
+import { quoteIdentifier } from './sql-identifiers.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
 
@@ -53,7 +60,14 @@ export type LiveParityFindingKind =
   | 'unique_constraint_missing'
   | 'invalid_index'
   /** Pre-#2373 PostgreSQL/DuckDB int4 column needing opt-in widening. */
-  | 'legacy_integer_width';
+  | 'legacy_integer_width'
+  /**
+   * A declared column exists live and holds no data while an undeclared
+   * column of a compatible type does (#2752) — the shape a framework field
+   * rename leaves behind when `db:migrate` adds the new column additively
+   * and never moves the old data into it.
+   */
+  | 'rename_data_pending';
 
 /** One difference between the live database and the expected shape. */
 export interface LiveParityFinding {
@@ -225,6 +239,9 @@ export async function checkLiveSchemaParity(
     tablesChecked++;
     const liveColumns = await readLiveColumns(db, table.name);
     findings.push(...compareColumns(table, liveColumns, engine));
+    findings.push(
+      ...(await detectRenameDataPending(db, engine, table, liveColumns)),
+    );
 
     if (indexCatalog) {
       const liveIndexes = await indexCatalog.forTable(table.name);
@@ -600,6 +617,196 @@ export function normalizeSqlType(type: string): string {
   if (/^(JSON|JSONB)$/.test(upper)) return 'JSON';
 
   return upper;
+}
+
+// ---------------------------------------------------------------------------
+// Rename-data-pending detection (#2752)
+// ---------------------------------------------------------------------------
+
+/** How a candidate (undeclared, live) column's type relates to a declared column's. */
+type RenameCompatibility = 'same-type' | 'text-to-uuid';
+
+/**
+ * Whether an undeclared live column could be the pre-rename home of a
+ * declared column's data. "Compatible" per #2752: identical normalized
+ * type, or the undeclared column is `TEXT` while the declared column is
+ * `UUID` (gated separately on data shape by the caller).
+ */
+function renameCompatibility(
+  declaredType: string,
+  candidateType: string,
+): RenameCompatibility | null {
+  if (declaredType === candidateType) return 'same-type';
+  if (declaredType === 'UUID' && candidateType === 'TEXT') {
+    return 'text-to-uuid';
+  }
+  return null;
+}
+
+const UUID_SHAPE_REGEX = new RegExp(CANONICAL_UUID_PATTERN, 'i');
+
+async function columnHasNonEmptyValue(
+  db: DatabaseInterface,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const quotedTable = quoteIdentifier(table);
+  const quotedColumn = quoteIdentifier(column);
+  const result = await db.query(
+    `SELECT 1 AS present FROM ${quotedTable} ` +
+      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1`,
+  );
+  return (result?.rows?.length ?? 0) > 0;
+}
+
+async function allNonEmptyValuesUuidShaped(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const quotedTable = quoteIdentifier(table);
+  const quotedColumn = quoteIdentifier(column);
+
+  if (engine === 'postgres') {
+    const result = await db.query(
+      `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+        `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' ` +
+        `AND CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
+    );
+    const row = result?.rows?.[0] as Record<string, unknown> | undefined;
+    return Number(row?.invalid_count ?? 0) === 0;
+  }
+
+  // SQLite (the only other engine this detector runs against) has no
+  // server-side regex operator, so fetch every non-empty value and test it
+  // in JS. Unlike PostgreSQL's pushed-down count, this is not aggregated —
+  // but it still scans the whole column rather than a bounded sample, so it
+  // can never miss a non-UUID-shaped value and produce a false positive.
+  const result = await db.query(
+    `SELECT CAST(${quotedColumn} AS TEXT) AS value FROM ${quotedTable} ` +
+      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`,
+  );
+  const rows = (result?.rows ?? []) as { value?: unknown }[];
+  return rows.every((row) => UUID_SHAPE_REGEX.test(String(row.value ?? '')));
+}
+
+function buildRenameDataPendingFinding(
+  table: ExpectedTable,
+  declaredColumn: string,
+  candidates: string[],
+): LiveParityFinding {
+  const single = candidates.length === 1;
+  const candidateList = candidates.map((name) => `\`${name}\``).join(', ');
+  return {
+    kind: 'rename_data_pending',
+    severity: 'warning',
+    table: table.name,
+    target: declaredColumn,
+    origin: table.origin,
+    message: single
+      ? `Column \`${table.name}.${declaredColumn}\` is declared but empty, while undeclared column \`${table.name}.${candidates[0]}\` holds data of a compatible type. Data appears to still live in \`${candidates[0]}\` after a field rename.`
+      : `Column \`${table.name}.${declaredColumn}\` is declared but empty, while ${candidates.length} undeclared columns hold data of a compatible type (${candidateList}). Data may still live in one of them after a field rename, but which one is ambiguous.`,
+    recommendation: single
+      ? `Run \`smrt db:diff\` for the suggested backfill SQL, review it, then copy data from \`${candidates[0]}\` into \`${declaredColumn}\` and drop \`${candidates[0]}\`.`
+      : 'Identify which undeclared column actually holds the pre-rename data before backfilling; SMRT will not guess among multiple candidates.',
+    details: { candidates },
+  };
+}
+
+/**
+ * Detect a pending rename backfill (#2752): a manifest-declared column that
+ * exists live but holds no data, paired with an undeclared live column of a
+ * compatible type that does hold data. This is the shape a framework field
+ * rename leaves behind when `db:migrate` adds the new column additively and
+ * never moves data into it, nor drops the old column.
+ *
+ * Advisory only (`warning`): this module never repairs, and when several
+ * undeclared columns qualify it lists them all rather than guessing.
+ */
+async function detectRenameDataPending(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: ExpectedTable,
+  liveColumns: Map<string, LiveColumn>,
+): Promise<LiveParityFinding[]> {
+  // The row-level probes below need plain SQL this module already assumes
+  // for these two engines; DuckDB/JSON are out of scope (matches the
+  // PostgreSQL/SQLite advisory SQL `db:diff` emits for the same pair).
+  if (engine !== 'postgres' && engine !== 'sqlite') return [];
+
+  const expectedNames = new Set(table.columns.map((column) => column.name));
+  const extraColumns = [...liveColumns.values()].filter(
+    (live) => !expectedNames.has(live.name),
+  );
+  if (extraColumns.length === 0) return [];
+
+  const findings: LiveParityFinding[] = [];
+
+  for (const column of table.columns) {
+    const live = liveColumns.get(column.name);
+    if (!live) continue; // missing_column already covers this
+
+    let declaredHasData: boolean;
+    try {
+      declaredHasData = await columnHasNonEmptyValue(
+        db,
+        table.name,
+        column.name,
+      );
+    } catch {
+      continue;
+    }
+    if (declaredHasData) continue;
+
+    const declaredType = normalizeSqlType(column.type);
+    const candidates: string[] = [];
+
+    for (const extra of extraColumns) {
+      const compatibility = renameCompatibility(
+        declaredType,
+        normalizeSqlType(extra.type),
+      );
+      if (!compatibility) continue;
+
+      let candidateHasData: boolean;
+      try {
+        candidateHasData = await columnHasNonEmptyValue(
+          db,
+          table.name,
+          extra.name,
+        );
+      } catch {
+        continue;
+      }
+      if (!candidateHasData) continue;
+
+      if (compatibility === 'text-to-uuid') {
+        let shaped: boolean;
+        try {
+          shaped = await allNonEmptyValuesUuidShaped(
+            db,
+            engine,
+            table.name,
+            extra.name,
+          );
+        } catch {
+          continue;
+        }
+        if (!shaped) continue;
+      }
+
+      candidates.push(extra.name);
+    }
+
+    if (candidates.length === 0) continue;
+    candidates.sort();
+    findings.push(
+      buildRenameDataPendingFinding(table, column.name, candidates),
+    );
+  }
+
+  return findings;
 }
 
 // ---------------------------------------------------------------------------
