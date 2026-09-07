@@ -853,4 +853,40 @@ describe('db:status', () => {
     ]);
     expect(payload.orphansError).toBeNull();
   });
+
+  it('still probes for orphans when the adapter has no getTableSchema (#2753 review finding)', async () => {
+    // A lighter adapter that cannot describe tables skips schema-diff/parity
+    // entirely (see the `parityError` branch above), but the orphan probe
+    // only needs `db.query()` — it must not be silently skipped too.
+    getDatabaseMock.mockResolvedValue({
+      url: 'postgresql://test:test@localhost:5432/test_db',
+      close: closeMock,
+    });
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          orphanCount: 2,
+          nullable: true,
+        },
+      ],
+      skipped: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], { json: true });
+    const payload = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+
+    expect(collectForeignKeyOrphanCountsMock).toHaveBeenCalled();
+    expect(payload.orphanedForeignKeys).toEqual([
+      expect.objectContaining({ childTable: 'events', orphanCount: 2 }),
+    ]);
+    expect(payload.orphansError).toBeNull();
+  });
 });

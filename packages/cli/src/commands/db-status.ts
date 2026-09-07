@@ -580,8 +580,8 @@ export const dbStatusCommand: CLICommand = {
       // 8. Compare the current manifest schema against the live database.
       // This keeps db:status useful for shared Postgres databases where the
       // migration history alone is not enough to prove the schema is current.
+      const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
       if (typeof db.getTableSchema === 'function') {
-        const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
         const comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
@@ -597,22 +597,7 @@ export const dbStatusCommand: CLICommand = {
           getUnresolvedGeneratedMigrationNames(diff.changes),
         );
 
-        // 8b. Per-foreign-key orphan counts (#2753). Diagnostic-only: never
-        // gates has_changes or the process exit code, and a probe failure is
-        // reported rather than failing the whole status command.
-        try {
-          const orphanReport = await collectForeignKeyOrphanCounts(
-            db,
-            manifestSchemas,
-            { engineHint: dbType },
-          );
-          status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
-        } catch (error) {
-          status.orphansError =
-            error instanceof Error ? error.message : String(error);
-        }
-
-        // 8c. Optional live-schema parity (#2368). The diff above answers
+        // 8b. Optional live-schema parity (#2368). The diff above answers
         // "does the live schema match the manifest"; this answers "does the
         // live schema match what the model layer actually needs", which is a
         // different question whenever the manifest itself is what dropped an
@@ -634,6 +619,24 @@ export const dbStatusCommand: CLICommand = {
       } else if (options.parity) {
         status.parityError =
           'The configured database adapter cannot describe tables, so live-schema parity cannot be verified.';
+      }
+
+      // 8c. Per-foreign-key orphan counts (#2753). Runs regardless of
+      // whether the adapter supports `getTableSchema` — the probe only needs
+      // `db.query()` — so this never silently skips on a lighter adapter the
+      // way the schema-diff/parity branches above must. Diagnostic-only:
+      // never gates has_changes or the process exit code, and a probe
+      // failure is reported rather than failing the whole status command.
+      try {
+        const orphanReport = await collectForeignKeyOrphanCounts(
+          db,
+          manifestSchemas,
+          { engineHint: dbType },
+        );
+        status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
+      } catch (error) {
+        status.orphansError =
+          error instanceof Error ? error.message : String(error);
       }
 
       const failedAssessments = assessFailedMigrations(
