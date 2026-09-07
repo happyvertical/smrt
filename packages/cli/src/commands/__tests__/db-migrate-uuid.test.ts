@@ -1031,6 +1031,69 @@ describePostgres(
       ).rejects.toThrow();
     }, 30_000);
 
+    it('restores both generated bridges before recreating a shared INCLUDE index once', async () => {
+      const db = await freshDb();
+      await db.query(
+        `ALTER TABLE "${parent}" ADD COLUMN bridge_b text GENERATED ALWAYS AS (id) STORED`,
+      );
+      const indexName = `${parent}_shared_idx`;
+      await db.query(
+        `CREATE INDEX "${indexName}" ON "${parent}" (_integrity_id_text) INCLUDE (bridge_b)`,
+      );
+      await db.query(
+        `COMMENT ON INDEX "${indexName}" IS 'shared bridge index'`,
+      );
+      const snapshot = async () =>
+        (
+          await (
+            await freshDb()
+          ).query(
+            `SELECT pg_get_indexdef(c.oid) AS definition, obj_description(c.oid, 'pg_class') AS comment
+             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = $1`,
+            indexName,
+          )
+        ).rows;
+      const before = await snapshot();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+        expect(errorSpy).not.toHaveBeenCalled();
+        const statements = logSpy.mock.calls.flat().map(String);
+        const creates = statements.filter(
+          (line) => line.includes('CREATE INDEX') && line.includes(indexName),
+        );
+        expect(creates).toHaveLength(1);
+        const output = statements.join('\n');
+        expect(output.indexOf('ADD COLUMN "bridge_b"')).toBeLessThan(
+          output.indexOf(creates[0]),
+        );
+        expect(output.indexOf('ADD COLUMN "_integrity_id_text"')).toBeLessThan(
+          output.indexOf(creates[0]),
+        );
+        await dbMigrateUuidCommand.handler([], {});
+        expect(errorSpy).not.toHaveBeenCalled();
+        expect(await snapshot()).toEqual(before);
+        const { rows } = await (await freshDb()).query(
+          `SELECT id::text AS id, _integrity_id_text, bridge_b FROM "${parent}"`,
+        );
+        expect(rows).toEqual([
+          {
+            id: '11111111-1111-1111-1111-111111111111',
+            _integrity_id_text: '11111111-1111-1111-1111-111111111111',
+            bridge_b: '11111111-1111-1111-1111-111111111111',
+          },
+        ]);
+        await dbMigrateUuidCommand.handler([], {});
+        expect(errorSpy).not.toHaveBeenCalled();
+        expect(await snapshot()).toEqual(before);
+      } finally {
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    }, 30_000);
+
     it('renders every bridge restoration statement in the dry-run plan', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -735,21 +735,21 @@ async function convertPostgresUuidColumns(
       await db.query(
         `ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET COMPRESSION ${bridge.compression === 'l' ? 'lz4' : 'pglz'}`,
       );
-    for (const index of bridge.indexDefinitions) {
-      await db.query(index.definition);
-      if (index.comment)
-        await db.query(
-          `COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)}`,
-        );
-      if (index.clustered)
-        await db.query(
-          `ALTER TABLE ${pgTable(bridge.table)} CLUSTER ON ${quoteIdentifier(index.name)}`,
-        );
-      if (index.replicaIdentity)
-        await db.query(
-          `ALTER TABLE ${pgTable(bridge.table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)}`,
-        );
-    }
+  }
+  for (const { index, table } of uniqueBridgeIndexes(bridges)) {
+    await db.query(index.definition);
+    if (index.comment)
+      await db.query(
+        `COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)}`,
+      );
+    if (index.clustered)
+      await db.query(
+        `ALTER TABLE ${pgTable(table)} CLUSTER ON ${quoteIdentifier(index.name)}`,
+      );
+    if (index.replicaIdentity)
+      await db.query(
+        `ALTER TABLE ${pgTable(table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)}`,
+      );
   }
   for (const foreignKey of foreignKeys) {
     await db.query(
@@ -761,6 +761,19 @@ async function convertPostgresUuidColumns(
       );
   }
   console.log(`\n✓ Converted ${columns.length} column(s) to uuid.\n`);
+}
+
+function uniqueBridgeIndexes(bridges: GeneratedBridgeSnapshot[]) {
+  return [
+    ...new Map(
+      bridges.flatMap((bridge) =>
+        bridge.indexDefinitions.map((index) => [
+          index.oid,
+          { index, table: bridge.table },
+        ]),
+      ),
+    ).values(),
+  ];
 }
 
 async function assertSupportedSourceColumns(
@@ -840,21 +853,21 @@ function renderUuidConversionSql(
       console.log(
         `  ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET COMPRESSION ${bridge.compression === 'l' ? 'lz4' : 'pglz'};`,
       );
-    for (const index of bridge.indexDefinitions) {
-      console.log(`  ${index.definition};`);
-      if (index.comment)
-        console.log(
-          `  COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)};`,
-        );
-      if (index.clustered)
-        console.log(
-          `  ALTER TABLE ${pgTable(bridge.table)} CLUSTER ON ${quoteIdentifier(index.name)};`,
-        );
-      if (index.replicaIdentity)
-        console.log(
-          `  ALTER TABLE ${pgTable(bridge.table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)};`,
-        );
-    }
+  }
+  for (const { index, table } of uniqueBridgeIndexes(bridges)) {
+    console.log(`  ${index.definition};`);
+    if (index.comment)
+      console.log(
+        `  COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)};`,
+      );
+    if (index.clustered)
+      console.log(
+        `  ALTER TABLE ${pgTable(table)} CLUSTER ON ${quoteIdentifier(index.name)};`,
+      );
+    if (index.replicaIdentity)
+      console.log(
+        `  ALTER TABLE ${pgTable(table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)};`,
+      );
   }
   for (const foreignKey of foreignKeys) {
     console.log(
