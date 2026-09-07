@@ -2199,6 +2199,22 @@ describe('SchemaComparer text -> timestamptz convergence (#2771)', () => {
         }
         return { rows: [{ table_name: 'tag_aliases' }] };
       },
+      // probeCastSafety() creates its session-scoped helper function and
+      // runs the probe query inside one db.transaction() call; simulate that
+      // with the same query() handler above so `sql.includes('invalid_count')`
+      // still distinguishes the probe query from the CREATE FUNCTION and the
+      // table-listing query.
+      transaction: async (
+        callback: (tx: { query: (sql: string) => Promise<unknown> }) => unknown,
+      ) =>
+        callback({
+          query: async (sql: string) => {
+            if (typeof sql === 'string' && sql.includes('invalid_count')) {
+              return { rows: probeRows };
+            }
+            return { rows: [{ table_name: 'tag_aliases' }] };
+          },
+        }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'text', notnull: true },
@@ -2305,6 +2321,22 @@ describe('SchemaComparer text -> jsonb convergence (#2772)', () => {
         }
         return { rows: [{ table_name: 'tag_aliases' }] };
       },
+      // probeCastSafety() creates its session-scoped helper function and
+      // runs the probe query inside one db.transaction() call; simulate that
+      // with the same query() handler above so `sql.includes('invalid_count')`
+      // still distinguishes the probe query from the CREATE FUNCTION and the
+      // table-listing query.
+      transaction: async (
+        callback: (tx: { query: (sql: string) => Promise<unknown> }) => unknown,
+      ) =>
+        callback({
+          query: async (sql: string) => {
+            if (typeof sql === 'string' && sql.includes('invalid_count')) {
+              return { rows: probeRows };
+            }
+            return { rows: [{ table_name: 'tag_aliases' }] };
+          },
+        }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'text', notnull: true },

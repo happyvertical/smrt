@@ -25,11 +25,9 @@ import {
 } from '../schema/foreign-key-policy.js';
 import {
   maskSampleValue,
+  probeCastSafety,
   renderJsonbColumnConversion,
-  renderJsonbShapeProbe,
   renderTimestamptzColumnConversion,
-  renderTimestamptzShapeProbe,
-  runShapeProbe,
   type ShapeProbeResult,
 } from '../schema/text-cast-probe.js';
 import type {
@@ -805,8 +803,9 @@ export class SchemaComparer {
   }
 
   /**
-   * Shape-probe a candidate `text` -> `timestamptz`/`jsonb` column (#2771,
-   * #2772). Unlike {@link probeUuidShape}, a failed/unrealistic probe
+   * Probe a candidate `text` -> `timestamptz`/`jsonb` column (#2771, #2772)
+   * with a real, exception-safe cast attempt (see `text-cast-probe.ts`).
+   * Unlike {@link probeUuidShape}, a failed/unrealistic probe
    * (`unavailable`) is the caller's cue to fall back to the pre-existing
    * behavior for that pair rather than surface a new finding — this keeps
    * the new convergence strictly additive for every case that isn't
@@ -817,11 +816,7 @@ export class SchemaComparer {
     columnName: string,
     kind: 'timestamptz' | 'jsonb',
   ): Promise<ShapeProbeResult> {
-    const sql =
-      kind === 'timestamptz'
-        ? renderTimestamptzShapeProbe(tableName, columnName)
-        : renderJsonbShapeProbe(tableName, columnName);
-    return runShapeProbe(this.db, sql);
+    return probeCastSafety(this.db, tableName, columnName, kind);
   }
 
   /**

@@ -1,39 +1,31 @@
 /**
- * Shared "shape probe, then cast" helpers for text-column type convergence
- * (#2771, #2772).
+ * Shared "probe, then cast" helpers for text-column type convergence (#2771,
+ * #2772).
  *
  * Two drift shapes on a table SMRT itself creates share one problem: a live
  * `text` column holds values that would parse losslessly into the manifest's
  * declared PostgreSQL type (`timestamptz` or `jsonb`), but the differ cannot
- * know that without looking at the data. Both probes follow the same
- * pattern the pre-R11 `text`->`uuid` convergence established
- * (`schema/uuid-convergence.ts`, `renderUuidShapeProbe`): a single
- * server-side aggregate query counts values that do NOT match the target
- * shape, and returns one sample so a fail-closed diagnostic can name the
- * offending value without dumping the whole column into JS.
+ * know that without looking at the data. `probeCastSafety()` answers that with
+ * a genuine, exception-safe cast attempt — not a shape heuristic — over every
+ * non-null value, and returns one sample so a fail-closed diagnostic can name
+ * the offending value without dumping the whole column into JS.
  *
- * The `timestamptz` probe validates by regex shape only (mirroring the uuid
- * probe exactly) because every value SMRT itself ever wrote is a
- * JavaScript `Date#toISOString()` output. `jsonb` shape validation cannot be
- * a true parser in plain SQL (PostgreSQL has no `TRY_CAST`/safe-cast builtin
- * before 17, and this fleet targets 16 — see `.github/workflows/postgres-tests.yml`
- * — so a per-row exception-catching probe would need a session-scoped
- * PL/pgSQL helper function whose lifetime would have to be pinned to one
- * physical connection across two separate queries). The regex used here is a
- * conservative shape check, not a full grammar, so it can theoretically
- * accept a structurally-invalid document (e.g. mismatched nesting). That is
- * an acceptable residual risk: the actual `ALTER COLUMN … TYPE jsonb USING
- * col::jsonb` this module renders always runs inside the same atomic
- * migration transaction as everything else in a `db:migrate` batch, so
- * PostgreSQL's own real JSON parser is the final safety net — a probe false
- * negative aborts and rolls back the whole batch with a clear PostgreSQL
- * error instead of writing corrupt data.
+ * PostgreSQL has no `TRY_CAST`/safe-cast builtin before 17 (`pg_input_is_valid`),
+ * and this fleet targets 16 (see `.github/workflows/postgres-tests.yml`), so a
+ * real per-row safe cast needs PL/pgSQL's exception handling. That handler is
+ * created as a session-scoped (`pg_temp`) function, which is why the create
+ * statement and the probe query run inside one `db.transaction()` — the two
+ * must land on the same physical connection, and a pooled adapter only
+ * guarantees that within one transaction. `target_type` is never derived from
+ * column data (always the literal `'jsonb'`/`'timestamptz'` this module
+ * passes), so the dynamic `EXECUTE format(...)` it builds cannot be steered by
+ * a row value; `%L` quotes the probed value as a literal.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { quoteIdentifier } from './sql-identifiers.js';
 
-/** Outcome of a server-side shape probe over one column's non-null values. */
+/** Outcome of a server-side cast-safety probe over one column's non-null values. */
 export type ShapeProbeResult =
   | { status: 'clean' }
   | { status: 'dirty'; count: number; sample?: string }
@@ -51,84 +43,96 @@ export function maskSampleValue(value: string): string {
   return `${value.slice(0, 3)}…${value.slice(-3)} (length ${value.length})`;
 }
 
-/**
- * Explicit-offset ISO-8601 instant shape: every value SMRT itself writes for
- * a timestamp column (`Date#toISOString()`, e.g.
- * `2023-01-15T10:00:00.000Z`) or an equivalent explicit-offset form. A
- * timestamp with NO offset (a naive wall time) deliberately does not match:
- * interpreting it unambiguously requires the operator-confirmed
- * `postgresTimestampMigration.legacyTimezone` path, not this probe.
- */
-export const TIMESTAMPTZ_SHAPE_PATTERN =
-  '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})$';
+/** Session-scoped helper function name; `pg_temp` keeps it off the real schema. */
+const PROBE_FUNCTION = 'pg_temp.smrt_probe_cast_ok';
 
 /**
- * Conservative JSON value shape: an object, an array, a quoted string, a
- * number, or a JSON literal. See the module doc for why this is a shape
- * check rather than a full parser.
+ * `target` is one of this module's own literal type names — never data —
+ * so building the DDL by interpolation is safe; there is no column, table,
+ * or row value in this string.
  */
-export const JSON_SHAPE_PATTERN =
-  '^\\s*(\\{.*\\}|\\[.*\\]|"([^"\\\\]|\\\\.)*"|-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?|true|false|null)\\s*$';
-
-function renderShapeProbeSql(
-  tableName: string,
-  columnName: string,
-  pattern: string,
-): string {
-  const column = quoteIdentifier(columnName);
+function renderCreateProbeFunctionSql(): string {
   return (
-    `SELECT count(*) AS invalid_count, min(${column}::text) AS sample_value ` +
-    `FROM ${quoteIdentifier(tableName)} ` +
-    `WHERE ${column} IS NOT NULL AND ${column}::text !~ '${pattern}'`
+    `CREATE OR REPLACE FUNCTION ${PROBE_FUNCTION}(value text, target_type text) ` +
+    'RETURNS boolean LANGUAGE plpgsql AS $$ ' +
+    'BEGIN ' +
+    'IF value IS NULL THEN RETURN true; END IF; ' +
+    "EXECUTE format('SELECT %L::%s', value, target_type); " +
+    'RETURN true; ' +
+    'EXCEPTION WHEN OTHERS THEN RETURN false; ' +
+    'END; $$'
   );
 }
 
-/** Render the shape-probe query for a candidate `text` -> `timestamptz` column. */
-export function renderTimestamptzShapeProbe(
+function renderProbeQuerySql(
   tableName: string,
   columnName: string,
+  targetType: 'timestamptz' | 'jsonb',
 ): string {
-  return renderShapeProbeSql(tableName, columnName, TIMESTAMPTZ_SHAPE_PATTERN);
+  const column = quoteIdentifier(columnName);
+  const table = quoteIdentifier(tableName);
+  const isValid = `${PROBE_FUNCTION}(${column}::text, '${targetType}')`;
+  return (
+    `SELECT count(*) AS invalid_count, ` +
+    `min(CASE WHEN NOT ${isValid} THEN ${column}::text END) AS sample_value ` +
+    `FROM ${table} WHERE ${column} IS NOT NULL AND NOT ${isValid}`
+  );
 }
 
-/** Render the shape-probe query for a candidate `text` -> `jsonb` column. */
-export function renderJsonbShapeProbe(
-  tableName: string,
-  columnName: string,
-): string {
-  return renderShapeProbeSql(tableName, columnName, JSON_SHAPE_PATTERN);
+function classifyProbeRows(
+  rows: { invalid_count?: unknown; sample_value?: unknown }[],
+): ShapeProbeResult {
+  const count = Number(rows[0]?.invalid_count);
+  if (!Number.isFinite(count)) {
+    return {
+      status: 'unavailable',
+      reason: 'probe returned a non-numeric count',
+    };
+  }
+  if (count === 0) return { status: 'clean' };
+  const sample = rows[0]?.sample_value;
+  return {
+    status: 'dirty',
+    count,
+    ...(typeof sample === 'string' ? { sample } : {}),
+  };
 }
 
 /**
- * Run a rendered shape-probe query and classify the result. Any query
- * failure (missing table mid-run, adapter error, a mock without a realistic
- * response) resolves to `unavailable` — callers must not treat that as
- * "clean"; SMRT never coerces or discards data on an unproven assumption.
+ * Probe every non-null value of a candidate `text` column for whether it can
+ * cast losslessly to `timestamptz` or `jsonb`, using a real, exception-safe
+ * cast attempt (not a shape heuristic) so an invalid-calendar timestamp or a
+ * structurally-malformed-but-bracket-balanced JSON document is caught the
+ * same as an obviously wrong value. Any failure to run the probe (adapter
+ * without transaction support, a missing table mid-run, a test double
+ * without a realistic response) resolves to `unavailable` — callers must not
+ * treat that as "clean"; SMRT never coerces or discards data on an unproven
+ * assumption.
  */
-export async function runShapeProbe(
+export async function probeCastSafety(
   db: DatabaseInterface,
-  sql: string,
+  tableName: string,
+  columnName: string,
+  targetType: 'timestamptz' | 'jsonb',
 ): Promise<ShapeProbeResult> {
-  try {
-    const result = await db.query(sql);
-    const rows = (Array.isArray(result) ? result : (result?.rows ?? [])) as {
-      invalid_count?: unknown;
-      sample_value?: unknown;
-    }[];
-    const count = Number(rows[0]?.invalid_count);
-    if (!Number.isFinite(count)) {
-      return {
-        status: 'unavailable',
-        reason: 'probe returned a non-numeric count',
-      };
-    }
-    if (count === 0) return { status: 'clean' };
-    const sample = rows[0]?.sample_value;
+  if (!db.transaction) {
     return {
-      status: 'dirty',
-      count,
-      ...(typeof sample === 'string' ? { sample } : {}),
+      status: 'unavailable',
+      reason: 'adapter does not support transactions',
     };
+  }
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.query(renderCreateProbeFunctionSql());
+      const result = await tx.query(
+        renderProbeQuerySql(tableName, columnName, targetType),
+      );
+      const rows = (Array.isArray(result) ? result : (result?.rows ?? [])) as {
+        invalid_count?: unknown;
+        sample_value?: unknown;
+      }[];
+      return classifyProbeRows(rows);
+    });
   } catch (error) {
     return {
       status: 'unavailable',
@@ -139,8 +143,8 @@ export async function runShapeProbe(
 
 /**
  * Render the one-time PostgreSQL conversion of a legacy `text` column to
- * native `timestamptz`, once a shape probe has confirmed every non-null
- * value parses unambiguously.
+ * native `timestamptz`, once {@link probeCastSafety} has confirmed every
+ * non-null value casts safely.
  */
 export function renderTimestamptzColumnConversion(
   tableName: string,
@@ -161,8 +165,8 @@ export function renderTimestamptzColumnConversion(
 
 /**
  * Render the one-time PostgreSQL conversion of a legacy `text` column to
- * native `jsonb`, once a shape probe has confirmed every non-null value is
- * JSON-shaped.
+ * native `jsonb`, once {@link probeCastSafety} has confirmed every non-null
+ * value casts safely.
  */
 export function renderJsonbColumnConversion(
   tableName: string,

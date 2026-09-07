@@ -14,6 +14,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
 import { checkLiveSchemaParity } from './live-parity.js';
+import { probeCastSafety } from './text-cast-probe.js';
 import type { SchemaDefinition } from './types.js';
 
 const pgUrl = process.env.DATABASE_URL ?? process.env.SMRT_TEST_POSTGRES_URL;
@@ -107,6 +108,88 @@ describe.skipIf(!pgUrl)(
           ignoreTypeMismatches: false,
         }).compare(schema());
         expect(getSQLFromDiff(rerunDiff)).toEqual([]);
+      });
+    });
+
+    describe('probeCastSafety catches shape-valid but semantically-invalid values', () => {
+      // A prior review pass flagged that a pure regex "shape" probe accepts
+      // an invalid-calendar timestamp and a bracket-balanced-but-malformed
+      // JSON document, since neither failure is expressible as a regex.
+      // probeCastSafety() runs a real, exception-safe cast attempt instead
+      // (see text-cast-probe.ts), so both must be rejected here.
+      const table = `i2771_2772_adversarial_${suffix}`;
+
+      afterAll(async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+      });
+
+      it('rejects an invalid-calendar timestamp that satisfies an ISO-8601 shape regex', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, bad_date text)`,
+        );
+        // February 30th does not exist; the shape (YYYY-MM-DDTHH:MM:SS.sssZ)
+        // is otherwise indistinguishable from a valid instant.
+        await db.query(
+          `INSERT INTO "${table}" (id, bad_date) VALUES ('r1', '2023-02-30T10:00:00.000Z')`,
+        );
+
+        const result = await probeCastSafety(
+          db,
+          table,
+          'bad_date',
+          'timestamptz',
+        );
+        expect(result.status).toBe('dirty');
+        if (result.status === 'dirty') {
+          expect(result.count).toBe(1);
+          expect(result.sample).toBe('2023-02-30T10:00:00.000Z');
+        }
+      });
+
+      it('rejects a bracket-balanced but syntactically invalid JSON document', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, bad_json text)`,
+        );
+        // Missing closing brace after the nested object; a naive `\{.*\}`
+        // shape regex still matches because the string contains a `{` and
+        // ends in a `}` (the nested object's).
+        await db.query(
+          `INSERT INTO "${table}" (id, bad_json) VALUES ('r1', '{"a": {"b": 1}')`,
+        );
+
+        const result = await probeCastSafety(db, table, 'bad_json', 'jsonb');
+        expect(result.status).toBe('dirty');
+        if (result.status === 'dirty') {
+          expect(result.count).toBe(1);
+        }
+      });
+
+      it('accepts valid values for both target types', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, good_date text, good_json text)`,
+        );
+        await db.query(
+          `INSERT INTO "${table}" (id, good_date, good_json) VALUES ` +
+            `('r1', '2023-01-15T10:00:00.000Z', '{"a": {"b": 1}}')`,
+        );
+
+        const dateResult = await probeCastSafety(
+          db,
+          table,
+          'good_date',
+          'timestamptz',
+        );
+        expect(dateResult.status).toBe('clean');
+        const jsonResult = await probeCastSafety(
+          db,
+          table,
+          'good_json',
+          'jsonb',
+        );
+        expect(jsonResult.status).toBe('clean');
       });
     });
 
