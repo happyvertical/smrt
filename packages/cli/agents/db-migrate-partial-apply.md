@@ -22,13 +22,13 @@ themselves but anything that *depends* on one, and applies everything else.
 
 **Dependency rule.** `computeBlockedColumns()` reads every manual
 intervention's blocked `table.column` identity, plus every report-only
-`type_upgrade`/`alter_column` **advisory** (e.g. the #2608 refused uuid
-convergence) — an advisory-only finding never enters `manualInterventions`
-(it carries no SQL) but names a live column just as concretely, and a
-dependent index/alter/drop on that column is exactly as unsafe as one on a
-manual-intervention column (review finding, #2748: the advisory bucket was
-previously excluded, so `--apply-unblocked` did not honor its own stated
-guarantee for that class of blocked type upgrade).
+`type_upgrade` **advisory** (the #2608 refused uuid convergence — the only
+producer of that shape) — an advisory-only finding never enters
+`manualInterventions` (it carries no SQL) but names a live column just as
+concretely, and a dependent index/alter/drop on that column is exactly as
+unsafe as one on a manual-intervention column (review finding, #2748: the
+advisory bucket was previously excluded, so `--apply-unblocked` did not
+honor its own stated guarantee for that class of blocked type upgrade).
 `partitionUnblockedMigrations()` then withholds any `add_index` /
 `add_foreign_key` / `alter_column` / `drop_column` that reads or writes one
 of those columns:
@@ -38,6 +38,20 @@ of those columns:
 - a foreign key whose child *or* parent column is blocked (a parent column
   mid-type-upgrade is just as unsafe to reference as the child);
 - an `alter_column`/`drop_column` on the blocked column itself.
+
+**A report-only `alter_column` advisory is deliberately excluded from that
+second loop**, even though `SchemaAdvisory` allows the type. Unlike
+`type_upgrade`, the only producer of an advisory-only `alter_column` is an
+un-opted-into relaxation (`drop_default`/`drop_not_null` when
+`--relax-columns` was not passed) — it says the live column is *stricter*
+than the manifest, not that anything about the column blocks convergence,
+and it reappears on every run regardless of `--apply-unblocked`. Blocking on
+it reproduced the exact `engineUnsupported` defect for a different shape:
+permanently withholding unrelated executable DDL on that column, worse than
+omitting the flag (review finding, #2748, second pass). A genuinely blocked
+`alter_column` — NOT NULL required with live NULLs and no default to
+backfill — carries its refusal as comment-only SQL and already reaches
+`manualInterventions` (keyed by `columnName`), so it was never affected.
 
 `add_column` and an executable `type_upgrade` never depend on another
 column's state — a new column add is self-contained, and a type upgrade is

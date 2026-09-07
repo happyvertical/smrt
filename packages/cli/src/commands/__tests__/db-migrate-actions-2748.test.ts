@@ -118,12 +118,11 @@ describe('computeBlockedColumns', () => {
     expect(blocked.has('posts.author_id')).toBe(true);
   });
 
-  it('blocks a column named only by a report-only type_upgrade/alter_column advisory', () => {
-    // #2608 refused uuid convergence and other advisory-only type/alter
-    // findings never enter `manualInterventions` (they carry no SQL), but
-    // they name a live column just as concretely — `--apply-unblocked` must
-    // not apply an index/alter/drop against that column either (review
-    // finding, #2748).
+  it('blocks a column named only by a report-only type_upgrade advisory', () => {
+    // #2608 refused uuid convergence never enters `manualInterventions` (it
+    // carries no SQL), but it names a live column just as concretely --
+    // `--apply-unblocked` must not apply an index/alter/drop against that
+    // column either (review finding, #2748).
     const blocked = computeBlockedColumns(
       [],
       [
@@ -143,6 +142,36 @@ describe('computeBlockedColumns', () => {
     expect(blocked.get('posts.author_id')).toContain(
       'incompatible column types',
     );
+  });
+
+  it('does not block a column named only by an un-opted-into relaxation alter_column advisory', () => {
+    // Real differ shape (differ.ts buildAlterColumnChange): a live default
+    // or NOT NULL the manifest no longer declares, reported as an
+    // advisory-only alter_column only because `--relax-columns` was not
+    // passed -- not because the column's own state blocks anything. Every
+    // rerun without that flag reproduces the same advisory, so treating it
+    // as a blocked column would permanently withhold unrelated executable
+    // DDL on that column, the same defect the `engineUnsupported` exclusion
+    // fixes for `add_foreign_key` (review finding, #2748, second pass).
+    const blocked = computeBlockedColumns(
+      [],
+      [
+        {
+          type: 'alter_column',
+          tableName: 'posts',
+          className: 'Post',
+          name: 'published_at',
+          alteration: 'drop_not_null',
+          advisory: {
+            severity: 'warning',
+            message:
+              'posts.published_at is NOT NULL in the database but nullable in the manifest.',
+          },
+        },
+      ],
+    );
+
+    expect(blocked.size).toBe(0);
   });
 });
 

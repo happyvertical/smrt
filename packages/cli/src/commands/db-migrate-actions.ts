@@ -1030,11 +1030,25 @@ function blockedColumnForAction(action: MigrationAction): string | undefined {
  * Every column a manual intervention blocks, keyed `table.column`, with the
  * human-readable reason (the action's advisory message, or a description of
  * the type mismatch) a dependent change is withheld for. `advisories`
- * (report-only `type_upgrade`/`alter_column` findings, e.g. the #2608
- * refused uuid convergence) name a column just as concretely as a manual
- * intervention does and must block the same dependents — omitting them let
- * `--apply-unblocked` apply an index/alter/drop against a column whose type
- * convergence is itself blocked (review finding, #2748).
+ * includes only report-only `type_upgrade` findings (the #2608 refused
+ * uuid convergence) — that shape is a genuine, permanent column-state block
+ * that names a column just as concretely as a manual intervention does, so
+ * omitting it let `--apply-unblocked` apply an index/alter/drop against a
+ * column whose type convergence is itself blocked (review finding, #2748).
+ *
+ * `alter_column` advisories are deliberately excluded even though the type
+ * exists on `SchemaAdvisory`: an advisory-only `alter_column` is produced
+ * only by an un-opted-into relaxation (`drop_default`/`drop_not_null` when
+ * `--relax-columns` was not passed) — it says the live column is *stricter*
+ * than the manifest, not that the column's state blocks anything, and it
+ * reappears on every run regardless of `--apply-unblocked`. Treating it as
+ * a blocked column reproduced the exact defect this function's
+ * `engineUnsupported` exclusion fixed for `add_foreign_key`: permanently
+ * withholding unrelated executable DDL on that column (review finding,
+ * #2748, second pass). A genuinely blocked `alter_column` (e.g. NOT NULL
+ * required with live NULLs and no default) carries executable-looking SQL
+ * as a comment and already reaches `manualInterventions` instead, where it
+ * is covered by the loop above via `columnName`.
  */
 export function computeBlockedColumns(
   manualInterventions: MigrationAction[],
@@ -1047,8 +1061,7 @@ export function computeBlockedColumns(
     blocked.set(key, describeBlockedReason(action));
   }
   for (const advisory of advisories) {
-    if (advisory.type !== 'type_upgrade' && advisory.type !== 'alter_column')
-      continue;
+    if (advisory.type !== 'type_upgrade') continue;
     const key = blockedColumnKey(advisory.tableName, advisory.name);
     if (blocked.has(key)) continue;
     blocked.set(
