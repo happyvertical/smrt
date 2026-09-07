@@ -1003,6 +1003,12 @@ export interface RegisteredClass {
     autoPopulate: boolean;
     allowSuperAdminBypass: boolean;
   };
+  /** Origin used to enforce tenancy declaration precedence at runtime. */
+  tenantScopedConfigSource?:
+    | 'explicit'
+    | 'manifest'
+    | 'tenant-decorator'
+    | 'field-fallback';
   /**
    * Visibility control for manifest inclusion
    * - 'public': Included in published manifest (default)

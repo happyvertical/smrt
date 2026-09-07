@@ -1019,9 +1019,26 @@ export function register(
   // Handle tenantScoped configuration (Issue #688)
   // External manifests can carry tenantScoped only in decoratorConfig, so
   // registration must honor the merged view rather than only explicit config.
+  // `@TenantScoped()` is intentionally implemented by smrt-tenancy, not core;
+  // when a standalone runtime imports an external model before its manifest is
+  // cached, the tenant field decorator is the core-visible declaration of that
+  // contract. Preserve it here so runtime registration and the manifest path
+  // agree on the conflict target (#2763).
   let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
+  const tenantScopedConfigSource: RegisteredClass['tenantScopedConfigSource'] =
+    config.tenantScoped !== undefined
+      ? 'explicit'
+      : manifestEntry?.decoratorConfig?.tenantScoped !== undefined
+        ? 'manifest'
+        : manifestEntry
+          ? undefined
+          : tenantScopedConfigFromFieldMetadata(fields)
+            ? 'field-fallback'
+            : undefined;
   const effectiveTenantScoped =
-    config.tenantScoped ?? manifestEntry?.decoratorConfig?.tenantScoped;
+    config.tenantScoped ??
+    manifestEntry?.decoratorConfig?.tenantScoped ??
+    (manifestEntry ? undefined : tenantScopedConfigFromFieldMetadata(fields));
   if (effectiveTenantScoped) {
     // Normalize boolean or object config into full options
     const tenantOpts =
@@ -1230,6 +1247,7 @@ export function register(
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
+    tenantScopedConfigSource,
     visibility, // Visibility control for manifest filtering
     // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
     // it lazily using the `extends` field. This ensures correct chain for both
@@ -1298,6 +1316,45 @@ export function register(
       }
     }
   }
+}
+
+/**
+ * Resolve the core-visible tenancy contract from a `@tenantId()` field when a
+ * runtime registration has no manifest entry. `@TenantScoped()` lives in the
+ * tenancy package, so core cannot import its registry without a cycle; the
+ * field decorator runs before `@smrt()`. A nullable tenant identifier is the
+ * runtime representation of optional tenancy used by that decorator.
+ */
+function tenantScopedConfigFromFieldMetadata(
+  fields: Map<string, RegisteredField>,
+): SmartObjectConfig['tenantScoped'] | undefined {
+  for (const [fieldName, field] of fields) {
+    const tenancy = field._meta?.__tenancy as
+      | {
+          isTenantIdField?: unknown;
+          mode?: unknown;
+          field?: unknown;
+          autoFilter?: unknown;
+          autoPopulate?: unknown;
+          allowSuperAdminBypass?: unknown;
+        }
+      | undefined;
+    if (tenancy?.isTenantIdField !== true) continue;
+
+    return {
+      mode:
+        tenancy.mode === 'required'
+          ? 'required'
+          : tenancy.mode === 'optional' || field._meta?.nullable === true
+            ? 'optional'
+            : 'required',
+      field: typeof tenancy.field === 'string' ? tenancy.field : fieldName,
+      autoFilter: tenancy.autoFilter !== false,
+      autoPopulate: tenancy.autoPopulate !== false,
+      allowSuperAdminBypass: tenancy.allowSuperAdminBypass === true,
+    };
+  }
+  return undefined;
 }
 
 export function registerCollection(

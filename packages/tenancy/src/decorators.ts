@@ -147,6 +147,17 @@ export function TenantScoped(options: TenantScopedOptions = {}) {
     // Register with the tenancy system
     registerTenantScopedClass(className, config);
 
+    // Support either class-decorator order. This declaration replaces only a
+    // provisional field fallback; explicit @smrt and manifest policy retain
+    // their documented precedence.
+    ObjectRegistry.reconcileTenantScopedConfig(className, {
+      mode: config.mode ?? 'required',
+      field: config.field ?? 'tenantId',
+      autoFilter: config.autoFilter ?? true,
+      autoPopulate: config.autoPopulate ?? true,
+      allowSuperAdminBypass: config.allowSuperAdminBypass ?? false,
+    });
+
     // Return the class unchanged
     return target;
   };

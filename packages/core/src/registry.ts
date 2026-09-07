@@ -2866,6 +2866,39 @@ export class ObjectRegistry {
   }
 
   /**
+   * Reconcile an external class-level tenancy declaration without allowing it
+   * to replace explicit core or manifest policy. Before `@smrt()` runs, carry
+   * the declaration through the marked tenant field so registration consumes it
+   * in either class-decorator order.
+   */
+  static reconcileTenantScopedConfig(
+    className: string,
+    config: NonNullable<RegisteredClass['tenantScopedConfig']>,
+  ): void {
+    const registered = ObjectRegistry.findClass(className);
+    if (registered) {
+      if (registered.tenantScopedConfigSource !== 'field-fallback') return;
+      registered.tenantScopedConfig = { ...config };
+      registered.tenantScopedConfigSource = 'tenant-decorator';
+      return;
+    }
+
+    const decorators = ObjectRegistry.fieldDecorators.get(className);
+    if (!decorators) return;
+    for (const [fieldName, fieldOptions] of decorators) {
+      const tenancy = fieldOptions.__tenancy as
+        | { isTenantIdField?: unknown; [key: string]: unknown }
+        | undefined;
+      if (tenancy?.isTenantIdField !== true) continue;
+      decorators.set(fieldName, {
+        ...fieldOptions,
+        __tenancy: { ...tenancy, ...config, isTenantIdField: true },
+      });
+      return;
+    }
+  }
+
+  /**
    * Check if a class is tenant-scoped (Issue #688)
    *
    * @param className - Name of the class to check
