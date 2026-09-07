@@ -79,9 +79,18 @@ describe.skipIf(!pgUrl)('live-schema parity (PostgreSQL)', () => {
       `CREATE INDEX ${TABLE}_tenant_id_idx ON ${TABLE} (tenant_id)`,
     );
 
+    // A reference-lead index (tenant_id) is no longer silently exempted from
+    // `extra_index` (#2751): declare it so this "declared and clean" fixture
+    // stays clean under the new policy.
+    const schema = widgetSchema();
+    schema[TABLE].indexes.push({
+      name: `${TABLE}_tenant_id_idx`,
+      columns: ['tenant_id'],
+    });
+
     const report = await checkLiveSchemaParity({
       db: db as DatabaseInterface,
-      schemas: widgetSchema(),
+      schemas: schema,
       conflictTargets: {
         [TABLE]: [{ columns: ['slug', 'context'], source: 'Widget' }],
       },
@@ -105,9 +114,16 @@ describe.skipIf(!pgUrl)('live-schema parity (PostgreSQL)', () => {
       `CREATE INDEX ${TABLE}_tenant_id_idx ON ${TABLE} (tenant_id)`,
     );
 
+    // See above (#2751): declare the reference-lead index explicitly.
+    const schema = widgetSchema();
+    schema[TABLE].indexes.push({
+      name: `${TABLE}_tenant_id_idx`,
+      columns: ['tenant_id'],
+    });
+
     const report = await checkLiveSchemaParity({
       db: db as DatabaseInterface,
-      schemas: widgetSchema(),
+      schemas: schema,
       conflictTargets: {
         [TABLE]: [{ columns: ['slug', 'context'], source: 'Widget' }],
       },

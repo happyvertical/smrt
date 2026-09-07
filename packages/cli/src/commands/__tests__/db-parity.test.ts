@@ -316,6 +316,16 @@ describe('live parity against a real SQLite database', () => {
   });
 
   it('db:status --json carries the parity report', async () => {
+    // A reference-lead index (tenant_id) is no longer silently exempted from
+    // `extra_index` (#2751): declare it so this "clean" fixture stays clean
+    // under the new policy, matching the live-parity.test.ts repair.
+    getSchemasSpy.mockReturnValue({
+      widgets: {
+        ...WIDGET_SCHEMA.widgets,
+        indexes: [{ name: 'widgets_tenant_id_idx', columns: ['tenant_id'] }],
+      },
+    } as never);
+
     await withDatabase(async (db) => {
       await db.query(
         'CREATE TABLE widgets (id TEXT PRIMARY KEY, slug TEXT, context TEXT, tenant_id TEXT)',
