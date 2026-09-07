@@ -2390,7 +2390,9 @@ export class ObjectRegistry {
    * ```
    */
   static getRelationships(className: string): RelationshipMetadata[] {
-    return ObjectRegistry.getRelationshipMap().get(className) || [];
+    const registered = ObjectRegistry.getClass(className);
+    const key = registered?.qualifiedName || className;
+    return ObjectRegistry.getRelationshipMap().get(key) || [];
   }
 
   /**
@@ -2627,8 +2629,11 @@ export class ObjectRegistry {
   static getInverseRelationships(className: string): RelationshipMetadata[] {
     const allRelationships = ObjectRegistry.getRelationshipMap();
     const inverseRelationships: RelationshipMetadata[] = [];
+    const visitedBuckets = new Set<RelationshipMetadata[]>();
 
     for (const [_sourceClass, relationships] of allRelationships) {
+      if (visitedBuckets.has(relationships)) continue;
+      visitedBuckets.add(relationships);
       for (const rel of relationships) {
         if (rel.targetClass === className) {
           inverseRelationships.push(rel);
@@ -2654,6 +2659,13 @@ export class ObjectRegistry {
    */
   static getSelfReferableNames(className: string): Set<string> {
     const names = new Set<string>([className]);
+    const registered = ObjectRegistry.getClass(className);
+    if (registered?.name) {
+      names.add(registered.name);
+    }
+    if (registered?.qualifiedName) {
+      names.add(registered.qualifiedName);
+    }
     for (const ancestor of ObjectRegistry.getInheritanceChain(className)) {
       names.add(ancestor);
       const simple = ObjectRegistry.getClass(ancestor)?.name;
@@ -2682,9 +2694,16 @@ export class ObjectRegistry {
   ): RelationshipMetadata[] {
     const names = ObjectRegistry.getSelfReferableNames(className);
     const result: RelationshipMetadata[] = [];
+    const visitedBuckets = new Set<RelationshipMetadata[]>();
     for (const [, relationships] of ObjectRegistry.getRelationshipMap()) {
+      if (visitedBuckets.has(relationships)) continue;
+      visitedBuckets.add(relationships);
       for (const rel of relationships) {
-        if (names.has(rel.targetClass)) {
+        const targetSimpleName = ObjectRegistry.getClass(rel.targetClass)?.name;
+        if (
+          names.has(rel.targetClass) ||
+          (targetSimpleName !== undefined && names.has(targetSimpleName))
+        ) {
           result.push(rel);
         }
       }
@@ -3496,7 +3515,11 @@ export function smrt(config: SmartObjectConfig = {}) {
       // structurally, so it is passed through a documented prototype view.
       applyOneToManyChildAccessors(
         ctor as unknown as { prototype?: unknown },
-        ObjectRegistry.getRelationships(ctor.name),
+        ObjectRegistry.getRelationships(
+          ObjectRegistry.getClassByConstructor(
+            ctor as unknown as SmrtObjectConstructor,
+          )?.qualifiedName ?? ctor.name,
+        ),
       );
     }
 

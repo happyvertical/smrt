@@ -3653,7 +3653,7 @@ export class SmrtObject extends SmrtClass {
 
     // Get relationship metadata from ObjectRegistry
     const relationships = ObjectRegistry.getRelationships(
-      this.constructor.name,
+      this.getResolvedQualifiedName(),
     );
     const relationship = relationships.find(
       (r) =>
@@ -3871,7 +3871,9 @@ export class SmrtObject extends SmrtClass {
       // class name, while `this.constructor.name` may be a subclass (e.g. a
       // Person inheriting Profile.relationshipsFrom).
       const inverseRelationships =
-        ObjectRegistry.getInverseRelationshipsForSelf(this.constructor.name);
+        ObjectRegistry.getInverseRelationshipsForSelf(
+          this.getResolvedQualifiedName(),
+        );
       const inverseCandidates = inverseRelationships.filter(
         (r) =>
           r.sourceClass === relationship.targetClass && r.type === 'foreignKey',

@@ -1821,7 +1821,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     relationship: import('./registry').RelationshipMetadata,
   ): import('./registry').RelationshipMetadata {
     const inverseCandidates = ObjectRegistry.getInverseRelationshipsForSelf(
-      this._itemClass.name,
+      this.getResolvedItemQualifiedName(),
     ).filter(
       (candidate) =>
         candidate.sourceClass === relationship.targetClass &&
@@ -1844,7 +1844,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const inverseForeignKey =
       matchedForeignKey ??
       inverseCandidates.find(
-        (candidate) => candidate.targetClass === this._itemClass.name,
+        (candidate) =>
+          candidate.targetClass === this.getResolvedItemClassName(),
       ) ??
       inverseCandidates[0];
     if (!inverseForeignKey) {
@@ -1926,7 +1927,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     where = resolveMetaTypeInWhere(where);
 
     const relationship = ObjectRegistry.getRelationships(
-      this._itemClass.name,
+      itemQualifiedName,
     ).find(
       (candidate) =>
         candidate.fieldName === latestOptions.relation &&
@@ -3189,7 +3190,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     for (const fieldName of relationships) {
       // Get relationship metadata
       const relationshipMeta = ObjectRegistry.getRelationships(
-        this._itemClass.name,
+        this.getResolvedItemQualifiedName(),
       );
       const relationship = relationshipMeta.find(
         (r) => r.fieldName === fieldName,
@@ -3308,7 +3309,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
     // loading resolve the same inverse side.
     const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
-      this._itemClass.name,
+      this.getResolvedItemQualifiedName(),
     );
     const inverseCandidates = inverseRelationships.filter(
       (r) =>

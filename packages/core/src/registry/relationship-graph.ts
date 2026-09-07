@@ -60,15 +60,25 @@ export function getDependencyGraph(): Map<string, string[]> {
 export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   const classes = getClasses();
   const relationshipMap = new Map<string, RelationshipMetadata[]>();
+  const simpleNameCounts = new Map<string, number>();
 
   // Initialize map with all registered classes
-  for (const [_key, entry] of classes) {
-    relationshipMap.set(entry.name || _key, []);
+  for (const [key, entry] of classes) {
+    // The registry is qualified-name keyed. Keep relationship buckets on that
+    // canonical identity as well: classes in separate packages may share a
+    // simple name, and a later empty declaration must not overwrite an earlier
+    // class's relationships.
+    relationshipMap.set(entry.qualifiedName || key, []);
+    const simpleName = entry.name || key;
+    simpleNameCounts.set(
+      simpleName,
+      (simpleNameCounts.get(simpleName) ?? 0) + 1,
+    );
   }
 
   // Scan all fields for relationship types
-  for (const [_key, registered] of classes) {
-    const simpleName = registered.name || _key;
+  for (const [key, registered] of classes) {
+    const simpleName = registered.name || key;
     const relationships: RelationshipMetadata[] = [];
 
     for (const [fieldName, field] of registered.fields) {
@@ -117,7 +127,18 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       }
     }
 
-    relationshipMap.set(simpleName, relationships);
+    relationshipMap.set(registered.qualifiedName || key, relationships);
+  }
+
+  // Preserve the public simple-name map contract where that name identifies
+  // exactly one registered class. Colliding names intentionally have no alias:
+  // callers with a constructor must use the qualified bucket above.
+  for (const [key, registered] of classes) {
+    const simpleName = registered.name || key;
+    if (simpleNameCounts.get(simpleName) !== 1) continue;
+    const qualifiedName = registered.qualifiedName || key;
+    const relationships = relationshipMap.get(qualifiedName);
+    if (relationships) relationshipMap.set(simpleName, relationships);
   }
 
   return relationshipMap;
