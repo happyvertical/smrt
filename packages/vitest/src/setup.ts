@@ -78,16 +78,18 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
     const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
     // The plugin's `config()` keys its entry by its resolved `root`
     // (default `process.cwd()` at the time it ran, in the same project).
-    // This worker's own `process.cwd()` is the same project's directory in
-    // the common single-project case, so look that up first. When a
-    // consumer passed a custom non-default `root` there is no key to match
-    // on directly; fall back to the map's one entry only when it is
-    // unambiguous (exactly one project registered in this process) rather
-    // than guessing among several.
-    const entries = Object.entries(byRoot);
-    const options =
-      byRoot[process.cwd()] ??
-      (entries.length === 1 ? entries[0][1] : undefined);
+    // This worker's own `process.cwd()` is that same project's directory in
+    // the standard case, so match on that alone -- deliberately NOT falling
+    // back to "the map's one entry" when there is no exact match: this
+    // module's setupFiles-standalone mode (no `smrtVitestPlugin()` in
+    // `plugins`) promises to be a no-op when there is nothing to register
+    // for THIS project, and a same-process, unrelated project's entry (e.g.
+    // a Vitest multi-project run mixing a plugin-using project with a
+    // plugin-less one) is not this project's options. A consumer passing a
+    // custom non-default `root` to the plugin simply gets no registration
+    // here (matching the pre-#2750 behavior for that project) rather than
+    // risking cross-project registry contamination.
+    const options = byRoot[process.cwd()];
     if (!options) {
       return;
     }
