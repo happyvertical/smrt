@@ -1400,19 +1400,32 @@ async function findUniqueIndexKeyColumns(
   // `to_json(...)` (not bare `array_agg`/columns): this driver returns a raw
   // Postgres `{a,b}` array literal or scalar as an opaque string, not
   // parsed JS values — wrapping in `to_json` gets them parsed for us.
+  //
+  // `indnullsnotdistinct` only exists on PostgreSQL 15+ (this project's
+  // documented floor is 14); a plain `idx.indnullsnotdistinct` reference —
+  // in the SELECT list OR the GROUP BY — is a parse-time "column does not
+  // exist" error on 14, not a NULL, so it would hard-fail every
+  // db:migrate-uuid run there. Read it through `to_jsonb(idx)`, which only
+  // ever exposes columns that exist on the connected server and yields NULL
+  // (→ coalesced to `false`, PostgreSQL's own NULLS DISTINCT default) when
+  // the key is absent — wrapped in an aggregate so it never needs to appear
+  // in GROUP BY itself.
   const { rows } = await db.query(
     `SELECT to_json(array_agg(json_build_object(
                 'name', key_attr.attname,
                 'type', format_type(key_attr.atttypid, key_attr.atttypmod)
               ) ORDER BY key_order.ord)) AS key_columns,
-              to_json(coalesce(idx.indnullsnotdistinct, false)) AS nulls_not_distinct
+              to_json(coalesce(
+                bool_or((to_jsonb(idx) ->> 'indnullsnotdistinct')::boolean),
+                false
+              )) AS nulls_not_distinct
          FROM pg_index idx
          CROSS JOIN LATERAL unnest((idx.indkey::int2[])[0:idx.indnkeyatts - 1]) WITH ORDINALITY AS key_order(attnum, ord)
          JOIN pg_attribute key_attr
            ON key_attr.attrelid = idx.indrelid AND key_attr.attnum = key_order.attnum
         WHERE idx.indrelid = ${quoteLiteral(relationOid)}::oid AND idx.indisunique
           AND ${attnum} = ANY((idx.indkey::int2[])[0:idx.indnkeyatts - 1])
-        GROUP BY idx.indexrelid, idx.indnullsnotdistinct`,
+        GROUP BY idx.indexrelid`,
   );
   return (rows as Array<Record<string, unknown>>).map((row) => ({
     keyColumns: (row.key_columns as Array<{ name: string; type: string }>).map(

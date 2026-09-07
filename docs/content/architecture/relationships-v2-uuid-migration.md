@@ -59,12 +59,27 @@ normalization" — rather than reaching `ALTER COLUMN … TYPE uuid` and failing
 the whole transaction on a duplicate-key error when that index is rebuilt.
 That skip also propagates to its foreign-key partners exactly like a
 non-uuid-shaped skip does. Following ordinary PostgreSQL `NULLS DISTINCT`
-semantics, a NULL in another key column never counts toward a collision,
-however the rest of the row compares. A column with no covering unique index
-at all, or one whose other key columns disagree (or are NULL), normalizing
-several rows to the same value is the intended, harmless outcome (e.g. an
-ordinary FK column with mixed-case or mixed-hyphenation spellings across
-rows) and is never flagged.
+semantics (the default), a NULL in another key column never counts toward a
+collision, however the rest of the row compares. A column with no covering
+unique index at all, or one whose other key columns disagree (or are NULL
+under a `NULLS DISTINCT` index), normalizing several rows to the same value
+is the intended, harmless outcome (e.g. an ordinary FK column with
+mixed-case or mixed-hyphenation spellings across rows) and is never flagged.
+
+Three narrow, deliberately-deferred imprecisions in this collision probe are
+known and out of this fix's bounded scope. Two are safe-direction
+(over-cautious skip, never a missed collision or a whole-run abort): a
+partial unique index's `WHERE` predicate is not read, so rows outside it can
+still be counted toward a collision; and an expression-based key column of a
+composite index is not modeled, which only widens (never narrows) what that
+index's check flags. The third is not safe-direction, but is narrowly
+reachable: under an index declared `NULLS NOT DISTINCT` (PostgreSQL 15+),
+two rows whose values both collapse to empty/NULL under the conversion's own
+`NULLIF(btrim(...), '')` (one literal `NULL`, one `''` or whitespace-only)
+are excluded from the probe entirely rather than counted as the collision
+`NULLS NOT DISTINCT` would make them, and so can still abort that specific,
+uncommon run — this predates #2702, since the empty-to-NULL collapse comes
+from the original `USING` clause, not from the widened shape probe.
 A generated TEXT bridge column (below) is narrower: it stays TEXT and is
 regenerated as `sourceColumn::text` over the now-native column, and
 `uuid::text` always renders the canonical hyphenated form — so a bare-hex
