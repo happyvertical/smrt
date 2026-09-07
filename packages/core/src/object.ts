@@ -1890,7 +1890,13 @@ export class SmrtObject extends SmrtClass {
     filter: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const className = this.getResolvedClassName();
-    const interceptorContext = createInterceptorContext(className, 'get');
+    const interceptorContext = createInterceptorContext(
+      className,
+      'get',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
+    );
     const intercepted = await GlobalInterceptors.executeBeforeGet(
       className,
       filter,
@@ -2108,7 +2114,13 @@ export class SmrtObject extends SmrtClass {
       await this.validateCrossPackageRefs();
 
       // Execute beforeSave interceptors (e.g., tenancy validation)
-      const interceptorContext = createInterceptorContext(className, 'save');
+      const interceptorContext = createInterceptorContext(
+        className,
+        'save',
+        undefined,
+        undefined,
+        this.getResolvedQualifiedName(),
+      );
       await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
 
       if (!this.id) {
@@ -2468,7 +2480,13 @@ export class SmrtObject extends SmrtClass {
     // omitting domain mutation and after-save hooks.
     await GlobalInterceptors.executeBeforeSave(
       this,
-      createInterceptorContext(className, 'save'),
+      createInterceptorContext(
+        className,
+        'save',
+        undefined,
+        undefined,
+        this.getResolvedQualifiedName(),
+      ),
     );
 
     const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
@@ -3345,6 +3363,9 @@ export class SmrtObject extends SmrtClass {
     const interceptorContext = createInterceptorContext(
       this.constructor.name,
       'delete',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
     );
     await GlobalInterceptors.executeBeforeDelete(this, interceptorContext);
 

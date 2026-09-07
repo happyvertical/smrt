@@ -4422,6 +4422,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this._itemClass.name,
       'query',
       this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
     );
     const interceptedQuery = await GlobalInterceptors.executeBeforeQuery(
       this._itemClass.name,
