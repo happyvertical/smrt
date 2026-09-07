@@ -249,6 +249,99 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toMatchObject({ mode: 'optional' });
   });
 
+  it('does not leak a same-name tenant marker into an ordinary peer field', () => {
+    const TenantRecord = class Record extends SmrtObject {};
+    const GlobalRecord = class Record extends SmrtObject {};
+    registerTenantField('Record', { nullable: false });
+    const tenantField = ObjectRegistry.getFieldDecorator('Record', 'tenantId');
+    if (!tenantField) throw new Error('tenant field was not registered');
+    ObjectRegistry.registerFieldDecoratorForConstructor(
+      TenantRecord,
+      'tenantId',
+      tenantField,
+    );
+    ObjectRegistry.registerFieldDecoratorForConstructor(
+      GlobalRecord,
+      'tenantId',
+      { type: 'text', nullable: true },
+    );
+
+    ObjectRegistry.register(TenantRecord, {
+      packageName: '@fixture/tenant-a',
+      tableName: 'tenant_record_a_2763',
+    });
+    ObjectRegistry.register(GlobalRecord, {
+      packageName: '@fixture/tenant-b',
+      tableName: 'tenant_record_b_2763',
+    });
+
+    expect(
+      ObjectRegistry.getClassByConstructor(GlobalRecord)?.tenantScopedConfig,
+    ).toBeUndefined();
+    expect(
+      ObjectRegistry.getConflictColumns('@fixture/tenant-b:Record'),
+    ).toEqual(['slug', 'context']);
+  });
+
+  it('adopts a standalone exact-constructor tenancy declaration with an ordinary field', () => {
+    const StandaloneTenantRecord = class StandaloneTenantRecord extends SmrtObject {};
+    ObjectRegistry.reconcileTenantScopedConfig(
+      StandaloneTenantRecord,
+      tenantConfig('optional'),
+    );
+    ObjectRegistry.registerFieldDecoratorForConstructor(
+      StandaloneTenantRecord,
+      'tenantId',
+      { type: 'text', nullable: true },
+    );
+    ObjectRegistry.register(StandaloneTenantRecord, {
+      tableName: 'standalone_tenant_record_2763',
+    });
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('StandaloneTenantRecord'),
+    ).toMatchObject({ mode: 'optional', field: 'tenantId' });
+    expect(ObjectRegistry.getConflictColumns('StandaloneTenantRecord')).toEqual(
+      ['tenant_id', 'slug', 'context'],
+    );
+  });
+
+  it('does not widen inverse relationships across same-name package targets', () => {
+    const ParentA = class Parent extends SmrtObject {};
+    const ParentB = class Parent extends SmrtObject {};
+    const Child = class Child extends SmrtObject {};
+    ObjectRegistry.registerFieldDecoratorForConstructor(Child, 'parentId', {
+      type: 'crossPackageRef',
+      related: '@fixture/parent-b:Parent',
+    });
+    ObjectRegistry.register(ParentA, {
+      packageName: '@fixture/parent-a',
+      tableName: 'parent_a_2763',
+    });
+    ObjectRegistry.register(ParentB, {
+      packageName: '@fixture/parent-b',
+      tableName: 'parent_b_2763',
+    });
+    ObjectRegistry.register(Child, {
+      packageName: '@fixture/child',
+      tableName: 'child_2763',
+    });
+
+    expect(
+      ObjectRegistry.getInverseRelationshipsForSelf('@fixture/parent-a:Parent'),
+    ).toEqual([]);
+    expect(
+      ObjectRegistry.getInverseRelationshipsForSelf('@fixture/parent-b:Parent'),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldName: 'parentId',
+          targetClass: '@fixture/parent-b:Parent',
+        }),
+      ]),
+    );
+  });
+
   it('lets a late silent manifest clear provisional field tenancy', () => {
     registerTenantField('LateManifestSilentTenant', { nullable: true });
     @smrt({

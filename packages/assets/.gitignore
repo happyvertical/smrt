@@ -15,7 +15,6 @@ src/routes/api/assetmetafields/initializeCommonMetafields/+server.ts
 src/routes/api/assets/\[id\]/+server.ts
 src/routes/api/assets/+server.ts
 src/routes/api/assets/addTag/+server.ts
-src/routes/api/assets/createNewVersion/+server.ts
 src/routes/api/assets/findByTenant/+server.ts
 src/routes/api/assets/findGlobal/+server.ts
 src/routes/api/assets/findWithGlobals/+server.ts
@@ -40,9 +39,7 @@ src/routes/api/assettypes/getOrCreate/+server.ts
 src/routes/api/assettypes/initializeCommonTypes/+server.ts
 src/routes/api/folders/\[id\]/+server.ts
 src/routes/api/folders/+server.ts
-src/routes/api/folders/getContents/+server.ts
 src/routes/api/folders/getPath/+server.ts
 src/routes/api/folders/getTree/+server.ts
-src/routes/api/folders/moveAsset/+server.ts
 src/routes/api/sync/apply/+server.ts
 # END SMRT auto-generated routes (Vite plugin)

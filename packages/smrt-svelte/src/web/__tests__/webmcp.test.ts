@@ -1,3 +1,9 @@
+import {
+  registerWebMcpBespokeTool as registerBespokeDirect,
+  reserveWebMcpToolNames,
+  WebMcpToolNameCollisionError,
+  webMcpToolNameOwner,
+} from '@happyvertical/smrt-web';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -182,6 +188,68 @@ describe('useWebMcpTool', () => {
 
     view.unmount();
     warnSpy.mockRestore();
+  });
+
+  it('reports a tool-name collision through its warn path, not as an unhandled rejection (#2613)', async () => {
+    const registered = installModelContext();
+    // Stand in for whatever already holds the name — a generated model tool,
+    // a fixed `smrt_ui_*` tool under a custom prefix, or another mounted
+    // component. `registerWebMcpBespokeTool` now throws SYNCHRONOUSLY here,
+    // inside this hook's fire-and-forget `register()`, so without the
+    // narrowed catch the page would see a global unhandled rejection instead
+    // of a diagnostic naming the tool and its owner.
+    const held = reserveWebMcpToolNames(['harness_tool_1'], 'generated');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const unhandled = vi.fn();
+    window.addEventListener('unhandledrejection', unhandled);
+
+    const view = render(Harness, { props: { version: 1 } });
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    // Two macrotask turns is enough for an unhandled rejection to surface.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(registered).toHaveLength(0);
+    const [message, name, error] = warn.mock.calls[0] as [
+      string,
+      string,
+      unknown,
+    ];
+    expect(message).toContain('bespoke WebMCP tool registration failed');
+    expect(name).toBe('harness_tool_1');
+    expect(error).toBeInstanceOf(WebMcpToolNameCollisionError);
+    expect((error as WebMcpToolNameCollisionError).owner).toBe('generated');
+
+    // The losing registrant strands nothing: the holder keeps the name, and
+    // unmounting the component leaves it exactly as it was.
+    expect(webMcpToolNameOwner('harness_tool_1')).toBe('generated');
+    view.unmount();
+    expect(webMcpToolNameOwner('harness_tool_1')).toBe('generated');
+    held.release();
+    expect(webMcpToolNameOwner('harness_tool_1')).toBeUndefined();
+
+    window.removeEventListener('unhandledrejection', unhandled);
+    warn.mockRestore();
+  });
+
+  it('still propagates a non-collision synchronous registrar throw', async () => {
+    installModelContext();
+    // The narrowed catch above must not swallow an authoring error. An
+    // invalid `effects` policy is the synchronous throw that already existed.
+    expect(() =>
+      registerBespokeDirect(
+        {
+          name: 'harness_tool_1',
+          description: 'x',
+          inputSchema: { type: 'object' },
+          annotations: { readOnlyHint: true },
+          execute: () => 'ok',
+        },
+        { effects: ['nonsense' as never] },
+      ),
+    ).toThrow(/Invalid WebMCP effect/);
+    expect(webMcpToolNameOwner('harness_tool_1')).toBeUndefined();
   });
 
   it('registers a previously-excluded bespoke tool when a Provider policy loosens to permit it (#2599)', async () => {

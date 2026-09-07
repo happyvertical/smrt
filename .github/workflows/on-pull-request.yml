@@ -281,7 +281,11 @@ jobs:
       - name: Run README validation
         env:
           # Keep the trusted pnpm 11.13.1 binary from honoring the repository's
-          # older packageManager version and self-switching during discovery.
+          # packageManager version and self-switching during discovery. That
+          # version is NEWER than this pin since #2686 unpinned the broken
+          # 11.13.0 release, so the guard matters in the opposite direction now:
+          # without it the trusted binary would fetch and hand control to a
+          # version the PR controls, which is exactly what pinning it prevents.
           PNPM_CONFIG_PM_ON_FAIL: ignore
           SMRT_TYPESCRIPT_PATH: ${{ runner.temp }}/readme-validator/node_modules/typescript/lib/typescript.js
         run: |

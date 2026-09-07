@@ -4,8 +4,8 @@
  * review/architecture prompt bundles, and portable agent skills.
  */
 
-import { readFileSync, realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { realpathSync } from 'node:fs';
+
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   ProtocolError,
@@ -13,8 +13,8 @@ import {
   Server,
 } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-
 import { getAgentSkill, listAgentSkills } from './agent-skills.js';
+import { startRuntimeHttpHost } from './http.js';
 import {
   buildArchitectureContext,
   buildKnowledgeIndex,
@@ -26,17 +26,31 @@ import {
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
+import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
 import {
   generateSmrtClass,
   introspectProject,
   reviewSmrtProject,
 } from './tools/index.js';
+import { redactConnectionString } from './tools/runtime/connection.js';
+import {
+  runtimeObject,
+  runtimeRegistry,
+  runtimeSchemaDiff,
+} from './tools/runtime/observation.js';
+import {
+  runtimeDispatchHealth,
+  runtimeJobHealth,
+  runtimeMigrationStatus,
+  runtimeRecentChanges,
+  runtimeRegistryDrift,
+  runtimeScheduleHealth,
+} from './tools/runtime/tools.js';
 
+export { SERVER_VERSION } from './server-info.js';
 export { TOOLS } from './tool-catalog.js';
 
-const SERVER_NAME = 'smrt-dev-mcp';
-export const SERVER_VERSION = readPackageVersion();
 const DEBUG = process.env.DEBUG === 'true';
 const REVIEW_SKILL_URI = `smrt-dev-mcp://agent-skills/${REVIEW_SKILL_NAME}`;
 const DOMAIN_CODE_REVIEW_PROMPT = 'domain-code-review';
@@ -458,7 +472,7 @@ export function createServer(): Server {
       console.error(`[${SERVER_NAME}] CallTool: ${name}`);
       console.error(
         `[${SERVER_NAME}] Arguments:`,
-        JSON.stringify(args, null, 2),
+        JSON.stringify(redactDebugArguments(args), null, 2),
       );
     }
 
@@ -652,6 +666,96 @@ export function createServer(): Server {
           );
           break;
 
+        case 'migration-status':
+          result = JSON.stringify(
+            await runtimeMigrationStatus(
+              args as unknown as Parameters<typeof runtimeMigrationStatus>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'job-health':
+          result = JSON.stringify(
+            await runtimeJobHealth(
+              args as unknown as Parameters<typeof runtimeJobHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'schedule-health':
+          result = JSON.stringify(
+            await runtimeScheduleHealth(
+              args as unknown as Parameters<typeof runtimeScheduleHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'dispatch-health':
+          result = JSON.stringify(
+            await runtimeDispatchHealth(
+              args as unknown as Parameters<typeof runtimeDispatchHealth>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'recent-changes':
+          result = JSON.stringify(
+            await runtimeRecentChanges(
+              args as unknown as Parameters<typeof runtimeRecentChanges>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'registry-drift':
+          result = JSON.stringify(
+            await runtimeRegistryDrift(
+              args as unknown as Parameters<typeof runtimeRegistryDrift>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'runtime-registry':
+          result = JSON.stringify(
+            await runtimeRegistry(
+              args as unknown as Parameters<typeof runtimeRegistry>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'runtime-object':
+          result = JSON.stringify(
+            await runtimeObject(
+              args as unknown as Parameters<typeof runtimeObject>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'runtime-schema-diff':
+          result = JSON.stringify(
+            await runtimeSchemaDiff(
+              args as unknown as Parameters<typeof runtimeSchemaDiff>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -726,21 +830,6 @@ function isEntrypoint(): boolean {
     return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
   } catch {
     return import.meta.url === pathToFileURL(entry).href;
-  }
-}
-
-function readPackageVersion(): string {
-  try {
-    const packageRoot = dirname(fileURLToPath(import.meta.url));
-    const packageJsonPath = join(packageRoot, '..', 'package.json');
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
-      version?: unknown;
-    };
-    return typeof packageJson.version === 'string'
-      ? packageJson.version
-      : '0.0.0';
-  } catch {
-    return '0.0.0';
   }
 }
 
@@ -822,12 +911,43 @@ function detailArg(args: unknown): string | undefined {
   return typeof detail === 'string' ? detail : undefined;
 }
 
+/**
+ * Debug logging happens before any tool runs its own redaction, so a
+ * credential-bearing `dbUrl` argument must be masked here.
+ */
+function redactDebugArguments(args: unknown): unknown {
+  if (!isRecord(args) || typeof args.dbUrl !== 'string') return args;
+  return { ...args, dbUrl: redactConnectionString(args.dbUrl) };
+}
+
+function isRuntimeEnvelope(value: unknown): value is {
+  ok: boolean;
+  coverage: unknown;
+  diagnostics: unknown[];
+  data: unknown;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.ok === 'boolean' &&
+    'coverage' in value &&
+    Array.isArray(value.diagnostics) &&
+    'data' in value
+  );
+}
+
 function toDevToolStructuredContent(result: string) {
   let data: unknown = result;
   try {
     data = JSON.parse(result);
   } catch {
     // `generate-smrt-class` intentionally returns source text, not JSON.
+  }
+
+  // Runtime diagnostics tools already return the `{ok, coverage, diagnostics,
+  // data}` envelope; re-wrapping would expose `data.data.*` in
+  // structuredContent while the text response exposes `data.*`.
+  if (isRuntimeEnvelope(data)) {
+    return data;
   }
 
   const source = isRecord(data) ? data : undefined;
@@ -890,8 +1010,64 @@ function sanitizePath(path: string | undefined): string | undefined {
   return path;
 }
 
+/**
+ * `smrt-dev-mcp --http [--port N] [--project DIR]` starts the Level 2 runtime
+ * dev-plane host (#1831) instead of the stdio server. Loopback-only, bearer
+ * protected, positive read-only catalog; see `http.ts`.
+ */
+export function parseHttpCliArgs(argv: readonly string[]): {
+  http: boolean;
+  port?: number;
+  projectRoot?: string;
+} {
+  const result: { http: boolean; port?: number; projectRoot?: string } = {
+    http: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--http') result.http = true;
+    else if (arg === '--port') {
+      const value = Number.parseInt(argv[index + 1] ?? '', 10);
+      if (!Number.isInteger(value) || value < 0 || value > 65535) {
+        throw new Error('--port requires an integer between 0 and 65535');
+      }
+      result.port = value;
+      index += 1;
+    } else if (arg === '--project') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--project requires a directory');
+      result.projectRoot = value;
+      index += 1;
+    }
+  }
+  return result;
+}
+
+async function mainHttp(cli: ReturnType<typeof parseHttpCliArgs>) {
+  const host = await startRuntimeHttpHost({
+    port: cli.port,
+    projectRoot: cli.projectRoot,
+  });
+  // The token is printed exactly once, to stderr, only when this process
+  // minted it; a token supplied via SMRT_DEV_MCP_TOKEN is never echoed.
+  const minted = !process.env.SMRT_DEV_MCP_TOKEN?.trim();
+  console.error(
+    `[${SERVER_NAME}] runtime dev-plane listening at ${host.url} (${host.boot.objectCount} booted objects, ${host.boot.manifests.length} manifests)`,
+  );
+  if (minted) {
+    console.error(`[${SERVER_NAME}] bearer token: ${host.token}`);
+  }
+  const shutdown = async () => {
+    await host.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
 if (isEntrypoint()) {
-  main().catch((error) => {
+  const cli = parseHttpCliArgs(process.argv.slice(2));
+  (cli.http ? mainHttp(cli) : main()).catch((error) => {
     console.error(`[${SERVER_NAME}] Fatal error:`, error);
     process.exit(1);
   });

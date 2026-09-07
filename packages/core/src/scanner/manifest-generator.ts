@@ -5,7 +5,12 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLogger } from '@happyvertical/logger';
-import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import {
+  createManifestClassNamePredicate,
+  resolveApiMethodExposure,
+  resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
+} from '../generators/custom-action.js';
 import {
   loadExternalManifestSync,
   lookupInManifest,
@@ -169,6 +174,18 @@ const FRAMEWORK_METHOD_BASE_NAMES = new Set([
   'SmrtClass',
   'SmrtCollection',
 ]);
+
+/**
+ * Deterministic string comparator (#2749). Manifest object iteration order
+ * follows scan/discovery order, which is not stable across runs, so any
+ * emitted artifact keyed off `Object.entries(manifest.objects)` needs a
+ * stable sort before emission.
+ */
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
 
 /**
  * Infer visibility from file path and explicit config
@@ -1727,6 +1744,40 @@ export class ManifestGenerator {
             );
             obj.collection = itemClass.collection;
           }
+
+          // Inherit a full route opt-out (api/mcp/cli === false) from the
+          // item class unless the collection class explicitly overrides it
+          // itself. Decorator-only registration never gives an undecorated
+          // collection its own independent route surface, so an item class
+          // that fully opts out of generated routes (e.g. api: false for a
+          // tenant-isolation fail-closed class such as SmrtJob, #2750) must
+          // not leave its collection independently advertised in the
+          // manifest path.
+          //
+          // Deliberately scoped to the boolean `false` opt-out only, never
+          // to an object-form config (e.g. `{ include: [...] }`): those
+          // configs list method names specific to the ITEM class's own
+          // instance methods, which do not correspond 1:1 to the
+          // COLLECTION class's methods of the same name (different
+          // signatures, e.g. a bulk/collection `create` vs. a single-record
+          // `create`) -- copying them verbatim previously broke unrelated
+          // packages whose item class narrows its own api/cli/mcp surface
+          // with an include list (e.g. @happyvertical/smrt-subscriptions's
+          // TenantUsageMetric), producing a spurious "CLI command not
+          // exposed via the api" build error on the collection.
+          for (const key of ['api', 'mcp', 'cli'] as const) {
+            const itemValue = itemClass.decoratorConfig?.[key];
+            if (
+              itemValue === false &&
+              obj.decoratorConfig?.[key] === undefined
+            ) {
+              obj.decoratorConfig = obj.decoratorConfig || {};
+              obj.decoratorConfig[key] = false;
+              logger.info(
+                `[manifest-generator] ${obj.className} inherits ${key}: false from item class ${itemClass.className}`,
+              );
+            }
+          }
         }
       }
     }
@@ -2134,7 +2185,18 @@ export class ManifestGenerator {
   generateTypeDefinitions(manifest: SmartObjectManifest): string {
     const interfaces: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
+    // Manifest key order follows scan/discovery order, which is not stable
+    // across runs (#2749): the vite-plugin's server-mode `@smrt/types`
+    // resolution calls this method directly, so sort deterministically
+    // before emitting for the same reason as the prebuild/client-mode paths.
+    const sortedEntries = Object.entries(manifest.objects).sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
+    for (const [_name, obj] of sortedEntries) {
       interfaces.push(this.generateInterface(obj));
     }
 
@@ -2193,7 +2255,7 @@ ${fields}
     for (const [_name, obj] of Object.entries(manifest.objects)) {
       const apiConfig = obj.decoratorConfig.api;
       if (apiConfig !== false) {
-        endpoints.push(...this.getSimpleEndpoints(obj));
+        endpoints.push(...this.getSimpleEndpoints(obj, manifest));
       }
     }
 
@@ -2222,7 +2284,7 @@ ${fields}
   private getApiRouteMetadata(
     obj: SmartObjectDefinition,
     actionName: string,
-    actionDef: { isStatic?: boolean },
+    actionDef: MethodDefinition | { isStatic?: boolean },
   ): {
     scope: 'item' | 'collection';
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -2232,8 +2294,17 @@ ${fields}
       obj.decoratorConfig.api && typeof obj.decoratorConfig.api === 'object'
         ? obj.decoratorConfig.api
         : undefined;
-    const routeConfig = config?.routes?.[actionName];
-    const normalizedPath = (routeConfig?.path || actionName)
+    // `@method({ httpMethod, path })` wins field by field over the class-level
+    // `api.routes[action]` entry, the same merge `resolveApiActionRouteConfig`
+    // and the knowledge artifact perform. Reading `routes` alone printed the
+    // PRE-migration verb and path for a class that had moved to the decorator
+    // (#2686).
+    const effective = resolveEffectiveActionMetadata({
+      actionName,
+      method: actionDef,
+      apiConfig: config,
+    });
+    const normalizedPath = (effective.path || actionName)
       .split('/')
       .map((segment) => segment.trim())
       .filter(Boolean)
@@ -2251,24 +2322,15 @@ ${fields}
         apiConfig: config,
         defaultScope,
       }).scope,
-      method:
-        routeConfig?.method?.toUpperCase() === 'GET' ||
-        routeConfig?.method?.toUpperCase() === 'POST' ||
-        routeConfig?.method?.toUpperCase() === 'PUT' ||
-        routeConfig?.method?.toUpperCase() === 'PATCH' ||
-        routeConfig?.method?.toUpperCase() === 'DELETE'
-          ? (routeConfig.method.toUpperCase() as
-              | 'GET'
-              | 'POST'
-              | 'PUT'
-              | 'PATCH'
-              | 'DELETE')
-          : 'POST',
+      method: effective.httpMethod ?? 'POST',
       path: normalizedPath || actionName,
     };
   }
 
-  private getSimpleEndpoints(obj: SmartObjectDefinition): string[] {
+  private getSimpleEndpoints(
+    obj: SmartObjectDefinition,
+    manifest?: SmartObjectManifest,
+  ): string[] {
     const { collection } = obj;
     const config = obj.decoratorConfig.api;
     const exclude = (typeof config === 'object' && config?.exclude) || [];
@@ -2276,6 +2338,7 @@ ${fields}
       (typeof config === 'object' && config?.include) || undefined;
     const isCollectionClass =
       obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
+    const isModelClassName = createManifestClassNamePredicate(manifest);
 
     const endpoints: string[] = [];
 
@@ -2304,29 +2367,25 @@ ${fields}
       }
     }
 
-    const standardActions = ['list', 'get', 'create', 'update', 'delete'];
+    // Custom actions read the ONE shared exposure resolver rather than a local
+    // copy of the include/exclude rule. This listing is a published virtual
+    // module (`@happyvertical/smrt-virt-routes`), so a stale rule here
+    // advertises operations whose routes the emitters never wrote -- exactly
+    // the consumer disagreement #2686 exists to close.
     for (const [actionName, actionDef] of Object.entries(obj.methods)) {
       if (
-        standardActions.includes(actionName) ||
-        !actionDef.isPublic ||
-        !shouldInclude(actionName)
+        !resolveApiMethodExposure({
+          actionName,
+          method: actionDef,
+          apiConfig: config,
+          isCollectionClass,
+          ...(isModelClassName ? { isModelClassName } : {}),
+        }).exposed
       ) {
         continue;
       }
 
       const route = this.getApiRouteMetadata(obj, actionName, actionDef);
-      if (
-        route.scope === 'collection' &&
-        !isCollectionClass &&
-        !actionDef.isStatic
-      ) {
-        continue;
-      }
-
-      if (route.scope === 'item' && isCollectionClass) {
-        continue;
-      }
-
       const suffix = route.scope === 'collection' ? '' : '/:id';
       endpoints.push(`${route.method} /${collection}${suffix}/${route.path}`);
     }

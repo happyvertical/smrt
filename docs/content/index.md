@@ -13,7 +13,7 @@ s-m-r-t is a TypeScript framework for defining domain behavior once and using th
 ## Requirements
 
 - Node.js 24.18 or newer
-- pnpm 11.13 or newer
+- pnpm 11.13.1 or newer (11.13.0 is a broken release pnpm itself refuses)
 - An explicitly prepared application schema
 
 ## Start here

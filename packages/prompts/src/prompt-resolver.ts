@@ -1,6 +1,10 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
-import { getCachedPromptBase, setCachedPromptBase } from './cache.js';
+import {
+  getCachedPromptBase,
+  getPromptCacheGeneration,
+  setCachedPromptBase,
+} from './cache.js';
 import { PromptOverrideCollection } from './collections/PromptOverrideCollection.js';
 import { PromptRegistry } from './prompt-registry.js';
 import type {
@@ -50,6 +54,12 @@ async function loadPromptBase(
     return cached;
   }
 
+  // Capture the invalidation generation before the asynchronous layer loads. A
+  // write that lands while they are in flight bumps it, and the cache write
+  // below is then refused rather than repopulating the key the write just
+  // invalidated with the pre-write value.
+  const loadedAtGeneration = getPromptCacheGeneration(key, cacheDb);
+
   const config = getPromptConfig();
   const layers = [
     {
@@ -80,7 +90,7 @@ async function loadPromptBase(
     ai: merged.ai,
   };
 
-  setCachedPromptBase(key, tenantId, cacheDb, value);
+  setCachedPromptBase(key, tenantId, cacheDb, value, loadedAtGeneration);
   return value;
 }
 

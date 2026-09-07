@@ -27,6 +27,7 @@ docs/build/
 docs/.docusaurus/
 docs/node_modules/
 docs/content/packages/
+docs/content/data-surface-conformance.md
 
 # Auto-generated documentation
 packages/*/docs/
@@ -141,6 +142,7 @@ ci-debug-*.log
 
 # Package artifacts
 *.tgz
+.artifacts/
 
 **/.claude/settings.local.json
 **/.claude/mcp-config.json

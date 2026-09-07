@@ -35,8 +35,89 @@ Before upgrading a PostgreSQL consumer that stores non-UUID tenant primary keys:
 5. Run `smrt db:migrate`, then run `smrt db:migrate-uuid`.
 
 `smrt db:migrate-uuid` only converts schema-declared UUID columns when all
-non-empty values are already canonical UUID strings. It deliberately skips dirty
-columns instead of coercing slug-shaped data.
+non-empty values are already UUID-shaped — not necessarily canonical UUID
+strings. A value being converted to
+native `uuid` counts as UUID-shaped in either the hyphenated form
+(`8-4-4-4-12` hex groups) or the bare 32-hex form with no hyphens — PostgreSQL's
+`::uuid` cast accepts both as the identical value, and the conversion normalizes
+either input to the same canonical hyphenated `uuid` value, so a foreign key
+between a hyphenated-form column and a bare-hex-form column still converts and
+recreates correctly. Braces and partially-hyphenated values are never accepted.
+It deliberately skips dirty columns instead of coercing slug-shaped data.
+Because the hyphenated and bare-hex forms — and, for the shape probe, upper
+and lower case — are accepted as the same value, TEXT→uuid is many-to-one.
+That is only a hazard for a column covered by a unique/PK index — single-key
+or composite (e.g. SMRT's own generated `UNIQUE (tenant_id, slug, context)`
+on tenant-scoped tables, or a link table's `UNIQUE (source_id, target_id)`
+where both sides are themselves declared UUID and converting in the same
+run). A covered column that holds two distinct TEXT rows normalizing to the
+same uuid, with every other key column of that index also matching — an
+other key column that is itself a declared-UUID candidate is compared on
+its own normalized value too, not its raw text, so a pair that only collides
+after BOTH columns convert is still caught — is detected before conversion
+and skipped as dirty — reported as "N duplicate value(s) after
+normalization" — rather than reaching `ALTER COLUMN … TYPE uuid` and failing
+the whole transaction on a duplicate-key error when that index is rebuilt.
+That skip also propagates to its foreign-key partners exactly like a
+non-uuid-shaped skip does. Following ordinary PostgreSQL `NULLS DISTINCT`
+semantics (the default), a NULL in another key column never counts toward a
+collision, however the rest of the row compares. A column with no covering
+unique index at all, or one whose other key columns disagree (or are NULL
+under a `NULLS DISTINCT` index), normalizing several rows to the same value
+is the intended, harmless outcome (e.g. an ordinary FK column with
+mixed-case or mixed-hyphenation spellings across rows) and is never flagged.
+
+Four narrow, deliberately-deferred imprecisions in this collision probe are
+known and out of this fix's bounded scope. Three are safe-direction
+(over-cautious skip, never a missed collision or a whole-run abort): a
+partial unique index's `WHERE` predicate is not read, so rows outside it can
+still be counted toward a collision; an expression-based key column of a
+composite index is not modeled, which only widens (never narrows) what that
+index's check flags; and a composite index's OTHER key column is normalized
+in the group-by whenever it is merely schema-declared UUID, not only when it
+will actually convert — a partner column that stays TEXT (skipped for dirty
+data or otherwise) can therefore cause a false "duplicate value(s) after
+normalization" skip on an otherwise-clean column sharing that index, which
+then propagates to that column's own FK partners. Re-running after cleaning
+the partner converges normally. The fourth is not safe-direction, but is
+narrowly reachable: under an index declared `NULLS NOT DISTINCT`
+(PostgreSQL 15+), two rows whose values both collapse to empty/NULL under
+the conversion's own `NULLIF(btrim(...), '')` (one literal `NULL`, one `''`
+or whitespace-only) are excluded from the probe entirely rather than counted
+as the collision `NULLS NOT DISTINCT` would make them, and so can still
+abort that specific, uncommon run — this predates #2702, since the
+empty-to-NULL collapse comes from the original `USING` clause, not from the
+widened shape probe.
+A generated TEXT bridge column (below) is narrower: it stays TEXT and is
+regenerated as `sourceColumn::text` over the now-native column, and
+`uuid::text` always renders the canonical hyphenated form — so a bare-hex
+bridge value would come back silently re-hyphenated, breaking the bridge's
+one job (matching its TEXT FK children exactly). The bridge's own sample probe
+therefore accepts only the canonical hyphenated form, never the bare-hex one.
+
+Inside its single transaction, before converting, it drops every foreign key
+that depends on a column being converted and recreates it afterward from the
+captured `pg_get_constraintdef`. A column whose foreign-key partner will not
+convert — because the partner's data is still dirty, or because the schema
+deliberately keeps the partner `TEXT` — blocks that column too, rather than
+aborting the whole run: the block propagates transitively (a two-hop chain of
+foreign keys blocks every column in the chain), and `--dry-run` lists each
+blocked column together with the reason and the foreign key that caused the
+block. Every unblocked column still converts, and repeat runs are a no-op.
+
+On PostgreSQL it also preserves a bounded dependency component in one
+transaction: schema-declared UUID foreign keys and plain stored `id::text`
+integrity bridges with their single-key btree indexes and inbound TEXT foreign
+keys. Before it drops a bridge column, it reads PostgreSQL's dependency catalog
+and allows only the bridge's generated-column definition, those reconstructable
+indexes, and the foreign keys it explicitly captures. Constraints, views,
+expression or partial indexes, extended statistics, and every other dependent
+catalog object are refused before any schema change. It also refuses views,
+partitions, inheritance, non-canonical bridge values, non-default bridge
+collations, multi-column foreign keys touching the migration component, foreign
+keys that mix a converted endpoint with a retained TEXT bridge, and foreign keys
+with nondefault PostgreSQL trigger enforcement; use `--dry-run` to inspect the
+exact plan.
 
 ## Validation
 
@@ -49,3 +130,12 @@ precondition for `tenants.id` when:
   operators to `smrt db:migrate-uuid`; or
 - the live table is `TEXT` and contains non-UUID values, which must be remapped
   before fresh 0.27 environments can be expected to work.
+
+`smrt db:status`'s UUID-shape probe is independent of `db:migrate-uuid`'s and,
+as of this writing, is canonical-hyphenated-only: it does NOT yet recognize
+the bare 32-hex form `db:migrate-uuid` accepts. A `tenants.id` column holding
+only bare-hex values is reported by `db:status` as containing non-UUID values
+that "must be remapped," even though `db:migrate-uuid` converts it cleanly.
+Treat that specific `db:status` precondition as informational until the two
+probes are unified; trust `db:migrate-uuid --dry-run` for the authoritative
+convertibility answer.

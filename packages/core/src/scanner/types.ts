@@ -160,19 +160,74 @@ export interface FieldDefinition {
   exported?: boolean;
 }
 
+export interface MethodParameterDefinition {
+  name: string;
+  type: string;
+  optional: boolean;
+  default?: unknown;
+  /**
+   * The declared annotation -- or a member of an inline object literal inside
+   * it -- was syntax the scanner could not express as a string (intersection,
+   * tuple, conditional, mapped, `typeof`, indexed access).
+   *
+   * `type` still reads `'any'` for compatibility, so this flag is the ONLY
+   * thing separating "the author wrote `any`" from "the scanner gave up".
+   * Anything that must fail closed on an uncertain type -- notably the API
+   * wire-ability gate in `generators/custom-action.ts` -- reads this (#2686).
+   */
+  typeUnresolved?: boolean;
+  /**
+   * Resolved member types of an INLINE object-literal annotation, flattened
+   * across nested literals, arrays, unions, and type arguments.
+   *
+   * The manifest records an inline literal as the single string `'object'`,
+   * which hides exactly the members that decide whether the bag can cross a
+   * wire (a callback, a model instance). NAMED bags -- an interface, type
+   * alias, `Partial<>`/`Pick<>` -- are deliberately absent here and accepted
+   * heuristically instead; expanding them needs cross-file type resolution the
+   * AST scanner does not perform (#2686).
+   */
+  memberTypes?: string[];
+  /**
+   * For a top-level UNION, each branch with the inline members IT declared.
+   *
+   * `memberTypes` above flattens across branches, which lets one branch veto
+   * another: `{ callback: () => void } | string` is wire-able through its
+   * string branch, but the flattened `Function` rejected the whole parameter.
+   * A consumer that understands this field MUST prefer it over `memberTypes`
+   * for unions. Absent on a non-union parameter and on manifests generated
+   * before #2686.
+   */
+  unionBranches?: ParameterTypeBranch[];
+}
+
+/** One branch of a top-level union parameter type (#2686). */
+export interface ParameterTypeBranch {
+  /** The branch's own type name, e.g. `string` or `object`. */
+  type: string;
+  /** Inline object members declared by THIS branch only. */
+  memberTypes?: string[];
+}
+
 export interface MethodDefinition {
   name: string;
   async: boolean;
-  parameters: Array<{
-    name: string;
-    type: string;
-    optional: boolean;
-    default?: unknown;
-  }>;
+  parameters: MethodParameterDefinition[];
   returnType: string;
   description?: string;
   isStatic: boolean;
   isPublic: boolean;
+  /**
+   * Config object of an `@method()` decorator declared on this method.
+   *
+   * `{}` for a bare `@method()`; absent when the method carries no `@method()`
+   * at all. Typed loosely on purpose: this is SCANNED config that reached the
+   * manifest as JSON, so consumers narrow it defensively through
+   * `readMethodDecoratorConfig` in `generators/custom-action.ts` rather than
+   * trusting a compile-time shape. The authoring type is `MethodOptions` in
+   * `decorators/index.ts` (#2686).
+   */
+  decoratorConfig?: Record<string, unknown>;
 }
 
 /**

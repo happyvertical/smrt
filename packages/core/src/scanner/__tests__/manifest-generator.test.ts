@@ -800,4 +800,116 @@ describe('ManifestGenerator', () => {
       ).toThrow(/Secret: schema is missing tenant-scoped column "tenant_id"/);
     });
   });
+
+  describe('collection api/mcp/cli inheritance (#2750 follow-up)', () => {
+    // SmrtJob/SmrtJobEvent-style: item class fully opts out of generated
+    // routes (api: false). Its undecorated collection class must inherit
+    // that opt-out, or the collection is silently left as a fully
+    // API-eligible object once manifest registration reaches worker
+    // processes -- the tenant-isolation route-leak this fix closes.
+    it('propagates a boolean api/mcp/cli === false opt-out from the item class to its undecorated collection', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/internal-job.ts',
+          objects: [
+            {
+              name: 'internalJob',
+              className: 'InternalJob',
+              collection: 'internal_jobs',
+              filePath: '/path/to/internal-job.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {
+                tableName: '_internal_jobs',
+                api: false,
+                mcp: false,
+                cli: false,
+              },
+              exportName: 'InternalJob',
+              collectionExportName: 'InternalJobCollection',
+            },
+            {
+              name: 'internalJobCollection',
+              className: 'InternalJobCollection',
+              collection: 'internal_jobs',
+              filePath: '/path/to/internal-job.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+              extends: 'SmrtCollection',
+              extendsTypeArg: 'InternalJob',
+              exportName: 'InternalJobCollection',
+              collectionExportName: 'InternalJobCollectionCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const collection = manifest.objects.internalJobCollection;
+      expect(collection.decoratorConfig?.api).toBe(false);
+      expect(collection.decoratorConfig?.mcp).toBe(false);
+      expect(collection.decoratorConfig?.cli).toBe(false);
+    });
+
+    // TenantUsageMetric-style: item class narrows its OWN api/mcp/cli
+    // surface with an object-form config (e.g. `{ include: [...] }`).
+    // Those method-name lists are specific to the item class's own
+    // instance methods and must NOT be copied onto the collection class,
+    // whose methods of the same name (list/get/create/...) have different
+    // signatures -- copying them verbatim previously broke
+    // @happyvertical/smrt-subscriptions's TenantUsageMetricCollection by
+    // making the CLI-vs-API exposure checker reject inherited CLI commands
+    // as unrouted.
+    it('does not propagate an object-form api/mcp/cli config to the collection', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/scoped-metric.ts',
+          objects: [
+            {
+              name: 'scopedMetric',
+              className: 'ScopedMetric',
+              collection: 'scoped_metrics',
+              filePath: '/path/to/scoped-metric.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {
+                tableName: '_scoped_metrics',
+                api: { include: ['list', 'get', 'create'] },
+                cli: { include: ['list', 'get', 'create'] },
+                mcp: { include: ['list', 'get'] },
+              },
+              exportName: 'ScopedMetric',
+              collectionExportName: 'ScopedMetricCollection',
+            },
+            {
+              name: 'scopedMetricCollection',
+              className: 'ScopedMetricCollection',
+              collection: 'scoped_metrics',
+              filePath: '/path/to/scoped-metric.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+              extends: 'SmrtCollection',
+              extendsTypeArg: 'ScopedMetric',
+              exportName: 'ScopedMetricCollection',
+              collectionExportName: 'ScopedMetricCollectionCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const collection = manifest.objects.scopedMetricCollection;
+      expect(collection.decoratorConfig?.api).toBeUndefined();
+      expect(collection.decoratorConfig?.cli).toBeUndefined();
+      expect(collection.decoratorConfig?.mcp).toBeUndefined();
+    });
+  });
 });

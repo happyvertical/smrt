@@ -198,6 +198,17 @@ export {
   type ResolvedAgentLearning,
   resolveAgentLearning,
 } from './learning.js';
+export {
+  AGENT_SCHEDULE_SLUG_BACKFILL,
+  AGENT_SCHEDULE_TABLE,
+  AgentScheduleSlugBackfillError,
+  type AgentScheduleSlugBackfillOptions,
+  type AgentScheduleSlugBackfillPlan,
+  type AgentScheduleSlugBackfillResult,
+  canonicalScheduleSlug,
+  migrateAgentScheduleSlugs,
+  planAgentScheduleSlugMigration,
+} from './migrations/agent-schedule-slugs.js';
 // Server-plane playbook preflight (#2590) — advisory prediction, never a grant.
 export {
   type CreatePlaybookPreflightToolOptions,
@@ -247,7 +258,6 @@ export {
   type TenantAgentStatus,
 } from './tenant-agent.js';
 export type { AgentStatusType } from './types.js';
-
 // UI types and registry for admin panels
 export {
   type AdminPanelBaseProps,

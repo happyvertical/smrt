@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { FRAMEWORK_BASE_TABLE_NAMES } from '@happyvertical/smrt-core/migrations';
+
 import {
   REFERENCE_RUNTIME_PROFILES,
   type InitializedReferenceFixture,
@@ -233,6 +235,22 @@ describe('runtime-profile reference workload fixture', () => {
       /^\.\./,
     );
     expect(existsSync(initialized.runtime.paths.database)).toBe(true);
+
+    // #2708: prepareReferenceFixtureDatabase()'s explicit `classes` filter
+    // must exclude the framework's own abstract base classes the same way
+    // getTestDatabase()'s implicit path does (#2645) -- otherwise this fixture
+    // creates the five phantom tables buildMergedTableSchemas() never creates
+    // in production, defeating the whole point of a schema-parity fixture.
+    const tableRows = (
+      await initialized.runtime.db.query(
+        "SELECT name FROM sqlite_master WHERE type='table'",
+      )
+    ).rows as { name?: string }[];
+    const tableNames = new Set(tableRows.map((row) => row.name));
+    for (const frameworkTableName of FRAMEWORK_BASE_TABLE_NAMES) {
+      expect(tableNames.has(frameworkTableName)).toBe(false);
+    }
+
     expect(snapshot).toEqual({
       owner: 'normal-owner',
       tenant: 'default-tenant',

@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_DRAIN_BATCH,
+  POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
+} from './system/schema.js';
 
 /** PostgreSQL ACLs only; this is not application authorization or RLS. */
 export interface PostgresPermissionContract {
@@ -9,6 +16,10 @@ export interface PostgresPermissionContract {
   migrationOwner: string;
   runtimeRole: string;
   managedTables: string[];
+  /** Existing operator-owned tables retained outside the runtime data surface. */
+  retainedTables?: string[];
+  /** Exact zero-argument trigger functions bound only to managed tables. */
+  managedTriggerFunctions?: string[];
   monitor?: { role: string; tables: Record<string, string[]> };
 }
 
@@ -29,12 +40,38 @@ export interface PostgresPermissionPlan {
   limitations: string[];
 }
 
+type NormalizedPostgresPermissionContract = PostgresPermissionContract & {
+  managedTriggerFunctions: string[];
+  retainedTables: string[];
+};
+
 type Executor = Pick<DatabaseInterface, 'query'>;
 interface Row {
   [key: string]: unknown;
   oid: string;
   name: string;
   schema: string;
+  identity: string;
+  argument_types: string;
+  argument_count: string;
+  argument_defaults: string | null;
+  return_type: string;
+  result: string;
+  cost: string;
+  rows: string;
+  support: string;
+  language: string;
+  security_definer: boolean;
+  config: unknown;
+  source: string;
+  volatility: string;
+  parallel: string;
+  leakproof: boolean;
+  strict: boolean;
+  function_oid: string;
+  table_name: string;
+  enabled: string;
+  internal: boolean;
   owner: string;
   acl: Acl[];
   kind: string;
@@ -42,6 +79,15 @@ interface Row {
   member: string;
   parent: string;
   relation: string;
+  parent_table: string | null;
+  child_schema: string;
+  child_table: string;
+  parent_schema: string;
+  delete_action: string;
+  update_action: string;
+  rule_name: string;
+  referenced_schema: string;
+  referenced_table: string;
   version: string;
   executor: string;
   superuser: boolean;
@@ -63,6 +109,69 @@ const literal = (value: string) =>
   `E'${value.replaceAll('\\', '\\\\').replaceAll("'", "''")}'`;
 const qualified = (schema: string, name: string) =>
   `${identifier(schema)}.${identifier(name)}`;
+
+const normalizeFunctionSource = (value: string) =>
+  value.replaceAll('\r\n', '\n').trim();
+const normalizeArgumentTypes = (value: string) =>
+  value.replaceAll(/\s*,\s*/g, ',');
+const normalizeFunctionResult = (value: string) =>
+  value
+    .replaceAll(/\s+/g, ' ')
+    .replaceAll(/\s*,\s*/g, ',')
+    .replaceAll(/\(\s*/g, '(')
+    .replaceAll(/\s*\)/g, ')')
+    .trim()
+    .toLowerCase();
+
+function sourceFromFunctionDdl(ddl: string): string {
+  const match = ddl.match(
+    /\bAS\s+\$([A-Za-z_][A-Za-z0-9_]*)\$\n([\s\S]*?)\n\$\1\$;/,
+  );
+  if (!match)
+    throw new Error('Framework function DDL has no dollar-quoted body.');
+  return normalizeFunctionSource(match[2]);
+}
+
+function resultFromFunctionDdl(ddl: string): string {
+  const match = ddl.match(/\bRETURNS\s+([\s\S]*?)\nLANGUAGE\s+/);
+  if (!match) throw new Error('Framework function DDL has no return result.');
+  return normalizeFunctionResult(match[1]);
+}
+
+type FrameworkRoutine = {
+  name: string;
+  argumentTypes: string;
+  argumentDefaults: string | null;
+  result: string;
+  source: string;
+};
+
+function frameworkRoutine(identity: string, ddl: string): FrameworkRoutine {
+  const match = identity.match(/^([^()]+)\((.*)\)$/);
+  if (!match)
+    throw new Error(`Invalid framework function identity: ${identity}`);
+  return {
+    name: match[1],
+    argumentTypes: normalizeArgumentTypes(match[2]),
+    argumentDefaults:
+      match[1] === '_smrt_drain_changes'
+        ? String(POSTGRES_CHANGE_FEED_DRAIN_BATCH)
+        : null,
+    result: resultFromFunctionDdl(ddl),
+    source: sourceFromFunctionDdl(ddl),
+  };
+}
+
+const frameworkRoutines = [
+  frameworkRoutine(
+    POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+    CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  ),
+  frameworkRoutine(
+    POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
+    CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  ),
+];
 
 function object(
   value: unknown,
@@ -94,7 +203,7 @@ function name(value: unknown, label: string): string {
 /** Validate configuration before opening a connection; unknown options fail closed. */
 export function validatePostgresPermissionContract(
   value: unknown,
-): PostgresPermissionContract {
+): NormalizedPostgresPermissionContract {
   const input = object(
     value,
     [
@@ -103,6 +212,8 @@ export function validatePostgresPermissionContract(
       'migrationOwner',
       'runtimeRole',
       'managedTables',
+      'retainedTables',
+      'managedTriggerFunctions',
       'monitor',
     ],
     'postgresPermissions',
@@ -121,6 +232,33 @@ export function validatePostgresPermissionContract(
   const managedTables = [
     ...new Set(
       input.managedTables.map((table) => name(table, 'managedTables entry')),
+    ),
+  ].sort();
+  if (
+    input.retainedTables !== undefined &&
+    !Array.isArray(input.retainedTables)
+  )
+    throw new Error('retainedTables must be an array.');
+  const retainedTables = [
+    ...new Set(
+      (input.retainedTables ?? []).map((table) =>
+        name(table, 'retainedTables entry'),
+      ),
+    ),
+  ].sort();
+  const overlap = retainedTables.find((table) => managedTables.includes(table));
+  if (overlap)
+    throw new Error(`Table ${overlap} cannot be both managed and retained.`);
+  if (
+    input.managedTriggerFunctions !== undefined &&
+    !Array.isArray(input.managedTriggerFunctions)
+  )
+    throw new Error('managedTriggerFunctions must be an array.');
+  const managedTriggerFunctions = [
+    ...new Set(
+      (input.managedTriggerFunctions ?? []).map((routine) =>
+        name(routine, 'managedTriggerFunctions entry'),
+      ),
     ),
   ].sort();
   let monitor: PostgresPermissionContract['monitor'];
@@ -168,6 +306,8 @@ export function validatePostgresPermissionContract(
     migrationOwner,
     runtimeRole,
     managedTables,
+    retainedTables,
+    managedTriggerFunctions,
     ...(monitor ? { monitor } : {}),
   };
 }
@@ -177,7 +317,7 @@ const acl = (expression: string) =>
 
 async function snapshot(
   db: Executor,
-  contract: PostgresPermissionContract,
+  contract: NormalizedPostgresPermissionContract,
 ): Promise<Record<string, Row[]>> {
   const roleNames = [
     contract.migrationOwner,
@@ -216,9 +356,13 @@ async function snapshot(
     memberships: `SELECT pg_get_userbyid(member) AS member, pg_get_userbyid(roleid) AS parent FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) OR roleid IN (SELECT oid FROM pg_roles WHERE rolname IN (${roleNames})) ORDER BY member, roleid`,
     database: `SELECT datname AS name, pg_get_userbyid(datdba) AS owner, ${acl("COALESCE(datacl, acldefault('d',datdba))")} AS acl FROM pg_database WHERE datname=current_database()`,
     schemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3) <> 'pg_' AND nspname <> 'information_schema' ORDER BY nspname`,
-    relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
+    relations: `SELECT c.oid::text, n.nspname AS schema, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner, c.relrowsecurity AS rls, (SELECT parent.relname FROM pg_depend d JOIN pg_class parent ON parent.oid=d.refobjid JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i') AND parent_schema.oid=n.oid LIMIT 1) AS parent_table, ${acl("COALESCE(c.relacl, acldefault(CASE WHEN c.relkind='S' THEN 's'::\"char\" ELSE 'r'::\"char\" END,c.relowner))")} AS acl FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f','S') ORDER BY n.nspname,c.relname`,
+    inherits: `SELECT child_schema.nspname AS child_schema, child.relname AS child_table, parent_schema.nspname AS parent_schema, parent.relname AS parent_table FROM pg_inherits i JOIN pg_class child ON child.oid=i.inhrelid JOIN pg_namespace child_schema ON child_schema.oid=child.relnamespace JOIN pg_class parent ON parent.oid=i.inhparent JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace ORDER BY child_schema.nspname,child.relname,parent_schema.nspname,parent.relname`,
+    foreignKeys: `SELECT child_schema.nspname AS child_schema, child.relname AS child_table, parent_schema.nspname AS parent_schema, parent.relname AS parent_table, con.confdeltype::text AS delete_action, con.confupdtype::text AS update_action FROM pg_constraint con JOIN pg_class child ON child.oid=con.conrelid JOIN pg_namespace child_schema ON child_schema.oid=child.relnamespace JOIN pg_class parent ON parent.oid=con.confrelid JOIN pg_namespace parent_schema ON parent_schema.oid=parent.relnamespace WHERE con.contype='f' ORDER BY child_schema.nspname,child.relname,parent_schema.nspname,parent.relname,con.conname`,
+    rewriteRules: `WITH RECURSIVE rule_dependencies AS (SELECT r.oid AS rule_oid, r.ev_class AS source_oid, r.rulename AS rule_name, d.refobjid AS referenced_oid FROM pg_rewrite r JOIN pg_depend d ON d.classid='pg_rewrite'::regclass AND d.objid=r.oid AND d.refclassid='pg_class'::regclass WHERE r.rulename <> '_RETURN' UNION SELECT dependencies.rule_oid, dependencies.source_oid, dependencies.rule_name, d.refobjid FROM rule_dependencies dependencies JOIN pg_rewrite view_rule ON view_rule.ev_class=dependencies.referenced_oid AND view_rule.rulename='_RETURN' JOIN pg_depend d ON d.classid='pg_rewrite'::regclass AND d.objid=view_rule.oid AND d.refclassid='pg_class'::regclass) SELECT n.nspname AS schema, c.relname AS table_name, dependencies.rule_name, referenced_schema.nspname AS referenced_schema, referenced.relname AS referenced_table FROM rule_dependencies dependencies JOIN pg_class c ON c.oid=dependencies.source_oid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_class referenced ON referenced.oid=dependencies.referenced_oid JOIN pg_namespace referenced_schema ON referenced_schema.oid=referenced.relnamespace ORDER BY n.nspname,c.relname,dependencies.rule_name,referenced_schema.nspname,referenced.relname`,
     columns: `SELECT c.oid::text AS relation, a.attname AS name, ${acl('a.attacl')} AS acl FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.oid,a.attnum`,
-    routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
+    routines: `SELECT n.nspname AS schema, p.oid::text, p.proname AS name, format('%I.%I(%s)', n.nspname, p.proname, oidvectortypes(p.proargtypes)) AS identity, oidvectortypes(p.proargtypes) AS argument_types, pg_get_expr(p.proargdefaults,0) AS argument_defaults, p.prokind AS kind, p.prorettype::regtype::text AS return_type, pg_get_function_result(p.oid) AS result, p.procost::text AS cost, p.prorows::text AS rows, p.prosupport::regproc::text AS support, p.pronargs::text AS argument_count, l.lanname AS language, p.prosecdef AS security_definer, p.provolatile::text AS volatility, p.proparallel::text AS parallel, p.proleakproof AS leakproof, p.proisstrict AS strict, COALESCE(to_json(p.proconfig),'[]'::json) AS config, p.prosrc AS source, CASE WHEN p.prokind='f' THEN pg_get_functiondef(p.oid) END AS definition, pg_get_userbyid(p.proowner) AS owner, ${acl("COALESCE(p.proacl, acldefault('f',p.proowner))")} AS acl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,p.oid`,
+    triggers: `SELECT t.oid::text, n.nspname AS schema, c.relname AS table_name, t.tgname AS name, t.tgfoid::text AS function_oid, t.tgenabled AS enabled, t.tgisinternal AS internal, t.tgtype::text AS type, encode(t.tgargs,'hex') AS arguments, pg_get_triggerdef(t.oid, true) AS definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' ORDER BY n.nspname,c.oid,t.oid`,
     types: `SELECT n.nspname AS schema, t.typname AS name, pg_get_userbyid(t.typowner) AS owner, ${acl("COALESCE(t.typacl, acldefault('T',t.typowner))")} AS acl FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_class c ON c.oid=t.typrelid WHERE left(n.nspname,3) <> 'pg_' AND n.nspname <> 'information_schema' AND NOT EXISTS (SELECT 1 FROM pg_type element WHERE element.typarray=t.oid) AND (t.typrelid=0 OR c.relkind='c') ORDER BY n.nspname,t.typname`,
     systemSchemas: `SELECT nspname AS name, pg_get_userbyid(nspowner) AS owner, ${acl("COALESCE(nspacl, acldefault('n',nspowner))")} AS acl FROM pg_namespace WHERE left(nspname,3)='pg_' OR nspname='information_schema' ORDER BY nspname`,
     systemPrivileges: `WITH resources AS (
@@ -447,6 +591,75 @@ async function plan(
         `GRANT ${desired.join(', ')}${suffix} ON ${kind} ${resource} TO ${identifier(role)}`,
       );
   }
+  function reconcileRoutine(
+    resource: string,
+    entries: Acl[],
+    desiredByRole: ReadonlyMap<string, readonly string[]>,
+  ) {
+    const grantee = (role: string) =>
+      role === 'PUBLIC' ? 'PUBLIC' : identifier(role);
+    for (const entry of entries)
+      if (
+        roles.includes(entry.grantor ?? '') &&
+        entry.grantee !== entry.grantor
+      )
+        unsupported(
+          'dependent-routine-grant',
+          resource,
+          `Configured role granted ${entry.privilege} to ${entry.grantee}; grant chains require infrastructure review to preserve other roles.`,
+          entry.grantor,
+        );
+    const managedGrantees = new Set([
+      contract.migrationOwner,
+      ...roles,
+      'PUBLIC',
+    ]);
+    for (const entry of entries)
+      if (!managedGrantees.has(entry.grantee))
+        unsupported(
+          'outside-routine-grant',
+          resource,
+          `${entry.grantee} has ${entry.privilege}; direct routine access outside the declared roles requires infrastructure review.`,
+          entry.grantee,
+        );
+    for (const role of [...roles, 'PUBLIC']) {
+      const desired = desiredByRole.get(role) ?? [];
+      const effective = entries.filter((entry) => entry.grantee === role);
+      const excess = effective.filter(
+        (entry) => !desired.includes(entry.privilege) || entry.grantable,
+      );
+      const missing = desired.filter(
+        (privilege) =>
+          !entries.some(
+            (entry) => entry.grantee === role && entry.privilege === privilege,
+          ),
+      );
+      for (const entry of excess)
+        add(
+          'excessive',
+          'excessive-routine-privilege',
+          resource,
+          `${entry.privilege}${entry.grantable ? ' WITH GRANT OPTION' : ''} is not declared.`,
+          role,
+        );
+      for (const privilege of missing)
+        add(
+          'missing',
+          'missing-routine-privilege',
+          resource,
+          `${privilege} is required.`,
+          role,
+        );
+      if (!excess.length && !missing.length) continue;
+      statements.push(
+        `REVOKE ALL PRIVILEGES ON FUNCTION ${resource} FROM ${grantee(role)}`,
+      );
+      if (desired.length)
+        statements.push(
+          `GRANT ${desired.join(', ')} ON FUNCTION ${resource} TO ${grantee(role)}`,
+        );
+    }
+  }
   for (const role of roles) {
     reconcile('DATABASE', identifier(database.name), database.acl, role, [
       'CONNECT',
@@ -591,9 +804,17 @@ async function plan(
     }
   }
   const declared = new Set(contract.managedTables);
+  const retained = new Set(contract.retainedTables);
   // Framework feature tables are owned by SMRT even when absent from manifests.
   for (const table of tables)
     if (table.name.startsWith('_smrt_')) declared.add(table.name);
+  for (const table of retained)
+    if (declared.has(table))
+      unsupported(
+        'retained-managed-table',
+        qualified(contract.schema, table),
+        'Retained tables must be outside the managed and framework table surfaces.',
+      );
   for (const table of declared)
     if (!tables.some((entry) => entry.name === table))
       unsupported(
@@ -601,15 +822,100 @@ async function plan(
         qualified(contract.schema, table),
         'Run supported schema migrations before reconciling permissions.',
       );
+  for (const table of retained)
+    if (!tables.some((entry) => entry.name === table))
+      unsupported(
+        'missing-retained-table',
+        qualified(contract.schema, table),
+        'Retained tables must already exist before permission reconciliation.',
+      );
+  for (const relation of state.inherits) {
+    const managedParent =
+      relation.parent_schema === contract.schema &&
+      declared.has(relation.parent_table ?? '');
+    const childRetained =
+      relation.child_schema === contract.schema &&
+      retained.has(relation.child_table);
+    const parentRetained =
+      relation.parent_schema === contract.schema &&
+      retained.has(relation.parent_table ?? '');
+    if (managedParent && relation.child_schema !== contract.schema)
+      unsupported(
+        'managed-inheritance',
+        qualified(relation.child_schema, relation.child_table),
+        'Managed tables may not have external inheritance or partition children: parent table privileges can invoke external triggers outside the retained-table isolation boundary.',
+      );
+    else if (childRetained !== parentRetained)
+      unsupported(
+        'retained-inheritance',
+        qualified(relation.child_schema, relation.child_table),
+        'Retained tables may inherit only from retained tables in the dedicated schema; an accessible parent can otherwise expose retained rows.',
+      );
+  }
+  for (const relation of state.foreignKeys) {
+    const managedParent =
+      relation.parent_schema === contract.schema &&
+      declared.has(relation.parent_table ?? '');
+    const childRetained =
+      relation.child_schema === contract.schema &&
+      retained.has(relation.child_table);
+    const parentRetained =
+      relation.parent_schema === contract.schema &&
+      retained.has(relation.parent_table ?? '');
+    if (managedParent && relation.child_schema !== contract.schema) {
+      unsupported(
+        'managed-foreign-key',
+        `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
+        'Managed tables may not have external foreign-key children: referential actions can invoke external triggers outside the retained-table isolation boundary.',
+      );
+      continue;
+    }
+    if (childRetained === parentRetained) continue;
+    unsupported(
+      'retained-foreign-key',
+      `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
+      'Retained tables may reference only retained tables; referential actions from an accessible table can otherwise mutate retained rows.',
+    );
+  }
+  for (const rule of state.rewriteRules) {
+    const managedSource =
+      rule.schema === contract.schema && declared.has(rule.table_name);
+    const retainedSource =
+      rule.schema === contract.schema && retained.has(rule.table_name);
+    const managedTarget =
+      rule.referenced_schema === contract.schema &&
+      declared.has(rule.referenced_table);
+    if (retainedSource && managedTarget)
+      unsupported(
+        'user-rewrite-rule',
+        `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
+        'Retained tables may not reference managed tables through rewrite rules.',
+      );
+    else if (managedSource && rule.referenced_schema !== contract.schema)
+      unsupported(
+        'user-rewrite-rule',
+        `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
+        'Managed rewrite rules may not reference external relations: rule-owner table privileges can invoke external triggers outside the retained-table isolation boundary.',
+      );
+    else if (
+      rule.referenced_schema === contract.schema &&
+      retained.has(rule.referenced_table)
+    )
+      unsupported(
+        'user-rewrite-rule',
+        `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
+        'User-defined rewrite rules are unsupported because rule-owner privileges can write retained tables indirectly.',
+      );
+  }
   for (const [table, columns] of Object.entries(
     contract.monitor?.tables ?? {},
   )) {
     const relation = tables.find((entry) => entry.name === table);
-    if (!declared.has(table) || !relation)
+    if (!declared.has(table) || retained.has(table) || !relation)
       unsupported(
         'monitor-table',
         table,
-        'Monitor tables must exist and belong to managedTables or framework tables.',
+        'Monitor tables must exist and belong to the managed or framework table surface, never retained tables.',
       );
     for (const column of columns)
       if (
@@ -650,11 +956,26 @@ async function plan(
         resource,
         `Managed resources must be owned by ${contract.migrationOwner}; ownership is never changed.`,
       );
-    if (relation.kind !== 'S' && !declared.has(relation.name))
+    if (
+      relation.kind !== 'S' &&
+      !declared.has(relation.name) &&
+      !retained.has(relation.name)
+    )
       unsupported(
         'undeclared-table',
         resource,
         'The dedicated schema contains an undeclared table; defaults cannot safely cover a mixed schema.',
+      );
+    if (
+      relation.kind === 'S' &&
+      (!relation.parent_table ||
+        (!declared.has(relation.parent_table) &&
+          !retained.has(relation.parent_table)))
+    )
+      unsupported(
+        'undeclared-sequence',
+        resource,
+        'Sequences must belong to a declared managed or retained table before permission reconciliation.',
       );
     if (!['r', 'p', 'S'].includes(relation.kind))
       unsupported(
@@ -672,10 +993,14 @@ async function plan(
       const isRuntime = role === contract.runtimeRole;
       const desired = isRuntime
         ? relation.kind === 'S'
-          ? ['USAGE']
-          : bookkeeping.has(relation.name)
-            ? ['SELECT']
-            : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+          ? retained.has(relation.parent_table ?? '')
+            ? []
+            : ['USAGE']
+          : retained.has(relation.name)
+            ? []
+            : bookkeeping.has(relation.name)
+              ? ['SELECT']
+              : ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
         : [];
       reconcile(
         relation.kind === 'S' ? 'SEQUENCE' : 'TABLE',
@@ -687,6 +1012,7 @@ async function plan(
       for (const column of columns) {
         const wanted =
           !isRuntime &&
+          !retained.has(relation.name) &&
           (contract.monitor?.tables[relation.name] ?? []).includes(column.name)
             ? ['SELECT']
             : [];
@@ -701,21 +1027,127 @@ async function plan(
       }
     }
   }
-  for (const category of ['routines', 'types'] as const)
-    for (const resource of state[category]) {
-      for (const role of roles)
-        if (
-          resource.schema === contract.schema ||
-          resource.owner === role ||
-          relevant(resource.acl, role).length
-        )
-          unsupported(
-            `unsupported-${category}`,
-            qualified(resource.schema, resource.name),
-            `User-defined ${category} are outside the supported table/sequence contract; review their effective privileges explicitly.`,
-            role,
-          );
+  const triggerRoutineNames = new Set(contract.managedTriggerFunctions);
+  const acceptedTriggerRoutineNames = new Set<string>();
+  const acceptedTriggerRoutineOids = new Set<string>();
+  const routineConfigIsEmpty = (value: unknown) =>
+    (Array.isArray(value) && value.length === 0) || value === '[]';
+  for (const resource of state.routines) {
+    const resourceName = qualified(resource.schema, resource.name);
+    const framework = frameworkRoutines.find(
+      (expected) =>
+        resource.schema === contract.schema &&
+        resource.name === expected.name &&
+        normalizeArgumentTypes(resource.argument_types) ===
+          expected.argumentTypes,
+    );
+    if (framework) {
+      const valid =
+        resource.owner === contract.migrationOwner &&
+        resource.kind === 'f' &&
+        resource.language === 'plpgsql' &&
+        resource.security_definer === false &&
+        resource.argument_defaults === framework.argumentDefaults &&
+        normalizeFunctionResult(resource.result) === framework.result &&
+        resource.cost === '100' &&
+        resource.rows === '1000' &&
+        resource.support === '-' &&
+        resource.volatility === 'v' &&
+        resource.parallel === 'u' &&
+        resource.leakproof === false &&
+        resource.strict === false &&
+        routineConfigIsEmpty(resource.config) &&
+        normalizeFunctionSource(String(resource.source)) === framework.source;
+      if (!valid)
+        unsupported(
+          'framework-routine-definition',
+          resourceName,
+          'Framework routine must retain its canonical identity, owner, invoker security, defaults, execution properties, settings and generated body.',
+        );
+      else
+        reconcileRoutine(
+          resource.identity,
+          resource.acl,
+          new Map([[contract.runtimeRole, ['EXECUTE']]]),
+        );
+      continue;
     }
+    const bindings = state.triggers.filter(
+      (trigger) => trigger.function_oid === resource.oid,
+    );
+    const triggerRoutine =
+      resource.schema === contract.schema &&
+      triggerRoutineNames.has(resource.name) &&
+      resource.kind === 'f' &&
+      resource.return_type === 'trigger' &&
+      resource.argument_types === '' &&
+      resource.argument_count === '0' &&
+      resource.owner === contract.migrationOwner &&
+      resource.language === 'plpgsql' &&
+      resource.security_definer === false &&
+      routineConfigIsEmpty(resource.config) &&
+      bindings.length > 0 &&
+      bindings.every(
+        (trigger) =>
+          trigger.schema === contract.schema &&
+          trigger.internal === false &&
+          (trigger.enabled === 'O' || trigger.enabled === 'A') &&
+          declared.has(trigger.table_name),
+      );
+    if (triggerRoutine) {
+      acceptedTriggerRoutineNames.add(resource.name);
+      acceptedTriggerRoutineOids.add(resource.oid);
+      reconcileRoutine(resource.identity, resource.acl, new Map());
+      continue;
+    }
+    for (const role of roles)
+      if (
+        resource.schema === contract.schema ||
+        resource.owner === role ||
+        relevant(resource.acl, role).length
+      )
+        unsupported(
+          'unsupported-routines',
+          resourceName,
+          triggerRoutineNames.has(resource.name)
+            ? 'Declared trigger routines must be migration-owner invoker PL/pgSQL functions returning trigger with no declared arguments, no function settings, and enabled non-internal bindings only to declared managed tables.'
+            : 'User-defined routines are outside the supported table/sequence and declared trigger contract; review their effective privileges explicitly.',
+          role,
+        );
+  }
+  for (const name of triggerRoutineNames)
+    if (!acceptedTriggerRoutineNames.has(name))
+      unsupported(
+        'missing-managed-trigger-function',
+        qualified(contract.schema, name),
+        'Run the migration that creates this exact managed trigger function and its enabled binding before reconciling permissions.',
+      );
+  for (const trigger of state.triggers)
+    if (
+      trigger.schema === contract.schema &&
+      declared.has(trigger.table_name) &&
+      trigger.internal === false &&
+      (trigger.enabled === 'O' || trigger.enabled === 'A') &&
+      !acceptedTriggerRoutineOids.has(trigger.function_oid)
+    )
+      unsupported(
+        'unsupported-managed-trigger',
+        `${qualified(trigger.schema, trigger.table_name)} (${trigger.name})`,
+        'Enabled managed-table triggers must use an exact declared invoker trigger routine; undeclared or SECURITY DEFINER trigger functions can bypass retained-table isolation.',
+      );
+  for (const resource of state.types)
+    for (const role of roles)
+      if (
+        resource.schema === contract.schema ||
+        resource.owner === role ||
+        relevant(resource.acl, role).length
+      )
+        unsupported(
+          'unsupported-types',
+          qualified(resource.schema, resource.name),
+          'User-defined types are outside the supported table/sequence contract; review their effective privileges explicitly.',
+          role,
+        );
   // Global grants combine with schema grants: a schema REVOKE cannot cancel them.
   for (const defaults of state.defaults) {
     const resource = `DEFAULT ${defaults.kind} (${defaults.schema || 'global'})`;
@@ -871,6 +1303,7 @@ async function plan(
       'Future user-defined routines and types are unsupported. PostgreSQL implicit global defaults grant PUBLIC EXECUTE/USAGE; rerun diagnostics after every migration before activating runtime roles.',
       'Pause migrations and external ACL/role writers during planning and apply. The advisory lock coordinates SMRT permission writers only.',
       'All framework bookkeeping tables must exist before setup. Stop runtime and monitor access throughout migrations, restores and repair: recreated bookkeeping tables temporarily receive creator CRUD defaults and require explicit reconciliation before either role is reactivated.',
+      'Retained tables are operator-owned data outside the runtime and monitor surfaces. Creator defaults initially grant runtime access to every new table and sequence, so create or restore every retained table first, then apply its reviewed plan and verify access is revoked before reactivating restricted roles.',
     ],
     statements: [...new Set(statements)],
     canApply: !diagnostics.some((entry) => entry.severity === 'unsupported'),
@@ -894,7 +1327,7 @@ export async function applyPostgresPermissions(
   contract: PostgresPermissionContract,
   options: { expectedFingerprint: string },
 ): Promise<PostgresPermissionPlan> {
-  validatePostgresPermissionContract(contract);
+  const normalizedContract = validatePostgresPermissionContract(contract);
   if (!options || !/^[a-f0-9]{64}$/.test(options.expectedFingerprint))
     throw new Error(
       'An expectedFingerprint from a reviewed permission plan is required.',
@@ -908,9 +1341,9 @@ export async function applyPostgresPermissions(
     await tx.query("SET LOCAL statement_timeout = '30s'");
     // Cooperating permission writers serialize; operators must quiesce migrations.
     await tx.query(
-      `SELECT pg_advisory_xact_lock(hashtext(${literal(`smrt-permissions:${contract.schema}`)}))`,
+      `SELECT pg_advisory_xact_lock(hashtext(${literal(`smrt-permissions:${normalizedContract.schema}`)}))`,
     );
-    const before = await plan(tx, contract);
+    const before = await plan(tx, normalizedContract);
     if (before.fingerprint !== options.expectedFingerprint)
       throw new Error(
         'Permission plan is stale; generate and review a new plan.',
@@ -924,12 +1357,15 @@ export async function applyPostgresPermissions(
         'SELECT current_user AS name, rolsuper FROM pg_roles WHERE rolname=current_user',
       )
     ).rows[0];
-    if (!executor.rolsuper && executor.name !== contract.migrationOwner)
+    if (
+      !executor.rolsuper &&
+      executor.name !== normalizedContract.migrationOwner
+    )
       throw new Error(
         'Apply must execute as the migration owner or a PostgreSQL superuser.',
       );
     for (const statement of before.statements) await tx.query(statement);
-    const after = await plan(tx, contract);
+    const after = await plan(tx, normalizedContract);
     if (!after.canApply || after.diagnostics.length)
       throw new Error(
         'Permission verification failed; all permission changes have been rolled back.',

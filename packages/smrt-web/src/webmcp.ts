@@ -49,6 +49,10 @@ import {
   mutationTargetHydrators,
   persistedMutationResults,
 } from './internal.js';
+import {
+  reserveWebMcpToolNames,
+  type WebMcpToolNameOwner,
+} from './webmcp-tool-names.js';
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
@@ -103,6 +107,20 @@ function getModelContext(): ModelContextLike | undefined {
  */
 export type { WebMcpToolEffect } from './capability-classification.js';
 
+/**
+ * Re-exported from `./webmcp-tool-names.js` so a host catching a collision
+ * does not have to import the lock entry separately. That entry
+ * (`@happyvertical/smrt-web/webmcp-tool-names`) stays the import a UI layer
+ * uses to reserve its own fixed tool names, because it is dependency-free.
+ */
+export {
+  reserveWebMcpToolNames,
+  WebMcpToolNameCollisionError,
+  type WebMcpToolNameOwner,
+  type WebMcpToolNameReservation,
+  webMcpToolNameOwner,
+} from './webmcp-tool-names.js';
+
 export interface WebMcpExposurePolicy {
   /** Allowed effects. Omitted means read-only exposure. */
   effects?: readonly WebMcpToolEffect[];
@@ -141,6 +159,23 @@ export interface RegisterWebMcpBespokeToolOptions {
    * an unrelated generated tool set fail to register.
    */
   effects?: readonly WebMcpToolEffect[];
+  /**
+   * Which path this registration belongs to, used ONLY to label its
+   * tool-name reservation (#2613) so a later collision names the right
+   * source. Defaults to `bespoke`.
+   *
+   * A UI-framework binding that compiles a declared view intent itself and
+   * registers it here — rather than through {@link registerViewIntent} —
+   * must pass `'intent'`. `useViewIntent` in `@happyvertical/smrt-svelte`
+   * does exactly that, because reusing `useWebMcpTool`'s single WebMCP
+   * lifecycle is a documented invariant of that package; without this it
+   * would be the only shipped intent path and every intent collision would
+   * blame a `useWebMcpTool` call that does not exist.
+   *
+   * Purely a diagnostic label: it grants no capability, narrows no policy,
+   * and changes nothing about how the tool registers or executes.
+   */
+  owner?: Extract<WebMcpToolNameOwner, 'intent' | 'bespoke'>;
 }
 
 export interface RegisterWebMcpToolsOptions extends WebMcpExposurePolicy {
@@ -214,8 +249,14 @@ type ToolSemantics = WebMcpCapabilityClassification;
 /**
  * Register every collection's generated tool descriptors with WebMCP.
  *
+ * Every selected tool name is claimed against the document-global tool-name
+ * lock (#2613) before the first browser registration, so a collision with a
+ * UI-layer or bespoke tool throws {@link WebMcpToolNameCollisionError} with
+ * the offending name and its current owner instead of reaching the host.
+ *
  * @returns a disposer that deregisters all tools this call registered. On a
  * browser without WebMCP the call is a no-op and the disposer is inert.
+ * @throws {WebMcpToolNameCollisionError} when a selected name is already held.
  */
 export function registerWebMcpTools(
   definitions: readonly WebMcpRegistrationDefinition[],
@@ -253,11 +294,21 @@ export function registerWebMcpTools(
     SmrtWebCollectionDefinition,
     SmrtCrudFetchers
   >();
+  // Claim every selected name against the document-global lock (#2613) BEFORE
+  // the first `registerTool` call, so a collision with the UI or bespoke path
+  // throws here — naming the owner — instead of surfacing as a silent host
+  // rejection after some sibling tools already registered. Atomic: a throw
+  // reserves nothing and this call has not touched the browser registry yet.
+  const reservation = reserveWebMcpToolNames(
+    tools.map((tool) => tool.name),
+    'generated',
+  );
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
     controller.abort();
+    reservation.release();
     for (const collection of collections.values()) {
       // Disposal is intentionally synchronous for WebMCP callers, but cleanup
       // is async because the underlying cache may close durable resources.
@@ -392,13 +443,36 @@ function registrationDisposer(
  * `maxTools` are out of scope for a bespoke tool; see
  * {@link RegisterWebMcpBespokeToolOptions}.
  *
+ * The tool's name is also claimed against the
+ * document-global tool-name lock before the browser sees it. A name a
+ * generated model tool, a fixed UI tool, or another live bespoke tool /
+ * intent already holds throws {@link WebMcpToolNameCollisionError}
+ * SYNCHRONOUSLY, naming the colliding name and the owner that holds it.
+ * Previously the host accepted the call and silently dropped the losing
+ * registration. Disposing releases the name, so register/dispose/re-register
+ * under one name still succeeds.
+ *
  * @returns a disposer that deregisters the tool this call registered (a
  * no-op double-call). On a browser without WebMCP, or when policy excludes
  * the tool's effect, the call is a no-op and the disposer is inert.
+ * @throws {WebMcpToolNameCollisionError} when the name is already held.
  */
 export function registerWebMcpBespokeTool(
   spec: WebMcpBespokeToolSpec,
   options: RegisterWebMcpBespokeToolOptions = {},
+): WebMcpRegistrationDisposer {
+  return registerSingleTool(spec, options, options.owner ?? 'bespoke');
+}
+
+/**
+ * The shared body of {@link registerWebMcpBespokeTool} and
+ * {@link registerViewIntent}. `owner` only labels the tool-name reservation
+ * (#2613) so a collision diagnostic can say which path holds a name.
+ */
+function registerSingleTool(
+  spec: WebMcpBespokeToolSpec,
+  options: RegisterWebMcpBespokeToolOptions,
+  owner: WebMcpToolNameOwner,
 ): WebMcpRegistrationDisposer {
   const { allowedEffects } = validateExposurePolicy(options);
   const ctx = getModelContext();
@@ -409,14 +483,25 @@ export function registerWebMcpBespokeTool(
     bespokeDeclaredSemantics(spec.annotations),
   );
   if (!allowedEffects.has(semantics.effect)) {
+    // Policy excluded the tool, so nothing was registered and the name stays
+    // available for whoever else may legitimately want it.
     return registrationDisposer(() => {}, Promise.resolve());
   }
+
+  // Claim the name against the document-global lock before the browser sees
+  // it: a generated model tool or a fixed UI tool may already hold it, and the
+  // host would otherwise reject this registration with no indication of who
+  // took the name. Throws synchronously — see the note on behavior change in
+  // this function's callers' docs.
+  const reservation = reserveWebMcpToolNames([spec.name], owner);
 
   const controller = new AbortController();
   let disposed = false;
   const dispose = (): void => {
+    if (disposed) return;
     disposed = true;
     controller.abort();
+    reservation.release();
   };
 
   let registration: void | Promise<void>;
@@ -467,15 +552,28 @@ export function registerWebMcpBespokeTool(
  * `compileViewIntentToolSpec` from `intent.target`. No author-supplied code
  * runs, and the only thing it can do is dispatch one browser registry
  * command — the runtime half of the no-REST invariant.
+ *
+ * The intent's derived tool name is claimed against the document-global
+ * tool-name lock (#2613), so an id whose flattened name collides with a
+ * generated model tool or a fixed UI tool throws
+ * {@link WebMcpToolNameCollisionError} here rather than silently losing the
+ * tool at the host. `defineIntent`'s own intent-vs-intent check cannot see
+ * either, because both depend on a runtime `namespace` / `prefix` the
+ * declaration never sees.
+ *
+ * @throws {WebMcpToolNameCollisionError} when the derived name is already held.
  */
 export function registerViewIntent(
   intent: ViewIntent,
   binding: ViewIntentBinding,
   options: RegisterWebMcpBespokeToolOptions = {},
 ): WebMcpRegistrationDisposer {
-  return registerWebMcpBespokeTool(
+  // Always `intent`, whatever `options.owner` says: this function only ever
+  // registers a compiled view intent.
+  return registerSingleTool(
     compileViewIntentToolSpec(intent, binding),
     options,
+    'intent',
   );
 }
 

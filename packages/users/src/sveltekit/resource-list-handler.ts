@@ -29,7 +29,10 @@
 import '../__smrt-register__.js';
 
 import {
+  createClassNamePredicate,
   ObjectRegistry,
+  resolveCustomActionMetadata,
+  resolveEffectiveActionMetadata,
   type SmartObjectConfig,
 } from '@happyvertical/smrt-core';
 import { classnameToTablename } from '@happyvertical/smrt-core/utils';
@@ -264,7 +267,24 @@ export function createResourceListHandler(
     const skipWarnings: SkipWarning[] = [];
     const slugSeen = new Map<string, string>();
 
-    for (const [registeredName, registered] of ObjectRegistry.getAllClasses()) {
+    // The wire-ability gate needs a class inventory to tell a model instance
+    // from an options interface. Without one it half-applies -- every rejection
+    // EXCEPT model instances -- and this listing would advertise commands for
+    // the `addAsset(asset: Asset)` shape whose route files the generator no
+    // longer writes (#2686).
+    const registeredClasses = [...ObjectRegistry.getAllClasses()];
+    const isModelClassName = createClassNamePredicate(
+      registeredClasses.flatMap(([name, registered]) => {
+        const definition = registered as unknown as RegisteredClassLike;
+        return [
+          name,
+          ...(definition.name ? [definition.name] : []),
+          ...(definition.qualifiedName ? [definition.qualifiedName] : []),
+        ];
+      }),
+    );
+
+    for (const [registeredName, registered] of registeredClasses) {
       const def = synthesizeDefinition(
         registeredName,
         registered as unknown as RegisteredClassLike,
@@ -284,6 +304,8 @@ export function createResourceListHandler(
       // resolveApiActionSet only reads decoratorConfig + methods; cast is safe.
       const apiActionSet = resolveApiActionSet(
         def as unknown as Parameters<typeof resolveApiActionSet>[0],
+        undefined,
+        { isModelClassName },
       );
       const includedMethods = resolveCliIncludedMethods(
         cliConfig,
@@ -466,6 +488,11 @@ interface MethodLike {
   parameters?: Array<{ name: string; type: string; optional?: boolean }>;
   returnType?: string;
   description?: string;
+  /**
+   * `@method()` config the manifest carries on the method. Needed here because
+   * both the route shape and the receiver resolve through it (#2686).
+   */
+  decoratorConfig?: Record<string, unknown>;
 }
 
 interface ToolLike {
@@ -741,20 +768,49 @@ function buildCustomCommand(
   kebabRoutes: boolean,
 ): CommandDefinition {
   const apiConfigObj = getApiConfigObject(def.decoratorConfig.api);
-  const routeConfig = apiConfigObj?.routes?.[methodName] as
-    | { scope?: CommandScope; method?: string; path?: string }
-    | undefined;
+  // `@method({ httpMethod, path, scope })` wins field by field over the legacy
+  // `api.routes[method]` entry. Reading the map alone printed the pre-migration
+  // verb and path for a class that had moved to the decorator (#2686).
+  const effective = resolveEffectiveActionMetadata({
+    actionName: methodName,
+    ...(methodDef ? { method: methodDef } : {}),
+    apiConfig: apiConfigObj,
+  });
 
   const defaultScope: CommandScope = methodDef?.isStatic
     ? 'collection'
     : 'item';
-  const scope = routeConfig?.scope ?? defaultScope;
-  const httpMethod = normalizeApiHttpMethod(routeConfig?.method);
+  // The RECEIVER-collapsed scope, not the raw declaration: a `scope` declares a
+  // method's receiver and cannot relocate it, and `scope` here also decides
+  // whether the generated command carries an id. Reading the declaration
+  // uncollapsed advertised an unrunnable command (#2686).
+  let scope: CommandScope = defaultScope;
+  try {
+    scope = resolveCustomActionMetadata({
+      actionName: methodName,
+      // Only `isStatic` and `decoratorConfig` decide the receiver; this
+      // module's `MethodLike` view of a parameter is looser than the
+      // manifest's, and forwarding it would force a widening for no benefit.
+      method: {
+        ...(methodDef?.isStatic !== undefined
+          ? { isStatic: methodDef.isStatic }
+          : {}),
+        ...(methodDef?.decoratorConfig
+          ? { decoratorConfig: methodDef.decoratorConfig }
+          : {}),
+      },
+      apiConfig: apiConfigObj,
+      defaultScope,
+    }).scope;
+  } catch {
+    scope = defaultScope;
+  }
+  const httpMethod = normalizeApiHttpMethod(effective.httpMethod);
 
   let pathSegments: string[];
-  if (routeConfig?.path) {
+  if (effective.path) {
     // Explicit override — used verbatim, no kebab transform.
-    pathSegments = routeConfig.path
+    pathSegments = effective.path
       .split('/')
       .map((s) => s.trim())
       .filter(Boolean);

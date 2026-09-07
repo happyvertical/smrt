@@ -14,6 +14,29 @@ export interface DomainKnowledgeSurface {
   objectName?: string;
 }
 
+/**
+ * A public method a generated surface deliberately does NOT expose, and why.
+ *
+ * Silence is the failure mode this closes: before #2686 a method that produced
+ * no route simply did not appear, leaving an author to guess whether they had
+ * mistyped a name, hit an `exclude`, or written a signature no HTTP caller can
+ * satisfy. `reason` is human-readable prose; `code` is the stable key to react
+ * to programmatically.
+ */
+export interface DomainKnowledgeWithheldSurface {
+  kind: DomainKnowledgeSurfaceKind;
+  /** The method name that was withheld. */
+  operation: string;
+  /**
+   * Stable rejection key — `not-wireable`, `excluded`, `not-included`,
+   * `withheld`, `lifecycle-method`, `no-receiver`, `api-disabled`.
+   */
+  code: string;
+  /** Human-readable explanation, e.g. why a parameter cannot cross a wire. */
+  reason: string;
+  objectName?: string;
+}
+
 /** Per-object configuration controlling domain-knowledge generation and exposure. */
 export interface DomainKnowledgeConfig {
   enabled?: boolean;
@@ -95,6 +118,12 @@ export interface DomainKnowledgeObject {
   tableStrategy?: 'cti' | 'sti';
   conflictColumns?: string[];
   surfaces: DomainKnowledgeSurface[];
+  /**
+   * Public methods a generated surface withheld, with the reason for each.
+   * Omitted entirely when nothing was withheld, so an artifact for a fully
+   * exposed object is unchanged (#2686).
+   */
+  withheldSurfaces?: DomainKnowledgeWithheldSurface[];
   relationshipFeatures: string[];
   tags: string[];
   summary?: string;

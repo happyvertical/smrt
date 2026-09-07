@@ -19,9 +19,12 @@
  */
 
 export {
+  type AgentSurfaceToolNameOptions,
+  checkAgentSurfaceToolNames,
   type ExtractAgentSurfaceOptions,
   emptyAgentSurface,
   extractAgentSurface,
+  type GeneratedModelToolName,
   isAgentSurfaceSourcePath,
   isPrunedAgentSurfacePath,
   mergeAgentSurfaces,

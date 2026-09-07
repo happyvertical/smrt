@@ -40,6 +40,7 @@ import {
   decideCollisionPolicy,
   type MatchKind,
 } from './collision-policy.js';
+import { isFrameworkBaseClass } from './framework-base-classes.js';
 import { buildInheritanceChain } from './inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -56,6 +57,7 @@ import {
   getCollections,
   getConstructorFieldDecorators,
   getConstructorIndex,
+  getConstructorTenantScopedDeclarations,
   getFieldDecorators,
   getInheritanceCache,
   getSourceFileFromStack,
@@ -1031,6 +1033,12 @@ export function register(
   // contract. Preserve it here so runtime registration and the manifest path
   // agree on the conflict target (#2763).
   let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
+  const constructorTenantScopedDeclaration = manifestEntry
+    ? undefined
+    : (getConstructorTenantScopedDeclarations().get(ctor) as
+        | RegisteredClass['tenantScopedConfig']
+        | undefined);
+  const fieldTenantScopedConfig = tenantScopedConfigFromFieldMetadata(fields);
   const tenantScopedConfigSource: RegisteredClass['tenantScopedConfigSource'] =
     config.tenantScoped !== undefined
       ? 'explicit'
@@ -1038,24 +1046,20 @@ export function register(
         ? 'manifest'
         : manifestEntry
           ? undefined
-          : tenantScopedConfigFromFieldMetadata(fields)
-            ? 'field-fallback'
-            : undefined;
+          : constructorTenantScopedDeclaration
+            ? 'tenant-decorator'
+            : fieldTenantScopedConfig
+              ? 'field-fallback'
+              : undefined;
   const effectiveTenantScoped =
     config.tenantScoped ??
     manifestEntry?.decoratorConfig?.tenantScoped ??
-    (manifestEntry ? undefined : tenantScopedConfigFromFieldMetadata(fields));
+    (manifestEntry
+      ? undefined
+      : (constructorTenantScopedDeclaration ?? fieldTenantScopedConfig));
   if (effectiveTenantScoped) {
-    // Normalize boolean or object config into full options
-    const tenantOpts =
-      typeof effectiveTenantScoped === 'boolean' ? {} : effectiveTenantScoped;
-    tenantScopedConfig = {
-      mode: tenantOpts.mode ?? 'required',
-      field: tenantOpts.field ?? 'tenantId',
-      autoFilter: tenantOpts.autoFilter ?? true,
-      autoPopulate: tenantOpts.autoPopulate ?? true,
-      allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
-    };
+    tenantScopedConfig = normalizeTenantScopedConfig(effectiveTenantScoped);
+    if (!tenantScopedConfig) return;
 
     // Inject or enrich tenantId field
     const fieldName = tenantScopedConfig.field;
@@ -1108,7 +1112,25 @@ export function register(
     const parentName = inheritanceChain[inheritanceChain.length - 2]; // Second-to-last is parent
     const parentEntry = findClass(parentName);
 
-    if (parentEntry) {
+    // A framework base class (SmrtObject, SmrtHierarchical, SmrtJunction, …)
+    // has no independent existence as a resource and carries no `@smrt()`
+    // decorator of its own (see framework-base-classes.ts) — any table
+    // strategy it appears to have once registered is just the registry's
+    // undecorated-entry default, not an authored constraint later
+    // subclasses must match. Every other one of this identity check's nine
+    // existing call sites already exempts these classes; this STI-strategy
+    // consistency check must too, or a framework base class that reaches
+    // `ObjectRegistry` before its first concrete decorated descendant (e.g.
+    // via #2750's worker-side manifest bulk-registration bulk-loading
+    // `@happyvertical/smrt-core`'s manifest, which lists every class
+    // extending `SmrtObject` including undecorated abstract bases) makes
+    // that descendant's OWN, correctly-declared `tableStrategy` look like a
+    // mismatch against its abstract parent's meaningless placeholder one.
+    const parentIsFrameworkBase =
+      parentEntry !== undefined &&
+      isFrameworkBaseClass(parentEntry.name, parentEntry.packageName);
+
+    if (parentEntry && !parentIsFrameworkBase) {
       const parentStrategy = parentEntry.config?.tableStrategy || 'default';
       const childStrategy = config.tableStrategy; // Don't default - undefined means inherit
 

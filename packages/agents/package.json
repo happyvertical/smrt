@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.45.3",
+  "version": "0.47.1",
   "smrtJsdoc": "strict",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -58,6 +58,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/migrations/__tests__/agent-schedule-slugs-postgres.optional.test.ts",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {

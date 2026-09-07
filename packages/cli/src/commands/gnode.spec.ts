@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CLICommand } from '../../generators/cli.js';
+import type { CLICommand } from '../cli-generator.js';
 
 // Mock dependencies
 const mockResolveTemplate = vi.fn();

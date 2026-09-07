@@ -33,7 +33,13 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import type { MethodDefinition } from '../scanner/types.js';
 import { PRIVATE_READ_CACHE_CONTROL } from './conditional-get.js';
+import {
+  declaresRuntimeRestRoute,
+  readMethodDecoratorConfig,
+  resolveEffectiveActionMetadata,
+} from './custom-action.js';
 
 /** Path segment the preflight route is served at, under the API base path. */
 export const PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT = '_preflight';
@@ -153,12 +159,13 @@ export function resolveRegisteredObjectName(model: string): string | undefined {
  * The HTTP method a REST action is served by.
  *
  * CRUD actions map to their fixed verbs. A custom action is served under the
- * method its own route config declares (`api.routes[action].method`, defaulting
- * to `POST` exactly as `dispatchCustomCollectionAction` does), because guessing
- * `POST` for a declared `GET` action would make preflight report a false `deny`
- * on a `public: 'read'` model — hiding a playbook the caller can actually run,
- * which is the tool-listing case this exists to serve. Without an `objectName`
- * to read the declaration from, the fail-closed `POST` remains.
+ * method its own declaration supplies — `@method({ httpMethod })` first, then
+ * `api.routes[action].method`, defaulting to `POST` exactly as
+ * `dispatchCustomCollectionAction` does — because guessing `POST` for a
+ * declared `GET` action would make preflight report a false `deny` on a
+ * `public: 'read'` model, hiding a playbook the caller can actually run, which
+ * is the tool-listing case this exists to serve. Without an `objectName` to
+ * read the declaration from, the fail-closed `POST` remains.
  */
 export function restMethodForApiAction(
   action: string,
@@ -183,14 +190,32 @@ export function restMethodForApiAction(
   }
 
   const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+  if (!apiConfig || typeof apiConfig !== 'object') {
     return 'POST';
   }
 
-  const route = (apiConfig.routes as Record<string, { method?: string }>)[
-    action
-  ];
-  return (route?.method ?? 'POST').toUpperCase();
+  const effective = resolveEffectiveActionMetadata({
+    actionName: action,
+    ...(readRegisteredMethod(objectName, action)
+      ? { method: readRegisteredMethod(objectName, action) }
+      : {}),
+    apiConfig,
+  });
+  return (effective.httpMethod ?? 'POST').toUpperCase();
+}
+
+/**
+ * The method view backing `action`: the manifest entry when the registry has
+ * one, with its `@method()` config backfilled from the live decorator store
+ * when it does not — the unscanned-runtime posture, where reading only the
+ * manifest would silently ignore `@method({ expose: false })` (#2686). Mirrors
+ * `APIGenerator.runtimeMethod`, which decides the dispatch this predicts.
+ */
+function readRegisteredMethod(
+  objectName: string,
+  action: string,
+): MethodDefinition | undefined {
+  return ObjectRegistry.resolveRuntimeMethod(objectName, action).method;
 }
 
 /**
@@ -237,13 +262,14 @@ export function isApiActionEnabledForObject(
  * Whether `action` names a route the generated REST surface can actually
  * dispatch on `objectName`.
  *
- * CRUD actions always have a route. A custom action exists only when the
- * decorator declares it in `api.routes` — `dispatchCustomCollectionAction`
- * iterates exactly that map, so an action absent from it can never execute no
+ * CRUD actions always have a route. A custom action exists only when it is
+ * DECLARED — historically an `api.routes` entry, and since #2686 also a
+ * `@method()` supplying route-shaping metadata. `dispatchCustomCollectionAction`
+ * iterates exactly that union, so an action outside it can never execute no
  * matter what `include`/`exclude` say. Exposure alone would report a typo'd or
  * removed custom action as `allow`, and an agent would then start the earlier
  * steps of a non-atomic playbook before dying on it — the failure preflight
- * exists to prevent.
+ * exists to prevent. This prediction and that dispatch must stay one rule.
  */
 export function isRestActionRoutable(
   objectName: string | undefined,
@@ -261,11 +287,45 @@ export function isRestActionRoutable(
   }
 
   const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+  if (!apiConfig || typeof apiConfig !== 'object') {
     return false;
   }
 
-  return Object.hasOwn(apiConfig.routes as Record<string, unknown>, action);
+  const registered = readRegisteredMethod(objectName, action);
+
+  // `@method({ expose: false })` outranks a legacy `api.routes` entry for the
+  // same method, and dispatch honors that. Checking it BEFORE the routes map is
+  // what keeps the two one rule: otherwise a withheld action that still carried
+  // a route declaration predicted `allow` for an operation the transport
+  // refuses (#2686).
+  if (readMethodDecoratorConfig(registered)?.expose === false) return false;
+
+  if (
+    apiConfig.routes &&
+    Object.hasOwn(apiConfig.routes as Record<string, unknown>, action)
+  ) {
+    return isHostableByRuntimeRest(objectName, action);
+  }
+
+  // Shared with `APIGenerator.declaredCollectionActions`, which decides the
+  // dispatch this predicate exists to predict.
+  return (
+    declaresRuntimeRestRoute(registered) &&
+    isHostableByRuntimeRest(objectName, action)
+  );
+}
+
+/**
+ * Whether this transport can HOST the action at all.
+ *
+ * It serves only collection-scoped custom actions, so an item-scoped
+ * declaration — the `@method()` decorator's most common shape, on a model
+ * instance method — answers 404 in dispatch. Predicting `allow` for it is the
+ * false-`allow` this module exists to prevent, so routability is the
+ * conjunction of "declared" and "hostable" (#2686).
+ */
+function isHostableByRuntimeRest(objectName: string, action: string): boolean {
+  return ObjectRegistry.isCollectionHostedMethod(objectName, action);
 }
 
 /**

@@ -112,6 +112,14 @@ const ARTIFACT = {
         sourceFile: 'src/lib/late.intents.ts',
         line: 9,
       },
+      {
+        code: 'tool-name-collision',
+        helper: 'defineIntent',
+        message:
+          'view intent `orders.list` derives the WebMCP tool name `orders_list`, which is also the generated model tool for `Order.list`.',
+        sourceFile: 'src/lib/orders.intents.ts',
+        line: 3,
+      },
     ],
   },
 };
@@ -138,6 +146,16 @@ describe('readAgentSurfaceReport', () => {
       {
         sourceFile: 'src/lib/late.intents.ts:9',
         message: expect.stringContaining('useWebMcpTool'),
+      },
+    ]);
+    // A tool-name collision (#2725) is the one diagnostic whose declaration
+    // WAS emitted — it is listed under "Declared view intents" above. Reading
+    // it as "not statically emittable" would contradict that line, so it gets
+    // its own bucket.
+    expect(report?.toolNameCollisions).toEqual([
+      {
+        sourceFile: 'src/lib/orders.intents.ts:3',
+        message: expect.stringContaining('`orders_list`'),
       },
     ]);
   });
@@ -253,6 +271,8 @@ describe('renderAgentSurfaceReport', () => {
     );
     expect(output).toContain('Not statically emittable: 1');
     expect(output).toContain('useWebMcpTool');
+    expect(output).toContain('Tool name also claimed: 1');
+    expect(output).toContain('src/lib/orders.intents.ts:3');
   });
 
   it('says what to do when nothing has been built yet', () => {

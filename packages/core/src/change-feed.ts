@@ -243,6 +243,14 @@ export interface GetChangesOptions {
    * resync before resuming from {@link ChangeFeedPage.resyncCursor}.
    */
   since: number;
+  /**
+   * Whether to sequence staged entries before reading (default `true`). On
+   * PostgreSQL that drain writes through `_smrt_drain_changes()`; a
+   * diagnostics reader that must stay SELECT-only passes `false` and
+   * accepts that entries still staged by an open caller transaction remain
+   * invisible until a writer drains them.
+   */
+  drain?: boolean;
   /** Restrict to these physical table names. Empty/omitted → all tables. */
   tables?: string[];
   /**
@@ -1302,7 +1310,9 @@ export async function getChangesSince(
   // advance the cursor past sequences a concurrent autocommit appender then
   // claims for its own entries. Anything this drain allocated is therefore
   // held back to the next poll.
-  await drainChangeFeedBestEffort(db);
+  if (options.drain !== false) {
+    await drainChangeFeedBestEffort(db);
+  }
 
   const p = placeholders(db);
 

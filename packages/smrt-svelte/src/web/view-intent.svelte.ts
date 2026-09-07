@@ -59,7 +59,7 @@ export interface UseViewIntentOptions {
  *
  * Registration therefore goes through `registerWebMcpBespokeTool`, so an
  * intent is subject to the same fail-closed exposure policy as a generated
- * model tool. Execution dispatches exactly one registry command with
+ * model tool, and reserves its tool name as `intent` rather than `bespoke`. Execution dispatches exactly one registry command with
  * `source: 'agent'` — `StagedControlReview` stays on the path, agent-staged
  * values remain proposals, and there is no path to REST.
  *
@@ -109,7 +109,15 @@ export function useViewIntent(
       );
       return binding ? compileViewIntentToolSpec(intent, binding) : null;
     },
-    options.effects ? { effects: options.effects } : {},
+    {
+      // This hook, not `registerViewIntent`, is the shipped intent path — the
+      // WebMCP lifecycle lives in `useWebMcpTool` and must not be duplicated
+      // here. Label the tool-name reservation `intent` anyway (#2613), or a
+      // collision against a mounted intent would report `bespoke` and send an
+      // author looking for a `useWebMcpTool` call that does not exist.
+      owner: 'intent',
+      ...(options.effects ? { effects: options.effects } : {}),
+    },
   );
 }
 

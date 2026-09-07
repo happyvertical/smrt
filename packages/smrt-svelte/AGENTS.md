@@ -29,6 +29,14 @@ all registrations abort when their owning component unmounts. It also covers
 an undeclared bespoke tool being excluded under the default read-only policy
 (#2586) — never remove that assertion when editing the fixture.
 
+The app-level data-surface parity/security gate is
+`src/web/__tests__/data-surface-conformance.integration.svelte.test.ts`. Keep
+it production-backed: the fixture uses a real SQLite collection, generated
+REST auth, mounted DataTable/controller snapshots, authenticated bridge ACKs,
+principal tools, opaque action preview/apply, and ContentList/report adapters.
+When changing a data-surface wire field or refusal reason, update the
+versioned normalizers and the conformance fixture together.
+
 ## The UI split — primitive-adoption contract (#1589)
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the
@@ -109,6 +117,15 @@ share an application registry. The adapter resolves registry state at execution
 time, never reads the DOM, never accepts agent confirmation, and removes the
 entire tool set with one abort signal. A document may have only one active
 adapter for a prefix; configure distinct prefixes for intentional coexistence.
+The six derived names are also reserved through smrt-web's document-global
+tool-name lock (`@happyvertical/smrt-web/webmcp-tool-names`, #2613), so a
+generated model tool, a view intent, or a `useWebMcpTool` tool that would
+occupy one of them under the configured prefix fails at registration with the
+owner named instead of losing a tool at the host. Reserve before the first
+`registerTool` and release on dispose. Both locks here — the per-document
+prefix set and the shared name table — are stamped with the `modelContext`
+they were taken against and reset when a host installs a new one; keep them in
+step, or a prefix stays refused against a registry that never held its tools.
 
 ## Hooks
 
@@ -135,6 +152,20 @@ for a data-surface one — for exactly the component's lifetime.
   compilation to a browser tool live in `@happyvertical/smrt-web` with no
   Svelte dependency. This binding is the thin part; a second framework is a
   binding, not a rewrite. Do not add intent semantics to this package.
+- **`useViewIntent` reserves as `intent`, not `bespoke`.** It reuses
+  `useWebMcpTool` rather than `registerViewIntent`, so it passes
+  `owner: 'intent'` explicitly; drop that and every intent collision blames a
+  `useWebMcpTool` call that does not exist. Diagnostic label only.
+- **A tool-name collision (#2613) reports, it does not throw at the caller.**
+  `registerWebMcpBespokeTool` throws synchronously, but both bindings here run
+  it after a lazy import inside an effect, so neither can hand the exception
+  back to a component. `<Provider>` catches the UI and generated registrars
+  into `logger.warn`; `useWebMcpTool` catches only
+  `WebMcpToolNameCollisionError` into its existing
+  `console.warn('[smrt-svelte] bespoke WebMCP tool registration failed', …)`
+  path — its `register()` is fire-and-forget, so anything it does not catch
+  becomes a page-level unhandled rejection. Every other synchronous throw (an
+  invalid `effects` policy) still propagates: that is an author bug.
 - **Built on `useWebMcpTool`.** Do not write a second WebMCP lifecycle: the
   synchronous Provider policy read, the `options.effects` fallback, serialized
   same-name re-registration across effect reruns, and the lazy

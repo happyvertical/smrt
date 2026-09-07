@@ -33,7 +33,6 @@ src/routes/api/v1/contentcontributors/getByProfileId/+server.ts
 src/routes/api/v1/contentcorrections/\[id\]/+server.ts
 src/routes/api/v1/contentcorrections/+server.ts
 src/routes/api/v1/contentcorrections/getPublishedForContent/+server.ts
-src/routes/api/v1/contentcorrections/issue/+server.ts
 src/routes/api/v1/contentcorrections/listForContent/+server.ts
 src/routes/api/v1/contentfeedsources/\[id\]/+server.ts
 src/routes/api/v1/contentfeedsources/+server.ts
@@ -91,12 +90,10 @@ src/routes/api/v1/contents/query/+server.ts
 src/routes/api/v1/contentversions/\[id\]/+server.ts
 src/routes/api/v1/contentversions/\[id\]/transparency/+server.ts
 src/routes/api/v1/contentversions/+server.ts
-src/routes/api/v1/contentversions/createSnapshot/+server.ts
 src/routes/api/v1/contentversions/getLatestForContent/+server.ts
 src/routes/api/v1/contentversions/getLatestPublishedForContent/+server.ts
 src/routes/api/v1/contentversions/getNextVersionNumber/+server.ts
 src/routes/api/v1/contentversions/getVersion/+server.ts
 src/routes/api/v1/contentversions/listForContent/+server.ts
-src/routes/api/v1/contentversions/restoreIntoContent/+server.ts
 src/routes/api/v1/sync/apply/+server.ts
 # END SMRT auto-generated routes (Vite plugin)

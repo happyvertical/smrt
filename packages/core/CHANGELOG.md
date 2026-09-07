@@ -1,5 +1,84 @@
 # @happyvertical/smrt-core
 
+## 0.47.1
+
+### Patch Changes
+
+- ### Features
+
+  - qualify retained operator tables without runtime access (#2744) (core)
+  - optional read-only runtime DB diagnostics from _smrt_\* tables (#2741) (dev-mcp)
+  - warn at build time when an intent's WebMCP tool name is already registered (#2739) (scanner)
+
+  ### Bug Fixes
+
+  - migrate UUID dependency components safely (#2745) (cli)
+  - avoid nested conformance builds in Turbo tests (#2747) (ci)
+  - backfill legacy schedule slugs (#2742) (agents)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.89.6 (#2673) (deps)
+  - @happyvertical/smrt-config@0.47.1
+  - @happyvertical/smrt-types@0.47.1
+  - @happyvertical/smrt-scanner@0.47.1
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - document-global WebMCP tool-name lock across all registration paths (#2717) (smrt-web)
+
+  ### Features
+
+  - @method() decorator + wire-ability heuristic gate for generated API routes (#2712) (core)
+
+  ### Bug Fixes
+
+  - reconcile managed PostgreSQL routines (#2722) (core)
+  - guard cache writes with an invalidation generation (#2719) (prompts,languages)
+
+  ### Other Changes
+
+  - test: skip duckdb rollback-isolation variant pending sdk#1231 (#2721) (subscriptions)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - retire unused CLIGenerator and smrt-virt-cli module (#2704) (core)
+
+  ### Features
+
+  - add db:drop-framework-base-tables remediation (#2711) (cli)
+  - support PostgreSQL deployment role permissions (#2703) (core)
+
+  ### Bug Fixes
+
+  - patch train — cli import, docs, fixture filter, write-queue identity, real lint gate (#2714)
+  - exclude framework base classes from getTestDatabase() (#2706) (core)
+
+  ### Other Changes
+
+  - test: add data surface conformance gate (#2671) (smrt-svelte)
+  - refactor: retire four duplicate CRUD verb lists in the vite plugin (#2694) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.45.3
 
 ### Patch Changes

@@ -403,9 +403,18 @@ describe('checkLiveSchemaParity (application tables)', () => {
       `CREATE INDEX widgets_owner_id_idx ON widgets(owner_id)`,
     );
 
+    // A reference-lead index (tenant_id, owner_id) is no longer silently
+    // exempted from `extra_index` (#2751): a repaired/clean schema declares
+    // it explicitly rather than relying on live-parity to stay quiet about it.
+    const schema = widgetSchema();
+    schema.widgets.indexes.push(
+      { name: 'widgets_tenant_id_idx', columns: ['tenant_id'] },
+      { name: 'widgets_owner_id_idx', columns: ['owner_id'] },
+    );
+
     const report = await checkLiveSchemaParity({
       db: database,
-      schemas: widgetSchema(),
+      schemas: schema,
       conflictTargets: {
         widgets: [{ columns: ['slug', 'context'], source: 'Widget' }],
       },
@@ -416,6 +425,66 @@ describe('checkLiveSchemaParity (application tables)', () => {
     expect(report.ok).toBe(true);
     expect(report.indexIntrospection).toBe('full');
     expect(report.tablesChecked).toBe(1);
+  });
+
+  it('reports an undeclared reference-lead index as info-severity drift (#2751)', async () => {
+    const database = await openDatabase();
+    await database.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        slug TEXT,
+        context TEXT,
+        tenant_id TEXT,
+        owner_id TEXT,
+        price REAL,
+        description TEXT
+      )`);
+    await database.query(
+      `CREATE UNIQUE INDEX widgets_slug_context_idx ON widgets(slug, context)`,
+    );
+    await database.query(`CREATE INDEX widgets_price_idx ON widgets(price)`);
+    // Undeclared single-column indexes led by reference columns. live-parity
+    // used to treat these as intentional policy and never report them, while
+    // `migrations/differ.ts --drop-indexes` would drop them — the two
+    // surfaces disagreed about what counted as drift. The repository owner
+    // decided these are drift: report them so an operator sees the signal
+    // before reaching for `--drop-indexes` (#2751).
+    await database.query(
+      `CREATE INDEX widgets_tenant_id_idx ON widgets(tenant_id)`,
+    );
+    await database.query(
+      `CREATE INDEX widgets_owner_id_idx ON widgets(owner_id)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: widgetSchema(),
+      conflictTargets: {
+        widgets: [{ columns: ['slug', 'context'], source: 'Widget' }],
+      },
+      includeSystemTables: false,
+    });
+
+    const extraIndexNames = report.findings
+      .filter((finding) => finding.kind === 'extra_index')
+      .map((finding) => finding.target)
+      .sort();
+    expect(extraIndexNames).toEqual([
+      'widgets_owner_id_idx',
+      'widgets_tenant_id_idx',
+    ]);
+    expect(
+      report.findings
+        .filter((finding) => finding.kind === 'extra_index')
+        .every((finding) => finding.severity === 'info'),
+    ).toBe(true);
+    expect(
+      report.findings.find(
+        (finding) => finding.target === 'widgets_tenant_id_idx',
+      )?.recommendation,
+    ).toBe(
+      'Declare it so a rebuilt database keeps it, or drop it if it is obsolete.',
+    );
   });
 });
 

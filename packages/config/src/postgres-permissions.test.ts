@@ -19,6 +19,7 @@ describe('PostgreSQL permissions configuration', () => {
       schemaExclusive: true,
       migrationOwner: 'owner',
       runtimeRole: 'runtime',
+      retainedTables: ['operator_audit'],
       monitor: { role: 'monitor', tables: { orders: ['id'] } },
     };
     const directory = await mkdtemp(join(tmpdir(), 'smrt-permissions-config-'));

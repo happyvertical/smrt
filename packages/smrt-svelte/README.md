@@ -145,7 +145,12 @@ should be discoverable:
 ```
 
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
-must coexist in one document; the same prefix cannot be registered twice.
+must coexist in one document; the same prefix cannot be registered twice. The
+six derived names are reserved through the document-global tool-name lock, so
+a generated model tool, a view intent, or a `useWebMcpTool` tool that would
+take one of them under your prefix fails at registration with a message naming
+the tool and its current owner, rather than being silently dropped by the
+browser.
 `ui: false` disables only the fixed UI adapter while leaving generated model
 tools enabled. For compatibility, an object config that omits `ui` continues to
 enable only generated model tools; use `webmcp={true}` or provide `ui: {}` to

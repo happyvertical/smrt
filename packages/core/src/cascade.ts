@@ -214,8 +214,20 @@ export function buildCascadePlan(
 
   const references: CascadeReference[] = [];
   const polymorphic: CascadePolymorphicReference[] = [];
+  const visitedBuckets = new Set<unknown>();
 
-  for (const [sourceClass, relationships] of registry.getRelationshipMap()) {
+  const relationshipMap = registry.getRelationshipMap();
+  for (const [sourceClass, relationships] of relationshipMap) {
+    const simpleSource = relationships[0]?.sourceClass;
+    if (
+      simpleSource &&
+      sourceClass !== simpleSource &&
+      relationshipMap.get(simpleSource) === relationships
+    ) {
+      continue;
+    }
+    if (visitedBuckets.has(relationships)) continue;
+    visitedBuckets.add(relationships);
     const fields = registry.getFields(sourceClass);
 
     if (isPolymorphicAssociationClass(fields)) {

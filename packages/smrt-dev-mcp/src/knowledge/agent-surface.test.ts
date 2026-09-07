@@ -426,6 +426,36 @@ export const a = defineIntent(config);
     expect(result.ok).toBe(false);
   });
 
+  it('warns about a tool-name collision without calling it undeclared', async () => {
+    // #2725. A collision diagnostic is derived from the MANIFEST — the emitter
+    // compares each intent against the generated model tools for the same
+    // build — so this pass, which re-derives declarations from source alone,
+    // can never produce one. Two things must hold: it is not misreported as
+    // "not statically emittable" (the declaration WAS emitted), and it is not
+    // counted as artifact drift, which would be an error no rebuild clears.
+    const surface = agentSurface();
+    surface.diagnostics.push({
+      code: 'tool-name-collision',
+      helper: 'defineIntent',
+      message:
+        'view intent `product.list` derives the WebMCP tool name `product_list`, which is also the generated model tool for `Product.list`.',
+      sourceFile: INTENT_SOURCE,
+      line: 3,
+    });
+    await writeArtifact(surface, await currentHashes());
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    const codes = result.issues.map((issue) => issue.code);
+    const warning = result.issues.find(
+      (issue) => issue.code === 'agent-surface-tool-name-collision',
+    );
+
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.message).toContain('`product_list`');
+    expect(codes).not.toContain('agent-surface-not-static');
+    expect(codes).not.toContain('stale-agent-surface');
+  });
+
   it('warns — never stays silent — about a non-static declaration', async () => {
     const surface = agentSurface();
     surface.diagnostics.push({
