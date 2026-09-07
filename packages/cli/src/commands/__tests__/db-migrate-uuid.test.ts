@@ -3783,12 +3783,18 @@ describePostgres(
     // An unrelated, clean, declared-UUID table — must still convert even
     // though the colliding table in the same run does not.
     const cleanTable = `${stem}_clean`;
+    // A non-unique declared-UUID column whose rows repeat the SAME raw TEXT
+    // value (an ordinary one-to-many FK shape, e.g. several children
+    // pointing at the same parent). This is NOT a collision — no unique
+    // index is violated by rows that were already byte-identical TEXT — and
+    // must still convert.
+    const repeatedTable = `${stem}_repeated`;
     let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     beforeEach(async () => {
       const db = await freshDb();
       await db.query(
-        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}"`,
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}"`,
       );
       await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
       await db.query(
@@ -3800,6 +3806,13 @@ describePostgres(
       await db.query(
         `INSERT INTO "${cleanTable}" (id) VALUES ($1)`,
         'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      );
+      await db.query(
+        `CREATE TABLE "${repeatedTable}" (row_id serial PRIMARY KEY, parent_id text)`,
+      );
+      await db.query(
+        `INSERT INTO "${repeatedTable}" (parent_id) VALUES ($1), ($1), ($1)`,
+        'cccccccc-cccc-cccc-cccc-cccccccccccc',
       );
 
       clearCache();
@@ -3833,6 +3846,16 @@ describePostgres(
             version: '',
             dependencies: [],
           },
+          [repeatedTable]: {
+            tableName: repeatedTable,
+            ddl: '',
+            columns: { parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
         } as any);
     });
 
@@ -3841,7 +3864,7 @@ describePostgres(
       try {
         const db = await freshDb();
         await db.query(
-          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}"`,
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}"`,
         );
       } catch {
         // Handler cleanup closes pooled handles; reacquire before teardown.
@@ -3849,7 +3872,7 @@ describePostgres(
       clearCache();
     });
 
-    it('skips the colliding column, converts the unrelated clean column, and reports the collision', async () => {
+    it('skips the colliding column, converts the unrelated clean and repeated-value columns, and reports the collision', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -3866,9 +3889,13 @@ describePostgres(
       // The unrelated clean column in the SAME run still converts: no
       // whole-transaction rollback from the collision elsewhere.
       expect(await dataType(cleanTable, 'id')).toBe('uuid');
+      // An ordinary non-unique column repeating the SAME raw TEXT value
+      // across rows is NOT a collision and must still convert.
+      expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
       expect(output).toContain(
         `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
       );
+      expect(output).not.toContain(`${repeatedTable}.parent_id`);
     }, 30_000);
 
     it('is a no-op on a second run', async () => {
@@ -3887,6 +3914,7 @@ describePostgres(
 
       expect(await dataType(collidingTable, 'id')).toBe('text');
       expect(await dataType(cleanTable, 'id')).toBe('uuid');
+      expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
     }, 30_000);
   },
 );

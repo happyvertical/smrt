@@ -689,13 +689,20 @@ async function convertPostgresUuidColumns(
         (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
       );
       // TEXT→uuid is many-to-one: the widened shape probe now accepts both
-      // the hyphenated and bare-hex forms of the SAME value, so two distinct,
-      // individually-valid TEXT rows can normalize to one uuid. A PK/unique
-      // index on this column would then fail `ALTER COLUMN … TYPE uuid` with
-      // a duplicate-key error, aborting the whole transaction. Detect that
-      // BEFORE conversion and route it through the same skip path as dirty
-      // data, so it degrades to a per-column skip instead of a whole-run
-      // abort.
+      // the hyphenated and bare-hex forms of the SAME value, so two
+      // DIFFERENT, individually-valid TEXT strings can normalize to the same
+      // uuid. A PK/unique index on this column would then fail
+      // `ALTER COLUMN … TYPE uuid` with a duplicate-key error, aborting the
+      // whole transaction. Detect that BEFORE conversion and route it
+      // through the same skip path as dirty data, so it degrades to a
+      // per-column skip instead of a whole-run abort.
+      //
+      // This must count DISTINCT raw TEXT forms per normalized group, not
+      // rows: an ordinary non-unique FK column legitimately repeats the same
+      // (identical) TEXT value across many rows — e.g. every child row
+      // referencing the same parent — and that is not a collision at all,
+      // since no unique index is violated by rows that were already
+      // byte-identical TEXT.
       const { rows: dupRows } = await db.query(
         `SELECT count(*)::text AS n FROM (
              SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
@@ -703,7 +710,7 @@ async function convertPostgresUuidColumns(
               WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
                 AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
               GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
-             HAVING count(*) > 1
+             HAVING count(DISTINCT btrim(${quoteIdentifier(column)})) > 1
            ) collisions`,
       );
       duplicateNormalized = Number(
