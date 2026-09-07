@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.47.1
+
+### Patch Changes
+
+- ### Features
+
+  - qualify retained operator tables without runtime access (#2744) (core)
+  - optional read-only runtime DB diagnostics from _smrt_\* tables (#2741) (dev-mcp)
+  - warn at build time when an intent's WebMCP tool name is already registered (#2739) (scanner)
+
+  ### Bug Fixes
+
+  - migrate UUID dependency components safely (#2745) (cli)
+  - avoid nested conformance builds in Turbo tests (#2747) (ci)
+  - backfill legacy schedule slugs (#2742) (agents)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.89.6 (#2673) (deps)
+  - @happyvertical/smrt-config@0.47.1
+  - @happyvertical/smrt-types@0.47.1
+  - @happyvertical/smrt-scanner@0.47.1
+
 ## 1.0.0
 
 ### Minor Changes
