@@ -611,6 +611,25 @@ describe('filterUnresolvedOrphanDispositions', () => {
     expect(filterUnresolvedOrphanDispositions(pending, [])).toEqual(pending);
   });
 
+  it('returns a fresh array, not the input reference, on the nothing-withheld path', () => {
+    // Recall finding, #2748: the caller (utilities.ts) replaces its source
+    // array in place via `arr.length = 0; arr.push(...result)`. If `result`
+    // were the same reference as the input, `.length = 0` would truncate it
+    // out from under itself before the spread, silently dropping every
+    // pending disposition on the common success path -- exactly the
+    // regression this test pins.
+    const pending = [
+      { tableName: 'posts', column: 'author_id', action: combinedAction },
+    ];
+
+    const result = filterUnresolvedOrphanDispositions(pending, []);
+    expect(result).not.toBe(pending);
+
+    pending.length = 0;
+    pending.push(...result);
+    expect(pending).toHaveLength(1);
+  });
+
   it('drops a pending disposition whose migration was withheld (blocked parent column)', () => {
     const pending = [
       { tableName: 'posts', column: 'author_id', action: combinedAction },

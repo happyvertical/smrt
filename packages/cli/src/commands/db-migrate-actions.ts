@@ -1223,7 +1223,13 @@ export function partitionUnblockedMigrations(
 export function filterUnresolvedOrphanDispositions<
   T extends { action: MigrationAction },
 >(pending: T[], withheld: WithheldMigration[]): T[] {
-  if (withheld.length === 0) return pending;
+  // Always a fresh array (recall finding, #2748): a caller that replaces
+  // its source array in place via `.length = 0; .push(...result)` — as
+  // `utilities.ts` does for `pendingOrphanDispositions` — would otherwise
+  // truncate `pending` itself out from under `result` on this common
+  // nothing-withheld path, since `.length = 0` on the same reference
+  // clears what `result` still pointed at before the subsequent spread.
+  if (withheld.length === 0) return [...pending];
   const withheldActions = new Set(withheld.map((item) => item.action));
   return pending.filter((item) => !withheldActions.has(item.action));
 }

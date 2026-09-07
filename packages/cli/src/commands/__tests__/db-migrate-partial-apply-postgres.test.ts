@@ -290,6 +290,11 @@ describePostgres(
       const migrate = await runMigrate(['db:migrate', '--null-orphans']);
 
       expect(migrate.stdout).toContain('Orphan-FK disposition');
+      // Recall finding, #2748: the post-apply report must still print this
+      // resolution line for the common case where nothing was withheld --
+      // an aliasing bug in the withheld-filter helper once silently dropped
+      // every pending disposition on this exact path.
+      expect(migrate.stdout).toContain('nulled 1 orphan reference(s)');
       expect(await fkExists(children)).toBe(true);
       const verifyDb = await freshDb();
       const rows = await verifyDb.query(
