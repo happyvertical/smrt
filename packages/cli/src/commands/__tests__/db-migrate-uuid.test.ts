@@ -430,6 +430,7 @@ describePostgres(
             ddl: '',
             columns: {
               id: { type: 'UUID', primaryKey: true },
+              old_ref: { type: 'UUID' },
               parent_id: { type: 'UUID' },
               poison_id: { type: 'UUID' },
             },
@@ -504,6 +505,35 @@ describePostgres(
       expect(output).toContain('✓ Converted 3 column(s) to uuid.');
       expect(await columnExists('old_ref')).toBe(false);
       expect(await dataType('parent_id')).toBe('uuid');
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }, 30_000);
+
+    it('projects dropped rename sources out of the rename+convert dry-run plan', async () => {
+      const db = await freshDb();
+      await db.query(`DROP VIEW "${viewName}"`);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {
+        'dry-run': true,
+        rename: 'old_ref:parent_id',
+        table: tableName,
+      });
+
+      const output = logSpy.mock.calls.flat().join('\n');
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(output).toContain(
+        `ALTER TABLE "public"."${tableName}" DROP COLUMN "old_ref";`,
+      );
+      expect(output).toContain(
+        `ALTER TABLE "public"."${tableName}" ALTER COLUMN "parent_id" TYPE uuid`,
+      );
+      expect(output).not.toContain(
+        `ALTER TABLE "public"."${tableName}" ALTER COLUMN "old_ref" TYPE uuid`,
+      );
+      expect(await columnExists('old_ref')).toBe(true);
+      expect(await dataType('parent_id')).toBe('text');
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }, 30_000);

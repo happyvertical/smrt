@@ -117,6 +117,12 @@ function declaredUuidKey(table: string, column: string): string {
   return `${table}|${column}`;
 }
 
+function renamedSourceColumns(renameSpecs: RenameSpec[]): Set<string> {
+  return new Set(
+    renameSpecs.map((spec) => declaredUuidKey(spec.table, spec.from)),
+  );
+}
+
 /** A live TEXT column scheduled for `ALTER COLUMN … TYPE uuid`. */
 interface ConvertCandidate {
   table: string;
@@ -339,7 +345,13 @@ export const dbMigrateUuidCommand: CLICommand = {
         await applyRenameBackfills(db, isPostgres, renameSpecs, true, {
           ownTransaction: false,
         });
-        await convertPostgresUuidColumns(db, declaredUuid, true);
+        await convertPostgresUuidColumns(
+          db,
+          declaredUuid,
+          true,
+          true,
+          renamedSourceColumns(renameSpecs),
+        );
         return;
       }
       if (!db.transaction) {
@@ -355,7 +367,13 @@ export const dbMigrateUuidCommand: CLICommand = {
         // This is a read-only safety preflight, not the operator-requested
         // dry run.  Suppress preview wording so a subsequently mutating run
         // never claims that no changes were applied.
-        await convertPostgresUuidColumns(db, declaredUuid, true, false);
+        await convertPostgresUuidColumns(
+          db,
+          declaredUuid,
+          true,
+          false,
+          renamedSourceColumns(renameSpecs),
+        );
       }
       await db.transaction(async (tx) => {
         // All mutation uses the callback executor: pooled root handles cannot
@@ -470,6 +488,7 @@ async function convertPostgresUuidColumns(
   declaredUuid: Set<string>,
   dryRun: boolean,
   renderDryRun = true,
+  excludedColumns = new Set<string>(),
 ): Promise<void> {
   const { rows: candidateRows } = await db.query(
     `SELECT cols.table_name, cols.column_name, cols.column_default,
@@ -488,6 +507,11 @@ async function convertPostgresUuidColumns(
   for (const row of candidateRows as Array<Record<string, unknown>>) {
     const table = String(row.table_name);
     const column = String(row.column_name);
+    // Rename backfills drop their source before the authoritative conversion
+    // scan. A dry/preflight scan still sees that source, so exclude it from
+    // the projected conversion component rather than previewing a TYPE ALTER
+    // that apply can never execute.
+    if (excludedColumns.has(declaredUuidKey(table, column))) continue;
     let nonUuid = 0;
     if (declaredUuid.has(declaredUuidKey(table, column))) {
       const { rows } = await db.query(
