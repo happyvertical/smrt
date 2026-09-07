@@ -110,6 +110,7 @@
       "inputs": [
         "src/**",
         "test/**",
+        "scripts/**",
         "**/*.test.ts",
         "**/*.spec.ts",
         "conformance-baseline.yml",
