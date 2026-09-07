@@ -1087,31 +1087,73 @@ function actionColumnDependencies(
  * upgrade is blocked, or a foreign key whose orphan rows block it, stays
  * withheld; everything else is applied. Pure and order-preserving so a
  * dry-run preview and a real apply partition identically.
+ *
+ * A `drop_index` carries no column list of its own (a DB-side index being
+ * removed; see `MigrationAction.indexName`'s doc comment), so it is never
+ * itself a dependency target — EXCEPT when it is the drop half of the
+ * #1165 shape-drift recreate pair (`drop_index` then `add_index` for the
+ * SAME name, in that order, in the same batch). Withholding the `add_index`
+ * half alone while letting its paired `drop_index` proceed would remove the
+ * existing index/uniqueness enforcement with no replacement — reachable and
+ * unsafe (review, #2748) — so a `drop_index` withholds together with any
+ * `add_index` of the same name that this partition withheld.
  */
 export function partitionUnblockedMigrations(
   migrations: MigrationAction[],
   blockedColumns: Map<string, string>,
 ): { applied: MigrationAction[]; withheld: WithheldMigration[] } {
-  const applied: MigrationAction[] = [];
-  const withheld: WithheldMigration[] = [];
-
-  for (const action of migrations) {
+  const directDependency = (
+    action: MigrationAction,
+  ): { dependsOn: string; reason: string } | undefined => {
     const dependency = actionColumnDependencies(action).find((dep) =>
       blockedColumns.has(blockedColumnKey(dep.tableName, dep.columnName)),
     );
-    if (!dependency) {
-      applied.push(action);
-      continue;
-    }
+    if (!dependency) return undefined;
     const dependsOn = blockedColumnKey(
       dependency.tableName,
       dependency.columnName,
     );
-    withheld.push({
-      action,
+    return {
       dependsOn,
       reason: blockedColumns.get(dependsOn) ?? 'depends on a blocked change',
-    });
+    };
+  };
+
+  // First pass: every directly-dependent action, and which add_index names
+  // were withheld (so a same-named drop_index can be paired with it below).
+  const withheldAddIndexDependency = new Map<
+    string,
+    { dependsOn: string; reason: string }
+  >();
+  const direct = migrations.map((action) => {
+    const dependency = directDependency(action);
+    if (dependency && action.type === 'add_index' && action.index?.name) {
+      withheldAddIndexDependency.set(action.index.name, dependency);
+    }
+    return { action, dependency };
+  });
+
+  const applied: MigrationAction[] = [];
+  const withheld: WithheldMigration[] = [];
+
+  for (const { action, dependency } of direct) {
+    if (dependency) {
+      withheld.push({ action, ...dependency });
+      continue;
+    }
+    const paired =
+      action.type === 'drop_index' && action.indexName
+        ? withheldAddIndexDependency.get(action.indexName)
+        : undefined;
+    if (paired) {
+      withheld.push({
+        action,
+        dependsOn: paired.dependsOn,
+        reason: `paired with the withheld rebuild of index ${action.indexName} (${paired.reason})`,
+      });
+      continue;
+    }
+    applied.push(action);
   }
 
   return { applied, withheld };

@@ -203,6 +203,86 @@ describe('partitionUnblockedMigrations', () => {
     expect(applied).toEqual([safe]);
     expect(withheld.map((w) => w.action)).toEqual([dependent]);
   });
+
+  it('withholds a shape-drift drop_index paired with a withheld add_index of the same name (review, #2748)', () => {
+    // #1165 shape-drift repair order: drop_index then add_index for the
+    // same name. If the add is withheld (its columns include a blocked
+    // one) but the drop is not, applying the drop alone removes the
+    // existing index/uniqueness enforcement with no replacement.
+    const drop: MigrationAction = {
+      type: 'drop_index',
+      tableName: 'contents',
+      className: 'Content',
+      indexName: 'contents_published_at_idx',
+    };
+    const add: MigrationAction = {
+      type: 'add_index',
+      tableName: 'contents',
+      className: 'Content',
+      index: {
+        name: 'contents_published_at_idx',
+        columns: ['published_at'],
+        unique: true,
+      },
+    };
+    const blocked = new Map([
+      ['contents.published_at', 'expected TIMESTAMP, found TEXT'],
+    ]);
+
+    const { applied, withheld } = partitionUnblockedMigrations(
+      [drop, add],
+      blocked,
+    );
+
+    expect(applied).toEqual([]);
+    expect(withheld.map((w) => w.action)).toEqual([drop, add]);
+    expect(withheld[0]?.reason).toContain(
+      'paired with the withheld rebuild of index contents_published_at_idx',
+    );
+  });
+
+  it('applies a lone orphan-index drop_index with no paired add_index', () => {
+    const drop: MigrationAction = {
+      type: 'drop_index',
+      tableName: 'contents',
+      className: 'Content',
+      indexName: 'contents_stale_idx',
+    };
+    const blocked = new Map([
+      ['contents.published_at', 'expected TIMESTAMP, found TEXT'],
+    ]);
+
+    const { applied, withheld } = partitionUnblockedMigrations([drop], blocked);
+
+    expect(applied).toEqual([drop]);
+    expect(withheld).toEqual([]);
+  });
+
+  it('applies a drop_index whose paired add_index was not withheld', () => {
+    const drop: MigrationAction = {
+      type: 'drop_index',
+      tableName: 'orders',
+      className: 'Order',
+      indexName: 'orders_status_idx',
+    };
+    const add: MigrationAction = {
+      type: 'add_index',
+      tableName: 'orders',
+      className: 'Order',
+      index: { name: 'orders_status_idx', columns: ['status'], unique: true },
+    };
+    const blocked = new Map([
+      ['contents.published_at', 'expected TIMESTAMP, found TEXT'],
+    ]);
+
+    const { applied, withheld } = partitionUnblockedMigrations(
+      [drop, add],
+      blocked,
+    );
+
+    expect(applied).toEqual([drop, add]);
+    expect(withheld).toEqual([]);
+  });
 });
 
 describe('planOrphanDispositions', () => {

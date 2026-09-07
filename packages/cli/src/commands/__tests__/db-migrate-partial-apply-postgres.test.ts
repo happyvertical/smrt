@@ -343,5 +343,55 @@ describePostgres(
       );
       expect(Number(count.rows[0].c)).toBe(1);
     }, 60_000);
+
+    it('--dry-run shows the identical partition a real run applies when --null-orphans resolves a dependency for --apply-unblocked (review, #2748)', async () => {
+      const db = await freshDb();
+      const goodParent = await db.query(
+        `INSERT INTO "${parents}" (id) VALUES (gen_random_uuid()) RETURNING id`,
+      );
+      const goodParentId = goodParent.rows[0].id;
+      await db.query(
+        `INSERT INTO "${children}" (id, parent_id) VALUES (gen_random_uuid(), gen_random_uuid())`,
+      );
+      await db.query(
+        `INSERT INTO "${children}" (id, parent_id) VALUES (gen_random_uuid(), $1)`,
+        [goodParentId],
+      );
+
+      // childSchema(true) declares an index directly on parent_id — the
+      // FK's own child column. Once --null-orphans resolves the FK, that
+      // index is no longer dependent on a blocked column and must show
+      // as applied in the dry-run preview too, not just in a real run.
+      installManifest({
+        [parents]: parentSchema(),
+        [children]: childSchema(true),
+      });
+
+      const dryRun = await runMigrate([
+        'db:migrate',
+        '--dry-run',
+        '--null-orphans',
+        '--apply-unblocked',
+      ]);
+      expect(dryRun.stdout).toContain('would null');
+      expect(dryRun.stdout).not.toContain('Withheld');
+      expect(dryRun.stdout).toContain(`${children}_parent_id_idx`);
+      // Nothing executed on --dry-run.
+      expect(await fkExists(children)).toBe(false);
+      expect(await indexExists(children, `${children}_parent_id_idx`)).toBe(
+        false,
+      );
+
+      const real = await runMigrate([
+        'db:migrate',
+        '--null-orphans',
+        '--apply-unblocked',
+      ]);
+      expect(real.stdout).not.toContain('Withheld');
+      expect(await fkExists(children)).toBe(true);
+      expect(await indexExists(children, `${children}_parent_id_idx`)).toBe(
+        true,
+      );
+    }, 60_000);
   },
 );

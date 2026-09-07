@@ -2092,6 +2092,8 @@ export default testManifest;
                 continue;
               }
 
+              if (!item.action.foreignKey) continue;
+
               if (isDryRun) {
                 console.log(
                   `   ${item.tableName}.${item.column}: ${beforeCount} orphan reference(s)`,
@@ -2100,15 +2102,16 @@ export default testManifest;
                 console.log(
                   `     → would null ${beforeCount} reference(s), then add the foreign key\n`,
                 );
-                continue;
               }
 
-              if (!item.action.foreignKey) continue;
-
-              // Resolved: drop the manual-intervention entry and add one
-              // combined executable migration (null the orphans, then add
-              // the FK) through the same transaction/tracker path every
-              // other change uses — atomic with the rest of the batch.
+              // Resolved (or, on --dry-run, would-resolve): drop the
+              // manual-intervention entry and add one combined migration
+              // (null the orphans, then add the FK) so downstream previews
+              // and --apply-unblocked's dependency computation see the
+              // identical partition on --dry-run and a real apply (review,
+              // #2748) — not just the same textual "would apply" line.
+              // Actual execution still only happens outside --dry-run,
+              // through the normal transaction/tracker path below.
               const index = manualInterventions.indexOf(item.action);
               if (index >= 0) manualInterventions.splice(index, 1);
               migrations.push({
@@ -2124,12 +2127,14 @@ export default testManifest;
                   ),
                 ],
               });
-              pendingOrphanDispositions.push({
-                tableName: item.tableName,
-                column: item.column,
-                countSql,
-                beforeCount,
-              });
+              if (!isDryRun) {
+                pendingOrphanDispositions.push({
+                  tableName: item.tableName,
+                  column: item.column,
+                  countSql,
+                  beforeCount,
+                });
+              }
             }
             console.log();
           }
