@@ -136,14 +136,31 @@ or `TEXT` → `TEXT`) holds at least one. It is `warning` severity and names bot
 columns; when several undeclared columns qualify it lists all of them rather
 than guessing which one holds the pre-rename data.
 
-`smrt db:diff` (and `db:migrate`, via the same advisory) prints the idempotent
-repair for each such pair as a commented, never-executed advisory — the same
-`UPDATE ... WHERE <new> IS NULL ... THEN DROP COLUMN <old>` shape the anytown
-backfill scripts hand-wrote, casting to `uuid` when the new column is native
-uuid (PostgreSQL) and doing a plain copy otherwise (SQLite has no `uuid`
-type). Review the suggested SQL before running it — this is detection and a
-printed repair, not an automatic one; see #2764 for carrying rename intent
-through the manifest so `db:migrate` could execute it directly.
+`smrt db:diff` (and `db:migrate`, via the same advisory) prints the repair for
+each such pair as a commented, never-executed advisory — the same copy-then-
+drop shape the anytown backfill scripts hand-wrote, casting to `uuid` when the
+new column is native uuid and doing a plain copy otherwise (SQLite has no
+`uuid` type). The two engines differ in how safely it can be rerun:
+
+- **PostgreSQL** gets one genuinely idempotent statement: an anonymous
+  `DO $$ ... $$` block that checks `information_schema.columns` and only runs
+  the `UPDATE` and `DROP COLUMN` when the old column still exists on `public`.
+  Rerunning it after the rename is complete is a true no-op — verified against
+  a real PostgreSQL 16 instance, including with a same-named table/column in
+  another schema.
+- **SQLite** has no procedural block or conditional-DDL construct at all, so
+  a single self-contained idempotent statement is not expressible in plain
+  SQL there. The advisory is explicitly operator-mediated instead: a guard
+  query (`pragma_table_info`) plus instructions to run the `UPDATE` and
+  `DROP COLUMN` only when it reports the old column still present. Blindly
+  rerunning the SQLite statements after the rename is already complete will
+  error at the `UPDATE` (the column no longer exists) — that error is safe
+  (loud, no data loss) but is not a silent no-op the way the PostgreSQL block
+  is.
+
+Review the suggested SQL before running it — this is detection and a printed
+repair, not an automatic one; see #2764 for carrying rename intent through the
+manifest so `db:migrate` could execute it directly.
 
 ## Validation
 
