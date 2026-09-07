@@ -290,10 +290,13 @@ describePostgres(
       const migrate = await runMigrate(['db:migrate', '--null-orphans']);
 
       expect(migrate.stdout).toContain('Orphan-FK disposition');
-      // Recall finding, #2748: the post-apply report must still print this
-      // resolution line for the common case where nothing was withheld --
-      // an aliasing bug in the withheld-filter helper once silently dropped
-      // every pending disposition on this exact path.
+      // Pins that the post-apply report prints this resolution line for a
+      // successful --null-orphans run. (This run has no --apply-unblocked,
+      // so it does not exercise filterUnresolvedOrphanDispositions()'s
+      // nothing-withheld path -- that aliasing regression, #2748, is
+      // covered at the unit level in db-migrate-actions-2748.test.ts;
+      // --null-orphans --apply-unblocked has no dedicated integration
+      // coverage for this line.)
       expect(migrate.stdout).toContain('nulled 1 orphan reference(s)');
       expect(await fkExists(children)).toBe(true);
       const verifyDb = await freshDb();
