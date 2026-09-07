@@ -7,7 +7,22 @@ describe('backfillProfileEmailKeys', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    // Opt out of smrt-vitest's automatic schema preparation (#2750 follow-up):
+    // this test deliberately creates a minimal, hand-shaped `profiles` table
+    // (only the columns this migration touches) to exercise
+    // `backfillProfileEmailKeys` in isolation, not the full production
+    // `Profile` schema. Since #2750's worker-side manifest re-registration
+    // made `@happyvertical/smrt-profiles`'s real `Profile` model (table
+    // `profiles`) reliably visible to every worker in this package
+    // (previously it wasn't, so the mocked `getDatabase()` never attempted
+    // to auto-create it here), the auto-schema-preparation mock now tries to
+    // `CREATE TABLE profiles` from the production schema before this
+    // `beforeEach` gets a chance to, colliding with the statement below.
+    db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
+    });
     await db.query(
       `CREATE TABLE profiles (
         id TEXT PRIMARY KEY NOT NULL,
