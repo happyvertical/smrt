@@ -23,6 +23,7 @@ import type {
   MigrationDefinition,
   MigrationResult,
 } from '@happyvertical/smrt-core/migrations';
+import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
 import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
@@ -38,13 +39,18 @@ import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-table
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
+  computeBlockedColumns,
   getSyntheticMigrationNameForAction,
   type MigrationAction,
+  orphanCountSql,
   partitionSchemaChanges,
+  partitionUnblockedMigrations,
+  planOrphanDispositions,
   printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
+  type WithheldMigration,
 } from './db-migrate-actions.js';
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
@@ -171,6 +177,51 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
 }
 
 /**
+ * Run an orphan-count `SELECT COUNT(*)` (from `orphanCountSql()`) and read
+ * back the count. Adapters disagree on the query-result envelope (some
+ * return `{ rows }`, some a bare array), so normalize both the same way the
+ * rest of the migration path does. Best-effort: a probe failure reports 0
+ * rather than aborting the `--null-orphans` disposition, since the report is
+ * informational and the UPDATE it precedes/follows is the authoritative step.
+ */
+async function countOrphanRows(
+  db: DatabaseInterface,
+  countSql: string,
+): Promise<number> {
+  try {
+    const result = await db.query(countSql);
+    const rows = Array.isArray(result)
+      ? result
+      : ((result as { rows?: unknown[] })?.rows ?? []);
+    const raw = (rows[0] as { orphan_count?: unknown } | undefined)
+      ?.orphan_count;
+    const count = Number(raw);
+    return Number.isFinite(count) ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * One-line identity for a migration action withheld under
+ * `--apply-unblocked`, for the withheld-changes report (#2748).
+ */
+function describeWithheldMigrationAction(action: MigrationAction): string {
+  switch (action.type) {
+    case 'add_index':
+      return `${action.tableName}: index ${action.index?.name ?? '(unnamed)'}`;
+    case 'add_foreign_key':
+      return `${action.tableName}: foreign key on ${action.foreignKey?.column ?? '(unknown column)'}`;
+    case 'alter_column':
+      return `${action.tableName}.${action.columnName ?? action.column?.name ?? '(unknown column)'}: ${action.alteration ?? 'alter_column'}`;
+    case 'drop_column':
+      return `${action.tableName}.${action.columnName ?? '(unknown column)'}: drop column`;
+    default:
+      return `${action.tableName}: ${action.type}`;
+  }
+}
+
+/**
  * Run the framework's deferred system-table compatibility pass after
  * `db:migrate` has created the tables it reshapes (issue #2376).
  *
@@ -271,6 +322,8 @@ interface DbMigrateOptions {
   'drop-indexes'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
+  'apply-unblocked'?: boolean;
+  'null-orphans'?: boolean;
   verbose?: boolean;
 }
 
@@ -1650,6 +1703,18 @@ export default testManifest;
           'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default; relaxations are always reported.',
         default: false,
       },
+      'apply-unblocked': {
+        type: 'boolean',
+        description:
+          'Apply every planned change that is executable and independent of a blocked item (e.g. safe indexes/columns on other tables), even when other changes in this batch need manual intervention. A change that depends on a blocked change (an index or foreign key on a column whose type upgrade is blocked, a foreign key whose orphan rows block it) still stays withheld and is reported with its reason. Off by default: a batch with any manual intervention is withheld in full.',
+        default: false,
+      },
+      'null-orphans': {
+        type: 'boolean',
+        description:
+          'For a foreign key blocked only by orphan child rows: null the orphaned references when the child column is nullable, then add the foreign key. Refuses with the existing manual-repair message when the child column is NOT NULL. Never deletes rows. Off by default.',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1979,6 +2044,81 @@ export default testManifest;
         manualInterventions.push(...partitionedChanges.manualInterventions);
         const advisories = partitionedChanges.advisories;
 
+        // #2748: opt-in orphan-FK disposition. Runs before the
+        // `--apply-unblocked` partition below so a relationship this
+        // resolves is no longer a "blocked column" a dependent index/FK
+        // gets withheld for.
+        if (options['null-orphans']) {
+          const { nullable: orphanDispositions } =
+            planOrphanDispositions(manualInterventions);
+
+          if (orphanDispositions.length > 0) {
+            console.log(
+              `🧹 Orphan-FK disposition (--null-orphans): ${orphanDispositions.length} relationship(s)\n`,
+            );
+
+            for (const item of orphanDispositions) {
+              const countSql = orphanCountSql(item.detectorSql);
+              const beforeCount = await countOrphanRows(db, countSql);
+
+              if (isDryRun) {
+                console.log(
+                  `   ${item.tableName}.${item.column}: ${beforeCount} orphan reference(s)`,
+                );
+                console.log(`     ${item.repairSql};`);
+                console.log(
+                  `     → would null ${beforeCount} reference(s), then add the foreign key\n`,
+                );
+                continue;
+              }
+
+              await db.query(item.repairSql);
+              const afterCount = await countOrphanRows(db, countSql);
+              console.log(
+                `   ✓ ${item.tableName}.${item.column}: nulled ${Math.max(beforeCount - afterCount, 0)} orphan reference(s) (${afterCount} remaining)`,
+              );
+
+              // Resolved: drop the manual-intervention entry and add the FK
+              // as a normal executable migration through the same
+              // transaction/tracker path every other change uses.
+              const index = manualInterventions.indexOf(item.action);
+              if (index >= 0) manualInterventions.splice(index, 1);
+              if (item.action.foreignKey) {
+                migrations.push({
+                  type: 'add_foreign_key',
+                  tableName: item.action.tableName,
+                  className: item.action.className,
+                  foreignKey: item.action.foreignKey,
+                  sqlStatements: renderForeignKeyAddStatements(
+                    item.action.tableName,
+                    item.action.foreignKey,
+                  ),
+                });
+              }
+            }
+            console.log();
+          }
+        }
+
+        // #2748: opt-in partial apply. Off by default — the batch stays
+        // all-or-nothing exactly as before. When set, split the safe/
+        // executable bucket into changes independent of every blocked
+        // column (applied normally) and changes that depend on one (an
+        // index/FK on a column whose type upgrade is blocked, or on a
+        // still-orphan-blocked FK's column) — those stay withheld and are
+        // reported like every other manual intervention.
+        let withheldForDependency: WithheldMigration[] = [];
+        if (options['apply-unblocked']) {
+          const blockedColumns = computeBlockedColumns(manualInterventions);
+          const partition = partitionUnblockedMigrations(
+            migrations,
+            blockedColumns,
+          );
+          withheldForDependency = partition.withheld;
+          migrations.length = 0;
+          migrations.push(...partition.applied);
+        }
+
         // #2608: the pre-R11 `text` -> `uuid` convergence has to run before
         // every `CREATE TABLE` in this batch — `planForeignKeyCreation()` only
         // defers the constraints inside a mutual cycle, so an acyclic new child
@@ -2046,6 +2186,20 @@ export default testManifest;
           );
         }
 
+        // 9a. Report changes withheld under --apply-unblocked because they
+        // depend on one of the manual interventions above (#2748).
+        if (withheldForDependency.length > 0) {
+          console.log(
+            `🔒 Withheld — depends on a blocked change (--apply-unblocked, ${withheldForDependency.length}):\n`,
+          );
+          for (const { action, dependsOn, reason } of withheldForDependency) {
+            console.log(
+              `   ${describeWithheldMigrationAction(action)}: depends on ${dependsOn} (${reason})`,
+            );
+          }
+          console.log();
+        }
+
         // 9b. Report-only advisories (#2369): orphan columns / stale unique
         // constraints / relaxations not opted into. Printed every run so a
         // NOT NULL orphan that breaks inserts is never silent; they do not
@@ -2060,6 +2214,7 @@ export default testManifest;
         const schemaUpToDate =
           migrations.length === 0 &&
           manualInterventions.length === 0 &&
+          withheldForDependency.length === 0 &&
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
@@ -2697,7 +2852,8 @@ export default testManifest;
 
         if (
           shouldFailDbMigrate({
-            manualInterventionCount: manualInterventions.length,
+            manualInterventionCount:
+              manualInterventions.length + withheldForDependency.length,
             tableErrorCount,
             migrationErrorCount: errorCount,
             stiErrorCount,

@@ -20,6 +20,26 @@ export interface SchemaChangeAdvisoryLike {
   suggestedSql?: string[];
 }
 
+/** Mirrors core's `ForeignKeyAction` (see `@happyvertical/smrt-core/schema`). */
+export type ForeignKeyActionLike =
+  | 'CASCADE'
+  | 'SET NULL'
+  | 'RESTRICT'
+  | 'NO ACTION';
+
+/**
+ * Local mirror of core's `ForeignKeyDefinition` — just enough shape for
+ * dependency analysis (#2748) and for rebuilding the `ADD CONSTRAINT`
+ * statements after an orphan-FK disposition repairs the blocking rows.
+ */
+export interface ForeignKeyDefinitionLike {
+  column: string;
+  referencesTable: string;
+  referencesColumn: string;
+  onDelete?: ForeignKeyActionLike;
+  onUpdate?: ForeignKeyActionLike;
+}
+
 export interface MigrationAction {
   type:
     | 'add_column'
@@ -74,6 +94,12 @@ export interface MigrationAction {
   sql?: string;
   sqlStatements?: string[];
   advisory?: SchemaChangeAdvisoryLike;
+  /** Set on `add_foreign_key` / `drop_foreign_key` actions (#2748). */
+  foreignKey?: ForeignKeyDefinitionLike;
+  /** See `SchemaChangeLike.orphanBlocked` (#2748). */
+  orphanBlocked?: boolean;
+  /** See `SchemaChangeLike.orphanNullable` (#2748). */
+  orphanNullable?: boolean;
 }
 
 /**
@@ -135,6 +161,19 @@ export interface SchemaChangeLike {
   advisory?: SchemaChangeAdvisoryLike;
   sql?: string;
   sqlStatements?: string[];
+  /** Set on `add_foreign_key` / `drop_foreign_key` changes (#2748). */
+  foreignKey?: ForeignKeyDefinitionLike;
+  /**
+   * True on an advisory-only `add_foreign_key` change specifically blocked
+   * by live orphan child rows (#2748), as opposed to any other manual-repair
+   * reason. Mirrors core's `SchemaChange.orphanBlocked`.
+   */
+  orphanBlocked?: boolean;
+  /**
+   * Present alongside `orphanBlocked: true`: whether the child column
+   * allows NULL. Mirrors core's `SchemaChange.orphanNullable`.
+   */
+  orphanNullable?: boolean;
 }
 
 /** True when a change carries an advisory and no executable statement. */
@@ -758,6 +797,13 @@ export function partitionSchemaChanges(
             ? { sqlStatements: change.sqlStatements }
             : {}),
           advisory: change.advisory,
+          ...(change.foreignKey ? { foreignKey: change.foreignKey } : {}),
+          ...(change.orphanBlocked !== undefined
+            ? { orphanBlocked: change.orphanBlocked }
+            : {}),
+          ...(change.orphanNullable !== undefined
+            ? { orphanNullable: change.orphanNullable }
+            : {}),
         };
         if (isAdvisoryOnlyChangeLike(change)) {
           manualInterventions.push(action);
@@ -932,4 +978,217 @@ function describeAdvisory(item: SchemaAdvisory): string {
     default:
       return `${item.tableName}.${item.name}: ${item.alteration ?? 'alter_column'}${item.actual ? ` (live: ${item.actual})` : ''}`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// #2748: `db:migrate --apply-unblocked` partial-apply partition.
+// ---------------------------------------------------------------------------
+
+/** `table.column` identity used to key a blocked column across actions. */
+function blockedColumnKey(tableName: string, columnName: string): string {
+  return `${tableName}.${columnName}`;
+}
+
+/**
+ * Column that a manual-intervention action blocks, if any. `type_mismatch`,
+ * a manual `type_upgrade`, and a manual `alter_column` each name exactly one
+ * live column via `mismatch.column`; a blocked `add_foreign_key` names its
+ * child column via `foreignKey.column`. Every other manual-intervention
+ * shape (an FK the differ cannot express at all, e.g. a non-PostgreSQL
+ * engine) blocks no column identity and is excluded from dependency
+ * analysis — it can never be a dependency target since nothing else in a
+ * batch is planned "on" it.
+ */
+function blockedColumnForAction(action: MigrationAction): string | undefined {
+  if (action.type === 'add_foreign_key' && action.foreignKey) {
+    return blockedColumnKey(action.tableName, action.foreignKey.column);
+  }
+  const column =
+    action.mismatch?.column ?? action.columnName ?? action.column?.name;
+  return column ? blockedColumnKey(action.tableName, column) : undefined;
+}
+
+/**
+ * Every column a manual intervention blocks, keyed `table.column`, with the
+ * human-readable reason (the action's advisory message, or a description of
+ * the type mismatch) a dependent change is withheld for.
+ */
+export function computeBlockedColumns(
+  manualInterventions: MigrationAction[],
+): Map<string, string> {
+  const blocked = new Map<string, string>();
+  for (const action of manualInterventions) {
+    const key = blockedColumnForAction(action);
+    if (!key || blocked.has(key)) continue;
+    blocked.set(key, describeBlockedReason(action));
+  }
+  return blocked;
+}
+
+function describeBlockedReason(action: MigrationAction): string {
+  if (action.advisory?.message) return action.advisory.message;
+  if (action.mismatch) {
+    return `expected ${action.mismatch.expected}, found ${action.mismatch.actual}`;
+  }
+  return `${action.type} requires manual intervention`;
+}
+
+/** One migration withheld under `--apply-unblocked` and why. */
+export interface WithheldMigration {
+  action: MigrationAction;
+  /** `table.column` of the blocked change this one depends on. */
+  dependsOn: string;
+  reason: string;
+}
+
+/**
+ * Column(s) an executable migration action reads or writes, for dependency
+ * analysis against `computeBlockedColumns()`. An `add_index` depends on
+ * every indexed column; an `add_foreign_key` depends on its own child
+ * column AND the parent column it references (a parent whose type upgrade
+ * is blocked is just as unsafe to reference); `alter_column`/`drop_column`
+ * depend on the single column they touch. `add_column`/`type_upgrade`/
+ * `drop_index` never depend on another column's state — they are either the
+ * fix itself or fully self-contained.
+ */
+function actionColumnDependencies(
+  action: MigrationAction,
+): { tableName: string; columnName: string }[] {
+  switch (action.type) {
+    case 'add_index':
+      return (action.index?.columns ?? []).map((columnName) => ({
+        tableName: action.tableName,
+        columnName,
+      }));
+    case 'add_foreign_key': {
+      if (!action.foreignKey) return [];
+      return [
+        { tableName: action.tableName, columnName: action.foreignKey.column },
+        {
+          tableName: action.foreignKey.referencesTable,
+          columnName: action.foreignKey.referencesColumn,
+        },
+      ];
+    }
+    case 'alter_column':
+    case 'drop_column': {
+      const columnName = action.columnName ?? action.column?.name;
+      return columnName ? [{ tableName: action.tableName, columnName }] : [];
+    }
+    default:
+      return [];
+  }
+}
+
+/**
+ * Partition executable migrations (the differ's "safe DDL" bucket) into
+ * those independent of every blocked column and those that depend on one
+ * (#2748's dependency rule): an index or foreign key on a column whose type
+ * upgrade is blocked, or a foreign key whose orphan rows block it, stays
+ * withheld; everything else is applied. Pure and order-preserving so a
+ * dry-run preview and a real apply partition identically.
+ */
+export function partitionUnblockedMigrations(
+  migrations: MigrationAction[],
+  blockedColumns: Map<string, string>,
+): { applied: MigrationAction[]; withheld: WithheldMigration[] } {
+  const applied: MigrationAction[] = [];
+  const withheld: WithheldMigration[] = [];
+
+  for (const action of migrations) {
+    const dependency = actionColumnDependencies(action).find((dep) =>
+      blockedColumns.has(blockedColumnKey(dep.tableName, dep.columnName)),
+    );
+    if (!dependency) {
+      applied.push(action);
+      continue;
+    }
+    const dependsOn = blockedColumnKey(
+      dependency.tableName,
+      dependency.columnName,
+    );
+    withheld.push({
+      action,
+      dependsOn,
+      reason: blockedColumns.get(dependsOn) ?? 'depends on a blocked change',
+    });
+  }
+
+  return { applied, withheld };
+}
+
+// ---------------------------------------------------------------------------
+// #2748: `db:migrate --null-orphans` opt-in orphan-FK disposition.
+// ---------------------------------------------------------------------------
+
+/** One orphan-blocked FK the child column allows nulling out. */
+export interface OrphanDispositionPlanItem {
+  action: MigrationAction;
+  tableName: string;
+  column: string;
+  /** `SELECT ... orphan_key ...` probe the differ generated (read-only). */
+  detectorSql: string;
+  /** Executable `UPDATE ... SET <column> = NULL WHERE ...` statement. */
+  repairSql: string;
+}
+
+/**
+ * Split `manualInterventions` into orphan-blocked `add_foreign_key` actions
+ * whose child column is nullable (an opt-in `--null-orphans` disposition can
+ * null the references and proceed) and every other manual intervention,
+ * including orphan-blocked FKs on a NOT NULL child column, which keep the
+ * existing "Manual repair required" refusal (#2748) unconditionally — a
+ * caller must never delete rows to make room for one of these.
+ *
+ * Reuses the differ's own rendered `advisory.suggestedSql` (detector at
+ * index 0, repair at index 1) rather than re-deriving the orphan probe's
+ * uuid-cast options, so the disposition always runs exactly the SQL the
+ * differ already decided on.
+ */
+export function planOrphanDispositions(
+  manualInterventions: MigrationAction[],
+): {
+  nullable: OrphanDispositionPlanItem[];
+  notNullable: MigrationAction[];
+} {
+  const nullable: OrphanDispositionPlanItem[] = [];
+  const notNullable: MigrationAction[] = [];
+
+  for (const action of manualInterventions) {
+    if (action.type !== 'add_foreign_key' || !action.orphanBlocked) continue;
+    if (!action.orphanNullable) {
+      notNullable.push(action);
+      continue;
+    }
+    const suggested = action.advisory?.suggestedSql ?? [];
+    const [detectorSql, repairSql] = suggested;
+    if (!action.foreignKey || !detectorSql || !repairSql) {
+      // Fail closed: an orphan-blocked, nullable FK without the expected
+      // shape (missing foreign key definition or suggested SQL) is a
+      // differ-side contract violation, not a case this disposition can
+      // safely guess its way through. Report and withhold rather than
+      // fabricate SQL.
+      notNullable.push(action);
+      continue;
+    }
+    nullable.push({
+      action,
+      tableName: action.tableName,
+      column: action.foreignKey.column,
+      detectorSql,
+      repairSql,
+    });
+  }
+
+  return { nullable, notNullable };
+}
+
+/**
+ * Wrap an orphan-probe `SELECT` (the differ's `renderForeignKeyOrphanDetector`
+ * output, a bare `SELECT ... orphan_key ...` with no `LIMIT`) as a
+ * `COUNT(*)` so `--null-orphans` can report before/after counts without
+ * re-deriving the probe's own uuid-cast options.
+ */
+export function orphanCountSql(detectorSql: string): string {
+  return `SELECT COUNT(*) AS orphan_count FROM (${detectorSql}) AS smrt_orphan_probe`;
 }

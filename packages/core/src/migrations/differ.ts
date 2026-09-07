@@ -13,7 +13,7 @@ import {
   CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
-  renderForeignKeyConstraint,
+  renderForeignKeyAddStatements,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
   schemaForeignKeys,
@@ -1096,6 +1096,8 @@ export class SchemaComparer {
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
+          orphanBlocked: true,
+          orphanNullable: orphanOptions.nullable,
           advisory: {
             severity: 'warning',
             message:
@@ -1113,10 +1115,7 @@ export class SchemaComparer {
         table: tableName,
         name: constraintName,
         foreignKey,
-        sqlStatements: [
-          `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
-          `ALTER TABLE ${this.quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${this.quoteIdentifier(constraintName)}`,
-        ],
+        sqlStatements: renderForeignKeyAddStatements(tableName, foreignKey),
       });
     }
     return changes;

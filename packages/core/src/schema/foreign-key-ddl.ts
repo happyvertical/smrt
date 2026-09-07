@@ -39,6 +39,24 @@ export function renderForeignKeyConstraint(
   return parts.join(' ');
 }
 
+/**
+ * Render the two-statement `ADD ... NOT VALID` + `VALIDATE CONSTRAINT`
+ * sequence PostgreSQL uses to add a foreign key without holding a full-table
+ * lock during validation. Shared by the differ's normal FK-add planning and
+ * `db:migrate --null-orphans` (#2748), which reconstructs this same pair
+ * after nulling out orphan references the differ refused to plan around.
+ */
+export function renderForeignKeyAddStatements(
+  tableName: string,
+  foreignKey: ForeignKeyDefinition,
+): string[] {
+  const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+  return [
+    `ALTER TABLE ${quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
+    `ALTER TABLE ${quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${quoteIdentifier(constraintName)}`,
+  ];
+}
+
 /** Render a PostgreSQL DROP CONSTRAINT statement for a catalog-owned FK. */
 export function renderForeignKeyConstraintDrop(
   tableName: string,
