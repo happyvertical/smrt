@@ -982,3 +982,87 @@ describe('parseIndexDefColumns', () => {
     ).toEqual([`((_meta_data ->> 'sku'::text))`]);
   });
 });
+
+/**
+ * #2770 — REAL and DOUBLE PRECISION both fold into `normalizeSqlType`'s
+ * shared 'REAL' bucket, so single- vs double-precision drift is invisible to
+ * the ordinary `column_type_drift` check above. SQLite's dynamic typing lets
+ * a table be hand-created with an arbitrary type name, which is enough to
+ * reproduce the narrowing direction (declared REAL, live DOUBLE PRECISION)
+ * without a real PostgreSQL server; the widening direction and the
+ * PostgreSQL-native "real"/"double precision" spellings are covered against
+ * a live server in `issue-2770-2771-2772-postgres.optional.test.ts`.
+ */
+describe('checkLiveSchemaParity float-width drift (#2770)', () => {
+  const priceSchema = (): Record<string, SchemaDefinition> => ({
+    products: {
+      tableName: 'products',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        price: { type: 'REAL' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  it('flags a declared REAL column backed by a wider live type', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price DOUBLE PRECISION)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    const drift = find(report.findings, 'column_type_drift', 'price');
+    expect(drift?.severity).toBe('warning');
+    expect(drift?.message).toContain('double-precision');
+    expect(drift?.recommendation).toContain('Narrowing');
+    expect(drift?.details).toEqual({
+      expected: 'REAL',
+      actual: 'DOUBLE PRECISION',
+    });
+    // A warning-severity advisory finding must not fail the run.
+    expect(report.counts.error).toBe(0);
+  });
+
+  it('does not flag a column whose live type already matches', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price REAL)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+
+  it('does not flag DECIMAL/NUMERIC columns still tolerated by the general REAL bucket', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price NUMERIC)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    // NUMERIC has no fixed binary width, so `floatPrecisionOf` returns null
+    // for it and the #2770 check must stay silent — this is pre-existing
+    // (#2361-era) tolerance, not something this feature should disturb.
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+});

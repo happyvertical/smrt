@@ -471,6 +471,41 @@ function compareColumns(
           'Reconcile the column type with `smrt db:migrate`, or repair the declaration if the live type is correct.',
         details: { expected: column.type, actual: live.type },
       });
+    } else {
+      const expectedBucket = normalizeSqlType(column.type);
+      const actualBucket = normalizeSqlType(live.type);
+
+      if (expectedBucket === 'REAL' && actualBucket === 'REAL') {
+        // #2770: REAL/DOUBLE PRECISION/DECIMAL/NUMERIC all normalize into
+        // one 'REAL' bucket above, so single- vs double-precision float
+        // drift never reaches the `!typesAreEquivalent` branch — the same
+        // way int4-vs-int8 drift hides behind the shared 'INTEGER' bucket
+        // (see `legacy_integer_width` below). Detect it here instead.
+        const expectedPrecision = floatPrecisionOf(column.type);
+        const actualPrecision = floatPrecisionOf(live.type);
+        if (
+          expectedPrecision &&
+          actualPrecision &&
+          expectedPrecision !== actualPrecision
+        ) {
+          const widening =
+            expectedPrecision === 'double' && actualPrecision === 'single';
+          findings.push({
+            kind: 'column_type_drift',
+            // Consistent with the other width findings (`legacy_integer_width`
+            // below): a maintenance concern to schedule, not a broken write path.
+            severity: 'warning',
+            table: table.name,
+            target: column.name,
+            origin: table.origin,
+            message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` (${actualPrecision}-precision) in the live database but declared \`${column.type}\` (${expectedPrecision}-precision).`,
+            recommendation: widening
+              ? 'Run `smrt db:migrate` to widen this column to double precision (lossless).'
+              : 'Narrowing to single precision can lose data; confirm the narrower declaration is intentional before repairing it manually.',
+            details: { expected: column.type, actual: live.type },
+          });
+        }
+      }
     }
 
     // A declared-NOT NULL column that is nullable live silently accepts rows
@@ -569,6 +604,21 @@ function typesAreEquivalent(
   }
 
   return false;
+}
+
+/**
+ * Single- vs double-precision float classification for #2770's float-width
+ * drift detection. `null` for anything that isn't unambiguously one or the
+ * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
+ */
+function floatPrecisionOf(type: string): 'single' | 'double' | null {
+  const upper = String(type ?? '')
+    .toUpperCase()
+    .trim()
+    .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
+  if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
+  return null;
 }
 
 function isStructuralReference(column: ExpectedColumn): boolean {

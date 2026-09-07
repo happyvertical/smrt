@@ -177,6 +177,21 @@ export function uniqueColumnIndexName(
  * True when a change is report-only: it carries an advisory and no
  * executable statement. Such changes never reach the migration stream.
  */
+/**
+ * Single- vs double-precision float classification for #2770's float-width
+ * drift detection. `null` for anything that isn't unambiguously one or the
+ * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
+ */
+function floatPrecisionOf(type: string): 'single' | 'double' | null {
+  const upper = type
+    .toUpperCase()
+    .trim()
+    .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
+  if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
+  return null;
+}
+
 export function isAdvisoryOnlyChange(change: SchemaChange): boolean {
   if (!change.advisory) return false;
   const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
@@ -1245,6 +1260,66 @@ export class SchemaComparer {
         const expectedEngineType = this.ddlStrategy.mapType(validatedType);
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
+
+        // #2770: REAL/DOUBLE PRECISION both normalize to the same 'REAL'
+        // bucket above (matching DECIMAL/NUMERIC tolerance), so the general
+        // equality gate below never sees single- vs double-precision float
+        // drift. Detect it here, the same way `legacy_integer_width` detects
+        // int4-vs-int8 drift the general INTEGER bucket also hides. Widening
+        // (float4 -> float8) is lossless and safe to auto-plan; narrowing
+        // (float8 -> float4) can lose precision, so it stays advisory-only.
+        if (
+          (this.engine === 'postgres' || this.engine === 'duckdb') &&
+          normalizedExpected === 'REAL' &&
+          normalizedActual === 'REAL'
+        ) {
+          const expectedPrecision = floatPrecisionOf(expectedEngineType);
+          const actualPrecision = floatPrecisionOf(dbCol.type);
+          if (
+            expectedPrecision &&
+            actualPrecision &&
+            expectedPrecision !== actualPrecision
+          ) {
+            typeDrifted = true;
+            const table = this.quoteIdentifier(tableName);
+            const column = this.quoteIdentifier(colName);
+            if (
+              expectedPrecision === 'double' &&
+              actualPrecision === 'single'
+            ) {
+              const targetType =
+                this.engine === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
+              changes.push({
+                type: 'type_upgrade',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                mismatch: { expected: expectedEngineType, actual: dbCol.type },
+                sql: `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE ${targetType} USING ${column}::${targetType}`,
+              });
+            } else {
+              changes.push({
+                type: 'type_upgrade',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                mismatch: { expected: expectedEngineType, actual: dbCol.type },
+                advisory: {
+                  severity: 'warning',
+                  message:
+                    `blocked: ${tableName}.${colName} is declared single-precision ` +
+                    `(${expectedEngineType}) but the live column is double-precision ` +
+                    `(${dbCol.type}). Narrowing loses precision, so this stays manual: ` +
+                    'confirm the narrower declaration is intentional, or widen the ' +
+                    'manifest field instead of the column.',
+                  suggestedSql: [
+                    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE ${expectedEngineType} USING ${column}::${expectedEngineType}`,
+                  ],
+                },
+              });
+            }
+          }
+        }
 
         // R11: native `uuid` and `text` are interchangeable for SMRT-owned
         // identifiers/references, but not for arbitrary provenance text. Keep

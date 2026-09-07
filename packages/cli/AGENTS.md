@@ -53,6 +53,14 @@ on an existing table, `db:migrate` probes the exact child/parent columns for
 orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
 failed probe stays manual with detector/repair SQL.
 
+### Float-width drift (#2770)
+
+`db:status`/`db:diff` report float-width drift (`real` vs `double precision`)
+as `column_type_drift`, the same severity class as `legacy_integer_width`; a
+live single-precision column backed by a double-precision declaration widens
+automatically (lossless), but a double-precision live column backed by a
+single-precision declaration stays advisory-only (narrowing loses precision).
+
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
 and deferred PostgreSQL cycle constraints; cached per-class DDL is not a valid

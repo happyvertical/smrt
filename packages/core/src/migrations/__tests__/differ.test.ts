@@ -2061,3 +2061,108 @@ describe('getSQLFromDiff', () => {
     expect(sql).toHaveLength(0);
   });
 });
+
+/**
+ * #2770 — REAL and DOUBLE PRECISION both normalize into the differ's shared
+ * 'REAL' bucket (matching DECIMAL/NUMERIC), so single- vs double-precision
+ * float drift never reached the ordinary type-mismatch gate. Widening
+ * (float4 -> float8) is lossless and auto-planned; narrowing stays
+ * advisory-only because it can lose precision.
+ */
+describe('SchemaComparer float-width drift (#2770)', () => {
+  const priceManifest = (): Record<string, SchemaDefinition> => ({
+    products: {
+      tableName: 'products',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        price: { type: 'REAL' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  it('plans a lossless widening ALTER when the live column is single-precision', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          price: { type: 'real', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('price');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "products" ALTER COLUMN "price" TYPE DOUBLE PRECISION USING "price"::DOUBLE PRECISION',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(true);
+  });
+
+  it('reports narrowing (double precision -> real) as an advisory only, never executable', async () => {
+    // Unreachable through the ordinary manifest pipeline on PostgreSQL (the
+    // abstract REAL type always maps to DOUBLE PRECISION there), but DuckDB's
+    // base strategy maps REAL straight through, so a legacy DuckDB column
+    // that was widened by hand to DOUBLE is a real narrowing candidate.
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'VARCHAR', notnull: true },
+          price: { type: 'DOUBLE', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('Narrowing');
+    expect(getSQLFromDiff(diff)).toEqual([]);
+    expect(diff.has_changes).toBe(true);
+  });
+
+  it('is a no-op once the live column already matches the declared precision', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          price: { type: 'double precision', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});
