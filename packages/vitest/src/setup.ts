@@ -41,6 +41,11 @@ const SETUP_OPTIONS_ENV_KEY = '__SMRT_VITEST_SETUP_OPTIONS__';
 declare global {
   // eslint-disable-next-line no-var
   var __smrtVitestSetupRegisteredClassNames: string[] | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtVitestSetupResolvedOptions:
+    | SmrtVitestPluginOptions
+    | null
+    | undefined;
 }
 
 /**
@@ -101,23 +106,38 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
   }
 
   try {
-    const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
-    // The plugin's `config()` keys its entry by its resolved, normalized
-    // `root` (default `process.cwd()` at the time it ran, in the same
-    // project). This worker's own `process.cwd()` is that same project's
-    // directory in the standard case, so match on that alone (also
-    // normalized the same way) -- deliberately NOT falling back to "the
-    // map's one entry" when there is no exact match: this module's
-    // setupFiles-standalone mode (no `smrtVitestPlugin()` in `plugins`)
-    // promises to be a no-op when there is nothing to register for THIS
-    // project, and a same-process, unrelated project's entry (e.g. a Vitest
-    // multi-project run mixing a plugin-using project with a plugin-less
-    // one) is not this project's options. A consumer passing a custom
-    // non-default `root` to the plugin simply gets no registration here
-    // (matching the pre-#2750 behavior for that project) rather than
-    // risking cross-project registry contamination.
-    const { normalizeRootKey } = await import('./index.js');
-    const options = byRoot[normalizeRootKey(process.cwd())];
+    // Resolve (and cache on `globalThis`) this worker's matching options
+    // exactly once per process: `import('./index.js')` -- needed here only
+    // for `normalizeRootKey` -- is the ~1300-line Vite-plugin module with
+    // its own transitive graph, and under `isolate: true` this function
+    // re-runs fresh on every test file. Re-importing it every file (even on
+    // the eventual no-op path) reintroduced per-file overhead and widened
+    // exposure to the exact class of module this file otherwise avoids a
+    // *static* import of (see the doc comment above). `undefined` means
+    // "not resolved yet"; `null` means "resolved, no match for this cwd" --
+    // both distinct from a real options object so a legitimate empty-ish
+    // options value is never mistaken for "not yet checked".
+    let options = globalThis.__smrtVitestSetupResolvedOptions;
+    if (options === undefined) {
+      const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
+      // The plugin's `config()` keys its entry by its resolved, normalized
+      // `root` (default `process.cwd()` at the time it ran, in the same
+      // project). This worker's own `process.cwd()` is that same project's
+      // directory in the standard case, so match on that alone (also
+      // normalized the same way) -- deliberately NOT falling back to "the
+      // map's one entry" when there is no exact match: this module's
+      // setupFiles-standalone mode (no `smrtVitestPlugin()` in `plugins`)
+      // promises to be a no-op when there is nothing to register for THIS
+      // project, and a same-process, unrelated project's entry (e.g. a
+      // Vitest multi-project run mixing a plugin-using project with a
+      // plugin-less one) is not this project's options. A consumer passing
+      // a custom non-default `root` to the plugin simply gets no
+      // registration here (matching the pre-#2750 behavior for that
+      // project) rather than risking cross-project registry contamination.
+      const { normalizeRootKey } = await import('./index.js');
+      options = byRoot[normalizeRootKey(process.cwd())] ?? null;
+      globalThis.__smrtVitestSetupResolvedOptions = options;
+    }
     if (!options) {
       return;
     }
