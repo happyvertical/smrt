@@ -52,9 +52,17 @@ not granted.
 
 The CLI discovers model tables from the application registry and includes
 present framework system tables. Add `managedTables: ['additional_table']` for
-application-managed tables outside that registry. Declared tables and monitoring
-columns must already exist. `packages.cli.postgresPermissions` can override the
-global contract using the normal package configuration precedence.
+application-managed tables outside that registry. Use
+`retainedTables: ['operator_audit']` only for existing operator-owned tables
+that must remain in the dedicated schema but are outside the application runtime
+surface. A retained table must be owned by the migration owner, cannot also be
+managed or monitored, cannot be connected to a managed table by inheritance,
+foreign keys, or rewrite rules, and receives no runtime or monitor table,
+column, or sequence privileges.
+Unknown tables and sequences still refuse qualification.
+Declared and retained tables and monitoring columns must already exist.
+`packages.cli.postgresPermissions` can override the global contract using the
+normal package configuration precedence.
 
 `managedTriggerFunctions` is an explicit opt-in for application integrity
 triggers. Each name identifies one zero-argument function in the configured
@@ -70,8 +78,12 @@ binding outside the declared table surface fail closed.
 
 Stop runtime and monitoring sessions for the complete migration or restore,
 permission-reconciliation, and verification cycle. Resume them only after the
-checks below pass. Run supported migrations as the migration owner before
-reconciling permissions.
+checks below pass. Run supported migrations and create or restore every declared
+retained table as the migration owner before reconciling permissions. PostgreSQL
+creator defaults cannot exclude a retained table by name: a newly created
+retained table and its sequence initially receive the migration owner's runtime
+defaults, then the reviewed permission apply explicitly revokes those grants.
+Do not reactivate restricted roles until that apply and verification pass.
 Use the configured PostgreSQL connection for these operator commands. Keep
 connection secrets in the deployment's existing secret configuration; the
 permission contract contains role identifiers only.

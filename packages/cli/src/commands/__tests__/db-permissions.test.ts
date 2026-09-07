@@ -35,6 +35,7 @@ const configured = {
   schemaExclusive: true as const,
   migrationOwner: 'owner',
   runtimeRole: 'runtime',
+  retainedTables: ['operator_audit'],
   monitor: { role: 'monitor', tables: { orders: ['id'] } },
 };
 const plan = {
@@ -92,6 +93,9 @@ describe('PostgreSQL permissions CLI', () => {
     expect(mocks.plan.mock.calls[0][1].managedTables).toEqual([
       '_smrt_changes',
       'orders',
+    ]);
+    expect(mocks.plan.mock.calls[0][1].retainedTables).toEqual([
+      'operator_audit',
     ]);
     expect(mocks.query).toHaveBeenCalledWith(
       expect.stringContaining('pg_catalog.pg_tables'),

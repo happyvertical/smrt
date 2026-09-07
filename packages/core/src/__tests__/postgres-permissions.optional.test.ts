@@ -434,6 +434,336 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       [],
     );
   });
+  it('revokes creator defaults from declared retained tables and their sequences without changing retained data', async () => {
+    await apply();
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (id bigserial PRIMARY KEY, evidence text NOT NULL)',
+    );
+    await as(
+      owner,
+      "INSERT INTO app.operator_audit(evidence) VALUES ('preserve this')",
+    );
+    expect(
+      (await as(runtime, 'SELECT evidence FROM app.operator_audit')).rows,
+    ).toEqual([{ evidence: 'preserve this' }]);
+    contract.retainedTables = ['operator_audit'];
+    const stale = await planPostgresPermissions(db, contract);
+    await db.query(
+      `GRANT SELECT(evidence) ON app.operator_audit TO ${q(monitor)}`,
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: stale.fingerprint,
+      }),
+    ).rejects.toThrow('stale');
+    const before = await planPostgresPermissions(db, contract);
+    expect(before.canApply, JSON.stringify(before.diagnostics)).toBe(true);
+    expect(before.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'excessive-privilege',
+        role: runtime,
+        resource: '"app"."operator_audit"',
+      }),
+    );
+    expect(before.statements).toContain(
+      `REVOKE ALL PRIVILEGES ON TABLE "app"."operator_audit" FROM ${q(runtime)}`,
+    );
+    expect(before.statements).toContain(
+      `REVOKE ALL PRIVILEGES ON SEQUENCE "app"."operator_audit_id_seq" FROM ${q(runtime)}`,
+    );
+    const result = await applyPostgresPermissions(db, contract, {
+      expectedFingerprint: before.fingerprint,
+    });
+    expect(result.diagnostics).toEqual([]);
+    await expect(
+      as(runtime, 'SELECT evidence FROM app.operator_audit'),
+    ).rejects.toThrow();
+    await expect(
+      as(runtime, "SELECT nextval('app.operator_audit_id_seq')"),
+    ).rejects.toThrow();
+    await expect(
+      as(monitor, 'SELECT evidence FROM app.operator_audit'),
+    ).rejects.toThrow();
+    expect(
+      (await as(owner, 'SELECT evidence FROM app.operator_audit')).rows,
+    ).toEqual([{ evidence: 'preserve this' }]);
+    expect((await apply()).statements).toEqual([]);
+  });
+  it('fails closed for undeclared tables and retained monitoring declarations', async () => {
+    await as(owner, 'CREATE TABLE app.unknown_table (id integer)');
+    let plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'undeclared-table' }),
+    );
+    await as(owner, 'DROP TABLE app.unknown_table');
+    await as(owner, 'CREATE TABLE app.operator_audit (id integer)');
+    contract.retainedTables = ['operator_audit'];
+    if (!contract.monitor) throw new Error('Expected test monitor role.');
+    contract.monitor.tables.operator_audit = ['id'];
+    plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'monitor-table',
+        resource: 'operator_audit',
+      }),
+    );
+    expect(plan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: 'retained-foreign-key' }),
+    );
+  });
+  it('refuses retained inheritance from a managed table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit () INHERITS (app.items)');
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-inheritance',
+        resource: '"app"."operator_audit"',
+      }),
+    );
+  });
+  it('refuses a managed partition of a retained table', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (id bigint) PARTITION BY RANGE (id)',
+    );
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit_partition PARTITION OF app.operator_audit FOR VALUES FROM (0) TO (100)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    contract.managedTables = ['operator_audit_partition'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-inheritance',
+        resource: '"app"."operator_audit_partition"',
+      }),
+    );
+  });
+  it('refuses an external partition of a managed table with a definer trigger', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.partition_source (id bigint, visible text) PARTITION BY RANGE (id)',
+    );
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      'CREATE TABLE other.partition_relay PARTITION OF app.partition_source FOR VALUES FROM (0) TO (100)',
+    );
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      `CREATE FUNCTION other.partition_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.partition_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER partition_to_audit AFTER INSERT ON other.partition_relay FOR EACH ROW EXECUTE FUNCTION other.partition_to_audit()',
+    );
+    contract.managedTables = ['items', 'partition_source'];
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'managed-inheritance',
+        resource: '"other"."partition_relay"',
+      }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
+  it('refuses retained foreign keys to a managed table', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.operator_audit (item_id bigint REFERENCES app.items(id) ON DELETE CASCADE)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'retained-foreign-key',
+        resource: '"app"."operator_audit" -> "app"."items"',
+      }),
+    );
+  });
+  it('refuses an external foreign-key child of a managed table with a definer trigger', async () => {
+    await as(owner, 'CREATE SCHEMA other');
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE TABLE other.audit_relay (item_id bigint REFERENCES app.items(id) ON DELETE CASCADE)',
+    );
+    await as(
+      owner,
+      `CREATE FUNCTION other.relay_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (OLD.item_id::text); RETURN OLD; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.relay_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER relay_to_audit AFTER DELETE ON other.audit_relay FOR EACH ROW EXECUTE FUNCTION other.relay_to_audit()',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'managed-foreign-key',
+        resource: '"other"."audit_relay" -> "app"."items"',
+      }),
+    );
+    expect(plan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: 'retained-foreign-key' }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
+  it('refuses managed rewrite rules that could write a retained table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE items_to_audit AS ON INSERT TO app.items DO ALSO INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_audit)',
+      }),
+    );
+  });
+  it('refuses retained rewrite rules that reference a managed table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE audit_to_items AS ON INSERT TO app.operator_audit DO ALSO INSERT INTO app.items(visible) VALUES (NEW.evidence)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."operator_audit" (audit_to_items)',
+      }),
+    );
+  });
+  it('refuses managed rewrite rules that reach retained data through an external view', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      'CREATE VIEW other.audit_proxy AS SELECT evidence FROM app.operator_audit',
+    );
+    await as(
+      owner,
+      'CREATE RULE items_to_proxy AS ON INSERT TO app.items DO ALSO INSERT INTO other.audit_proxy(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_proxy)',
+      }),
+    );
+  });
+  it('refuses a managed rewrite rule that can reach retained data through an external definer trigger', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(owner, 'CREATE TABLE other.audit_relay (evidence text)');
+    await as(
+      owner,
+      `CREATE FUNCTION other.relay_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.evidence); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.relay_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER relay_to_audit AFTER INSERT ON other.audit_relay FOR EACH ROW EXECUTE FUNCTION other.relay_to_audit()',
+    );
+    await as(
+      owner,
+      'CREATE RULE items_to_relay AS ON INSERT TO app.items DO ALSO INSERT INTO other.audit_relay(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_relay)',
+      }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
+  it('allows rewrite rules that do not reference a retained table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE items_notify AS ON UPDATE TO app.items DO ALSO NOTIFY items_updated',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply, JSON.stringify(plan.diagnostics)).toBe(true);
+  });
+  it('refuses an undeclared definer trigger on a managed table that writes retained data', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      `CREATE FUNCTION other.items_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER items_to_audit BEFORE INSERT ON app.items FOR EACH ROW EXECUTE FUNCTION other.items_to_audit()',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'unsupported-managed-trigger',
+        resource: '"app"."items" (items_to_audit)',
+      }),
+    );
+  });
   it('retains permissions for tables and sequences created by supported owner migrations', async () => {
     await as(owner, 'DROP TABLE app._smrt_schema_migrations');
     await db.query(

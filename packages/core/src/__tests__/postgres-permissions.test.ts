@@ -37,6 +37,12 @@ describe('PostgreSQL permission configuration', () => {
         managedTables: ['odd"name', 'items', 'items'],
       }).managedTables,
     ).toEqual(['items', 'odd"name']);
+    expect(
+      validatePostgresPermissionContract({
+        ...valid,
+        retainedTables: ['audit', 'audit', 'odd"history'],
+      }).retainedTables,
+    ).toEqual(['audit', 'odd"history']);
   });
   it.each([
     null,
@@ -48,6 +54,8 @@ describe('PostgreSQL permission configuration', () => {
     { ...valid, runtimeRole: 'a\0b' },
     { ...valid, runtimeRole: 'x'.repeat(64) },
     { ...valid, managedTables: 'items' },
+    { ...valid, retainedTables: 'items' },
+    { ...valid, retainedTables: ['items'] },
     { ...valid, managedTriggerFunctions: 'guard' },
     { ...valid, monitor: { role: 'monitor', tables: { items: [] } } },
     {
