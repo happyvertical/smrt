@@ -11,7 +11,10 @@ import {
   renderApiClientCustomMethodParameters,
   selectApiClientEntries,
 } from '../vite-plugin/api-client-entries.js';
-import { selectWebCollectionEntries } from '../vite-plugin/web-collections.js';
+import {
+  compareText,
+  selectWebCollectionEntries,
+} from '../vite-plugin/web-collections.js';
 
 export interface PrebuildOptions {
   /** Path to manifest file or manifest object */
@@ -76,8 +79,17 @@ async function generateObjectTypeDeclarations(
 ): Promise<void> {
   const interfaces: string[] = [];
 
-  // Generate interfaces for each discovered SMRT object
-  for (const [_objectName, objectMeta] of Object.entries(manifest.objects)) {
+  // Generate interfaces for each discovered SMRT object. Manifest key order
+  // follows scan/discovery order, which is not stable across runs (#2749),
+  // so sort deterministically before emitting.
+  const sortedObjectEntries = Object.entries(manifest.objects).sort(
+    ([leftKey, left], [rightKey, right]) =>
+      compareText(
+        left.qualifiedName || leftKey,
+        right.qualifiedName || rightKey,
+      ) || compareText(leftKey, rightKey),
+  );
+  for (const [_objectName, objectMeta] of sortedObjectEntries) {
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 
@@ -283,10 +295,18 @@ declare module '@smrt/mcp' {
   export default createMCPServer;
 }`;
 
-  // Generate types module declaration with object imports
-  const objectImports = Object.values(manifest.objects)
+  // Generate types module declaration with object imports. Sorted for the
+  // same reason as generateObjectTypeDeclarations (#2749).
+  const objectImports = Object.entries(manifest.objects)
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    )
     .map(
-      (obj) =>
+      ([, obj]) =>
         `  export type ${obj.className}Data = import('./smrt-objects').${obj.className}Data;`,
     )
     .join('\n');

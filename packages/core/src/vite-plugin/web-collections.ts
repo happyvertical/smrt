@@ -172,7 +172,12 @@ export interface WebMcpToolDefinition extends ToolDescriptor {
   relationships: WebRelationship[];
 }
 
-function compareText(left: string, right: string): number {
+/**
+ * Deterministic string comparator shared by every manifest-derived ordering
+ * in this module and by consumers that need to sort manifest objects the
+ * same way generated declarations do (#2749).
+ */
+export function compareText(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
@@ -525,12 +530,30 @@ function selectEntriesQualifiedBy(
     WebCollectionEntry & { isStiChild: boolean }
   >();
 
-  for (const obj of Object.values(manifest.objects)) {
+  // Manifest key order follows scan/discovery order, which is not stable
+  // across runs (#2749). STI base-vs-child precedence below is independent
+  // of that order, but two candidates of EQUAL isStiChild status sharing one
+  // `collection` (e.g. two unrelated models, or two STI children whose base
+  // is absent/not qualified) are not — the map keeps whichever arrives
+  // first. Pre-sort the iteration source so that tie is resolved by
+  // qualified name instead of scan order. Unlike
+  // {@link selectWebMcpToolEntries}'s sort, this falls back to the manifest
+  // key rather than the strict {@link webCollectionObjectRef} (which throws
+  // without a qualifiedName/packageName): every candidate must be ordered
+  // here, including ones that never reach {@link buildWebCollectionDefinition}
+  // and so never need a resolvable object ref.
+  const sortedEntries = Object.entries(manifest.objects)
+    .filter(([, obj]) => !isFrameworkBaseClass(obj.className, obj.packageName))
+    .sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
+
+  for (const [, obj] of sortedEntries) {
     if (isCollectionManifestClass(manifest, obj)) continue;
-    // The framework's own abstract base classes are scaffolding, not
-    // resources — never materialize a web collection/tool for them,
-    // regardless of config (#2642).
-    if (isFrameworkBaseClass(obj.className, obj.packageName)) continue;
 
     // Pass the manifest: without it the wire-ability heuristic cannot tell a
     // model class from an options interface, and this selector would qualify a
@@ -541,8 +564,8 @@ function selectEntriesQualifiedBy(
     const isStiChild = isStiChildModel(manifest, obj);
     const existing = byCollection.get(obj.collection);
     // One definition per REST collection. The STI BASE model owns it: a child
-    // only wins while no base has been recorded yet, so the result is
-    // independent of declaration / scan order.
+    // only wins while no base has been recorded yet. Between two candidates
+    // of equal status, the pre-sort above makes the winner deterministic.
     if (existing && !(existing.isStiChild && !isStiChild)) continue;
 
     byCollection.set(obj.collection, {
@@ -553,11 +576,16 @@ function selectEntriesQualifiedBy(
     });
   }
 
-  return [...byCollection.values()].map(({ collection, obj, actions }) => ({
-    collection,
-    obj,
-    actions,
-  }));
+  // The winner for each collection is now independent of scan order (above);
+  // sort the final list by collection name so the emitted declarations are
+  // too.
+  return [...byCollection.values()]
+    .sort((left, right) => compareText(left.collection, right.collection))
+    .map(({ collection, obj, actions }) => ({
+      collection,
+      obj,
+      actions,
+    }));
 }
 
 /**

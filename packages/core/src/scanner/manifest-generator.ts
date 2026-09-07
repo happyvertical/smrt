@@ -176,6 +176,18 @@ const FRAMEWORK_METHOD_BASE_NAMES = new Set([
 ]);
 
 /**
+ * Deterministic string comparator (#2749). Manifest object iteration order
+ * follows scan/discovery order, which is not stable across runs, so any
+ * emitted artifact keyed off `Object.entries(manifest.objects)` needs a
+ * stable sort before emission.
+ */
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+/**
  * Infer visibility from file path and explicit config
  *
  * Priority:
@@ -2139,7 +2151,18 @@ export class ManifestGenerator {
   generateTypeDefinitions(manifest: SmartObjectManifest): string {
     const interfaces: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
+    // Manifest key order follows scan/discovery order, which is not stable
+    // across runs (#2749): the vite-plugin's server-mode `@smrt/types`
+    // resolution calls this method directly, so sort deterministically
+    // before emitting for the same reason as the prebuild/client-mode paths.
+    const sortedEntries = Object.entries(manifest.objects).sort(
+      ([leftKey, left], [rightKey, right]) =>
+        compareText(
+          left.qualifiedName || leftKey,
+          right.qualifiedName || rightKey,
+        ) || compareText(leftKey, rightKey),
+    );
+    for (const [_name, obj] of sortedEntries) {
       interfaces.push(this.generateInterface(obj));
     }
 
