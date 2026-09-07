@@ -1,0 +1,184 @@
+/**
+ * Level 2 read-only observation tools over the booted runtime (#1831).
+ *
+ * Three facts planes, labelled separately in every envelope:
+ * - `declared (manifest)`: what the confined boot registered ({@link bootRuntime});
+ * - `booted (registry)`: the in-process `ObjectRegistry` projected through the
+ *   sanitized {@link snapshotRegistry} DTO;
+ * - `runtime (live DB)`: the optional read-only connection, reused from Level 1.
+ *
+ * Nothing here mutates: no writes, no `do()`, no generated CRUD, no project
+ * code execution. `runtime-schema-diff` only *introspects* the live schema.
+ */
+
+import { ObjectRegistry, snapshotRegistry } from '@happyvertical/smrt-core';
+import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
+import { bootRuntime, type RuntimeBoot } from './boot.js';
+import type { RuntimeDatabaseArgs } from './connection.js';
+import {
+  type RuntimeDiagnostic,
+  type RuntimeToolEnvelope,
+  withRuntimeConnection,
+} from './tools.js';
+
+/** Row budget for `runtime-schema-diff` change lists. */
+const SCHEMA_DIFF_CHANGE_LIMIT = 200;
+
+export interface RuntimeProjectArgs {
+  /** Project root to boot from (defaults to the server's cwd). */
+  projectPath?: string;
+}
+
+function bootDiagnostics(boot: RuntimeBoot): RuntimeDiagnostic[] {
+  return boot.diagnostics
+    .filter((d) => d.severity !== 'info')
+    .map((d) => ({
+      severity: d.severity === 'error' ? 'warning' : d.severity,
+      code: `boot_${d.code}`,
+      message: d.message,
+    }));
+}
+
+function bootSummary(boot: RuntimeBoot) {
+  return {
+    provenance: boot.provenance,
+    bootedAt: boot.bootedAt,
+    projectName: boot.projectName,
+    manifests: boot.manifests,
+    objectCount: boot.objectCount,
+  };
+}
+
+export interface RuntimeRegistryArgs extends RuntimeProjectArgs {
+  /** Restrict object detail to these simple or qualified names. */
+  objects?: string[];
+  /** Include field/method detail (default: only when `objects` is given). */
+  detail?: boolean;
+}
+
+/** `runtime-registry`: sanitized snapshot of the booted registry. */
+export async function runtimeRegistry(
+  args: RuntimeRegistryArgs = {},
+): Promise<RuntimeToolEnvelope> {
+  const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const snapshot = snapshotRegistry({
+    projectRoot: args.projectPath,
+    objects: args.objects,
+    detail: args.detail ?? Boolean(args.objects?.length),
+  });
+  return {
+    ok: true,
+    coverage: null,
+    diagnostics: bootDiagnostics(boot),
+    data: {
+      provenance: snapshot.provenance,
+      boot: bootSummary(boot),
+      snapshot,
+    },
+  };
+}
+
+export interface RuntimeObjectArgs extends RuntimeProjectArgs {
+  /** Simple or qualified object name. */
+  name: string;
+  /** Engine for the generated DDL preview (default: the registry's default). */
+  engine?: 'sqlite' | 'postgres' | 'duckdb';
+}
+
+/** `runtime-object`: one object's sanitized definition plus its generated DDL. */
+export async function runtimeObject(
+  args: RuntimeObjectArgs,
+): Promise<RuntimeToolEnvelope> {
+  const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const name = typeof args.name === 'string' ? args.name.trim() : '';
+  const snapshot = snapshotRegistry({
+    projectRoot: args.projectPath,
+    objects: name ? [name] : [],
+    detail: true,
+  });
+  const object = snapshot.objects[0] ?? null;
+  const diagnostics = bootDiagnostics(boot);
+  if (!object) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'object_not_found',
+      message: name
+        ? `No booted object named ${name}; use runtime-registry to list names.`
+        : 'name is required.',
+    });
+  }
+  let ddl: string | null = null;
+  if (object) {
+    try {
+      ddl = ObjectRegistry.getSchemaDDL(object.name, args.engine) ?? null;
+    } catch (error) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'ddl_unavailable',
+        message: `Generated DDL unavailable: ${error instanceof Error ? error.message : 'unknown error'}`,
+      });
+    }
+  }
+  return {
+    ok: true,
+    coverage: null,
+    diagnostics,
+    data: {
+      provenance: snapshot.provenance,
+      boot: bootSummary(boot),
+      object,
+      ddl,
+    },
+  };
+}
+
+export interface RuntimeSchemaDiffArgs
+  extends RuntimeDatabaseArgs,
+    RuntimeProjectArgs {}
+
+/**
+ * `runtime-schema-diff`: booted registry schemas versus the live database,
+ * using the same comparer `db:diff`/`db:migrate` use. Introspection only —
+ * drop/relax options are pinned off and nothing is executed.
+ */
+export async function runtimeSchemaDiff(
+  args: RuntimeSchemaDiffArgs = {},
+): Promise<RuntimeToolEnvelope> {
+  const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const envelope = await withRuntimeConnection(
+    args,
+    async (db) => {
+      const comparer = new SchemaComparer(db, {
+        includeDroppedTables: false,
+        includeDroppedColumns: false,
+        includeDroppedIndexes: false,
+        relaxColumns: false,
+      });
+      const diff = await comparer.compare(
+        ObjectRegistry.getAllSchemasAsDefinitions(),
+      );
+      const byType: Record<string, number> = {};
+      for (const change of diff.changes) {
+        const type = String((change as { type?: unknown }).type ?? 'unknown');
+        byType[type] = (byType[type] ?? 0) + 1;
+      }
+      return {
+        data: {
+          boot: bootSummary(boot),
+          hasChanges: diff.has_changes,
+          addedTables: diff.added_tables.map((t) => t.tableName),
+          droppedTables: diff.dropped_tables,
+          orphanTables: diff.orphan_tables ?? [],
+          changeCount: diff.changes.length,
+          changesByType: byType,
+          changes: diff.changes.slice(0, SCHEMA_DIFF_CHANGE_LIMIT),
+          truncated: diff.changes.length > SCHEMA_DIFF_CHANGE_LIMIT,
+        },
+        diagnostics: [],
+      };
+    },
+    'booted registry schemas only; connect a dev database to diff against live tables',
+  );
+  envelope.diagnostics = [...bootDiagnostics(boot), ...envelope.diagnostics];
+  return envelope;
+}

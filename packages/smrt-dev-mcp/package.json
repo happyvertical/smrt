@@ -59,12 +59,12 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
+    "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.10",
-    "@modelcontextprotocol/node": "2.0.0",
     "@types/node": "24.13.2",
     "ajv": "8.18.0",
     "typescript": "5.9.3",

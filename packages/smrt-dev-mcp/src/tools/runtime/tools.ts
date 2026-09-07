@@ -114,7 +114,7 @@ async function enqueueRuntimeRead<T>(
  *   category-unavailable reader result keeps its `available: false` data and
  *   surfaces its message as a diagnostic
  */
-async function withRuntimeConnection(
+export async function withRuntimeConnection(
   args: RuntimeDatabaseArgs,
   read: RuntimeRead,
   staticHint: string,

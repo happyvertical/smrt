@@ -4,8 +4,8 @@
  * review/architecture prompt bundles, and portable agent skills.
  */
 
-import { readFileSync, realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { realpathSync } from 'node:fs';
+
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   ProtocolError,
@@ -13,8 +13,8 @@ import {
   Server,
 } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-
 import { getAgentSkill, listAgentSkills } from './agent-skills.js';
+import { startRuntimeHttpHost } from './http.js';
 import {
   buildArchitectureContext,
   buildKnowledgeIndex,
@@ -26,6 +26,7 @@ import {
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
+import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
 import {
   generateSmrtClass,
@@ -33,6 +34,11 @@ import {
   reviewSmrtProject,
 } from './tools/index.js';
 import { redactConnectionString } from './tools/runtime/connection.js';
+import {
+  runtimeObject,
+  runtimeRegistry,
+  runtimeSchemaDiff,
+} from './tools/runtime/observation.js';
 import {
   runtimeDispatchHealth,
   runtimeJobHealth,
@@ -42,10 +48,9 @@ import {
   runtimeScheduleHealth,
 } from './tools/runtime/tools.js';
 
+export { SERVER_VERSION } from './server-info.js';
 export { TOOLS } from './tool-catalog.js';
 
-const SERVER_NAME = 'smrt-dev-mcp';
-export const SERVER_VERSION = readPackageVersion();
 const DEBUG = process.env.DEBUG === 'true';
 const REVIEW_SKILL_URI = `smrt-dev-mcp://agent-skills/${REVIEW_SKILL_NAME}`;
 const DOMAIN_CODE_REVIEW_PROMPT = 'domain-code-review';
@@ -721,6 +726,36 @@ export function createServer(): Server {
           );
           break;
 
+        case 'runtime-registry':
+          result = JSON.stringify(
+            await runtimeRegistry(
+              args as unknown as Parameters<typeof runtimeRegistry>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'runtime-object':
+          result = JSON.stringify(
+            await runtimeObject(
+              args as unknown as Parameters<typeof runtimeObject>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'runtime-schema-diff':
+          result = JSON.stringify(
+            await runtimeSchemaDiff(
+              args as unknown as Parameters<typeof runtimeSchemaDiff>[0],
+            ),
+            null,
+            2,
+          );
+          break;
+
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -795,21 +830,6 @@ function isEntrypoint(): boolean {
     return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
   } catch {
     return import.meta.url === pathToFileURL(entry).href;
-  }
-}
-
-function readPackageVersion(): string {
-  try {
-    const packageRoot = dirname(fileURLToPath(import.meta.url));
-    const packageJsonPath = join(packageRoot, '..', 'package.json');
-    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
-      version?: unknown;
-    };
-    return typeof packageJson.version === 'string'
-      ? packageJson.version
-      : '0.0.0';
-  } catch {
-    return '0.0.0';
   }
 }
 
@@ -990,8 +1010,64 @@ function sanitizePath(path: string | undefined): string | undefined {
   return path;
 }
 
+/**
+ * `smrt-dev-mcp --http [--port N] [--project DIR]` starts the Level 2 runtime
+ * dev-plane host (#1831) instead of the stdio server. Loopback-only, bearer
+ * protected, positive read-only catalog; see `http.ts`.
+ */
+export function parseHttpCliArgs(argv: readonly string[]): {
+  http: boolean;
+  port?: number;
+  projectRoot?: string;
+} {
+  const result: { http: boolean; port?: number; projectRoot?: string } = {
+    http: false,
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--http') result.http = true;
+    else if (arg === '--port') {
+      const value = Number.parseInt(argv[index + 1] ?? '', 10);
+      if (!Number.isInteger(value) || value < 0 || value > 65535) {
+        throw new Error('--port requires an integer between 0 and 65535');
+      }
+      result.port = value;
+      index += 1;
+    } else if (arg === '--project') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--project requires a directory');
+      result.projectRoot = value;
+      index += 1;
+    }
+  }
+  return result;
+}
+
+async function mainHttp(cli: ReturnType<typeof parseHttpCliArgs>) {
+  const host = await startRuntimeHttpHost({
+    port: cli.port,
+    projectRoot: cli.projectRoot,
+  });
+  // The token is printed exactly once, to stderr, only when this process
+  // minted it; a token supplied via SMRT_DEV_MCP_TOKEN is never echoed.
+  const minted = !process.env.SMRT_DEV_MCP_TOKEN?.trim();
+  console.error(
+    `[${SERVER_NAME}] runtime dev-plane listening at ${host.url} (${host.boot.objectCount} booted objects, ${host.boot.manifests.length} manifests)`,
+  );
+  if (minted) {
+    console.error(`[${SERVER_NAME}] bearer token: ${host.token}`);
+  }
+  const shutdown = async () => {
+    await host.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
 if (isEntrypoint()) {
-  main().catch((error) => {
+  const cli = parseHttpCliArgs(process.argv.slice(2));
+  (cli.http ? mainHttp(cli) : main()).catch((error) => {
     console.error(`[${SERVER_NAME}] Fatal error:`, error);
     process.exit(1);
   });
