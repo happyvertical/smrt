@@ -358,7 +358,10 @@ export const dbMigrateUuidCommand: CLICommand = {
       // locked authoritative re-scan; this read-only pass makes a malformed
       // existing component fail before the rename UPDATE/DROP is attempted.
       if (runRenames && runConvert) {
-        await convertPostgresUuidColumns(db, declaredUuid, true);
+        // This is a read-only safety preflight, not the operator-requested
+        // dry run.  Suppress preview wording so a subsequently mutating run
+        // never claims that no changes were applied.
+        await convertPostgresUuidColumns(db, declaredUuid, true, false);
       }
       await db.transaction(async (tx) => {
         // All mutation uses the callback executor: pooled root handles cannot
@@ -389,6 +392,9 @@ type QueryExecutor = Pick<DatabaseInterface, 'query'>;
 
 interface PostgresColumn extends ConvertCandidate {
   defaultExpression: string | null;
+  relationOid: string;
+  attributeNumber: number;
+  typeName: string;
 }
 
 interface ForeignKeySnapshot {
@@ -404,6 +410,8 @@ interface GeneratedBridgeSnapshot {
   tableOid: string;
   attributeNumber: number;
   attributeDefaultOid: string;
+  statisticsTarget: number | null;
+  compression: string;
   table: string;
   column: string;
   sourceColumn: string;
@@ -436,11 +444,17 @@ async function convertPostgresUuidColumns(
   db: QueryExecutor,
   declaredUuid: Set<string>,
   dryRun: boolean,
+  renderDryRun = true,
 ): Promise<void> {
   const { rows: candidateRows } = await db.query(
-    `SELECT table_name, column_name, column_default
-       FROM information_schema.columns
-      WHERE table_schema = 'public' AND data_type = 'text'
+    `SELECT cols.table_name, cols.column_name, cols.column_default,
+              relation.oid::text AS relation_oid, attribute.attnum AS attribute_number,
+              format_type(attribute.atttypid, attribute.atttypmod) AS type_name
+         FROM information_schema.columns cols
+         JOIN pg_namespace namespace ON namespace.nspname = cols.table_schema
+         JOIN pg_class relation ON relation.relnamespace = namespace.oid AND relation.relname = cols.table_name
+         JOIN pg_attribute attribute ON attribute.attrelid = relation.oid AND attribute.attname = cols.column_name
+        WHERE cols.table_schema = 'public' AND cols.data_type = 'text'
         AND (column_name = 'id' OR column_name ~* '(_id|Id)$')
       ORDER BY table_name, column_name`,
   );
@@ -495,6 +509,27 @@ async function convertPostgresUuidColumns(
     ...column,
     defaultExpression:
       defaults.get(declaredUuidKey(column.table, column.column)) ?? null,
+    relationOid: String(
+      (candidateRows as Array<Record<string, unknown>>).find(
+        (row) =>
+          String(row.table_name) === column.table &&
+          String(row.column_name) === column.column,
+      )?.relation_oid,
+    ),
+    attributeNumber: Number(
+      (candidateRows as Array<Record<string, unknown>>).find(
+        (row) =>
+          String(row.table_name) === column.table &&
+          String(row.column_name) === column.column,
+      )?.attribute_number,
+    ),
+    typeName: String(
+      (candidateRows as Array<Record<string, unknown>>).find(
+        (row) =>
+          String(row.table_name) === column.table &&
+          String(row.column_name) === column.column,
+      )?.type_name,
+    ),
   }));
   await assertSupportedSourceColumns(db, columns);
   const bridges = await snapshotGeneratedBridges(db, columns);
@@ -509,6 +544,7 @@ async function convertPostgresUuidColumns(
   ].sort();
 
   if (dryRun) {
+    if (!renderDryRun) return;
     console.log(
       `\nDRY RUN — dependency plan for ${columns.length} conversion(s):`,
     );
@@ -526,18 +562,30 @@ async function convertPostgresUuidColumns(
   }
   for (const column of columns) {
     const { rows } = await db.query(
-      `SELECT column_default FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = ${quoteLiteral(column.table)}
-          AND column_name = ${quoteLiteral(column.column)}`,
+      `SELECT cols.column_default, relation.oid::text AS relation_oid,
+              attribute.attnum AS attribute_number,
+              format_type(attribute.atttypid, attribute.atttypmod) AS type_name
+         FROM information_schema.columns cols
+         JOIN pg_namespace namespace ON namespace.nspname = cols.table_schema
+         JOIN pg_class relation ON relation.relnamespace = namespace.oid AND relation.relname = cols.table_name
+         JOIN pg_attribute attribute ON attribute.attrelid = relation.oid AND attribute.attname = cols.column_name
+        WHERE cols.table_schema = 'public'
+          AND cols.table_name = ${quoteLiteral(column.table)}
+          AND cols.column_name = ${quoteLiteral(column.column)}`,
     );
     const lockedDefault =
       (rows[0] as Record<string, unknown> | undefined)?.column_default == null
         ? null
         : String((rows[0] as Record<string, unknown>).column_default);
-    if (lockedDefault !== column.defaultExpression) {
+    const locked = rows[0] as Record<string, unknown> | undefined;
+    if (
+      lockedDefault !== column.defaultExpression ||
+      String(locked?.relation_oid) !== column.relationOid ||
+      Number(locked?.attribute_number) !== column.attributeNumber ||
+      String(locked?.type_name) !== column.typeName
+    ) {
       throw new Error(
-        `UUID source default changed while locks were acquired for ${column.table}.${column.column}; refusing stale migration plan. Re-run the command.`,
+        `UUID source identity, type, or default changed while locks were acquired for ${column.table}.${column.column}; refusing stale migration plan. Re-run the command.`,
       );
     }
   }
@@ -594,6 +642,14 @@ async function convertPostgresUuidColumns(
     await db.query(
       `ALTER TABLE ${pgTable(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED`,
     );
+    if (bridge.statisticsTarget != null && bridge.statisticsTarget !== -1)
+      await db.query(
+        `ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET STATISTICS ${bridge.statisticsTarget}`,
+      );
+    if (bridge.compression)
+      await db.query(
+        `ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET COMPRESSION ${bridge.compression === 'l' ? 'lz4' : 'pglz'}`,
+      );
     for (const index of bridge.indexDefinitions) {
       await db.query(index.definition);
       if (index.comment)
@@ -691,8 +747,29 @@ function renderUuidConversionSql(
     console.log(
       `  ALTER TABLE ${pgTable(bridge.table)} ADD COLUMN ${quoteIdentifier(bridge.column)} text GENERATED ALWAYS AS (${quoteIdentifier(bridge.sourceColumn)}::text) STORED;`,
     );
-    for (const index of bridge.indexDefinitions)
+    if (bridge.statisticsTarget != null && bridge.statisticsTarget !== -1)
+      console.log(
+        `  ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET STATISTICS ${bridge.statisticsTarget};`,
+      );
+    if (bridge.compression)
+      console.log(
+        `  ALTER TABLE ${pgTable(bridge.table)} ALTER COLUMN ${quoteIdentifier(bridge.column)} SET COMPRESSION ${bridge.compression === 'l' ? 'lz4' : 'pglz'};`,
+      );
+    for (const index of bridge.indexDefinitions) {
       console.log(`  ${index.definition};`);
+      if (index.comment)
+        console.log(
+          `  COMMENT ON INDEX ${quoteIdentifier(index.schema)}.${quoteIdentifier(index.name)} IS ${quoteLiteral(index.comment)};`,
+        );
+      if (index.clustered)
+        console.log(
+          `  ALTER TABLE ${pgTable(bridge.table)} CLUSTER ON ${quoteIdentifier(index.name)};`,
+        );
+      if (index.replicaIdentity)
+        console.log(
+          `  ALTER TABLE ${pgTable(bridge.table)} REPLICA IDENTITY USING INDEX ${quoteIdentifier(index.name)};`,
+        );
+    }
   }
   for (const foreignKey of foreignKeys)
     console.log(
@@ -714,6 +791,9 @@ async function snapshotGeneratedBridges(
             pg_get_expr(def.adbin, def.adrelid) AS expression,
             format_type(generated_attr.atttypid, generated_attr.atttypmod) AS type_name,
             generated_attr.attnotnull AS not_null, generated_attr.attstorage AS storage,
+            generated_attr.attstattarget AS statistics_target,
+            generated_attr.attcompression AS compression,
+            generated_attr.attoptions AS options,
             generated_attr.attacl IS NOT NULL AS has_acl,
             generated_attr.attcollation <> (SELECT typcollation FROM pg_type WHERE oid = generated_attr.atttypid) AS nondefault_collation,
             col_description(generated_attr.attrelid, generated_attr.attnum) AS column_comment,
@@ -735,7 +815,18 @@ async function snapshotGeneratedBridges(
       /^\(?([a-zA-Z_][a-zA-Z0-9_$]*)\)?(?:::text)?$/,
     )?.[1];
     if (!sourceColumn) {
-      if (columns.some((column) => column.table === bridgeTable)) {
+      const sourceColumns = columns.filter(
+        (column) => column.table === bridgeTable,
+      );
+      if (
+        sourceColumns.length > 0 &&
+        (await generatedColumnDependsOn(
+          db,
+          String(row.attribute_default_oid),
+          String(row.table_oid),
+          sourceColumns.map((column) => column.attributeNumber),
+        ))
+      ) {
         throw new Error(
           `Unsupported generated dependency ${bridgeTable}.${bridgeColumn}; only a plain stored TEXT id::text bridge can coexist with a converted UUID column.`,
         );
@@ -754,6 +845,7 @@ async function snapshotGeneratedBridges(
       String(row.type_name) !== 'text' ||
       row.not_null ||
       String(row.storage) !== 'x' ||
+      row.options != null ||
       row.has_acl ||
       row.nondefault_collation ||
       row.column_comment != null ||
@@ -790,6 +882,9 @@ async function snapshotGeneratedBridges(
       tableOid: String(row.table_oid),
       attributeNumber: Number(row.attribute_number),
       attributeDefaultOid: String(row.attribute_default_oid),
+      statisticsTarget:
+        row.statistics_target == null ? null : Number(row.statistics_target),
+      compression: String(row.compression),
       table,
       column: bridgeColumn,
       sourceColumn,
@@ -798,6 +893,29 @@ async function snapshotGeneratedBridges(
   }
   return bridges.sort((a, b) =>
     `${a.table}.${a.column}`.localeCompare(`${b.table}.${b.column}`),
+  );
+}
+
+/** Whether a generated expression actually references a converted source attr. */
+async function generatedColumnDependsOn(
+  db: QueryExecutor,
+  attributeDefaultOid: string,
+  tableOid: string,
+  sourceAttributeNumbers: number[],
+): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_depend dep
+        WHERE dep.classid = 'pg_attrdef'::regclass
+          AND dep.objid = ${quoteLiteral(attributeDefaultOid)}::oid
+          AND dep.refclassid = 'pg_class'::regclass
+          AND dep.refobjid = ${quoteLiteral(tableOid)}::oid
+          AND dep.refobjsubid IN (${sourceAttributeNumbers.join(', ')})
+     ) AS depends_on_converted_column`,
+  );
+  return Boolean(
+    (rows[0] as Record<string, unknown> | undefined)
+      ?.depends_on_converted_column,
   );
 }
 
@@ -814,6 +932,7 @@ async function snapshotBridgeIndexes(
             idx.indexprs IS NOT NULL AS expression_index, idx.indisvalid AS valid,
             idx.indisready AS ready, idx.indisclustered AS clustered,
             idx.indisreplident AS replica_identity,
+            index_rel.reltablespace <> 0 AS nondefault_tablespace,
             am.amname AS method
        FROM pg_index idx
        JOIN pg_class table_rel ON table_rel.oid = idx.indrelid
@@ -823,7 +942,8 @@ async function snapshotBridgeIndexes(
        JOIN pg_am am ON am.oid = index_rel.relam
        JOIN pg_attribute attr ON attr.attrelid = table_rel.oid AND attr.attnum = ANY(idx.indkey)
       WHERE ns.nspname = 'public' AND table_rel.relname = ${quoteLiteral(table)}
-        AND attr.attname = ${quoteLiteral(column)}`,
+        AND attr.attname = ${quoteLiteral(column)}
+       ORDER BY index_ns.nspname, index_rel.relname, index_rel.oid`,
   );
   return (rows as Array<Record<string, unknown>>).map((row) => {
     if (
@@ -832,10 +952,11 @@ async function snapshotBridgeIndexes(
       row.expression_index ||
       !row.valid ||
       !row.ready ||
+      row.nondefault_tablespace ||
       row.method !== 'btree'
     ) {
       throw new Error(
-        `Unsupported index depending on generated bridge ${table}.${column}; only one-key valid btree indexes can be reconstructed safely.`,
+        `Unsupported index depending on generated bridge ${table}.${column}; only one-key valid btree indexes without a custom tablespace can be reconstructed safely.`,
       );
     }
     return {

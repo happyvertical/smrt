@@ -486,6 +486,27 @@ describePostgres(
       expect(await dataType('poison_id')).toBe('text');
       expect(await dataType('id')).toBe('text');
     }, 30_000);
+
+    it('does not report a completed dry run before a successful rename+convert run mutates', async () => {
+      const db = await freshDb();
+      await db.query(`DROP VIEW "${viewName}"`);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {
+        rename: 'old_ref:parent_id',
+        table: tableName,
+      });
+
+      const output = logSpy.mock.calls.flat().join('\n');
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(output).not.toContain('Dry run complete — no changes applied');
+      expect(output).toContain('✓ Converted 3 column(s) to uuid.');
+      expect(await columnExists('old_ref')).toBe(false);
+      expect(await dataType('parent_id')).toBe('uuid');
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }, 30_000);
   },
 );
 
@@ -585,7 +606,16 @@ describePostgres(
         `CREATE TABLE "${parent}" (id text PRIMARY KEY, _integrity_id_text text GENERATED ALWAYS AS (id) STORED)`,
       );
       await db.query(
+        `ALTER TABLE "${parent}" ALTER COLUMN _integrity_id_text SET STATISTICS 777`,
+      );
+      await db.query(
+        `ALTER TABLE "${parent}" ALTER COLUMN _integrity_id_text SET COMPRESSION pglz`,
+      );
+      await db.query(
         `CREATE UNIQUE INDEX "${parent}_bridge_uidx" ON "${parent}" USING btree (_integrity_id_text)`,
+      );
+      await db.query(
+        `COMMENT ON INDEX "${parent}_bridge_uidx" IS 'generated bridge index'`,
       );
       await db.query(
         `ALTER TABLE "${parent}" CLUSTER ON "${parent}_bridge_uidx"`,
@@ -681,6 +711,16 @@ describePostgres(
       expect((bridge as any[])[0]._integrity_id_text).toBe(
         '11111111-1111-1111-1111-111111111111',
       );
+      const { rows: bridgeAttributes } = await db.query(
+        `SELECT attstattarget AS statistics_target, attcompression AS compression
+           FROM pg_attribute attribute
+           JOIN pg_class relation ON relation.oid = attribute.attrelid
+          WHERE relation.relname = $1 AND attribute.attname = '_integrity_id_text'`,
+        parent,
+      );
+      expect(bridgeAttributes).toEqual([
+        { statistics_target: 777, compression: 'p' },
+      ]);
       const { rows: bridgeIndex } = await db.query(
         `SELECT index_rel.relname AS name, idx.indisclustered AS clustered,
                 idx.indisreplident AS replica_identity
@@ -717,6 +757,74 @@ describePostgres(
           `INSERT INTO "${child}" (id, parent_id) VALUES ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000')`,
         ),
       ).rejects.toThrow();
+    }, 30_000);
+
+    it('renders every bridge restoration statement in the dry-run plan', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      const output = logSpy.mock.calls.flat().join('\n');
+      expect(output).toContain('COMMENT ON INDEX "public"."');
+      expect(output).toContain('generated bridge index');
+      expect(output).toContain('SET STATISTICS 777');
+      expect(output).toContain('SET COMPRESSION pglz');
+      expect(output).toContain(`CLUSTER ON "${parent}_bridge_uidx"`);
+      expect(output).toContain(
+        `REPLICA IDENTITY USING INDEX "${parent}_replica_uidx"`,
+      );
+      expect(output.indexOf(`${parent}_bridge_uidx`)).toBeLessThan(
+        output.indexOf(`${parent}_replica_uidx`),
+      );
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }, 30_000);
+
+    it('preserves the server-default statistics target across PostgreSQL versions', async () => {
+      const db = await freshDb();
+      await db.query(
+        `ALTER TABLE "${parent}" ALTER COLUMN _integrity_id_text SET STATISTICS -1`,
+      );
+      const before = await db.query(
+        `SELECT attstattarget FROM pg_attribute attribute JOIN pg_class relation ON relation.oid = attribute.attrelid WHERE relation.relname = $1 AND attribute.attname = '_integrity_id_text'`,
+        parent,
+      );
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+      const after = await freshDb();
+      const restored = await after.query(
+        `SELECT attstattarget FROM pg_attribute attribute JOIN pg_class relation ON relation.oid = attribute.attrelid WHERE relation.relname = $1 AND attribute.attname = '_integrity_id_text'`,
+        parent,
+      );
+      expect(restored.rows).toEqual(before.rows);
+    }, 30_000);
+
+    it('leaves an unrelated stored generated column on a converted table intact', async () => {
+      const db = await freshDb();
+      await db.query(
+        `ALTER TABLE "${parent}" ADD COLUMN title text NOT NULL DEFAULT 'Title'`,
+      );
+      await db.query(
+        `ALTER TABLE "${parent}" ADD COLUMN title_lower text GENERATED ALWAYS AS (lower(title)) STORED`,
+      );
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+      const after = await freshDb();
+      const { rows } = await after.query(
+        `SELECT data_type, is_generated FROM information_schema.columns WHERE table_name = $1 AND column_name = 'title_lower'`,
+        parent,
+      );
+      expect(rows).toEqual([{ data_type: 'text', is_generated: 'ALWAYS' }]);
     }, 30_000);
   },
 );
@@ -1009,6 +1117,83 @@ describePostgres(
       ]);
     }, 30_000);
 
+    it('refuses a replaced source attribute after planning and before locks', async () => {
+      let replacedAttribute = false;
+      sqlTestHarness.interceptor = async (...args: any[]) => {
+        const realDb: any = await sqlTestHarness.realGetDatabase(...args);
+        return new Proxy(realDb, {
+          get(target, property, receiver) {
+            if (property === 'transaction') {
+              return async (callback: (tx: any) => Promise<unknown>) =>
+                target.transaction(async (tx: any) => {
+                  const callbackTx = new Proxy(tx, {
+                    get(transactionTarget, transactionProperty, txReceiver) {
+                      if (transactionProperty === 'query') {
+                        return async (...queryArgs: any[]) => {
+                          const sql = String(queryArgs[0]);
+                          if (!replacedAttribute && /^LOCK TABLE /i.test(sql)) {
+                            replacedAttribute = true;
+                            // Inject the catalog change at the exact race
+                            // boundary. An external session can commit the
+                            // same ALTER between the pre-plan read and lock;
+                            // keeping it on this transaction avoids a test
+                            // harness lock deadlock while exercising the
+                            // source identity guard. The nullable child FK has
+                            // no default, so the prior default-only guard would
+                            // have let this stale replacement through.
+                            await transactionTarget.query(
+                              `ALTER TABLE "${child}" RENAME COLUMN parent_id TO replaced_parent_id`,
+                            );
+                          }
+                          return transactionTarget.query(...queryArgs);
+                        };
+                      }
+                      const value = Reflect.get(
+                        transactionTarget,
+                        transactionProperty,
+                        txReceiver,
+                      );
+                      return typeof value === 'function'
+                        ? value.bind(transactionTarget)
+                        : value;
+                    },
+                  });
+                  return callback(callbackTx);
+                });
+            }
+            const value = Reflect.get(target, property, receiver);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+      };
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], {});
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      sqlTestHarness.interceptor = undefined;
+      expect(replacedAttribute).toBe(true);
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'source identity, type, or default changed while locks were acquired',
+        ),
+      );
+      errorSpy.mockRestore();
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='parent_id'`,
+        child,
+      );
+      expect(rows).toEqual([
+        {
+          data_type: 'text',
+        },
+      ]);
+    }, 30_000);
+
     it('refuses a source default changed after planning and before locks', async () => {
       let changedDefault = false;
       sqlTestHarness.interceptor = async (...args: any[]) => {
@@ -1025,12 +1210,9 @@ describePostgres(
                           const sql = String(queryArgs[0]);
                           if (!changedDefault && /^LOCK TABLE /i.test(sql)) {
                             changedDefault = true;
-                            // Inject the catalog change at the exact race
-                            // boundary. An external session can commit the
-                            // same ALTER between the pre-plan read and lock;
-                            // keeping it on this transaction avoids a test
-                            // harness lock deadlock while exercising the
-                            // stale-default guard.
+                            // An external session can commit this ALTER at the
+                            // plan/lock boundary; keep it in the callback here
+                            // only to avoid a harness-induced lock deadlock.
                             await transactionTarget.query(
                               `ALTER TABLE "${parent}" ALTER COLUMN id SET DEFAULT '22222222-2222-2222-2222-222222222222'`,
                             );
@@ -1068,7 +1250,7 @@ describePostgres(
       expect(exitCode).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'source default changed while locks were acquired',
+          'source identity, type, or default changed while locks were acquired',
         ),
       );
       errorSpy.mockRestore();
@@ -1630,6 +1812,13 @@ describePostgres(
           'text COLLATE "C" GENERATED ALWAYS AS ((id)::text) STORED',
       },
       {
+        name: 'bridge column options',
+        key: 'column_options',
+        bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
+        optionsSql:
+          'ALTER TABLE "PARENT" ALTER COLUMN _integrity_id_text SET (n_distinct = -0.5)',
+      },
+      {
         name: 'an expression index that references the bridge',
         key: 'expression_index',
         bridgeDefinition: 'text GENERATED ALWAYS AS ((id)::text) STORED',
@@ -1679,6 +1868,7 @@ describePostgres(
       const statisticsSql = scenario.statisticsSql
         ?.replace('BRIDGE_STATISTICS', statisticsName)
         .replace('PARENT', parent);
+      const optionsSql = scenario.optionsSql?.replace('PARENT', parent);
       const foreignKeyTriggerSql = scenario.foreignKeyTriggerSql?.replaceAll(
         'CHILD',
         child,
@@ -1756,6 +1946,7 @@ describePostgres(
         );
         if (indexSql) await connection.query(indexSql);
         if (statisticsSql) await connection.query(statisticsSql);
+        if (optionsSql) await connection.query(optionsSql);
         await connection.query(
           `CREATE TABLE "${child}" (
                id text PRIMARY KEY,
