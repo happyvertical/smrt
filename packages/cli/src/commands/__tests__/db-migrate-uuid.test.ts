@@ -3789,12 +3789,17 @@ describePostgres(
     // index is violated by rows that were already byte-identical TEXT — and
     // must still convert.
     const repeatedTable = `${stem}_repeated`;
+    // Two DISTINCT TEXT primary-key rows that differ only by leading
+    // whitespace and normalize to the SAME uuid (the conversion's own
+    // `USING NULLIF(btrim(...), '')::uuid` clause btrims before casting).
+    // Counting DISTINCT *trimmed* forms would hide this collision.
+    const whitespaceTable = `${stem}_whitespace`;
     let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     beforeEach(async () => {
       const db = await freshDb();
       await db.query(
-        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}"`,
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}"`,
       );
       await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
       await db.query(
@@ -3813,6 +3818,12 @@ describePostgres(
       await db.query(
         `INSERT INTO "${repeatedTable}" (parent_id) VALUES ($1), ($1), ($1)`,
         'cccccccc-cccc-cccc-cccc-cccccccccccc',
+      );
+      await db.query(`CREATE TABLE "${whitespaceTable}" (id text PRIMARY KEY)`);
+      await db.query(
+        `INSERT INTO "${whitespaceTable}" (id) VALUES ($1), ($2)`,
+        'dddddddd-dddd-dddd-dddd-dddddddddddd',
+        ' dddddddd-dddd-dddd-dddd-dddddddddddd',
       );
 
       clearCache();
@@ -3856,6 +3867,16 @@ describePostgres(
             version: '',
             dependencies: [],
           },
+          [whitespaceTable]: {
+            tableName: whitespaceTable,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
         } as any);
     });
 
@@ -3864,7 +3885,7 @@ describePostgres(
       try {
         const db = await freshDb();
         await db.query(
-          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}"`,
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}"`,
         );
       } catch {
         // Handler cleanup closes pooled handles; reacquire before teardown.
@@ -3892,8 +3913,14 @@ describePostgres(
       // An ordinary non-unique column repeating the SAME raw TEXT value
       // across rows is NOT a collision and must still convert.
       expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
+      // A whitespace-only difference is ALSO a collision (the conversion
+      // trims before casting) — must be caught, not silently aborted.
+      expect(await dataType(whitespaceTable, 'id')).toBe('text');
       expect(output).toContain(
         `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
+      );
+      expect(output).toContain(
+        `SKIP ${whitespaceTable}.id: 1 duplicate value(s) after normalization`,
       );
       expect(output).not.toContain(`${repeatedTable}.parent_id`);
     }, 30_000);
@@ -3915,6 +3942,7 @@ describePostgres(
       expect(await dataType(collidingTable, 'id')).toBe('text');
       expect(await dataType(cleanTable, 'id')).toBe('uuid');
       expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
+      expect(await dataType(whitespaceTable, 'id')).toBe('text');
     }, 30_000);
   },
 );

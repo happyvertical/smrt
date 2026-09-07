@@ -697,12 +697,18 @@ async function convertPostgresUuidColumns(
       // through the same skip path as dirty data, so it degrades to a
       // per-column skip instead of a whole-run abort.
       //
-      // This must count DISTINCT raw TEXT forms per normalized group, not
-      // rows: an ordinary non-unique FK column legitimately repeats the same
-      // (identical) TEXT value across many rows — e.g. every child row
-      // referencing the same parent — and that is not a collision at all,
-      // since no unique index is violated by rows that were already
-      // byte-identical TEXT.
+      // This must count DISTINCT RAW (un-trimmed) TEXT forms per normalized
+      // group, not rows and not trimmed forms:
+      //   - not rows: an ordinary non-unique FK column legitimately repeats
+      //     the same (identical) TEXT value across many rows — e.g. every
+      //     child row referencing the same parent — and that is not a
+      //     collision at all, since no unique index is violated by rows
+      //     that were already byte-identical TEXT.
+      //   - not trimmed forms: the conversion's own `USING` clause also
+      //     btrims before casting, so two rows differing only by leading or
+      //     trailing whitespace (' <uuid>' vs '<uuid>') are just as
+      //     collision-prone as a hyphen/bare-hex pair, and counting on the
+      //     trimmed value would hide exactly that case.
       const { rows: dupRows } = await db.query(
         `SELECT count(*)::text AS n FROM (
              SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
@@ -710,7 +716,7 @@ async function convertPostgresUuidColumns(
               WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
                 AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
               GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
-             HAVING count(DISTINCT btrim(${quoteIdentifier(column)})) > 1
+             HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
            ) collisions`,
       );
       duplicateNormalized = Number(
