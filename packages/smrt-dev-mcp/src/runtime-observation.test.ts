@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
@@ -17,6 +24,7 @@ import { parseHttpCliArgs, TOOLS } from './index.js';
 import {
   bootRuntime,
   DECLARED_PROVENANCE,
+  getBootedProjectRoot,
   resetRuntimeBootForTests,
 } from './tools/runtime/boot.js';
 import {
@@ -109,6 +117,37 @@ describe('confined runtime boot (#1831)', () => {
     expect(JSON.stringify(boot)).not.toContain(projectRoot);
   });
 
+  it('never writes to the project and honours per-object package ownership', async () => {
+    // An aggregate manifest carries a dependency object with its own package.
+    const manifestPath = join(projectRoot, '.smrt', 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.objects.Person = {
+      className: 'Person',
+      name: 'person',
+      collection: 'people',
+      packageName: '@acme/people',
+      filePath: join(
+        projectRoot,
+        'node_modules',
+        '@acme',
+        'people',
+        'Person.js',
+      ),
+      fields: { name: { type: 'text' } },
+      methods: {},
+      decoratorConfig: {},
+    };
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    const boot = await bootRuntime({ projectRoot });
+    expect(boot.objectCount).toBe(2);
+    expect(getBootedProjectRoot()).toBe(projectRoot);
+    expect(ObjectRegistry.getClass('Person')?.packageName).toBe('@acme/people');
+    expect(ObjectRegistry.getClass('Article')?.packageName).toBe('@acme/app');
+    expect(existsSync(join(projectRoot, '.smrt', 'discovery-cache.json'))).toBe(
+      false,
+    );
+  });
+
   it('boots once per process and reports a missing manifest as a warning', async () => {
     const first = await bootRuntime({ projectRoot });
     const second = await bootRuntime({ projectRoot: '/nowhere' });
@@ -146,6 +185,53 @@ describe('observation tools (#1831)', () => {
     expect(text).not.toContain(projectRoot);
     expect(text).not.toContain('top secret');
     expect(text).not.toContain('constructor');
+  });
+
+  it('ignores a widened projectPath after boot and never relativizes against it', async () => {
+    await runtimeRegistry({ projectPath: projectRoot });
+    const spoofed = await runtimeRegistry({
+      projectPath: '/',
+      objects: ['Article'],
+    });
+    const snapshot = spoofed.data.snapshot as {
+      objects: Array<{ sourceFile: string }>;
+    };
+    expect(snapshot.objects[0].sourceFile).toBe('src/Article.ts');
+    expect(JSON.stringify(spoofed)).not.toContain(projectRoot);
+  });
+
+  it('runtime-object refuses an ambiguous simple name', async () => {
+    await bootRuntime({ projectRoot });
+    ObjectRegistry.registerFromManifest(
+      'Article',
+      {
+        className: 'Article',
+        name: 'article',
+        collection: 'articles',
+        filePath: '/opt/other/Article.js',
+        fields: { headline: { type: 'text' } },
+        methods: {},
+        decoratorConfig: {},
+      } as never,
+      '@other/news',
+    );
+    const ambiguous = await runtimeObject({
+      projectPath: projectRoot,
+      name: 'Article',
+    });
+    expect(ambiguous.data.object).toBeNull();
+    const diagnostic = ambiguous.diagnostics.find(
+      (d) => d.code === 'object_ambiguous',
+    );
+    expect(diagnostic?.message).toContain('@acme/app:Article');
+    expect(diagnostic?.message).toContain('@other/news:Article');
+    const qualified = await runtimeObject({
+      projectPath: projectRoot,
+      name: '@acme/app:Article',
+    });
+    expect(
+      (qualified.data.object as { qualifiedName: string }).qualifiedName,
+    ).toBe('@acme/app:Article');
   });
 
   it('runtime-object returns detail and generated DDL, or a not-found diagnostic', async () => {

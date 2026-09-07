@@ -368,6 +368,12 @@ describe('runtime diagnostics tools (#1824)', () => {
     expect(redactConnectionString('authToken=abc123')).toBe('authToken=***');
   });
 
+  it('reduces Windows database paths to a basename too', () => {
+    expect(
+      redactConnectionString('open C:\\Users\\me\\proj\\data\\dev.db failed'),
+    ).toBe('open …/dev.db failed');
+  });
+
   it('reduces local database paths in driver errors to a basename', () => {
     expect(
       safeErrorMessage(

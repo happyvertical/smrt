@@ -4,6 +4,7 @@ import type { SmartObjectDefinition } from '../scanner/types.js';
 import {
   assertPlainJson,
   BOOTED_PROVENANCE,
+  sanitizeMessagePaths,
   snapshotRegistry,
 } from '../system/registry-snapshot.js';
 
@@ -151,6 +152,32 @@ describe('registry snapshot (#1831)', () => {
     });
     expect(snapshot.objects[0].fields).toEqual([]);
     expect(snapshot.objects[0].fieldCount).toBeGreaterThan(0);
+  });
+
+  it('reduces absolute paths inside diagnostic messages', () => {
+    expect(
+      sanitizeMessagePaths(
+        `Package manifest not found at ${PROJECT_ROOT}/node_modules/@acme/people/dist/manifest.json`,
+        PROJECT_ROOT,
+      ),
+    ).toBe(
+      'Package manifest not found at node_modules/@acme/people/dist/manifest.json',
+    );
+    expect(
+      sanitizeMessagePaths(
+        'Manifest /opt/elsewhere/deps/manifest.json has an invalid shape',
+        PROJECT_ROOT,
+      ),
+    ).toBe('Manifest manifest.json has an invalid shape');
+    expect(
+      sanitizeMessagePaths(
+        'Windows path C:\\deps\\pkg\\manifest.json failed',
+        '/srv/app',
+      ),
+    ).not.toContain('C:\\deps');
+    expect(sanitizeMessagePaths('no paths here', PROJECT_ROOT)).toBe(
+      'no paths here',
+    );
   });
 
   it('does not mutate the registry', () => {

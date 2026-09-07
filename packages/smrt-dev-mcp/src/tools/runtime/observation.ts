@@ -11,9 +11,13 @@
  * code execution. `runtime-schema-diff` only *introspects* the live schema.
  */
 
-import { ObjectRegistry, snapshotRegistry } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type RegistrySnapshotObject,
+  snapshotRegistry,
+} from '@happyvertical/smrt-core';
 import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
-import { bootRuntime, type RuntimeBoot } from './boot.js';
+import { bootRuntime, getBootedProjectRoot, type RuntimeBoot } from './boot.js';
 import type { RuntimeDatabaseArgs } from './connection.js';
 import {
   type RuntimeDiagnostic,
@@ -61,8 +65,10 @@ export async function runtimeRegistry(
   args: RuntimeRegistryArgs = {},
 ): Promise<RuntimeToolEnvelope> {
   const boot = await bootRuntime({ projectRoot: args.projectPath });
+  // Paths are relativized against the root the process actually booted from,
+  // never the per-request argument (which is ignored after the first boot).
   const snapshot = snapshotRegistry({
-    projectRoot: args.projectPath,
+    projectRoot: getBootedProjectRoot() ?? undefined,
     objects: args.objects,
     detail: args.detail ?? Boolean(args.objects?.length),
   });
@@ -92,13 +98,24 @@ export async function runtimeObject(
   const boot = await bootRuntime({ projectRoot: args.projectPath });
   const name = typeof args.name === 'string' ? args.name.trim() : '';
   const snapshot = snapshotRegistry({
-    projectRoot: args.projectPath,
+    projectRoot: getBootedProjectRoot() ?? undefined,
     objects: name ? [name] : [],
     detail: true,
   });
-  const object = snapshot.objects[0] ?? null;
   const diagnostics = bootDiagnostics(boot);
-  if (!object) {
+  let object: RegistrySnapshotObject | null = snapshot.objects[0] ?? null;
+  if (snapshot.objects.length > 1) {
+    // Two packages registering the same simple name is legal; picking one
+    // silently would misreport identity. Ask for the qualified name instead.
+    object = null;
+    diagnostics.push({
+      severity: 'warning',
+      code: 'object_ambiguous',
+      message: `${name} is registered by several packages; pass a qualified name: ${snapshot.objects
+        .map((candidate) => candidate.qualifiedName ?? candidate.name)
+        .join(', ')}`,
+    });
+  } else if (!object) {
     diagnostics.push({
       severity: 'warning',
       code: 'object_not_found',
@@ -110,7 +127,13 @@ export async function runtimeObject(
   let ddl: string | null = null;
   if (object) {
     try {
-      ddl = ObjectRegistry.getSchemaDDL(object.name, args.engine) ?? null;
+      // Resolve by qualified identity so a same-name class in another package
+      // can never answer for this one.
+      ddl =
+        ObjectRegistry.getSchemaDDL(
+          object.qualifiedName ?? object.name,
+          args.engine,
+        ) ?? null;
     } catch (error) {
       diagnostics.push({
         severity: 'warning',

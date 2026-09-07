@@ -15,7 +15,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   discoverSmrtPackages,
@@ -64,7 +64,12 @@ interface ManifestLike {
 
 function relativePath(projectRoot: string, path: string): string {
   const rel = relative(projectRoot, path);
-  return rel.startsWith(`..${sep}`) ? basename(path) : rel.split(sep).join('/');
+  // Anything outside the root — the parent itself, a `..` walk, or a path on
+  // another drive (Windows keeps those absolute) — is reduced to a basename.
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return basename(path);
+  }
+  return rel.split(sep).join('/');
 }
 
 function readManifest(path: string): ManifestLike | null {
@@ -82,17 +87,24 @@ function registerManifest(
   manifest: ManifestLike,
   fallbackPackageName: string | null,
 ): number {
-  const packageName =
+  const manifestPackageName =
     typeof manifest.packageName === 'string' && manifest.packageName
       ? manifest.packageName
       : (fallbackPackageName ?? undefined);
   let count = 0;
   for (const [name, definition] of Object.entries(manifest.objects ?? {})) {
     if (!definition || typeof definition !== 'object') continue;
+    // An aggregate project manifest (consumer plugin output) carries
+    // dependency objects that keep their own `packageName`; registering them
+    // under the app's name would mint false `@app:Object` identities that
+    // collide with the dependency's own manifest. Per-object ownership wins.
+    const ownPackage = (definition as { packageName?: unknown }).packageName;
     ObjectRegistry.registerFromManifest(
       name,
       definition as Parameters<typeof ObjectRegistry.registerFromManifest>[1],
-      packageName,
+      typeof ownPackage === 'string' && ownPackage
+        ? ownPackage
+        : manifestPackageName,
     );
     count += 1;
   }
@@ -100,15 +112,26 @@ function registerManifest(
 }
 
 let booted: RuntimeBoot | null = null;
+let bootedProjectRoot: string | null = null;
 
 /** The boot record for this process, or `null` before {@link bootRuntime}. */
 export function getRuntimeBoot(): RuntimeBoot | null {
   return booted;
 }
 
+/**
+ * The resolved root the process booted from. Consumers must relativize
+ * paths against *this* root, never a per-request argument, or a caller could
+ * widen the root (e.g. `/`) and read the layout back through "relative" paths.
+ */
+export function getBootedProjectRoot(): string | null {
+  return bootedProjectRoot;
+}
+
 /** Test seam: forget the boot record (the registry itself is cleared by the caller). */
 export function resetRuntimeBootForTests(): void {
   booted = null;
+  bootedProjectRoot = null;
 }
 
 export interface BootRuntimeOptions {
@@ -164,7 +187,12 @@ export async function bootRuntime(
 
   let dependencyNames: string[] = [];
   try {
-    dependencyNames = discoverSmrtPackages({ baseDir: projectRoot });
+    // `noCache` keeps discovery from writing `.smrt/discovery-cache.json`:
+    // observing a project must never dirty it.
+    dependencyNames = discoverSmrtPackages({
+      baseDir: projectRoot,
+      noCache: true,
+    });
   } catch (error) {
     diagnostics.push({
       severity: 'warning',
@@ -199,6 +227,7 @@ export async function bootRuntime(
     });
   }
 
+  bootedProjectRoot = projectRoot;
   booted = {
     provenance: DECLARED_PROVENANCE,
     bootedAt: (options.now ?? new Date()).toISOString(),

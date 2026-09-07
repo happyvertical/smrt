@@ -12,7 +12,7 @@
  * never boots project code, and never mutates the registry.
  */
 
-import { relative, sep } from 'node:path';
+import { basename, isAbsolute, relative, sep, win32 } from 'node:path';
 import type { RegisteredClass, RegisteredField } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type { MethodDefinition } from '../scanner/types.js';
@@ -113,11 +113,11 @@ function relativeSourcePath(
 ): string | null {
   if (typeof filePath !== 'string' || filePath.length === 0) return null;
   const rel = relative(projectRoot, filePath);
-  // A path outside the project root (installed package, symlinked workspace)
-  // would still leak the absolute layout through `../..` walking; report only
-  // the basename in that case.
-  if (rel.startsWith(`..${sep}`) || rel === '..' || rel.startsWith('/')) {
-    return filePath.split(sep).pop() ?? null;
+  // A path outside the project root (installed package, symlinked workspace,
+  // or another drive on Windows — `relative` keeps those absolute) would
+  // still leak the layout through `../..` walking; report only the basename.
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    return basename(filePath) || null;
   }
   return rel.split(sep).join('/');
 }
@@ -248,13 +248,14 @@ export function snapshotRegistry(
     if (table) tables.add(table);
   }
 
-  // `context` may carry absolute paths; only the stable code, severity, and
-  // message are projected.
+  // `context` may carry absolute paths and is dropped. Messages such as
+  // PACKAGE_MANIFEST_NOT_FOUND also interpolate paths, so every absolute
+  // path token in the message text is reduced the same way source files are.
   const diagnostics: RegistrySnapshotDiagnostic[] =
     ObjectRegistry.getDiagnostics().map((diagnostic) => ({
       severity: diagnostic.severity,
       code: diagnostic.code,
-      message: diagnostic.message,
+      message: sanitizeMessagePaths(diagnostic.message, projectRoot),
     }));
 
   return {
@@ -273,6 +274,31 @@ export function snapshotRegistry(
       .map((registered) => toSnapshotObject(registered, projectRoot, detail)),
     diagnostics,
   };
+}
+
+/** POSIX or Windows absolute path tokens inside free text. */
+const ABSOLUTE_PATH_TOKEN = /(?:[A-Za-z]:)?(?:[\\/][^\s\\/'"`(),;]+){2,}/g;
+
+/**
+ * Reduce absolute paths embedded in a message to the same relative/basename
+ * form {@link relativeSourcePath} produces, so diagnostic text cannot leak
+ * filesystem layout the structured fields already hide.
+ */
+export function sanitizeMessagePaths(
+  message: string,
+  projectRoot: string,
+): string {
+  return message.replace(ABSOLUTE_PATH_TOKEN, (token) => {
+    if (isAbsolute(token)) {
+      return relativeSourcePath(token, projectRoot) ?? token;
+    }
+    // A Windows path quoted on a POSIX host (or vice versa) is still a layout
+    // leak; the platform-specific check catches it and keeps the basename.
+    if (win32.isAbsolute(token)) {
+      return win32.basename(token) || token;
+    }
+    return token;
+  });
 }
 
 /**
