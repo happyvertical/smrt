@@ -25,6 +25,7 @@ import {
   resolveCollectionItemClassName,
   resolveRelatedRegistration,
 } from '../registry/collection-resolution.js';
+import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine } from '../schema/ddl/index.js';
@@ -401,8 +402,39 @@ export async function getTestDatabase(
     classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
 
-  // Skip if no classes registered
+  // Skip if no classes registered. When the caller left `classes` implicit,
+  // an empty registry usually means registration never reached this
+  // process/module instance of ObjectRegistry (e.g. a Vitest plugin hook
+  // registering manifests in a different worker/process than the test code
+  // — #2750) rather than a deliberate "system tables only" setup. Warn (never
+  // throw by default) so that failure surfaces here instead of as a much
+  // later, harder-to-diagnose "no such table" error. An explicit empty
+  // `classes: []` array is a deliberate choice and stays silent.
   if (classNames.length === 0) {
+    if (isImplicitClassList) {
+      const emptyRegistryMessage =
+        'getTestDatabase() found zero registered classes in ObjectRegistry and ' +
+        'created only system tables. If you expected model tables, the ' +
+        'registry is likely empty in this process — for smrt-vitest ' +
+        'consumers, confirm registration (smrtVitestPlugin() manifest ' +
+        'loading, or your setupFiles) actually runs in the same process ' +
+        'as your test code, or pass an explicit `classes` list to ' +
+        'getTestDatabase() to opt out of this check.';
+      // recordRegistryDiagnostic('warn', ...) only buffers -- nothing reads
+      // that buffer automatically (only strict-mode 'error' severity throws;
+      // printing the buffer requires an explicit flushRegistryDiagnostics()
+      // call this package never makes). Pair it with an immediate
+      // console.warn so the failure is actually visible at the point of the
+      // problem, which is the entire point of this diagnostic (#2750) --
+      // the buffered record stays available for programmatic inspection via
+      // getRegistryDiagnostics().
+      console.warn(`[getTestDatabase] ${emptyRegistryMessage}`);
+      recordRegistryDiagnostic(
+        'warn',
+        'TEST_DATABASE_EMPTY_IMPLICIT_REGISTRY',
+        emptyRegistryMessage,
+      );
+    }
     return db;
   }
 

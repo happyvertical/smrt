@@ -11,6 +11,14 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       '**/*.d.ts',
+      // Consumer-shaped fixture packages under __tests__/fixtures/ are their
+      // own standalone Vitest projects (own vitest.config.ts, own
+      // smrtVitestPlugin()/setup wiring) run out-of-process by the tests
+      // that exercise them (e.g. issue-2750-registry-shared-across-worker.test.ts)
+      // -- never by this package's own top-level `include` glob, which would
+      // run their spec files without the fixture's plugin/setup and produce
+      // unrelated false failures.
+      'src/__tests__/fixtures/**',
     ],
     environment: 'node',
     testTimeout: 30000,

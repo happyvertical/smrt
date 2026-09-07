@@ -17,7 +17,20 @@ describe('backfillLegacyUserProfiles', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
-    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    // Opt out of smrt-vitest's automatic schema preparation (#2750
+    // follow-up): this suite applies its own hand-shaped
+    // `OIDC_USERS_TEST_SCHEMA` immediately below via `syncSchema()`, not the
+    // full production `User`/`Profile` schemas. #2750's worker-side manifest
+    // re-registration made those real models reliably visible to every
+    // worker in this package, so the auto-schema-preparation mock now
+    // applies the production schema here first, before this suite's own
+    // `syncSchema()` call -- producing a `users` table shape (and any
+    // leftover unique-index state) the test never asked for.
+    db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
+    });
     await syncSchema({ db, schema: OIDC_USERS_TEST_SCHEMA });
     await backfillProfileEmailKeys(db);
     await backfillUserEmailKeys(db);

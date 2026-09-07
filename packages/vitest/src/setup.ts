@@ -23,11 +23,147 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
+import type { SmrtVitestPluginOptions } from './index.js';
 import {
   applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
+
+/**
+ * `SMRT_VITEST_SETUP_OPTIONS_ENV_KEY` mirrored from `./index.ts` (kept as a
+ * plain string literal, not a static import — see the note on
+ * {@link ensureManifestsRegisteredInThisProcess} for why this file avoids a
+ * static, module-load-time import of `./index.js`).
+ */
+const SETUP_OPTIONS_ENV_KEY = '__SMRT_VITEST_SETUP_OPTIONS__';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtVitestSetupRegisteredClassNames: string[] | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtVitestSetupResolvedOptions:
+    | SmrtVitestPluginOptions
+    | null
+    | undefined;
+}
+
+/**
+ * Re-run `smrtVitestPlugin()`'s manifest registration inside THIS worker
+ * process (#2750). `configResolved()`/`config()` in `./index.ts` only ever
+ * run in Vitest's main/orchestrator process; `ObjectRegistry` is a
+ * `globalThis` singleton, which is not shared across the OS
+ * processes/worker threads that actually execute test files. Without this,
+ * test code sees an empty registry even though the plugin logged classes as
+ * loaded.
+ *
+ * Self-healing rather than register-once: guarded by a `globalThis` list of
+ * the qualified class names this function itself registered last time, not
+ * a plain boolean. `ObjectRegistry` is a `globalThis` singleton that
+ * persists across test files within one worker process (the same
+ * assumption this file's own `beforeAll`/`afterAll` already rely on for
+ * `__smrtManifestCache`), and any test file may call
+ * `ObjectRegistry.clear()` — several plugin-consuming packages' suites do.
+ * A plain "registered once" flag would then leave every later test file in
+ * that worker silently back at the pre-#2750 empty-registry state for
+ * manifest-only classes (the ones never imported directly, so no decorator
+ * re-registers them on the next file's fresh module graph). Re-checking
+ * `hasClass()` for the previously-registered set on every `beforeAll` and
+ * only skipping when they are all still present keeps the common case
+ * (nothing cleared) cheap while self-healing after a `clear()`.
+ *
+ * Run from a `beforeAll` hook rather than a module-top-level `await`: a
+ * top-level `await` in a `setupFiles` entry changes how Vitest sequences
+ * module loading and shifted the async call-stack frames
+ * `getSourceFileFromStack()` (`packages/core/src/registry/shared-state.ts`)
+ * relies on to attribute a `@smrt()` class to its declaring package —
+ * observed as spurious `@vitest/runner:<Class>` qualified names in core's
+ * own test suite. `beforeAll` still runs before every test in the file (and
+ * before the mocked `getDatabase()` is first exercised), without disturbing
+ * module-load-time stack shape.
+ *
+ * `setupSmrtManifests`/`ObjectRegistry` are loaded with a dynamic
+ * `import('./index.js')` / `loadSmrtCoreModule()` here, not a static
+ * top-level import, for the same reason: `./index.ts` is the full
+ * Vite-plugin module (workspace aliasing, manifest generation, the
+ * `configResolved` hook, ~1300 lines with its own transitive import graph).
+ * A *static* import of it from this setup file was enough on its own to
+ * reproduce the exact same stack-attribution corruption in `smrt-core`'s own
+ * suite (`sti-registry.test.ts`, `transform-json-hook.test.ts` —
+ * `@vitest/runner:<Class>` instead of `@happyvertical/smrt-core:<Class>`)
+ * even with registration itself moved into `beforeAll` — confirmed by A/B
+ * testing against this exact base commit with only that one import changed.
+ * Deferring the import to inside this already-lazy, already-`beforeAll`-gated
+ * function keeps this file's *static* import graph identical to its
+ * pre-#2750 shape; every other lazy loader in this file
+ * (`loadSmrtCoreModule`, `loadSmrtTableCacheModule`) follows the same
+ * dynamic-import pattern for the same class of reason.
+ */
+async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
+  const raw = process.env[SETUP_OPTIONS_ENV_KEY];
+  if (!raw) {
+    return;
+  }
+
+  try {
+    // Resolve (and cache on `globalThis`) this worker's matching options
+    // exactly once per process: `import('./index.js')` -- needed here only
+    // for `normalizeRootKey` -- is the ~1300-line Vite-plugin module with
+    // its own transitive graph, and under `isolate: true` this function
+    // re-runs fresh on every test file. Re-importing it every file (even on
+    // the eventual no-op path) reintroduced per-file overhead and widened
+    // exposure to the exact class of module this file otherwise avoids a
+    // *static* import of (see the doc comment above). `undefined` means
+    // "not resolved yet"; `null` means "resolved, no match for this cwd" --
+    // both distinct from a real options object so a legitimate empty-ish
+    // options value is never mistaken for "not yet checked".
+    let options = globalThis.__smrtVitestSetupResolvedOptions;
+    if (options === undefined) {
+      const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
+      // The plugin's `config()` keys its entry by its resolved, normalized
+      // `root` (default `process.cwd()` at the time it ran, in the same
+      // project). This worker's own `process.cwd()` is that same project's
+      // directory in the standard case, so match on that alone (also
+      // normalized the same way) -- deliberately NOT falling back to "the
+      // map's one entry" when there is no exact match: this module's
+      // setupFiles-standalone mode (no `smrtVitestPlugin()` in `plugins`)
+      // promises to be a no-op when there is nothing to register for THIS
+      // project, and a same-process, unrelated project's entry (e.g. a
+      // Vitest multi-project run mixing a plugin-using project with a
+      // plugin-less one) is not this project's options. A consumer passing
+      // a custom non-default `root` to the plugin simply gets no
+      // registration here (matching the pre-#2750 behavior for that
+      // project) rather than risking cross-project registry contamination.
+      const { normalizeRootKey } = await import('./index.js');
+      options = byRoot[normalizeRootKey(process.cwd())] ?? null;
+      globalThis.__smrtVitestSetupResolvedOptions = options;
+    }
+    if (!options) {
+      return;
+    }
+
+    const { ObjectRegistry } = await loadSmrtCoreModule();
+    const previouslyRegistered =
+      globalThis.__smrtVitestSetupRegisteredClassNames;
+    if (previouslyRegistered?.every((name) => ObjectRegistry.hasClass(name))) {
+      return;
+    }
+
+    const { setupSmrtManifests } = await import('./index.js');
+    await setupSmrtManifests(options);
+    globalThis.__smrtVitestSetupRegisteredClassNames =
+      ObjectRegistry.getQualifiedClassNames();
+  } catch (error) {
+    console.warn(
+      '[smrt-vitest] setup: failed to register manifests in this test process:',
+      error,
+    );
+  }
+}
+
+beforeAll(async () => {
+  await ensureManifestsRegisteredInThisProcess();
+});
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
 type CacheState = unknown;
@@ -46,6 +182,8 @@ type VitestDatabaseOptions = Parameters<
 interface SmrtCoreSchemaModule {
   ObjectRegistry: {
     getAllSchemasAsDefinitions(): Record<string, SchemaDefinition>;
+    hasClass(name: string): boolean;
+    getQualifiedClassNames(): string[];
   };
   detectEngine(
     url: string,
@@ -213,19 +351,68 @@ function buildSchemaSqlBatches(
           dbConfig.type,
         );
 
-  return Object.values(
-    smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
-  ).map((schema) => {
-    const ddl = smrtCore.generateDDLForEngine(schema, engine);
-    return [
-      ddl.createTable,
-      ...ddl.indexes,
-      ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
-    ]
-      .filter(Boolean)
-      .map(normalizeSchemaStatement)
-      .join('\n');
-  });
+  return Object.values(smrtCore.ObjectRegistry.getAllSchemasAsDefinitions())
+    .map((schema) => {
+      // Generate DDL per-schema, in isolation: `ObjectRegistry` in this
+      // process now holds every manifest-registered class from every
+      // discovered smrt package (#2750's worker-side re-registration fix),
+      // not just the classes this particular test file happens to import.
+      // A handful of those classes are legitimately incompatible with a
+      // given engine by design (e.g. a cross-package foreign key using
+      // `ON DELETE CASCADE`, which DuckDB's strategy deliberately rejects —
+      // see `duckdb-strategy.ts`) and `generateDDLForEngine` throws for
+      // them. Before the worker-side fix, those unrelated classes were
+      // simply never registered in this process, so the throw never
+      // happened. Letting one such throw escape here aborts
+      // `Promise.all`/`.map` for the WHOLE batch, silently skipping table
+      // creation even for the class this test actually needs — reproduced
+      // for `packages/events` (`EventType`/`event_types`) via an unrelated
+      // `EventAsset` FK, and for `packages/analytics`
+      // (`AnalyticsProperty`/`analytics_properties`) the same way. Catch and
+      // skip only the offending schema so every other registered class,
+      // including the one under test, still gets its table.
+      try {
+        const ddl = smrtCore.generateDDLForEngine(schema, engine);
+        return [
+          ddl.createTable,
+          ...ddl.indexes,
+          ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
+        ]
+          .filter(Boolean)
+          .map(normalizeSchemaStatement)
+          .join('\n');
+      } catch (error) {
+        warnOnceForSchemaDdlFailure(schema.tableName, engine, error);
+        return '';
+      }
+    })
+    .filter(Boolean);
+}
+
+/**
+ * De-duplicates the per-schema DDL-generation warning from
+ * {@link buildSchemaSqlBatches} across repeated `getDatabase()` calls in one
+ * worker process (every `beforeEach` in a JSON/DuckDB-backed test file can
+ * trigger it again for the same offending table) so it is reported once,
+ * not once per test.
+ */
+const warnedSchemaDdlFailures = new Set<string>();
+
+function warnOnceForSchemaDdlFailure(
+  tableName: string,
+  engine: string,
+  error: unknown,
+): void {
+  const key = `${engine}:${tableName}`;
+  if (warnedSchemaDdlFailures.has(key)) {
+    return;
+  }
+  warnedSchemaDdlFailures.add(key);
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[smrt-vitest] setup: skipping automatic schema creation for table ` +
+      `'${tableName}' on engine '${engine}' -- ${message}`,
+  );
 }
 
 vi.mock('@happyvertical/sql', async () => {
