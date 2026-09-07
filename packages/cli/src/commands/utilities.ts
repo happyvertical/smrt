@@ -2478,9 +2478,17 @@ export default testManifest;
         let errorCount = 0;
         let stiErrorCount = 0;
         // Hoisted out of the `applySchemaMigrations` block below (review,
-        // #2748) so the post-apply --null-orphans report can tell a
-        // concurrent-index partial commit apart from a full rollback.
-        let deferredIndexMigrationsCount = 0;
+        // #2748) so the post-apply --null-orphans report can tell, per
+        // disposition, whether that exact migration committed — a batch-
+        // wide "did the non-index phase commit" signal (an earlier version
+        // of this fix used `deferredIndexMigrations > 0`) cannot
+        // distinguish a phase-2-only concurrent-index failure from a
+        // phase-1 rollback of the non-index transaction itself, and
+        // treating every partial-batch failure as "committed" produced a
+        // false ✓ for a disposition that never applied (recall finding,
+        // #2748). `tracker.applyAll()`'s own per-migration `success` is the
+        // ground truth regardless of what else in the batch failed.
+        let migrationResults: MigrationResult[] = [];
 
         const schemaChangeCount =
           diff.added_tables.length +
@@ -2627,7 +2635,6 @@ export default testManifest;
             concurrentIndexMode && engine === 'postgres'
               ? buildConcurrentIndexPlan(migrationDefs, true).size
               : 0;
-          deferredIndexMigrationsCount = deferredIndexMigrations;
           const batchHasIndexDDL = migrations.some(
             (migration) =>
               migration.type === 'add_index' || migration.type === 'drop_index',
@@ -2691,6 +2698,12 @@ export default testManifest;
                 );
               },
             });
+            // Captured before the failure check below can throw: a
+            // concurrent-index (or any other) failure elsewhere in the
+            // batch still leaves this array populated with per-migration
+            // `success`/`rolled_back` truth for whatever did or didn't
+            // apply (review, #2748).
+            migrationResults = results;
 
             const failed = migrationResultFailure(results);
             if (failed) {
@@ -2736,29 +2749,42 @@ export default testManifest;
         }
 
         // #2748: report each --null-orphans disposition's actual before/
-        // after count once the batch carrying the combined null+add-FK
-        // migration has actually committed. `errorCount === 0` alone
-        // conflated "nothing committed" with PostgreSQL concurrent-index
-        // mode's partial commit: when `deferredIndexMigrations > 0`, the
-        // non-index batch (including this disposition) commits in its own
-        // transaction before the deferred concurrent index build runs
-        // separately and non-transactionally — exactly the case the
-        // console.error branch above already documents ("Non-index
-        // changes in this batch were committed"). Gating on `errorCount
-        // === 0` alone silently suppressed the resolution report for a
-        // mutation that did commit (review finding, #2748). A genuine
-        // non-index-batch rollback (`deferredIndexMigrations === 0` and
-        // `errorCount > 0`) still means nothing here applied, and the
-        // generic atomic-failure message above already explains that.
-        const nonIndexBatchCommitted =
-          errorCount === 0 || deferredIndexMigrationsCount > 0;
-        if (pendingOrphanDispositions.length > 0 && nonIndexBatchCommitted) {
+        // after count only for a disposition whose own combined
+        // null+add-FK migration actually committed. Gating on a
+        // batch-wide `errorCount === 0` alone silently suppressed the
+        // resolution report for a mutation that did commit in PostgreSQL
+        // concurrent-index mode, where the non-index batch (including this
+        // disposition) commits in its own transaction before a deferred
+        // `CREATE INDEX CONCURRENTLY` runs separately and can fail on its
+        // own (review finding, #2748). A batch-wide "did the non-index
+        // phase commit" proxy is not enough either: it can't tell that
+        // apart from the non-index transaction itself rolling back
+        // (recall finding, #2748) — both raise `errorCount`, but only one
+        // means this disposition's own migration applied. Check each
+        // disposition's own migration result directly instead of
+        // inferring commit status for the whole batch.
+        const succeededMigrationNames = new Set(
+          migrationResults
+            .filter((result) => result.success)
+            .map((result) => result.name),
+        );
+        const resolvedDispositions = pendingOrphanDispositions.filter(
+          (pending) => {
+            const migrationName = getSyntheticMigrationNameForAction(
+              pending.action,
+            );
+            return migrationName
+              ? succeededMigrationNames.has(migrationName)
+              : false;
+          },
+        );
+        if (resolvedDispositions.length > 0) {
           if (errorCount > 0) {
             console.log(
-              '   (non-index changes below, including these dispositions, committed before a later concurrent index build failure)',
+              '   (some changes in this batch failed; only fully-applied --null-orphans dispositions are listed below)',
             );
           }
-          for (const pending of pendingOrphanDispositions) {
+          for (const pending of resolvedDispositions) {
             try {
               const afterCount = await countOrphanRows(db, pending.countSql);
               console.log(

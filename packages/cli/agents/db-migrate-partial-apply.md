@@ -140,19 +140,26 @@ the report never prints a `✓ ... resolved` line for a migration that never
 executed (review finding, #2748) — that relationship is already covered by
 the `🔒 Withheld` listing.
 
-**"Committed" is not simply `errorCount === 0`.** In PostgreSQL
-concurrent-index mode (`--postgres-safe` with
+**"Committed" is checked per disposition, not for the whole batch.** In
+PostgreSQL concurrent-index mode (`--postgres-safe` with
 `migrations.postgres.useConcurrently`), the non-index batch — including
 this disposition's combined migration — commits in its own transaction
 before any deferred `CREATE INDEX CONCURRENTLY` migrations run separately
 and non-transactionally; a later index build failure still increments
 `errorCount` even though the non-index changes already committed. Gating
 the report on `errorCount === 0` alone silently suppressed the resolution
-line for a mutation that did commit (review finding, #2748). The gate is
-`errorCount === 0 || deferredIndexMigrationsCount > 0` — the same signal
-the console error branch above it already relies on to tell the operator
-non-index changes were committed — and a partial-commit run adds an extra
-line noting the caveat before the per-relationship resolution lines.
+line for a mutation that did commit (review finding, #2748). A batch-wide
+proxy for "did the non-index phase commit" is not enough either: it can't
+tell that apart from the non-index transaction itself rolling back (recall
+finding, #2748) — both raise `errorCount`, but only one means this
+disposition's own migration applied. The report instead re-derives each
+pending disposition's synthetic migration name
+(`getSyntheticMigrationNameForAction()`, the same helper that named it when
+building the tracker batch) and checks that exact name's own `success` in
+`tracker.applyAll()`'s per-migration results — the ground truth regardless
+of what else in the batch failed — printing a caveat line only when some
+other change in the batch failed but this disposition's own migration
+still succeeded.
 
 For a `NOT NULL` child column: refuse with the same "Manual repair required"
 text `db:migrate` always prints for that case. Nulling is not a legal repair
