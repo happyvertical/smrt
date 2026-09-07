@@ -43,6 +43,14 @@ either input to the same canonical hyphenated `uuid` value, so a foreign key
 between a hyphenated-form column and a bare-hex-form column still converts and
 recreates correctly. Braces and partially-hyphenated values are never accepted.
 It deliberately skips dirty columns instead of coercing slug-shaped data.
+Because the hyphenated and bare-hex forms are accepted as the same value,
+TEXT→uuid is many-to-one: a column that holds BOTH forms of the identical
+uuid as two distinct rows (a re-import or dedupe artifact) is detected before
+conversion and skipped as dirty — reported as "N duplicate value(s) after
+normalization" — rather than reaching `ALTER COLUMN … TYPE uuid` and failing
+the whole transaction on a duplicate-key error from the column's PK/unique
+index. That skip also propagates to its foreign-key partners exactly like a
+non-uuid-shaped skip does.
 A generated TEXT bridge column (below) is narrower: it stays TEXT and is
 regenerated as `sourceColumn::text` over the now-native column, and
 `uuid::text` always renders the canonical hyphenated form — so a bare-hex
@@ -85,3 +93,12 @@ precondition for `tenants.id` when:
   operators to `smrt db:migrate-uuid`; or
 - the live table is `TEXT` and contains non-UUID values, which must be remapped
   before fresh 0.27 environments can be expected to work.
+
+`smrt db:status`'s UUID-shape probe is independent of `db:migrate-uuid`'s and,
+as of this writing, is canonical-hyphenated-only: it does NOT yet recognize
+the bare 32-hex form `db:migrate-uuid` accepts. A `tenants.id` column holding
+only bare-hex values is reported by `db:status` as containing non-UUID values
+that "must be remapped," even though `db:migrate-uuid` converts it cleanly.
+Treat that specific `db:status` precondition as informational until the two
+probes are unified; trust `db:migrate-uuid --dry-run` for the authoritative
+convertibility answer.

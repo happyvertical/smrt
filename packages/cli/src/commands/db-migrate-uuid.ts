@@ -156,6 +156,13 @@ export interface LiveTextColumn {
   hasDefault: boolean;
   /** Count of non-empty values that are not canonical UUIDs. */
   nonUuid: number;
+  /**
+   * Count of normalized-value groups with more than one distinct TEXT row
+   * mapping to the same uuid (e.g. one hyphenated, one bare-hex row for the
+   * same value) — a many-to-one collision the widened shape probe admits.
+   * Optional/defaults to 0 so existing call sites need not set it.
+   */
+  duplicateNormalized?: number;
 }
 
 /**
@@ -163,8 +170,17 @@ export interface LiveTextColumn {
  */
 export interface ConversionPlan {
   convert: ConvertCandidate[];
-  /** Declared-UUID columns whose data still has non-uuid values. */
-  skipDirtyData: Array<{ table: string; column: string; nonUuid: number }>;
+  /**
+   * Declared-UUID columns whose data still has non-uuid values, and/or two or
+   * more TEXT rows that normalize to the same uuid (a post-normalization
+   * collision — `duplicateNormalized` is present only when > 0).
+   */
+  skipDirtyData: Array<{
+    table: string;
+    column: string;
+    nonUuid: number;
+    duplicateNormalized?: number;
+  }>;
   /** Live TEXT columns the schema does NOT declare as UUID (left as TEXT). */
   skipNotDeclared: Array<{ table: string; column: string }>;
   /**
@@ -200,6 +216,19 @@ export interface ForeignKeyEdge {
  * keys touching the candidate columns, discovered separately. Multi-column
  * foreign keys are out of scope here and stay a hard refusal downstream.
  */
+/** Human-readable reason for one `skipDirtyData` entry — shared by dry-run/apply logging and FK-block-propagation reasons. */
+function dirtyDataReason(
+  item: ConversionPlan['skipDirtyData'][number],
+): string {
+  const parts: string[] = [];
+  if (item.nonUuid > 0) parts.push(`${item.nonUuid} non-uuid value(s)`);
+  if (item.duplicateNormalized)
+    parts.push(
+      `${item.duplicateNormalized} duplicate value(s) after normalization`,
+    );
+  return parts.join(', ');
+}
+
 export function propagateBlockedForeignKeyPartners(
   plan: ConversionPlan,
   edges: ForeignKeyEdge[],
@@ -214,7 +243,7 @@ export function propagateBlockedForeignKeyPartners(
   for (const item of plan.skipDirtyData) {
     blockedReason.set(
       declaredUuidKey(item.table, item.column),
-      `${item.nonUuid} non-uuid value(s)`,
+      dirtyDataReason(item),
     );
   }
   for (const item of plan.skipNotDeclared) {
@@ -307,12 +336,16 @@ export function planUuidConversions(
       skipNotDeclared.push({ table: col.table, column: col.column });
       continue;
     }
-    if (col.nonUuid > 0) {
-      // Gate 2 failed: declared UUID but data is not all-uuid. Operator cleans.
+    const duplicateNormalized = col.duplicateNormalized ?? 0;
+    if (col.nonUuid > 0 || duplicateNormalized > 0) {
+      // Gate 2 failed: declared UUID but data is not all-uuid, OR two+ TEXT
+      // rows normalize to the same uuid (a PK/unique conflict waiting to
+      // happen at ALTER time). Operator cleans/dedupes.
       skipDirtyData.push({
         table: col.table,
         column: col.column,
         nonUuid: col.nonUuid,
+        ...(duplicateNormalized > 0 ? { duplicateNormalized } : {}),
       });
       continue;
     }
@@ -645,6 +678,7 @@ async function convertPostgresUuidColumns(
     // that apply can never execute.
     if (excludedColumns.has(declaredUuidKey(table, column))) continue;
     let nonUuid = 0;
+    let duplicateNormalized = 0;
     if (declaredUuid.has(declaredUuidKey(table, column))) {
       const { rows } = await db.query(
         `SELECT count(*)::text AS n FROM ${pgTable(table)}
@@ -654,12 +688,34 @@ async function convertPostgresUuidColumns(
       nonUuid = Number(
         (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
       );
+      // TEXT→uuid is many-to-one: the widened shape probe now accepts both
+      // the hyphenated and bare-hex forms of the SAME value, so two distinct,
+      // individually-valid TEXT rows can normalize to one uuid. A PK/unique
+      // index on this column would then fail `ALTER COLUMN … TYPE uuid` with
+      // a duplicate-key error, aborting the whole transaction. Detect that
+      // BEFORE conversion and route it through the same skip path as dirty
+      // data, so it degrades to a per-column skip instead of a whole-run
+      // abort.
+      const { rows: dupRows } = await db.query(
+        `SELECT count(*)::text AS n FROM (
+             SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
+               FROM ${pgTable(table)}
+              WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
+                AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
+              GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
+             HAVING count(*) > 1
+           ) collisions`,
+      );
+      duplicateNormalized = Number(
+        (dupRows[0] as Record<string, unknown> | undefined)?.n ?? 0,
+      );
     }
     liveColumns.push({
       table,
       column,
       hasDefault: row.column_default != null,
       nonUuid,
+      duplicateNormalized,
     });
     defaults.set(
       declaredUuidKey(table, column),
@@ -708,7 +764,7 @@ async function convertPostgresUuidColumns(
   );
   for (const item of skipDirtyData)
     console.log(
-      `  SKIP ${item.table}.${item.column}: ${item.nonUuid} non-uuid value(s)`,
+      `  SKIP ${item.table}.${item.column}: ${dirtyDataReason(item)}`,
     );
   for (const item of skipNotDeclared)
     console.log(

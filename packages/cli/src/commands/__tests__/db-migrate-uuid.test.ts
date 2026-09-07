@@ -184,6 +184,23 @@ describe('db:migrate-uuid command', () => {
       expect(plan.skipNotDeclared).toEqual([]);
     });
 
+    it('skips a declared-UUID column whose values normalize to duplicate uuids', () => {
+      const live: LiveTextColumn[] = [
+        {
+          table: 'things',
+          column: 'id',
+          hasDefault: false,
+          nonUuid: 0,
+          duplicateNormalized: 1,
+        },
+      ];
+      const plan = planUuidConversions(live, declared);
+      expect(plan.convert).toEqual([]);
+      expect(plan.skipDirtyData).toEqual([
+        { table: 'things', column: 'id', nonUuid: 0, duplicateNormalized: 1 },
+      ]);
+    });
+
     it('converts nothing when the declared-UUID set is empty (fail-closed)', () => {
       const live: LiveTextColumn[] = [
         { table: 'things', column: 'id', hasDefault: false, nonUuid: 0 },
@@ -3730,5 +3747,146 @@ describePostgres(
         );
       }, 30_000);
     });
+  },
+);
+
+describePostgres(
+  'db:migrate-uuid skips post-normalization duplicate collisions instead of aborting (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    const stem = `mu_dupnorm_${Math.random().toString(36).slice(2, 8)}`;
+    // Two DISTINCT TEXT primary-key rows that normalize to the SAME uuid —
+    // one hyphenated, one bare-hex. This is legal, coexisting TEXT data (the
+    // PK constraint compares raw TEXT, not the eventual uuid), but converting
+    // this column to native uuid would collide on the PK/unique index.
+    const collidingTable = `${stem}_colliding`;
+    // An unrelated, clean, declared-UUID table — must still convert even
+    // though the colliding table in the same run does not.
+    const cleanTable = `${stem}_clean`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}"`,
+      );
+      await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
+      await db.query(
+        `INSERT INTO "${collidingTable}" (id) VALUES ($1), ($2)`,
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
+      await db.query(`CREATE TABLE "${cleanTable}" (id text PRIMARY KEY)`);
+      await db.query(
+        `INSERT INTO "${cleanTable}" (id) VALUES ($1)`,
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      );
+
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [collidingTable]: {
+            tableName: collidingTable,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [cleanTable]: {
+            tableName: cleanTable,
+            ddl: '',
+            columns: { id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}"`,
+        );
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('skips the colliding column, converts the unrelated clean column, and reports the collision', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+      // Read call history BEFORE mockRestore() — restoring also clears it.
+      const output = logSpy.mock.calls.flat().map(String).join('\n');
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      // Colliding column stays TEXT — skipped, not a whole-run abort.
+      expect(await dataType(collidingTable, 'id')).toBe('text');
+      // The unrelated clean column in the SAME run still converts: no
+      // whole-transaction rollback from the collision elsewhere.
+      expect(await dataType(cleanTable, 'id')).toBe('uuid');
+      expect(output).toContain(
+        `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
+      );
+    }, 30_000);
+
+    it('is a no-op on a second run', async () => {
+      const quiet1 = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errors1 = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      quiet1.mockRestore();
+      errors1.mockRestore();
+
+      const quiet2 = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errors2 = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+      expect(errors2).not.toHaveBeenCalled();
+      quiet2.mockRestore();
+      errors2.mockRestore();
+
+      expect(await dataType(collidingTable, 'id')).toBe('text');
+      expect(await dataType(cleanTable, 'id')).toBe('uuid');
+    }, 30_000);
   },
 );
