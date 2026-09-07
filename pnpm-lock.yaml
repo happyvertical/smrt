@@ -2316,6 +2316,9 @@ importers:
       '@happyvertical/sql':
         specifier: ^0.89.6
         version: 0.89.6(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@modelcontextprotocol/node':
+        specifier: 2.0.0
+        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -2326,9 +2329,6 @@ importers:
       '@modelcontextprotocol/conformance':
         specifier: 0.2.0-alpha.10
         version: 0.2.0-alpha.10(@cfworker/json-schema@4.1.1)(supports-color@8.1.1)
-      '@modelcontextprotocol/node':
-        specifier: 2.0.0
-        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

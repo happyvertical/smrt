@@ -29,6 +29,9 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `dispatch-health` | Live dispatch health from the `_smrt_dispatch`/`_smrt_dispatch_subscriptions` system tables — stuck/pending by type/status, subscription topology; payloads/metadata never read (runtime provenance; read-only, #1824) |
 | `recent-changes` | Tail of the `_smrt_changes` append-only change feed with cursor semantics, filterable by table and tenant (runtime provenance; read-only, #1824) |
 | `registry-drift` | Registry drift report — `_smrt_registry` is retired and reported as such, never queried or fabricated (read-only, #1824) |
+| `runtime-registry` | Sanitized snapshot of the booted `ObjectRegistry` from project + installed manifests; no project code executed (booted provenance; read-only, #1831) |
+| `runtime-object` | One booted object's sanitized definition plus generated DDL (booted provenance; read-only, #1831) |
+| `runtime-schema-diff` | Booted registry schemas vs live dev DB via the `db:diff` comparer; introspection only, no drops/relaxations (runtime provenance; read-only, #1831) |
 
 `pnpm knowledge:check --strict --format markdown` compares this catalog and the
 README parameter tables to the exported `TOOLS` definitions. Add or change a

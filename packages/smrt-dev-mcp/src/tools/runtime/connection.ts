@@ -131,6 +131,14 @@ export function redactConnectionString(value: string): string {
     );
   }
 
+  // Local database files: a `file:` URL or a driver error quoting the path
+  // (POSIX or Windows separators) reveals the filesystem layout. Keep only
+  // the basename.
+  redacted = redacted.replace(
+    /(?:[A-Za-z]:)?(?:[\\/][^\s\\/'"`]+)+[\\/]([^\s\\/'"`]+\.(?:db|sqlite3?|duckdb))/g,
+    '…/$1',
+  );
+
   // Free-text pass: mask the value of any sensitive `key=value` pair the URL
   // parse above may have left intact (e.g. a URL quoted inside an error
   // message, where `?`/`&` boundaries do not delimit params for `new URL`).

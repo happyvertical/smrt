@@ -21,6 +21,7 @@ and repository rules.
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
+| `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
 
 ## Cross-module invariants
 
