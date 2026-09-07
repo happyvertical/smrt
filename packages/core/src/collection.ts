@@ -1905,6 +1905,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -1958,6 +1960,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       relatedItemClassName,
       'list',
       relatedCollection.constructor.name,
+      undefined,
+      relatedQualifiedName,
     );
     const relatedInterceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
