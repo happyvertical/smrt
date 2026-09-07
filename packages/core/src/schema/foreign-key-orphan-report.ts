@@ -95,9 +95,22 @@ export async function collectForeignKeyOrphanCounts(
   const engine = resolveEngine(db, options.engineHint);
   const liveTables = await listLiveTables(db, engine);
   // Cache per table: several foreign keys can share a child table, and
-  // `db.getTableSchema` is a live introspection round-trip.
-  const fetchLiveSchema = async (tableName: string) =>
-    db.getTableSchema?.(tableName);
+  // `db.getTableSchema` is a live introspection round-trip. Both shipped
+  // adapters throw on a failed schema lookup rather than returning `null`
+  // (review finding, #2748: an unguarded call here aborted the whole
+  // report, one bad child table taking down every other relationship's
+  // count) — swallow the same way `readLiveColumnType()` already does
+  // below: this introspection failing is not the orphan probe itself
+  // failing, so the relationship still gets counted (falling back to
+  // manifest-only nullability) or lands in `skipped` via the probe's own
+  // `catch`.
+  const fetchLiveSchema = async (tableName: string) => {
+    try {
+      return await db.getTableSchema?.(tableName);
+    } catch {
+      return undefined;
+    }
+  };
   const liveSchemaCache = new Map<
     string,
     Awaited<ReturnType<typeof fetchLiveSchema>>

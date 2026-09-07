@@ -249,4 +249,40 @@ describe('collectForeignKeyOrphanCounts', () => {
       orphanCount: 1,
     });
   });
+
+  it('does not abort the whole report when db.getTableSchema() throws (recall finding, #2748)', async () => {
+    // Both shipped adapters throw rather than return null on a failed
+    // schema lookup. The nullability introspection this report added must
+    // degrade to manifest-only nullability for that one relationship, not
+    // take down every other relationship's count.
+    const fakeDb = {
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master')) {
+          return [{ name: 'event_types' }, { name: 'events' }];
+        }
+        if (sql.includes('COUNT(*)')) {
+          return [{ orphan_count: 1 }];
+        }
+        return [];
+      },
+      getTableSchema: async () => {
+        throw new Error('permission denied for table events');
+      },
+    } as unknown as Parameters<typeof collectForeignKeyOrphanCounts>[0];
+
+    const report = await collectForeignKeyOrphanCounts(fakeDb, {
+      event_types: manifest().event_types,
+      events: manifest().events,
+    });
+
+    expect(report.skipped).toEqual([]);
+    expect(report.counts).toHaveLength(1);
+    // Falls back to manifest-only nullability (events.type_id has no
+    // `notNull` in the manifest) rather than throwing or misreporting.
+    expect(report.counts[0]).toMatchObject({
+      childTable: 'events',
+      orphanCount: 1,
+      nullable: true,
+    });
+  });
 });
