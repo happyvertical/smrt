@@ -252,7 +252,7 @@ describePostgres(
       expect(recoveredHistory).toHaveLength(2);
       for (const row of recoveredHistory) {
         expect(row.status).toBe('completed');
-        expect(row.attempts).toBe(2);
+        expect(Number(row.attempts)).toBe(2);
         expect(row.checksum).not.toBe(staleChecksums.get(row.name));
       }
 
@@ -313,7 +313,7 @@ describePostgres(
       expect(guardedHistory).toHaveLength(3);
       for (const row of guardedHistory) {
         expect(row.status).toBe('completed');
-        expect(row.attempts).toBe(1);
+        expect(Number(row.attempts)).toBe(1);
         expect(row.checksum).toBe(staleChecksums.get(row.name));
       }
     }, 60_000);
