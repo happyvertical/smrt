@@ -840,7 +840,22 @@ async function convertPostgresUuidColumns(
   // Fail closed before the (public-only) edge discovery below can silently
   // miss, or a table/column name collision could silently mis-attribute, a
   // real cross-schema FK partner of a schema-declared-UUID column.
-  await assertNoCrossSchemaForeignKeyPartners(db, declaredUuid);
+  //
+  // `relevant` is deliberately narrower than the full manifest-wide
+  // `declaredUuid` set: it is exactly the live TEXT columns
+  // `propagateBlockedForeignKeyPartners` reasons about below (the ones that
+  // will convert, plus the ones blocked only for dirty data — see its
+  // `blockedReason` map). An already-native-`uuid` declared column, or a
+  // declared column that does not currently exist as live TEXT, is neither
+  // — this run touches neither its type nor its constraints — so a
+  // legitimate cross-schema FK on it must never abort an otherwise
+  // unrelated, idempotent re-run.
+  const relevantForCrossSchemaCheck = new Set(
+    [...initialPlan.convert, ...skipDirtyData].map((candidate) =>
+      declaredUuidKey(candidate.table, candidate.column),
+    ),
+  );
+  await assertNoCrossSchemaForeignKeyPartners(db, relevantForCrossSchemaCheck);
   const foreignKeyEdges = await fetchSingleColumnForeignKeyEdges(db);
   const { convert, skipBlockedPartner = [] } =
     propagateBlockedForeignKeyPartners(initialPlan, foreignKeyEdges);
@@ -1567,11 +1582,12 @@ async function snapshotForeignKeys(
        JOIN pg_class child ON child.oid = con.conrelid
        JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
        JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
        JOIN unnest(con.conkey) WITH ORDINALITY child_key(attnum, ord) ON true
        JOIN unnest(con.confkey) WITH ORDINALITY parent_key(attnum, ord) ON parent_key.ord = child_key.ord
        JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = child_key.attnum
        JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = parent_key.attnum
-      WHERE con.contype = 'f' AND child_ns.nspname = 'public'`,
+      WHERE con.contype = 'f' AND child_ns.nspname = 'public' AND parent_ns.nspname = 'public'`,
   );
   const participating: ForeignKeySnapshot[] = [];
   for (const row of rows as Array<Record<string, unknown>>) {

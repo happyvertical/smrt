@@ -3507,6 +3507,251 @@ describePostgres(
   },
 );
 
+// #2702 review recall: the initial cross-schema fail-closed check was too
+// broad (any manifest-declared column with ANY cross-schema FK partner
+// aborted the whole run, even an already-native-uuid column no write ever
+// touches) and `snapshotForeignKeys`'s own query still only filtered the
+// child namespace, so an unrelated cross-schema FK whose parent table
+// merely SHARES A NAME with a real public conversion candidate could still
+// mis-attribute and abort. Both must NOT block an otherwise valid,
+// unrelated migration.
+describePostgres(
+  'db:migrate-uuid tolerates unrelated cross-schema foreign keys (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    describe('an already-native-uuid declared column with a legitimate cross-schema FK', () => {
+      const stem = `mu_fkxsafe_native_${Math.random().toString(36).slice(2, 8)}`;
+      const otherSchema = `${stem}_other_ns`;
+      const extParent = `${stem}_ext_parent`;
+      const alreadyUuid = `${stem}_already_uuid`;
+      const normalChild = `${stem}_normal_child`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${alreadyUuid}", "${normalChild}" CASCADE`,
+        );
+        await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+        await db.query(`CREATE SCHEMA "${otherSchema}"`);
+        await db.query(
+          `CREATE TABLE "${otherSchema}"."${extParent}" (id uuid PRIMARY KEY)`,
+        );
+        // Already fully native uuid — a completed prior migration. Still
+        // schema-declared UUID (declaredUuid contains it), but it is not a
+        // live TEXT candidate: candidateRows only ever selects TEXT columns.
+        await db.query(
+          `CREATE TABLE "${alreadyUuid}" (
+             id uuid PRIMARY KEY,
+             ref_id uuid REFERENCES "${otherSchema}"."${extParent}"(id)
+           )`,
+        );
+        // An ordinary, unrelated live TEXT candidate elsewhere in public
+        // that should still convert normally on the same run.
+        await db.query(`CREATE TABLE "${normalChild}" (id text PRIMARY KEY)`);
+        await db.query(
+          `INSERT INTO "${normalChild}" (id) VALUES ($1)`,
+          '33333333-3333-3333-3333-333333333333',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [alreadyUuid]: {
+              tableName: alreadyUuid,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, ref_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [normalChild]: {
+              tableName: normalChild,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${alreadyUuid}", "${normalChild}" CASCADE`,
+          );
+          await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('does not abort the run, and the unrelated TEXT candidate still converts', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        process.exitCode = undefined;
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        const exitCode = process.exitCode;
+        process.exitCode = undefined;
+        logSpy.mockRestore();
+        expect(errorSpy).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+        expect(exitCode).toBeUndefined();
+
+        expect(await dataType(normalChild, 'id')).toBe('uuid');
+      }, 30_000);
+    });
+
+    describe('an unrelated cross-schema FK whose parent shares a name with a real candidate', () => {
+      const stem = `mu_fkxsafe_collide_${Math.random().toString(36).slice(2, 8)}`;
+      const otherSchema = `${stem}_other_ns`;
+      const sharedName = `${stem}_accounts`;
+      const auditTable = `${stem}_audit`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${auditTable}", "${sharedName}" CASCADE`,
+        );
+        await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+        await db.query(`CREATE SCHEMA "${otherSchema}"`);
+        // A table in another schema with the SAME base name as the public
+        // conversion candidate below — declaredUuidKey's schema-agnostic
+        // `table|column` key would collide between the two if not guarded.
+        await db.query(
+          `CREATE TABLE "${otherSchema}"."${sharedName}" (id text PRIMARY KEY)`,
+        );
+        await db.query(
+          `INSERT INTO "${otherSchema}"."${sharedName}" (id) VALUES ($1)`,
+          'legacy-external-slug',
+        );
+        // The real public conversion candidate, unrelated to the FK below.
+        await db.query(`CREATE TABLE "${sharedName}" (id text PRIMARY KEY)`);
+        await db.query(
+          `INSERT INTO "${sharedName}" (id) VALUES ($1)`,
+          '44444444-4444-4444-4444-444444444444',
+        );
+        // A public table with an FK to the OTHER schema's same-named table —
+        // entirely unrelated to the public "accounts" candidate, and itself
+        // not schema-declared UUID at all.
+        await db.query(
+          `CREATE TABLE "${auditTable}" (
+             id text PRIMARY KEY,
+             account_ref text REFERENCES "${otherSchema}"."${sharedName}"(id)
+           )`,
+        );
+        await db.query(
+          `INSERT INTO "${auditTable}" (id, account_ref) VALUES ($1, $2)`,
+          '55555555-5555-5555-5555-555555555555',
+          'legacy-external-slug',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        // Only the public "accounts" candidate is SMRT-declared; the
+        // unrelated audit table (and the other-schema table it references)
+        // are both outside the manifest entirely.
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [sharedName]: {
+              tableName: sharedName,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${auditTable}", "${sharedName}" CASCADE`,
+          );
+          await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('converts the real public candidate and leaves the unrelated FK untouched', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        process.exitCode = undefined;
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        const exitCode = process.exitCode;
+        process.exitCode = undefined;
+        logSpy.mockRestore();
+        expect(errorSpy).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+        expect(exitCode).toBeUndefined();
+
+        expect(await dataType(sharedName, 'id')).toBe('uuid');
+        // Unrelated, unconverted, and never even declared UUID.
+        expect(await dataType(auditTable, 'account_ref')).toBe('text');
+      }, 30_000);
+    });
+  },
+);
+
 describePostgres(
   'db:migrate-uuid accepts bare 32-hex UUID shapes (real Postgres)',
   () => {
