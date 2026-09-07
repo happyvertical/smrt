@@ -1132,11 +1132,17 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
     // Reporting it as a "not static" warning would make the duplicate error
     // unreachable in practice, so the diagnostic itself carries the severity.
     const duplicate = diagnostic.code === 'duplicate-identity';
+    // A tool-name collision (#2725) is the one diagnostic whose declaration WAS
+    // emitted — the entry is right there in `surface.intents`. Calling it "not
+    // statically emittable" would describe the opposite of what happened.
+    const collision = diagnostic.code === 'tool-name-collision';
     issues.push({
       severity: duplicate ? 'error' : 'warning',
       code: duplicate
         ? 'agent-surface-duplicate-identity'
-        : 'agent-surface-not-static',
+        : collision
+          ? 'agent-surface-tool-name-collision'
+          : 'agent-surface-not-static',
       message: `${where} — ${diagnostic.message}`,
       file,
       packageName: pkg.name,
@@ -1263,6 +1269,14 @@ function findAgentSurfaceDriftIssues(
     }
     for (const diagnostic of pkg.agentSurface?.diagnostics ?? []) {
       if (!withinScan(diagnostic.sourceFile)) continue;
+      // A tool-name collision is derived from the MANIFEST, not from the
+      // declaration (#2725): the emitter compares each intent against the
+      // generated model tools for the same build. This pass re-derives
+      // declarations from source alone and has no manifest, so it can never
+      // produce one — counting it as "declared" would report every collision
+      // as artifact drift no rebuild could clear, in exactly the way the
+      // `.svelte` and out-of-`src` carve-outs above exist to prevent.
+      if (diagnostic.code === 'tool-name-collision') continue;
       emitted.add(
         `diagnostic:${diagnostic.code}:${diagnostic.sourceFile}:${diagnostic.line ?? 0}`,
       );

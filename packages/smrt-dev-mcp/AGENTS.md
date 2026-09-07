@@ -23,6 +23,12 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
+| `migration-status` | Live migration status from the `_smrt_schema_migrations` system table — completed/running/failed/rolled_back counts, latest completed and failed migrations (runtime provenance; read-only; optional live DB, #1824) |
+| `job-health` | Live job queue health from the `_smrt_jobs`/`_smrt_workers` system tables — counts by status, stuck/failed jobs, worker liveness; payloads/results never read (runtime provenance; read-only, #1824) |
+| `schedule-health` | Live agent schedule health from the `_smrt_agent_schedules` system table — due/overdue/errored counts, last/next run; sensitive `agentConfig` never read (runtime provenance; read-only, #1824) |
+| `dispatch-health` | Live dispatch health from the `_smrt_dispatch`/`_smrt_dispatch_subscriptions` system tables — stuck/pending by type/status, subscription topology; payloads/metadata never read (runtime provenance; read-only, #1824) |
+| `recent-changes` | Tail of the `_smrt_changes` append-only change feed with cursor semantics, filterable by table and tenant (runtime provenance; read-only, #1824) |
+| `registry-drift` | Registry drift report — `_smrt_registry` is retired and reported as such, never queried or fabricated (read-only, #1824) |
 
 `pnpm knowledge:check --strict --format markdown` compares this catalog and the
 README parameter tables to the exported `TOOLS` definitions. Add or change a

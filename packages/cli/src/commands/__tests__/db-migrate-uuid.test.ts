@@ -2,6 +2,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dbMigrateAgentScheduleSlugsCommand } from '../db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from '../db-migrate-int8.js';
 import {
   buildDeclaredUuidColumnSet,
@@ -190,6 +191,20 @@ describe('db:migrate-int8 command', () => {
     expect(dbMigrateInt8Command.name).toBe('db:migrate-int8');
     expect(dbMigrateInt8Command.aliases).toContain('migrate-int8');
     expect(dbMigrateInt8Command.options?.['dry-run']).toBeDefined();
+  });
+});
+
+describe('db:migrate-agent-schedule-slugs command', () => {
+  it('is registered as an explicit dry-run-capable repair', () => {
+    expect(utilityCommands['db:migrate-agent-schedule-slugs']).toBe(
+      dbMigrateAgentScheduleSlugsCommand,
+    );
+    expect(dbMigrateAgentScheduleSlugsCommand.aliases).toContain(
+      'migrate-agent-schedule-slugs',
+    );
+    expect(
+      dbMigrateAgentScheduleSlugsCommand.options?.['dry-run'],
+    ).toBeDefined();
   });
 });
 

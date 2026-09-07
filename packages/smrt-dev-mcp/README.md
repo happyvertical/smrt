@@ -456,6 +456,119 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 | `name` | `'smrt-code-review'` | Yes | Skill name |
 | `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
+### `migration-status`
+
+Live migration status from the `_smrt_schema_migrations` system table:
+completed / running / failed / rolled-back counts (the tracker's real status
+vocabulary) plus the latest completed and the failed migrations. Runtime
+provenance (`runtime (live DB)`); read-only. Without a configured connection it
+returns a successful static-only result.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+| `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
+
+### `job-health`
+
+Live job queue health from the `_smrt_jobs`, `_smrt_workers`, and
+`_smrt_job_events` system tables: counts by status, stuck/failed jobs, worker
+liveness. Job payloads and results are never read. Runtime provenance;
+read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+| `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
+
+### `schedule-health`
+
+Live agent schedule health from the `_smrt_agent_schedules` system table:
+due/overdue/errored counts, last/next run per schedule. The sensitive
+`agentConfig`/`methodArgs` columns are never read. Runtime provenance;
+read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+| `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
+
+### `dispatch-health`
+
+Live dispatch health from the `_smrt_dispatch` and
+`_smrt_dispatch_subscriptions` system tables: stuck/pending messages by type
+and status plus subscription topology. Dispatch payloads and metadata are never
+read. Runtime provenance; read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+| `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
+
+### `recent-changes`
+
+Tail of the `_smrt_changes` append-only change feed with cursor semantics,
+filterable by table and tenant. Runtime provenance; read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+| `since` | `number` | No | Cursor to read after (default 0) |
+| `tables` | `string[]` | No | Restrict to these physical table names |
+| `tenantId` | `string` | No | Tenant narrowing filter |
+| `limit` | `number` | No | Page size (default 200, capped at 500) |
+
+### `registry-drift`
+
+Registry drift report. `_smrt_registry` is retired (system schema 1.10.1) and
+is never queried: the tool reports the retirement and whether a legacy empty
+table remains, and never fabricates drift. Declared objects come from the
+static manifest tools. Read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+
+## Runtime Diagnostics (Optional Live DB)
+
+The six runtime-diagnostics tools above (`migration-status`, `job-health`,
+`schedule-health`, `dispatch-health`, `recent-changes`, `registry-drift`) share
+an **optional, read-only** dev-database connection so a development agent can
+see runtime truth — not just what static artifacts declare. They complement the
+static knowledge tools (#1819); together the two surfaces give the full
+picture.
+
+**Configuration.** Connection resolution, per call: an explicit `dbUrl`
+argument, then the `SMRT_DEV_DB_URL` environment variable, then the project's
+smrt config `cli.database` (`database.type` / `database.url`). An optional
+`dbType` argument (`sqlite`, `postgres`, `duckdb`) overrides engine inference
+for `dbUrl` or the environment connection; unknown values fail with a safe
+diagnostic instead of opening the wrong adapter. No configuration
+anywhere → every runtime tool returns a successful static-only result
+(`provenance: 'static'`, `connected: false`) and the server starts and serves
+all static tools unaffected.
+
+**Provenance labeling.** Live results carry `provenance: 'runtime (live DB)'`;
+static-only results carry `provenance: 'static'`. Never conflate the two: the
+manifest reports what the code declares, runtime tools report what the running
+system is doing.
+
+**Read-only, dev-only.** Every runtime statement is a bounded `SELECT` with an
+explicit safe column projection. Sensitive columns (job payloads/results,
+schedule `agentConfig`/`methodArgs`, dispatch `payload`/`metadata`) are never
+selected. This is a dev/localhost diagnostic surface, not a data plane — it is
+not `smrt-app-mcp` and never writes.
+
+**Connection strings are never logged.** Surfaced URLs are redacted
+(passwords and token query params masked); driver errors pass through a
+redacting normalizer before they can appear in a diagnostic.
+
 ## MCP Resources And Prompts
 
 Resources:
