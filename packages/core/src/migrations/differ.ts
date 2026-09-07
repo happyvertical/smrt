@@ -9,6 +9,8 @@ import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
+  CANONICAL_UUID_PATTERN,
+  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
@@ -1361,7 +1363,356 @@ export class SchemaComparer {
       changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
     }
 
+    changes.push(
+      ...(await this.detectRenameDataPending(tableName, manifest, dbSchema)),
+    );
+
     return changes;
+  }
+
+  /**
+   * Detect a pending rename backfill (#2752): a manifest-declared column
+   * that exists live but holds no data, paired with an orphan (undeclared)
+   * live column of a compatible type that does hold data — the shape a
+   * framework field rename leaves behind when `db:migrate` adds the new
+   * column additively and never moves data into it. For each such pair,
+   * emit the copy-then-drop repair as an advisory: never executed,
+   * PostgreSQL and SQLite only (DuckDB/JSON are out of scope). The repair
+   * is genuinely idempotent SQL on PostgreSQL (a self-guarding
+   * `DO $$ ... $$` block); SQLite has no conditional-DDL construct, so its
+   * repair is operator-mediated instead — a guard query plus instructions,
+   * not a blind-rerun-safe statement. See {@link describeRenameDataPending}.
+   */
+  private async detectRenameDataPending(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+  ): Promise<SchemaChange[]> {
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite') return [];
+
+    const dbColumnNames = new Set(Object.keys(dbSchema.columns));
+    const manifestColumnNames = new Set(Object.keys(manifest.columns));
+    const orphanColumnNames = [...dbColumnNames].filter(
+      (name) => !manifestColumnNames.has(name),
+    );
+    if (orphanColumnNames.length === 0) return [];
+
+    const changes: SchemaChange[] = [];
+
+    for (const [colName, colDef] of Object.entries(manifest.columns)) {
+      const dbCol = dbSchema.columns[colName];
+      if (!dbCol) continue; // add_column already covers a missing declared column
+
+      let declaredHasData: boolean;
+      try {
+        declaredHasData = await this.columnHasNonEmptyValue(tableName, colName);
+      } catch {
+        continue;
+      }
+      if (declaredHasData) continue;
+
+      const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
+        ? colDef.type
+        : 'TEXT';
+      // Branch on the manifest's *logical* type, not the engine-mapped one:
+      // SQLite has no native uuid type, so `mapType('UUID')` collapses to
+      // TEXT there and `declaredNormalized` alone can no longer distinguish
+      // "this is logically a UUID column" from "this is plain text" (#2767
+      // review). Checking `isLogicalUuid` directly keeps the shape probe
+      // (`allNonEmptyValuesUuidShaped`) in the loop for SQLite too, instead
+      // of silently downgrading to an unvalidated same-type text copy.
+      const isLogicalUuid = validatedType === 'UUID';
+      const declaredNormalized = this.normalizeType(
+        this.ddlStrategy.mapType(validatedType),
+      );
+
+      // Collect every qualifying orphan candidate for this declared column
+      // before emitting anything: when more than one orphan column is a
+      // populated, type-compatible match, the source of the rename is
+      // genuinely ambiguous and running every pair's suggested repair could
+      // merge values in output order and drop every candidate column (#2767
+      // review). Only a single unambiguous candidate gets destructive
+      // repair SQL; multiple candidates get one advisory that lists them
+      // and withholds SQL until an operator picks the real source.
+      const candidates: { orphanName: string; isUuidCast: boolean }[] = [];
+
+      for (const orphanName of orphanColumnNames) {
+        const orphanCol = dbSchema.columns[orphanName];
+        const orphanNormalized = this.normalizeType(orphanCol.type);
+
+        // Two independent questions, deliberately not conflated (#2767
+        // review, P1): does this pairing need the UUID *shape probe*, and
+        // does the emitted repair SQL need the `::uuid` *cast*? A logical
+        // UUID column paired with a text-typed orphan always needs the
+        // shape probe, on every engine — but only a physically native uuid
+        // destination (PostgreSQL/DuckDB; `declaredNormalized === 'UUID'`)
+        // needs `::uuid` and the NULL-only empty predicate. SQLite has no
+        // native uuid type, so its logical-UUID column is still physically
+        // TEXT and must get the same plain copy + `CAST(...) = ''` predicate
+        // as any other TEXT column, even though it still needed the probe.
+        const requiresShapeCheck = isLogicalUuid && orphanNormalized === 'TEXT';
+        const isSameType = orphanNormalized === declaredNormalized;
+        if (!requiresShapeCheck && !isSameType) continue;
+
+        let orphanHasData: boolean;
+        try {
+          orphanHasData = await this.columnHasNonEmptyValue(
+            tableName,
+            orphanName,
+          );
+        } catch {
+          continue;
+        }
+        if (!orphanHasData) continue;
+
+        if (requiresShapeCheck) {
+          let shaped: boolean;
+          try {
+            shaped = await this.allNonEmptyValuesUuidShaped(
+              tableName,
+              orphanName,
+            );
+          } catch {
+            continue;
+          }
+          if (!shaped) continue;
+        }
+
+        candidates.push({
+          orphanName,
+          isUuidCast: declaredNormalized === 'UUID',
+        });
+      }
+
+      if (candidates.length === 1) {
+        changes.push(
+          this.describeRenameDataPending(
+            tableName,
+            colName,
+            candidates[0].orphanName,
+            candidates[0].isUuidCast,
+          ),
+        );
+      } else if (candidates.length > 1) {
+        changes.push(
+          this.describeRenameDataPendingAmbiguous(
+            tableName,
+            colName,
+            candidates.map((c) => c.orphanName),
+          ),
+        );
+      }
+    }
+
+    return changes;
+  }
+
+  /**
+   * Live-data probe: does the column hold any non-null, non-empty value?
+   * Used by {@link detectRenameDataPending}. Errors propagate to the
+   * caller, which skips the pair rather than guessing (#2752).
+   */
+  private async columnHasNonEmptyValue(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const result = await this.db.query(
+      `SELECT 1 AS present FROM ${quotedTable} ` +
+        `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1`,
+    );
+    return (result.rows?.length ?? 0) > 0;
+  }
+
+  /**
+   * Live-data probe: are every one of a column's non-empty values
+   * UUID-shaped ({@link CANONICAL_UUID_PATTERN})? PostgreSQL pushes the
+   * check into the query with its regex operator; SQLite has no regex
+   * operator, but its case-sensitive `GLOB` can still express the fixed
+   * 36-character canonical shape ({@link CANONICAL_UUID_SQLITE_GLOB_PATTERN}
+   * against `LOWER(...)`, guarded by an exact `LENGTH(...) = 36` check), so
+   * both engines run one server-side aggregate `count(*)` rather than
+   * fetching every non-empty value into JS to test in a loop — important on
+   * a production table with many rows (#2767 review).
+   */
+  private async allNonEmptyValuesUuidShaped(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
+
+    if (this.engine === 'postgres') {
+      const result = await this.db.query(
+        `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+          `WHERE ${nonEmptyPredicate} ` +
+          `AND CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
+      );
+      const row = result.rows?.[0] as Record<string, unknown> | undefined;
+      return Number(row?.invalid_count ?? 0) === 0;
+    }
+
+    const result = await this.db.query(
+      `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
+        `WHERE ${nonEmptyPredicate} ` +
+        `AND NOT (LENGTH(CAST(${quotedCol} AS TEXT)) = 36 ` +
+        `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`,
+    );
+    const row = result.rows?.[0] as Record<string, unknown> | undefined;
+    return Number(row?.invalid_count ?? 0) === 0;
+  }
+
+  /**
+   * Render the repair for one rename-data-pending pair (#2752): copy
+   * non-empty `oldColumn` into `newColumn` only where `newColumn` is still
+   * empty (casting to `uuid` when the new column is native uuid, otherwise a
+   * plain copy), then drop `oldColumn`.
+   *
+   * Idempotency review findings and the fix:
+   *
+   * - (P1) The `newColumn`-is-empty predicate previously compared any
+   *   non-uuid destination to `''` (`col IS NULL OR col = ''`), which is
+   *   only valid for text-affinity types — PostgreSQL rejects `col = ''`
+   *   for `integer`/`boolean`/`timestamp`/etc. before a same-type rename
+   *   pair of one of those types ever copies anything. Fixed by comparing
+   *   `CAST(col AS TEXT) = ''` instead, mirroring the same portable
+   *   emptiness check {@link columnHasNonEmptyValue} already uses for
+   *   detection, so the predicate is valid for every column type.
+   * - (P2) An `UPDATE` unconditionally naming `oldColumn` fails once that
+   *   column is gone, on either engine, regardless of the DROP's own
+   *   idempotency — a guard query placed before the DROP (or even before
+   *   the UPDATE) still leaves a human decision between "run" and "don't",
+   *   which is not genuine SQL-level idempotency. PostgreSQL CAN express a
+   *   truly self-contained, unconditionally-safe-to-rerun statement here:
+   *   an anonymous `DO $$ ... $$` block (the same idiom this file already
+   *   uses for `generatePostgresIntegerPreflightSQL`) that checks
+   *   `information_schema.columns` and only runs the UPDATE + DROP when the
+   *   old column still exists — one executable statement, no operator
+   *   judgment required, safe to rerun any number of times. SQLite has no
+   *   procedural block or conditional-DDL construct at all (confirmed
+   *   against a real connection), so there the contract is explicitly
+   *   downgraded from "idempotent SQL" to "operator-mediated": a guard
+   *   query plus instructions, not a single statement that is itself safe
+   *   to blindly rerun.
+   *
+   * This is report-only either way: `db:migrate` never executes it.
+   */
+  private describeRenameDataPending(
+    tableName: string,
+    newColumn: string,
+    oldColumn: string,
+    newIsNativeUuid: boolean,
+  ): SchemaChange {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedNew = this.quoteIdentifier(newColumn);
+    const quotedOld = this.quoteIdentifier(oldColumn);
+    const oldValue = newIsNativeUuid ? `${quotedOld}::uuid` : quotedOld;
+    const newEmptyPredicate = newIsNativeUuid
+      ? `${quotedNew} IS NULL`
+      : `(${quotedNew} IS NULL OR CAST(${quotedNew} AS TEXT) = '')`;
+    const copySql =
+      `UPDATE ${quotedTable} SET ${quotedNew} = ${oldValue} ` +
+      `WHERE ${newEmptyPredicate} AND ${quotedOld} IS NOT NULL AND CAST(${quotedOld} AS TEXT) <> ''`;
+
+    let suggestedSql: string[];
+    let dropIdempotencyNote: string;
+
+    if (this.engine === 'postgres') {
+      // A single anonymous block: checks the old column's existence once
+      // and only then runs the UPDATE and the DROP, inside the same
+      // condition — genuinely idempotent, safe to rerun any number of
+      // times with no operator judgment involved.
+      // Scoped to `public` (matches this file's other information_schema
+      // queries, e.g. the table-listing query below): unscoped, this check
+      // matches any schema the connection can see, so a same-named
+      // table/column pair in another schema could make the guard report
+      // "still present" (or, symmetrically, mask an already-dropped
+      // relation on `public`) regardless of the actual target relation's
+      // state — silently breaking the no-op contract this block exists to
+      // provide (#2752 review finding).
+      const existsCheck =
+        `EXISTS (SELECT 1 FROM information_schema.columns ` +
+        `WHERE table_schema = 'public' AND table_name = ${this.quoteLiteral(tableName)} AND column_name = ${this.quoteLiteral(oldColumn)})`;
+      const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedOld}`;
+      suggestedSql = [
+        `DO $$ BEGIN IF ${existsCheck} THEN ${copySql}; ${dropSql}; END IF; END $$`,
+      ];
+      dropIdempotencyNote =
+        'This single statement is idempotent: rerunning it after the ' +
+        `rename is complete is a genuine no-op, because it only touches ` +
+        `${oldColumn} when the block finds it still exists.`;
+    } else {
+      // SQLite has no procedural block or conditional-DDL construct at
+      // all, so true statement-level idempotency is not achievable in
+      // plain SQL here. The contract is explicitly operator-mediated
+      // instead: a guard query, then the two statements to run only when
+      // it reports the old column present.
+      const guardSql =
+        `SELECT count(*) AS old_column_still_present ` +
+        `FROM pragma_table_info(${this.quoteLiteral(tableName)}) WHERE name = ${this.quoteLiteral(oldColumn)}`;
+      const dropSql = this.generateDropColumnSQL(tableName, oldColumn);
+      suggestedSql = [guardSql, copySql, dropSql];
+      dropIdempotencyNote =
+        'SQLite has no conditional-DDL construct, so this is operator-mediated, ' +
+        `not self-contained idempotent SQL: run the guard query first, and only run ` +
+        `the UPDATE and DROP below when it reports ${oldColumn} still present.`;
+    }
+
+    return {
+      type: 'rename_data_pending',
+      table: tableName,
+      name: newColumn,
+      mismatch: {
+        expected: `data in ${newColumn}`,
+        actual: `data appears to still be in ${oldColumn}`,
+      },
+      advisory: {
+        severity: 'warning',
+        message:
+          `${tableName}.${newColumn} is declared but empty, while undeclared column ${tableName}.${oldColumn} ` +
+          'holds data of a compatible type. This looks like a framework field rename whose data was never ' +
+          `moved (db:migrate adds columns additively and never drops the old one). ${dropIdempotencyNote}`,
+        suggestedSql,
+      },
+    };
+  }
+
+  /**
+   * Render the advisory for an ambiguous rename-data-pending match (#2767
+   * review): more than one orphan column is a populated, type-compatible
+   * candidate for the same empty declared column, so the real rename source
+   * cannot be inferred. Unlike {@link describeRenameDataPending}, this
+   * carries no `suggestedSql` — running a per-candidate copy-and-drop would
+   * let output order decide which candidate's data wins and then drop every
+   * one of them, which is not a repair an advisory should suggest blindly.
+   */
+  private describeRenameDataPendingAmbiguous(
+    tableName: string,
+    newColumn: string,
+    candidateColumns: string[],
+  ): SchemaChange {
+    const candidateList = candidateColumns
+      .map((name) => `${tableName}.${name}`)
+      .join(', ');
+    return {
+      type: 'rename_data_pending',
+      table: tableName,
+      name: newColumn,
+      mismatch: {
+        expected: `data in ${newColumn}`,
+        actual: `data appears to still be in one of several columns: ${candidateList}`,
+      },
+      advisory: {
+        severity: 'warning',
+        message:
+          `${tableName}.${newColumn} is declared but empty, while ${candidateColumns.length} undeclared ` +
+          `columns of a compatible type hold data (${candidateList}). This looks like a framework field ` +
+          'rename, but which column is the actual rename source is ambiguous — no suggested repair SQL is ' +
+          'printed. An operator must identify the correct source column and write its own targeted copy-then-drop.',
+      },
+    };
   }
 
   /**

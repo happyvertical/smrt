@@ -119,6 +119,55 @@ keys that mix a converted endpoint with a retained TEXT bridge, and foreign keys
 with nondefault PostgreSQL trigger enforcement; use `--dry-run` to inspect the
 exact plan.
 
+## Detecting a pending rename backfill (#2752)
+
+A field rename like the ones above is additive by construction: `smrt
+db:migrate` adds the new column and never moves data into it or drops the old
+one, because additive migrations never drop. Every consumer that took
+relationships-v2 (`events.parent_event_id` → `events.parent_id`,
+`assets.parent_id` → `assets.source_asset_id`) had to hand-write a backfill
+script for a rename the framework itself authored.
+
+As of #2752, `smrt db:status --parity` reports a `rename_data_pending` finding
+when, on one table, a manifest-declared column exists live and holds no
+non-null/non-empty values while an undeclared live column of a compatible type
+(same type, `TEXT` → `UUID` when every non-empty value is already UUID-shaped,
+or `TEXT` → `TEXT`) holds at least one. It is `warning` severity and names both
+columns; when several undeclared columns qualify it lists all of them rather
+than guessing which one holds the pre-rename data.
+
+`smrt db:diff` (and `db:migrate`, via the same advisory) prints the repair as
+a commented, never-executed advisory — the same copy-then-drop shape the
+anytown backfill scripts hand-wrote, casting to `uuid` when the new column is
+native uuid and doing a plain copy otherwise (SQLite has no `uuid` type).
+When exactly one undeclared column qualifies as the rename source, it prints
+that column's repair SQL; when several qualify, it mirrors `db:status
+--parity`'s ambiguity handling and prints one advisory that lists every
+candidate with no suggested SQL, rather than emitting a separate destructive
+repair per candidate that an operator could run all of and merge or drop data
+in output order. The two engines differ in how safely a single-candidate
+repair can be rerun:
+
+- **PostgreSQL** gets one genuinely idempotent statement: an anonymous
+  `DO $$ ... $$` block that checks `information_schema.columns` and only runs
+  the `UPDATE` and `DROP COLUMN` when the old column still exists on `public`.
+  Rerunning it after the rename is complete is a true no-op — verified against
+  a real PostgreSQL 16 instance, including with a same-named table/column in
+  another schema.
+- **SQLite** has no procedural block or conditional-DDL construct at all, so
+  a single self-contained idempotent statement is not expressible in plain
+  SQL there. The advisory is explicitly operator-mediated instead: a guard
+  query (`pragma_table_info`) plus instructions to run the `UPDATE` and
+  `DROP COLUMN` only when it reports the old column still present. Blindly
+  rerunning the SQLite statements after the rename is already complete will
+  error at the `UPDATE` (the column no longer exists) — that error is safe
+  (loud, no data loss) but is not a silent no-op the way the PostgreSQL block
+  is.
+
+Review the suggested SQL before running it — this is detection and a printed
+repair, not an automatic one; see #2764 for carrying rename intent through the
+manifest so `db:migrate` could execute it directly.
+
 ## Validation
 
 Run `smrt db:status` after migration. The command now reports a compatibility

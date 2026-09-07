@@ -192,4 +192,39 @@ describe.skipIf(!pgUrl)('live-schema parity (PostgreSQL)', () => {
       ),
     ).toBeDefined();
   });
+
+  it('flags a pending rename: empty declared uuid column, populated undeclared text column of UUID-shaped values (#2752)', async () => {
+    await createWidgets();
+    // Simulate a framework field rename: `db:migrate` already added the
+    // declared `source_context` (native uuid, empty) but the pre-rename data
+    // is still sitting in the undeclared `legacy_context` column.
+    await db?.query(`ALTER TABLE ${TABLE} ADD COLUMN legacy_context text`);
+    await db?.query(
+      `INSERT INTO ${TABLE} (id, slug, context, tenant_id, legacy_context) VALUES ` +
+        `('11111111-1111-1111-1111-111111111111', 'a', 'ctx', '22222222-2222-2222-2222-222222222222', '33333333-3333-3333-3333-333333333333')`,
+    );
+
+    const schemas = widgetSchema();
+    schemas[TABLE].columns.source_context = {
+      type: 'UUID',
+      referenceKind: 'foreignKey',
+      foreignKey: { table: 'widgets', column: 'id' },
+    };
+    await db?.query(`ALTER TABLE ${TABLE} ADD COLUMN source_context uuid`);
+
+    const report = await checkLiveSchemaParity({
+      db: db as DatabaseInterface,
+      schemas,
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    const finding = report.findings.find(
+      (item) =>
+        item.kind === 'rename_data_pending' && item.target === 'source_context',
+    );
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.details?.candidates).toEqual(['legacy_context']);
+  });
 });
