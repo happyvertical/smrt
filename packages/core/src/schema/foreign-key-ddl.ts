@@ -70,6 +70,13 @@ export function renderForeignKeyOrphanDetector(
   options: {
     engine?: DatabaseEngine;
     limitOne?: boolean;
+    /**
+     * Aggregate the same predicate as `COUNT(*)` instead of listing orphan
+     * keys. Used by the read-only per-foreign-key orphan count report
+     * (#2753) so the report shares the exact FROM/JOIN/WHERE clause the
+     * migration gate probes with, rather than a second hand-written copy.
+     */
+    countOnly?: boolean;
     uuidComparison?: boolean;
     uuidCastSide?: ForeignKeyUuidCastSide;
   } = {},
@@ -81,10 +88,15 @@ export function renderForeignKeyOrphanDetector(
     options.uuidComparison,
     options.uuidCastSide,
   );
-  return (
-    `SELECT ${parts.childColumn} AS orphan_key FROM ${parts.childTable} ` +
+  const fromClause =
+    `${parts.childTable} ` +
     `LEFT JOIN ${parts.parentTable} ON ${parts.joinPredicate} ` +
-    `WHERE ${parts.childColumn} IS NOT NULL AND ${parts.parentColumn} IS NULL` +
+    `WHERE ${parts.childColumn} IS NOT NULL AND ${parts.parentColumn} IS NULL`;
+  if (options.countOnly) {
+    return `SELECT COUNT(*) AS orphan_count FROM ${fromClause}`;
+  }
+  return (
+    `SELECT ${parts.childColumn} AS orphan_key FROM ${fromClause}` +
     (options.limitOne ? ' LIMIT 1' : '')
   );
 }
@@ -133,6 +145,23 @@ const FOREIGN_KEY_PARENT_ALIAS = 'smrt_fk_parent';
  */
 export const CANONICAL_UUID_PATTERN =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+/**
+ * The same canonical UUID shape as {@link CANONICAL_UUID_PATTERN}, expressed
+ * as a SQLite `GLOB` pattern instead of a regex — SQLite has no built-in
+ * regex operator, so a shape probe there cannot push a regex predicate down
+ * to the server. `GLOB` is case-sensitive, so callers must `LOWER()` the
+ * value first; combine with a `LENGTH(...) = 36` check (`GLOB` alone allows
+ * a shorter/longer value to still match a middle substring) so this can run
+ * as a whole-table server-side aggregate instead of fetching every row into
+ * JS to test in a loop (#2767 review).
+ */
+export const CANONICAL_UUID_SQLITE_GLOB_PATTERN =
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-' +
+  '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]';
 
 function foreignKeyOrphanParts(
   tableName: string,

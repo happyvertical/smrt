@@ -1,5 +1,7 @@
 # @happyvertical/smrt-scanner
 
+## 0.47.2
+
 ## 0.47.1
 
 ## 1.0.0

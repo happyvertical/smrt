@@ -1,5 +1,14 @@
 # @happyvertical/smrt-manufacturing
 
+## 0.47.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.47.2
+  - @happyvertical/smrt-inventory@0.47.2
+  - @happyvertical/smrt-tenancy@0.47.2
+
 ## 0.47.1
 
 ### Patch Changes

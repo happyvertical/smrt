@@ -9,6 +9,9 @@
 
 import {
   checkLiveSchemaParity,
+  collectForeignKeyOrphanCounts,
+  type ForeignKeyOrphanCount,
+  type ForeignKeyOrphanSkipped,
   type LiveSchemaParityReport,
   ObjectRegistry,
   SchemaComparer,
@@ -26,6 +29,7 @@ import {
   getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import { affectedOrphanCounts, formatOrphanCountLine } from './db-orphans.js';
 import {
   collectRegistryConflictTargets,
   formatParityReport,
@@ -392,6 +396,18 @@ export function summarizeSchemaDiff(diff: {
             'Run `smrt db:migrate --drop-columns` to drop this orphan column (destructive).',
         });
         break;
+
+      case 'rename_data_pending':
+        // Advisory-only (#2752): report-only, warning severity.
+        if (change.advisory?.severity !== 'warning') break;
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'rename_data_pending',
+          recommendation:
+            change.advisory?.message ??
+            'A declared column is empty while an undeclared column of a compatible type holds data — data appears to still live in the old column after a field rename. Run `smrt db:diff` for the suggested backfill SQL.',
+        });
+        break;
     }
   }
 
@@ -564,6 +580,9 @@ export const dbStatusCommand: CLICommand = {
         schemaContract: schemaContract as SchemaContractReport,
         parity: null as LiveSchemaParityReport | null,
         parityError: null as string | null,
+        orphanedForeignKeys: [] as ForeignKeyOrphanCount[],
+        orphanProbeFailures: [] as ForeignKeyOrphanSkipped[],
+        orphansError: null as string | null,
       };
       let diff: SchemaDiff = {
         added_tables: [],
@@ -575,8 +594,8 @@ export const dbStatusCommand: CLICommand = {
       // 8. Compare the current manifest schema against the live database.
       // This keeps db:status useful for shared Postgres databases where the
       // migration history alone is not enough to prove the schema is current.
+      const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
       if (typeof db.getTableSchema === 'function') {
-        const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
         const comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
@@ -614,6 +633,34 @@ export const dbStatusCommand: CLICommand = {
       } else if (options.parity) {
         status.parityError =
           'The configured database adapter cannot describe tables, so live-schema parity cannot be verified.';
+      }
+
+      // 8c. Per-foreign-key orphan counts (#2753). Runs regardless of
+      // whether the adapter supports `getTableSchema` — the probe only needs
+      // `db.query()` — so this never silently skips on a lighter adapter the
+      // way the schema-diff/parity branches above must. Diagnostic-only:
+      // never gates has_changes or the process exit code, and a probe
+      // failure is reported rather than failing the whole status command.
+      try {
+        const orphanReport = await collectForeignKeyOrphanCounts(
+          db,
+          manifestSchemas,
+          { engineHint: dbType },
+        );
+        status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
+        // A per-relationship probe failure (permissions, a malformed live
+        // column, ...) is caught inside collectForeignKeyOrphanCounts and
+        // never rethrown here — it lands in `skipped` instead of `counts`,
+        // which `affectedOrphanCounts()` never surfaces. Without this, a real
+        // failed probe and "zero orphans" would read identically in
+        // `db:status`. `missing_table` skips stay silent here (expected,
+        // benign); `smrt db:orphans` lists both kinds in full.
+        status.orphanProbeFailures = orphanReport.skipped.filter(
+          (skip) => skip.kind === 'probe_failed',
+        );
+      } catch (error) {
+        status.orphansError =
+          error instanceof Error ? error.message : String(error);
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -733,6 +780,38 @@ export const dbStatusCommand: CLICommand = {
           }
         }
         console.log();
+      }
+
+      // Per-foreign-key orphan summary (#2753). Diagnostic-only: does not
+      // touch process.exitCode or the existing drift/notes finding kinds.
+      if (status.orphansError) {
+        console.log(
+          `⚠️  Foreign-key orphan check unavailable: ${status.orphansError}`,
+        );
+        console.log();
+      } else {
+        if (status.orphanedForeignKeys.length > 0) {
+          console.log(
+            `⚠️  Foreign-key orphans found (${status.orphanedForeignKeys.length}):`,
+          );
+          for (const count of status.orphanedForeignKeys) {
+            console.log(`   • ${formatOrphanCountLine(count)}`);
+          }
+          console.log('   Run `smrt db:orphans` for the full report.');
+          console.log();
+        }
+        if (status.orphanProbeFailures.length > 0) {
+          console.log(
+            `⚠️  ${status.orphanProbeFailures.length} foreign-key orphan probe(s) failed (not counted as clean):`,
+          );
+          for (const failure of status.orphanProbeFailures) {
+            console.log(
+              `   • ${failure.childTable}.${failure.childColumn} -> ${failure.parentTable}.${failure.parentColumn}: ${failure.reason}`,
+            );
+          }
+          console.log('   Run `smrt db:orphans` for details.');
+          console.log();
+        }
       }
 
       if (options.parity) {

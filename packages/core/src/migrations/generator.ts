@@ -511,10 +511,17 @@ ${downStatementsStr}
 
       case 'orphan_column':
       case 'orphan_index':
+      case 'rename_data_pending':
         // Report-only: surface the advisory as comments so a generated
         // migration file documents the drift without acting on it.
         up.push(
-          `-- ${change.advisory?.severity === 'warning' ? 'WARNING' : 'NOTE'}: ${change.type === 'orphan_column' ? 'Orphan column' : 'Orphan unique constraint'} ${change.table}.${change.name} (${change.mismatch?.actual ?? 'unknown shape'})`,
+          `-- ${change.advisory?.severity === 'warning' ? 'WARNING' : 'NOTE'}: ${
+            change.type === 'orphan_column'
+              ? 'Orphan column'
+              : change.type === 'orphan_index'
+                ? 'Orphan unique constraint'
+                : 'Rename data pending'
+          } ${change.table}.${change.name} (${change.mismatch?.actual ?? 'unknown shape'})`,
         );
         if (change.advisory?.message) {
           up.push(`-- ${change.advisory.message}`);

@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.47.2
+
+### Patch Changes
+
+- ### Features
+
+  - detect and advise on pending rename backfills (#2752) (#2767) (core)
+  - per-foreign-key orphan count report (#2766) (schema,cli)
+  - read-only booted runtime observation plane over HTTP (#2758) (dev-mcp)
+
+  ### Bug Fixes
+
+  - exclude collection conflict targets (#2765) (cli)
+  - deterministic codegen order + live-parity reference-lead index drift reporting (#2756) (core)
+  - share ObjectRegistry with pool worker processes (#2757) (vitest,core)
+  - db:migrate-uuid FK-partner propagation and bare-hex UUID acceptance (#2759) (cli)
+  - @happyvertical/smrt-config@0.47.2
+  - @happyvertical/smrt-types@0.47.2
+  - @happyvertical/smrt-scanner@0.47.2
+
 ## 0.47.1
 
 ### Patch Changes
