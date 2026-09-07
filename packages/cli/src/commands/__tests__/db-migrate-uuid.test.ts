@@ -537,6 +537,46 @@ describePostgres(
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }, 30_000);
+
+    it('projects dirty values copied into an empty rename destination as a dry-run skip', async () => {
+      const db = await freshDb();
+      await db.query(`DROP VIEW "${viewName}"`);
+      await db.query(`UPDATE "${tableName}" SET old_ref = 'dirty-source'`);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], {
+        'dry-run': true,
+        rename: 'old_ref:parent_id',
+        table: tableName,
+      });
+      const output = logSpy.mock.calls.flat().join('\n');
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(output).toContain(`SKIP ${tableName}.parent_id: 1 non-uuid`);
+      expect(output).not.toContain(`ALTER COLUMN "parent_id" TYPE uuid`);
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }, 30_000);
+
+    it('does not project a dirty rename source over an already populated destination', async () => {
+      const db = await freshDb();
+      await db.query(`DROP VIEW "${viewName}"`);
+      await db.query(
+        `UPDATE "${tableName}" SET old_ref = 'dirty-source', parent_id = '22222222-2222-2222-2222-222222222222'`,
+      );
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], {
+        'dry-run': true,
+        rename: 'old_ref:parent_id',
+        table: tableName,
+      });
+      const output = logSpy.mock.calls.flat().join('\n');
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(output).toContain(`ALTER COLUMN "parent_id" TYPE uuid`);
+      expect(output).not.toContain(`SKIP ${tableName}.parent_id:`);
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }, 30_000);
   },
 );
 

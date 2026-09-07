@@ -351,6 +351,7 @@ export const dbMigrateUuidCommand: CLICommand = {
           true,
           true,
           renamedSourceColumns(renameSpecs),
+          renameSpecs,
         );
         return;
       }
@@ -373,6 +374,7 @@ export const dbMigrateUuidCommand: CLICommand = {
           true,
           false,
           renamedSourceColumns(renameSpecs),
+          renameSpecs,
         );
       }
       await db.transaction(async (tx) => {
@@ -489,6 +491,7 @@ async function convertPostgresUuidColumns(
   dryRun: boolean,
   renderDryRun = true,
   excludedColumns = new Set<string>(),
+  projectedRenames: RenameSpec[] = [],
 ): Promise<void> {
   const { rows: candidateRows } = await db.query(
     `SELECT cols.table_name, cols.column_name, cols.column_default,
@@ -532,6 +535,25 @@ async function convertPostgresUuidColumns(
     defaults.set(
       declaredUuidKey(table, column),
       row.column_default == null ? null : String(row.column_default),
+    );
+  }
+  // Apply copies a source only into an empty destination before scanning it.
+  // Project dirty copied values into dry/preflight eligibility so the plan
+  // never promises a TYPE ALTER that the authoritative scan will skip.
+  for (const spec of projectedRenames) {
+    const destination = liveColumns.find(
+      (column) => column.table === spec.table && column.column === spec.to,
+    );
+    if (!destination || !declaredUuid.has(declaredUuidKey(spec.table, spec.to)))
+      continue;
+    const { rows } = await db.query(
+      `SELECT count(*)::text AS n FROM ${pgTable(spec.table)}
+        WHERE ${nullifEmpty(true, quoteIdentifier(spec.from))} IS NOT NULL
+          AND ${quoteIdentifier(spec.to)} IS NULL
+          AND btrim(${quoteIdentifier(spec.from)}) !~* '${UUID_RE}'`,
+    );
+    destination.nonUuid += Number(
+      (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
     );
   }
   const { convert, skipDirtyData, skipNotDeclared } = planUuidConversions(
