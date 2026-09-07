@@ -151,7 +151,10 @@ Knowledge and introspection tools return a **summary** by default and accept
   `fieldCount`, compact relationship strings, `mcpOperations`). A response that
   exceeds its character budget reports a `truncated` block with the omitted count
   and filter guidance instead of being silently cut. `maxChars` overrides the
-  budget.
+  budget, and a truncated response carries `nextCursor`; pass it back as
+  `cursor` to read the next alphabetical page. `runtime-registry` pages the
+  same way (`page.nextCursor`, `limit` default 50) while its summary stays
+  global.
 - `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
   authored `AGENTS.md` and module docs **by path** rather than embedding them,
   and return compact package records. With `detail: "full"`, they embed the package
@@ -287,6 +290,8 @@ available it falls back to `@happyvertical/smrt-scanner`.
 | `manifestPath` | `string` | No | Explicit manifest artifact path |
 | `detail` | `'summary' \| 'full'` | No | Default `summary`. `full` returns field, schema, and method detail |
 | `maxChars` | `number` | No | Response character budget; overflow is reported under `truncated` |
+| `cursor` | `string` | No | Resume after this `className` (alphabetical); pass a previous response's `nextCursor` |
+| `limit` | `number` | No | Maximum objects per page, applied before the character budget |
 | `includeFields` | `boolean` | No | Include field details (`detail: "full"` only) |
 | `includeRelationships` | `boolean` | No | Analyze relationships (`detail: "full"` only) |
 | `includeMethods` | `boolean` | No | Include public method details (`detail: "full"` only) |
@@ -548,6 +553,8 @@ provenance (`booted (registry)`); read-only.
 | `projectPath` | `string` | No | Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once) |
 | `objects` | `string[]` | No | Restrict field/method detail to these simple or qualified object names |
 | `detail` | `boolean` | No | Include field and method detail for every object (default: only when `objects` is given) |
+| `cursor` | `string` | No | Resume after this qualified object name; pass a previous response's `page.nextCursor` |
+| `limit` | `number` | No | Objects per page (default 50, capped at 500) |
 
 ### `runtime-object`
 
