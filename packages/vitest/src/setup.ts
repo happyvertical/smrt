@@ -351,19 +351,68 @@ function buildSchemaSqlBatches(
           dbConfig.type,
         );
 
-  return Object.values(
-    smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
-  ).map((schema) => {
-    const ddl = smrtCore.generateDDLForEngine(schema, engine);
-    return [
-      ddl.createTable,
-      ...ddl.indexes,
-      ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
-    ]
-      .filter(Boolean)
-      .map(normalizeSchemaStatement)
-      .join('\n');
-  });
+  return Object.values(smrtCore.ObjectRegistry.getAllSchemasAsDefinitions())
+    .map((schema) => {
+      // Generate DDL per-schema, in isolation: `ObjectRegistry` in this
+      // process now holds every manifest-registered class from every
+      // discovered smrt package (#2750's worker-side re-registration fix),
+      // not just the classes this particular test file happens to import.
+      // A handful of those classes are legitimately incompatible with a
+      // given engine by design (e.g. a cross-package foreign key using
+      // `ON DELETE CASCADE`, which DuckDB's strategy deliberately rejects —
+      // see `duckdb-strategy.ts`) and `generateDDLForEngine` throws for
+      // them. Before the worker-side fix, those unrelated classes were
+      // simply never registered in this process, so the throw never
+      // happened. Letting one such throw escape here aborts
+      // `Promise.all`/`.map` for the WHOLE batch, silently skipping table
+      // creation even for the class this test actually needs — reproduced
+      // for `packages/events` (`EventType`/`event_types`) via an unrelated
+      // `EventAsset` FK, and for `packages/analytics`
+      // (`AnalyticsProperty`/`analytics_properties`) the same way. Catch and
+      // skip only the offending schema so every other registered class,
+      // including the one under test, still gets its table.
+      try {
+        const ddl = smrtCore.generateDDLForEngine(schema, engine);
+        return [
+          ddl.createTable,
+          ...ddl.indexes,
+          ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
+        ]
+          .filter(Boolean)
+          .map(normalizeSchemaStatement)
+          .join('\n');
+      } catch (error) {
+        warnOnceForSchemaDdlFailure(schema.tableName, engine, error);
+        return '';
+      }
+    })
+    .filter(Boolean);
+}
+
+/**
+ * De-duplicates the per-schema DDL-generation warning from
+ * {@link buildSchemaSqlBatches} across repeated `getDatabase()` calls in one
+ * worker process (every `beforeEach` in a JSON/DuckDB-backed test file can
+ * trigger it again for the same offending table) so it is reported once,
+ * not once per test.
+ */
+const warnedSchemaDdlFailures = new Set<string>();
+
+function warnOnceForSchemaDdlFailure(
+  tableName: string,
+  engine: string,
+  error: unknown,
+): void {
+  const key = `${engine}:${tableName}`;
+  if (warnedSchemaDdlFailures.has(key)) {
+    return;
+  }
+  warnedSchemaDdlFailures.add(key);
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[smrt-vitest] setup: skipping automatic schema creation for table ` +
+      `'${tableName}' on engine '${engine}' -- ${message}`,
+  );
 }
 
 vi.mock('@happyvertical/sql', async () => {
