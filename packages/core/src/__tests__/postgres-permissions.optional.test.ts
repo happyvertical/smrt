@@ -595,6 +595,43 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses a managed rewrite rule that can reach retained data through an external definer trigger', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(owner, 'CREATE TABLE other.audit_relay (evidence text)');
+    await as(
+      owner,
+      `CREATE FUNCTION other.relay_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.evidence); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.relay_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER relay_to_audit AFTER INSERT ON other.audit_relay FOR EACH ROW EXECUTE FUNCTION other.relay_to_audit()',
+    );
+    await as(
+      owner,
+      'CREATE RULE items_to_relay AS ON INSERT TO app.items DO ALSO INSERT INTO other.audit_relay(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_relay)',
+      }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
   it('allows rewrite rules that do not reference a retained table', async () => {
     await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
     await as(

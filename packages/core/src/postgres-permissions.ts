@@ -857,8 +857,16 @@ async function plan(
       'Retained tables may reference only retained tables; referential actions from an accessible table can otherwise mutate retained rows.',
     );
   }
-  for (const rule of state.rewriteRules)
-    if (
+  for (const rule of state.rewriteRules) {
+    const managedSource =
+      rule.schema === contract.schema && declared.has(rule.table_name);
+    if (managedSource && rule.referenced_schema !== contract.schema)
+      unsupported(
+        'user-rewrite-rule',
+        `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
+        'Managed rewrite rules may not reference external relations: rule-owner table privileges can invoke external triggers outside the retained-table isolation boundary.',
+      );
+    else if (
       rule.referenced_schema === contract.schema &&
       retained.has(rule.referenced_table)
     )
@@ -867,6 +875,7 @@ async function plan(
         `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
         'User-defined rewrite rules are unsupported because rule-owner privileges can write retained tables indirectly.',
       );
+  }
   for (const [table, columns] of Object.entries(
     contract.monitor?.tables ?? {},
   )) {
