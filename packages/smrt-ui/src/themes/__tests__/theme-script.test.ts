@@ -28,6 +28,13 @@ describe('themeScript', () => {
     document.documentElement.classList.remove('dark');
   });
 
+  it("uses Vitest's original jsdom Storage rather than Node host storage", () => {
+    expect(localStorage).toBe(
+      (globalThis as typeof globalThis & { jsdom: { window: Window } }).jsdom
+        .window.localStorage,
+    );
+  });
+
   it('resolves system preference when nothing is stored', () => {
     mockSystemDark(true);
     run(themeScript({ preset: 'material' }));
