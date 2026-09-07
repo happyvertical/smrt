@@ -13,9 +13,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
+  field,
   getSystemTableShapes,
   type LiveSchemaParityReport,
   ObjectRegistry,
+  SmrtCollection,
+  SmrtObject,
+  smrtRegistry as smrt,
 } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -150,16 +154,26 @@ describe('collectRegistryConflictTargets', () => {
     vi.restoreAllMocks();
   });
 
-  it('maps every registered class onto its table conflict target', () => {
+  it('maps registered object classes onto their table conflict target, excluding collections', () => {
     vi.spyOn(ObjectRegistry, 'getQualifiedClassNames').mockReturnValue([
       '@app:Widget',
       '@app:Gadget',
+      '@app:WidgetCollection',
     ]);
     vi.spyOn(ObjectRegistry, 'getTableName').mockImplementation((name) =>
-      name === '@app:Widget' ? 'widgets' : 'gadgets',
+      name === '@app:Widget' || name === '@app:WidgetCollection'
+        ? 'widgets'
+        : 'gadgets',
     );
     vi.spyOn(ObjectRegistry, 'getConflictColumns').mockImplementation((name) =>
-      name === '@app:Widget' ? ['slug', 'context'] : ['tenant_id', 'code'],
+      name === '@app:Widget' || name === '@app:WidgetCollection'
+        ? ['slug', 'context']
+        : ['tenant_id', 'code'],
+    );
+    vi.spyOn(ObjectRegistry, 'getClass').mockImplementation((name) =>
+      name === '@app:WidgetCollection'
+        ? ({ extends: 'SmrtCollection' } as never)
+        : ({ extends: 'SmrtObject' } as never),
     );
 
     expect(collectRegistryConflictTargets()).toEqual({
@@ -179,6 +193,85 @@ describe('collectRegistryConflictTargets', () => {
     vi.spyOn(ObjectRegistry, 'getConflictColumns').mockReturnValue([]);
 
     expect(collectRegistryConflictTargets()).toEqual({});
+  });
+
+  it('uses real registration to retain custom, tenant, and STI object targets while excluding collections', () => {
+    ObjectRegistry.clear();
+    try {
+      @smrt({
+        tableName: 'issue_2762_custom_records',
+        conflictColumns: ['external_key'],
+      })
+      class Issue2762CustomRecord extends SmrtObject {
+        @field({ type: 'text', required: true })
+        externalKey: string = '';
+      }
+
+      @smrt({
+        tableName: 'issue_2762_tenant_records',
+        tenantScoped: { mode: 'optional' },
+      })
+      class Issue2762TenantRecord extends SmrtObject {
+        @field({ type: 'text', required: true })
+        slug: string = '';
+      }
+
+      @smrt({ tableName: 'issue_2762_events', tableStrategy: 'sti' })
+      class Issue2762Event extends SmrtObject {
+        @field({ type: 'text', required: true })
+        slug: string = '';
+      }
+
+      @smrt()
+      class Issue2762Meeting extends Issue2762Event {}
+
+      @smrt()
+      class Issue2762CustomRecordCollection extends SmrtCollection<Issue2762CustomRecord> {
+        static readonly _itemClass = Issue2762CustomRecord;
+      }
+
+      @smrt()
+      class Issue2762TenantRecordCollection extends SmrtCollection<Issue2762TenantRecord> {
+        static readonly _itemClass = Issue2762TenantRecord;
+      }
+
+      @smrt()
+      class Issue2762MeetingCollection extends SmrtCollection<Issue2762Meeting> {
+        static readonly _itemClass = Issue2762Meeting;
+      }
+
+      const targets = collectRegistryConflictTargets();
+      for (const objectClass of [
+        Issue2762CustomRecord,
+        Issue2762TenantRecord,
+        Issue2762Meeting,
+      ]) {
+        const name = objectClass.name;
+        const source = ObjectRegistry.getClass(name)?.qualifiedName ?? name;
+        const tableName = ObjectRegistry.getTableName(name);
+        expect(tableName).toBeDefined();
+        expect(targets[tableName as string]).toContainEqual({
+          columns: ObjectRegistry.getConflictColumns(source),
+          source,
+        });
+      }
+
+      for (const collectionClass of [
+        Issue2762CustomRecordCollection,
+        Issue2762TenantRecordCollection,
+        Issue2762MeetingCollection,
+      ]) {
+        const name = collectionClass.name;
+        const source = ObjectRegistry.getClass(name)?.qualifiedName ?? name;
+        const tableName = ObjectRegistry.getTableName(name);
+        expect(targets[tableName as string]).not.toContainEqual({
+          columns: ObjectRegistry.getConflictColumns(source),
+          source,
+        });
+      }
+    } finally {
+      ObjectRegistry.clear();
+    }
   });
 });
 

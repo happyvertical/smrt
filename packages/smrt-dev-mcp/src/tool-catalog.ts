@@ -45,6 +45,12 @@ const DATABASE_TYPE_PROPERTY = {
     'Optional engine hint for dbUrl or the environment connection (sqlite, postgres, duckdb); inferred from the URL scheme when omitted',
 };
 
+const PROJECT_PATH_PROPERTY = {
+  type: 'string',
+  description:
+    'Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once)',
+} as const;
+
 const LIMIT_PROPERTY = {
   type: 'number',
   description: 'Row budget for result lists (default 50, capped at 500)',
@@ -582,6 +588,62 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        dbUrl: DATABASE_URL_PROPERTY,
+        dbType: DATABASE_TYPE_PROPERTY,
+      },
+    },
+  },
+  {
+    name: 'runtime-registry',
+    description:
+      'Sanitized snapshot of the booted ObjectRegistry from the project and installed manifests (booted provenance; read-only; no project code executed)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: PROJECT_PATH_PROPERTY,
+        objects: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Restrict field/method detail to these simple or qualified object names',
+        },
+        detail: {
+          type: 'boolean',
+          description:
+            'Include field and method detail for every object (default: only when objects is given)',
+        },
+      },
+    },
+  },
+  {
+    name: 'runtime-object',
+    description:
+      'One booted object: sanitized fields, methods, tenancy, inheritance, and the DDL the registry would generate (booted provenance; read-only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: PROJECT_PATH_PROPERTY,
+        name: {
+          type: 'string',
+          description: 'Simple or qualified object name',
+        },
+        engine: {
+          type: 'string',
+          enum: ['sqlite', 'postgres', 'duckdb'],
+          description: 'Engine for the DDL preview (default: registry default)',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'runtime-schema-diff',
+    description:
+      'Booted registry schemas versus the live dev database using the db:diff comparer; introspection only, drops/relaxations never proposed (runtime provenance; read-only)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: PROJECT_PATH_PROPERTY,
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
       },

@@ -70,6 +70,13 @@ export function renderForeignKeyOrphanDetector(
   options: {
     engine?: DatabaseEngine;
     limitOne?: boolean;
+    /**
+     * Aggregate the same predicate as `COUNT(*)` instead of listing orphan
+     * keys. Used by the read-only per-foreign-key orphan count report
+     * (#2753) so the report shares the exact FROM/JOIN/WHERE clause the
+     * migration gate probes with, rather than a second hand-written copy.
+     */
+    countOnly?: boolean;
     uuidComparison?: boolean;
     uuidCastSide?: ForeignKeyUuidCastSide;
   } = {},
@@ -81,10 +88,15 @@ export function renderForeignKeyOrphanDetector(
     options.uuidComparison,
     options.uuidCastSide,
   );
-  return (
-    `SELECT ${parts.childColumn} AS orphan_key FROM ${parts.childTable} ` +
+  const fromClause =
+    `${parts.childTable} ` +
     `LEFT JOIN ${parts.parentTable} ON ${parts.joinPredicate} ` +
-    `WHERE ${parts.childColumn} IS NOT NULL AND ${parts.parentColumn} IS NULL` +
+    `WHERE ${parts.childColumn} IS NOT NULL AND ${parts.parentColumn} IS NULL`;
+  if (options.countOnly) {
+    return `SELECT COUNT(*) AS orphan_count FROM ${fromClause}`;
+  }
+  return (
+    `SELECT ${parts.childColumn} AS orphan_key FROM ${fromClause}` +
     (options.limitOne ? ' LIMIT 1' : '')
   );
 }

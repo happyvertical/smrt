@@ -535,6 +535,44 @@ static manifest tools. Read-only.
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 
+### `runtime-registry`
+
+Sanitized snapshot of the booted `ObjectRegistry`: objects, packages, tables,
+fields, methods, tenancy, and inheritance, projected through a plain-JSON DTO.
+The boot registers the project's `.smrt/manifest.json` (or `dist/manifest.json`)
+and every installed s-m-r-t package manifest; no project code is imported. Booted
+provenance (`booted (registry)`); read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `projectPath` | `string` | No | Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once) |
+| `objects` | `string[]` | No | Restrict field/method detail to these simple or qualified object names |
+| `detail` | `boolean` | No | Include field and method detail for every object (default: only when `objects` is given) |
+
+### `runtime-object`
+
+One booted object: sanitized fields, methods, tenancy, inheritance, and the
+DDL the registry would generate for it. Booted provenance; read-only.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `projectPath` | `string` | No | Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once) |
+| `name` | `string` | Yes | Simple or qualified object name |
+| `engine` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Engine for the DDL preview (default: registry default) |
+
+### `runtime-schema-diff`
+
+Booted registry schemas versus the live dev database, using the same comparer
+as `db:diff`/`db:migrate`. Introspection only: drops and relaxations are never
+proposed and nothing is executed. Runtime provenance; read-only. Without a
+configured connection it returns a successful static-only result.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `projectPath` | `string` | No | Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once) |
+| `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
+
 ## Runtime Diagnostics (Optional Live DB)
 
 The six runtime-diagnostics tools above (`migration-status`, `job-health`,
@@ -568,6 +606,31 @@ not `smrt-app-mcp` and never writes.
 **Connection strings are never logged.** Surfaced URLs are redacted
 (passwords and token query params masked); driver errors pass through a
 redacting normalizer before they can appear in a diagnostic.
+
+## Runtime Dev-Plane Host (HTTP, Level 2)
+
+`smrt-dev-mcp --http [--port N] [--project DIR]` boots the confined runtime
+once and serves a **positive, read-only** catalog over the stateless
+Streamable HTTP transport (no SSE, no `Mcp-Session-Id`, no sticky routing):
+`runtime-registry`, `runtime-object`, `runtime-schema-diff`, and the six
+live-DB diagnostics above. The static stdio catalog is not mounted, and
+generated CRUD, custom actions, `do()`, and tool-backed `is()` are never
+exposed.
+
+- Binds loopback only; the SDK's localhost Host and Origin validation runs on
+  every request.
+- Every request needs `Authorization: Bearer <token>`. Set
+  `SMRT_DEV_MCP_TOKEN`, or let the process mint one and print it once to
+  stderr. A supplied token is never echoed.
+- No authenticated principal exists on this plane, so scope is fail-closed
+  global-only exactly as for the stdio diagnostics.
+- Per-request `projectPath` arguments are ignored: the booted project is fixed
+  at start. Restart the process to observe a rebuilt manifest.
+
+```bash
+SMRT_DEV_MCP_TOKEN=dev-secret smrt-dev-mcp --http --port 3939 --project .
+# → [smrt-dev-mcp] runtime dev-plane listening at http://127.0.0.1:3939/mcp
+```
 
 ## MCP Resources And Prompts
 

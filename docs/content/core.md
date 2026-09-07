@@ -735,6 +735,18 @@ After restarting your MCP client, use `generate-smrt-class` for model
 scaffolding, `introspect-project` for object and schema discovery, and
 `smrt-review` for deterministic framework-alignment findings.
 
+The same server also carries an optional **runtime** plane, labelled
+separately from static facts. With `SMRT_DEV_DB_URL` (or `cli.database`
+config) set, `migration-status`, `job-health`, `schedule-health`,
+`dispatch-health`, `recent-changes`, and `registry-drift` read the `_smrt_*`
+system tables with SELECT-only queries and redacted output. `runtime-registry`,
+`runtime-object`, and `runtime-schema-diff` boot the project's manifests into
+an in-process registry (no project code is imported) and report a sanitized
+snapshot, per-object DDL, and a live schema diff. `smrt-dev-mcp --http` serves
+exactly that read-only runtime catalog over stateless Streamable HTTP on
+loopback with a bearer token; it never exposes generated CRUD, custom actions,
+or `do()`. See the package README for parameters and the security boundary.
+
 Former source-checkout helper tool names are not exposed as compatibility
 aliases. When using `generate-smrt-class` to scaffold a collection, add its
 item import and required `_itemClass`; for curl examples, use the public REST
