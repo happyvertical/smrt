@@ -862,13 +862,15 @@ async function plan(
     const parentRetained =
       relation.parent_schema === contract.schema &&
       retained.has(relation.parent_table ?? '');
-    if (managedParent && relation.child_schema !== contract.schema)
+    if (managedParent && relation.child_schema !== contract.schema) {
       unsupported(
         'managed-foreign-key',
         `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
         'Managed tables may not have external foreign-key children: referential actions can invoke external triggers outside the retained-table isolation boundary.',
       );
-    else if (childRetained === parentRetained) continue;
+      continue;
+    }
+    if (childRetained === parentRetained) continue;
     unsupported(
       'retained-foreign-key',
       `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
@@ -878,7 +880,18 @@ async function plan(
   for (const rule of state.rewriteRules) {
     const managedSource =
       rule.schema === contract.schema && declared.has(rule.table_name);
-    if (managedSource && rule.referenced_schema !== contract.schema)
+    const retainedSource =
+      rule.schema === contract.schema && retained.has(rule.table_name);
+    const managedTarget =
+      rule.referenced_schema === contract.schema &&
+      declared.has(rule.referenced_table);
+    if (retainedSource && managedTarget)
+      unsupported(
+        'user-rewrite-rule',
+        `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,
+        'Retained tables may not reference managed tables through rewrite rules.',
+      );
+    else if (managedSource && rule.referenced_schema !== contract.schema)
       unsupported(
         'user-rewrite-rule',
         `${qualified(rule.schema, rule.table_name)} (${rule.rule_name})`,

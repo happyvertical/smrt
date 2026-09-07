@@ -510,6 +510,9 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         resource: 'operator_audit',
       }),
     );
+    expect(plan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: 'retained-foreign-key' }),
+    );
   });
   it('refuses retained inheritance from a managed table', async () => {
     await as(owner, 'CREATE TABLE app.operator_audit () INHERITS (app.items)');
@@ -629,6 +632,9 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         resource: '"other"."audit_relay" -> "app"."items"',
       }),
     );
+    expect(plan.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: 'retained-foreign-key' }),
+    );
     await expect(
       applyPostgresPermissions(db, contract, {
         expectedFingerprint: plan.fingerprint,
@@ -648,6 +654,22 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       expect.objectContaining({
         code: 'user-rewrite-rule',
         resource: '"app"."items" (items_to_audit)',
+      }),
+    );
+  });
+  it('refuses retained rewrite rules that reference a managed table', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE RULE audit_to_items AS ON INSERT TO app.operator_audit DO ALSO INSERT INTO app.items(visible) VALUES (NEW.evidence)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."operator_audit" (audit_to_items)',
       }),
     );
   });
