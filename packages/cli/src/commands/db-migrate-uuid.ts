@@ -84,8 +84,12 @@ interface DbMigrateUuidOptions {
   verbose?: boolean;
 }
 
+// PostgreSQL's `::uuid` cast also accepts the bare 32-hex form (no hyphens) as
+// the identical value to its canonical hyphenated form — but NOT braces or
+// partial hyphenation. Accept both forms everywhere this probe is used so a
+// column holding hyphen-stripped uuids is not needlessly reported as dirty.
 const UUID_RE =
-  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  '^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$';
 
 /**
  * Build the set of schema-declared UUID columns from a manifest's
@@ -151,6 +155,119 @@ export interface ConversionPlan {
   skipDirtyData: Array<{ table: string; column: string; nonUuid: number }>;
   /** Live TEXT columns the schema does NOT declare as UUID (left as TEXT). */
   skipNotDeclared: Array<{ table: string; column: string }>;
+  /**
+   * Otherwise-convertible columns blocked because a foreign-key partner
+   * (transitively) will not convert. Populated by
+   * `propagateBlockedForeignKeyPartners`; absent/empty before that step runs.
+   */
+  skipBlockedPartner?: Array<{ table: string; column: string; reason: string }>;
+}
+
+/** A single-column foreign key edge between two candidate columns. */
+export interface ForeignKeyEdge {
+  name: string;
+  childTable: string;
+  childColumn: string;
+  parentTable: string;
+  parentColumn: string;
+}
+
+/**
+ * Propagate skips across foreign-key edges to a fixpoint.
+ *
+ * `db:migrate-uuid` converts a column only when BOTH its declared-UUID/clean
+ * data gates pass (see `planUuidConversions`) AND every foreign-key partner
+ * of it will also convert — otherwise `ALTER TABLE … ADD CONSTRAINT` at
+ * recreation time would fail with a text/uuid type mismatch. Rather than
+ * aborting the whole run, block the convertible partner too: a column
+ * skipped for dirty data or because the schema intentionally keeps it TEXT
+ * blocks every foreign-key partner of it, and that block propagates
+ * transitively (a two-hop chain blocks both hops).
+ *
+ * Pure and DB-independent: `edges` is the full set of single-column foreign
+ * keys touching the candidate columns, discovered separately. Multi-column
+ * foreign keys are out of scope here and stay a hard refusal downstream.
+ */
+export function propagateBlockedForeignKeyPartners(
+  plan: ConversionPlan,
+  edges: ForeignKeyEdge[],
+): ConversionPlan {
+  const convertByKey = new Map(
+    plan.convert.map((candidate) => [
+      declaredUuidKey(candidate.table, candidate.column),
+      candidate,
+    ]),
+  );
+  const blockedReason = new Map<string, string>();
+  for (const item of plan.skipDirtyData) {
+    blockedReason.set(
+      declaredUuidKey(item.table, item.column),
+      `${item.nonUuid} non-uuid value(s)`,
+    );
+  }
+  for (const item of plan.skipNotDeclared) {
+    blockedReason.set(
+      declaredUuidKey(item.table, item.column),
+      'not schema-declared UUID',
+    );
+  }
+
+  const skipBlockedPartner: NonNullable<ConversionPlan['skipBlockedPartner']> =
+    [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const edge of edges) {
+      const childKey = declaredUuidKey(edge.childTable, edge.childColumn);
+      const parentKey = declaredUuidKey(edge.parentTable, edge.parentColumn);
+      const childBlockedReason = blockedReason.get(childKey);
+      const parentBlockedReason = blockedReason.get(parentKey);
+
+      if (
+        childBlockedReason !== undefined &&
+        parentBlockedReason === undefined &&
+        convertByKey.has(parentKey)
+      ) {
+        const candidate = convertByKey.get(parentKey);
+        if (!candidate) continue;
+        const reason = `blocked by foreign key ${edge.name} to ${edge.childTable}.${edge.childColumn} (${childBlockedReason})`;
+        blockedReason.set(parentKey, reason);
+        convertByKey.delete(parentKey);
+        skipBlockedPartner.push({
+          table: candidate.table,
+          column: candidate.column,
+          reason,
+        });
+        changed = true;
+        continue;
+      }
+
+      if (
+        parentBlockedReason !== undefined &&
+        childBlockedReason === undefined &&
+        convertByKey.has(childKey)
+      ) {
+        const candidate = convertByKey.get(childKey);
+        if (!candidate) continue;
+        const reason = `blocked by foreign key ${edge.name} to ${edge.parentTable}.${edge.parentColumn} (${parentBlockedReason})`;
+        blockedReason.set(childKey, reason);
+        convertByKey.delete(childKey);
+        skipBlockedPartner.push({
+          table: candidate.table,
+          column: candidate.column,
+          reason,
+        });
+        changed = true;
+      }
+    }
+  }
+
+  return {
+    convert: [...convertByKey.values()],
+    skipDirtyData: plan.skipDirtyData,
+    skipNotDeclared: plan.skipNotDeclared,
+    skipBlockedPartner,
+  };
 }
 
 /**
@@ -565,12 +682,17 @@ async function convertPostgresUuidColumns(
       (rows[0] as Record<string, unknown> | undefined)?.n ?? 0,
     );
   }
-  const { convert, skipDirtyData, skipNotDeclared } = planUuidConversions(
-    liveColumns,
-    declaredUuid,
-  );
+  const initialPlan = planUuidConversions(liveColumns, declaredUuid);
+  const { skipDirtyData, skipNotDeclared } = initialPlan;
+  // A convertible column whose foreign-key partner will not convert (dirty
+  // data, or a column the schema deliberately keeps TEXT) must be blocked
+  // too, transitively, or the FK recreation step below fails with a
+  // text/uuid mismatch instead of the conversion being safely skipped.
+  const foreignKeyEdges = await fetchSingleColumnForeignKeyEdges(db);
+  const { convert, skipBlockedPartner = [] } =
+    propagateBlockedForeignKeyPartners(initialPlan, foreignKeyEdges);
   console.log(
-    `Found ${candidateRows.length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length} skipped.`,
+    `Found ${candidateRows.length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length + skipBlockedPartner.length} skipped.`,
   );
   for (const item of skipDirtyData)
     console.log(
@@ -580,6 +702,8 @@ async function convertPostgresUuidColumns(
     console.log(
       `  SKIP ${item.table}.${item.column}: not schema-declared UUID`,
     );
+  for (const item of skipBlockedPartner)
+    console.log(`  SKIP ${item.table}.${item.column}: ${item.reason}`);
   if (convert.length === 0) {
     console.log('\nNothing to convert. Done.\n');
     return;
@@ -1072,6 +1196,38 @@ async function snapshotBridgeIndexes(
       replicaIdentity: Boolean(row.replica_identity),
     };
   });
+}
+
+/**
+ * Discover every single-column foreign key in the `public` schema, keyed by
+ * child/parent table+column. Used purely to feed
+ * `propagateBlockedForeignKeyPartners` before the convert set is finalized;
+ * multi-column foreign keys are excluded here and remain a hard refusal in
+ * `snapshotForeignKeys` once the (reduced) convert set is known.
+ */
+async function fetchSingleColumnForeignKeyEdges(
+  db: QueryExecutor,
+): Promise<ForeignKeyEdge[]> {
+  const { rows } = await db.query(
+    `SELECT con.conname AS name, child.relname AS child_table,
+            child_attr.attname AS child_column,
+            parent.relname AS parent_table, parent_attr.attname AS parent_column
+       FROM pg_constraint con
+       JOIN pg_class child ON child.oid = con.conrelid
+       JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+       JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = con.conkey[1]
+       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = con.confkey[1]
+      WHERE con.contype = 'f' AND child_ns.nspname = 'public'
+        AND array_length(con.conkey, 1) = 1`,
+  );
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    name: String(row.name),
+    childTable: String(row.child_table),
+    childColumn: String(row.child_column),
+    parentTable: String(row.parent_table),
+    parentColumn: String(row.parent_column),
+  }));
 }
 
 async function snapshotForeignKeys(

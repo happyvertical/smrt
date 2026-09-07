@@ -35,17 +35,37 @@ Before upgrading a PostgreSQL consumer that stores non-UUID tenant primary keys:
 5. Run `smrt db:migrate`, then run `smrt db:migrate-uuid`.
 
 `smrt db:migrate-uuid` only converts schema-declared UUID columns when all
-non-empty values are already canonical UUID strings. It deliberately skips dirty
-columns instead of coercing slug-shaped data. On PostgreSQL it also preserves a
-bounded dependency component in one transaction: schema-declared UUID foreign
-keys and plain stored `id::text` integrity bridges with their single-key btree
-indexes and inbound TEXT foreign keys. Before it drops a bridge column, it reads
-PostgreSQL's dependency catalog and allows only the bridge's generated-column
-definition, those reconstructable indexes, and the foreign keys it explicitly
-captures. Constraints, views, expression or partial indexes, extended
-statistics, and every other dependent catalog object are refused before any
-schema change. It also refuses views, partitions, inheritance, non-canonical
-bridge values, and non-default bridge collations; use `--dry-run` to inspect the
+non-empty values are already canonical UUID strings. A value counts as
+canonical-UUID-shaped in either the hyphenated form
+(`8-4-4-4-12` hex groups) or the bare 32-hex form with no hyphens — PostgreSQL's
+`::uuid` cast accepts both as the identical value, and the conversion normalizes
+either input to the same canonical hyphenated `uuid` value, so a foreign key
+between a hyphenated-form column and a bare-hex-form column still converts and
+recreates correctly. Braces and partially-hyphenated values are never accepted.
+It deliberately skips dirty columns instead of coercing slug-shaped data.
+
+Inside its single transaction, before converting, it drops every foreign key
+that depends on a column being converted and recreates it afterward from the
+captured `pg_get_constraintdef`. A column whose foreign-key partner will not
+convert — because the partner's data is still dirty, or because the schema
+deliberately keeps the partner `TEXT` — blocks that column too, rather than
+aborting the whole run: the block propagates transitively (a two-hop chain of
+foreign keys blocks every column in the chain), and `--dry-run` lists each
+blocked column together with the reason and the foreign key that caused the
+block. Every unblocked column still converts, and repeat runs are a no-op.
+
+On PostgreSQL it also preserves a bounded dependency component in one
+transaction: schema-declared UUID foreign keys and plain stored `id::text`
+integrity bridges with their single-key btree indexes and inbound TEXT foreign
+keys. Before it drops a bridge column, it reads PostgreSQL's dependency catalog
+and allows only the bridge's generated-column definition, those reconstructable
+indexes, and the foreign keys it explicitly captures. Constraints, views,
+expression or partial indexes, extended statistics, and every other dependent
+catalog object are refused before any schema change. It also refuses views,
+partitions, inheritance, non-canonical bridge values, non-default bridge
+collations, multi-column foreign keys touching the migration component, foreign
+keys that mix a converted endpoint with a retained TEXT bridge, and foreign keys
+with nondefault PostgreSQL trigger enforcement; use `--dry-run` to inspect the
 exact plan.
 
 ## Validation

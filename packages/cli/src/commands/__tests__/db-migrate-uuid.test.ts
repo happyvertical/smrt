@@ -7,9 +7,11 @@ import { dbMigrateInt8Command } from '../db-migrate-int8.js';
 import {
   buildDeclaredUuidColumnSet,
   dbMigrateUuidCommand,
+  type ForeignKeyEdge,
   type LiveTextColumn,
   parseRenameSpecs,
   planUuidConversions,
+  propagateBlockedForeignKeyPartners,
 } from '../db-migrate-uuid.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -198,6 +200,146 @@ describe('db:migrate-uuid command', () => {
         'external_id',
         'id',
       ]);
+    });
+  });
+
+  describe('propagateBlockedForeignKeyPartners', () => {
+    it('blocks a convertible column whose FK partner is skipped for dirty data', () => {
+      const plan = planUuidConversions(
+        [
+          { table: 'parent', column: 'id', hasDefault: false, nonUuid: 1 },
+          {
+            table: 'child',
+            column: 'parent_id',
+            hasDefault: false,
+            nonUuid: 0,
+          },
+        ],
+        new Set(['parent|id', 'child|parent_id']),
+      );
+      const edges: ForeignKeyEdge[] = [
+        {
+          name: 'child_parent_fkey',
+          childTable: 'child',
+          childColumn: 'parent_id',
+          parentTable: 'parent',
+          parentColumn: 'id',
+        },
+      ];
+
+      const result = propagateBlockedForeignKeyPartners(plan, edges);
+
+      expect(result.convert).toEqual([]);
+      expect(
+        result.skipBlockedPartner?.map((c) => `${c.table}.${c.column}`),
+      ).toEqual(['child.parent_id']);
+      expect(result.skipBlockedPartner?.[0]?.reason).toContain(
+        'child_parent_fkey',
+      );
+    });
+
+    it('blocks a convertible column whose FK partner the schema keeps TEXT', () => {
+      const plan = planUuidConversions(
+        [
+          { table: 'parent', column: 'id', hasDefault: false, nonUuid: 0 },
+          {
+            table: 'child',
+            column: 'parent_id',
+            hasDefault: false,
+            nonUuid: 0,
+          },
+        ],
+        // parent.id is NOT declared UUID.
+        new Set(['child|parent_id']),
+      );
+      const edges: ForeignKeyEdge[] = [
+        {
+          name: 'child_parent_fkey',
+          childTable: 'child',
+          childColumn: 'parent_id',
+          parentTable: 'parent',
+          parentColumn: 'id',
+        },
+      ];
+
+      const result = propagateBlockedForeignKeyPartners(plan, edges);
+
+      expect(result.convert).toEqual([]);
+      expect(
+        result.skipBlockedPartner?.map((c) => `${c.table}.${c.column}`),
+      ).toEqual(['child.parent_id']);
+      expect(result.skipBlockedPartner?.[0]?.reason).toContain(
+        'not schema-declared UUID',
+      );
+    });
+
+    it('propagates the block transitively across a two-hop chain', () => {
+      const plan = planUuidConversions(
+        [
+          { table: 'gp', column: 'id', hasDefault: false, nonUuid: 0 },
+          { table: 'p', column: 'id', hasDefault: false, nonUuid: 0 },
+          { table: 'c', column: 'parent_id', hasDefault: false, nonUuid: 0 },
+          { table: 'c', column: 'id', hasDefault: false, nonUuid: 0 },
+        ],
+        // gp.id is NOT declared UUID; everything else is.
+        new Set(['p|id', 'c|parent_id', 'c|id']),
+      );
+      const edges: ForeignKeyEdge[] = [
+        {
+          name: 'p_gp_fkey',
+          childTable: 'p',
+          childColumn: 'id',
+          parentTable: 'gp',
+          parentColumn: 'id',
+        },
+        {
+          name: 'c_parent_fkey',
+          childTable: 'c',
+          childColumn: 'parent_id',
+          parentTable: 'p',
+          parentColumn: 'id',
+        },
+      ];
+
+      const result = propagateBlockedForeignKeyPartners(plan, edges);
+
+      expect(result.convert.map((c) => `${c.table}.${c.column}`)).toEqual([
+        'c.id',
+      ]);
+      expect(
+        result.skipBlockedPartner?.map((c) => `${c.table}.${c.column}`).sort(),
+      ).toEqual(['c.parent_id', 'p.id']);
+    });
+
+    it('leaves the plan unchanged when every FK partner also converts', () => {
+      const plan = planUuidConversions(
+        [
+          { table: 'parent', column: 'id', hasDefault: false, nonUuid: 0 },
+          {
+            table: 'child',
+            column: 'parent_id',
+            hasDefault: false,
+            nonUuid: 0,
+          },
+        ],
+        new Set(['parent|id', 'child|parent_id']),
+      );
+      const edges: ForeignKeyEdge[] = [
+        {
+          name: 'child_parent_fkey',
+          childTable: 'child',
+          childColumn: 'parent_id',
+          parentTable: 'parent',
+          parentColumn: 'id',
+        },
+      ];
+
+      const result = propagateBlockedForeignKeyPartners(plan, edges);
+
+      expect(
+        result.convert.map((c) => `${c.table}.${c.column}`).sort(),
+      ).toEqual(['child.parent_id', 'parent.id']);
+      expect(result.skipBlockedPartner).toEqual([]);
     });
   });
 });
@@ -2795,5 +2937,706 @@ describePostgres(
         ),
       ).toMatchObject({ comment: publicBridgeComment });
     }, 30_000);
+  },
+);
+
+describePostgres(
+  'db:migrate-uuid propagates blocked FK partners to a fixpoint (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    async function fkExists(constraintName: string): Promise<boolean> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT 1 FROM pg_constraint WHERE conname = $1 AND contype = 'f'`,
+        constraintName,
+      );
+      return (rows as any[]).length > 0;
+    }
+
+    describe('a dirty parent blocks its convertible declared-UUID child', () => {
+      const stem = `mu_fkblk_dirty_${Math.random().toString(36).slice(2, 8)}`;
+      const parent = `${stem}_parent`;
+      const child = `${stem}_child`;
+      const fkName = `${child}_parent_fkey`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`);
+        await db.query(`CREATE TABLE "${parent}" (id text PRIMARY KEY)`);
+        await db.query(
+          `CREATE TABLE "${child}" (
+             id text PRIMARY KEY,
+             parent_id text NOT NULL CONSTRAINT "${fkName}" REFERENCES "${parent}"(id)
+           )`,
+        );
+        // parent has one clean row and one dirty (non-uuid) row — the column
+        // as a whole is skipped for dirty data (Gate 2 fails).
+        await db.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1), ($2)`,
+          '11111111-1111-1111-1111-111111111111',
+          'legacy-parent-slug',
+        );
+        // child only ever references the clean parent row, so child.parent_id
+        // is itself entirely UUID-shaped — it would convert on its own merits.
+        // child.id is unrelated to the FK entirely and should still convert.
+        await db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '22222222-2222-2222-2222-222222222222',
+          '11111111-1111-1111-1111-111111111111',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [parent]: {
+              tableName: parent,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [child]: {
+              tableName: child,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`,
+          );
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('blocks child.parent_id, leaves parent.id TEXT, still converts child.id, and the FK survives', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        process.exitCode = undefined;
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        const exitCode = process.exitCode;
+        process.exitCode = undefined;
+        expect(exitCode).toBeUndefined();
+        expect(errorSpy).not.toHaveBeenCalled();
+        const dryRunLog = logSpy.mock.calls.flat().map(String).join('\n');
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        // Parent stays TEXT: dirty data blocks conversion of its own column.
+        expect(await dataType(parent, 'id')).toBe('text');
+        // Child's parent_id is blocked purely because its FK partner is
+        // skipped — even though child.parent_id's own data is 100% clean.
+        expect(await dataType(child, 'parent_id')).toBe('text');
+        // The rest converts: child.id has no FK dependency on the dirty pair.
+        expect(await dataType(child, 'id')).toBe('uuid');
+        // The FK constraint is never dropped since neither endpoint converts.
+        expect(await fkExists(fkName)).toBe(true);
+        expect(dryRunLog).toContain(`SKIP ${parent}.id`);
+        expect(dryRunLog).toContain(`SKIP ${child}.parent_id`);
+      }, 30_000);
+
+      it('lists the propagated skip in --dry-run output without mutating anything', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+
+        const output = logSpy.mock.calls.flat().map(String).join('\n');
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(output).toMatch(
+          new RegExp(`SKIP ${child}\\.parent_id: blocked by foreign key`),
+        );
+        // Dry run never mutates.
+        expect(await dataType(parent, 'id')).toBe('text');
+        expect(await dataType(child, 'parent_id')).toBe('text');
+        expect(await dataType(child, 'id')).toBe('text');
+      }, 30_000);
+
+      it('is a no-op on a second run', async () => {
+        const quiet1 = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errors1 = vi.spyOn(console, 'error').mockImplementation(() => {});
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        quiet1.mockRestore();
+        errors1.mockRestore();
+
+        const quiet2 = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errors2 = vi.spyOn(console, 'error').mockImplementation(() => {});
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+        expect(errors2).not.toHaveBeenCalled();
+        quiet2.mockRestore();
+        errors2.mockRestore();
+
+        expect(await dataType(parent, 'id')).toBe('text');
+        expect(await dataType(child, 'parent_id')).toBe('text');
+        expect(await dataType(child, 'id')).toBe('uuid');
+        expect(await fkExists(fkName)).toBe(true);
+      }, 30_000);
+    });
+
+    describe('a declared-TEXT parent blocks its convertible declared-UUID child', () => {
+      const stem = `mu_fkblk_text_${Math.random().toString(36).slice(2, 8)}`;
+      const parent = `${stem}_parent`;
+      const child = `${stem}_child`;
+      const fkName = `${child}_parent_fkey`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`);
+        await db.query(`CREATE TABLE "${parent}" (id text PRIMARY KEY)`);
+        await db.query(
+          `CREATE TABLE "${child}" (
+             id text PRIMARY KEY,
+             parent_id text NOT NULL CONSTRAINT "${fkName}" REFERENCES "${parent}"(id)
+           )`,
+        );
+        await db.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1)`,
+          '11111111-1111-1111-1111-111111111111',
+        );
+        await db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '22222222-2222-2222-2222-222222222222',
+          '11111111-1111-1111-1111-111111111111',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        // parent.id is declared TEXT on purpose — the schema never converts
+        // it, so its declared-UUID child.parent_id must stay TEXT too.
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [parent]: {
+              tableName: parent,
+              ddl: '',
+              columns: { id: { type: 'TEXT' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [child]: {
+              tableName: child,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`,
+          );
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('blocks child.parent_id, still converts child.id, and the FK survives', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        expect(errorSpy).not.toHaveBeenCalled();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(await dataType(parent, 'id')).toBe('text');
+        expect(await dataType(child, 'parent_id')).toBe('text');
+        expect(await dataType(child, 'id')).toBe('uuid');
+        expect(await fkExists(fkName)).toBe(true);
+      }, 30_000);
+    });
+
+    describe('a two-hop chain propagates the block through both hops', () => {
+      const stem = `mu_fkblk_chain_${Math.random().toString(36).slice(2, 8)}`;
+      const grandparent = `${stem}_gp`;
+      const parent = `${stem}_p`;
+      const child = `${stem}_c`;
+      const parentFk = `${parent}_gp_fkey`;
+      const childFk = `${child}_parent_fkey`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(
+          `DROP TABLE IF EXISTS "${child}", "${parent}", "${grandparent}" CASCADE`,
+        );
+        // Shared-PK chain: parent.id itself is a FK to grandparent.id, and
+        // child.parent_id is a FK to parent.id.
+        await db.query(`CREATE TABLE "${grandparent}" (id text PRIMARY KEY)`);
+        await db.query(
+          `CREATE TABLE "${parent}" (
+             id text PRIMARY KEY CONSTRAINT "${parentFk}" REFERENCES "${grandparent}"(id)
+           )`,
+        );
+        await db.query(
+          `CREATE TABLE "${child}" (
+             id text PRIMARY KEY,
+             parent_id text NOT NULL CONSTRAINT "${childFk}" REFERENCES "${parent}"(id)
+           )`,
+        );
+        await db.query(
+          `INSERT INTO "${grandparent}" (id) VALUES ($1)`,
+          '00000000-0000-0000-0000-000000000000',
+        );
+        await db.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1)`,
+          '00000000-0000-0000-0000-000000000000',
+        );
+        await db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '11111111-1111-1111-1111-111111111111',
+          '00000000-0000-0000-0000-000000000000',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            // grandparent.id is declared TEXT on purpose: the ultimate,
+            // never-converts source of the block.
+            [grandparent]: {
+              tableName: grandparent,
+              ddl: '',
+              columns: { id: { type: 'TEXT' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [parent]: {
+              tableName: parent,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [child]: {
+              tableName: child,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${child}", "${parent}", "${grandparent}" CASCADE`,
+          );
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('blocks parent.id (hop 1) and child.parent_id (hop 2), still converts child.id, and both FKs survive', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        expect(errorSpy).not.toHaveBeenCalled();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(await dataType(grandparent, 'id')).toBe('text');
+        expect(await dataType(parent, 'id')).toBe('text');
+        expect(await dataType(child, 'parent_id')).toBe('text');
+        expect(await dataType(child, 'id')).toBe('uuid');
+        expect(await fkExists(parentFk)).toBe(true);
+        expect(await fkExists(childFk)).toBe(true);
+      }, 30_000);
+    });
+  },
+);
+
+describePostgres(
+  'db:migrate-uuid accepts bare 32-hex UUID shapes (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    async function fkExists(constraintName: string): Promise<boolean> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT 1 FROM pg_constraint WHERE conname = $1 AND contype = 'f'`,
+        constraintName,
+      );
+      return (rows as any[]).length > 0;
+    }
+
+    describe('a column of bare-hex values', () => {
+      const table = `mu_barehex_${Math.random().toString(36).slice(2, 8)}`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, owner_id text)`,
+        );
+        // Bare 32-hex, no hyphens — the hyphen-stripped form of a canonical
+        // uuid, which PostgreSQL's ::uuid cast accepts as the same value.
+        // owner_id (not "val") so it matches db:migrate-uuid's id/FK naming
+        // filter (`column_name = 'id' OR column_name ~* '(_id|Id)$'`).
+        await db.query(
+          `INSERT INTO "${table}" (id, owner_id) VALUES ($1, $2)`,
+          '11111111-1111-1111-1111-111111111111',
+          '11111111111111111111111111111111',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [table]: {
+              tableName: table,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, owner_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('converts instead of being reported dirty', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        expect(errorSpy).not.toHaveBeenCalled();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(await dataType(table, 'owner_id')).toBe('uuid');
+        const db = await freshDb();
+        const { rows } = await db.query(
+          `SELECT owner_id::text AS owner_id FROM "${table}"`,
+        );
+        expect((rows as any[])[0].owner_id).toBe(
+          '11111111-1111-1111-1111-111111111111',
+        );
+      }, 30_000);
+    });
+
+    describe('a mixed canonical/bare-hex FK pair', () => {
+      const stem = `mu_barehex_fk_${Math.random().toString(36).slice(2, 8)}`;
+      const parent = `${stem}_parent`;
+      const child = `${stem}_child`;
+      const fkName = `${child}_parent_fkey`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`);
+        await db.query(`CREATE TABLE "${parent}" (id text PRIMARY KEY)`);
+        await db.query(
+          `CREATE TABLE "${child}" (
+             id text PRIMARY KEY,
+             parent_id text NOT NULL CONSTRAINT "${fkName}" REFERENCES "${parent}"(id)
+           )`,
+        );
+        // Row 1: canonical hyphenated form on both sides.
+        await db.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1)`,
+          '33333333-3333-3333-3333-333333333333',
+        );
+        await db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '55555555-5555-5555-5555-555555555555',
+          '33333333-3333-3333-3333-333333333333',
+        );
+        // Row 2: bare 32-hex form on both sides (a distinct uuid value).
+        await db.query(
+          `INSERT INTO "${parent}" (id) VALUES ($1)`,
+          '44444444444444444444444444444444',
+        );
+        await db.query(
+          `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+          '66666666-6666-6666-6666-666666666666',
+          '44444444444444444444444444444444',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [parent]: {
+              tableName: parent,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+            [child]: {
+              tableName: child,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(
+            `DROP TABLE IF EXISTS "${child}", "${parent}" CASCADE`,
+          );
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('converts both endpoints and recreates the FK', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        expect(errorSpy).not.toHaveBeenCalled();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(await dataType(parent, 'id')).toBe('uuid');
+        expect(await dataType(child, 'parent_id')).toBe('uuid');
+        expect(await fkExists(fkName)).toBe(true);
+        const db = await freshDb();
+        const { rows } = await db.query(
+          `SELECT id::text AS id FROM "${parent}" ORDER BY id`,
+        );
+        expect((rows as any[]).map((row) => row.id)).toEqual([
+          '33333333-3333-3333-3333-333333333333',
+          '44444444-4444-4444-4444-444444444444',
+        ]);
+      }, 30_000);
+    });
+
+    describe('a value with 31 hex characters', () => {
+      const table = `mu_barehex31_${Math.random().toString(36).slice(2, 8)}`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, owner_id text)`,
+        );
+        // 31 hex characters — one short of the bare-32 form, and not
+        // hyphenated either. PostgreSQL's ::uuid cast rejects this shape.
+        // owner_id (not "val") so it matches db:migrate-uuid's id/FK naming
+        // filter (`column_name = 'id' OR column_name ~* '(_id|Id)$'`).
+        await db.query(
+          `INSERT INTO "${table}" (id, owner_id) VALUES ($1, $2)`,
+          '77777777-7777-7777-7777-777777777777',
+          '1111111111111111111111111111111',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [table]: {
+              tableName: table,
+              ddl: '',
+              columns: { id: { type: 'UUID' }, owner_id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('is still reported dirty and left as TEXT', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        const output = logSpy.mock.calls.flat().map(String).join('\n');
+        expect(errorSpy).not.toHaveBeenCalled();
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(await dataType(table, 'owner_id')).toBe('text');
+        expect(output).toContain(`SKIP ${table}.owner_id: 1 non-uuid value(s)`);
+      }, 30_000);
+    });
   },
 );
