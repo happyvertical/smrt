@@ -658,12 +658,7 @@ async function convertPostgresUuidColumns(
   const { rows: candidateRows } = await db.query(
     `SELECT cols.table_name, cols.column_name, cols.column_default,
               relation.oid::text AS relation_oid, attribute.attnum AS attribute_number,
-              format_type(attribute.atttypid, attribute.atttypmod) AS type_name,
-              EXISTS (
-                SELECT 1 FROM pg_index idx
-                 WHERE idx.indrelid = relation.oid AND idx.indisunique
-                   AND idx.indnkeyatts = 1 AND idx.indkey[0] = attribute.attnum
-              ) AS unique_covered
+              format_type(attribute.atttypid, attribute.atttypmod) AS type_name
          FROM information_schema.columns cols
          JOIN pg_namespace namespace ON namespace.nspname = cols.table_schema
          JOIN pg_class relation ON relation.relnamespace = namespace.oid AND relation.relname = cols.table_name
@@ -696,18 +691,34 @@ async function convertPostgresUuidColumns(
       // TEXT→uuid is many-to-one: the widened shape probe now accepts both
       // the hyphenated and bare-hex forms of the SAME value, so two
       // DIFFERENT, individually-valid TEXT strings can normalize to the same
-      // uuid. That is only a problem for a column with a PK/unique index —
-      // `ALTER COLUMN … TYPE uuid` rebuilds that index and fails with a
-      // duplicate-key error, aborting the whole transaction. A non-unique
-      // column normalizing several rows to the same value is the intended,
-      // harmless outcome (e.g. an ordinary FK column with mixed-case or
-      // mixed hyphenation across rows), so only probe columns actually
-      // covered by a single-key unique/PK index — flagging every declared-
+      // uuid. That is only a problem for a column covered by a unique/PK
+      // index (single-key OR composite — SMRT itself generates composite
+      // UNIQUE(tenant_id, slug, context) indexes on tenant-scoped tables) —
+      // `ALTER COLUMN … TYPE uuid` rebuilds every such index and fails with
+      // a duplicate-key error, aborting the whole transaction. A column with
+      // no unique index at all normalizing several rows to the same value is
+      // the intended, harmless outcome (e.g. an ordinary FK column with
+      // mixed-case or mixed hyphenation across rows), so only probe columns
+      // actually covered by SOME unique index — flagging every declared-
       // UUID column would itself falsely block otherwise-clean, unindexed
       // data (and propagate that false block to FK partners).
-      if (row.unique_covered) {
+      const uniqueIndexKeyColumns = await findUniqueIndexKeyColumns(
+        db,
+        String(row.relation_oid),
+        Number(row.attribute_number),
+      );
+      for (const keyColumns of uniqueIndexKeyColumns) {
+        const otherColumns = keyColumns.filter((c) => c !== column);
         // This must count DISTINCT RAW (un-trimmed) TEXT forms per
-        // normalized group, not rows and not trimmed forms:
+        // (other key column values, normalized-uuid) group, not rows and
+        // not trimmed forms:
+        //   - grouping by the index's OTHER key columns too (composite
+        //     case): a collision only violates THIS index when every other
+        //     key column also matches — two rows that share a normalized
+        //     `tenant_id` but differ in `slug` never collide on
+        //     UNIQUE(tenant_id, slug, context). Empty for a single-key
+        //     index, which degenerates to grouping on the normalized value
+        //     alone.
         //   - not rows: an ordinary repeat of the same (identical) TEXT
         //     value across many rows under the SAME unique key cannot
         //     happen (the unique index already forbids it), but guard it
@@ -718,19 +729,29 @@ async function convertPostgresUuidColumns(
         //     or trailing whitespace (' <uuid>' vs '<uuid>') are just as
         //     collision-prone as a hyphen/bare-hex pair, and counting on
         //     the trimmed value would hide exactly that case.
+        const groupBy = [
+          ...otherColumns.map((c) => quoteIdentifier(c)),
+          `NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid`,
+        ].join(', ');
         const { rows: dupRows } = await db.query(
           `SELECT count(*)::text AS n FROM (
-               SELECT NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid AS normalized
+               SELECT 1
                  FROM ${pgTable(table)}
                 WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
                   AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
-                GROUP BY NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid
+                GROUP BY ${groupBy}
                HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
              ) collisions`,
         );
-        duplicateNormalized = Number(
+        const found = Number(
           (dupRows[0] as Record<string, unknown> | undefined)?.n ?? 0,
         );
+        if (found > 0) {
+          duplicateNormalized += found;
+          // One flagged unique index is enough to force the skip; other
+          // covering indexes would only add noise to the reported count.
+          break;
+        }
       }
     }
     liveColumns.push({
@@ -1298,6 +1319,40 @@ async function snapshotBridgeIndexes(
  * multi-column foreign keys are excluded here and remain a hard refusal in
  * `snapshotForeignKeys` once the (reduced) convert set is known.
  */
+/**
+ * Every unique or primary-key index that covers `attnum` as a key column
+ * (single-key or composite; INCLUDE-only columns are excluded via
+ * `indnkeyatts`), returned as one ordered list of key-column names per
+ * covering index — the probed column included, so callers can filter it out
+ * to get the index's "other" key columns for a composite collision check.
+ */
+async function findUniqueIndexKeyColumns(
+  db: QueryExecutor,
+  relationOid: string,
+  attnum: number,
+): Promise<string[][]> {
+  // `indkey` is `int2vector`, whose cast to `int2[]` keeps its ORIGINAL
+  // zero-based lower bound (unlike a normal array literal) — slicing it with
+  // a one-based `[1:n]` silently returns empty. Slice `[0:n-1]` instead.
+  //
+  // `to_json(array_agg(...))` (not bare `array_agg`): this driver returns a
+  // raw Postgres `{a,b}` array literal as an opaque string, not a parsed JS
+  // array — wrapping in `to_json` gets it parsed for us.
+  const { rows } = await db.query(
+    `SELECT to_json(array_agg(key_attr.attname ORDER BY key_order.ord)) AS key_columns
+       FROM pg_index idx
+       CROSS JOIN LATERAL unnest((idx.indkey::int2[])[0:idx.indnkeyatts - 1]) WITH ORDINALITY AS key_order(attnum, ord)
+       JOIN pg_attribute key_attr
+         ON key_attr.attrelid = idx.indrelid AND key_attr.attnum = key_order.attnum
+      WHERE idx.indrelid = ${quoteLiteral(relationOid)}::oid AND idx.indisunique
+        AND ${attnum} = ANY((idx.indkey::int2[])[0:idx.indnkeyatts - 1])
+      GROUP BY idx.indexrelid`,
+  );
+  return (rows as Array<Record<string, unknown>>).map((row) =>
+    (row.key_columns as string[]).map(String),
+  );
+}
+
 async function fetchSingleColumnForeignKeyEdges(
   db: QueryExecutor,
 ): Promise<ForeignKeyEdge[]> {

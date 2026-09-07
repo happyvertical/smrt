@@ -3799,12 +3799,19 @@ describePostgres(
     // Normalizing them to one value at ALTER time is harmless — no unique
     // index is rebuilt — so this must NOT be treated as a collision.
     const nonUniqueMixedTable = `${stem}_nonunique_mixed`;
+    // A composite UNIQUE(tenant_id, slug) index — the same shape SMRT itself
+    // generates on tenant-scoped tables. Two rows sharing the SAME `slug`
+    // but spelling `tenant_id` two different ways for the same uuid DO
+    // collide on this index (every other key column matches), even though
+    // neither the single-key colliding-PK check nor a plain non-unique
+    // check would catch it.
+    const compositeUniqueTable = `${stem}_composite`;
     let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     beforeEach(async () => {
       const db = await freshDb();
       await db.query(
-        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}"`,
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}"`,
       );
       await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
       await db.query(
@@ -3837,6 +3844,20 @@ describePostgres(
         `INSERT INTO "${nonUniqueMixedTable}" (ref_id) VALUES ($1), ($2)`,
         'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
         'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      );
+      await db.query(
+        `CREATE TABLE "${compositeUniqueTable}" (
+           row_id serial PRIMARY KEY,
+           tenant_id text,
+           slug text,
+           UNIQUE (tenant_id, slug)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${compositeUniqueTable}" (tenant_id, slug) VALUES ($1, $2), ($3, $2)`,
+        'ffffffff-ffff-ffff-ffff-ffffffffffff',
+        'same-slug',
+        'ffffffffffffffffffffffffffffffff',
       );
 
       clearCache();
@@ -3900,6 +3921,16 @@ describePostgres(
             version: '',
             dependencies: [],
           },
+          [compositeUniqueTable]: {
+            tableName: compositeUniqueTable,
+            ddl: '',
+            columns: { tenant_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
         } as any);
     });
 
@@ -3908,7 +3939,7 @@ describePostgres(
       try {
         const db = await freshDb();
         await db.query(
-          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}"`,
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}"`,
         );
       } catch {
         // Handler cleanup closes pooled handles; reacquire before teardown.
@@ -3916,7 +3947,7 @@ describePostgres(
       clearCache();
     });
 
-    it('skips only unique-indexed collisions; converts the unrelated clean, repeated-value, and non-unique mixed-spelling columns', async () => {
+    it('skips unique-indexed (single-key and composite) collisions; converts the unrelated clean, repeated-value, and non-unique mixed-spelling columns', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -3944,11 +3975,18 @@ describePostgres(
       // has no unique index to violate — normalizing to one value is
       // harmless, so it must still convert, not be flagged as dirty.
       expect(await dataType(nonUniqueMixedTable, 'ref_id')).toBe('uuid');
+      // A composite UNIQUE(tenant_id, slug) collision — two rows sharing
+      // `slug` but spelling `tenant_id` differently — must be caught too,
+      // not just single-key PK/unique collisions.
+      expect(await dataType(compositeUniqueTable, 'tenant_id')).toBe('text');
       expect(output).toContain(
         `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
       );
       expect(output).toContain(
         `SKIP ${whitespaceTable}.id: 1 duplicate value(s) after normalization`,
+      );
+      expect(output).toContain(
+        `SKIP ${compositeUniqueTable}.tenant_id: 1 duplicate value(s) after normalization`,
       );
       expect(output).not.toContain(`${repeatedTable}.parent_id`);
       expect(output).not.toContain(`${nonUniqueMixedTable}.ref_id`);
@@ -3973,6 +4011,7 @@ describePostgres(
       expect(await dataType(repeatedTable, 'parent_id')).toBe('uuid');
       expect(await dataType(whitespaceTable, 'id')).toBe('text');
       expect(await dataType(nonUniqueMixedTable, 'ref_id')).toBe('uuid');
+      expect(await dataType(compositeUniqueTable, 'tenant_id')).toBe('text');
     }, 30_000);
   },
 );
