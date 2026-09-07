@@ -1440,19 +1440,19 @@ export class SchemaComparer {
         const orphanCol = dbSchema.columns[orphanName];
         const orphanNormalized = this.normalizeType(orphanCol.type);
 
-        let mode: 'same-type' | 'text-to-uuid' | null = null;
-        if (isLogicalUuid && orphanNormalized === 'TEXT') {
-          // Any text-typed orphan paired with a logical UUID column needs
-          // shape validation — whether the declared column's own physical
-          // type is TEXT (SQLite) or native uuid (PostgreSQL/DuckDB).
-          mode = 'text-to-uuid';
-        } else if (orphanNormalized === declaredNormalized) {
-          // Not a logical-UUID pairing needing a shape probe (or the orphan
-          // is already a native uuid column, which the engine itself
-          // validated) — a same-type copy is safe as-is.
-          mode = 'same-type';
-        }
-        if (!mode) continue;
+        // Two independent questions, deliberately not conflated (#2767
+        // review, P1): does this pairing need the UUID *shape probe*, and
+        // does the emitted repair SQL need the `::uuid` *cast*? A logical
+        // UUID column paired with a text-typed orphan always needs the
+        // shape probe, on every engine — but only a physically native uuid
+        // destination (PostgreSQL/DuckDB; `declaredNormalized === 'UUID'`)
+        // needs `::uuid` and the NULL-only empty predicate. SQLite has no
+        // native uuid type, so its logical-UUID column is still physically
+        // TEXT and must get the same plain copy + `CAST(...) = ''` predicate
+        // as any other TEXT column, even though it still needed the probe.
+        const requiresShapeCheck = isLogicalUuid && orphanNormalized === 'TEXT';
+        const isSameType = orphanNormalized === declaredNormalized;
+        if (!requiresShapeCheck && !isSameType) continue;
 
         let orphanHasData: boolean;
         try {
@@ -1465,7 +1465,7 @@ export class SchemaComparer {
         }
         if (!orphanHasData) continue;
 
-        if (mode === 'text-to-uuid') {
+        if (requiresShapeCheck) {
           let shaped: boolean;
           try {
             shaped = await this.allNonEmptyValuesUuidShaped(
@@ -1478,7 +1478,10 @@ export class SchemaComparer {
           if (!shaped) continue;
         }
 
-        candidates.push({ orphanName, isUuidCast: mode === 'text-to-uuid' });
+        candidates.push({
+          orphanName,
+          isUuidCast: declaredNormalized === 'UUID',
+        });
       }
 
       if (candidates.length === 1) {

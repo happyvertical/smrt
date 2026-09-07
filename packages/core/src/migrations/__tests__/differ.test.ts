@@ -1762,6 +1762,21 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       (c) => c.type === 'rename_data_pending' && c.name === 'new_id',
     );
     expect(change).toBeDefined();
+
+    // SQLite has no `::uuid` cast syntax and no native uuid type: even
+    // though this declared column is logically a UUID (and needed the
+    // shape probe above), the emitted repair must still be a plain text
+    // copy with the ordinary `CAST(...) = ''` empty predicate, not the
+    // PostgreSQL-only `::uuid` cast / NULL-only predicate (#2767 review,
+    // final-pass P1 — the two were previously conflated).
+    const suggested = change?.advisory?.suggestedSql ?? [];
+    const copyStatement = suggested.find((sql) => sql.includes('UPDATE'));
+    expect(copyStatement).toBeDefined();
+    expect(copyStatement).not.toContain('::uuid');
+    expect(copyStatement).toContain('"new_id" = "old_id"');
+    expect(copyStatement).toContain(
+      `("new_id" IS NULL OR CAST("new_id" AS TEXT) = '')`,
+    );
   });
 
   it('withholds repair SQL and lists every candidate when the rename source is ambiguous (#2767 review)', async () => {
