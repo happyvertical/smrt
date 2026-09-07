@@ -162,11 +162,7 @@ export async function collectForeignKeyOrphanCounts(
 
       try {
         const result = await db.query(sql);
-        const rows = (
-          Array.isArray(result)
-            ? result
-            : ((result as { rows?: unknown[] })?.rows ?? [])
-        ) as Record<string, unknown>[];
+        const rows = normalizeQueryRows(result);
         const raw = rows[0]?.orphan_count;
         const orphanCount = Number(raw);
         counts.push({
@@ -277,6 +273,22 @@ function resolveEngine(
   return detectEngine(db.url || dbWithConfig.config?.url || '', engineHint);
 }
 
+/**
+ * Normalize a `db.query()` result to a row array. Adapters disagree on the
+ * envelope: most return `{ rows }`, but some (per the same normalization in
+ * `migrations/differ.ts`'s `getExistingTables()`) return a bare array. A
+ * caller that only checks `.rows` reads every row as absent on the latter,
+ * which for `listLiveTables()` means every relationship looks like it has a
+ * `missing_table` — a silent false negative, not a thrown error.
+ */
+function normalizeQueryRows(result: unknown): Record<string, unknown>[] {
+  return (
+    Array.isArray(result)
+      ? result
+      : ((result as { rows?: unknown[] })?.rows ?? [])
+  ) as Record<string, unknown>[];
+}
+
 async function listLiveTables(
   db: DatabaseInterface,
   engine: DatabaseEngine,
@@ -287,7 +299,7 @@ async function listLiveTables(
       : `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
 
   const result = await db.query(sql);
-  const rows = ((result as { rows?: unknown[] })?.rows ?? []) as {
+  const rows = normalizeQueryRows(result) as {
     name?: string;
     table_name?: string;
   }[];

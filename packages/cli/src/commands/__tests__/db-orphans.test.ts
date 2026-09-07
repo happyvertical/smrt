@@ -227,6 +227,55 @@ describe('formatOrphanReport / affectedOrphanCounts', () => {
     expect(failedLine).toContain('[PROBE FAILED]');
     expect(missingLine).not.toContain('[PROBE FAILED]');
   });
+
+  it('does not claim "no orphans" when a probe failed, even with zero counted orphans (review finding)', () => {
+    const lines = formatOrphanReport({
+      engine: 'postgres',
+      counts: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          orphanCount: 0,
+          nullable: true,
+        },
+      ],
+      skipped: [
+        {
+          childTable: 'legacy',
+          childColumn: 'ref_id',
+          parentTable: 'refs',
+          parentColumn: 'id',
+          reason: 'Could not probe for orphan rows: permission denied',
+          kind: 'probe_failed',
+        },
+      ],
+    }).join('\n');
+
+    expect(lines).not.toContain('✅ No orphan rows found');
+    expect(lines).toContain('incomplete, not clean');
+    expect(lines).toContain('1 probe(s) failed');
+  });
+
+  it('still claims "no orphans" when every skip is a benign missing_table', () => {
+    const lines = formatOrphanReport({
+      engine: 'sqlite',
+      counts: [],
+      skipped: [
+        {
+          childTable: 'legacy',
+          childColumn: 'ref_id',
+          parentTable: 'refs',
+          parentColumn: 'id',
+          reason: 'Child table `legacy` does not exist in the live database.',
+          kind: 'missing_table',
+        },
+      ],
+    }).join('\n');
+
+    expect(lines).toContain('✅ No orphan rows found');
+  });
 });
 
 describe('db:orphans against a real SQLite database', () => {

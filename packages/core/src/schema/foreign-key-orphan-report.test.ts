@@ -182,4 +182,37 @@ describe('collectForeignKeyOrphanCounts', () => {
     expect(report.counts).toHaveLength(1);
     expect(report.counts[0]).toMatchObject({ orphanCount: 0, nullable: true });
   });
+
+  it('handles an adapter whose db.query() returns a bare row array instead of { rows } (review finding)', async () => {
+    // Some adapters return the row array directly rather than wrapping it in
+    // `{ rows }` — `migrations/differ.ts`'s `getExistingTables()` already
+    // normalizes both shapes. `listLiveTables()` must too: reading only
+    // `.rows` on a bare-array result silently empties it, so every
+    // relationship would misreport as `missing_table`.
+    const seenTables = new Set(['event_types', 'events']);
+    const fakeDb = {
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master')) {
+          // Bare array, not { rows: [...] }.
+          return [...seenTables].map((name) => ({ name }));
+        }
+        if (sql.includes('COUNT(*)')) {
+          return [{ orphan_count: sql.includes('events') ? 1 : 0 }];
+        }
+        return [];
+      },
+    } as unknown as Parameters<typeof collectForeignKeyOrphanCounts>[0];
+
+    const report = await collectForeignKeyOrphanCounts(fakeDb, {
+      event_types: manifest().event_types,
+      events: manifest().events,
+    });
+
+    expect(report.skipped).toEqual([]);
+    expect(report.counts).toHaveLength(1);
+    expect(report.counts[0]).toMatchObject({
+      childTable: 'events',
+      orphanCount: 1,
+    });
+  });
 });

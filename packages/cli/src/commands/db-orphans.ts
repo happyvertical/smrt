@@ -7,9 +7,13 @@
  * every manifest-declared foreign key, so planning a repair no longer starts
  * with hand-writing the same SQL against the live database.
  *
- * Strictly diagnostic: it never repairs anything and always exits 0 — the
- * existing "no foreign-key orphan repair, by design" boundary stays exactly
- * where it is. Use `--json` for scripting.
+ * Strictly diagnostic: it never repairs anything, and the orphan counts
+ * themselves never affect the exit code — a database full of orphans still
+ * exits 0. It exits non-zero only on a configuration or runtime error (no
+ * database configured, or the report itself could not run), the same
+ * contract every other `db:*` command uses. The existing "no foreign-key
+ * orphan repair, by design" boundary stays exactly where it is. Use `--json`
+ * for scripting.
  */
 
 import {
@@ -48,14 +52,23 @@ export function formatOrphanReport(
 ): string[] {
   const lines: string[] = [];
   const affected = report.counts.filter((count) => count.orphanCount > 0);
+  const failedProbeCount = report.skipped.filter(
+    (skip) => skip.kind === 'probe_failed',
+  ).length;
 
   lines.push(
     `   Engine: ${report.engine} · foreign keys checked: ${report.counts.length}` +
       (report.skipped.length > 0 ? ` · skipped: ${report.skipped.length}` : ''),
   );
 
-  if (affected.length === 0) {
+  if (affected.length === 0 && failedProbeCount === 0) {
     lines.push('   ✅ No orphan rows found across any manifest foreign key.');
+  } else if (affected.length === 0) {
+    // At least one relationship's probe errored — an incomplete scan is not
+    // the same claim as a clean one, so this must not read as "no orphans".
+    lines.push(
+      `   ⚠️  No orphans found among the successfully probed foreign keys, but ${failedProbeCount} probe(s) failed — see Skipped below. The scan is incomplete, not clean.`,
+    );
   } else {
     for (const count of affected) {
       const icon = count.nullable ? '⚠️' : '❌';
@@ -110,7 +123,7 @@ export type {
 export const dbOrphansCommand: CLICommand = {
   name: 'db:orphans',
   description:
-    'Read-only per-foreign-key orphan count report: for every manifest foreign key, prints child/parent table and column, the live orphan row count, and whether the child column is NOT NULL. Never repairs. Always exits 0.',
+    'Read-only per-foreign-key orphan count report: for every manifest foreign key, prints child/parent table and column, the live orphan row count, and whether the child column is NOT NULL. Never repairs. Orphans found never affect the exit code; exits non-zero only on a configuration or runtime error.',
   aliases: ['orphans', 'db-orphans'],
   args: [],
   options: {

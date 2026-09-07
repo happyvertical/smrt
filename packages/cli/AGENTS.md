@@ -10,7 +10,7 @@ smrt doctor                  # Umbrella diagnostics; can verify a generation sna
 smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:status --parity      # Same, plus live-schema parity (see below)
-smrt db:orphans              # Orphan count
+smrt db:orphans              # agents/db-orphans.md
 smrt db:migrate              # Apply migrations
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
@@ -20,7 +20,7 @@ smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned fr
 smrt db:drop-framework-base-tables --dry-run # Print the drop plan without executing
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Roll back migrations by executing their recorded DOWN
-smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
+smrt db:rollback --mark-only # Record-only flip; schema untouched
 smrt db:prune                # Prune framework system tables to their retention windows
 smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt docs:agents             # Generate .agents/smrt-framework.md
