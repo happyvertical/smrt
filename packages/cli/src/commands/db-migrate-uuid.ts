@@ -1492,10 +1492,10 @@ async function fetchSingleColumnForeignKeyEdges(
 }
 
 /**
- * Fail closed when a single-column foreign key has exactly one endpoint in
- * the public schema and the public-side column is in `relevant` (a
- * schema-declared-UUID column this run treats as a real conversion
- * candidate/participant).
+ * Fail closed when a (single- OR multi-column) foreign key has exactly one
+ * endpoint in the public schema and at least one of the public-side key
+ * columns is in `relevant` (a schema-declared-UUID column this run treats
+ * as a real conversion candidate/participant).
  *
  * `db:migrate-uuid` never converts or recreates DDL outside `public` (see
  * `pgTable`), and `declaredUuidKey` keys purely on `table|column` with no
@@ -1508,6 +1508,15 @@ async function fetchSingleColumnForeignKeyEdges(
  * documentation gaps, so this check runs independently of `declaredUuidKey`
  * lookups and fails the whole run with a specific, actionable message
  * instead of silently mis-propagating or mis-recreating a constraint.
+ *
+ * Deliberately not restricted to single-column FKs: `snapshotForeignKeys`
+ * only refuses an unsupported multi-column FK once it has already matched
+ * an in-`public` participant via `converted`/`bridgeColumns`, which this
+ * cross-schema check runs ahead of and independently from. A composite FK
+ * whose public-side key touches a converting column, but whose other
+ * endpoint lives outside `public`, must fail closed here at preflight —
+ * before `--dry-run` reports a plan `apply` cannot actually execute — the
+ * same as the single-column case.
  */
 async function assertNoCrossSchemaForeignKeyPartners(
   db: QueryExecutor,
@@ -1516,31 +1525,41 @@ async function assertNoCrossSchemaForeignKeyPartners(
   const { rows } = await db.query(
     `SELECT con.conname AS name,
             child_ns.nspname AS child_schema, child.relname AS child_table,
-            child_attr.attname AS child_column,
+            to_json(array_agg(child_attr.attname ORDER BY child_key.ord)) AS child_columns,
             parent_ns.nspname AS parent_schema, parent.relname AS parent_table,
-            parent_attr.attname AS parent_column
+            to_json(array_agg(parent_attr.attname ORDER BY child_key.ord)) AS parent_columns
        FROM pg_constraint con
        JOIN pg_class child ON child.oid = con.conrelid
        JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
        JOIN pg_class parent ON parent.oid = con.confrelid
        JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
-       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = con.conkey[1]
-       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = con.confkey[1]
-      WHERE con.contype = 'f' AND array_length(con.conkey, 1) = 1
-        AND (child_ns.nspname = 'public') <> (parent_ns.nspname = 'public')`,
+       JOIN unnest(con.conkey) WITH ORDINALITY child_key(attnum, ord) ON true
+       JOIN unnest(con.confkey) WITH ORDINALITY parent_key(attnum, ord) ON parent_key.ord = child_key.ord
+       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = child_key.attnum
+       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = parent_key.attnum
+      WHERE con.contype = 'f'
+        AND (child_ns.nspname = 'public') <> (parent_ns.nspname = 'public')
+      GROUP BY con.oid, con.conname, child_ns.nspname, child.relname,
+               parent_ns.nspname, parent.relname`,
   );
   for (const row of rows as Array<Record<string, unknown>>) {
     const childSchema = String(row.child_schema);
     const parentSchema = String(row.parent_schema);
+    const childTable = String(row.child_table);
+    const parentTable = String(row.parent_table);
+    const childColumns = row.child_columns as string[];
+    const parentColumns = row.parent_columns as string[];
     const childOnPublic = childSchema === 'public';
-    const publicKey = childOnPublic
-      ? declaredUuidKey(String(row.child_table), String(row.child_column))
-      : declaredUuidKey(String(row.parent_table), String(row.parent_column));
-    if (!relevant.has(publicKey)) continue;
+    const publicTable = childOnPublic ? childTable : parentTable;
+    const publicColumns = childOnPublic ? childColumns : parentColumns;
+    const touchesRelevant = publicColumns.some((column) =>
+      relevant.has(declaredUuidKey(publicTable, column)),
+    );
+    if (!touchesRelevant) continue;
     throw new Error(
       `Foreign key ${String(row.name)} crosses the public schema boundary ` +
-        `(${childSchema}.${String(row.child_table)}.${String(row.child_column)} → ` +
-        `${parentSchema}.${String(row.parent_table)}.${String(row.parent_column)}); ` +
+        `(${childSchema}.${childTable}(${childColumns.join(', ')}) → ` +
+        `${parentSchema}.${parentTable}(${parentColumns.join(', ')})); ` +
         'db:migrate-uuid only ever converts or recreates constraints in the public schema.',
     );
   }

@@ -3507,6 +3507,158 @@ describePostgres(
   },
 );
 
+// #2702 review recall (final pass 2): the cross-schema guard's catalog query
+// originally restricted to `array_length(con.conkey, 1) = 1`, so a
+// COMPOSITE (multi-column) FK crossing the public schema boundary escaped
+// it entirely — and also escaped `snapshotForeignKeys`'s own preflight
+// refusal for unsupported multi-column FKs once that query's new
+// `parent_ns = 'public'` filter (added for the single-column fix) started
+// excluding the row outright. That combination let `--dry-run` report a
+// clean plan for something `apply` could not actually execute.
+describePostgres(
+  'db:migrate-uuid refuses a composite foreign key that crosses the public schema boundary (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    const stem = `mu_fkxschema_composite_${Math.random().toString(36).slice(2, 8)}`;
+    const otherSchema = `${stem}_other_ns`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const fkName = `${child}_parent_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(`DROP TABLE IF EXISTS "${child}" CASCADE`);
+      await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+      await db.query(`CREATE SCHEMA "${otherSchema}"`);
+      await db.query(
+        `CREATE TABLE "${otherSchema}"."${parent}" (
+           x text NOT NULL, y text NOT NULL, PRIMARY KEY (x, y)
+         )`,
+      );
+      // A COMPOSITE FK: only "a_id" is a live TEXT, schema-declared-UUID
+      // conversion candidate; "b_id" is not declared at all. The FK still
+      // crosses the public boundary through "a_id".
+      await db.query(
+        `CREATE TABLE "${child}" (
+           id text PRIMARY KEY,
+           a_id text NOT NULL,
+           b_id text NOT NULL,
+           CONSTRAINT "${fkName}" FOREIGN KEY (a_id, b_id)
+             REFERENCES "${otherSchema}"."${parent}"(x, y)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${otherSchema}"."${parent}" (x, y) VALUES ($1, $2)`,
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, a_id, b_id) VALUES ($1, $2, $3)`,
+        '33333333-3333-3333-3333-333333333333',
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      );
+
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, a_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${child}" CASCADE`);
+        await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('fails closed instead of converting when the composite FK partner lives outside public', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('crosses the public schema boundary'),
+      );
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(fkName));
+      errorSpy.mockRestore();
+
+      expect(await dataType(child, 'id')).toBe('text');
+      expect(await dataType(child, 'a_id')).toBe('text');
+    }, 30_000);
+
+    it('fails closed in --dry-run too, so dry-run never diverges from apply', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('crosses the public schema boundary'),
+      );
+      errorSpy.mockRestore();
+
+      expect(await dataType(child, 'id')).toBe('text');
+      expect(await dataType(child, 'a_id')).toBe('text');
+    }, 30_000);
+  },
+);
+
 // #2702 review recall: the initial cross-schema fail-closed check was too
 // broad (any manifest-declared column with ANY cross-schema FK partner
 // aborted the whole run, even an already-native-uuid column no write ever
