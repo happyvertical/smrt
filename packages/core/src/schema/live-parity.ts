@@ -475,7 +475,48 @@ function compareColumns(
       const expectedBucket = normalizeSqlType(column.type);
       const actualBucket = normalizeSqlType(live.type);
 
-      if (expectedBucket === 'REAL' && actualBucket === 'REAL') {
+      // #2772: `TEXT` (live) vs `JSON`/`JSONB` (declared) is tolerated above
+      // (#1335) so it never becomes an `error`, but on a table SMRT itself
+      // creates this is real, repairable drift — `db:migrate` can converge
+      // it (see `differ.ts`'s shape-probed `type_upgrade`). Surface it as a
+      // warning rather than staying invisible; the reverse direction (a
+      // native `json`/`jsonb` column backed by a text-convention manifest
+      // field) stays silent — that pairing is intentional, not drift.
+      if (expectedBucket === 'JSON' && actualBucket === 'TEXT') {
+        findings.push({
+          kind: 'column_type_drift',
+          severity: 'warning',
+          table: table.name,
+          target: column.name,
+          origin: table.origin,
+          message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` in the live database but declared \`${column.type}\`.`,
+          recommendation:
+            'Run `smrt db:migrate` to converge this column to native jsonb once its live values are confirmed valid JSON.',
+          details: { expected: column.type, actual: live.type },
+        });
+      } else if (
+        expectedBucket === 'UUID' &&
+        actualBucket === 'TEXT' &&
+        isStructuralReference(column)
+      ) {
+        // #2772: the reverse of the uuid tolerance above already has a
+        // framework repair path (`db:migrate-uuid`, #2608) — this differs
+        // from the jsonb case in staying `info`: text/uuid interop on
+        // structural columns is an intentional, long-supported compatibility
+        // shape, not a bug, so this is a pointer to the optional convergence
+        // path rather than a warning.
+        findings.push({
+          kind: 'column_type_drift',
+          severity: 'info',
+          table: table.name,
+          target: column.name,
+          origin: table.origin,
+          message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` in the live database but declared \`${column.type}\`; SMRT tolerates text/uuid for structural identifier/reference columns.`,
+          recommendation:
+            'Run `smrt db:migrate-uuid` to converge this column to native uuid, or leave it as-is — this pairing is tolerated indefinitely.',
+          details: { expected: column.type, actual: live.type },
+        });
+      } else if (expectedBucket === 'REAL' && actualBucket === 'REAL') {
         // #2770: REAL/DOUBLE PRECISION/DECIMAL/NUMERIC all normalize into
         // one 'REAL' bucket above, so single- vs double-precision float
         // drift never reaches the `!typesAreEquivalent` branch — the same

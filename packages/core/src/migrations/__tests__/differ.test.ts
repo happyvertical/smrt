@@ -2271,3 +2271,126 @@ describe('SchemaComparer text -> timestamptz convergence (#2771)', () => {
     expect(diff.has_changes).toBe(false);
   });
 });
+
+/**
+ * #2772 — a live `text` column on a table SMRT itself creates, holding
+ * SMRT-serialized JSON, but the manifest declares `JSON` (-> jsonb on
+ * PostgreSQL). Previously silently tolerated in both directions (#1335); the
+ * `text` (manifest) <-> `json` (live) direction stays tolerated, but the
+ * `JSON` (manifest) <-> `text` (live) direction is now probed and, when
+ * safe, converged.
+ */
+describe('SchemaComparer text -> jsonb convergence (#2772)', () => {
+  const tagAliasManifest = (): Record<string, SchemaDefinition> => ({
+    tag_aliases: {
+      tableName: 'tag_aliases',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        _meta_data: { type: 'JSON' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  function mockDbWithProbe(probeRows: Record<string, unknown>[]) {
+    return {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('invalid_count')) {
+          return { rows: probeRows };
+        }
+        return { rows: [{ table_name: 'tag_aliases' }] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'text', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+  }
+
+  it('plans an executable USING ::jsonb cast once the shape probe is clean', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 0, sample_value: null }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('_meta_data');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "tag_aliases" ALTER COLUMN "_meta_data" TYPE jsonb USING "_meta_data"::jsonb',
+    );
+  });
+
+  it('fails closed with a masked sample when the shape probe finds non-JSON values', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 1, sample_value: 'active' }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('blocked');
+    expect(typeUpgrades[0].advisory?.message).not.toContain('active');
+    expect(typeUpgrades[0].advisory?.suggestedSql?.[0]).toContain('::jsonb');
+  });
+
+  it('stays silent (#1335 tolerance) when the probe cannot run', async () => {
+    // A test double (or a real adapter error) that cannot answer the probe
+    // must never be treated as proof of safety — this preserves the #1335
+    // "no phantom upgrade" contract for every caller that cannot realistically
+    // answer the probe query.
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'text', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+
+  it('is a no-op once the column is already jsonb', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'jsonb', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});

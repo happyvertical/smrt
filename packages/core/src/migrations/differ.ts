@@ -25,6 +25,8 @@ import {
 } from '../schema/foreign-key-policy.js';
 import {
   maskSampleValue,
+  renderJsonbColumnConversion,
+  renderJsonbShapeProbe,
   renderTimestamptzColumnConversion,
   renderTimestamptzShapeProbe,
   runShapeProbe,
@@ -813,10 +815,12 @@ export class SchemaComparer {
   private async probeTextCastShape(
     tableName: string,
     columnName: string,
-    kind: 'timestamptz',
+    kind: 'timestamptz' | 'jsonb',
   ): Promise<ShapeProbeResult> {
-    const sql = renderTimestamptzShapeProbe(tableName, columnName);
-    void kind;
+    const sql =
+      kind === 'timestamptz'
+        ? renderTimestamptzShapeProbe(tableName, columnName)
+        : renderJsonbShapeProbe(tableName, columnName);
     return runShapeProbe(this.db, sql);
   }
 
@@ -1361,6 +1365,29 @@ export class SchemaComparer {
           normalizedActual,
         );
 
+        // #2772: on PostgreSQL, a manifest-declared JSON column backed by a
+        // live `text` column is a real, repairable drift on a table SMRT
+        // itself owns — not the enum-mis-inferred canary the tolerance below
+        // exists for. Probe first (never trust the manifest's intent over
+        // the live data): a clean probe converts the tolerance below into an
+        // executable `type_upgrade`; a dirty probe converts it into a
+        // visible, fail-closed advisory instead of staying silent. An
+        // unavailable probe (missing table mid-run, a test double without a
+        // realistic response) preserves the pre-existing silent tolerance —
+        // this feature never invents a new finding it cannot back with data.
+        const jsonUpgradeCandidate =
+          this.engine === 'postgres' &&
+          normalizedExpected === 'JSON' &&
+          normalizedActual === 'TEXT';
+        let jsonProbe: ShapeProbeResult | undefined;
+        if (jsonUpgradeCandidate) {
+          jsonProbe = await this.probeTextCastShape(
+            tableName,
+            colName,
+            'jsonb',
+          );
+        }
+
         // #1335: native `json`/`jsonb` (DB) and `text` (manifest) are
         // interchangeable for SMRT — the convention is to serialize JSON values
         // into TEXT columns, and a native-json column already holds exactly that
@@ -1369,7 +1396,9 @@ export class SchemaComparer {
         //   - manifest TEXT vs DB json   (native-json column, text-convention manifest)
         //   - manifest JSON vs DB text   (the canary case: an enum/plain field
         //     mis-inferred as JSON by a downstream scanner, sitting on a real
-        //     `text` column holding bare values like 'active')
+        //     `text` column holding bare values like 'active') — tolerated only
+        //     when the #2772 probe above could not affirmatively clear or
+        //     convict the column (see `jsonUpgradeCandidate` above).
         // Generating an ALTER here is pure churn at best and data-destroying at
         // worst: `status::jsonb` on a column holding 'active' raises
         // "invalid input syntax for type json" and aborts the whole atomic
@@ -1377,8 +1406,10 @@ export class SchemaComparer {
         // gate only (not in `normalizeType`) so `isCompatibleTypeUpgrade` still
         // treats JSON and TEXT as distinct buckets for OTHER upgrade paths.
         const isJsonTextEquivalent =
-          (normalizedExpected === 'JSON' && normalizedActual === 'TEXT') ||
-          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON');
+          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON') ||
+          (normalizedExpected === 'JSON' &&
+            normalizedActual === 'TEXT' &&
+            (!jsonUpgradeCandidate || jsonProbe?.status === 'unavailable'));
 
         // #2771: shape-probe a manifest TIMESTAMP column (-> TIMESTAMPTZ on
         // PostgreSQL) backed by a live `text` column, independent of the
@@ -1414,7 +1445,42 @@ export class SchemaComparer {
 
           const hasDefault = colDef.defaultValue !== undefined;
 
-          if (
+          if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
+            const statements = renderJsonbColumnConversion(tableName, colName, {
+              hasDefault,
+            });
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              sql: statements[statements.length - 1],
+              sqlStatements: statements,
+            });
+          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'dirty') {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} is declared JSON but ${jsonProbe.count} ` +
+                  `live value(s) are not valid JSON (sample: ${
+                    jsonProbe.sample
+                      ? maskSampleValue(jsonProbe.sample)
+                      : 'unavailable'
+                  }). Repair or clear the offending value(s), then rerun ` +
+                  '`smrt db:migrate`.',
+                suggestedSql: renderJsonbColumnConversion(tableName, colName, {
+                  hasDefault,
+                }),
+              },
+            });
+          } else if (
             timestamptzUpgradeCandidate &&
             timestamptzProbe?.status === 'clean'
           ) {

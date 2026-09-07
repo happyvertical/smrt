@@ -77,6 +77,21 @@ stays reserved for ambiguous naive wall-clock strings the probe does not
 accept. SQLite has no distinct storage for `text` vs `timestamptz`, so this
 stays advisory-only there.
 
+### text -> jsonb convergence and uuid visibility (#2772)
+
+A `text` column on a table smrt itself creates, backed by a manifest `JSON`
+(-> `jsonb` on PostgreSQL) declaration, was previously invisible to
+`db:status`/`db:diff` and had no `db:migrate` repair path (the #1335
+text/json tolerance is directional: it stays silent for the reverse pairing —
+a native `json`/`jsonb` live column backed by a text-convention manifest
+field — but this direction now runs the same shared shape probe as #2771's
+timestamptz path and converges the same way: a clean probe plans `ALTER
+COLUMN … TYPE jsonb USING col::jsonb`; a dirty probe fails closed with a
+masked sample. `db:status` also now reports an `info`-level finding for a
+declared-`uuid` structural column still backed by live `text` (previously
+silent by design), pointing at `db:migrate-uuid` — the tolerance itself is
+unchanged, only its visibility. SQLite stays advisory-only for both.
+
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
 and deferred PostgreSQL cycle constraints; cached per-class DDL is not a valid
