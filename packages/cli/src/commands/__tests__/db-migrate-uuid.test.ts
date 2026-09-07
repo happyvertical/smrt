@@ -814,6 +814,9 @@ describePostgres(
       await db.query(
         `CREATE TABLE "${child}" (id text PRIMARY KEY, parent_id text NOT NULL CONSTRAINT "${child}_parent_fkey" REFERENCES "${parent}"(id) ON UPDATE CASCADE ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED)`,
       );
+      await db.query(
+        `COMMENT ON CONSTRAINT "${child}_parent_fkey" ON "${child}" IS 'generated bridge inbound FK'`,
+      );
       await db.query(`CREATE TABLE "${junction}" (parent_text text NOT NULL)`);
       await db.query(
         `ALTER TABLE "${junction}" ADD CONSTRAINT "${junction}_bridge_fkey" FOREIGN KEY (parent_text) REFERENCES "${parent}"(_integrity_id_text) ON UPDATE CASCADE ON DELETE CASCADE NOT VALID`,
@@ -954,6 +957,9 @@ describePostgres(
       const output = logSpy.mock.calls.flat().join('\n');
       expect(output).toContain('COMMENT ON INDEX "public"."');
       expect(output).toContain('generated bridge index');
+      expect(output).toContain(
+        `COMMENT ON CONSTRAINT "${child}_parent_fkey" ON "public"."${child}" IS 'generated bridge inbound FK';`,
+      );
       expect(output).toContain('SET STATISTICS 777');
       expect(output).toContain('SET COMPRESSION pglz');
       expect(output).toContain(`CLUSTER ON "${parent}_bridge_uidx"`);

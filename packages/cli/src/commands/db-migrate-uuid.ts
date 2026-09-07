@@ -801,10 +801,15 @@ function renderUuidConversionSql(
         );
     }
   }
-  for (const foreignKey of foreignKeys)
+  for (const foreignKey of foreignKeys) {
     console.log(
       `  ALTER TABLE ${pgTable(foreignKey.table)} ADD CONSTRAINT ${quoteIdentifier(foreignKey.name)} ${foreignKey.definition}${foreignKey.validated ? '' : ' NOT VALID'};`,
     );
+    if (foreignKey.comment)
+      console.log(
+        `  COMMENT ON CONSTRAINT ${quoteIdentifier(foreignKey.name)} ON ${pgTable(foreignKey.table)} IS ${quoteLiteral(foreignKey.comment)};`,
+      );
+  }
 }
 
 async function snapshotGeneratedBridges(
