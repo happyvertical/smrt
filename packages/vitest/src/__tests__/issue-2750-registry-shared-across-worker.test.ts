@@ -58,18 +58,35 @@ describe('issue #2750: ObjectRegistry is shared with the pool: "forks" worker pr
 
     let stdout = '';
     let failed = false;
-    try {
-      stdout = execFileSync(process.execPath, [vitestBin, 'run'], {
-        cwd: fixtureRoot,
-        encoding: 'utf-8',
-        env: { ...process.env },
-        timeout: 60_000,
-      });
-    } catch (error) {
-      failed = true;
-      stdout =
-        (error as { stdout?: string }).stdout ??
-        (error instanceof Error ? error.message : String(error));
+    // A nested `vitest run` spawn can transiently fail with ENOENT under
+    // heavy parallel load (observed sporadically when this file runs
+    // alongside the rest of the package's suite) even though
+    // `process.execPath` is always valid -- retry a couple of times before
+    // treating it as a real failure, the same way `smrtVitestPlugin()`
+    // itself retries CI-only spawn/timing flakes (see AGENTS.md's "CI
+    // retry" section).
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      failed = false;
+      try {
+        stdout = execFileSync(process.execPath, [vitestBin, 'run'], {
+          cwd: fixtureRoot,
+          encoding: 'utf-8',
+          env: { ...process.env },
+          timeout: 60_000,
+        });
+        break;
+      } catch (error) {
+        failed = true;
+        stdout =
+          (error as { stdout?: string }).stdout ??
+          (error instanceof Error ? error.message : String(error));
+        const isTransientSpawnFailure =
+          (error as { code?: string }).code === 'ENOENT';
+        if (!isTransientSpawnFailure || attempt === maxAttempts) {
+          break;
+        }
+      }
     }
 
     expect(stdout, `nested vitest run failed:\n${stdout}`).toContain(
