@@ -73,7 +73,7 @@ const TIMESTAMPTZ_SPECIAL_VALUES = new Set([
  * without one, PostgreSQL interprets the value under the *migrating
  * session's* `TimeZone` setting, so the exact same text can cast to a
  * different instant on a different run/server. That ambiguity is exactly
- * what `--postgres-timestamp-legacy-timezone=UTC` exists to resolve explicitly; the probe must
+ * what `--legacy-timezone=UTC` exists to resolve explicitly; the probe must
  * fail closed (not silently guess UTC) so naive values route to that opt-in
  * path instead of being auto-converged.
  */

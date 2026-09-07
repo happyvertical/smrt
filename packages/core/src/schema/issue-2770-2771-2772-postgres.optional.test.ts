@@ -198,7 +198,7 @@ describe.skipIf(!pgUrl)(
       // -- but the resulting instant depends on the *casting session's*
       // TimeZone or is evaluated at cast time, so `USING col::timestamptz`
       // would silently corrupt or reinterpret the data. The probe must
-      // reject both, routing them to the explicit `--postgres-timestamp-legacy-timezone=UTC`
+      // reject both, routing them to the explicit `--legacy-timezone=UTC`
       // opt-in instead of auto-converging.
       it('rejects session-dependent naive timestamps and PostgreSQL special values', async () => {
         await db.query(`DROP TABLE IF EXISTS "${table}"`);
