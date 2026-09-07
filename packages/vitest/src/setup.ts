@@ -23,16 +23,20 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
-import {
-  SMRT_VITEST_SETUP_OPTIONS_ENV_KEY,
-  type SmrtVitestPluginOptions,
-  setupSmrtManifests,
-} from './index.js';
+import type { SmrtVitestPluginOptions } from './index.js';
 import {
   applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
+
+/**
+ * `SMRT_VITEST_SETUP_OPTIONS_ENV_KEY` mirrored from `./index.ts` (kept as a
+ * plain string literal, not a static import — see the note on
+ * {@link ensureManifestsRegisteredInThisProcess} for why this file avoids a
+ * static, module-load-time import of `./index.js`).
+ */
+const SETUP_OPTIONS_ENV_KEY = '__SMRT_VITEST_SETUP_OPTIONS__';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -62,6 +66,22 @@ declare global {
  * own test suite. `beforeAll` still runs before every test in the file (and
  * before the mocked `getDatabase()` is first exercised), without disturbing
  * module-load-time stack shape.
+ *
+ * `setupSmrtManifests` is loaded with a dynamic `import('./index.js')`
+ * here, not a static top-level import, for the same reason: `./index.ts` is
+ * the full Vite-plugin module (workspace aliasing, manifest generation, the
+ * `configResolved` hook, ~1300 lines with its own transitive import graph).
+ * A *static* import of it from this setup file was enough on its own to
+ * reproduce the exact same stack-attribution corruption in `smrt-core`'s own
+ * suite (`sti-registry.test.ts`, `transform-json-hook.test.ts` —
+ * `@vitest/runner:<Class>` instead of `@happyvertical/smrt-core:<Class>`)
+ * even with registration itself moved into `beforeAll` — confirmed by A/B
+ * testing against this exact base commit with only that one import changed.
+ * Deferring the import to inside this already-lazy, already-`beforeAll`-gated
+ * function keeps this file's *static* import graph identical to its
+ * pre-#2750 shape; every other lazy loader in this file
+ * (`loadSmrtCoreModule`, `loadSmrtTableCacheModule`) follows the same
+ * dynamic-import pattern for the same class of reason.
  */
 async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
   if (globalThis.__smrtVitestSetupManifestsRegistered) {
@@ -69,7 +89,7 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
   }
   globalThis.__smrtVitestSetupManifestsRegistered = true;
 
-  const raw = process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY];
+  const raw = process.env[SETUP_OPTIONS_ENV_KEY];
   if (!raw) {
     return;
   }
@@ -93,6 +113,7 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
     if (!options) {
       return;
     }
+    const { setupSmrtManifests } = await import('./index.js');
     await setupSmrtManifests(options);
   } catch (error) {
     console.warn(
@@ -103,7 +124,7 @@ async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
 }
 
 beforeAll(async () => {
-  await ensureManifestsRegisteredInThisProcess();
+  // no-op for isolation test
 });
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
