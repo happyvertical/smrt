@@ -36,7 +36,17 @@ Before upgrading a PostgreSQL consumer that stores non-UUID tenant primary keys:
 
 `smrt db:migrate-uuid` only converts schema-declared UUID columns when all
 non-empty values are already canonical UUID strings. It deliberately skips dirty
-columns instead of coercing slug-shaped data.
+columns instead of coercing slug-shaped data. On PostgreSQL it also preserves a
+bounded dependency component in one transaction: schema-declared UUID foreign
+keys and plain stored `id::text` integrity bridges with their single-key btree
+indexes and inbound TEXT foreign keys. Before it drops a bridge column, it reads
+PostgreSQL's dependency catalog and allows only the bridge's generated-column
+definition, those reconstructable indexes, and the foreign keys it explicitly
+captures. Constraints, views, expression or partial indexes, extended
+statistics, and every other dependent catalog object are refused before any
+schema change. It also refuses views, partitions, inheritance, non-canonical
+bridge values, and non-default bridge collations; use `--dry-run` to inspect the
+exact plan.
 
 ## Validation
 
