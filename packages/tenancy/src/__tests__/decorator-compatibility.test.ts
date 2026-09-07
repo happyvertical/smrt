@@ -1,6 +1,8 @@
 import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { TenantContextError } from '../context.js';
 import { TenantScoped, tenantId } from '../decorators.js';
+import { createTenantInterceptor } from '../interceptor.js';
 
 function createFieldContext(
   name: string,
@@ -112,5 +114,18 @@ describe('tenantId decorator compatibility', () => {
       ObjectRegistry.getClassByConstructor(optionalConstructor)
         ?.tenantScopedConfig,
     ).toMatchObject({ mode: 'optional', field: 'tenantId' });
+
+    const interceptor = createTenantInterceptor();
+    expect(() =>
+      interceptor.beforeList?.(
+        '@fixture/tenant-required:TenantCollision',
+        {},
+        {
+          className: 'TenantCollision',
+          operation: 'list',
+          timestamp: new Date(),
+        },
+      ),
+    ).toThrow(TenantContextError);
   });
 });

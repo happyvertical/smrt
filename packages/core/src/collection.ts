@@ -2870,7 +2870,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.constructor.name,
     );
     const interceptedFilter = await GlobalInterceptors.executeBeforeGet(
-      itemClassName,
+      itemQualifiedName,
       filter,
       interceptorContext,
     );
@@ -3049,7 +3049,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemClassName,
+        itemQualifiedName,
         options as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -4114,6 +4114,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ) {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // Security (#1540): count() is a list-shaped read, so run the same
     // `beforeList` interceptors (tenant filtering, etc.). Without this, count()
@@ -4126,7 +4127,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemClassName,
+        itemQualifiedName,
         options as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -4211,7 +4212,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemClassName,
+        itemQualifiedName,
         options as unknown as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -5215,7 +5216,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.constructor.name,
     );
     const tenantPrefilter = await GlobalInterceptors.executeBeforeList(
-      itemClassName,
+      this.getResolvedItemQualifiedName(),
       { where: {} },
       tenantPrefilterContext,
     );
