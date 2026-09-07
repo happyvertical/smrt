@@ -31,12 +31,12 @@ const TENANT_A = 'aaaaaaaa-2763-4aaa-8aaa-aaaaaaaaaaa1';
 describe('qualified tenant identity through real caller paths (#2763)', () => {
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
   let parents: SmrtCollection<any>;
-  let optionalParents: SmrtCollection<any>;
+  let openParents: SmrtCollection<any>;
   let related: SmrtCollection<any>;
   let RequiredRelated: typeof SmrtObject;
   let OptionalRelated: typeof SmrtObject;
   let parentId = '';
-  let optionalParentId = '';
+  let openParentId = '';
   let relatedId = '';
 
   beforeAll(async () => {
@@ -55,28 +55,32 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
       @tenantId({ nullable: true })
       tenantId: string | null = null;
 
-      @oneToMany('TenantIdentityRelated', { foreignKey: 'optionalParentId' })
+      @oneToMany('@fixture/tenant-identity-required:TenantIdentityRelated', {
+        foreignKey: 'parentId',
+      })
       related: SmrtObject[] = [];
     }
 
-    let OptionalParent: typeof SmrtObject;
+    let OpenParent: typeof SmrtObject;
     {
       @smrt({
-        packageName: '@fixture/tenant-identity-parent-optional',
-        tableName: 'tenant_identity_optional_parents_2763',
+        packageName: '@fixture/tenant-identity-required',
+        tableName: 'tenant_identity_open_parents_2763',
       })
       @TenantScoped({ mode: 'optional' })
-      class TenantIdentityParent extends SmrtObject {
+      class TenantIdentityOpenParent extends SmrtObject {
         @field({ type: 'text' })
         title = '';
 
         @tenantId({ nullable: true })
         tenantId: string | null = null;
 
-        @oneToMany('TenantIdentityRelated')
+        @oneToMany('@fixture/tenant-identity-required:TenantIdentityRelated', {
+          foreignKey: 'openParentId',
+        })
         related: SmrtObject[] = [];
       }
-      OptionalParent = TenantIdentityParent;
+      OpenParent = TenantIdentityOpenParent;
     }
 
     @smrt({
@@ -88,8 +92,8 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
       @foreignKey(TenantIdentityParent)
       parentId = '';
 
-      @foreignKey(OptionalParent)
-      optionalParentId = '';
+      @foreignKey(OpenParent)
+      openParentId = '';
 
       @field({ type: 'integer' })
       sequence = 0;
@@ -101,6 +105,24 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
       tenantId: string | null = null;
     }
     RequiredRelated = TenantIdentityRelated;
+
+    // This cross-package peer is deliberately optional and evaluated after
+    // the required class. It has no physical relationship: @foreignKey()
+    // relationships stay inside the required fixture package.
+    {
+      @smrt({
+        packageName: '@fixture/tenant-identity-optional',
+        tableName: 'tenant_identity_optional_parents_2763',
+      })
+      @TenantScoped({ mode: 'optional' })
+      class TenantIdentityParent extends SmrtObject {
+        @field({ type: 'text' })
+        title = '';
+
+        @tenantId({ nullable: true })
+        tenantId: string | null = null;
+      }
+    }
 
     {
       // Intentionally evaluated last: the simple-name tenancy registry now
@@ -127,26 +149,19 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
     class TenantIdentityRelatedCollection extends SmrtCollection<TenantIdentityRelated> {
       static readonly _itemClass = TenantIdentityRelated;
     }
-    class TenantIdentityOptionalParentCollection extends SmrtCollection<any> {
-      static readonly _itemClass = OptionalParent;
+    class TenantIdentityOpenParentCollection extends SmrtCollection<any> {
+      static readonly _itemClass = OpenParent;
     }
     ObjectRegistry.registerCollection(
       '@fixture/tenant-identity-parent:TenantIdentityParent',
       TenantIdentityParentCollection,
     );
     ObjectRegistry.registerCollection(
-      '@fixture/tenant-identity-parent-optional:TenantIdentityParent',
-      TenantIdentityOptionalParentCollection,
+      '@fixture/tenant-identity-required:TenantIdentityOpenParent',
+      TenantIdentityOpenParentCollection,
     );
     ObjectRegistry.registerCollection(
       '@fixture/tenant-identity-required:TenantIdentityRelated',
-      TenantIdentityRelatedCollection,
-    );
-    // Relationship metadata intentionally remains simple-name based. Bind its
-    // collection alias to the required constructor; the caller under test then
-    // has to carry that constructor's qualified identity into interception.
-    ObjectRegistry.registerCollection(
-      'TenantIdentityRelated',
       TenantIdentityRelatedCollection,
     );
     db = await getTestDatabase({
@@ -154,13 +169,13 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
       url: ':memory:',
       classes: [
         '@fixture/tenant-identity-parent:TenantIdentityParent',
-        '@fixture/tenant-identity-parent-optional:TenantIdentityParent',
+        '@fixture/tenant-identity-required:TenantIdentityOpenParent',
         '@fixture/tenant-identity-required:TenantIdentityRelated',
         '@fixture/tenant-identity-optional:TenantIdentityRelated',
       ],
     });
     parents = await TenantIdentityParentCollection.create({ db });
-    optionalParents = await TenantIdentityOptionalParentCollection.create({
+    openParents = await TenantIdentityOpenParentCollection.create({
       db,
     });
     related = await TenantIdentityRelatedCollection.create({ db });
@@ -169,13 +184,13 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
     await withTenant({ tenantId: TENANT_A }, async () => {
       const parent = await parents.create({ title: 'parent' });
       parentId = parent.id;
-      const optionalParent = await optionalParents.create({
-        title: 'optional parent',
+      const openParent = await openParents.create({
+        title: 'open parent',
       });
-      optionalParentId = optionalParent.id;
+      openParentId = openParent.id;
       const child = await related.create({
         parentId,
-        optionalParentId,
+        openParentId,
         sequence: 1,
         title: 'related',
       });
@@ -195,23 +210,47 @@ describe('qualified tenant identity through real caller paths (#2763)', () => {
       }),
     ).rejects.toThrow(TenantContextError);
 
-    // The optional same-name parent reaches the related `beforeList` hook. Its required
-    // same-name peer must reject even though optional peers were registered
-    // later under the shared simple name.
+    // The distinct optional parent reaches the related `beforeList` hook. Its
+    // required same-name peer must reject even though an optional peer was
+    // registered later under the shared simple name.
     await expect(
-      optionalParents.listWithLatestRelated({
+      openParents.listWithLatestRelated({
         latestRelated: { relation: 'related', orderBy: 'sequence DESC' },
       }),
     ).rejects.toThrow(TenantContextError);
 
     await expect(
-      withTenant({ tenantId: TENANT_A }, () => parents.list({})),
-    ).resolves.toContainEqual(
-      expect.objectContaining({ id: parentId, title: 'parent' }),
-    );
+      withTenant({ tenantId: TENANT_A }, () =>
+        parents.listWithLatestRelated({
+          latestRelated: {
+            relation: 'related',
+            orderBy: 'sequence DESC',
+            select: ['id', 'parentId'],
+          },
+        }),
+      ),
+    ).resolves.toMatchObject([
+      {
+        parent: { id: parentId },
+        latestRelated: { id: relatedId, parentId },
+      },
+    ]);
     await expect(
-      withTenant({ tenantId: TENANT_A }, () => related.list({})),
-    ).resolves.toMatchObject([{ id: relatedId, parentId, title: 'related' }]);
+      withTenant({ tenantId: TENANT_A }, () =>
+        openParents.listWithLatestRelated({
+          latestRelated: {
+            relation: 'related',
+            orderBy: 'sequence DESC',
+            select: ['id', 'openParentId'],
+          },
+        }),
+      ),
+    ).resolves.toMatchObject([
+      {
+        parent: { id: openParentId },
+        latestRelated: { id: relatedId, openParentId },
+      },
+    ]);
   });
 
   it('keeps the required same-name class closed for hydration and mutations while its optional peer remains permissive', async () => {
