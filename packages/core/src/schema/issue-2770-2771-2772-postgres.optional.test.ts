@@ -517,7 +517,16 @@ describe.skipIf(!pgUrl)(
         await db.query(`DROP TABLE IF EXISTS "${liveOnlyTable}"`);
       });
 
-      it('drops a live-only default (not declared by the manifest) so the ALTER does not abort the batch', async () => {
+      // Review finding (repeat final full-diff pass): unconditionally
+      // dropping a live-only default is the same "relaxation"
+      // `compareColumnConstraints` already gates behind `relaxColumns`
+      // elsewhere in this differ; auto-executing it here would silently
+      // weaken the column (any external writer relying on the default now
+      // gets NULL/23502) with no advisory and no opt-in. Without
+      // `relaxColumns`, the conversion must stay a fail-closed advisory
+      // instead -- never abort the batch (the original regression), but
+      // never silently drop the default either.
+      it('without relaxColumns, blocks with a fail-closed advisory and leaves the live default untouched', async () => {
         await db.query(`DROP TABLE IF EXISTS "${liveOnlyTable}"`);
         await db.query(`
           CREATE TABLE "${liveOnlyTable}" (
@@ -532,10 +541,45 @@ describe.skipIf(!pgUrl)(
         const diff = await new SchemaComparer(db, {
           ignoreTypeMismatches: false,
         }).compare(liveOnlySchema());
+        const typeUpgrade = diff.changes.find(
+          (change) => change.type === 'type_upgrade' && change.name === 'tags',
+        );
+        expect(typeUpgrade).toBeDefined();
+        expect(typeUpgrade?.sql).toBeUndefined();
+        expect(typeUpgrade?.sqlStatements).toBeUndefined();
+        expect(typeUpgrade?.advisory?.severity).toBe('warning');
+        expect(typeUpgrade?.advisory?.message).toContain('live default');
+        expect(typeUpgrade?.advisory?.message).toContain('relaxColumns');
+        expect(getSQLFromDiff(diff)).toEqual([]);
+
+        const liveDefault = await db.query(
+          `SELECT column_default FROM information_schema.columns ` +
+            `WHERE table_name = $1 AND column_name = 'tags'`,
+          [liveOnlyTable],
+        );
+        expect(liveDefault.rows?.[0]?.column_default).not.toBeNull();
+      });
+
+      it('with relaxColumns, drops the live-only default and converges (does not abort the batch)', async () => {
+        await db.query(`DROP TABLE IF EXISTS "${liveOnlyTable}"`);
+        await db.query(`
+          CREATE TABLE "${liveOnlyTable}" (
+            id text PRIMARY KEY,
+            tags text DEFAULT ''
+          )
+        `);
+        await db.query(
+          `INSERT INTO "${liveOnlyTable}" (id, tags) VALUES ('r1', '{"a":1}')`,
+        );
+
+        const diff = await new SchemaComparer(db, {
+          ignoreTypeMismatches: false,
+          relaxColumns: true,
+        }).compare(liveOnlySchema());
         const statements = getSQLFromDiff(diff);
         expect(statements.length).toBeGreaterThan(0);
         // Must not throw "default for column ... cannot be cast
-        // automatically to type jsonb" -- this is the regression itself.
+        // automatically to type jsonb" -- the original regression.
         for (const statement of statements) {
           await db.query(statement);
         }

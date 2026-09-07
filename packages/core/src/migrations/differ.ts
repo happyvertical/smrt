@@ -1467,7 +1467,47 @@ export class SchemaComparer {
             manifestDefaultValue: colDef.defaultValue,
           };
 
-          if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
+          // Review finding: dropping a live default the manifest no longer
+          // declares is the same "relaxation" `compareColumnConstraints`
+          // already gates behind `relaxColumns` elsewhere (see the
+          // `dbHasDefault` branch above) — auto-executing it here as a side
+          // effect of the type conversion would silently weaken the column
+          // with no advisory and no opt-in. When there's no manifest
+          // default to restore and the operator hasn't opted into
+          // relaxation, surface it the same way a dirty probe does: a
+          // fail-closed advisory naming the blocker, with the would-be SQL
+          // attached for visibility, instead of executing.
+          const liveOnlyDefaultNeedsRelaxOptIn =
+            hasLiveDefault &&
+            colDef.defaultValue === undefined &&
+            !this.options.relaxColumns;
+
+          if (
+            jsonUpgradeCandidate &&
+            jsonProbe?.status === 'clean' &&
+            liveOnlyDefaultNeedsRelaxOptIn
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} has a live default ` +
+                  `(${String(dbCol.defaultValue)}) the manifest no longer ` +
+                  'declares; converging to jsonb requires dropping it ' +
+                  `first. ${this.relaxHint('drop it as part of this conversion')}`,
+                suggestedSql: renderJsonbColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
             const statements = renderJsonbColumnConversion(
               tableName,
               colName,
@@ -1500,6 +1540,31 @@ export class SchemaComparer {
                   }). Repair or clear the offending value(s), then rerun ` +
                   '`smrt db:migrate`.',
                 suggestedSql: renderJsonbColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'clean' &&
+            liveOnlyDefaultNeedsRelaxOptIn
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} has a live default ` +
+                  `(${String(dbCol.defaultValue)}) the manifest no longer ` +
+                  'declares; converging to timestamptz requires dropping ' +
+                  `it first. ${this.relaxHint('drop it as part of this conversion')}`,
+                suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,
                   conversionOptions,
@@ -1543,7 +1608,7 @@ export class SchemaComparer {
                       ? maskSampleValue(timestamptzProbe.sample)
                       : 'unavailable'
                   }). Repair the offending value(s), or confirm legacy naive ` +
-                  'wall-clock provenance with `smrt db:migrate --legacy-timezone=UTC`, then rerun.',
+                  'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.',
                 suggestedSql: renderTimestamptzColumnConversion(
                   tableName,
                   colName,

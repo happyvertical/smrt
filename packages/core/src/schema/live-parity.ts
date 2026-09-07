@@ -482,7 +482,18 @@ function compareColumns(
       // warning rather than staying invisible; the reverse direction (a
       // native `json`/`jsonb` column backed by a text-convention manifest
       // field) stays silent — that pairing is intentional, not drift.
-      if (expectedBucket === 'JSON' && actualBucket === 'TEXT') {
+      //
+      // Engine-gated to `postgres` to match the differ's own repair gate
+      // (`jsonUpgradeCandidate` in `differ.ts`, `this.engine === 'postgres'`
+      // only): on DuckDB/SQLite there is no `type_upgrade` path for this
+      // pairing, so flagging it here would be a permanent, unclearable
+      // warning (review finding — the same class already fixed for #2770's
+      // float-width check).
+      if (
+        engine === 'postgres' &&
+        expectedBucket === 'JSON' &&
+        actualBucket === 'TEXT'
+      ) {
         findings.push({
           kind: 'column_type_drift',
           severity: 'warning',
@@ -516,12 +527,23 @@ function compareColumns(
             'Run `smrt db:migrate-uuid` to converge this column to native uuid, or leave it as-is — this pairing is tolerated indefinitely.',
           details: { expected: column.type, actual: live.type },
         });
-      } else if (expectedBucket === 'REAL' && actualBucket === 'REAL') {
+      } else if (
+        (engine === 'postgres' || engine === 'duckdb') &&
+        expectedBucket === 'REAL' &&
+        actualBucket === 'REAL'
+      ) {
         // #2770: REAL/DOUBLE PRECISION/DECIMAL/NUMERIC all normalize into
         // one 'REAL' bucket above, so single- vs double-precision float
         // drift never reaches the `!typesAreEquivalent` branch — the same
         // way int4-vs-int8 drift hides behind the shared 'INTEGER' bucket
         // (see `legacy_integer_width` below). Detect it here instead.
+        //
+        // Engine-gated to match the differ's own repair gate (`differ.ts`,
+        // `this.engine === 'postgres' || this.engine === 'duckdb'`): SQLite
+        // stores every real as an 8-byte double regardless of the declared
+        // type name, so there is no narrowing and no `type_upgrade` path —
+        // flagging it there would be a permanent, unclearable warning
+        // (review finding).
         const expectedPrecision = floatPrecisionOf(column.type, engine);
         const actualPrecision = floatPrecisionOf(live.type, engine);
         if (
