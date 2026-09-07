@@ -129,4 +129,57 @@ describe('tenantId decorator compatibility', () => {
       ),
     ).toThrow(TenantContextError);
   });
+
+  it('keeps a silent manifest authoritative in either real class-decorator order', () => {
+    @TenantScoped({ mode: 'required' })
+    @smrt({
+      packageName: '@fixture/silent-manifest-outer-tenant',
+      _manifest: {
+        packageName: '@fixture/silent-manifest-outer-tenant',
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          SilentManifestOuterTenant: {
+            className: 'SilentManifestOuterTenant',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      _manifestKey: 'SilentManifestOuterTenant',
+    })
+    class SilentManifestOuterTenant extends SmrtObject {}
+
+    @smrt({
+      packageName: '@fixture/silent-manifest-inner-tenant',
+      _manifest: {
+        packageName: '@fixture/silent-manifest-inner-tenant',
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          SilentManifestInnerTenant: {
+            className: 'SilentManifestInnerTenant',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      _manifestKey: 'SilentManifestInnerTenant',
+    })
+    @TenantScoped({ mode: 'required' })
+    class SilentManifestInnerTenant extends SmrtObject {}
+
+    for (const className of [
+      'SilentManifestOuterTenant',
+      'SilentManifestInnerTenant',
+    ]) {
+      expect(ObjectRegistry.getTenantScopedConfig(className)).toBeUndefined();
+      expect(ObjectRegistry.getConflictColumns(className)).toEqual([
+        'slug',
+        'context',
+      ]);
+    }
+  });
 });

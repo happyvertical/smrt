@@ -385,6 +385,41 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toEqual(['slug', 'context']);
   });
 
+  it('does not let a later class declaration override a late silent manifest', () => {
+    class LateManifestReconciledTenant extends SmrtObject {}
+    ObjectRegistry.reconcileTenantScopedConfig(
+      LateManifestReconciledTenant,
+      tenantConfig('required'),
+    );
+    ObjectRegistry.register(LateManifestReconciledTenant, {
+      packageName: '@test/late-manifest-reconciled',
+      tableName: 'late_manifest_reconciled_tenants_2763',
+    });
+
+    ObjectRegistry.registerFromManifest(
+      '@test/late-manifest-reconciled:LateManifestReconciledTenant',
+      {
+        className: 'LateManifestReconciledTenant',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+      '@test/late-manifest-reconciled',
+    );
+
+    ObjectRegistry.reconcileTenantScopedConfig(
+      LateManifestReconciledTenant,
+      tenantConfig('required'),
+    );
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('LateManifestReconciledTenant'),
+    ).toBeUndefined();
+    expect(
+      ObjectRegistry.getConflictColumns('LateManifestReconciledTenant'),
+    ).toEqual(['slug', 'context']);
+  });
+
   it('keeps explicit core tenancy when a late manifest is silent', () => {
     @smrt({
       packageName: '@test/explicit-manifest',

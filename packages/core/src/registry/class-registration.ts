@@ -1045,7 +1045,7 @@ export function register(
       : manifestEntry?.decoratorConfig?.tenantScoped !== undefined
         ? 'manifest'
         : manifestEntry
-          ? undefined
+          ? 'manifest'
           : constructorTenantScopedDeclaration
             ? 'tenant-decorator'
             : fieldTenantScopedConfig
@@ -1711,9 +1711,7 @@ function mergeManifestIntoExistingRegistration(
       manifestConfig.tenantScoped,
     );
     existing.tenantScopedConfig = tenantScopedConfig;
-    existing.tenantScopedConfigSource = tenantScopedConfig
-      ? 'manifest'
-      : undefined;
+    existing.tenantScopedConfigSource = 'manifest';
     if (tenantScopedConfig) {
       ensureTenantScopedField(existing.fields, tenantScopedConfig);
     }
