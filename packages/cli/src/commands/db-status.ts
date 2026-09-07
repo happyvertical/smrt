@@ -9,6 +9,8 @@
 
 import {
   checkLiveSchemaParity,
+  collectForeignKeyOrphanCounts,
+  type ForeignKeyOrphanCount,
   type LiveSchemaParityReport,
   ObjectRegistry,
   SchemaComparer,
@@ -26,6 +28,7 @@ import {
   getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import { affectedOrphanCounts, formatOrphanCountLine } from './db-orphans.js';
 import {
   collectRegistryConflictTargets,
   formatParityReport,
@@ -564,6 +567,8 @@ export const dbStatusCommand: CLICommand = {
         schemaContract: schemaContract as SchemaContractReport,
         parity: null as LiveSchemaParityReport | null,
         parityError: null as string | null,
+        orphanedForeignKeys: [] as ForeignKeyOrphanCount[],
+        orphansError: null as string | null,
       };
       let diff: SchemaDiff = {
         added_tables: [],
@@ -592,7 +597,22 @@ export const dbStatusCommand: CLICommand = {
           getUnresolvedGeneratedMigrationNames(diff.changes),
         );
 
-        // 8b. Optional live-schema parity (#2368). The diff above answers
+        // 8b. Per-foreign-key orphan counts (#2753). Diagnostic-only: never
+        // gates has_changes or the process exit code, and a probe failure is
+        // reported rather than failing the whole status command.
+        try {
+          const orphanReport = await collectForeignKeyOrphanCounts(
+            db,
+            manifestSchemas,
+            { engineHint: dbType },
+          );
+          status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
+        } catch (error) {
+          status.orphansError =
+            error instanceof Error ? error.message : String(error);
+        }
+
+        // 8c. Optional live-schema parity (#2368). The diff above answers
         // "does the live schema match the manifest"; this answers "does the
         // live schema match what the model layer actually needs", which is a
         // different question whenever the manifest itself is what dropped an
@@ -732,6 +752,24 @@ export const dbStatusCommand: CLICommand = {
             console.log(`     ${note.recommendation}`);
           }
         }
+        console.log();
+      }
+
+      // Per-foreign-key orphan summary (#2753). Diagnostic-only: does not
+      // touch process.exitCode or the existing drift/notes finding kinds.
+      if (status.orphansError) {
+        console.log(
+          `⚠️  Foreign-key orphan check unavailable: ${status.orphansError}`,
+        );
+        console.log();
+      } else if (status.orphanedForeignKeys.length > 0) {
+        console.log(
+          `⚠️  Foreign-key orphans found (${status.orphanedForeignKeys.length}):`,
+        );
+        for (const count of status.orphanedForeignKeys) {
+          console.log(`   • ${formatOrphanCountLine(count)}`);
+        }
+        console.log('   Run `smrt db:orphans` for the full report.');
         console.log();
       }
 

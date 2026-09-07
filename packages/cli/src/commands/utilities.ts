@@ -49,6 +49,7 @@ import {
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
+import { dbOrphansCommand } from './db-orphans.js';
 import {
   formatParityReport,
   runLiveSchemaParity,
@@ -3414,6 +3415,7 @@ export default testManifest;
   'db:migrate-int8': dbMigrateInt8Command,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
+  'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
   'db:permissions': dbPermissionsCommand,
 

@@ -530,6 +530,18 @@ SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
 path. Neither engine treats an unsupported constraint addition as a successful
 no-op.
 
+**Counting orphans is a separate, read-only concern (#2753).**
+`renderForeignKeyOrphanDetector({ limitOne: true })` makes the probe a gate;
+`schema/foreign-key-orphan-report.ts`'s `collectForeignKeyOrphanCounts()` runs
+the identical predicate as `COUNT(*)` (via the same function's `countOnly`
+option, so the FROM/JOIN/WHERE clause is never duplicated) for every
+manifest-declared foreign key, and reports child/parent table and column, the
+live count, and child-column nullability. A relationship whose child or parent
+table does not exist live is skipped and reported separately rather than
+failing the whole run. It never repairs anything — the CLI surface is
+`smrt db:orphans` (`packages/cli/src/commands/db-orphans.ts`), and `db:status`
+prints a compact per-foreign-key summary when any count is nonzero.
+
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 
 PostgreSQL FK columns must have matching physical types. Legacy text IDs may

@@ -291,6 +291,16 @@ export {
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
+// Per-foreign-key orphan count report (#2753) — read-only, COUNT(*) probe of
+// every manifest foreign key, reusing the same predicate the migration
+// differ's orphan gate probes with.
+export {
+  type CollectForeignKeyOrphanCountsOptions,
+  collectForeignKeyOrphanCounts,
+  type ForeignKeyOrphanCount,
+  type ForeignKeyOrphanCountReport,
+  type ForeignKeyOrphanSkipped,
+} from './schema/foreign-key-orphan-report';
 export { planForeignKeyCreation } from './schema/foreign-key-planner';
 // Live-schema parity check (#2368) — compares a live database to the shape
 // the model layer assumes, including hand-DDL `_smrt_*` system tables.

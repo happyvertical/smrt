@@ -11,6 +11,7 @@ const {
   getAppliedMigrationsMock,
   getHistoryMock,
   getEngineMock,
+  collectForeignKeyOrphanCountsMock,
   SchemaComparerMock,
   MigrationTrackerMock,
 } = vi.hoisted(() => {
@@ -20,6 +21,7 @@ const {
   const getAppliedMigrations = vi.fn();
   const getHistory = vi.fn();
   const getEngine = vi.fn();
+  const collectForeignKeyOrphanCounts = vi.fn();
 
   class MockSchemaComparer {
     compare = compare;
@@ -43,6 +45,7 @@ const {
     getAppliedMigrationsMock: getAppliedMigrations,
     getHistoryMock: getHistory,
     getEngineMock: getEngine,
+    collectForeignKeyOrphanCountsMock: collectForeignKeyOrphanCounts,
     SchemaComparerMock: MockSchemaComparer,
     MigrationTrackerMock: MockMigrationTracker,
   };
@@ -65,6 +68,7 @@ vi.mock('@happyvertical/smrt-core', () => ({
     getAllSchemasAsDefinitions: getAllSchemasAsDefinitionsMock,
   },
   SchemaComparer: SchemaComparerMock,
+  collectForeignKeyOrphanCounts: collectForeignKeyOrphanCountsMock,
 }));
 
 vi.mock('@happyvertical/smrt-core/migrations', () => ({
@@ -118,6 +122,11 @@ describe('db:status', () => {
     getAppliedMigrationsMock.mockResolvedValue([]);
     getHistoryMock.mockResolvedValue([]);
     getEngineMock.mockReturnValue('postgres');
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [],
+      skipped: [],
+    });
   });
 
   afterEach(() => {
@@ -712,5 +721,136 @@ describe('db:status', () => {
       ],
       other: [],
     });
+  });
+
+  it('reports affected foreign keys in the orphan summary (#2753)', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          orphanCount: 3,
+          nullable: true,
+        },
+        {
+          childTable: 'event_participants',
+          childColumn: 'event_id',
+          parentTable: 'events',
+          parentColumn: 'id',
+          orphanCount: 5,
+          nullable: false,
+        },
+        {
+          childTable: 'clean',
+          childColumn: 'ref_id',
+          parentTable: 'refs',
+          parentColumn: 'id',
+          orphanCount: 0,
+          nullable: true,
+        },
+      ],
+      skipped: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], {});
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(output).toContain('Foreign-key orphans found (2)');
+    expect(output).toContain('events.type_id -> event_types.id: 3 orphan(s)');
+    expect(output).toContain(
+      'event_participants.event_id -> events.id: 5 orphan(s) [NOT NULL]',
+    );
+    expect(output).not.toContain('clean.ref_id');
+    expect(output).toContain('smrt db:orphans');
+    // Diagnostic-only: never touches the exit code.
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('says nothing about orphans when none are found', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], {});
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(output).not.toContain('Foreign-key orphans found');
+    expect(output).not.toContain('Foreign-key orphan check unavailable');
+  });
+
+  it('reports the orphan check as unavailable rather than failing db:status', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    collectForeignKeyOrphanCountsMock.mockRejectedValue(
+      new Error('could not connect'),
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], {});
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(output).toContain(
+      'Foreign-key orphan check unavailable: could not connect',
+    );
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('carries orphanedForeignKeys in --json output', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          orphanCount: 3,
+          nullable: true,
+        },
+      ],
+      skipped: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], { json: true });
+    const payload = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+
+    expect(payload.orphanedForeignKeys).toEqual([
+      {
+        childTable: 'events',
+        childColumn: 'type_id',
+        parentTable: 'event_types',
+        parentColumn: 'id',
+        orphanCount: 3,
+        nullable: true,
+      },
+    ]);
+    expect(payload.orphansError).toBeNull();
   });
 });
