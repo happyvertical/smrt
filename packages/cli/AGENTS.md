@@ -11,7 +11,7 @@ smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
-smrt db:migrate              # Apply migrations
+smrt db:migrate              # agents/type-drift.md
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
@@ -52,45 +52,6 @@ constraints after both tables exist. When a same-package constraint is missing
 on an existing table, `db:migrate` probes the exact child/parent columns for
 orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
 failed probe stays manual with detector/repair SQL.
-
-### Float-width drift (#2770)
-
-`db:status`/`db:diff` report float-width drift (`real` vs `double precision`)
-as `column_type_drift`, the same severity class as `legacy_integer_width`; a
-live single-precision column backed by a double-precision declaration widens
-automatically (lossless), but a double-precision live column backed by a
-single-precision declaration stays advisory-only (narrowing loses precision).
-
-### text -> timestamptz convergence (#2771)
-
-A `text` column on a table smrt itself creates, backed by a manifest
-`TIMESTAMP` (-> `TIMESTAMPTZ` on PostgreSQL) declaration, converges instead of
-staying blocked forever: `db:migrate` runs a server-side shape probe over
-every non-null value first (`packages/core/src/schema/text-cast-probe.ts`)
-and only plans the executable `ALTER COLUMN … TYPE timestamptz USING
-col::timestamptz` when every value is confirmed to parse unambiguously. A
-probe that finds an unparsable value fails closed with a masked sample
-instead of running the cast — repair the value, then rerun; the migration is
-a no-op once converged. This is independent of
-`postgresTimestampMigration.legacyTimezone` (`--legacy-timezone=UTC`), which
-stays reserved for ambiguous naive wall-clock strings the probe does not
-accept. SQLite has no distinct storage for `text` vs `timestamptz`, so this
-stays advisory-only there.
-
-### text -> jsonb convergence and uuid visibility (#2772)
-
-A `text` column on a table smrt itself creates, backed by a manifest `JSON`
-(-> `jsonb` on PostgreSQL) declaration, was previously invisible to
-`db:status`/`db:diff` and had no `db:migrate` repair path (the #1335
-text/json tolerance is directional: it stays silent for the reverse pairing —
-a native `json`/`jsonb` live column backed by a text-convention manifest
-field — but this direction now runs the same shared shape probe as #2771's
-timestamptz path and converges the same way: a clean probe plans `ALTER
-COLUMN … TYPE jsonb USING col::jsonb`; a dirty probe fails closed with a
-masked sample. `db:status` also now reports an `info`-level finding for a
-declared-`uuid` structural column still backed by live `text` (previously
-silent by design), pointing at `db:migrate-uuid` — the tolerance itself is
-unchanged, only its visibility. SQLite stays advisory-only for both.
 
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
