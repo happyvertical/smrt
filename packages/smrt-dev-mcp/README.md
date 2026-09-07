@@ -540,7 +540,7 @@ static manifest tools. Read-only.
 Sanitized snapshot of the booted `ObjectRegistry`: objects, packages, tables,
 fields, methods, tenancy, and inheritance, projected through a plain-JSON DTO.
 The boot registers the project's `.smrt/manifest.json` (or `dist/manifest.json`)
-and every installed SMRT package manifest; no project code is imported. Booted
+and every installed s-m-r-t package manifest; no project code is imported. Booted
 provenance (`booted (registry)`); read-only.
 
 | Parameter | Type | Required | Description |
