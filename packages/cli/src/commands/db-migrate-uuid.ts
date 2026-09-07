@@ -524,6 +524,23 @@ async function convertPostgresUuidColumns(
   for (const table of tables) {
     await db.query(`LOCK TABLE ${pgTable(table)} IN ACCESS EXCLUSIVE MODE`);
   }
+  for (const column of columns) {
+    const { rows } = await db.query(
+      `SELECT column_default FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ${quoteLiteral(column.table)}
+          AND column_name = ${quoteLiteral(column.column)}`,
+    );
+    const lockedDefault =
+      (rows[0] as Record<string, unknown> | undefined)?.column_default == null
+        ? null
+        : String((rows[0] as Record<string, unknown>).column_default);
+    if (lockedDefault !== column.defaultExpression) {
+      throw new Error(
+        `UUID source default changed while locks were acquired for ${column.table}.${column.column}; refusing stale migration plan. Re-run the command.`,
+      );
+    }
+  }
   const rescannedBridges = await snapshotGeneratedBridges(db, columns);
   const rescannedForeignKeys = await snapshotForeignKeys(
     db,
