@@ -309,17 +309,13 @@ export const dbMigrateUuidCommand: CLICommand = {
       const runConvert = !skipConvert && isPostgres;
 
       if (skipConvert) {
-        await applyRenameBackfills(db, isPostgres, renameSpecs, dryRun, {
-          ownTransaction: !dryRun,
-        });
+        await applyRenameOnlyBackfills(db, isPostgres, renameSpecs, dryRun);
         console.log('Skipping TEXT→uuid conversion (--skip-convert).\n');
         return;
       }
 
       if (!isPostgres) {
-        await applyRenameBackfills(db, isPostgres, renameSpecs, dryRun, {
-          ownTransaction: !dryRun,
-        });
+        await applyRenameOnlyBackfills(db, isPostgres, renameSpecs, dryRun);
         console.log(
           `Database type "${dbType}" has no native uuid column type that needs converting; uuid conversion is a no-op.\n`,
         );
@@ -335,9 +331,7 @@ export const dbMigrateUuidCommand: CLICommand = {
           'Skipping TEXT→uuid conversion (fail-closed). Run this command from\n' +
             'the project root so the SMRT manifest can be discovered, then re-run.\n',
         );
-        await applyRenameBackfills(db, isPostgres, renameSpecs, dryRun, {
-          ownTransaction: !dryRun,
-        });
+        await applyRenameOnlyBackfills(db, isPostgres, renameSpecs, dryRun);
         return;
       }
 
@@ -386,6 +380,37 @@ function nullifEmpty(isPostgres: boolean, quotedCol: string): string {
   return isPostgres
     ? `nullif(btrim(${quotedCol}), '')`
     : `nullif(trim(${quotedCol}), '')`;
+}
+
+/** Execute a rename-only PostgreSQL mutation on the transaction callback. */
+async function applyRenameOnlyBackfills(
+  db: DatabaseInterface,
+  isPostgres: boolean,
+  renameSpecs: RenameSpec[],
+  dryRun: boolean,
+): Promise<void> {
+  if (!isPostgres || dryRun) {
+    await applyRenameBackfills(db, isPostgres, renameSpecs, dryRun, {
+      ownTransaction: !dryRun,
+    });
+    return;
+  }
+  if (renameSpecs.length === 0) {
+    await applyRenameBackfills(db, true, renameSpecs, false, {
+      ownTransaction: false,
+    });
+    return;
+  }
+  if (!db.transaction) {
+    throw new Error(
+      'PostgreSQL UUID migration requires DatabaseInterface.transaction(); refusing to run unpinned DDL.',
+    );
+  }
+  await db.transaction(async (tx) => {
+    await applyRenameBackfills(tx, true, renameSpecs, false, {
+      ownTransaction: false,
+    });
+  });
 }
 
 type QueryExecutor = Pick<DatabaseInterface, 'query'>;
@@ -560,6 +585,11 @@ async function convertPostgresUuidColumns(
   for (const table of tables) {
     await db.query(`LOCK TABLE ${pgTable(table)} IN ACCESS EXCLUSIVE MODE`);
   }
+  // A concurrent session can attach an inherited child after the original
+  // preflight but before our first lock. Recheck the supported table shape
+  // while holding the planned tables: ALTER TYPE on a parent recurses to an
+  // undeclared child, so proceeding would exceed the declared source scope.
+  await assertSupportedSourceColumns(db, columns);
   for (const column of columns) {
     const { rows } = await db.query(
       `SELECT cols.column_default, relation.oid::text AS relation_oid,
