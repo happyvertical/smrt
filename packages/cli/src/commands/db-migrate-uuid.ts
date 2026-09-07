@@ -86,10 +86,22 @@ interface DbMigrateUuidOptions {
 
 // PostgreSQL's `::uuid` cast also accepts the bare 32-hex form (no hyphens) as
 // the identical value to its canonical hyphenated form — but NOT braces or
-// partial hyphenation. Accept both forms everywhere this probe is used so a
-// column holding hyphen-stripped uuids is not needlessly reported as dirty.
+// partial hyphenation. Accept both forms at the shape probes that gate a
+// TEXT→uuid TYPE conversion (candidate shape probe, rename-source probe): the
+// column becomes a native `uuid` either way, and both input forms normalize
+// to the same value.
 const UUID_RE =
   '^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$';
+
+// The generated TEXT bridge stays TEXT — it is re-added as `sourceColumn::text`
+// over the now-native-uuid column, and `uuid::text` always renders the
+// canonical HYPHENATED form. A bridge column that held the bare-hex form
+// would therefore come back re-hyphenated: a silent, irreversible rewrite of
+// the exact literal the bridge exists to preserve for TEXT FK children. So
+// the bridge sample probe stays canonical-hyphenated-only (case-sensitive,
+// lower-case), never the widened alternation.
+const CANONICAL_UUID_RE =
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 /**
  * Build the set of schema-declared UUID columns from a manifest's
@@ -1090,12 +1102,14 @@ async function snapshotGeneratedBridges(
       );
     }
     // UUID casts normalize input. A text bridge must keep its values exactly,
-    // so accepting upper-case/space-padded legacy values would break TEXT FK
-    // children after recreation.
+    // so accepting upper-case/space-padded legacy values — or the bare-hex
+    // shape, which would come back re-hyphenated by `uuid::text` — would
+    // break TEXT FK children after recreation. Canonical-hyphenated-only,
+    // deliberately narrower than the shape probes above.
     const { rows: nonCanonical } = await db.query(
       `SELECT count(*)::text AS n FROM ${pgTable(table)}
         WHERE ${quoteIdentifier(sourceColumn)} IS NOT NULL
-          AND ${quoteIdentifier(sourceColumn)} !~ '${UUID_RE}'`,
+          AND ${quoteIdentifier(sourceColumn)} !~ '${CANONICAL_UUID_RE}'`,
     );
     if (
       Number((nonCanonical[0] as Record<string, unknown> | undefined)?.n ?? 0) >

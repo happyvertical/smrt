@@ -35,14 +35,20 @@ Before upgrading a PostgreSQL consumer that stores non-UUID tenant primary keys:
 5. Run `smrt db:migrate`, then run `smrt db:migrate-uuid`.
 
 `smrt db:migrate-uuid` only converts schema-declared UUID columns when all
-non-empty values are already canonical UUID strings. A value counts as
-canonical-UUID-shaped in either the hyphenated form
+non-empty values are already canonical UUID strings. A value being converted to
+native `uuid` counts as UUID-shaped in either the hyphenated form
 (`8-4-4-4-12` hex groups) or the bare 32-hex form with no hyphens — PostgreSQL's
 `::uuid` cast accepts both as the identical value, and the conversion normalizes
 either input to the same canonical hyphenated `uuid` value, so a foreign key
 between a hyphenated-form column and a bare-hex-form column still converts and
 recreates correctly. Braces and partially-hyphenated values are never accepted.
 It deliberately skips dirty columns instead of coercing slug-shaped data.
+A generated TEXT bridge column (below) is narrower: it stays TEXT and is
+regenerated as `sourceColumn::text` over the now-native column, and
+`uuid::text` always renders the canonical hyphenated form — so a bare-hex
+bridge value would come back silently re-hyphenated, breaking the bridge's
+one job (matching its TEXT FK children exactly). The bridge's own sample probe
+therefore accepts only the canonical hyphenated form, never the bare-hex one.
 
 Inside its single transaction, before converting, it drops every foreign key
 that depends on a column being converted and recreates it afterward from the

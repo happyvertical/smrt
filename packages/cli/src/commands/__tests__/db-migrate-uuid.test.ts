@@ -3638,5 +3638,97 @@ describePostgres(
         expect(output).toContain(`SKIP ${table}.owner_id: 1 non-uuid value(s)`);
       }, 30_000);
     });
+
+    describe('a generated TEXT bridge holding a bare-hex source value', () => {
+      // A bare-hex bridge value must NOT be accepted: uuid::text always
+      // renders the canonical hyphenated form, so re-adding the bridge over
+      // the now-native column would silently rewrite the exact literal the
+      // bridge exists to preserve for its TEXT FK children. The shape probes
+      // that gate the TYPE conversion accept bare hex; the bridge's own
+      // sample probe stays canonical-hyphenated-only and refuses instead.
+      const stem = `mu_barehex_bridge_${Math.random().toString(36).slice(2, 8)}`;
+      const table = `${stem}_t`;
+      let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      beforeEach(async () => {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        await db.query(
+          `CREATE TABLE "${table}" (id text PRIMARY KEY, _integrity_id_text text GENERATED ALWAYS AS (id) STORED)`,
+        );
+        await db.query(
+          `CREATE UNIQUE INDEX "${table}_bridge_uidx" ON "${table}" USING btree (_integrity_id_text)`,
+        );
+        // Bare 32-hex — the shape probe on the *converting* id column would
+        // accept this, but the bridge sample probe must not.
+        await db.query(
+          `INSERT INTO "${table}" (id) VALUES ($1)`,
+          '88888888888888888888888888888888',
+        );
+
+        clearCache();
+        setConfig({
+          packages: {
+            cli: {
+              database: { type: 'postgres', url: process.env.DATABASE_URL },
+            },
+          },
+        } as any);
+        schemaSpy = vi
+          .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+          .mockReturnValue({
+            [table]: {
+              tableName: table,
+              ddl: '',
+              columns: { id: { type: 'UUID' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              version: '',
+              dependencies: [],
+            },
+          } as any);
+      });
+
+      afterEach(async () => {
+        schemaSpy?.mockRestore();
+        try {
+          const db = await freshDb();
+          await db.query(`DROP TABLE IF EXISTS "${table}"`);
+        } catch {
+          // Handler cleanup closes pooled handles; reacquire before teardown.
+        }
+        clearCache();
+      });
+
+      it('refuses instead of silently re-hyphenating the bridge value', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const errorSpy = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+        process.exitCode = undefined;
+
+        await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+        const exitCode = process.exitCode;
+        process.exitCode = undefined;
+        // Read call history BEFORE mockRestore() — restoring also clears it.
+        const errorOutput = errorSpy.mock.calls.flat().map(String).join('\n');
+        logSpy.mockRestore();
+        errorSpy.mockRestore();
+
+        expect(exitCode).toBe(1);
+        expect(errorOutput).toContain('canonical lower-case UUID text');
+        // Refused before any write: id and the bridge stay exactly as-is.
+        expect(await dataType(table, 'id')).toBe('text');
+        const db = await freshDb();
+        const { rows } = await db.query(
+          `SELECT _integrity_id_text FROM "${table}"`,
+        );
+        expect((rows as any[])[0]._integrity_id_text).toBe(
+          '88888888888888888888888888888888',
+        );
+      }, 30_000);
+    });
   },
 );
