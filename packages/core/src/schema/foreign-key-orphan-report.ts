@@ -94,6 +94,22 @@ export async function collectForeignKeyOrphanCounts(
 ): Promise<ForeignKeyOrphanCountReport> {
   const engine = resolveEngine(db, options.engineHint);
   const liveTables = await listLiveTables(db, engine);
+  // Cache per table: several foreign keys can share a child table, and
+  // `db.getTableSchema` is a live introspection round-trip.
+  const fetchLiveSchema = async (tableName: string) =>
+    db.getTableSchema?.(tableName);
+  const liveSchemaCache = new Map<
+    string,
+    Awaited<ReturnType<typeof fetchLiveSchema>>
+  >();
+  const getLiveSchema = async (tableName: string) => {
+    if (liveSchemaCache.has(tableName)) {
+      return liveSchemaCache.get(tableName);
+    }
+    const liveSchema = await fetchLiveSchema(tableName);
+    liveSchemaCache.set(tableName, liveSchema);
+    return liveSchema;
+  };
 
   const counts: ForeignKeyOrphanCount[] = [];
   const skipped: ForeignKeyOrphanSkipped[] = [];
@@ -128,7 +144,21 @@ export async function collectForeignKeyOrphanCounts(
       }
 
       const childColumnDefinition = schema.columns[foreignKey.column];
-      const nullable = childColumnDefinition?.notNull !== true;
+      // Nullable only when BOTH the manifest and the live column agree
+      // (review finding, #2748): a manifest relaxed to nullable while the
+      // live column is still physically NOT NULL (relaxation pending, not
+      // yet applied) is exactly the drift `db:migrate --null-orphans`
+      // refuses to null out — this report must say the same thing, or an
+      // operator reading `db:orphans`'s "null-out possible" summary and
+      // then running `--null-orphans` hits an unconditional refusal for a
+      // relationship this report told them was nullable. Mirrors
+      // `SchemaComparer.getForeignKeyOrphanOptions()` in
+      // `migrations/differ.ts`.
+      const liveChildSchema = await getLiveSchema(childTable);
+      const manifestNullable = childColumnDefinition?.notNull !== true;
+      const liveNotNull =
+        liveChildSchema?.columns[foreignKey.column]?.notNull === true;
+      const nullable = manifestNullable && !liveNotNull;
       const parentColumnDefinition =
         schemas[parentTable]?.columns[foreignKey.referencesColumn];
       const declaredUuidComparison =

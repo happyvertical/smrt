@@ -147,6 +147,40 @@ describe('collectForeignKeyOrphanCounts', () => {
     expect(report.skipped[0].reason).toContain('ghosts');
   });
 
+  it('reports nullable: false when the manifest is relaxed to nullable but the live column is still physically NOT NULL (review, #2748)', async () => {
+    // The exact drift `db:migrate --null-orphans` refuses to null out
+    // (`SchemaComparer.getForeignKeyOrphanOptions()` in
+    // `migrations/differ.ts` requires manifest AND live agreement). This
+    // report must say the same thing, or `db:orphans`'s "null-out
+    // possible" summary contradicts the very next `--null-orphans` run's
+    // unconditional refusal for the same relationship.
+    const database = await openDatabase();
+    await database.query(`CREATE TABLE event_types (id TEXT PRIMARY KEY)`);
+    // Manifest below declares `events.type_id` nullable, but the live
+    // column is still physically NOT NULL -- a relaxation the manifest
+    // wants but the live schema hasn't converged to yet.
+    await database.query(
+      `CREATE TABLE events (id TEXT PRIMARY KEY, type_id TEXT NOT NULL)`,
+    );
+    await database.query(`INSERT INTO event_types (id) VALUES ('t1')`);
+    await database.query(
+      `INSERT INTO events (id, type_id) VALUES ('e1', 't1'), ('e2', 'missing-type')`,
+    );
+
+    const report = await collectForeignKeyOrphanCounts(database, {
+      event_types: manifest().event_types,
+      events: manifest().events,
+    });
+
+    expect(report.counts).toHaveLength(1);
+    expect(report.counts[0]).toMatchObject({
+      childTable: 'events',
+      childColumn: 'type_id',
+      orphanCount: 1,
+      nullable: false,
+    });
+  });
+
   it('reports zero orphans and skips a relationship whose child table does not exist live', async () => {
     const database = await openDatabase();
     // Only create the parent tables; leave every child table missing.
