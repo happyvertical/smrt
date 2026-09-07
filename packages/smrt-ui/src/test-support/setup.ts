@@ -11,6 +11,18 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/svelte';
 import { afterEach } from 'vitest';
 
+// Vitest leaves Node 26's host `localStorage` accessor on the test global.
+// It is configurable but returns undefined without Node's storage-file flag.
+// Vitest retains the original JSDOM instance at `globalThis.jsdom`.
+const jsdomStorage = (
+  globalThis as typeof globalThis & { jsdom: { window: Window } }
+).jsdom.window.localStorage;
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: jsdomStorage,
+  writable: true,
+});
+
 afterEach(() => {
   cleanup();
 });
