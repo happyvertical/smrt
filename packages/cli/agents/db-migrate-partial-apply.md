@@ -4,9 +4,10 @@ Both are opt-in and off by default; default `db:migrate` behavior is
 unchanged either way. Implementation: `packages/cli/src/commands/
 db-migrate-actions.ts` (pure partition/planning functions) and
 `packages/cli/src/commands/utilities.ts`'s `db:migrate` handler (wiring,
-I/O). Core side: `SchemaChange.orphanBlocked` / `.orphanNullable`
-(`packages/core/src/schema/types.ts`), set by the FK-orphan advisory branch
-in `compareForeignKeys()` (`packages/core/src/migrations/differ.ts`), and
+I/O). Core side: `SchemaChange.orphanBlocked` / `.orphanNullable` /
+`.engineUnsupported` (`packages/core/src/schema/types.ts`), set by the
+FK advisory branches in `compareForeignKeys()`
+(`packages/core/src/migrations/differ.ts`), and
 `renderForeignKeyAddStatements()` (`packages/core/src/schema/
 foreign-key-ddl.ts`).
 
@@ -20,11 +21,20 @@ partition on top of that: it withholds not just the blocked changes
 themselves but anything that *depends* on one, and applies everything else.
 
 **Dependency rule.** `computeBlockedColumns()` reads every manual
-intervention's blocked `table.column` identity. `partitionUnblockedMigrations()`
-then withholds any `add_index` / `add_foreign_key` / `alter_column` /
-`drop_column` that reads or writes one of those columns:
+intervention's blocked `table.column` identity, plus every report-only
+`type_upgrade`/`alter_column` **advisory** (e.g. the #2608 refused uuid
+convergence) — an advisory-only finding never enters `manualInterventions`
+(it carries no SQL) but names a live column just as concretely, and a
+dependent index/alter/drop on that column is exactly as unsafe as one on a
+manual-intervention column (review finding, #2748: the advisory bucket was
+previously excluded, so `--apply-unblocked` did not honor its own stated
+guarantee for that class of blocked type upgrade).
+`partitionUnblockedMigrations()` then withholds any `add_index` /
+`add_foreign_key` / `alter_column` / `drop_column` that reads or writes one
+of those columns:
 
-- an index on a column whose type upgrade is blocked;
+- an index on a column whose type upgrade is blocked (manual intervention
+  or report-only advisory);
 - a foreign key whose child *or* parent column is blocked (a parent column
   mid-type-upgrade is just as unsafe to reference as the child);
 - an `alter_column`/`drop_column` on the blocked column itself.
@@ -33,6 +43,18 @@ then withholds any `add_index` / `add_foreign_key` / `alter_column` /
 column's state — a new column add is self-contained, and a type upgrade is
 the fix itself — so they always apply. Everything independent goes through
 the exact same transaction/tracker path an unflagged run uses.
+
+**An `add_foreign_key` blocked only because this engine cannot express the
+constraint at all is not a column-state block.** SQLite (table rebuild
+required) and DuckDB (no `ALTER TABLE ADD CONSTRAINT`) each carry
+`engineUnsupported: true` on that advisory — distinct from a conflicting
+constraint or an incompatible-type block, which genuinely do implicate the
+column and stay blocking. `blockedColumnForAction()` excludes only the
+`engineUnsupported` case: every real differ `add_foreign_key` advisory sets
+`foreignKey`, so gating on its mere presence blocked this case too (review
+finding, #2748) and, since no rerun on that engine ever resolves it, made
+`--apply-unblocked` permanently withhold unrelated dependent DDL on that
+column — strictly worse than omitting the flag.
 
 Withheld items print under `🔒 Withheld — depends on a blocked change`, each
 naming the `table.column` it depends on and the same reason text the manual

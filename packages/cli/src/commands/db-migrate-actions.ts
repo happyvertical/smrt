@@ -100,6 +100,8 @@ export interface MigrationAction {
   orphanBlocked?: boolean;
   /** See `SchemaChangeLike.orphanNullable` (#2748). */
   orphanNullable?: boolean;
+  /** See `SchemaChangeLike.engineUnsupported` (#2748). */
+  engineUnsupported?: boolean;
 }
 
 /**
@@ -174,6 +176,13 @@ export interface SchemaChangeLike {
    * allows NULL. Mirrors core's `SchemaChange.orphanNullable`.
    */
   orphanNullable?: boolean;
+  /**
+   * True on an advisory-only `add_foreign_key` change blocked because this
+   * engine cannot express the constraint at all (SQLite/DuckDB), as opposed
+   * to a data or type problem with the column itself. Mirrors core's
+   * `SchemaChange.engineUnsupported`.
+   */
+  engineUnsupported?: boolean;
 }
 
 /** True when a change carries an advisory and no executable statement. */
@@ -804,6 +813,9 @@ export function partitionSchemaChanges(
           ...(change.orphanNullable !== undefined
             ? { orphanNullable: change.orphanNullable }
             : {}),
+          ...(change.engineUnsupported !== undefined
+            ? { engineUnsupported: change.engineUnsupported }
+            : {}),
         };
         if (isAdvisoryOnlyChangeLike(change)) {
           manualInterventions.push(action);
@@ -993,14 +1005,20 @@ function blockedColumnKey(tableName: string, columnName: string): string {
  * Column that a manual-intervention action blocks, if any. `type_mismatch`,
  * a manual `type_upgrade`, and a manual `alter_column` each name exactly one
  * live column via `mismatch.column`; a blocked `add_foreign_key` names its
- * child column via `foreignKey.column`. Every other manual-intervention
- * shape (an FK the differ cannot express at all, e.g. a non-PostgreSQL
- * engine) blocks no column identity and is excluded from dependency
- * analysis — it can never be a dependency target since nothing else in a
- * batch is planned "on" it.
+ * child column via `foreignKey.column` — unless the block reason is
+ * `engineUnsupported` (this engine cannot express `ALTER TABLE ADD
+ * CONSTRAINT` at all, e.g. SQLite/DuckDB): that says nothing about the
+ * column's own state, no rerun on this engine ever resolves it, and
+ * treating it as a blocked column would withhold unrelated dependent DDL
+ * on that column permanently (review finding, #2748). That case blocks no
+ * column identity and is excluded from dependency analysis.
  */
 function blockedColumnForAction(action: MigrationAction): string | undefined {
-  if (action.type === 'add_foreign_key' && action.foreignKey) {
+  if (
+    action.type === 'add_foreign_key' &&
+    action.foreignKey &&
+    !action.engineUnsupported
+  ) {
     return blockedColumnKey(action.tableName, action.foreignKey.column);
   }
   const column =
@@ -1011,16 +1029,33 @@ function blockedColumnForAction(action: MigrationAction): string | undefined {
 /**
  * Every column a manual intervention blocks, keyed `table.column`, with the
  * human-readable reason (the action's advisory message, or a description of
- * the type mismatch) a dependent change is withheld for.
+ * the type mismatch) a dependent change is withheld for. `advisories`
+ * (report-only `type_upgrade`/`alter_column` findings, e.g. the #2608
+ * refused uuid convergence) name a column just as concretely as a manual
+ * intervention does and must block the same dependents — omitting them let
+ * `--apply-unblocked` apply an index/alter/drop against a column whose type
+ * convergence is itself blocked (review finding, #2748).
  */
 export function computeBlockedColumns(
   manualInterventions: MigrationAction[],
+  advisories: SchemaAdvisory[] = [],
 ): Map<string, string> {
   const blocked = new Map<string, string>();
   for (const action of manualInterventions) {
     const key = blockedColumnForAction(action);
     if (!key || blocked.has(key)) continue;
     blocked.set(key, describeBlockedReason(action));
+  }
+  for (const advisory of advisories) {
+    if (advisory.type !== 'type_upgrade' && advisory.type !== 'alter_column')
+      continue;
+    const key = blockedColumnKey(advisory.tableName, advisory.name);
+    if (blocked.has(key)) continue;
+    blocked.set(
+      key,
+      advisory.advisory.message ??
+        `${advisory.type} requires manual intervention`,
+    );
   }
   return blocked;
 }

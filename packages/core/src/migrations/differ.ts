@@ -1013,6 +1013,7 @@ export class SchemaComparer {
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
+          engineUnsupported: true,
           advisory: {
             severity: 'warning',
             message: `${engineReason} Run the orphan detector, repair rows, and rebuild the table with the generated constraint.`,

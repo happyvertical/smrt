@@ -6,6 +6,7 @@ import {
   partitionSchemaChanges,
   partitionUnblockedMigrations,
   planOrphanDispositions,
+  type SchemaAdvisory,
 } from '../db-migrate-actions.js';
 
 /**
@@ -64,20 +65,84 @@ describe('computeBlockedColumns', () => {
     expect(blocked.get('posts.author_id')).toContain('Cannot add foreign key');
   });
 
-  it('ignores manual interventions with no column identity', () => {
+  it('ignores an engine-unsupported add_foreign_key (SQLite/DuckDB cannot express the constraint at all)', () => {
+    // Real differ shape (packages/core/src/migrations/differ.ts, the
+    // non-postgres branch): `foreignKey` IS populated here, same as every
+    // other add_foreign_key advisory. Only `engineUnsupported: true`
+    // distinguishes "this engine can never add this constraint" from a
+    // column-state block (review finding, #2748) — a prior version of this
+    // test fabricated a foreignKey-less shape the differ never produces and
+    // passed without exercising the real gate.
     const manualInterventions: MigrationAction[] = [
       {
         type: 'add_foreign_key',
         tableName: 'posts',
         className: 'Post',
+        engineUnsupported: true,
+        foreignKey: {
+          column: 'author_id',
+          referencesTable: 'authors',
+          referencesColumn: 'id',
+        },
         advisory: {
           severity: 'warning',
-          message: 'SQLite requires a table rebuild.',
+          message:
+            'SQLite requires a table rebuild to add a foreign key to an existing table.',
         },
       },
     ];
 
     expect(computeBlockedColumns(manualInterventions).size).toBe(0);
+  });
+
+  it('still blocks a same-shape add_foreign_key that is not engine-unsupported (conflicting constraint / type block)', () => {
+    const manualInterventions: MigrationAction[] = [
+      {
+        type: 'add_foreign_key',
+        tableName: 'posts',
+        className: 'Post',
+        foreignKey: {
+          column: 'author_id',
+          referencesTable: 'authors',
+          referencesColumn: 'id',
+        },
+        advisory: {
+          severity: 'warning',
+          message:
+            'Foreign key posts.author_id exists with a different target or action.',
+        },
+      },
+    ];
+
+    const blocked = computeBlockedColumns(manualInterventions);
+    expect(blocked.has('posts.author_id')).toBe(true);
+  });
+
+  it('blocks a column named only by a report-only type_upgrade/alter_column advisory', () => {
+    // #2608 refused uuid convergence and other advisory-only type/alter
+    // findings never enter `manualInterventions` (they carry no SQL), but
+    // they name a live column just as concretely — `--apply-unblocked` must
+    // not apply an index/alter/drop against that column either (review
+    // finding, #2748).
+    const blocked = computeBlockedColumns(
+      [],
+      [
+        {
+          type: 'type_upgrade',
+          tableName: 'posts',
+          className: 'Post',
+          name: 'author_id',
+          advisory: {
+            severity: 'warning',
+            message: 'blocked: incompatible column types.',
+          },
+        },
+      ],
+    );
+
+    expect(blocked.get('posts.author_id')).toContain(
+      'incompatible column types',
+    );
   });
 });
 

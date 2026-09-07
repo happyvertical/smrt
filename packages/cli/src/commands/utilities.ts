@@ -2149,7 +2149,10 @@ export default testManifest;
         // reported like every other manual intervention.
         let withheldForDependency: WithheldMigration[] = [];
         if (options['apply-unblocked']) {
-          const blockedColumns = computeBlockedColumns(manualInterventions);
+          const blockedColumns = computeBlockedColumns(
+            manualInterventions,
+            advisories,
+          );
           const partition = partitionUnblockedMigrations(
             migrations,
             blockedColumns,
