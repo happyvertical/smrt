@@ -577,6 +577,16 @@ missing its `foreignKey` definition or its `advisory.suggestedSql` pair, on
 the same "report and withhold rather than guess" principle as the rest of
 this gate.
 
+`getForeignKeyOrphanOptions()`'s `nullable` reads BOTH sides: the manifest
+AND the live column (`dbSchema.columns[...].notNull`), never the manifest
+alone (review, #2748). A manifest relaxed to nullable while the live column
+has not converged yet — the same drift `--relax-columns` handles for plain
+columns — would otherwise report `nullable: true` from the manifest side
+only, and `--null-orphans` would attempt an `UPDATE` PostgreSQL rejects
+outright (`23502`), failing the whole atomic batch instead of refusing just
+that one relationship. Nullable only when both sides agree; a real
+NOT NULL on either side keeps the unconditional refusal.
+
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 
 PostgreSQL FK columns must have matching physical types. Legacy text IDs may

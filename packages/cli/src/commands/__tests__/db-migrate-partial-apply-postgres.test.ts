@@ -344,6 +344,59 @@ describePostgres(
       expect(Number(count.rows[0].c)).toBe(1);
     }, 60_000);
 
+    it('--null-orphans refuses when the manifest says nullable but the live column is still NOT NULL, and an unrelated index still applies under --apply-unblocked (review, #2748)', async () => {
+      // Drift case the reviewer flagged: the manifest was relaxed to
+      // nullable but the live column has not been altered yet (the same
+      // drift --relax-columns handles for plain columns). Nullability
+      // eligibility for --null-orphans must follow the LIVE column, not
+      // just the manifest — otherwise PostgreSQL rejects the UPDATE
+      // outright and the whole atomic batch (including the unrelated
+      // index) rolls back.
+      const db = await freshDb();
+      await db.query(
+        `INSERT INTO "${requiredChildren}" (id, parent_id) VALUES (gen_random_uuid(), gen_random_uuid())`,
+      );
+
+      installManifest({
+        [parents]: parentSchema(),
+        [requiredChildren]: {
+          tableName: requiredChildren,
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            // Manifest says nullable; live column (created NOT NULL in
+            // beforeEach) has not converged yet.
+            parent_id: { type: 'UUID', foreignKey: foreignKey() },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [foreignKey()],
+          version: '2748-test',
+          dependencies: [parents],
+        },
+        [unrelated]: unrelatedSchema(),
+      });
+
+      const migrate = await runMigrate([
+        'db:migrate',
+        '--null-orphans',
+        '--apply-unblocked',
+      ]);
+
+      expect(migrate.exitCode).toBe(1);
+      expect(migrate.stdout).toContain('Manual migration required');
+      expect(await fkExists(requiredChildren)).toBe(false);
+      const verifyDb = await freshDb();
+      const count = await verifyDb.query(
+        `SELECT COUNT(*) AS c FROM "${requiredChildren}"`,
+      );
+      expect(Number(count.rows[0].c)).toBe(1);
+      // The batch never attempted the doomed UPDATE, so the unrelated
+      // safe index still applies.
+      expect(await indexExists(unrelated, `${unrelated}_status_idx`)).toBe(
+        true,
+      );
+    }, 60_000);
+
     it('--dry-run shows the identical partition a real run applies when --null-orphans resolves a dependency for --apply-unblocked (review, #2748)', async () => {
       const db = await freshDb();
       const goodParent = await db.query(
