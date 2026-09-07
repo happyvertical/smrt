@@ -2868,9 +2868,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'get',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedFilter = await GlobalInterceptors.executeBeforeGet(
-      itemQualifiedName,
+      itemClassName,
       filter,
       interceptorContext,
     );
@@ -3046,10 +3048,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemQualifiedName,
+        itemClassName,
         options as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -4124,10 +4128,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemQualifiedName,
+        itemClassName,
         options as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -4209,10 +4215,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        itemQualifiedName,
+        itemClassName,
         options as unknown as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -5214,9 +5222,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
     );
     const tenantPrefilter = await GlobalInterceptors.executeBeforeList(
-      this.getResolvedItemQualifiedName(),
+      itemClassName,
       { where: {} },
       tenantPrefilterContext,
     );

@@ -118,10 +118,11 @@ describe('tenantId decorator compatibility', () => {
     const interceptor = createTenantInterceptor();
     expect(() =>
       interceptor.beforeList?.(
-        '@fixture/tenant-required:TenantCollision',
+        'TenantCollision',
         {},
         {
           className: 'TenantCollision',
+          qualifiedClassName: '@fixture/tenant-required:TenantCollision',
           operation: 'list',
           timestamp: new Date(),
         },
