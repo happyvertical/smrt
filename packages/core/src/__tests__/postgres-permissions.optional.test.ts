@@ -599,6 +599,42 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses an external foreign-key child of a managed table with a definer trigger', async () => {
+    await as(owner, 'CREATE SCHEMA other');
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      'CREATE TABLE other.audit_relay (item_id bigint REFERENCES app.items(id) ON DELETE CASCADE)',
+    );
+    await as(
+      owner,
+      `CREATE FUNCTION other.relay_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (OLD.item_id::text); RETURN OLD; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.relay_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER relay_to_audit AFTER DELETE ON other.audit_relay FOR EACH ROW EXECUTE FUNCTION other.relay_to_audit()',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'managed-foreign-key',
+        resource: '"other"."audit_relay" -> "app"."items"',
+      }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
   it('refuses managed rewrite rules that could write a retained table', async () => {
     await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
     await as(

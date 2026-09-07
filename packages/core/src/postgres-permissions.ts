@@ -853,13 +853,22 @@ async function plan(
       );
   }
   for (const relation of state.foreignKeys) {
+    const managedParent =
+      relation.parent_schema === contract.schema &&
+      declared.has(relation.parent_table ?? '');
     const childRetained =
       relation.child_schema === contract.schema &&
       retained.has(relation.child_table);
     const parentRetained =
       relation.parent_schema === contract.schema &&
       retained.has(relation.parent_table ?? '');
-    if (childRetained === parentRetained) continue;
+    if (managedParent && relation.child_schema !== contract.schema)
+      unsupported(
+        'managed-foreign-key',
+        `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
+        'Managed tables may not have external foreign-key children: referential actions can invoke external triggers outside the retained-table isolation boundary.',
+      );
+    else if (childRetained === parentRetained) continue;
     unsupported(
       'retained-foreign-key',
       `${qualified(relation.child_schema, relation.child_table)} -> ${qualified(relation.parent_schema, relation.parent_table ?? '')}`,
