@@ -1629,6 +1629,9 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(suggested).toHaveLength(1);
     expect(suggested[0]).toContain('DO $$ BEGIN IF EXISTS');
     expect(suggested[0]).toContain('information_schema.columns');
+    // Scoped to the `public` schema (#2752 review finding): an unscoped
+    // check would match a same-named table/column in another schema.
+    expect(suggested[0]).toContain("table_schema = 'public'");
     expect(suggested[0]).toContain("'old_id'");
     expect(suggested[0]).toContain('"new_id" = "old_id"::uuid');
     expect(suggested[0]).toContain('"new_id" IS NULL');

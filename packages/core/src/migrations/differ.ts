@@ -1578,9 +1578,17 @@ export class SchemaComparer {
       // and only then runs the UPDATE and the DROP, inside the same
       // condition — genuinely idempotent, safe to rerun any number of
       // times with no operator judgment involved.
+      // Scoped to `public` (matches this file's other information_schema
+      // queries, e.g. the table-listing query below): unscoped, this check
+      // matches any schema the connection can see, so a same-named
+      // table/column pair in another schema could make the guard report
+      // "still present" (or, symmetrically, mask an already-dropped
+      // relation on `public`) regardless of the actual target relation's
+      // state — silently breaking the no-op contract this block exists to
+      // provide (#2752 review finding).
       const existsCheck =
         `EXISTS (SELECT 1 FROM information_schema.columns ` +
-        `WHERE table_name = ${this.quoteLiteral(tableName)} AND column_name = ${this.quoteLiteral(oldColumn)})`;
+        `WHERE table_schema = 'public' AND table_name = ${this.quoteLiteral(tableName)} AND column_name = ${this.quoteLiteral(oldColumn)})`;
       const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedOld}`;
       suggestedSql = [
         `DO $$ BEGIN IF ${existsCheck} THEN ${copySql}; ${dropSql}; END IF; END $$`,
