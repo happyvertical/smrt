@@ -52,20 +52,29 @@ interventions into nullable (a disposition is possible) and not-nullable
 (unconditional refusal) using `SchemaChange.orphanNullable` — never by
 parsing `advisory.message` text.
 
-For a nullable child column: run the *exact* `UPDATE ... SET <column> = NULL
+For a nullable child column: the *exact* `UPDATE ... SET <column> = NULL
 WHERE ...` the differ already generated for that relationship
 (`advisory.suggestedSql[1]` — never re-derived, so the disposition can never
-drift from what the differ decided the safe repair is), then rebuild the
-`ADD CONSTRAINT ... NOT VALID` + `VALIDATE CONSTRAINT` pair via
+drift from what the differ decided the safe repair is) and the `ADD
+CONSTRAINT ... NOT VALID` + `VALIDATE CONSTRAINT` pair from
 `renderForeignKeyAddStatements()` (the same helper the differ's own safe-add
-branch uses) and add it through the normal tracker path. The resolved FK
-moves from `manualInterventions` into the executable `migrations` bucket
-before the `--apply-unblocked` partition runs, so a relationship this flag
-resolves is never a blocked column for that dependency rule.
+branch uses) are combined into **one** `add_foreign_key` migration action —
+`sqlStatements: [repairSql, ...addStatements]` — and applied atomically
+through the normal tracker path, not run as a separate direct query before
+it (review finding, #2748: running the UPDATE outside the batch let a later
+failure elsewhere in the same batch roll back the FK add while leaving the
+just-nulled rows committed, silently splitting one promised disposition
+into two). The resolved FK moves from `manualInterventions` into the
+executable `migrations` bucket before the `--apply-unblocked` partition
+runs, so a relationship this flag resolves is never a blocked column for
+that dependency rule. Post-apply before/after counts are only printed once
+the whole batch has actually committed (`errorCount === 0`); on a rollback
+the generic atomic-failure message already covers it — nothing in that
+batch, including this disposition, applied.
 
 For a `NOT NULL` child column: refuse with the same "Manual repair required"
 text `db:migrate` always prints for that case. Nulling is not a legal repair
-there, and **this flag never deletes rows** either way — the only executed
+there, and **this flag never deletes rows** either way — the only mutating
 statement is the UPDATE that nulls references, never a DELETE.
 
 `--dry-run` prints the exact UPDATE statement plus the live orphan count
@@ -73,6 +82,15 @@ statement is the UPDATE that nulls references, never a DELETE.
 `COUNT(*)`) before applying anything; a real run reports the count before
 and after. Composes with `smrt db:orphans` (#2753, `packages/cli/agents/
 db-orphans.md`) — same probe, same repair SQL, no duplicated logic.
+
+**Fails closed on the count probe too** (review finding, #2748):
+`countOrphanRows()` throws rather than swallowing a query failure into `0`.
+An orphan-count probe that cannot run at all is exactly the "unexpected
+shape" case this flag must report and withhold on — proceeding to null data
+on an unverified count would violate the fail-closed requirement. A probe
+failure withholds that one relationship's disposition (printed, left in
+`manualInterventions`) without aborting the rest of the batch or the other
+dispositions.
 
 ## Fails closed on an unexpected shape
 

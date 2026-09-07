@@ -180,26 +180,32 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
  * Run an orphan-count `SELECT COUNT(*)` (from `orphanCountSql()`) and read
  * back the count. Adapters disagree on the query-result envelope (some
  * return `{ rows }`, some a bare array), so normalize both the same way the
- * rest of the migration path does. Best-effort: a probe failure reports 0
- * rather than aborting the `--null-orphans` disposition, since the report is
- * informational and the UPDATE it precedes/follows is the authoritative step.
+ * rest of the migration path does.
+ *
+ * Deliberately NOT best-effort: `--null-orphans` fails closed (#2748 review)
+ * — if the probe itself cannot run (bad SQL shape, a permissions error, an
+ * adapter that doesn't support the query), that is exactly the "unexpected
+ * shape" case the flag must report and withhold on, not silently treat as
+ * "zero orphans" and proceed to mutate data anyway. Callers that want the
+ * disposition to abort on a probe failure should let this throw and catch
+ * it themselves; there is no built-in fallback to 0.
  */
 async function countOrphanRows(
   db: DatabaseInterface,
   countSql: string,
 ): Promise<number> {
-  try {
-    const result = await db.query(countSql);
-    const rows = Array.isArray(result)
-      ? result
-      : ((result as { rows?: unknown[] })?.rows ?? []);
-    const raw = (rows[0] as { orphan_count?: unknown } | undefined)
-      ?.orphan_count;
-    const count = Number(raw);
-    return Number.isFinite(count) ? count : 0;
-  } catch {
-    return 0;
+  const result = await db.query(countSql);
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] })?.rows ?? []);
+  const raw = (rows[0] as { orphan_count?: unknown } | undefined)?.orphan_count;
+  const count = Number(raw);
+  if (!Number.isFinite(count)) {
+    throw new Error(
+      `orphan-count probe returned a non-numeric count: ${JSON.stringify(raw)}`,
+    );
   }
+  return count;
 }
 
 /**
@@ -2048,6 +2054,23 @@ export default testManifest;
         // `--apply-unblocked` partition below so a relationship this
         // resolves is no longer a "blocked column" a dependent index/FK
         // gets withheld for.
+        //
+        // Fails closed (review): the orphan-count probe is never
+        // best-effort here. A probe failure means the differ's detector SQL
+        // hit an unexpected shape, and this disposition must report and
+        // withhold rather than proceed to null anything with an unverified
+        // count. The UPDATE and the ADD CONSTRAINT are combined into ONE
+        // migration action applied atomically through the normal tracker
+        // path (review) — nulling orphan references outside that
+        // transaction would let a later failure in the same batch roll
+        // back the FK add while leaving the just-nulled rows committed,
+        // silently splitting a promised single disposition into two.
+        const pendingOrphanDispositions: {
+          tableName: string;
+          column: string;
+          countSql: string;
+          beforeCount: number;
+        }[] = [];
         if (options['null-orphans']) {
           const { nullable: orphanDispositions } =
             planOrphanDispositions(manualInterventions);
@@ -2059,7 +2082,15 @@ export default testManifest;
 
             for (const item of orphanDispositions) {
               const countSql = orphanCountSql(item.detectorSql);
-              const beforeCount = await countOrphanRows(db, countSql);
+              let beforeCount: number;
+              try {
+                beforeCount = await countOrphanRows(db, countSql);
+              } catch (error) {
+                console.log(
+                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                continue;
+              }
 
               if (isDryRun) {
                 console.log(
@@ -2072,29 +2103,33 @@ export default testManifest;
                 continue;
               }
 
-              await db.query(item.repairSql);
-              const afterCount = await countOrphanRows(db, countSql);
-              console.log(
-                `   ✓ ${item.tableName}.${item.column}: nulled ${Math.max(beforeCount - afterCount, 0)} orphan reference(s) (${afterCount} remaining)`,
-              );
+              if (!item.action.foreignKey) continue;
 
-              // Resolved: drop the manual-intervention entry and add the FK
-              // as a normal executable migration through the same
-              // transaction/tracker path every other change uses.
+              // Resolved: drop the manual-intervention entry and add one
+              // combined executable migration (null the orphans, then add
+              // the FK) through the same transaction/tracker path every
+              // other change uses — atomic with the rest of the batch.
               const index = manualInterventions.indexOf(item.action);
               if (index >= 0) manualInterventions.splice(index, 1);
-              if (item.action.foreignKey) {
-                migrations.push({
-                  type: 'add_foreign_key',
-                  tableName: item.action.tableName,
-                  className: item.action.className,
-                  foreignKey: item.action.foreignKey,
-                  sqlStatements: renderForeignKeyAddStatements(
+              migrations.push({
+                type: 'add_foreign_key',
+                tableName: item.action.tableName,
+                className: item.action.className,
+                foreignKey: item.action.foreignKey,
+                sqlStatements: [
+                  item.repairSql,
+                  ...renderForeignKeyAddStatements(
                     item.action.tableName,
                     item.action.foreignKey,
                   ),
-                });
-              }
+                ],
+              });
+              pendingOrphanDispositions.push({
+                tableName: item.tableName,
+                column: item.column,
+                countSql,
+                beforeCount,
+              });
             }
             console.log();
           }
@@ -2652,6 +2687,29 @@ export default testManifest;
                 : '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
             );
           }
+        }
+
+        // #2748: report each --null-orphans disposition's actual before/
+        // after count now that the combined null+add-FK migration has gone
+        // through the same atomic batch as everything else. Only report a
+        // resolution when the batch actually committed (errorCount === 0);
+        // on a rollback the generic atomic-failure message above already
+        // explains that nothing in this batch — including these
+        // dispositions — was applied.
+        if (pendingOrphanDispositions.length > 0 && errorCount === 0) {
+          for (const pending of pendingOrphanDispositions) {
+            try {
+              const afterCount = await countOrphanRows(db, pending.countSql);
+              console.log(
+                `   ✓ ${pending.tableName}.${pending.column}: nulled ${Math.max(pending.beforeCount - afterCount, 0)} orphan reference(s) (${afterCount} remaining)`,
+              );
+            } catch (error) {
+              console.log(
+                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${error instanceof Error ? error.message : String(error)})`,
+              );
+            }
+          }
+          console.log();
         }
 
         if (schemaUpToDate && !repairData) {
