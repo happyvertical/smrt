@@ -574,6 +574,27 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses managed rewrite rules that reach retained data through an external view', async () => {
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      'CREATE VIEW other.audit_proxy AS SELECT evidence FROM app.operator_audit',
+    );
+    await as(
+      owner,
+      'CREATE RULE items_to_proxy AS ON INSERT TO app.items DO ALSO INSERT INTO other.audit_proxy(evidence) VALUES (NEW.visible)',
+    );
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'user-rewrite-rule',
+        resource: '"app"."items" (items_to_proxy)',
+      }),
+    );
+  });
   it('allows rewrite rules that do not reference a retained table', async () => {
     await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
     await as(
