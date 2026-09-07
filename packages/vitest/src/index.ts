@@ -26,7 +26,7 @@
  * @packageDocumentation
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,9 +54,69 @@ import type { Plugin } from 'vitest/config';
  * `child_process.fork` (the `forks` pool) and `worker_threads` (the
  * `threads` pool) both inherit `process.env` from the parent at spawn time,
  * so the option payload reaches every worker without any new public API.
+ *
+ * The env var's value is a JSON object keyed by resolved plugin `root`
+ * (see {@link setManifestRegistrationOptionsForRoot}), not a single flat
+ * options object: a Vitest multi-project config (`test.projects`) can run
+ * several `smrtVitestPlugin()` instances — with different options, or none
+ * at all next to one that has options — inside the same orchestrator
+ * process, and `process.env` is process-global. Keying by `root` and
+ * merging (never overwriting) keeps one project's options from leaking into
+ * another's worker, and `setup.ts` looks its own `process.cwd()` up in the
+ * map rather than reading a single ambient value.
  */
 export const SMRT_VITEST_SETUP_OPTIONS_ENV_KEY =
   '__SMRT_VITEST_SETUP_OPTIONS__';
+
+/**
+ * Normalize a project root to a stable key for
+ * {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY}: resolves symlinks
+ * (`fs.realpathSync`) so the write side (this plugin, running in the
+ * orchestrator process) and the read side (`setup.ts`'s `process.cwd()`,
+ * running in a pool worker) agree on the same key even when the two differ
+ * only by a symlink — e.g. macOS's `/var` → `/private/var` (`os.tmpdir()`
+ * and some CI checkouts live under it), or Linux's `/tmp` → `/private/tmp`
+ * equivalents. Falls back to the raw path (still trimmed of a trailing
+ * separator) when the path does not exist yet or `realpathSync` otherwise
+ * fails, so this never throws.
+ */
+export function normalizeRootKey(root: string): string {
+  try {
+    return realpathSync(root);
+  } catch {
+    return root.replace(/[/\\]+$/, '') || root;
+  }
+}
+
+/**
+ * Merge `options` for `root` into {@link SMRT_VITEST_SETUP_OPTIONS_ENV_KEY},
+ * preserving any other roots' entries already present (from an earlier
+ * `smrtVitestPlugin()` instance in the same process — see the env var's
+ * doc comment). `root` is normalized through {@link normalizeRootKey}
+ * before use as the map key. Exported so `setup.ts` and tests can reason
+ * about the exact payload shape without duplicating the parse/merge logic.
+ */
+export function setManifestRegistrationOptionsForRoot(
+  root: string,
+  options: SmrtVitestPluginOptions,
+): void {
+  const key = normalizeRootKey(root);
+  let byRoot: Record<string, SmrtVitestPluginOptions> = {};
+  const raw = process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        byRoot = parsed as Record<string, SmrtVitestPluginOptions>;
+      }
+    } catch {
+      // A malformed/foreign prior value is discarded rather than merged.
+    }
+  }
+
+  byRoot[key] = options;
+  process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify(byRoot);
+}
 
 /**
  * Configuration options for {@link smrtVitestPlugin} and
@@ -1181,11 +1241,41 @@ export function smrtVitestPlugin(
       // Propagate manifest-registration options to every worker process this
       // early — before Vitest spawns any pool worker — so ./setup.ts can
       // re-run registration inside the worker's own process/realm (#2750).
-      process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY] = JSON.stringify({
-        packages,
-        root,
-        verbose,
-      } satisfies SmrtVitestPluginOptions);
+      // Must happen in `config()`, not `configResolved()`: Vitest begins
+      // spawning/pre-warming pool workers (which snapshot `process.env` at
+      // `child_process.fork()`/`worker_threads` spawn time) concurrently
+      // with plugin config resolution, and `configResolved()` running later
+      // than that spawn left already-forked workers with a stale (missing)
+      // env var — confirmed empirically: moving this call to
+      // `configResolved()` broke the fixture regression test even though
+      // `configResolved()` is still awaited before the FIRST test file runs.
+      // `config()` is the earliest hook available and keeps the working
+      // behavior from #2750's original fix.
+      //
+      // Keyed by `root` (merged into any existing payload, never
+      // overwritten, normalized through `normalizeRootKey` to resolve
+      // symlinks) rather than a single flat value: several
+      // `smrtVitestPlugin()` instances -- with different options, or none at
+      // all next to one that has options -- can run inside the SAME
+      // orchestrator process (e.g. a Vitest multi-project `test.projects`
+      // run), and `process.env` is process-global. A flat value let the
+      // last project's call silently overwrite every earlier project's
+      // options, contaminating unrelated projects' worker registration.
+      // `setup.ts` looks its own (`normalizeRootKey`-d) `process.cwd()` up
+      // in this map.
+      //
+      // Known residual limitation: `root` here is this closure's
+      // construction-time value (`options.root ?? process.cwd()`), not a
+      // per-project Vite-resolved root -- Vite never `chdir`s while loading
+      // project configs, so every `smrtVitestPlugin()` instance in one
+      // `test.projects` array that leaves `root` at its default computes the
+      // identical key regardless of which project subdirectory it actually
+      // lives in, and the last one to call `config()` wins for all of them.
+      // Bounded by `registerManifestObjects()`'s `hasClass()` guard to extra
+      // additive registrations (never corruption) plus extra `verbose`
+      // logging; a project needing distinct isolation in that shape should
+      // pass an explicit, distinct `root` to `smrtVitestPlugin()`.
+      setManifestRegistrationOptionsForRoot(root, { packages, root, verbose });
 
       const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
       applyTestDefaultsToProjects(userConfig.test?.projects, rootRetry);

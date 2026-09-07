@@ -23,35 +23,49 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
-import {
-  SMRT_VITEST_SETUP_OPTIONS_ENV_KEY,
-  type SmrtVitestPluginOptions,
-  setupSmrtManifests,
-} from './index.js';
+import type { SmrtVitestPluginOptions } from './index.js';
 import {
   applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
 
+/**
+ * `SMRT_VITEST_SETUP_OPTIONS_ENV_KEY` mirrored from `./index.ts` (kept as a
+ * plain string literal, not a static import — see the note on
+ * {@link ensureManifestsRegisteredInThisProcess} for why this file avoids a
+ * static, module-load-time import of `./index.js`).
+ */
+const SETUP_OPTIONS_ENV_KEY = '__SMRT_VITEST_SETUP_OPTIONS__';
+
 declare global {
   // eslint-disable-next-line no-var
-  var __smrtVitestSetupManifestsRegistered: boolean | undefined;
+  var __smrtVitestSetupRegisteredClassNames: string[] | undefined;
 }
 
 /**
  * Re-run `smrtVitestPlugin()`'s manifest registration inside THIS worker
- * process (#2750). `configResolved()` in `./index.ts` only ever runs in
- * Vitest's main/orchestrator process; `ObjectRegistry` is a `globalThis`
- * singleton, which is not shared across the OS processes/worker threads
- * that actually execute test files. Without this, test code sees an empty
- * registry even though the plugin logged classes as loaded.
+ * process (#2750). `configResolved()`/`config()` in `./index.ts` only ever
+ * run in Vitest's main/orchestrator process; `ObjectRegistry` is a
+ * `globalThis` singleton, which is not shared across the OS
+ * processes/worker threads that actually execute test files. Without this,
+ * test code sees an empty registry even though the plugin logged classes as
+ * loaded.
  *
- * Guarded by a `globalThis` flag (not a module-scoped one — this module may
- * be freshly re-evaluated per test file under `isolate: true`) so repeated
- * filesystem/manifest work only happens once per worker process. A no-op
- * when the env var is absent — i.e. this setup file used standalone,
- * without `smrtVitestPlugin()` in `plugins`.
+ * Self-healing rather than register-once: guarded by a `globalThis` list of
+ * the qualified class names this function itself registered last time, not
+ * a plain boolean. `ObjectRegistry` is a `globalThis` singleton that
+ * persists across test files within one worker process (the same
+ * assumption this file's own `beforeAll`/`afterAll` already rely on for
+ * `__smrtManifestCache`), and any test file may call
+ * `ObjectRegistry.clear()` — several plugin-consuming packages' suites do.
+ * A plain "registered once" flag would then leave every later test file in
+ * that worker silently back at the pre-#2750 empty-registry state for
+ * manifest-only classes (the ones never imported directly, so no decorator
+ * re-registers them on the next file's fresh module graph). Re-checking
+ * `hasClass()` for the previously-registered set on every `beforeAll` and
+ * only skipping when they are all still present keeps the common case
+ * (nothing cleared) cheap while self-healing after a `clear()`.
  *
  * Run from a `beforeAll` hook rather than a module-top-level `await`: a
  * top-level `await` in a `setupFiles` entry changes how Vitest sequences
@@ -62,21 +76,63 @@ declare global {
  * own test suite. `beforeAll` still runs before every test in the file (and
  * before the mocked `getDatabase()` is first exercised), without disturbing
  * module-load-time stack shape.
+ *
+ * `setupSmrtManifests`/`ObjectRegistry` are loaded with a dynamic
+ * `import('./index.js')` / `loadSmrtCoreModule()` here, not a static
+ * top-level import, for the same reason: `./index.ts` is the full
+ * Vite-plugin module (workspace aliasing, manifest generation, the
+ * `configResolved` hook, ~1300 lines with its own transitive import graph).
+ * A *static* import of it from this setup file was enough on its own to
+ * reproduce the exact same stack-attribution corruption in `smrt-core`'s own
+ * suite (`sti-registry.test.ts`, `transform-json-hook.test.ts` —
+ * `@vitest/runner:<Class>` instead of `@happyvertical/smrt-core:<Class>`)
+ * even with registration itself moved into `beforeAll` — confirmed by A/B
+ * testing against this exact base commit with only that one import changed.
+ * Deferring the import to inside this already-lazy, already-`beforeAll`-gated
+ * function keeps this file's *static* import graph identical to its
+ * pre-#2750 shape; every other lazy loader in this file
+ * (`loadSmrtCoreModule`, `loadSmrtTableCacheModule`) follows the same
+ * dynamic-import pattern for the same class of reason.
  */
 async function ensureManifestsRegisteredInThisProcess(): Promise<void> {
-  if (globalThis.__smrtVitestSetupManifestsRegistered) {
-    return;
-  }
-  globalThis.__smrtVitestSetupManifestsRegistered = true;
-
-  const raw = process.env[SMRT_VITEST_SETUP_OPTIONS_ENV_KEY];
+  const raw = process.env[SETUP_OPTIONS_ENV_KEY];
   if (!raw) {
     return;
   }
 
   try {
-    const options = JSON.parse(raw) as SmrtVitestPluginOptions;
+    const byRoot = JSON.parse(raw) as Record<string, SmrtVitestPluginOptions>;
+    // The plugin's `config()` keys its entry by its resolved, normalized
+    // `root` (default `process.cwd()` at the time it ran, in the same
+    // project). This worker's own `process.cwd()` is that same project's
+    // directory in the standard case, so match on that alone (also
+    // normalized the same way) -- deliberately NOT falling back to "the
+    // map's one entry" when there is no exact match: this module's
+    // setupFiles-standalone mode (no `smrtVitestPlugin()` in `plugins`)
+    // promises to be a no-op when there is nothing to register for THIS
+    // project, and a same-process, unrelated project's entry (e.g. a Vitest
+    // multi-project run mixing a plugin-using project with a plugin-less
+    // one) is not this project's options. A consumer passing a custom
+    // non-default `root` to the plugin simply gets no registration here
+    // (matching the pre-#2750 behavior for that project) rather than
+    // risking cross-project registry contamination.
+    const { normalizeRootKey } = await import('./index.js');
+    const options = byRoot[normalizeRootKey(process.cwd())];
+    if (!options) {
+      return;
+    }
+
+    const { ObjectRegistry } = await loadSmrtCoreModule();
+    const previouslyRegistered =
+      globalThis.__smrtVitestSetupRegisteredClassNames;
+    if (previouslyRegistered?.every((name) => ObjectRegistry.hasClass(name))) {
+      return;
+    }
+
+    const { setupSmrtManifests } = await import('./index.js');
     await setupSmrtManifests(options);
+    globalThis.__smrtVitestSetupRegisteredClassNames =
+      ObjectRegistry.getQualifiedClassNames();
   } catch (error) {
     console.warn(
       '[smrt-vitest] setup: failed to register manifests in this test process:',
@@ -106,6 +162,8 @@ type VitestDatabaseOptions = Parameters<
 interface SmrtCoreSchemaModule {
   ObjectRegistry: {
     getAllSchemasAsDefinitions(): Record<string, SchemaDefinition>;
+    hasClass(name: string): boolean;
+    getQualifiedClassNames(): string[];
   };
   detectEngine(
     url: string,
