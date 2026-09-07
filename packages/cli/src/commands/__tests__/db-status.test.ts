@@ -813,6 +813,90 @@ describe('db:status', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('surfaces a per-relationship probe failure distinctly from a clean zero-orphan result (#2753 review finding)', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    // The collector itself resolves (it never rethrows a per-relationship
+    // failure); the failure lands in `skipped` with kind 'probe_failed'
+    // rather than in `counts`, so db:status must not read it as "clean".
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [],
+      skipped: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          reason: 'Could not probe for orphan rows: permission denied',
+          kind: 'probe_failed',
+        },
+        {
+          childTable: 'legacy',
+          childColumn: 'ref_id',
+          parentTable: 'ghosts',
+          parentColumn: 'id',
+          reason: 'Parent table `ghosts` does not exist in the live database.',
+          kind: 'missing_table',
+        },
+      ],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], { json: true });
+    const payload = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+
+    expect(payload.orphanedForeignKeys).toEqual([]);
+    expect(payload.orphanProbeFailures).toEqual([
+      expect.objectContaining({
+        childTable: 'events',
+        kind: 'probe_failed',
+      }),
+    ]);
+    // The benign missing_table skip stays out of db:status's summary.
+    expect(payload.orphanProbeFailures).toHaveLength(1);
+    expect(payload.orphansError).toBeNull();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it('prints failed orphan probes in human-readable db:status output without touching the exit code', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    collectForeignKeyOrphanCountsMock.mockResolvedValue({
+      engine: 'postgres',
+      counts: [],
+      skipped: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          reason: 'Could not probe for orphan rows: permission denied',
+          kind: 'probe_failed',
+        },
+      ],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dbStatusCommand.handler([], {});
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(output).toContain('foreign-key orphan probe(s) failed');
+    expect(output).toContain('permission denied');
+    expect(output).toContain('smrt db:orphans');
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('carries orphanedForeignKeys in --json output', async () => {
     compareMock.mockResolvedValue({
       added_tables: [],

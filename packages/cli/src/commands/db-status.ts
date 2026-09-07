@@ -11,6 +11,7 @@ import {
   checkLiveSchemaParity,
   collectForeignKeyOrphanCounts,
   type ForeignKeyOrphanCount,
+  type ForeignKeyOrphanSkipped,
   type LiveSchemaParityReport,
   ObjectRegistry,
   SchemaComparer,
@@ -568,6 +569,7 @@ export const dbStatusCommand: CLICommand = {
         parity: null as LiveSchemaParityReport | null,
         parityError: null as string | null,
         orphanedForeignKeys: [] as ForeignKeyOrphanCount[],
+        orphanProbeFailures: [] as ForeignKeyOrphanSkipped[],
         orphansError: null as string | null,
       };
       let diff: SchemaDiff = {
@@ -634,6 +636,16 @@ export const dbStatusCommand: CLICommand = {
           { engineHint: dbType },
         );
         status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
+        // A per-relationship probe failure (permissions, a malformed live
+        // column, ...) is caught inside collectForeignKeyOrphanCounts and
+        // never rethrown here — it lands in `skipped` instead of `counts`,
+        // which `affectedOrphanCounts()` never surfaces. Without this, a real
+        // failed probe and "zero orphans" would read identically in
+        // `db:status`. `missing_table` skips stay silent here (expected,
+        // benign); `smrt db:orphans` lists both kinds in full.
+        status.orphanProbeFailures = orphanReport.skipped.filter(
+          (skip) => skip.kind === 'probe_failed',
+        );
       } catch (error) {
         status.orphansError =
           error instanceof Error ? error.message : String(error);
@@ -765,15 +777,29 @@ export const dbStatusCommand: CLICommand = {
           `⚠️  Foreign-key orphan check unavailable: ${status.orphansError}`,
         );
         console.log();
-      } else if (status.orphanedForeignKeys.length > 0) {
-        console.log(
-          `⚠️  Foreign-key orphans found (${status.orphanedForeignKeys.length}):`,
-        );
-        for (const count of status.orphanedForeignKeys) {
-          console.log(`   • ${formatOrphanCountLine(count)}`);
+      } else {
+        if (status.orphanedForeignKeys.length > 0) {
+          console.log(
+            `⚠️  Foreign-key orphans found (${status.orphanedForeignKeys.length}):`,
+          );
+          for (const count of status.orphanedForeignKeys) {
+            console.log(`   • ${formatOrphanCountLine(count)}`);
+          }
+          console.log('   Run `smrt db:orphans` for the full report.');
+          console.log();
         }
-        console.log('   Run `smrt db:orphans` for the full report.');
-        console.log();
+        if (status.orphanProbeFailures.length > 0) {
+          console.log(
+            `⚠️  ${status.orphanProbeFailures.length} foreign-key orphan probe(s) failed (not counted as clean):`,
+          );
+          for (const failure of status.orphanProbeFailures) {
+            console.log(
+              `   • ${failure.childTable}.${failure.childColumn} -> ${failure.parentTable}.${failure.parentColumn}: ${failure.reason}`,
+            );
+          }
+          console.log('   Run `smrt db:orphans` for details.');
+          console.log();
+        }
       }
 
       if (options.parity) {

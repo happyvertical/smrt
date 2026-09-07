@@ -25,6 +25,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { detectEngine } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import {
+  type ForeignKeyUuidCastSide,
   renderForeignKeyOrphanDetector,
   schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';
@@ -49,6 +50,14 @@ export interface ForeignKeyOrphanSkipped {
   parentTable: string;
   parentColumn: string;
   reason: string;
+  /**
+   * `missing_table` is benign and expected (a manifest table not yet
+   * migrated, or filtered out of this database). `probe_failed` means the
+   * `COUNT(*)` query itself errored — a real signal (permissions, a
+   * malformed live column, a genuine SQL failure) that a caller should
+   * surface distinctly rather than silently treat as "no orphans found".
+   */
+  kind: 'missing_table' | 'probe_failed';
 }
 
 /** Aggregate result of one orphan-count run. */
@@ -104,6 +113,7 @@ export async function collectForeignKeyOrphanCounts(
       if (!liveTables.has(childTable)) {
         skipped.push({
           ...base,
+          kind: 'missing_table',
           reason: `Child table \`${childTable}\` does not exist in the live database.`,
         });
         continue;
@@ -111,6 +121,7 @@ export async function collectForeignKeyOrphanCounts(
       if (!liveTables.has(parentTable)) {
         skipped.push({
           ...base,
+          kind: 'missing_table',
           reason: `Parent table \`${parentTable}\` does not exist in the live database.`,
         });
         continue;
@@ -120,15 +131,33 @@ export async function collectForeignKeyOrphanCounts(
       const nullable = childColumnDefinition?.notNull !== true;
       const parentColumnDefinition =
         schemas[parentTable]?.columns[foreignKey.referencesColumn];
-      const uuidComparison =
+      const declaredUuidComparison =
         childColumnDefinition?.type === 'UUID' &&
         (parentColumnDefinition === undefined ||
           parentColumnDefinition.type === 'UUID');
+
+      // The manifest declaring UUID on both sides is not proof the live
+      // columns are actually native uuid yet — #2608 tolerates a legacy
+      // component that is still `text` on every side until it converges. Mirror
+      // the migration gate's live-type cast-side selection
+      // (`SchemaComparer.getForeignKeyOrphanOptions` in migrations/differ.ts)
+      // instead of guessing from the manifest alone, or a legacy text/text or
+      // text/uuid relationship either errors (`operator does not exist: text
+      // = uuid`) or silently mismatches instead of being counted.
+      const { uuidComparison, uuidCastSide } = await resolveUuidCastSide(db, {
+        engine,
+        declaredUuidComparison,
+        childTable,
+        childColumn: foreignKey.column,
+        parentTable,
+        parentColumn: foreignKey.referencesColumn,
+      });
 
       const sql = renderForeignKeyOrphanDetector(childTable, foreignKey, {
         engine,
         countOnly: true,
         uuidComparison,
+        uuidCastSide,
       });
 
       try {
@@ -148,6 +177,7 @@ export async function collectForeignKeyOrphanCounts(
       } catch (error) {
         skipped.push({
           ...base,
+          kind: 'probe_failed',
           reason: `Could not probe for orphan rows: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
@@ -157,6 +187,83 @@ export async function collectForeignKeyOrphanCounts(
   counts.sort((a, b) => b.orphanCount - a.orphanCount);
 
   return { engine, counts, skipped };
+}
+
+/**
+ * Resolve whether to guard-cast the probe's join predicate, and which side,
+ * from the LIVE column types rather than the manifest's declared types —
+ * mirroring `SchemaComparer.getForeignKeyOrphanOptions()` in
+ * `migrations/differ.ts` so the diagnostic and the migration gate treat the
+ * same relationship the same way. Only PostgreSQL casts at all
+ * (`foreignKeyOrphanParts()` ignores `uuidComparison` on every other engine).
+ */
+async function resolveUuidCastSide(
+  db: DatabaseInterface,
+  options: {
+    engine: DatabaseEngine;
+    declaredUuidComparison: boolean;
+    childTable: string;
+    childColumn: string;
+    parentTable: string;
+    parentColumn: string;
+  },
+): Promise<{ uuidComparison: boolean; uuidCastSide?: ForeignKeyUuidCastSide }> {
+  const {
+    engine,
+    declaredUuidComparison,
+    childTable,
+    childColumn,
+    parentTable,
+    parentColumn,
+  } = options;
+  if (!declaredUuidComparison || engine !== 'postgres') {
+    return { uuidComparison: false };
+  }
+  if (typeof db.getTableSchema !== 'function') {
+    // No live-type introspection available on this adapter; fall back to
+    // the manifest-declared signal with the builder's own default cast side
+    // ('child') rather than refusing to count anything.
+    return { uuidComparison: true };
+  }
+
+  const childType = await readLiveColumnType(db, childTable, childColumn);
+  const parentType = await readLiveColumnType(db, parentTable, parentColumn);
+  if (!childType || !parentType) {
+    return { uuidComparison: true };
+  }
+
+  const childIsUuid = isUuidType(childType);
+  const parentIsUuid = isUuidType(parentType);
+  if (childIsUuid === parentIsUuid) {
+    // Both sides already agree (native uuid/uuid, or the #2608-tolerated
+    // legacy text/text component) — compare directly, no guarded cast.
+    return { uuidComparison: false };
+  }
+  return {
+    uuidComparison: true,
+    uuidCastSide: childIsUuid ? 'parent' : 'child',
+  };
+}
+
+function isUuidType(type: string): boolean {
+  return type.toUpperCase().includes('UUID');
+}
+
+async function readLiveColumnType(
+  db: DatabaseInterface,
+  tableName: string,
+  columnName: string,
+): Promise<string | undefined> {
+  try {
+    const schema = await db.getTableSchema?.(tableName);
+    const type = schema?.columns?.[columnName]?.type;
+    return type === undefined || type === null ? undefined : String(type);
+  } catch {
+    // Introspection failure here is not the probe failing — the caller
+    // falls back to the manifest-declared signal, and the COUNT(*) probe
+    // itself still runs and can report its own failure.
+    return undefined;
+  }
 }
 
 function resolveEngine(

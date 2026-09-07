@@ -154,6 +154,7 @@ describe('formatOrphanReport / affectedOrphanCounts', () => {
           parentTable: 'ghosts',
           parentColumn: 'id',
           reason: 'Parent table `ghosts` does not exist in the live database.',
+          kind: 'missing_table' as const,
         },
       ],
     };
@@ -163,6 +164,68 @@ describe('formatOrphanReport / affectedOrphanCounts', () => {
     expect(lines).not.toContain('a.x -> p.id');
     expect(lines).toContain('Skipped:');
     expect(lines).toContain('ghosts');
+  });
+
+  it('--verbose lists each zero-orphan relationship by identity, not just a count', () => {
+    const report = {
+      engine: 'sqlite' as const,
+      counts: [
+        {
+          childTable: 'a',
+          childColumn: 'x',
+          parentTable: 'p',
+          parentColumn: 'id',
+          orphanCount: 0,
+          nullable: true,
+        },
+        {
+          childTable: 'b',
+          childColumn: 'y',
+          parentTable: 'p',
+          parentColumn: 'id',
+          orphanCount: 0,
+          nullable: false,
+        },
+      ],
+      skipped: [],
+    };
+    const lines = formatOrphanReport(report, { verbose: true }).join('\n');
+    expect(lines).toContain('a.x -> p.id: 0 orphan(s)');
+    expect(lines).toContain('b.y -> p.id: 0 orphan(s) [NOT NULL]');
+  });
+
+  it('marks a probe_failed skip distinctly from a missing_table skip', () => {
+    const report = {
+      engine: 'sqlite' as const,
+      counts: [],
+      skipped: [
+        {
+          childTable: 'a',
+          childColumn: 'x',
+          parentTable: 'p',
+          parentColumn: 'id',
+          reason: 'Parent table `p` does not exist in the live database.',
+          kind: 'missing_table' as const,
+        },
+        {
+          childTable: 'b',
+          childColumn: 'y',
+          parentTable: 'q',
+          parentColumn: 'id',
+          reason: 'Could not probe for orphan rows: permission denied',
+          kind: 'probe_failed' as const,
+        },
+      ],
+    };
+    const lines = formatOrphanReport(report).join('\n');
+    const failedLine = lines
+      .split('\n')
+      .find((line) => line.includes('permission denied'));
+    const missingLine = lines
+      .split('\n')
+      .find((line) => line.includes('does not exist'));
+    expect(failedLine).toContain('[PROBE FAILED]');
+    expect(missingLine).not.toContain('[PROBE FAILED]');
   });
 });
 

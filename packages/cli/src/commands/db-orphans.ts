@@ -66,17 +66,19 @@ export function formatOrphanReport(
   if (options.verbose) {
     const clean = report.counts.filter((count) => count.orphanCount === 0);
     if (clean.length > 0) {
-      lines.push(
-        `   ✅ ${clean.length} foreign key(s) with zero orphans not shown above.`,
-      );
+      lines.push(`   ✅ Zero orphans (${clean.length}):`);
+      for (const count of clean) {
+        lines.push(`      • ${formatOrphanCountLine(count)}`);
+      }
     }
   }
 
   if (report.skipped.length > 0) {
     lines.push('   Skipped:');
     for (const skip of report.skipped) {
+      const marker = skip.kind === 'probe_failed' ? ' [PROBE FAILED]' : '';
       lines.push(
-        `      • ${skip.childTable}.${skip.childColumn} -> ${skip.parentTable}.${skip.parentColumn}: ${skip.reason}`,
+        `      • ${skip.childTable}.${skip.childColumn} -> ${skip.parentTable}.${skip.parentColumn}: ${skip.reason}${marker}`,
       );
     }
   }
