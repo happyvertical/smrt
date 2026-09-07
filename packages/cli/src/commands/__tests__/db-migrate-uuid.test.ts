@@ -3361,6 +3361,152 @@ describePostgres(
   },
 );
 
+// #2702 review: `fetchSingleColumnForeignKeyEdges` and `snapshotForeignKeys`
+// each only filtered the CHILD namespace to 'public', so a public child's FK
+// to a parent living in another schema was either silently dropped from
+// consideration (never discovered, letting the child's declared-UUID column
+// convert while its real FK partner stayed untouched) or, on a same-named
+// collision, mis-attributed to an unrelated in-component candidate.
+// `assertNoCrossSchemaForeignKeyPartners` now fails the whole run closed
+// instead.
+describePostgres(
+  'db:migrate-uuid refuses a foreign key that crosses the public schema boundary (real Postgres)',
+  () => {
+    async function freshDb(): Promise<any> {
+      return getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+    }
+
+    async function dataType(
+      table: string,
+      column: string,
+    ): Promise<string | undefined> {
+      const db = await freshDb();
+      const { rows } = await db.query(
+        `SELECT data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+        table,
+        column,
+      );
+      return (rows as any[])[0]?.data_type;
+    }
+
+    const stem = `mu_fkxschema_${Math.random().toString(36).slice(2, 8)}`;
+    const otherSchema = `${stem}_other_ns`;
+    const parent = `${stem}_parent`;
+    const child = `${stem}_child`;
+    const fkName = `${child}_parent_fkey`;
+    let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    beforeEach(async () => {
+      const db = await freshDb();
+      await db.query(`DROP TABLE IF EXISTS "${child}" CASCADE`);
+      await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+      await db.query(`CREATE SCHEMA "${otherSchema}"`);
+      await db.query(
+        `CREATE TABLE "${otherSchema}"."${parent}" (id text PRIMARY KEY)`,
+      );
+      // The child (public, SMRT-declared UUID) references a parent that
+      // lives entirely outside public and outside the SMRT manifest.
+      await db.query(
+        `CREATE TABLE "${child}" (
+           id text PRIMARY KEY,
+           parent_id text NOT NULL CONSTRAINT "${fkName}"
+             REFERENCES "${otherSchema}"."${parent}"(id)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${otherSchema}"."${parent}" (id) VALUES ($1)`,
+        '11111111-1111-1111-1111-111111111111',
+      );
+      await db.query(
+        `INSERT INTO "${child}" (id, parent_id) VALUES ($1, $2)`,
+        '22222222-2222-2222-2222-222222222222',
+        '11111111-1111-1111-1111-111111111111',
+      );
+
+      clearCache();
+      setConfig({
+        packages: {
+          cli: {
+            database: { type: 'postgres', url: process.env.DATABASE_URL },
+          },
+        },
+      } as any);
+      schemaSpy = vi
+        .spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions')
+        .mockReturnValue({
+          [child]: {
+            tableName: child,
+            ddl: '',
+            columns: { id: { type: 'UUID' }, parent_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+        } as any);
+    });
+
+    afterEach(async () => {
+      schemaSpy?.mockRestore();
+      try {
+        const db = await freshDb();
+        await db.query(`DROP TABLE IF EXISTS "${child}" CASCADE`);
+        await db.query(`DROP SCHEMA IF EXISTS "${otherSchema}" CASCADE`);
+      } catch {
+        // Handler cleanup closes pooled handles; reacquire before teardown.
+      }
+      clearCache();
+    });
+
+    it('fails closed instead of converting when the FK partner lives outside public', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': false });
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('crosses the public schema boundary'),
+      );
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(fkName));
+      errorSpy.mockRestore();
+
+      // Nothing was mutated: the whole run aborted before any ALTER.
+      expect(await dataType(child, 'id')).toBe('text');
+      expect(await dataType(child, 'parent_id')).toBe('text');
+    }, 30_000);
+
+    it('fails closed in --dry-run too, without mutating anything', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      process.exitCode = undefined;
+
+      await dbMigrateUuidCommand.handler([], { 'dry-run': true });
+
+      const exitCode = process.exitCode;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('crosses the public schema boundary'),
+      );
+      errorSpy.mockRestore();
+
+      expect(await dataType(child, 'id')).toBe('text');
+      expect(await dataType(child, 'parent_id')).toBe('text');
+    }, 30_000);
+  },
+);
+
 describePostgres(
   'db:migrate-uuid accepts bare 32-hex UUID shapes (real Postgres)',
   () => {

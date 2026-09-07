@@ -35,7 +35,8 @@ Before upgrading a PostgreSQL consumer that stores non-UUID tenant primary keys:
 5. Run `smrt db:migrate`, then run `smrt db:migrate-uuid`.
 
 `smrt db:migrate-uuid` only converts schema-declared UUID columns when all
-non-empty values are already canonical UUID strings. A value being converted to
+non-empty values are already UUID-shaped — not necessarily canonical UUID
+strings. A value being converted to
 native `uuid` counts as UUID-shaped in either the hyphenated form
 (`8-4-4-4-12` hex groups) or the bare 32-hex form with no hyphens — PostgreSQL's
 `::uuid` cast accepts both as the identical value, and the conversion normalizes

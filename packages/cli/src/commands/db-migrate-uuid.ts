@@ -16,7 +16,7 @@
  *     drop the old column.
  *
  *  2. **TEXT → native uuid conversion**. Most existing `id`/FK columns already
- *     hold canonical UUID strings in TEXT columns and can be promoted to native
+ *     hold UUID-shaped strings in TEXT columns and can be promoted to native
  *     `uuid`. Conversion is gated on TWO independent checks, BOTH of which must
  *     pass for a column to be converted:
  *
@@ -31,7 +31,7 @@
  *           Tables not present in the manifest (non-SMRT tables in the `public`
  *           schema) drop out automatically.
  *
- *       (b) **Data-shape** — every non-empty value is already a canonical UUID.
+ *       (b) **Data-shape** — every non-empty value is already UUID-shaped.
  *           A declared-UUID column that still holds genuine non-uuid values
  *           (legacy unhyphenated ids, partially-migrated data, …) is SKIPPED and
  *           reported so the operator can clean it before re-running.
@@ -148,13 +148,13 @@ interface ConvertCandidate {
 
 /**
  * A live TEXT `id`/FK column discovered in the database, annotated with how
- * many of its non-empty values are NOT canonical UUIDs.
+ * many of its non-empty values are NOT UUID-shaped.
  */
 export interface LiveTextColumn {
   table: string;
   column: string;
   hasDefault: boolean;
-  /** Count of non-empty values that are not canonical UUIDs. */
+  /** Count of non-empty values that are not UUID-shaped. */
   nonUuid: number;
   /**
    * Count of normalized-value groups with more than one distinct TEXT row
@@ -316,7 +316,7 @@ export function propagateBlockedForeignKeyPartners(
  *
  * A column is converted ONLY if BOTH gates pass:
  *   1. it is in the schema-declared-UUID set, AND
- *   2. all of its non-empty values are already canonical UUIDs.
+ *   2. all of its non-empty values are already UUID-shaped.
  *
  * Declared-UUID columns with dirty data are reported in `skipDirtyData`;
  * undeclared columns (schema-intentional TEXT, or non-SMRT tables) are reported
@@ -837,6 +837,10 @@ async function convertPostgresUuidColumns(
   // data, or a column the schema deliberately keeps TEXT) must be blocked
   // too, transitively, or the FK recreation step below fails with a
   // text/uuid mismatch instead of the conversion being safely skipped.
+  // Fail closed before the (public-only) edge discovery below can silently
+  // miss, or a table/column name collision could silently mis-attribute, a
+  // real cross-schema FK partner of a schema-declared-UUID column.
+  await assertNoCrossSchemaForeignKeyPartners(db, declaredUuid);
   const foreignKeyEdges = await fetchSingleColumnForeignKeyEdges(db);
   const { convert, skipBlockedPartner = [] } =
     propagateBlockedForeignKeyPartners(initialPlan, foreignKeyEdges);
@@ -1435,6 +1439,17 @@ async function findUniqueIndexKeyColumns(
   }));
 }
 
+/**
+ * Discover every single-column foreign key with BOTH endpoints in the public
+ * schema — the only schema `db:migrate-uuid` ever converts or recreates DDL
+ * against (see `pgTable`). Both `child_ns` and `parent_ns` are filtered to
+ * `public` so a same-named table or column living in another schema can
+ * never be silently treated as a candidate's FK partner by `declaredUuidKey`,
+ * which keys purely on `table|column` with no schema qualifier. A
+ * cross-schema partner that actually matters to a converting column is
+ * caught separately, and fails closed, by
+ * `assertNoCrossSchemaForeignKeyPartners`.
+ */
 async function fetchSingleColumnForeignKeyEdges(
   db: QueryExecutor,
 ): Promise<ForeignKeyEdge[]> {
@@ -1446,9 +1461,10 @@ async function fetchSingleColumnForeignKeyEdges(
        JOIN pg_class child ON child.oid = con.conrelid
        JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
        JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
        JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = con.conkey[1]
        JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = con.confkey[1]
-      WHERE con.contype = 'f' AND child_ns.nspname = 'public'
+      WHERE con.contype = 'f' AND child_ns.nspname = 'public' AND parent_ns.nspname = 'public'
         AND array_length(con.conkey, 1) = 1`,
   );
   return (rows as Array<Record<string, unknown>>).map((row) => ({
@@ -1458,6 +1474,61 @@ async function fetchSingleColumnForeignKeyEdges(
     parentTable: String(row.parent_table),
     parentColumn: String(row.parent_column),
   }));
+}
+
+/**
+ * Fail closed when a single-column foreign key has exactly one endpoint in
+ * the public schema and the public-side column is in `relevant` (a
+ * schema-declared-UUID column this run treats as a real conversion
+ * candidate/participant).
+ *
+ * `db:migrate-uuid` never converts or recreates DDL outside `public` (see
+ * `pgTable`), and `declaredUuidKey` keys purely on `table|column` with no
+ * schema — so a same-named table/column pair living in another schema could
+ * otherwise be silently mistaken for that candidate's real FK partner
+ * (making `propagateBlockedForeignKeyPartners` or `snapshotForeignKeys`
+ * reason about the wrong table), or a genuine cross-schema partner could go
+ * entirely undiscovered because the edge queries only ever look at
+ * public-to-public constraints. Both are correctness bugs, not merely
+ * documentation gaps, so this check runs independently of `declaredUuidKey`
+ * lookups and fails the whole run with a specific, actionable message
+ * instead of silently mis-propagating or mis-recreating a constraint.
+ */
+async function assertNoCrossSchemaForeignKeyPartners(
+  db: QueryExecutor,
+  relevant: Set<string>,
+): Promise<void> {
+  const { rows } = await db.query(
+    `SELECT con.conname AS name,
+            child_ns.nspname AS child_schema, child.relname AS child_table,
+            child_attr.attname AS child_column,
+            parent_ns.nspname AS parent_schema, parent.relname AS parent_table,
+            parent_attr.attname AS parent_column
+       FROM pg_constraint con
+       JOIN pg_class child ON child.oid = con.conrelid
+       JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+       JOIN pg_class parent ON parent.oid = con.confrelid
+       JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+       JOIN pg_attribute child_attr ON child_attr.attrelid = child.oid AND child_attr.attnum = con.conkey[1]
+       JOIN pg_attribute parent_attr ON parent_attr.attrelid = parent.oid AND parent_attr.attnum = con.confkey[1]
+      WHERE con.contype = 'f' AND array_length(con.conkey, 1) = 1
+        AND (child_ns.nspname = 'public') <> (parent_ns.nspname = 'public')`,
+  );
+  for (const row of rows as Array<Record<string, unknown>>) {
+    const childSchema = String(row.child_schema);
+    const parentSchema = String(row.parent_schema);
+    const childOnPublic = childSchema === 'public';
+    const publicKey = childOnPublic
+      ? declaredUuidKey(String(row.child_table), String(row.child_column))
+      : declaredUuidKey(String(row.parent_table), String(row.parent_column));
+    if (!relevant.has(publicKey)) continue;
+    throw new Error(
+      `Foreign key ${String(row.name)} crosses the public schema boundary ` +
+        `(${childSchema}.${String(row.child_table)}.${String(row.child_column)} → ` +
+        `${parentSchema}.${String(row.parent_table)}.${String(row.parent_column)}); ` +
+        'db:migrate-uuid only ever converts or recreates constraints in the public schema.',
+    );
+  }
 }
 
 async function snapshotForeignKeys(
@@ -1470,6 +1541,14 @@ async function snapshotForeignKeys(
   );
   const bridgeColumns = new Set(
     bridges.map((bridge) => declaredUuidKey(bridge.table, bridge.column)),
+  );
+  // Fail closed before the per-row `converted`/`bridgeColumns` membership
+  // checks below, which key purely on `table|column` with no schema and so
+  // could otherwise be fooled by a same-named table/column living outside
+  // public into treating a genuine cross-schema FK as an in-component edge.
+  await assertNoCrossSchemaForeignKeyPartners(
+    db,
+    new Set([...converted, ...bridgeColumns]),
   );
   const { rows } = await db.query(
     `SELECT con.oid, child.relname AS child_table, con.conname AS name,
