@@ -14,7 +14,10 @@ import { ensureSystemTables } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { redactConnectionString } from './tools/runtime/connection.js';
+import {
+  redactConnectionString,
+  safeErrorMessage,
+} from './tools/runtime/connection.js';
 import {
   RUNTIME_PROVENANCE,
   runtimeDispatchHealth,
@@ -363,6 +366,16 @@ describe('runtime diagnostics tools (#1824)', () => {
       'hunter2',
     );
     expect(redactConnectionString('authToken=abc123')).toBe('authToken=***');
+  });
+
+  it('reduces local database paths in driver errors to a basename', () => {
+    expect(
+      safeErrorMessage(
+        new Error(
+          'Unable to open connection to local database /Users/dev/secret-project/data/dev.db: 14',
+        ),
+      ),
+    ).toBe('Unable to open connection to local database …/dev.db: 14');
   });
 
   it('masks sensitive pairs preceded by comma or parenthesis', () => {
