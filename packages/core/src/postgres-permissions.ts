@@ -830,13 +830,22 @@ async function plan(
         'Retained tables must already exist before permission reconciliation.',
       );
   for (const relation of state.inherits) {
+    const managedParent =
+      relation.parent_schema === contract.schema &&
+      declared.has(relation.parent_table ?? '');
     const childRetained =
       relation.child_schema === contract.schema &&
       retained.has(relation.child_table);
     const parentRetained =
       relation.parent_schema === contract.schema &&
       retained.has(relation.parent_table ?? '');
-    if (childRetained !== parentRetained)
+    if (managedParent && relation.child_schema !== contract.schema)
+      unsupported(
+        'managed-inheritance',
+        qualified(relation.child_schema, relation.child_table),
+        'Managed tables may not have external inheritance or partition children: parent table privileges can invoke external triggers outside the retained-table isolation boundary.',
+      );
+    else if (childRetained !== parentRetained)
       unsupported(
         'retained-inheritance',
         qualified(relation.child_schema, relation.child_table),

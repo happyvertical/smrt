@@ -543,6 +543,47 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       }),
     );
   });
+  it('refuses an external partition of a managed table with a definer trigger', async () => {
+    await as(
+      owner,
+      'CREATE TABLE app.partition_source (id bigint, visible text) PARTITION BY RANGE (id)',
+    );
+    await as(owner, 'CREATE SCHEMA other');
+    await as(
+      owner,
+      'CREATE TABLE other.partition_relay PARTITION OF app.partition_source FOR VALUES FROM (0) TO (100)',
+    );
+    await as(owner, 'CREATE TABLE app.operator_audit (evidence text)');
+    await as(
+      owner,
+      `CREATE FUNCTION other.partition_to_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
+        BEGIN INSERT INTO app.operator_audit(evidence) VALUES (NEW.visible); RETURN NEW; END;
+      $$`,
+    );
+    await as(
+      owner,
+      'REVOKE ALL ON FUNCTION other.partition_to_audit() FROM PUBLIC',
+    );
+    await as(
+      owner,
+      'CREATE TRIGGER partition_to_audit AFTER INSERT ON other.partition_relay FOR EACH ROW EXECUTE FUNCTION other.partition_to_audit()',
+    );
+    contract.managedTables = ['items', 'partition_source'];
+    contract.retainedTables = ['operator_audit'];
+    const plan = await planPostgresPermissions(db, contract);
+    expect(plan.canApply).toBe(false);
+    expect(plan.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'managed-inheritance',
+        resource: '"other"."partition_relay"',
+      }),
+    );
+    await expect(
+      applyPostgresPermissions(db, contract, {
+        expectedFingerprint: plan.fingerprint,
+      }),
+    ).rejects.toThrow('unsupported');
+  });
   it('refuses retained foreign keys to a managed table', async () => {
     await as(
       owner,
