@@ -14,6 +14,14 @@ export {
   schemaForeignKeys,
   schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';
+// Per-foreign-key orphan count report (#2753)
+export {
+  type CollectForeignKeyOrphanCountsOptions,
+  collectForeignKeyOrphanCounts,
+  type ForeignKeyOrphanCount,
+  type ForeignKeyOrphanCountReport,
+  type ForeignKeyOrphanSkipped,
+} from './foreign-key-orphan-report.js';
 export {
   type ForeignKeyCreationPlan,
   planForeignKeyCreation,
