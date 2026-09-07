@@ -1635,9 +1635,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const schema =
       ObjectRegistry.getSchema(itemQualifiedName) ??
       ObjectRegistry.getSchema(itemClassName);
-    const schemaColumnNames = schema?.columns
-      ? new Set(Object.keys(schema.columns))
-      : undefined;
+    // Runtime-only declarations can carry an intentionally empty generated
+    // schema while their registered fields remain authoritative. Do not turn
+    // that absence of column metadata into a projection deny-all; normal
+    // registered-field, sensitive, and permission validation still applies.
+    const schemaColumnNames =
+      schema?.columns && Object.keys(schema.columns).length > 0
+        ? new Set(Object.keys(schema.columns))
+        : undefined;
     const registeredFields = ObjectRegistry.getFields(itemQualifiedName);
     const explicitFields =
       registeredFields.size > 0
@@ -1824,7 +1829,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.getResolvedItemQualifiedName(),
     ).filter(
       (candidate) =>
-        candidate.sourceClass === relationship.targetClass &&
+        (candidate.sourceClass === relationship.targetClass ||
+          candidate.sourceQualifiedClass === relationship.targetClass) &&
         candidate.type === 'foreignKey',
     );
     const explicitForeignKey = relationship.options?.foreignKey as
@@ -3313,7 +3319,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const inverseCandidates = inverseRelationships.filter(
       (r) =>
-        r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
+        (r.sourceClass === relationship.targetClass ||
+          r.sourceQualifiedClass === relationship.targetClass) &&
+        r.type === 'foreignKey',
     );
     // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
     // declares multiple foreign keys back to this class; otherwise fall back
@@ -3961,8 +3969,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     // Fallback to ObjectRegistry sync method if cache not populated
     // This handles edge cases where collection wasn't created via static create()
-    const className = this.getResolvedItemClassName();
-    const fields = ObjectRegistry.getFields(className);
+    const fields = ObjectRegistry.getFields(
+      this.getResolvedItemQualifiedName(),
+    );
     // Convert Map to Record for consistency with getFields() return type.
     // Registry `RegisteredField`s are a structural superset of the members the
     // collection reads (`type`, `sensitive`, `_meta`); view through `unknown`.
@@ -4011,17 +4020,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
             this._tableName = baseSchema.tableName;
           } else {
             // Fallback to own schema tableName
-            const ownSchema = ObjectRegistry.getSchema(className);
+            const ownSchema = ObjectRegistry.getSchema(qualifiedName);
             this._tableName = ownSchema?.tableName || fallbackTableName;
           }
         } else {
           // Fallback to own schema tableName
-          const ownSchema = ObjectRegistry.getSchema(className);
+          const ownSchema = ObjectRegistry.getSchema(qualifiedName);
           this._tableName = ownSchema?.tableName || fallbackTableName;
         }
       } else {
         // CTI: Use own schema tableName
-        const ownSchema = ObjectRegistry.getSchema(className);
+        const ownSchema = ObjectRegistry.getSchema(qualifiedName);
         this._tableName = ownSchema?.tableName || fallbackTableName;
       }
     }

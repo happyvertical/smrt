@@ -854,6 +854,8 @@ export type RelationshipType =
 export interface RelationshipMetadata {
   /** Source class name */
   sourceClass: string;
+  /** Canonical source identity retained for collision-safe internal matching. */
+  sourceQualifiedClass?: string;
   /** Field name on the source class */
   fieldName: string;
   /** Target/related class name */

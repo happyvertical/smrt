@@ -1225,19 +1225,19 @@ export class SmrtObject extends SmrtClass {
             this._tableName = baseSchema.tableName;
           } else {
             // Fallback to own schema tableName
-            const ownSchema = ObjectRegistry.getSchema(className);
+            const ownSchema = ObjectRegistry.getSchema(qualifiedName);
             this._tableName =
               ownSchema?.tableName || tableNameFromClass(this.constructor);
           }
         } else {
           // Fallback to own schema tableName
-          const ownSchema = ObjectRegistry.getSchema(className);
+          const ownSchema = ObjectRegistry.getSchema(qualifiedName);
           this._tableName =
             ownSchema?.tableName || tableNameFromClass(this.constructor);
         }
       } else {
         // CTI: Use own schema tableName
-        const ownSchema = ObjectRegistry.getSchema(className);
+        const ownSchema = ObjectRegistry.getSchema(qualifiedName);
         this._tableName =
           ownSchema?.tableName || tableNameFromClass(this.constructor);
       }
@@ -3876,7 +3876,9 @@ export class SmrtObject extends SmrtClass {
         );
       const inverseCandidates = inverseRelationships.filter(
         (r) =>
-          r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
+          (r.sourceClass === relationship.targetClass ||
+            r.sourceQualifiedClass === relationship.targetClass) &&
+          r.type === 'foreignKey',
       );
       // When the target declares multiple foreign keys back to this class
       // (e.g. ProfileRelationship.fromProfileId / toProfileId), honor an

@@ -79,6 +79,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   // Scan all fields for relationship types
   for (const [key, registered] of classes) {
     const simpleName = registered.name || key;
+    const sourceQualifiedClass = registered.qualifiedName || key;
     const relationships: RelationshipMetadata[] = [];
 
     for (const [fieldName, field] of registered.fields) {
@@ -86,6 +87,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'foreignKey' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
           type: 'foreignKey',
@@ -97,6 +99,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'crossPackageRef' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
           type: 'crossPackageRef',
@@ -108,6 +111,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'oneToMany' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
           type: 'oneToMany',
@@ -119,6 +123,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'manyToMany' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
           type: 'manyToMany',
