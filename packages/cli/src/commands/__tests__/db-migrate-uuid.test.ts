@@ -3806,12 +3806,23 @@ describePostgres(
     // neither the single-key colliding-PK check nor a plain non-unique
     // check would catch it.
     const compositeUniqueTable = `${stem}_composite`;
+    // A composite UNIQUE(source_id, target_id) index where BOTH key columns
+    // are themselves declared-UUID candidates converting in the SAME run
+    // (SMRT's own shape for a link table). Two rows that only collide AFTER
+    // BOTH columns normalize (one side hyphenated, one side bare-hex) must
+    // still be caught — grouping on either column's RAW text would miss it.
+    const compositeUuidPairTable = `${stem}_composite_uuid_pair`;
+    // A composite UNIQUE(tenant_id, slug) index where the OTHER key column
+    // (`slug`) is NULL on both rows. PostgreSQL's default NULLS DISTINCT
+    // means two NULLs never collide — so these two `tenant_id` spellings of
+    // the same uuid must NOT be treated as a collision and must convert.
+    const compositeNullOtherTable = `${stem}_composite_null_other`;
     let schemaSpy: ReturnType<typeof vi.spyOn> | undefined;
 
     beforeEach(async () => {
       const db = await freshDb();
       await db.query(
-        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}"`,
+        `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}", "${compositeUuidPairTable}", "${compositeNullOtherTable}"`,
       );
       await db.query(`CREATE TABLE "${collidingTable}" (id text PRIMARY KEY)`);
       await db.query(
@@ -3858,6 +3869,35 @@ describePostgres(
         'ffffffff-ffff-ffff-ffff-ffffffffffff',
         'same-slug',
         'ffffffffffffffffffffffffffffffff',
+      );
+      await db.query(
+        `CREATE TABLE "${compositeUuidPairTable}" (
+           row_id serial PRIMARY KEY,
+           source_id text,
+           target_id text,
+           UNIQUE (source_id, target_id)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${compositeUuidPairTable}" (source_id, target_id) VALUES
+           ($1, $2), ($3, $4)`,
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+        '11111111111111111111111111111111',
+        '22222222222222222222222222222222',
+      );
+      await db.query(
+        `CREATE TABLE "${compositeNullOtherTable}" (
+           row_id serial PRIMARY KEY,
+           tenant_id text,
+           slug text,
+           UNIQUE (tenant_id, slug)
+         )`,
+      );
+      await db.query(
+        `INSERT INTO "${compositeNullOtherTable}" (tenant_id, slug) VALUES ($1, NULL), ($2, NULL)`,
+        '33333333-3333-3333-3333-333333333333',
+        '33333333333333333333333333333333',
       );
 
       clearCache();
@@ -3931,6 +3971,29 @@ describePostgres(
             version: '',
             dependencies: [],
           },
+          [compositeUuidPairTable]: {
+            tableName: compositeUuidPairTable,
+            ddl: '',
+            columns: {
+              source_id: { type: 'UUID' },
+              target_id: { type: 'UUID' },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
+          [compositeNullOtherTable]: {
+            tableName: compositeNullOtherTable,
+            ddl: '',
+            columns: { tenant_id: { type: 'UUID' } },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '',
+            dependencies: [],
+          },
         } as any);
     });
 
@@ -3939,7 +4002,7 @@ describePostgres(
       try {
         const db = await freshDb();
         await db.query(
-          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}"`,
+          `DROP TABLE IF EXISTS "${collidingTable}", "${cleanTable}", "${repeatedTable}", "${whitespaceTable}", "${nonUniqueMixedTable}", "${compositeUniqueTable}", "${compositeUuidPairTable}", "${compositeNullOtherTable}"`,
         );
       } catch {
         // Handler cleanup closes pooled handles; reacquire before teardown.
@@ -3979,6 +4042,15 @@ describePostgres(
       // `slug` but spelling `tenant_id` differently — must be caught too,
       // not just single-key PK/unique collisions.
       expect(await dataType(compositeUniqueTable, 'tenant_id')).toBe('text');
+      // A composite UNIQUE(source_id, target_id) where BOTH sides are
+      // declared UUID: the collision only exists AFTER both columns
+      // normalize, so grouping on raw text alone would miss it.
+      expect(await dataType(compositeUuidPairTable, 'source_id')).toBe('text');
+      expect(await dataType(compositeUuidPairTable, 'target_id')).toBe('text');
+      // A composite UNIQUE(tenant_id, slug) where `slug` is NULL on both
+      // rows: NULLS DISTINCT means these never collide, so tenant_id must
+      // still convert despite sharing a normalized value.
+      expect(await dataType(compositeNullOtherTable, 'tenant_id')).toBe('uuid');
       expect(output).toContain(
         `SKIP ${collidingTable}.id: 1 duplicate value(s) after normalization`,
       );
@@ -3988,8 +4060,11 @@ describePostgres(
       expect(output).toContain(
         `SKIP ${compositeUniqueTable}.tenant_id: 1 duplicate value(s) after normalization`,
       );
+      expect(output).toContain(`SKIP ${compositeUuidPairTable}.source_id:`);
+      expect(output).toContain(`SKIP ${compositeUuidPairTable}.target_id:`);
       expect(output).not.toContain(`${repeatedTable}.parent_id`);
       expect(output).not.toContain(`${nonUniqueMixedTable}.ref_id`);
+      expect(output).not.toContain(`${compositeNullOtherTable}.tenant_id`);
     }, 30_000);
 
     it('is a no-op on a second run', async () => {
@@ -4012,6 +4087,9 @@ describePostgres(
       expect(await dataType(whitespaceTable, 'id')).toBe('text');
       expect(await dataType(nonUniqueMixedTable, 'ref_id')).toBe('uuid');
       expect(await dataType(compositeUniqueTable, 'tenant_id')).toBe('text');
+      expect(await dataType(compositeUuidPairTable, 'source_id')).toBe('text');
+      expect(await dataType(compositeUuidPairTable, 'target_id')).toBe('text');
+      expect(await dataType(compositeNullOtherTable, 'tenant_id')).toBe('uuid');
     }, 30_000);
   },
 );

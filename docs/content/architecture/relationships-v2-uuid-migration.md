@@ -47,17 +47,24 @@ Because the hyphenated and bare-hex forms — and, for the shape probe, upper
 and lower case — are accepted as the same value, TEXT→uuid is many-to-one.
 That is only a hazard for a column covered by a unique/PK index — single-key
 or composite (e.g. SMRT's own generated `UNIQUE (tenant_id, slug, context)`
-on tenant-scoped tables). A covered column that holds two distinct TEXT rows
-normalizing to the same uuid, with every other key column of that index also
-matching, is detected before conversion and skipped as dirty — reported as
-"N duplicate value(s) after normalization" — rather than reaching
-`ALTER COLUMN … TYPE uuid` and failing the whole transaction on a
-duplicate-key error when that index is rebuilt. That skip also propagates to
-its foreign-key partners exactly like a non-uuid-shaped skip does. A column
-with no covering unique index at all, or one whose other key columns
-disagree, normalizing several rows to the same value is the intended,
-harmless outcome (e.g. an ordinary FK column with mixed-case or
-mixed-hyphenation spellings across rows) and is never flagged.
+on tenant-scoped tables, or a link table's `UNIQUE (source_id, target_id)`
+where both sides are themselves declared UUID and converting in the same
+run). A covered column that holds two distinct TEXT rows normalizing to the
+same uuid, with every other key column of that index also matching — an
+other key column that is itself a declared-UUID candidate is compared on
+its own normalized value too, not its raw text, so a pair that only collides
+after BOTH columns convert is still caught — is detected before conversion
+and skipped as dirty — reported as "N duplicate value(s) after
+normalization" — rather than reaching `ALTER COLUMN … TYPE uuid` and failing
+the whole transaction on a duplicate-key error when that index is rebuilt.
+That skip also propagates to its foreign-key partners exactly like a
+non-uuid-shaped skip does. Following ordinary PostgreSQL `NULLS DISTINCT`
+semantics, a NULL in another key column never counts toward a collision,
+however the rest of the row compares. A column with no covering unique index
+at all, or one whose other key columns disagree (or are NULL), normalizing
+several rows to the same value is the intended, harmless outcome (e.g. an
+ordinary FK column with mixed-case or mixed-hyphenation spellings across
+rows) and is never flagged.
 A generated TEXT bridge column (below) is narrower: it stays TEXT and is
 regenerated as `sourceColumn::text` over the now-native column, and
 `uuid::text` always renders the canonical hyphenated form — so a bare-hex

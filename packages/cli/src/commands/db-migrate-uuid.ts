@@ -702,16 +702,49 @@ async function convertPostgresUuidColumns(
       // actually covered by SOME unique index — flagging every declared-
       // UUID column would itself falsely block otherwise-clean, unindexed
       // data (and propagate that false block to FK partners).
-      const uniqueIndexKeyColumns = await findUniqueIndexKeyColumns(
+      const uniqueIndexes = await findUniqueIndexKeyColumns(
         db,
         String(row.relation_oid),
         Number(row.attribute_number),
       );
-      for (const keyColumns of uniqueIndexKeyColumns) {
-        const otherColumns = keyColumns.filter((c) => c !== column);
-        // This must count DISTINCT RAW (un-trimmed) TEXT forms per
-        // (other key column values, normalized-uuid) group, not rows and
-        // not trimmed forms:
+      for (const { keyColumns, nullsNotDistinct } of uniqueIndexes) {
+        const otherColumns = keyColumns.filter((c) => c.name !== column);
+        // Build each other key column's GROUP BY expression:
+        //   - a column that is ITSELF a declared-UUID candidate converting
+        //     in the SAME run (e.g. UNIQUE(source_id, target_id) where both
+        //     are declared UUID) must be grouped on its normalized value
+        //     too, not its raw TEXT — otherwise two rows that collide only
+        //     AFTER both columns convert (one hyphenated, one bare-hex on
+        //     EACH side) stay in different groups and the collision is
+        //     missed, reintroducing the whole-run abort this probe exists
+        //     to prevent. Guarded with CASE so a row whose other-column
+        //     value is not itself uuid-shaped (dirty data on that column)
+        //     falls back to its raw text rather than erroring the cast.
+        //   - a column already native `uuid` (e.g. converted in an earlier
+        //     run) needs no cast at all.
+        //   - anything else (a column that will never convert, e.g. `slug`)
+        //     groups on its raw value, unchanged.
+        const otherColumnExpr = (other: UniqueIndexKeyColumn): string => {
+          const quoted = quoteIdentifier(other.name);
+          if (other.typeName === 'uuid') return quoted;
+          if (declaredUuid.has(declaredUuidKey(table, other.name))) {
+            return `CASE WHEN btrim(${quoted}) ~* '${UUID_RE}' THEN NULLIF(btrim(${quoted}), '')::uuid::text ELSE ${quoted} END`;
+          }
+          return quoted;
+        };
+        // PostgreSQL's default NULLS DISTINCT means a NULL in an other key
+        // column can never collide with anything, however the rest of the
+        // row compares — exclude those rows from the group entirely rather
+        // than let a shared NULL falsely group two otherwise-unrelated rows
+        // together (a false collision that would needlessly skip, and
+        // propagate-block, an otherwise-clean column).
+        const nullGuards = nullsNotDistinct
+          ? []
+          : otherColumns.map(
+              (other) => `${quoteIdentifier(other.name)} IS NOT NULL`,
+            );
+        // This must count DISTINCT RAW (un-trimmed) TEXT forms of THIS
+        // column per group, not rows and not trimmed forms:
         //   - grouping by the index's OTHER key columns too (composite
         //     case): a collision only violates THIS index when every other
         //     key column also matches — two rows that share a normalized
@@ -730,15 +763,19 @@ async function convertPostgresUuidColumns(
         //     collision-prone as a hyphen/bare-hex pair, and counting on
         //     the trimmed value would hide exactly that case.
         const groupBy = [
-          ...otherColumns.map((c) => quoteIdentifier(c)),
+          ...otherColumns.map(otherColumnExpr),
           `NULLIF(btrim(${quoteIdentifier(column)}), '')::uuid`,
         ].join(', ');
+        const whereClause = [
+          `nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL`,
+          `btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'`,
+          ...nullGuards,
+        ].join(' AND ');
         const { rows: dupRows } = await db.query(
           `SELECT count(*)::text AS n FROM (
                SELECT 1
                  FROM ${pgTable(table)}
-                WHERE nullif(btrim(${quoteIdentifier(column)}), '') IS NOT NULL
-                  AND btrim(${quoteIdentifier(column)}) ~* '${UUID_RE}'
+                WHERE ${whereClause}
                 GROUP BY ${groupBy}
                HAVING count(DISTINCT ${quoteIdentifier(column)}) > 1
              ) collisions`,
@@ -1319,38 +1356,70 @@ async function snapshotBridgeIndexes(
  * multi-column foreign keys are excluded here and remain a hard refusal in
  * `snapshotForeignKeys` once the (reduced) convert set is known.
  */
+/** One key column of a covering unique/PK index, with enough type info to
+ * build a correct collision-detection GROUP BY over it. */
+interface UniqueIndexKeyColumn {
+  name: string;
+  /** `format_type()` output, e.g. `text`, `uuid`. */
+  typeName: string;
+}
+
+interface UniqueIndexCoverage {
+  keyColumns: UniqueIndexKeyColumn[];
+  /**
+   * PostgreSQL's default is `NULLS DISTINCT`: two rows with NULL in the same
+   * key column never collide, however their other columns compare. `false`
+   * unless the index was declared `NULLS NOT DISTINCT` (PG 15+).
+   */
+  nullsNotDistinct: boolean;
+}
+
 /**
  * Every unique or primary-key index that covers `attnum` as a key column
  * (single-key or composite; INCLUDE-only columns are excluded via
- * `indnkeyatts`), returned as one ordered list of key-column names per
- * covering index — the probed column included, so callers can filter it out
- * to get the index's "other" key columns for a composite collision check.
+ * `indnkeyatts`), returned as one entry per covering index — the probed
+ * column included in `keyColumns`, so callers can filter it out to get the
+ * index's "other" key columns for a composite collision check.
+ *
+ * A key column that is itself an expression (not a plain column reference)
+ * has no `pg_attribute` row and is silently dropped from `keyColumns` by the
+ * inner join below — the resulting collision check under-specifies that
+ * index's true key, which only widens (never narrows) what it flags, so it
+ * cannot hide a real collision; documented as a known imprecision rather
+ * than fully modeled here.
  */
 async function findUniqueIndexKeyColumns(
   db: QueryExecutor,
   relationOid: string,
   attnum: number,
-): Promise<string[][]> {
+): Promise<UniqueIndexCoverage[]> {
   // `indkey` is `int2vector`, whose cast to `int2[]` keeps its ORIGINAL
   // zero-based lower bound (unlike a normal array literal) — slicing it with
   // a one-based `[1:n]` silently returns empty. Slice `[0:n-1]` instead.
   //
-  // `to_json(array_agg(...))` (not bare `array_agg`): this driver returns a
-  // raw Postgres `{a,b}` array literal as an opaque string, not a parsed JS
-  // array — wrapping in `to_json` gets it parsed for us.
+  // `to_json(...)` (not bare `array_agg`/columns): this driver returns a raw
+  // Postgres `{a,b}` array literal or scalar as an opaque string, not
+  // parsed JS values — wrapping in `to_json` gets them parsed for us.
   const { rows } = await db.query(
-    `SELECT to_json(array_agg(key_attr.attname ORDER BY key_order.ord)) AS key_columns
-       FROM pg_index idx
-       CROSS JOIN LATERAL unnest((idx.indkey::int2[])[0:idx.indnkeyatts - 1]) WITH ORDINALITY AS key_order(attnum, ord)
-       JOIN pg_attribute key_attr
-         ON key_attr.attrelid = idx.indrelid AND key_attr.attnum = key_order.attnum
-      WHERE idx.indrelid = ${quoteLiteral(relationOid)}::oid AND idx.indisunique
-        AND ${attnum} = ANY((idx.indkey::int2[])[0:idx.indnkeyatts - 1])
-      GROUP BY idx.indexrelid`,
+    `SELECT to_json(array_agg(json_build_object(
+                'name', key_attr.attname,
+                'type', format_type(key_attr.atttypid, key_attr.atttypmod)
+              ) ORDER BY key_order.ord)) AS key_columns,
+              to_json(coalesce(idx.indnullsnotdistinct, false)) AS nulls_not_distinct
+         FROM pg_index idx
+         CROSS JOIN LATERAL unnest((idx.indkey::int2[])[0:idx.indnkeyatts - 1]) WITH ORDINALITY AS key_order(attnum, ord)
+         JOIN pg_attribute key_attr
+           ON key_attr.attrelid = idx.indrelid AND key_attr.attnum = key_order.attnum
+        WHERE idx.indrelid = ${quoteLiteral(relationOid)}::oid AND idx.indisunique
+          AND ${attnum} = ANY((idx.indkey::int2[])[0:idx.indnkeyatts - 1])
+        GROUP BY idx.indexrelid, idx.indnullsnotdistinct`,
   );
-  return (rows as Array<Record<string, unknown>>).map((row) =>
-    (row.key_columns as string[]).map(String),
-  );
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    keyColumns: (row.key_columns as Array<{ name: string; type: string }>).map(
+      (col) => ({ name: String(col.name), typeName: String(col.type) }),
+    ),
+    nullsNotDistinct: Boolean(row.nulls_not_distinct),
+  }));
 }
 
 async function fetchSingleColumnForeignKeyEdges(
