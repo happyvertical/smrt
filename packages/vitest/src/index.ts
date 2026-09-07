@@ -106,7 +106,14 @@ export function setManifestRegistrationOptionsForRoot(
   if (raw) {
     try {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
+      // `typeof [] === 'object'` too: an array here would let `byRoot[key] =
+      // options` silently succeed (JS permits arbitrary string keys on
+      // arrays) but `JSON.stringify()` an array only serializes integer
+      // indices, dropping that property -- the env var update would appear
+      // to work and then vanish. Reject non-plain-object values explicitly
+      // so a foreign/malformed prior value falls through to the empty-map
+      // default below instead.
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         byRoot = parsed as Record<string, SmrtVitestPluginOptions>;
       }
     } catch {

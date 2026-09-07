@@ -18,7 +18,7 @@
  * @see https://github.com/happyvertical/smrt/issues/2750
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearRegistryDiagnostics,
   getRegistryDiagnostics,
@@ -29,14 +29,21 @@ import { getTestDatabase } from '../testing/database.js';
 
 describe('issue #2750: getTestDatabase() warns on an empty implicit registry', () => {
   let restoreRegistry: () => void;
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     restoreRegistry = snapshotObjectRegistryState();
     ObjectRegistry.clear();
     clearRegistryDiagnostics();
+    // This suite intentionally triggers getTestDatabase()'s console.warn
+    // (the expected, documented behavior under test); stub it so the
+    // expected warning doesn't spam the core suite's own output, matching
+    // the pattern in issue-265-external-package-manifest.test.ts.
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    consoleWarnSpy.mockRestore();
     restoreRegistry();
     clearRegistryDiagnostics();
   });
