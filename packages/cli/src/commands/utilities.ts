@@ -40,6 +40,7 @@ import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
   computeBlockedColumns,
+  filterUnresolvedOrphanDispositions,
   getSyntheticMigrationNameForAction,
   type MigrationAction,
   orphanCountSql,
@@ -1712,7 +1713,7 @@ export default testManifest;
       'apply-unblocked': {
         type: 'boolean',
         description:
-          'Apply every planned change that is executable and independent of a blocked item (e.g. safe indexes/columns on other tables), even when other changes in this batch need manual intervention. A change that depends on a blocked change (an index or foreign key on a column whose type upgrade is blocked, a foreign key whose orphan rows block it) still stays withheld and is reported with its reason. Off by default: a batch with any manual intervention is withheld in full.',
+          'Withhold only the executable changes that depend on a blocked item (an index or foreign key on a column whose type upgrade is blocked, a foreign key whose orphan rows block it), instead of the default of applying every executable change regardless of dependency. A withheld change is reported with the blocked column it depends on. Off by default: every executable change in the batch still applies even when other items need manual intervention -- this flag makes that dependency-unsafe subset stop applying, it does not add anything that was previously withheld.',
         default: false,
       },
       'null-orphans': {
@@ -2070,6 +2071,13 @@ export default testManifest;
           column: string;
           countSql: string;
           beforeCount: number;
+          // The exact combined null+add-FK `MigrationAction` this
+          // disposition pushed into `migrations` (review, #2748):
+          // `--apply-unblocked` can still withhold it below if the FK's
+          // *parent* column is separately blocked, and this reference is
+          // how the post-apply report tells "resolved" from "withheld"
+          // instead of reporting success for a migration that never ran.
+          action: MigrationAction;
         }[] = [];
         if (options['null-orphans']) {
           const { nullable: orphanDispositions } =
@@ -2114,7 +2122,7 @@ export default testManifest;
               // through the normal transaction/tracker path below.
               const index = manualInterventions.indexOf(item.action);
               if (index >= 0) manualInterventions.splice(index, 1);
-              migrations.push({
+              const combinedAction: MigrationAction = {
                 type: 'add_foreign_key',
                 tableName: item.action.tableName,
                 className: item.action.className,
@@ -2126,13 +2134,15 @@ export default testManifest;
                     item.action.foreignKey,
                   ),
                 ],
-              });
+              };
+              migrations.push(combinedAction);
               if (!isDryRun) {
                 pendingOrphanDispositions.push({
                   tableName: item.tableName,
                   column: item.column,
                   countSql,
                   beforeCount,
+                  action: combinedAction,
                 });
               }
             }
@@ -2140,9 +2150,14 @@ export default testManifest;
           }
         }
 
-        // #2748: opt-in partial apply. Off by default — the batch stays
-        // all-or-nothing exactly as before. When set, split the safe/
-        // executable bucket into changes independent of every blocked
+        // #2748: opt-in partial apply. Off by default — every executable
+        // change in `migrations` still applies regardless of dependency
+        // (review finding: the prior comment here claimed the unflagged
+        // batch is "all-or-nothing", but `shouldApplySchemaMigrations()`
+        // never gates on `manualInterventions`, so an unrelated safe DDL
+        // and even a dependent one both apply unflagged; only the blocked
+        // items themselves never enter `migrations`). When set, split the
+        // safe/executable bucket into changes independent of every blocked
         // column (applied normally) and changes that depend on one (an
         // index/FK on a column whose type upgrade is blocked, or on a
         // still-orphan-blocked FK's column) — those stay withheld and are
@@ -2160,6 +2175,20 @@ export default testManifest;
           withheldForDependency = partition.withheld;
           migrations.length = 0;
           migrations.push(...partition.applied);
+
+          // A --null-orphans disposition's combined null+add-FK migration
+          // can itself be withheld here (its parent column separately
+          // blocked) even though it already resolved out of
+          // `manualInterventions` above. Drop it from the pending list so
+          // the post-apply report doesn't print a ✓ resolution for a
+          // migration that never ran — it's already covered by the
+          // "🔒 Withheld" listing below (review, #2748).
+          const stillPending = filterUnresolvedOrphanDispositions(
+            pendingOrphanDispositions,
+            withheldForDependency,
+          );
+          pendingOrphanDispositions.length = 0;
+          pendingOrphanDispositions.push(...stillPending);
         }
 
         // #2608: the pre-R11 `text` -> `uuid` convergence has to run before

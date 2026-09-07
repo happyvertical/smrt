@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeBlockedColumns,
+  filterUnresolvedOrphanDispositions,
   type MigrationAction,
   orphanCountSql,
   partitionSchemaChanges,
   partitionUnblockedMigrations,
   planOrphanDispositions,
   type SchemaAdvisory,
+  type WithheldMigration,
 } from '../db-migrate-actions.js';
 
 /**
@@ -580,5 +582,79 @@ describe('partitionSchemaChanges propagates FK orphan metadata (#2748)', () => {
       referencesColumn: 'id',
     });
     expect(migrations[0]?.orphanBlocked).toBeUndefined();
+  });
+});
+
+describe('filterUnresolvedOrphanDispositions', () => {
+  // Final review finding, #2748: a --null-orphans combined null+add-FK
+  // migration can itself depend on a separately blocked *parent* column and
+  // get withheld under --apply-unblocked even though it already resolved
+  // out of `manualInterventions`. The post-apply report must not print a
+  // resolution for a disposition whose migration never ran.
+  const combinedAction: MigrationAction = {
+    type: 'add_foreign_key',
+    tableName: 'posts',
+    className: 'Post',
+    foreignKey: {
+      column: 'author_id',
+      referencesTable: 'authors',
+      referencesColumn: 'id',
+    },
+    sqlStatements: ['UPDATE ...', 'ALTER TABLE "posts" ADD CONSTRAINT ...'],
+  };
+
+  it('keeps a pending disposition whose migration was not withheld', () => {
+    const pending = [
+      { tableName: 'posts', column: 'author_id', action: combinedAction },
+    ];
+
+    expect(filterUnresolvedOrphanDispositions(pending, [])).toEqual(pending);
+  });
+
+  it('drops a pending disposition whose migration was withheld (blocked parent column)', () => {
+    const pending = [
+      { tableName: 'posts', column: 'author_id', action: combinedAction },
+    ];
+    const withheld: WithheldMigration[] = [
+      {
+        action: combinedAction,
+        dependsOn: 'authors.id',
+        reason: 'blocked: incompatible column types.',
+      },
+    ];
+
+    expect(filterUnresolvedOrphanDispositions(pending, withheld)).toEqual([]);
+  });
+
+  it('only drops the matching entry, by action identity, when several are pending', () => {
+    const otherAction: MigrationAction = {
+      type: 'add_foreign_key',
+      tableName: 'comments',
+      className: 'Comment',
+      foreignKey: {
+        column: 'post_id',
+        referencesTable: 'posts',
+        referencesColumn: 'id',
+      },
+      sqlStatements: [
+        'UPDATE ...',
+        'ALTER TABLE "comments" ADD CONSTRAINT ...',
+      ],
+    };
+    const pending = [
+      { tableName: 'posts', column: 'author_id', action: combinedAction },
+      { tableName: 'comments', column: 'post_id', action: otherAction },
+    ];
+    const withheld: WithheldMigration[] = [
+      {
+        action: combinedAction,
+        dependsOn: 'authors.id',
+        reason: 'blocked: incompatible column types.',
+      },
+    ];
+
+    expect(filterUnresolvedOrphanDispositions(pending, withheld)).toEqual([
+      pending[1],
+    ]);
   });
 });

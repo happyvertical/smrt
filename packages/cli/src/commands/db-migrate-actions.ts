@@ -1207,6 +1207,27 @@ export function partitionUnblockedMigrations(
   return { applied, withheld };
 }
 
+/**
+ * Drop any pending post-apply report entry whose `action` reference was
+ * withheld by `partitionUnblockedMigrations()` (review finding, #2748): a
+ * `--null-orphans` combined null+add-FK migration can itself depend on a
+ * separately blocked *parent* column and get withheld under
+ * `--apply-unblocked` even though it already resolved out of
+ * `manualInterventions`. Without this filter, the post-apply report printed
+ * a `✓ ... resolved` line for a disposition that never executed — the same
+ * relationship the `🔒 Withheld` listing (from `withheld`) already names.
+ * Matches by object identity, not by table/column, since the caller pushed
+ * the exact `MigrationAction` reference into both `migrations` and the
+ * pending entry.
+ */
+export function filterUnresolvedOrphanDispositions<
+  T extends { action: MigrationAction },
+>(pending: T[], withheld: WithheldMigration[]): T[] {
+  if (withheld.length === 0) return pending;
+  const withheldActions = new Set(withheld.map((item) => item.action));
+  return pending.filter((item) => !withheldActions.has(item.action));
+}
+
 // ---------------------------------------------------------------------------
 // #2748: `db:migrate --null-orphans` opt-in orphan-FK disposition.
 // ---------------------------------------------------------------------------

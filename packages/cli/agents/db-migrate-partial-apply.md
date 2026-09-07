@@ -108,6 +108,19 @@ the whole batch has actually committed (`errorCount === 0`); on a rollback
 the generic atomic-failure message already covers it — nothing in that
 batch, including this disposition, applied.
 
+**The combined migration can still be withheld by `--apply-unblocked`
+itself**, if the FK's *parent* column is separately blocked (e.g. a
+report-only `type_upgrade` advisory) — resolving out of
+`manualInterventions` only means this specific relationship's *child*-side
+orphan block is gone, not that the dependency partition can't withhold it
+for an unrelated reason. `filterUnresolvedOrphanDispositions()` drops a
+pending post-apply report entry whose exact migration action ended up
+withheld, matched by object identity (the same reference is pushed into
+both `migrations` and the pending entry) rather than by table/column, so
+the report never prints a `✓ ... resolved` line for a migration that never
+executed (review finding, #2748) — that relationship is already covered by
+the `🔒 Withheld` listing.
+
 For a `NOT NULL` child column: refuse with the same "Manual repair required"
 text `db:migrate` always prints for that case. Nulling is not a legal repair
 there, and **this flag never deletes rows** either way — the only mutating
