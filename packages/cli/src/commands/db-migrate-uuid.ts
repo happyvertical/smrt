@@ -546,6 +546,15 @@ async function convertPostgresUuidColumns(
     );
     if (!destination || !declaredUuid.has(declaredUuidKey(spec.table, spec.to)))
       continue;
+    const { rows: source } = await db.query(
+      `SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = ${quoteLiteral(spec.table)}
+          AND column_name = ${quoteLiteral(spec.from)}`,
+    );
+    // Mirror applyRenameBackfills: an already-dropped source is an idempotent
+    // skip, not an error during dry-run or the read-only preflight.
+    if (source.length === 0) continue;
     const { rows } = await db.query(
       `SELECT count(*)::text AS n FROM ${pgTable(spec.table)}
         WHERE ${nullifEmpty(true, quoteIdentifier(spec.from))} IS NOT NULL

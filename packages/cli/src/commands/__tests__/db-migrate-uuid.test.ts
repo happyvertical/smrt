@@ -577,6 +577,20 @@ describePostgres(
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }, 30_000);
+
+    it('skips an already-dropped rename source during dry-run projection', async () => {
+      const db = await freshDb();
+      await db.query(`DROP VIEW "${viewName}"`);
+      await db.query(`ALTER TABLE "${tableName}" DROP COLUMN old_ref`);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await dbMigrateUuidCommand.handler([], {
+        'dry-run': true,
+        rename: 'old_ref:parent_id',
+        table: tableName,
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    }, 30_000);
   },
 );
 
