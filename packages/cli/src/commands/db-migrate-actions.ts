@@ -1081,6 +1081,40 @@ function describeBlockedReason(action: MigrationAction): string {
   return `${action.type} requires manual intervention`;
 }
 
+/**
+ * `table.column` keys whose only manual-intervention block is an
+ * orphan-blocked `add_foreign_key` on that same (child) column — a
+ * row-data condition (existing rows don't match a parent), not a
+ * column-state one. An un-opted-into `--relax-columns` relaxation on that
+ * column (`DROP NOT NULL`/`DROP DEFAULT`) is not unsafe against orphan
+ * rows; it is in fact the exact remediation that makes a NOT-NULL-child
+ * orphan block eventually resolvable by `--null-orphans` on a later run.
+ * Gating that `alter_column` on the orphan block made `--apply-unblocked
+ * --relax-columns` withhold it forever — the relaxation never applies, the
+ * live column never becomes nullable, the orphan block never clears, in a
+ * stable non-converging loop (review finding, #2748). Every other
+ * dependent shape on that column (an index, an unrelated foreign key, a
+ * `drop_column`) still correctly stays gated by the orphan block; this set
+ * narrows the exclusion to `alter_column` alone at the call site.
+ */
+export function computeOrphanOnlyBlockedColumns(
+  manualInterventions: MigrationAction[],
+): Set<string> {
+  const orphanOnly = new Set<string>();
+  const otherwiseBlocked = new Set<string>();
+  for (const action of manualInterventions) {
+    const key = blockedColumnForAction(action);
+    if (!key) continue;
+    if (action.type === 'add_foreign_key' && action.orphanBlocked) {
+      orphanOnly.add(key);
+    } else {
+      otherwiseBlocked.add(key);
+    }
+  }
+  for (const key of otherwiseBlocked) orphanOnly.delete(key);
+  return orphanOnly;
+}
+
 /** One migration withheld under `--apply-unblocked` and why. */
 export interface WithheldMigration {
   action: MigrationAction;
@@ -1149,13 +1183,23 @@ function actionColumnDependencies(
 export function partitionUnblockedMigrations(
   migrations: MigrationAction[],
   blockedColumns: Map<string, string>,
+  orphanOnlyBlockedColumns: Set<string> = new Set(),
 ): { applied: MigrationAction[]; withheld: WithheldMigration[] } {
   const directDependency = (
     action: MigrationAction,
   ): { dependsOn: string; reason: string } | undefined => {
-    const dependency = actionColumnDependencies(action).find((dep) =>
-      blockedColumns.has(blockedColumnKey(dep.tableName, dep.columnName)),
-    );
+    const dependency = actionColumnDependencies(action).find((dep) => {
+      const key = blockedColumnKey(dep.tableName, dep.columnName);
+      if (!blockedColumns.has(key)) return false;
+      // An orphan-blocked FK is a row-data condition, not a column-state
+      // one; an `alter_column` relaxation is the remediation for it, not
+      // something unsafe against it (review, #2748) — see
+      // `computeOrphanOnlyBlockedColumns()`.
+      if (action.type === 'alter_column' && orphanOnlyBlockedColumns.has(key)) {
+        return false;
+      }
+      return true;
+    });
     if (!dependency) return undefined;
     const dependsOn = blockedColumnKey(
       dependency.tableName,

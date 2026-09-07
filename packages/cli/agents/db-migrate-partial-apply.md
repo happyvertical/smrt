@@ -70,6 +70,25 @@ finding, #2748) and, since no rerun on that engine ever resolves it, made
 `--apply-unblocked` permanently withhold unrelated dependent DDL on that
 column — strictly worse than omitting the flag.
 
+**An orphan-blocked `add_foreign_key`'s block is a row-data condition, not
+a column-state one — an `alter_column` relaxation on that same column is
+its remediation, not something unsafe against it.** With `--relax-columns
+--apply-unblocked`, a FK child column that is physically `NOT NULL` while
+the manifest declares it nullable (with live orphan rows) stays
+orphan-blocked — `--null-orphans` can't resolve a NOT NULL child. The
+executable `DROP NOT NULL` relaxation for that same column is exactly what
+makes the block eventually resolvable (the column becomes nullable, then a
+later `--null-orphans` run can null the references). Gating that
+relaxation on the orphan block (review finding, #2748) made the run
+withhold it on every pass, so the column never became nullable, the
+orphan block never cleared, and the batch failed forever — worse than
+omitting the flag. `computeOrphanOnlyBlockedColumns()` identifies a
+`table.column` whose *only* manual-intervention block is an orphan-blocked
+FK on that column, and `partitionUnblockedMigrations()` excludes that key
+from gating an `alter_column` specifically — an index, a different foreign
+key, or a `drop_column` on that same orphan-blocked column still correctly
+stays withheld.
+
 Withheld items print under `🔒 Withheld — depends on a blocked change`, each
 naming the `table.column` it depends on and the same reason text the manual
 intervention above it carries. `--dry-run` shows the identical
@@ -104,9 +123,9 @@ into two). The resolved FK moves from `manualInterventions` into the
 executable `migrations` bucket before the `--apply-unblocked` partition
 runs, so a relationship this flag resolves is never a blocked column for
 that dependency rule. Post-apply before/after counts are only printed once
-the whole batch has actually committed (`errorCount === 0`); on a rollback
-the generic atomic-failure message already covers it — nothing in that
-batch, including this disposition, applied.
+the batch that carries this disposition has actually committed; on a full
+rollback the generic atomic-failure message already covers it — nothing in
+that batch, including this disposition, applied.
 
 **The combined migration can still be withheld by `--apply-unblocked`
 itself**, if the FK's *parent* column is separately blocked (e.g. a
@@ -120,6 +139,20 @@ both `migrations` and the pending entry) rather than by table/column, so
 the report never prints a `✓ ... resolved` line for a migration that never
 executed (review finding, #2748) — that relationship is already covered by
 the `🔒 Withheld` listing.
+
+**"Committed" is not simply `errorCount === 0`.** In PostgreSQL
+concurrent-index mode (`--postgres-safe` with
+`migrations.postgres.useConcurrently`), the non-index batch — including
+this disposition's combined migration — commits in its own transaction
+before any deferred `CREATE INDEX CONCURRENTLY` migrations run separately
+and non-transactionally; a later index build failure still increments
+`errorCount` even though the non-index changes already committed. Gating
+the report on `errorCount === 0` alone silently suppressed the resolution
+line for a mutation that did commit (review finding, #2748). The gate is
+`errorCount === 0 || deferredIndexMigrationsCount > 0` — the same signal
+the console error branch above it already relies on to tell the operator
+non-index changes were committed — and a partial-commit run adds an extra
+line noting the caveat before the per-relationship resolution lines.
 
 For a `NOT NULL` child column: refuse with the same "Manual repair required"
 text `db:migrate` always prints for that case. Nulling is not a legal repair

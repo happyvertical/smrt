@@ -40,6 +40,7 @@ import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
   computeBlockedColumns,
+  computeOrphanOnlyBlockedColumns,
   filterUnresolvedOrphanDispositions,
   getSyntheticMigrationNameForAction,
   type MigrationAction,
@@ -2168,9 +2169,12 @@ export default testManifest;
             manualInterventions,
             advisories,
           );
+          const orphanOnlyBlockedColumns =
+            computeOrphanOnlyBlockedColumns(manualInterventions);
           const partition = partitionUnblockedMigrations(
             migrations,
             blockedColumns,
+            orphanOnlyBlockedColumns,
           );
           withheldForDependency = partition.withheld;
           migrations.length = 0;
@@ -2473,6 +2477,10 @@ export default testManifest;
         let skippedCount = 0;
         let errorCount = 0;
         let stiErrorCount = 0;
+        // Hoisted out of the `applySchemaMigrations` block below (review,
+        // #2748) so the post-apply --null-orphans report can tell a
+        // concurrent-index partial commit apart from a full rollback.
+        let deferredIndexMigrationsCount = 0;
 
         const schemaChangeCount =
           diff.added_tables.length +
@@ -2619,6 +2627,7 @@ export default testManifest;
             concurrentIndexMode && engine === 'postgres'
               ? buildConcurrentIndexPlan(migrationDefs, true).size
               : 0;
+          deferredIndexMigrationsCount = deferredIndexMigrations;
           const batchHasIndexDDL = migrations.some(
             (migration) =>
               migration.type === 'add_index' || migration.type === 'drop_index',
@@ -2727,13 +2736,28 @@ export default testManifest;
         }
 
         // #2748: report each --null-orphans disposition's actual before/
-        // after count now that the combined null+add-FK migration has gone
-        // through the same atomic batch as everything else. Only report a
-        // resolution when the batch actually committed (errorCount === 0);
-        // on a rollback the generic atomic-failure message above already
-        // explains that nothing in this batch — including these
-        // dispositions — was applied.
-        if (pendingOrphanDispositions.length > 0 && errorCount === 0) {
+        // after count once the batch carrying the combined null+add-FK
+        // migration has actually committed. `errorCount === 0` alone
+        // conflated "nothing committed" with PostgreSQL concurrent-index
+        // mode's partial commit: when `deferredIndexMigrations > 0`, the
+        // non-index batch (including this disposition) commits in its own
+        // transaction before the deferred concurrent index build runs
+        // separately and non-transactionally — exactly the case the
+        // console.error branch above already documents ("Non-index
+        // changes in this batch were committed"). Gating on `errorCount
+        // === 0` alone silently suppressed the resolution report for a
+        // mutation that did commit (review finding, #2748). A genuine
+        // non-index-batch rollback (`deferredIndexMigrations === 0` and
+        // `errorCount > 0`) still means nothing here applied, and the
+        // generic atomic-failure message above already explains that.
+        const nonIndexBatchCommitted =
+          errorCount === 0 || deferredIndexMigrationsCount > 0;
+        if (pendingOrphanDispositions.length > 0 && nonIndexBatchCommitted) {
+          if (errorCount > 0) {
+            console.log(
+              '   (non-index changes below, including these dispositions, committed before a later concurrent index build failure)',
+            );
+          }
           for (const pending of pendingOrphanDispositions) {
             try {
               const afterCount = await countOrphanRows(db, pending.countSql);

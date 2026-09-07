@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeBlockedColumns,
+  computeOrphanOnlyBlockedColumns,
   filterUnresolvedOrphanDispositions,
   type MigrationAction,
   orphanCountSql,
@@ -174,6 +175,73 @@ describe('computeBlockedColumns', () => {
     );
 
     expect(blocked.size).toBe(0);
+  });
+});
+
+describe('computeOrphanOnlyBlockedColumns', () => {
+  // Final review finding, #2748: an orphan-blocked FK is a row-data
+  // condition, not a column-state one -- a `--relax-columns` relaxation on
+  // that same column is the remediation, not something unsafe against it.
+  it('includes a column whose only manual intervention is an orphan-blocked add_foreign_key', () => {
+    const manualInterventions: MigrationAction[] = [
+      {
+        type: 'add_foreign_key',
+        tableName: 'posts',
+        className: 'Post',
+        orphanBlocked: true,
+        orphanNullable: false,
+        foreignKey: {
+          column: 'author_id',
+          referencesTable: 'authors',
+          referencesColumn: 'id',
+        },
+        advisory: {
+          severity: 'warning',
+          message:
+            'Cannot add foreign key posts.author_id: existing rows do not match authors.id. Repair them, then rerun.',
+        },
+      },
+    ];
+
+    expect(
+      computeOrphanOnlyBlockedColumns(manualInterventions).has(
+        'posts.author_id',
+      ),
+    ).toBe(true);
+  });
+
+  it('excludes a column that is also blocked for a non-orphan reason', () => {
+    const manualInterventions: MigrationAction[] = [
+      {
+        type: 'add_foreign_key',
+        tableName: 'posts',
+        className: 'Post',
+        orphanBlocked: true,
+        orphanNullable: false,
+        foreignKey: {
+          column: 'author_id',
+          referencesTable: 'authors',
+          referencesColumn: 'id',
+        },
+        advisory: { severity: 'warning', message: 'orphan rows' },
+      },
+      {
+        type: 'type_mismatch',
+        tableName: 'posts',
+        className: 'Post',
+        mismatch: {
+          column: 'author_id',
+          expected: 'UUID',
+          actual: 'TEXT',
+        },
+      },
+    ];
+
+    expect(
+      computeOrphanOnlyBlockedColumns(manualInterventions).has(
+        'posts.author_id',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -378,6 +446,89 @@ describe('partitionUnblockedMigrations', () => {
 
     expect(applied).toEqual([drop, add]);
     expect(withheld).toEqual([]);
+  });
+
+  it('applies a --relax-columns alter_column relaxation on a column blocked only by an orphan FK (review, #2748)', () => {
+    // Reachable with `--relax-columns --apply-unblocked`: a FK child column
+    // is physically NOT NULL while the manifest declares it nullable, with
+    // live orphan rows, so the FK stays orphan-blocked (not resolvable by
+    // --null-orphans, since orphanNullable is false). The DROP NOT NULL
+    // relaxation on that same column is not unsafe against the orphan
+    // block -- it's the remediation that eventually makes the block
+    // resolvable. Gating it on the orphan block made the run never
+    // converge.
+    const relaxation: MigrationAction = {
+      type: 'alter_column',
+      tableName: 'posts',
+      className: 'Post',
+      columnName: 'author_id',
+      alteration: 'drop_not_null',
+      sql: 'ALTER TABLE "posts" ALTER COLUMN "author_id" DROP NOT NULL',
+    };
+    const blocked = new Map([
+      [
+        'posts.author_id',
+        'Cannot add foreign key posts.author_id: existing rows do not match authors.id.',
+      ],
+    ]);
+    const orphanOnly = new Set(['posts.author_id']);
+
+    const { applied, withheld } = partitionUnblockedMigrations(
+      [relaxation],
+      blocked,
+      orphanOnly,
+    );
+
+    expect(applied).toEqual([relaxation]);
+    expect(withheld).toEqual([]);
+  });
+
+  it('still withholds an add_index on a column blocked only by an orphan FK, even with the orphan-only exclusion active', () => {
+    // The orphan-only exclusion is narrowed to alter_column: an index on
+    // the still-orphan-blocked column is exactly as unsafe as before.
+    const index: MigrationAction = {
+      type: 'add_index',
+      tableName: 'posts',
+      className: 'Post',
+      index: { name: 'posts_author_id_idx', columns: ['author_id'] },
+      sql: 'CREATE INDEX "posts_author_id_idx" ON "posts" ("author_id")',
+    };
+    const blocked = new Map([
+      ['posts.author_id', 'Cannot add foreign key posts.author_id: ...'],
+    ]);
+    const orphanOnly = new Set(['posts.author_id']);
+
+    const { applied, withheld } = partitionUnblockedMigrations(
+      [index],
+      blocked,
+      orphanOnly,
+    );
+
+    expect(applied).toEqual([]);
+    expect(withheld[0]?.dependsOn).toBe('posts.author_id');
+  });
+
+  it('still withholds an alter_column when the column is blocked for a non-orphan reason too', () => {
+    const relaxation: MigrationAction = {
+      type: 'alter_column',
+      tableName: 'posts',
+      className: 'Post',
+      columnName: 'author_id',
+      alteration: 'drop_not_null',
+      sql: 'ALTER TABLE "posts" ALTER COLUMN "author_id" DROP NOT NULL',
+    };
+    const blocked = new Map([['posts.author_id', 'expected UUID, found TEXT']]);
+    // Empty orphan-only set: computeOrphanOnlyBlockedColumns() would not
+    // include this key since a type_mismatch also blocks it.
+
+    const { applied, withheld } = partitionUnblockedMigrations(
+      [relaxation],
+      blocked,
+      new Set(),
+    );
+
+    expect(applied).toEqual([]);
+    expect(withheld[0]?.dependsOn).toBe('posts.author_id');
   });
 });
 
