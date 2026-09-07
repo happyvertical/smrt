@@ -8,6 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   lstatSync,
@@ -48,28 +49,29 @@ function runCommand(command: string, args: string[], cwd: string) {
   return result.stdout;
 }
 
-function getCoreBuildHash(cwd: string): string {
+type TurboTask = {
+  dependencies: string[];
+  hash: string;
+  taskId: string;
+};
+
+function getCoreBuildTask(cwd: string): TurboTask {
   const output = runCommand(
     resolve(workspaceDir, 'node_modules/.bin/turbo'),
-    [
-      'run',
-      'build',
-      '--filter=@happyvertical/smrt-core',
-      '--only',
-      '--dry=json',
-    ],
+    ['run', 'build', '--filter=@happyvertical/smrt-core', '--dry=json'],
     cwd,
   );
   const jsonStart = output.indexOf('\n{');
   const task = JSON.parse(
     output.slice(jsonStart === -1 ? 0 : jsonStart + 1),
   ).tasks.find(
-    (candidate: { taskId: string }) =>
+    (candidate: TurboTask) =>
       candidate.taskId === '@happyvertical/smrt-core#build',
-  );
+  ) as TurboTask | undefined;
 
-  expect(task).toBeDefined();
-  return task.hash;
+  if (!task)
+    throw new Error('Core build task was missing from the Turbo graph');
+  return task;
 }
 
 function snapshotPath(path: string): string {
@@ -193,11 +195,19 @@ describe('Issue #2223 - test manifest task ownership', () => {
     const liveBefore = snapshotLiveGeneratedArtifacts();
 
     withIsolatedCoreFixture((fixtureDir) => {
-      const coldBuildHash = getCoreBuildHash(resolve(fixtureDir, '../..'));
-      runPnpm(['--dir', fixtureDir, 'run', 'generate:test']);
-      expect(getCoreBuildHash(resolve(fixtureDir, '../..'))).toBe(
-        coldBuildHash,
+      const fixtureWorkspace = resolve(fixtureDir, '../..');
+      const coldBuild = getCoreBuildTask(fixtureWorkspace);
+      expect(coldBuild.dependencies).toContain(
+        '@happyvertical/smrt-core#generate',
       );
+      runPnpm(['--dir', fixtureDir, 'run', 'generate:test']);
+      expect(getCoreBuildTask(fixtureWorkspace).hash).toBe(coldBuild.hash);
+
+      appendFileSync(
+        resolve(fixtureDir, 'scripts/generate-manifest.js'),
+        '\n// fixture-only generate-task hash input\n',
+      );
+      expect(getCoreBuildTask(fixtureWorkspace).hash).not.toBe(coldBuild.hash);
 
       runPnpm(['--dir', fixtureDir, 'run', 'build']);
       expect(
