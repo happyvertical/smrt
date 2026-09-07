@@ -45,6 +45,12 @@ declare global {
   var __smrtRegistryFieldDecorators:
     | Map<string, Map<string, Record<string, unknown>>>
     | undefined;
+  // Constructor-keyed metadata is necessary for declarations which must not
+  // cross package boundaries when two classes share a simple name.
+  // eslint-disable-next-line no-var
+  var __smrtRegistryConstructorFieldDecorators:
+    | Map<Function, Map<string, Record<string, unknown>>>
+    | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
@@ -234,6 +240,21 @@ export function getFieldDecorators(): Map<
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;
+}
+
+/**
+ * Field-decorator metadata keyed by the exact runtime constructor. This is
+ * used for identity-sensitive declarations while the string-keyed map remains
+ * the compatibility store for legacy decorator consumers.
+ */
+export function getConstructorFieldDecorators(): Map<
+  Function,
+  Map<string, Record<string, unknown>>
+> {
+  if (!globalThis.__smrtRegistryConstructorFieldDecorators) {
+    globalThis.__smrtRegistryConstructorFieldDecorators = new Map();
+  }
+  return globalThis.__smrtRegistryConstructorFieldDecorators;
 }
 
 export function getStiSiblingsLoaded(): Set<string> {

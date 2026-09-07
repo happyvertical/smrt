@@ -34,6 +34,16 @@ function registerTenantField(
   });
 }
 
+function tenantConfig(mode: 'required' | 'optional') {
+  return {
+    mode,
+    field: 'tenantId',
+    autoFilter: true,
+    autoPopulate: true,
+    allowSuperAdminBypass: false,
+  };
+}
+
 describe('runtime tenant schema registration (#2763)', () => {
   let restoreRegistry: () => void;
 
@@ -191,6 +201,119 @@ describe('runtime tenant schema registration (#2763)', () => {
       'slug',
       'context',
     ]);
+  });
+
+  it('keeps same-name tenant declarations bound to their constructors', () => {
+    const FirstTenantCollision = class TenantCollision extends SmrtObject {};
+    const SecondTenantCollision = class TenantCollision extends SmrtObject {};
+
+    ObjectRegistry.registerFieldDecoratorForConstructor(
+      FirstTenantCollision,
+      'tenantId',
+      {
+        type: 'foreignKey',
+        nullable: false,
+        __tenancy: { isTenantIdField: true },
+      },
+    );
+    ObjectRegistry.registerFieldDecoratorForConstructor(
+      SecondTenantCollision,
+      'tenantId',
+      {
+        type: 'foreignKey',
+        nullable: true,
+        __tenancy: { isTenantIdField: true },
+      },
+    );
+
+    ObjectRegistry.register(FirstTenantCollision, {
+      packageName: '@fixture/tenant-a',
+      tableName: 'tenant_collision_a_2763',
+    });
+    ObjectRegistry.register(SecondTenantCollision, {
+      packageName: '@fixture/tenant-b',
+      tableName: 'tenant_collision_b_2763',
+    });
+    ObjectRegistry.reconcileTenantScopedConfig(
+      SecondTenantCollision,
+      tenantConfig('optional'),
+    );
+
+    expect(
+      ObjectRegistry.getClassByConstructor(FirstTenantCollision)
+        ?.tenantScopedConfig,
+    ).toMatchObject({ mode: 'required' });
+    expect(
+      ObjectRegistry.getClassByConstructor(SecondTenantCollision)
+        ?.tenantScopedConfig,
+    ).toMatchObject({ mode: 'optional' });
+  });
+
+  it('lets a late silent manifest clear provisional field tenancy', () => {
+    registerTenantField('LateManifestSilentTenant', { nullable: true });
+    @smrt({
+      packageName: '@test/late-manifest',
+      tableName: 'late_manifest_silent_tenants_2763',
+    })
+    class LateManifestSilentTenant extends SmrtObject {
+      tenantId: string | null = null;
+    }
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('LateManifestSilentTenant'),
+    ).toMatchObject({ mode: 'optional' });
+
+    ObjectRegistry.registerFromManifest(
+      '@test/late-manifest:LateManifestSilentTenant',
+      {
+        className: 'LateManifestSilentTenant',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'late_manifest_silent_tenants_2763',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      '@test/late-manifest',
+    );
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('LateManifestSilentTenant'),
+    ).toBeUndefined();
+    expect(
+      ObjectRegistry.getConflictColumns('LateManifestSilentTenant'),
+    ).toEqual(['slug', 'context']);
+  });
+
+  it('keeps explicit core tenancy when a late manifest is silent', () => {
+    @smrt({
+      packageName: '@test/explicit-manifest',
+      tableName: 'explicit_manifest_silent_tenants_2763',
+      tenantScoped: { mode: 'required' },
+    })
+    class ExplicitManifestSilentTenant extends SmrtObject {}
+
+    ObjectRegistry.registerFromManifest(
+      '@test/explicit-manifest:ExplicitManifestSilentTenant',
+      {
+        className: 'ExplicitManifestSilentTenant',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+      '@test/explicit-manifest',
+    );
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig('ExplicitManifestSilentTenant'),
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
   });
 
   it('does not infer tenancy from an ordinary field', () => {

@@ -8,8 +8,10 @@ const standardDecoratorRegistrations = new WeakMap<
   WeakSet<(className: string) => void>
 >();
 
+type FieldDecoratorRegistration = (className: string, ctor?: Function) => void;
+
 type PendingDecoratorRegistration = {
-  register: (className: string) => void;
+  register: FieldDecoratorRegistration;
 };
 
 export type LegacyPropertyDecoratorTarget = {
@@ -106,7 +108,7 @@ function getClassDecoratorMetadata(
 
 function queuePendingFieldDecorator(
   metadata: DecoratorMetadataStore,
-  register: (className: string) => void,
+  register: FieldDecoratorRegistration,
 ): void {
   const pendingDecorators =
     (metadata[PENDING_FIELD_DECORATORS_KEY] as
@@ -150,7 +152,7 @@ export function applyPendingDecoratorRegistrations(
       continue;
     }
 
-    register(target.name);
+    register(target.name, target);
   }
 
   Reflect.deleteProperty(metadata, PENDING_FIELD_DECORATORS_KEY);
@@ -159,7 +161,11 @@ export function applyPendingDecoratorRegistrations(
 export function registerCompatibleFieldDecorator<This, Value>(
   targetOrValue: LegacyPropertyDecoratorTarget | undefined,
   propertyKeyOrContext: CompatiblePropertyDecoratorContext<This, Value>,
-  registerFieldDecorator: (className: string, propertyKey: string) => void,
+  registerFieldDecorator: (
+    className: string,
+    propertyKey: string,
+    ctor?: Function,
+  ) => void,
 ): void {
   if (
     typeof propertyKeyOrContext === 'string' ||
@@ -167,15 +173,19 @@ export function registerCompatibleFieldDecorator<This, Value>(
   ) {
     const className = resolveDecoratorClassName(targetOrValue);
     if (className) {
-      registerFieldDecorator(className, String(propertyKeyOrContext));
+      registerFieldDecorator(
+        className,
+        String(propertyKeyOrContext),
+        getDecoratorConstructor(targetOrValue),
+      );
     }
     return;
   }
 
   const context = propertyKeyOrContext;
   const propertyKey = String(context.name);
-  const register = (className: string) =>
-    registerFieldDecorator(className, propertyKey);
+  const register: FieldDecoratorRegistration = (className, ctor) =>
+    registerFieldDecorator(className, propertyKey, ctor);
   const metadata = getDecoratorMetadata(context);
 
   if (metadata) {
@@ -190,7 +200,7 @@ export function registerCompatibleFieldDecorator<This, Value>(
 
     const className = resolveDecoratorClassName(this);
     if (className) {
-      register(className);
+      register(className, getDecoratorConstructor(this));
     }
   });
 }

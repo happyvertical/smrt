@@ -150,7 +150,7 @@ export function TenantScoped(options: TenantScopedOptions = {}) {
     // Support either class-decorator order. This declaration replaces only a
     // provisional field fallback; explicit @smrt and manifest policy retain
     // their documented precedence.
-    ObjectRegistry.reconcileTenantScopedConfig(className, {
+    ObjectRegistry.reconcileTenantScopedConfig(target, {
       mode: config.mode ?? 'required',
       field: config.field ?? 'tenantId',
       autoFilter: config.autoFilter ?? true,
@@ -219,8 +219,10 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+      (className, propertyKey, ctor) => {
+        const fieldOptions: Parameters<
+          typeof ObjectRegistry.registerFieldDecorator
+        >[2] = {
           type: 'foreignKey',
           related: 'Tenant',
           sqlType: 'UUID',
@@ -230,7 +232,19 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
             ...opts,
             isTenantIdField: true,
           },
-        });
+        };
+        if (ctor) {
+          ObjectRegistry.registerFieldDecoratorForConstructor(
+            ctor,
+            propertyKey,
+            fieldOptions,
+          );
+        }
+        ObjectRegistry.registerFieldDecorator(
+          className,
+          propertyKey,
+          fieldOptions,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;

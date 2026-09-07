@@ -121,6 +121,7 @@ import {
   getCollectionCache,
   getCollections,
   getCollectionTableNames,
+  getConstructorFieldDecorators,
   getDbInstanceIds,
   getDiscoveryAttemptCache,
   getFieldDecorators,
@@ -518,6 +519,16 @@ export class ObjectRegistry {
     >;
   }
 
+  private static get constructorFieldDecorators(): Map<
+    Function,
+    Map<string, FieldDecoratorOptions>
+  > {
+    return getConstructorFieldDecorators() as Map<
+      Function,
+      Map<string, FieldDecoratorOptions>
+    >;
+  }
+
   /**
    * Track collections that have been processed for STI siblings
    * Prevents infinite recursion when loading siblings
@@ -606,6 +617,23 @@ export class ObjectRegistry {
     } else {
       classDecorators.set(propertyKey, options);
     }
+  }
+
+  /**
+   * Register identity-sensitive field metadata for one exact constructor.
+   * String-keyed metadata remains available to legacy decorators, but must not
+   * be used to reconcile tenancy across package boundaries.
+   */
+  static registerFieldDecoratorForConstructor(
+    ctor: Function,
+    propertyKey: string,
+    options: FieldDecoratorOptions,
+  ): void {
+    const decorators = ObjectRegistry.constructorFieldDecorators;
+    const existing = decorators.get(ctor)?.get(propertyKey);
+    const fields = decorators.get(ctor) ?? new Map();
+    fields.set(propertyKey, existing ? { ...existing, ...options } : options);
+    decorators.set(ctor, fields);
   }
 
   /**
@@ -1477,6 +1505,7 @@ export class ObjectRegistry {
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
+    ObjectRegistry.constructorFieldDecorators.clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
     // iterate the classes Map directly, so there's no secondary index to
@@ -2814,10 +2843,10 @@ export class ObjectRegistry {
    * otherwise) is not tenant-scoped (#2360).
    *
    * Resolved from the owner's normalized `tenantScoped` configuration
-   * (`@smrt({ tenantScoped })`, or `@TenantScoped()` carried by the
-   * manifest), never from the standalone tenancy registry: the schema
-   * generator and `getConflictColumns()` must agree before any interceptor
-   * is enabled.
+   * using precedence: explicit `@smrt`, a manifest (including a silent
+   * manifest), `@TenantScoped()` reconciliation, then marked-field fallback.
+   * It never reads the standalone tenancy registry, so schema generation and
+   * `getConflictColumns()` agree before any interceptor is enabled.
    *
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case tenant column name, e.g. `tenant_id`
@@ -2872,10 +2901,12 @@ export class ObjectRegistry {
    * in either class-decorator order.
    */
   static reconcileTenantScopedConfig(
-    className: string,
+    ctor: Function,
     config: NonNullable<RegisteredClass['tenantScopedConfig']>,
   ): void {
-    const registered = ObjectRegistry.findClass(className);
+    const registered = ObjectRegistry.getClassByConstructor(
+      ctor as SmrtObjectConstructor,
+    );
     if (registered) {
       if (registered.tenantScopedConfigSource !== 'field-fallback') return;
       registered.tenantScopedConfig = { ...config };
@@ -2883,19 +2914,31 @@ export class ObjectRegistry {
       return;
     }
 
-    const decorators = ObjectRegistry.fieldDecorators.get(className);
-    if (!decorators) return;
-    for (const [fieldName, fieldOptions] of decorators) {
-      const tenancy = fieldOptions.__tenancy as
-        | { isTenantIdField?: unknown; [key: string]: unknown }
-        | undefined;
-      if (tenancy?.isTenantIdField !== true) continue;
-      decorators.set(fieldName, {
-        ...fieldOptions,
-        __tenancy: { ...tenancy, ...config, isTenantIdField: true },
-      });
-      return;
-    }
+    const reconcileDeclaration = (
+      decorators: Map<string, FieldDecoratorOptions> | undefined,
+    ): boolean => {
+      if (!decorators) return false;
+      for (const [fieldName, fieldOptions] of decorators) {
+        const tenancy = fieldOptions.__tenancy as
+          | { isTenantIdField?: unknown; [key: string]: unknown }
+          | undefined;
+        if (tenancy?.isTenantIdField !== true) continue;
+        decorators.set(fieldName, {
+          ...fieldOptions,
+          __tenancy: { ...tenancy, ...config, isTenantIdField: true },
+        });
+        return true;
+      }
+      return false;
+    };
+
+    // The constructor store drives registration. Mirror to the legacy
+    // string-keyed view only for its established public inspection contract;
+    // subsequent registration overlays the exact constructor metadata.
+    reconcileDeclaration(ObjectRegistry.constructorFieldDecorators.get(ctor));
+    // Legacy callers can only provide a simple-name declaration. They keep
+    // the historic behavior; decorator paths overlay the exact metadata above.
+    reconcileDeclaration(ObjectRegistry.fieldDecorators.get(ctor.name));
   }
 
   /**

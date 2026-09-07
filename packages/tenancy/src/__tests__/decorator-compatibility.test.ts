@@ -71,4 +71,46 @@ describe('tenantId decorator compatibility', () => {
       },
     });
   });
+
+  it('reconciles same-name package classes through their exact constructors', () => {
+    let requiredConstructor: typeof SmrtObject;
+    {
+      @smrt({
+        packageName: '@fixture/tenant-required',
+        tableName: 'tenant_required_collision_2763',
+      })
+      @TenantScoped({ mode: 'required' })
+      class TenantCollision extends SmrtObject {
+        @tenantId()
+        tenantId = '';
+      }
+      requiredConstructor = TenantCollision;
+    }
+
+    let optionalConstructor: typeof SmrtObject;
+    {
+      @smrt({
+        packageName: '@fixture/tenant-optional',
+        tableName: 'tenant_optional_collision_2763',
+      })
+      @TenantScoped({ mode: 'optional' })
+      class TenantCollision extends SmrtObject {
+        @tenantId({ nullable: true })
+        tenantId: string | null = null;
+      }
+      optionalConstructor = TenantCollision;
+    }
+
+    if (!requiredConstructor || !optionalConstructor) {
+      throw new Error('Expected both same-name constructors to be assigned');
+    }
+    expect(
+      ObjectRegistry.getClassByConstructor(requiredConstructor)
+        ?.tenantScopedConfig,
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
+    expect(
+      ObjectRegistry.getClassByConstructor(optionalConstructor)
+        ?.tenantScopedConfig,
+    ).toMatchObject({ mode: 'optional', field: 'tenantId' });
+  });
 });

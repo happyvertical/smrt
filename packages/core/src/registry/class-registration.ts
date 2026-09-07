@@ -54,6 +54,7 @@ import {
 import {
   getClasses,
   getCollections,
+  getConstructorFieldDecorators,
   getConstructorIndex,
   getFieldDecorators,
   getInheritanceCache,
@@ -895,9 +896,14 @@ export function register(
 
   // Apply decorator metadata to override/extend manifest fields
   // Decorators take priority over AST-scanned types (Issue #316)
-  const decorators = getFieldDecorators().get(
+  const simpleDecorators = getFieldDecorators().get(
     isolatedManifestEntry ? ctor.name : name,
   );
+  const constructorDecorators = getConstructorFieldDecorators().get(ctor);
+  const decorators =
+    simpleDecorators || constructorDecorators
+      ? new Map([...(simpleDecorators ?? []), ...(constructorDecorators ?? [])])
+      : undefined;
   if (decorators && decorators.size > 0) {
     verboseLog(
       `[registry] Applying ${decorators.size} field decorators for ${name}`,
@@ -1675,12 +1681,20 @@ function mergeManifestIntoExistingRegistration(
     }
   }
 
-  const tenantScopedConfig = normalizeTenantScopedConfig(
-    existing.config.tenantScoped,
-  );
-  if (tenantScopedConfig) {
+  // An explicit core declaration remains authoritative. Otherwise a manifest
+  // is authoritative even when it is silent: discard provisional decorator or
+  // field-fallback tenancy so lazy manifest loading matches preloaded runtime.
+  if (existing.tenantScopedConfigSource !== 'explicit') {
+    const tenantScopedConfig = normalizeTenantScopedConfig(
+      manifestConfig.tenantScoped,
+    );
     existing.tenantScopedConfig = tenantScopedConfig;
-    ensureTenantScopedField(existing.fields, tenantScopedConfig);
+    existing.tenantScopedConfigSource = tenantScopedConfig
+      ? 'manifest'
+      : undefined;
+    if (tenantScopedConfig) {
+      ensureTenantScopedField(existing.fields, tenantScopedConfig);
+    }
   }
 
   if (objectDef.methods) {
