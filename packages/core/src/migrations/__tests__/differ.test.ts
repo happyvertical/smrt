@@ -2166,3 +2166,108 @@ describe('SchemaComparer float-width drift (#2770)', () => {
     expect(diff.has_changes).toBe(false);
   });
 });
+
+/**
+ * #2771 — a live `text` column on a table SMRT itself creates, holding
+ * SMRT-written ISO-8601 instants, but the manifest declares `TIMESTAMP`
+ * (-> TIMESTAMPTZ on PostgreSQL). Previously blocked forever behind
+ * `postgresTimestampMigration.legacyTimezone`, which exists for genuinely
+ * ambiguous naive wall-clock strings, not this case.
+ */
+describe('SchemaComparer text -> timestamptz convergence (#2771)', () => {
+  const tagAliasManifest = (): Record<string, SchemaDefinition> => ({
+    tag_aliases: {
+      tableName: 'tag_aliases',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        created_at: { type: 'TIMESTAMP' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  function mockDbWithProbe(probeRows: Record<string, unknown>[]) {
+    return {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('invalid_count')) {
+          return { rows: probeRows };
+        }
+        return { rows: [{ table_name: 'tag_aliases' }] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          created_at: { type: 'text', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+  }
+
+  it('plans an executable USING ::timestamptz cast once the shape probe is clean', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 0, sample_value: null }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('created_at');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "tag_aliases" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at"::timestamptz',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('fails closed with a masked sample when the shape probe finds unparsable values', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([
+        { invalid_count: 2, sample_value: 'not-a-timestamp-value' },
+      ]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('blocked');
+    // The masked sample must not echo the raw offending value verbatim.
+    expect(typeUpgrades[0].advisory?.message).not.toContain(
+      'not-a-timestamp-value',
+    );
+    expect(typeUpgrades[0].advisory?.suggestedSql?.[0]).toContain(
+      '::timestamptz',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('is a no-op once the column is already timestamptz', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          created_at: { type: 'timestamp with time zone', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});

@@ -23,6 +23,13 @@ import {
   normalizeForeignKeyAction,
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
+import {
+  maskSampleValue,
+  renderTimestamptzColumnConversion,
+  renderTimestamptzShapeProbe,
+  runShapeProbe,
+  type ShapeProbeResult,
+} from '../schema/text-cast-probe.js';
 import type {
   ColumnAlteration,
   ColumnDefinition,
@@ -796,6 +803,24 @@ export class SchemaComparer {
   }
 
   /**
+   * Shape-probe a candidate `text` -> `timestamptz`/`jsonb` column (#2771,
+   * #2772). Unlike {@link probeUuidShape}, a failed/unrealistic probe
+   * (`unavailable`) is the caller's cue to fall back to the pre-existing
+   * behavior for that pair rather than surface a new finding — this keeps
+   * the new convergence strictly additive for every case that isn't
+   * affirmatively confirmed safe or affirmatively confirmed unsafe.
+   */
+  private async probeTextCastShape(
+    tableName: string,
+    columnName: string,
+    kind: 'timestamptz',
+  ): Promise<ShapeProbeResult> {
+    const sql = renderTimestamptzShapeProbe(tableName, columnName);
+    void kind;
+    return runShapeProbe(this.db, sql);
+  }
+
+  /**
    * Turn the convergence plan into diff entries: executable `type_upgrade`
    * conversions marked `phase: 'pre_foreign_key'`, plus report-only warnings
    * for components the planner refused.
@@ -1355,15 +1380,86 @@ export class SchemaComparer {
           (normalizedExpected === 'JSON' && normalizedActual === 'TEXT') ||
           (normalizedExpected === 'TEXT' && normalizedActual === 'JSON');
 
+        // #2771: shape-probe a manifest TIMESTAMP column (-> TIMESTAMPTZ on
+        // PostgreSQL) backed by a live `text` column, independent of the
+        // `postgresTimestampMigration` opt-in (which exists for genuinely
+        // ambiguous naive wall-clock strings). Every value SMRT itself ever
+        // wrote carries an explicit UTC/offset designator, so a clean probe
+        // here converts losslessly with no operator confirmation needed.
+        const timestamptzUpgradeCandidate =
+          this.engine === 'postgres' &&
+          // `normalizedExpected` is the MAPPED engine bucket ('TIMESTAMPTZ'
+          // on PostgreSQL); `isCompatibleTypeUpgrade` below keys off the RAW
+          // abstract manifest bucket ('TIMESTAMP') instead, so this checks
+          // the same raw bucket to stay consistent with that gate.
+          this.normalizeType(colDef.type) === 'TIMESTAMP' &&
+          normalizedActual === 'TEXT' &&
+          normalizedExpected === 'TIMESTAMPTZ' &&
+          !this.isCompatibleTypeUpgrade(colDef.type, dbCol.type);
+        let timestamptzProbe: ShapeProbeResult | undefined;
+        if (timestamptzUpgradeCandidate) {
+          timestamptzProbe = await this.probeTextCastShape(
+            tableName,
+            colName,
+            'timestamptz',
+          );
+        }
+
         if (
           normalizedExpected !== normalizedActual &&
           !isUuidTextEquivalent &&
           !isJsonTextEquivalent
         ) {
           typeDrifted = true;
-          // Check if this is a safe type upgrade that SMRT can handle
-          // Since SMRT owns the data lifecycle, we know the intent from the manifest
-          if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
+
+          const hasDefault = colDef.defaultValue !== undefined;
+
+          if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'clean'
+          ) {
+            const statements = renderTimestamptzColumnConversion(
+              tableName,
+              colName,
+              { hasDefault },
+            );
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              sql: statements[statements.length - 1],
+              sqlStatements: statements,
+            });
+          } else if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'dirty'
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} is declared TIMESTAMP but ${timestamptzProbe.count} ` +
+                  `live value(s) do not parse as an unambiguous timestamp (sample: ${
+                    timestamptzProbe.sample
+                      ? maskSampleValue(timestamptzProbe.sample)
+                      : 'unavailable'
+                  }). Repair the offending value(s), or confirm legacy naive ` +
+                  'wall-clock provenance with `smrt db:migrate --legacy-timezone=UTC`, then rerun.',
+                suggestedSql: renderTimestamptzColumnConversion(
+                  tableName,
+                  colName,
+                  { hasDefault },
+                ),
+              },
+            });
+          } else if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
             const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,

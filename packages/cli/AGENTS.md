@@ -61,6 +61,22 @@ live single-precision column backed by a double-precision declaration widens
 automatically (lossless), but a double-precision live column backed by a
 single-precision declaration stays advisory-only (narrowing loses precision).
 
+### text -> timestamptz convergence (#2771)
+
+A `text` column on a table smrt itself creates, backed by a manifest
+`TIMESTAMP` (-> `TIMESTAMPTZ` on PostgreSQL) declaration, converges instead of
+staying blocked forever: `db:migrate` runs a server-side shape probe over
+every non-null value first (`packages/core/src/schema/text-cast-probe.ts`)
+and only plans the executable `ALTER COLUMN … TYPE timestamptz USING
+col::timestamptz` when every value is confirmed to parse unambiguously. A
+probe that finds an unparsable value fails closed with a masked sample
+instead of running the cast — repair the value, then rerun; the migration is
+a no-op once converged. This is independent of
+`postgresTimestampMigration.legacyTimezone` (`--legacy-timezone=UTC`), which
+stays reserved for ambiguous naive wall-clock strings the probe does not
+accept. SQLite has no distinct storage for `text` vs `timestamptz`, so this
+stays advisory-only there.
+
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
 and deferred PostgreSQL cycle constraints; cached per-class DDL is not a valid
