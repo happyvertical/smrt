@@ -13,7 +13,7 @@ import {
   CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
-  renderForeignKeyConstraint,
+  renderForeignKeyAddStatements,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
   schemaForeignKeys,
@@ -1063,6 +1063,7 @@ export class SchemaComparer {
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
+          engineUnsupported: true,
           advisory: {
             severity: 'warning',
             message: `${engineReason} Run the orphan detector, repair rows, and rebuild the table with the generated constraint.`,
@@ -1146,6 +1147,8 @@ export class SchemaComparer {
           table: tableName,
           name: foreignKeyConstraintName(tableName, foreignKey),
           foreignKey,
+          orphanBlocked: true,
+          orphanNullable: orphanOptions.nullable,
           advisory: {
             severity: 'warning',
             message:
@@ -1163,10 +1166,7 @@ export class SchemaComparer {
         table: tableName,
         name: constraintName,
         foreignKey,
-        sqlStatements: [
-          `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
-          `ALTER TABLE ${this.quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${this.quoteIdentifier(constraintName)}`,
-        ],
+        sqlStatements: renderForeignKeyAddStatements(tableName, foreignKey),
       });
     }
     return changes;
@@ -1215,7 +1215,18 @@ export class SchemaComparer {
       manifestSchemas[foreignKey.referencesTable]?.columns[
         foreignKey.referencesColumn
       ];
-    const nullable = sourceColumn?.notNull !== true;
+    // #2748 review: nullability for the orphan disposition (does the
+    // null-out repair even apply?) must reflect the LIVE column, not only
+    // the manifest. A manifest that now declares the column nullable while
+    // the live column is still physically NOT NULL (nullability relaxation
+    // pending, not yet applied — the same drift `--relax-columns` handles
+    // for plain columns) would otherwise report `nullable: true` and let
+    // `--null-orphans` attempt an UPDATE that PostgreSQL rejects outright,
+    // failing the whole atomic batch instead of refusing this one
+    // relationship. Nullable only when BOTH sides agree.
+    const manifestNullable = sourceColumn?.notNull !== true;
+    const liveNotNull = dbSchema.columns[foreignKey.column]?.notNull === true;
+    const nullable = manifestNullable && !liveNotNull;
     const uuidComparison =
       sourceColumn?.type === 'UUID' &&
       (targetColumn === undefined || targetColumn.type === 'UUID');

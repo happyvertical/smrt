@@ -542,6 +542,51 @@ failing the whole run. It never repairs anything — the CLI surface is
 `smrt db:orphans` (`packages/cli/src/commands/db-orphans.ts`), and `db:status`
 prints a compact per-foreign-key summary when any count is nonzero.
 
+**Partial apply and opt-in orphan disposition (#2748).** The batch an
+unflagged `db:migrate` attempts already excludes every blocked change (a
+FK-with-orphans, a manual `type_upgrade`/`alter_column`) — those never leave
+`SchemaDiff.changes` as executable SQL, so they never enter the atomic
+tracker batch on their own. `--apply-unblocked` adds a second, opt-in
+safety layer on top of that exclusion: the CLI partitions the remaining
+"safe" bucket by *dependency*, not just by whether a change is individually
+blocked. `computeBlockedColumns()` (`packages/cli/src/commands/
+db-migrate-actions.ts`) reads every manual intervention's blocked
+`table.column` identity; `partitionUnblockedMigrations()` then withholds any
+`add_index`/`add_foreign_key`/`alter_column`/`drop_column` that reads or
+writes one of those columns (an index on a column whose type upgrade is
+blocked, or a FK whose child *or* parent column is blocked) and applies
+everything else through the normal transaction/tracker path. Off by
+default: without the flag, the batch stays exactly what it always was.
+
+The FK-orphan advisory branch in `compareForeignKeys()` (`migrations/
+differ.ts`) tags its `SchemaChange` with `orphanBlocked: true` and
+`orphanNullable` (mirroring `renderForeignKeyOrphanRepair()`'s own
+nullable/not-nullable branch) so a caller can identify this specific
+manual-intervention reason without parsing `advisory.message`. `db:migrate
+--null-orphans` reads that tag: for a nullable child column it runs the
+differ's own suggested `UPDATE ... SET <column> = NULL` (from
+`advisory.suggestedSql[1]`, the exact statement the differ already
+rendered — never re-derived), then rebuilds the `ADD CONSTRAINT NOT VALID` +
+`VALIDATE CONSTRAINT` pair via the shared `renderForeignKeyAddStatements()`
+helper (`schema/foreign-key-ddl.ts`, also used by the differ's own safe-add
+branch) and adds it through the normal tracker path. A NOT NULL child column
+keeps the unconditional "Manual repair required" refusal — nulling isn't an
+option and the flag never deletes rows. `planOrphanDispositions()` fails
+closed (routes to "not nullable"/no-op) if an orphan-blocked change is
+missing its `foreignKey` definition or its `advisory.suggestedSql` pair, on
+the same "report and withhold rather than guess" principle as the rest of
+this gate.
+
+`getForeignKeyOrphanOptions()`'s `nullable` reads BOTH sides: the manifest
+AND the live column (`dbSchema.columns[...].notNull`), never the manifest
+alone (review, #2748). A manifest relaxed to nullable while the live column
+has not converged yet — the same drift `--relax-columns` handles for plain
+columns — would otherwise report `nullable: true` from the manifest side
+only, and `--null-orphans` would attempt an `UPDATE` PostgreSQL rejects
+outright (`23502`), failing the whole atomic batch instead of refusing just
+that one relationship. Nullable only when both sides agree; a real
+NOT NULL on either side keeps the unconditional refusal.
+
 ### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
 
 PostgreSQL FK columns must have matching physical types. Legacy text IDs may

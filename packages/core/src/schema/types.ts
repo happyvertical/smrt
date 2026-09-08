@@ -399,6 +399,34 @@ export interface SchemaChange {
    * carrying an advisory and no `sql`/`sqlStatements` is never executed.
    */
   advisory?: SchemaChangeAdvisory;
+  /**
+   * True on an advisory-only `add_foreign_key` change specifically blocked
+   * by live orphan child rows (#2748) — as opposed to a type mismatch, a
+   * conflicting existing constraint, or an engine that cannot add a foreign
+   * key to an existing table. Lets a caller (`db:migrate --null-orphans`)
+   * distinguish "repair the data and retry" from every other manual-repair
+   * reason without parsing `advisory.message`.
+   */
+  orphanBlocked?: boolean;
+  /**
+   * Present alongside `orphanBlocked: true`: whether the child column
+   * allows NULL, matching `renderForeignKeyOrphanRepair()`'s own
+   * nullable/not-nullable branch. `false` means the differ's suggested
+   * repair SQL is the "Manual repair required" comment, never an
+   * executable `UPDATE`.
+   */
+  orphanNullable?: boolean;
+  /**
+   * True on an advisory-only `add_foreign_key` change specifically blocked
+   * because this engine cannot express the constraint at all (SQLite
+   * requires a table rebuild; DuckDB has no `ALTER TABLE ADD CONSTRAINT`)
+   * (#2748). Unlike `orphanBlocked` or a type-conflict advisory, this
+   * reason says nothing about the column's own state — a caller (`db:migrate
+   * --apply-unblocked`) must not treat the child column as a dependency
+   * blocker for it, since no rerun on this engine ever resolves it and doing
+   * so would withhold unrelated DDL on that column permanently.
+   */
+  engineUnsupported?: boolean;
   /** Generated SQL statement */
   sql?: string;
   /**

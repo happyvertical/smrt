@@ -23,6 +23,7 @@ import type {
   MigrationDefinition,
   MigrationResult,
 } from '@happyvertical/smrt-core/migrations';
+import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
 import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
@@ -38,13 +39,20 @@ import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-table
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
+  computeBlockedColumns,
+  computeOrphanOnlyBlockedColumns,
+  filterUnresolvedOrphanDispositions,
   getSyntheticMigrationNameForAction,
   type MigrationAction,
+  orphanCountSql,
   partitionSchemaChanges,
+  partitionUnblockedMigrations,
+  planOrphanDispositions,
   printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
+  type WithheldMigration,
 } from './db-migrate-actions.js';
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
@@ -171,6 +179,57 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
 }
 
 /**
+ * Run an orphan-count `SELECT COUNT(*)` (from `orphanCountSql()`) and read
+ * back the count. Adapters disagree on the query-result envelope (some
+ * return `{ rows }`, some a bare array), so normalize both the same way the
+ * rest of the migration path does.
+ *
+ * Deliberately NOT best-effort: `--null-orphans` fails closed (#2748 review)
+ * — if the probe itself cannot run (bad SQL shape, a permissions error, an
+ * adapter that doesn't support the query), that is exactly the "unexpected
+ * shape" case the flag must report and withhold on, not silently treat as
+ * "zero orphans" and proceed to mutate data anyway. Callers that want the
+ * disposition to abort on a probe failure should let this throw and catch
+ * it themselves; there is no built-in fallback to 0.
+ */
+async function countOrphanRows(
+  db: DatabaseInterface,
+  countSql: string,
+): Promise<number> {
+  const result = await db.query(countSql);
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] })?.rows ?? []);
+  const raw = (rows[0] as { orphan_count?: unknown } | undefined)?.orphan_count;
+  const count = Number(raw);
+  if (!Number.isFinite(count)) {
+    throw new Error(
+      `orphan-count probe returned a non-numeric count: ${JSON.stringify(raw)}`,
+    );
+  }
+  return count;
+}
+
+/**
+ * One-line identity for a migration action withheld under
+ * `--apply-unblocked`, for the withheld-changes report (#2748).
+ */
+function describeWithheldMigrationAction(action: MigrationAction): string {
+  switch (action.type) {
+    case 'add_index':
+      return `${action.tableName}: index ${action.index?.name ?? '(unnamed)'}`;
+    case 'add_foreign_key':
+      return `${action.tableName}: foreign key on ${action.foreignKey?.column ?? '(unknown column)'}`;
+    case 'alter_column':
+      return `${action.tableName}.${action.columnName ?? action.column?.name ?? '(unknown column)'}: ${action.alteration ?? 'alter_column'}`;
+    case 'drop_column':
+      return `${action.tableName}.${action.columnName ?? '(unknown column)'}: drop column`;
+    default:
+      return `${action.tableName}: ${action.type}`;
+  }
+}
+
+/**
  * Run the framework's deferred system-table compatibility pass after
  * `db:migrate` has created the tables it reshapes (issue #2376).
  *
@@ -271,6 +330,8 @@ interface DbMigrateOptions {
   'drop-indexes'?: boolean;
   'drop-columns'?: boolean;
   'relax-columns'?: boolean;
+  'apply-unblocked'?: boolean;
+  'null-orphans'?: boolean;
   verbose?: boolean;
 }
 
@@ -1650,6 +1711,18 @@ export default testManifest;
           'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default; relaxations are always reported.',
         default: false,
       },
+      'apply-unblocked': {
+        type: 'boolean',
+        description:
+          'Withhold only the executable changes that depend on a blocked item (an index or foreign key on a column whose type upgrade is blocked, a foreign key whose orphan rows block it), instead of the default of applying every executable change regardless of dependency. A withheld change is reported with the blocked column it depends on. Off by default: every executable change in the batch still applies even when other items need manual intervention -- this flag makes that dependency-unsafe subset stop applying, it does not add anything that was previously withheld.',
+        default: false,
+      },
+      'null-orphans': {
+        type: 'boolean',
+        description:
+          'For a foreign key blocked only by orphan child rows: null the orphaned references when the child column is nullable, then add the foreign key. Refuses with the existing manual-repair message when the child column is NOT NULL. Never deletes rows. Off by default.',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1979,6 +2052,149 @@ export default testManifest;
         manualInterventions.push(...partitionedChanges.manualInterventions);
         const advisories = partitionedChanges.advisories;
 
+        // #2748: opt-in orphan-FK disposition. Runs before the
+        // `--apply-unblocked` partition below so a relationship this
+        // resolves is no longer a "blocked column" a dependent index/FK
+        // gets withheld for.
+        //
+        // Fails closed (review): the orphan-count probe is never
+        // best-effort here. A probe failure means the differ's detector SQL
+        // hit an unexpected shape, and this disposition must report and
+        // withhold rather than proceed to null anything with an unverified
+        // count. The UPDATE and the ADD CONSTRAINT are combined into ONE
+        // migration action applied atomically through the normal tracker
+        // path (review) — nulling orphan references outside that
+        // transaction would let a later failure in the same batch roll
+        // back the FK add while leaving the just-nulled rows committed,
+        // silently splitting a promised single disposition into two.
+        const pendingOrphanDispositions: {
+          tableName: string;
+          column: string;
+          countSql: string;
+          beforeCount: number;
+          // The exact combined null+add-FK `MigrationAction` this
+          // disposition pushed into `migrations` (review, #2748):
+          // `--apply-unblocked` can still withhold it below if the FK's
+          // *parent* column is separately blocked, and this reference is
+          // how the post-apply report tells "resolved" from "withheld"
+          // instead of reporting success for a migration that never ran.
+          action: MigrationAction;
+        }[] = [];
+        if (options['null-orphans']) {
+          const { nullable: orphanDispositions } =
+            planOrphanDispositions(manualInterventions);
+
+          if (orphanDispositions.length > 0) {
+            console.log(
+              `🧹 Orphan-FK disposition (--null-orphans): ${orphanDispositions.length} relationship(s)\n`,
+            );
+
+            for (const item of orphanDispositions) {
+              const countSql = orphanCountSql(item.detectorSql);
+              let beforeCount: number;
+              try {
+                beforeCount = await countOrphanRows(db, countSql);
+              } catch (error) {
+                console.log(
+                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                continue;
+              }
+
+              if (!item.action.foreignKey) continue;
+
+              if (isDryRun) {
+                console.log(
+                  `   ${item.tableName}.${item.column}: ${beforeCount} orphan reference(s)`,
+                );
+                console.log(`     ${item.repairSql};`);
+                console.log(
+                  `     → would null ${beforeCount} reference(s), then add the foreign key\n`,
+                );
+              }
+
+              // Resolved (or, on --dry-run, would-resolve): drop the
+              // manual-intervention entry and add one combined migration
+              // (null the orphans, then add the FK) so downstream previews
+              // and --apply-unblocked's dependency computation see the
+              // identical partition on --dry-run and a real apply (review,
+              // #2748) — not just the same textual "would apply" line.
+              // Actual execution still only happens outside --dry-run,
+              // through the normal transaction/tracker path below.
+              const index = manualInterventions.indexOf(item.action);
+              if (index >= 0) manualInterventions.splice(index, 1);
+              const combinedAction: MigrationAction = {
+                type: 'add_foreign_key',
+                tableName: item.action.tableName,
+                className: item.action.className,
+                foreignKey: item.action.foreignKey,
+                sqlStatements: [
+                  item.repairSql,
+                  ...renderForeignKeyAddStatements(
+                    item.action.tableName,
+                    item.action.foreignKey,
+                  ),
+                ],
+              };
+              migrations.push(combinedAction);
+              if (!isDryRun) {
+                pendingOrphanDispositions.push({
+                  tableName: item.tableName,
+                  column: item.column,
+                  countSql,
+                  beforeCount,
+                  action: combinedAction,
+                });
+              }
+            }
+            console.log();
+          }
+        }
+
+        // #2748: opt-in partial apply. Off by default — every executable
+        // change in `migrations` still applies regardless of dependency
+        // (review finding: the prior comment here claimed the unflagged
+        // batch is "all-or-nothing", but `shouldApplySchemaMigrations()`
+        // never gates on `manualInterventions`, so an unrelated safe DDL
+        // and even a dependent one both apply unflagged; only the blocked
+        // items themselves never enter `migrations`). When set, split the
+        // safe/executable bucket into changes independent of every blocked
+        // column (applied normally) and changes that depend on one (an
+        // index/FK on a column whose type upgrade is blocked, or on a
+        // still-orphan-blocked FK's column) — those stay withheld and are
+        // reported like every other manual intervention.
+        let withheldForDependency: WithheldMigration[] = [];
+        if (options['apply-unblocked']) {
+          const blockedColumns = computeBlockedColumns(
+            manualInterventions,
+            advisories,
+          );
+          const orphanOnlyBlockedColumns =
+            computeOrphanOnlyBlockedColumns(manualInterventions);
+          const partition = partitionUnblockedMigrations(
+            migrations,
+            blockedColumns,
+            orphanOnlyBlockedColumns,
+          );
+          withheldForDependency = partition.withheld;
+          migrations.length = 0;
+          migrations.push(...partition.applied);
+
+          // A --null-orphans disposition's combined null+add-FK migration
+          // can itself be withheld here (its parent column separately
+          // blocked) even though it already resolved out of
+          // `manualInterventions` above. Drop it from the pending list so
+          // the post-apply report doesn't print a ✓ resolution for a
+          // migration that never ran — it's already covered by the
+          // "🔒 Withheld" listing below (review, #2748).
+          const stillPending = filterUnresolvedOrphanDispositions(
+            pendingOrphanDispositions,
+            withheldForDependency,
+          );
+          pendingOrphanDispositions.length = 0;
+          pendingOrphanDispositions.push(...stillPending);
+        }
+
         // #2608: the pre-R11 `text` -> `uuid` convergence has to run before
         // every `CREATE TABLE` in this batch — `planForeignKeyCreation()` only
         // defers the constraints inside a mutual cycle, so an acyclic new child
@@ -2046,6 +2262,20 @@ export default testManifest;
           );
         }
 
+        // 9a. Report changes withheld under --apply-unblocked because they
+        // depend on one of the manual interventions above (#2748).
+        if (withheldForDependency.length > 0) {
+          console.log(
+            `🔒 Withheld — depends on a blocked change (--apply-unblocked, ${withheldForDependency.length}):\n`,
+          );
+          for (const { action, dependsOn, reason } of withheldForDependency) {
+            console.log(
+              `   ${describeWithheldMigrationAction(action)}: depends on ${dependsOn} (${reason})`,
+            );
+          }
+          console.log();
+        }
+
         // 9b. Report-only advisories (#2369): orphan columns / stale unique
         // constraints / relaxations not opted into. Printed every run so a
         // NOT NULL orphan that breaks inserts is never silent; they do not
@@ -2060,6 +2290,7 @@ export default testManifest;
         const schemaUpToDate =
           migrations.length === 0 &&
           manualInterventions.length === 0 &&
+          withheldForDependency.length === 0 &&
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
@@ -2246,6 +2477,18 @@ export default testManifest;
         let skippedCount = 0;
         let errorCount = 0;
         let stiErrorCount = 0;
+        // Hoisted out of the `applySchemaMigrations` block below (review,
+        // #2748) so the post-apply --null-orphans report can tell, per
+        // disposition, whether that exact migration committed — a batch-
+        // wide "did the non-index phase commit" signal (an earlier version
+        // of this fix used `deferredIndexMigrations > 0`) cannot
+        // distinguish a phase-2-only concurrent-index failure from a
+        // phase-1 rollback of the non-index transaction itself, and
+        // treating every partial-batch failure as "committed" produced a
+        // false ✓ for a disposition that never applied (recall finding,
+        // #2748). `tracker.applyAll()`'s own per-migration `success` is the
+        // ground truth regardless of what else in the batch failed.
+        let migrationResults: MigrationResult[] = [];
 
         const schemaChangeCount =
           diff.added_tables.length +
@@ -2455,6 +2698,12 @@ export default testManifest;
                 );
               },
             });
+            // Captured before the failure check below can throw: a
+            // concurrent-index (or any other) failure elsewhere in the
+            // batch still leaves this array populated with per-migration
+            // `success`/`rolled_back` truth for whatever did or didn't
+            // apply (review, #2748).
+            migrationResults = results;
 
             const failed = migrationResultFailure(results);
             if (failed) {
@@ -2497,6 +2746,57 @@ export default testManifest;
                 : '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
             );
           }
+        }
+
+        // #2748: report each --null-orphans disposition's actual before/
+        // after count only for a disposition whose own combined
+        // null+add-FK migration actually committed. Gating on a
+        // batch-wide `errorCount === 0` alone silently suppressed the
+        // resolution report for a mutation that did commit in PostgreSQL
+        // concurrent-index mode, where the non-index batch (including this
+        // disposition) commits in its own transaction before a deferred
+        // `CREATE INDEX CONCURRENTLY` runs separately and can fail on its
+        // own (review finding, #2748). A batch-wide "did the non-index
+        // phase commit" proxy is not enough either: it can't tell that
+        // apart from the non-index transaction itself rolling back
+        // (recall finding, #2748) — both raise `errorCount`, but only one
+        // means this disposition's own migration applied. Check each
+        // disposition's own migration result directly instead of
+        // inferring commit status for the whole batch.
+        const succeededMigrationNames = new Set(
+          migrationResults
+            .filter((result) => result.success)
+            .map((result) => result.name),
+        );
+        const resolvedDispositions = pendingOrphanDispositions.filter(
+          (pending) => {
+            const migrationName = getSyntheticMigrationNameForAction(
+              pending.action,
+            );
+            return migrationName
+              ? succeededMigrationNames.has(migrationName)
+              : false;
+          },
+        );
+        if (resolvedDispositions.length > 0) {
+          if (errorCount > 0) {
+            console.log(
+              '   (some changes in this batch failed; only fully-applied --null-orphans dispositions are listed below)',
+            );
+          }
+          for (const pending of resolvedDispositions) {
+            try {
+              const afterCount = await countOrphanRows(db, pending.countSql);
+              console.log(
+                `   ✓ ${pending.tableName}.${pending.column}: nulled ${Math.max(pending.beforeCount - afterCount, 0)} orphan reference(s) (${afterCount} remaining)`,
+              );
+            } catch (error) {
+              console.log(
+                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${error instanceof Error ? error.message : String(error)})`,
+              );
+            }
+          }
+          console.log();
         }
 
         if (schemaUpToDate && !repairData) {
@@ -2697,7 +2997,8 @@ export default testManifest;
 
         if (
           shouldFailDbMigrate({
-            manualInterventionCount: manualInterventions.length,
+            manualInterventionCount:
+              manualInterventions.length + withheldForDependency.length,
             tableErrorCount,
             migrationErrorCount: errorCount,
             stiErrorCount,
