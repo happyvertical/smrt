@@ -196,6 +196,84 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
     ).toBeUndefined();
   });
 
+  it.each([
+    'tenant-first',
+    'smrt-first',
+  ] as const)('keeps explicit required core policy over an optional decorator (%s)', async (order) => {
+    let Document: typeof SmrtObject;
+    if (order === 'tenant-first') {
+      @smrt({
+        packageName: `@fixture/2792-${order}`,
+        tenantScoped: { mode: 'required' },
+      })
+      @TenantScoped({ mode: 'optional' })
+      class RequiredDocument extends SmrtObject {}
+      Document = RequiredDocument;
+    } else {
+      @TenantScoped({ mode: 'optional' })
+      @smrt({
+        packageName: `@fixture/2792-${order}`,
+        tenantScoped: { mode: 'required' },
+      })
+      class RequiredDocument extends SmrtObject {}
+      Document = RequiredDocument;
+    }
+    const interceptor = createTenantInterceptor();
+    expect(() =>
+      interceptor.beforeList?.(
+        'RequiredDocument',
+        {},
+        {
+          ...context('list'),
+          className: 'RequiredDocument',
+          qualifiedClassName: undefined,
+        },
+      ),
+    ).toThrow(TenantContextError);
+    await withTenant({ tenantId: TENANT }, async () => {
+      expect(
+        interceptor.beforeList?.(
+          'RequiredDocument',
+          {},
+          {
+            ...context('list'),
+            className: 'RequiredDocument',
+            qualifiedClassName: undefined,
+          },
+        ),
+      ).toEqual({ where: { tenantId: TENANT } });
+      expect(() =>
+        interceptor.beforeList?.(
+          'RequiredDocument',
+          { where: { tenantId: OTHER_TENANT } },
+          {
+            ...context('list'),
+            className: 'RequiredDocument',
+            qualifiedClassName: undefined,
+          },
+        ),
+      ).toThrow(TenantIsolationError);
+    });
+  });
+
+  it('keeps explicit core false over a required decorator for simple lookup', () => {
+    @TenantScoped({ mode: 'required' })
+    @smrt({ packageName: '@fixture/2792-explicit-false', tenantScoped: false })
+    class GlobalDocument extends SmrtObject {}
+    const interceptor = createTenantInterceptor();
+    expect(
+      interceptor.beforeList?.(
+        'GlobalDocument',
+        {},
+        {
+          ...context('list'),
+          className: 'GlobalDocument',
+          qualifiedClassName: undefined,
+        },
+      ),
+    ).toBeUndefined();
+  });
+
   it('inherits a bound direct registration without stripping an ancestor namespace', async () => {
     registerTenantScopedClass('DirectBase2792');
     @smrt({ packageName: '@fixture/2792-inheritance', tableStrategy: 'sti' })

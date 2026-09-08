@@ -264,7 +264,7 @@ function getDirectTenantScopedConfig(
 
   const registered = isQualifiedClassName(className)
     ? ObjectRegistry.getClassByQualifiedName(className)
-    : undefined;
+    : ObjectRegistry.getClass(className);
 
   // A direct simple selector can bind lazily after registration-before-core.
   // It is never inferred from a qualified name when more than one core class
@@ -306,14 +306,14 @@ function getDirectTenantScopedConfig(
         return cloneConfig(directSimpleRegistrations.get(simple)!);
       }
     }
-  } else if (!isQualifiedClassName(className)) {
-    // Plain-object/test-double paths have no core identity. They retain the
-    // historical simple selector contract only while that selector is not
-    // ambiguous among registered core classes.
+  }
+
+  if (!isQualifiedClassName(className)) {
+    // Explicit direct selectors retain their established precedence. For
+    // plain-object/test-double paths this is the historical simple-selector
+    // fallback, subject to the existing ambiguity checks.
     const directSimple = getDirectSimpleRegistration(className);
     if (directSimple) return cloneConfig(directSimple);
-    const decoratorConfig = unregisteredDecoratorRegistrations.get(className);
-    if (decoratorConfig) return cloneConfig(decoratorConfig);
   }
 
   // 2. Core registry (@smrt({ tenantScoped: true }) pattern - Issue #688).
@@ -329,6 +329,13 @@ function getDirectTenantScopedConfig(
       autoPopulate: coreConfig.autoPopulate,
       allowSuperAdminBypass: coreConfig.allowSuperAdminBypass,
     };
+  }
+
+  // A decorator mirror is only authoritative when core has no registration.
+  // A registered unqualified consumer still has a canonical simple identity.
+  if (!registered && !isQualifiedClassName(className)) {
+    const decoratorConfig = unregisteredDecoratorRegistrations.get(className);
+    if (decoratorConfig) return cloneConfig(decoratorConfig);
   }
 
   return undefined;
