@@ -982,3 +982,275 @@ describe('parseIndexDefColumns', () => {
     ).toEqual([`((_meta_data ->> 'sku'::text))`]);
   });
 });
+
+/**
+ * #2770 — REAL and DOUBLE PRECISION both fold into `normalizeSqlType`'s
+ * shared 'REAL' bucket, so single- vs double-precision drift is invisible to
+ * the ordinary `column_type_drift` check above. SQLite's dynamic typing lets
+ * a table be hand-created with an arbitrary type name, which is enough to
+ * reproduce the narrowing direction (declared REAL, live DOUBLE PRECISION)
+ * without a real PostgreSQL server; the widening direction and the
+ * PostgreSQL-native "real"/"double precision" spellings are covered against
+ * a live server in `issue-2770-2771-2772-postgres.optional.test.ts`.
+ */
+describe('checkLiveSchemaParity float-width drift (#2770)', () => {
+  const priceSchema = (): Record<string, SchemaDefinition> => ({
+    products: {
+      tableName: 'products',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        price: { type: 'REAL' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  // Review finding: SQLite stores every real as an 8-byte double regardless
+  // of the declared type name, so there is no narrowing and no repair path
+  // (the differ's own float check is gated `postgres || duckdb` — see
+  // `differ.ts`). Flagging this on SQLite, as an earlier revision did, would
+  // be a permanent, unclearable warning for a distinction that has no
+  // meaning there — the same class of bug already fixed for #2772's
+  // JSON-vs-TEXT warning below. SQLite's dynamic typing is only used here to
+  // confirm the check stays silent even though the live type name alone
+  // would otherwise look like narrowing.
+  it('does not flag SQLite: there is no narrowing (or a repair path) on a dynamically-typed engine', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price DOUBLE PRECISION)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+
+  // The narrowing direction (a real repair concern on an engine with fixed
+  // float widths) is covered on a DuckDB-shaped mock instead, mirroring how
+  // `differ.test.ts` already tests DuckDB narrowing without a live server.
+  it('flags a declared REAL column backed by a wider live type on DuckDB', async () => {
+    const duckDb = {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'products' }] };
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('duckdb_constraints')) return { rows: [] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'products',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          price: { type: 'DOUBLE', notNull: false },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+
+    const report = await checkLiveSchemaParity({
+      db: duckDb,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    const drift = find(report.findings, 'column_type_drift', 'price');
+    expect(drift?.severity).toBe('warning');
+    expect(drift?.recommendation).toContain('Narrowing');
+    expect(drift?.details).toEqual({
+      expected: 'REAL',
+      actual: 'DOUBLE',
+    });
+    expect(report.counts.error).toBe(0);
+  });
+
+  // Companion regression to the DuckDB narrowing test above: DuckDB's
+  // information_schema normalizes REAL/FLOAT4 to the bare string "FLOAT"
+  // (never "REAL"), so a converged column must not misreport as drift.
+  it('does not flag a converged DuckDB REAL column reporting live type FLOAT', async () => {
+    const duckDb = {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'products' }] };
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('duckdb_constraints')) return { rows: [] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'products',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          price: { type: 'FLOAT', notNull: false },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+
+    const report = await checkLiveSchemaParity({
+      db: duckDb,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+
+  it('does not flag a column whose live type already matches', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price REAL)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+
+  it('does not flag DECIMAL/NUMERIC columns still tolerated by the general REAL bucket', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE products (id TEXT PRIMARY KEY, price NUMERIC)`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: priceSchema(),
+      includeSystemTables: false,
+    });
+
+    // NUMERIC has no fixed binary width, so `floatPrecisionOf` returns null
+    // for it and the #2770 check must stay silent — this is pre-existing
+    // (#2361-era) tolerance, not something this feature should disturb.
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+  });
+});
+
+/**
+ * #2772 — the JSON-vs-TEXT warning is only actionable on PostgreSQL, the
+ * only engine `differ.ts`'s `jsonUpgradeCandidate` gate can converge (see
+ * `differ.ts`, `this.engine === 'postgres'`). The positive path (PostgreSQL,
+ * a live text column backed by a declared JSON field) is covered against a
+ * real server by the `tag_aliases` fixture in
+ * `issue-2770-2771-2772-postgres.optional.test.ts`; this only needs to
+ * confirm the warning stays silent on an engine with no repair path.
+ */
+describe('checkLiveSchemaParity JSON-vs-TEXT warning is engine-gated (#2772)', () => {
+  it('does not flag a legacy text column on DuckDB, which has no jsonb repair path', async () => {
+    const duckDb = {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'tag_aliases' }] };
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('duckdb_constraints')) return { rows: [] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'tag_aliases',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          _meta_data: { type: 'TEXT', notNull: false },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+
+    const schema: Record<string, SchemaDefinition> = {
+      tag_aliases: {
+        tableName: 'tag_aliases',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          _meta_data: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const report = await checkLiveSchemaParity({
+      db: duckDb,
+      schemas: schema,
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    expect(
+      find(report.findings, 'column_type_drift', '_meta_data'),
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * #2772 review follow-up (final full-diff pass 4) — the uuid/text `info`
+ * finding's only repair path is `smrt db:migrate-uuid`, which is gated
+ * PostgreSQL-only (`cli/src/commands/db-migrate-uuid.ts`, `runConvert = ... &&
+ * isPostgres`). On DuckDB there is no conversion path for this pairing, so
+ * the finding must stay silent there — the same class of fix already applied
+ * to the jsonb (#2772) and float-width (#2770) checks above.
+ */
+describe('checkLiveSchemaParity uuid/text info finding is engine-gated (#2772)', () => {
+  it('does not flag a structural id column on DuckDB, which has no db:migrate-uuid repair path', async () => {
+    const duckDb = {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'widgets' }] };
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('duckdb_constraints')) return { rows: [] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+
+    const schema: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const report = await checkLiveSchemaParity({
+      db: duckDb,
+      schemas: schema,
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    expect(find(report.findings, 'column_type_drift', 'id')).toBeUndefined();
+  });
+});

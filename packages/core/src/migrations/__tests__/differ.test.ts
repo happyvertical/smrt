@@ -2061,3 +2061,397 @@ describe('getSQLFromDiff', () => {
     expect(sql).toHaveLength(0);
   });
 });
+
+/**
+ * #2770 — REAL and DOUBLE PRECISION both normalize into the differ's shared
+ * 'REAL' bucket (matching DECIMAL/NUMERIC), so single- vs double-precision
+ * float drift never reached the ordinary type-mismatch gate. Widening
+ * (float4 -> float8) is lossless and auto-planned; narrowing stays
+ * advisory-only because it can lose precision.
+ */
+describe('SchemaComparer float-width drift (#2770)', () => {
+  const priceManifest = (): Record<string, SchemaDefinition> => ({
+    products: {
+      tableName: 'products',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        price: { type: 'REAL' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  it('plans a lossless widening ALTER when the live column is single-precision', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          price: { type: 'real', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('price');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "products" ALTER COLUMN "price" TYPE DOUBLE PRECISION USING "price"::DOUBLE PRECISION',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(true);
+  });
+
+  it('reports narrowing (double precision -> real) as an advisory only, never executable', async () => {
+    // Unreachable through the ordinary manifest pipeline on PostgreSQL (the
+    // abstract REAL type always maps to DOUBLE PRECISION there), but DuckDB's
+    // base strategy maps REAL straight through, so a legacy DuckDB column
+    // that was widened by hand to DOUBLE is a real narrowing candidate.
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'VARCHAR', notnull: true },
+          price: { type: 'DOUBLE', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('Narrowing');
+    expect(getSQLFromDiff(diff)).toEqual([]);
+    expect(diff.has_changes).toBe(true);
+  });
+
+  it('is a no-op once the live column already matches the declared precision', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          price: { type: 'double precision', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+
+  it('is a no-op on DuckDB when a converged REAL column reports live type FLOAT', async () => {
+    // Review finding: DuckDB's information_schema normalizes REAL/FLOAT4 to
+    // the bare string "FLOAT" (never "REAL"), and reports its
+    // double-precision type as "DOUBLE" (never "FLOAT"). floatPrecisionOf
+    // previously classified bare FLOAT as double-precision unconditionally
+    // (correct for PostgreSQL, where FLOAT never appears live), which made
+    // every already-converged DuckDB REAL column permanently misreport as
+    // narrowing drift with no `db:migrate` able to clear it.
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'products' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'VARCHAR', notnull: true },
+          price: { type: 'FLOAT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(priceManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});
+
+/**
+ * #2771 — a live `text` column on a table SMRT itself creates, holding
+ * SMRT-written ISO-8601 instants, but the manifest declares `TIMESTAMP`
+ * (-> TIMESTAMPTZ on PostgreSQL). Previously blocked forever behind
+ * `postgresTimestampMigration.legacyTimezone`, which exists for genuinely
+ * ambiguous naive wall-clock strings, not this case.
+ */
+describe('SchemaComparer text -> timestamptz convergence (#2771)', () => {
+  const tagAliasManifest = (): Record<string, SchemaDefinition> => ({
+    tag_aliases: {
+      tableName: 'tag_aliases',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        created_at: { type: 'TIMESTAMP' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  function mockDbWithProbe(probeRows: Record<string, unknown>[]) {
+    return {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('invalid_count')) {
+          return { rows: probeRows };
+        }
+        return { rows: [{ table_name: 'tag_aliases' }] };
+      },
+      // probeCastSafety() creates its session-scoped helper function and
+      // runs the probe query inside one db.transaction() call; simulate that
+      // with the same query() handler above so `sql.includes('invalid_count')`
+      // still distinguishes the probe query from the CREATE FUNCTION and the
+      // table-listing query.
+      transaction: async (
+        callback: (tx: { query: (sql: string) => Promise<unknown> }) => unknown,
+      ) =>
+        callback({
+          query: async (sql: string) => {
+            if (typeof sql === 'string' && sql.includes('invalid_count')) {
+              return { rows: probeRows };
+            }
+            return { rows: [{ table_name: 'tag_aliases' }] };
+          },
+        }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          created_at: { type: 'text', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+  }
+
+  it('plans an executable USING ::timestamptz cast once the shape probe is clean', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 0, sample_value: null }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('created_at');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "tag_aliases" ALTER COLUMN "created_at" TYPE timestamptz USING "created_at"::timestamptz',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('fails closed with a masked sample when the shape probe finds unparsable values', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([
+        { invalid_count: 2, sample_value: 'not-a-timestamp-value' },
+      ]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('blocked');
+    // The masked sample must not echo the raw offending value verbatim.
+    expect(typeUpgrades[0].advisory?.message).not.toContain(
+      'not-a-timestamp-value',
+    );
+    expect(typeUpgrades[0].advisory?.suggestedSql?.[0]).toContain(
+      '::timestamptz',
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('is a no-op once the column is already timestamptz', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          created_at: { type: 'timestamp with time zone', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});
+
+/**
+ * #2772 — a live `text` column on a table SMRT itself creates, holding
+ * SMRT-serialized JSON, but the manifest declares `JSON` (-> jsonb on
+ * PostgreSQL). Previously silently tolerated in both directions (#1335); the
+ * `text` (manifest) <-> `json` (live) direction stays tolerated, but the
+ * `JSON` (manifest) <-> `text` (live) direction is now probed and, when
+ * safe, converged.
+ */
+describe('SchemaComparer text -> jsonb convergence (#2772)', () => {
+  const tagAliasManifest = (): Record<string, SchemaDefinition> => ({
+    tag_aliases: {
+      tableName: 'tag_aliases',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        _meta_data: { type: 'JSON' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  function mockDbWithProbe(probeRows: Record<string, unknown>[]) {
+    return {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (typeof sql === 'string' && sql.includes('invalid_count')) {
+          return { rows: probeRows };
+        }
+        return { rows: [{ table_name: 'tag_aliases' }] };
+      },
+      // probeCastSafety() creates its session-scoped helper function and
+      // runs the probe query inside one db.transaction() call; simulate that
+      // with the same query() handler above so `sql.includes('invalid_count')`
+      // still distinguishes the probe query from the CREATE FUNCTION and the
+      // table-listing query.
+      transaction: async (
+        callback: (tx: { query: (sql: string) => Promise<unknown> }) => unknown,
+      ) =>
+        callback({
+          query: async (sql: string) => {
+            if (typeof sql === 'string' && sql.includes('invalid_count')) {
+              return { rows: probeRows };
+            }
+            return { rows: [{ table_name: 'tag_aliases' }] };
+          },
+        }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'text', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+  }
+
+  it('plans an executable USING ::jsonb cast once the shape probe is clean', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 0, sample_value: null }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('_meta_data');
+    expect(typeUpgrades[0].advisory).toBeUndefined();
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "tag_aliases" ALTER COLUMN "_meta_data" TYPE jsonb USING "_meta_data"::jsonb',
+    );
+  });
+
+  it('fails closed with a masked sample when the shape probe finds non-JSON values', async () => {
+    const diff = await new SchemaComparer(
+      mockDbWithProbe([{ invalid_count: 1, sample_value: 'active' }]) as any,
+      { ignoreTypeMismatches: false },
+    ).compare(tagAliasManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toBeUndefined();
+    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
+    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
+    expect(typeUpgrades[0].advisory?.message).toContain('blocked');
+    expect(typeUpgrades[0].advisory?.message).not.toContain('active');
+    expect(typeUpgrades[0].advisory?.suggestedSql?.[0]).toContain('::jsonb');
+  });
+
+  it('stays silent (#1335 tolerance) when the probe cannot run', async () => {
+    // A test double (or a real adapter error) that cannot answer the probe
+    // must never be treated as proof of safety — this preserves the #1335
+    // "no phantom upgrade" contract for every caller that cannot realistically
+    // answer the probe query.
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'text', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+
+  it('is a no-op once the column is already jsonb', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'tag_aliases' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'jsonb', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(tagAliasManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});

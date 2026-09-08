@@ -23,6 +23,13 @@ import {
   normalizeForeignKeyAction,
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
+import {
+  maskSampleValue,
+  probeCastSafety,
+  renderJsonbColumnConversion,
+  renderTimestamptzColumnConversion,
+  type ShapeProbeResult,
+} from '../schema/text-cast-probe.js';
 import type {
   ColumnAlteration,
   ColumnDefinition,
@@ -177,6 +184,32 @@ export function uniqueColumnIndexName(
  * True when a change is report-only: it carries an advisory and no
  * executable statement. Such changes never reach the migration stream.
  */
+/**
+ * Single- vs double-precision float classification for #2770's float-width
+ * drift detection. `null` for anything that isn't unambiguously one or the
+ * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
+ */
+function floatPrecisionOf(
+  type: string,
+  engine: 'postgres' | 'duckdb',
+): 'single' | 'double' | null {
+  const upper = type
+    .toUpperCase()
+    .trim()
+    .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
+  if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  // DuckDB's information_schema normalizes REAL/FLOAT4 to the bare string
+  // `FLOAT` (never `REAL`) and reports its double-precision type as
+  // `DOUBLE` (never `FLOAT`) — the opposite of PostgreSQL, where bare
+  // `FLOAT` never appears live and previously defaulted safely to
+  // double-precision. Treating DuckDB's `FLOAT` as double-precision made
+  // every converged DuckDB REAL column permanently misreport as narrowing
+  // drift (review finding on #2770).
+  if (engine === 'duckdb' && upper === 'FLOAT') return 'single';
+  if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
+  return null;
+}
+
 export function isAdvisoryOnlyChange(change: SchemaChange): boolean {
   if (!change.advisory) return false;
   const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
@@ -781,6 +814,23 @@ export class SchemaComparer {
   }
 
   /**
+   * Probe a candidate `text` -> `timestamptz`/`jsonb` column (#2771, #2772)
+   * with a real, exception-safe cast attempt (see `text-cast-probe.ts`).
+   * Unlike {@link probeUuidShape}, a failed/unrealistic probe
+   * (`unavailable`) is the caller's cue to fall back to the pre-existing
+   * behavior for that pair rather than surface a new finding — this keeps
+   * the new convergence strictly additive for every case that isn't
+   * affirmatively confirmed safe or affirmatively confirmed unsafe.
+   */
+  private async probeTextCastShape(
+    tableName: string,
+    columnName: string,
+    kind: 'timestamptz' | 'jsonb',
+  ): Promise<ShapeProbeResult> {
+    return probeCastSafety(this.db, tableName, columnName, kind);
+  }
+
+  /**
    * Turn the convergence plan into diff entries: executable `type_upgrade`
    * conversions marked `phase: 'pre_foreign_key'`, plus report-only warnings
    * for components the planner refused.
@@ -1246,6 +1296,69 @@ export class SchemaComparer {
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
+        // #2770: REAL/DOUBLE PRECISION both normalize to the same 'REAL'
+        // bucket above (matching DECIMAL/NUMERIC tolerance), so the general
+        // equality gate below never sees single- vs double-precision float
+        // drift. Detect it here, the same way `legacy_integer_width` detects
+        // int4-vs-int8 drift the general INTEGER bucket also hides. Widening
+        // (float4 -> float8) is lossless and safe to auto-plan; narrowing
+        // (float8 -> float4) can lose precision, so it stays advisory-only.
+        if (
+          (this.engine === 'postgres' || this.engine === 'duckdb') &&
+          normalizedExpected === 'REAL' &&
+          normalizedActual === 'REAL'
+        ) {
+          const expectedPrecision = floatPrecisionOf(
+            expectedEngineType,
+            this.engine,
+          );
+          const actualPrecision = floatPrecisionOf(dbCol.type, this.engine);
+          if (
+            expectedPrecision &&
+            actualPrecision &&
+            expectedPrecision !== actualPrecision
+          ) {
+            typeDrifted = true;
+            const table = this.quoteIdentifier(tableName);
+            const column = this.quoteIdentifier(colName);
+            if (
+              expectedPrecision === 'double' &&
+              actualPrecision === 'single'
+            ) {
+              const targetType =
+                this.engine === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
+              changes.push({
+                type: 'type_upgrade',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                mismatch: { expected: expectedEngineType, actual: dbCol.type },
+                sql: `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE ${targetType} USING ${column}::${targetType}`,
+              });
+            } else {
+              changes.push({
+                type: 'type_upgrade',
+                table: tableName,
+                name: colName,
+                column: colDef,
+                mismatch: { expected: expectedEngineType, actual: dbCol.type },
+                advisory: {
+                  severity: 'warning',
+                  message:
+                    `blocked: ${tableName}.${colName} is declared single-precision ` +
+                    `(${expectedEngineType}) but the live column is double-precision ` +
+                    `(${dbCol.type}). Narrowing loses precision, so this stays manual: ` +
+                    'confirm the narrower declaration is intentional, or widen the ' +
+                    'manifest field instead of the column.',
+                  suggestedSql: [
+                    `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE ${expectedEngineType} USING ${column}::${expectedEngineType}`,
+                  ],
+                },
+              });
+            }
+          }
+        }
+
         // R11: native `uuid` and `text` are interchangeable for SMRT-owned
         // identifiers/references, but not for arbitrary provenance text. Keep
         // the tolerance directional:
@@ -1261,6 +1374,29 @@ export class SchemaComparer {
           normalizedActual,
         );
 
+        // #2772: on PostgreSQL, a manifest-declared JSON column backed by a
+        // live `text` column is a real, repairable drift on a table SMRT
+        // itself owns — not the enum-mis-inferred canary the tolerance below
+        // exists for. Probe first (never trust the manifest's intent over
+        // the live data): a clean probe converts the tolerance below into an
+        // executable `type_upgrade`; a dirty probe converts it into a
+        // visible, fail-closed advisory instead of staying silent. An
+        // unavailable probe (missing table mid-run, a test double without a
+        // realistic response) preserves the pre-existing silent tolerance —
+        // this feature never invents a new finding it cannot back with data.
+        const jsonUpgradeCandidate =
+          this.engine === 'postgres' &&
+          normalizedExpected === 'JSON' &&
+          normalizedActual === 'TEXT';
+        let jsonProbe: ShapeProbeResult | undefined;
+        if (jsonUpgradeCandidate) {
+          jsonProbe = await this.probeTextCastShape(
+            tableName,
+            colName,
+            'jsonb',
+          );
+        }
+
         // #1335: native `json`/`jsonb` (DB) and `text` (manifest) are
         // interchangeable for SMRT — the convention is to serialize JSON values
         // into TEXT columns, and a native-json column already holds exactly that
@@ -1269,7 +1405,9 @@ export class SchemaComparer {
         //   - manifest TEXT vs DB json   (native-json column, text-convention manifest)
         //   - manifest JSON vs DB text   (the canary case: an enum/plain field
         //     mis-inferred as JSON by a downstream scanner, sitting on a real
-        //     `text` column holding bare values like 'active')
+        //     `text` column holding bare values like 'active') — tolerated only
+        //     when the #2772 probe above could not affirmatively clear or
+        //     convict the column (see `jsonUpgradeCandidate` above).
         // Generating an ALTER here is pure churn at best and data-destroying at
         // worst: `status::jsonb` on a column holding 'active' raises
         // "invalid input syntax for type json" and aborts the whole atomic
@@ -1277,8 +1415,35 @@ export class SchemaComparer {
         // gate only (not in `normalizeType`) so `isCompatibleTypeUpgrade` still
         // treats JSON and TEXT as distinct buckets for OTHER upgrade paths.
         const isJsonTextEquivalent =
-          (normalizedExpected === 'JSON' && normalizedActual === 'TEXT') ||
-          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON');
+          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON') ||
+          (normalizedExpected === 'JSON' &&
+            normalizedActual === 'TEXT' &&
+            (!jsonUpgradeCandidate || jsonProbe?.status === 'unavailable'));
+
+        // #2771: shape-probe a manifest TIMESTAMP column (-> TIMESTAMPTZ on
+        // PostgreSQL) backed by a live `text` column, independent of the
+        // `postgresTimestampMigration` opt-in (which exists for genuinely
+        // ambiguous naive wall-clock strings). Every value SMRT itself ever
+        // wrote carries an explicit UTC/offset designator, so a clean probe
+        // here converts losslessly with no operator confirmation needed.
+        const timestamptzUpgradeCandidate =
+          this.engine === 'postgres' &&
+          // `normalizedExpected` is the MAPPED engine bucket ('TIMESTAMPTZ'
+          // on PostgreSQL); `isCompatibleTypeUpgrade` below keys off the RAW
+          // abstract manifest bucket ('TIMESTAMP') instead, so this checks
+          // the same raw bucket to stay consistent with that gate.
+          this.normalizeType(colDef.type) === 'TIMESTAMP' &&
+          normalizedActual === 'TEXT' &&
+          normalizedExpected === 'TIMESTAMPTZ' &&
+          !this.isCompatibleTypeUpgrade(colDef.type, dbCol.type);
+        let timestamptzProbe: ShapeProbeResult | undefined;
+        if (timestamptzUpgradeCandidate) {
+          timestamptzProbe = await this.probeTextCastShape(
+            tableName,
+            colName,
+            'timestamptz',
+          );
+        }
 
         if (
           normalizedExpected !== normalizedActual &&
@@ -1286,9 +1451,172 @@ export class SchemaComparer {
           !isJsonTextEquivalent
         ) {
           typeDrifted = true;
-          // Check if this is a safe type upgrade that SMRT can handle
-          // Since SMRT owns the data lifecycle, we know the intent from the manifest
-          if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
+
+          // #2771/#2772 review finding: PostgreSQL rejects `ALTER COLUMN
+          // ... TYPE` outright whenever the column has ANY existing default
+          // that can't auto-cast to the target type -- regardless of
+          // whether the manifest itself wants a default -- so DROP DEFAULT
+          // must be gated on the LIVE default, not the manifest's. SET
+          // DEFAULT afterward stays gated on the manifest default only: a
+          // live-only default the manifest no longer declares must not be
+          // silently resurrected.
+          const hasLiveDefault =
+            dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
+          const conversionOptions = {
+            hasLiveDefault,
+            manifestDefaultValue: colDef.defaultValue,
+          };
+
+          // Review finding: dropping a live default the manifest no longer
+          // declares is the same "relaxation" `compareColumnConstraints`
+          // already gates behind `relaxColumns` elsewhere (see the
+          // `dbHasDefault` branch above) — auto-executing it here as a side
+          // effect of the type conversion would silently weaken the column
+          // with no advisory and no opt-in. When there's no manifest
+          // default to restore and the operator hasn't opted into
+          // relaxation, surface it the same way a dirty probe does: a
+          // fail-closed advisory naming the blocker, with the would-be SQL
+          // attached for visibility, instead of executing.
+          const liveOnlyDefaultNeedsRelaxOptIn =
+            hasLiveDefault &&
+            colDef.defaultValue === undefined &&
+            !this.options.relaxColumns;
+
+          if (
+            jsonUpgradeCandidate &&
+            jsonProbe?.status === 'clean' &&
+            liveOnlyDefaultNeedsRelaxOptIn
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} has a live default ` +
+                  `(${String(dbCol.defaultValue)}) the manifest no longer ` +
+                  'declares; converging to jsonb requires dropping it ' +
+                  `first. ${this.relaxHint('drop it as part of this conversion')}`,
+                suggestedSql: renderJsonbColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'clean') {
+            const statements = renderJsonbColumnConversion(
+              tableName,
+              colName,
+              conversionOptions,
+            );
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              sql: statements[statements.length - 1],
+              sqlStatements: statements,
+            });
+          } else if (jsonUpgradeCandidate && jsonProbe?.status === 'dirty') {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} is declared JSON but ${jsonProbe.count} ` +
+                  `live value(s) are not valid JSON (sample: ${
+                    jsonProbe.sample
+                      ? maskSampleValue(jsonProbe.sample)
+                      : 'unavailable'
+                  }). Repair or clear the offending value(s), then rerun ` +
+                  '`smrt db:migrate`.',
+                suggestedSql: renderJsonbColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'clean' &&
+            liveOnlyDefaultNeedsRelaxOptIn
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} has a live default ` +
+                  `(${String(dbCol.defaultValue)}) the manifest no longer ` +
+                  'declares; converging to timestamptz requires dropping ' +
+                  `it first. ${this.relaxHint('drop it as part of this conversion')}`,
+                suggestedSql: renderTimestamptzColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'clean'
+          ) {
+            const statements = renderTimestamptzColumnConversion(
+              tableName,
+              colName,
+              conversionOptions,
+            );
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              sql: statements[statements.length - 1],
+              sqlStatements: statements,
+            });
+          } else if (
+            timestamptzUpgradeCandidate &&
+            timestamptzProbe?.status === 'dirty'
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} is declared TIMESTAMP but ${timestamptzProbe.count} ` +
+                  `live value(s) do not parse as an unambiguous timestamp (sample: ${
+                    timestamptzProbe.sample
+                      ? maskSampleValue(timestamptzProbe.sample)
+                      : 'unavailable'
+                  }). Repair the offending value(s), or confirm legacy naive ` +
+                  'wall-clock provenance with `smrt db:migrate --postgres-timestamp-legacy-timezone=UTC`, then rerun.',
+                suggestedSql: renderTimestamptzColumnConversion(
+                  tableName,
+                  colName,
+                  conversionOptions,
+                ),
+              },
+            });
+          } else if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
             const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,

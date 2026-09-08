@@ -471,6 +471,112 @@ function compareColumns(
           'Reconcile the column type with `smrt db:migrate`, or repair the declaration if the live type is correct.',
         details: { expected: column.type, actual: live.type },
       });
+    } else {
+      const expectedBucket = normalizeSqlType(column.type);
+      const actualBucket = normalizeSqlType(live.type);
+
+      // #2772: `TEXT` (live) vs `JSON`/`JSONB` (declared) is tolerated above
+      // (#1335) so it never becomes an `error`, but on a table SMRT itself
+      // creates this is real, repairable drift — `db:migrate` can converge
+      // it (see `differ.ts`'s shape-probed `type_upgrade`). Surface it as a
+      // warning rather than staying invisible; the reverse direction (a
+      // native `json`/`jsonb` column backed by a text-convention manifest
+      // field) stays silent — that pairing is intentional, not drift.
+      //
+      // Engine-gated to `postgres` to match the differ's own repair gate
+      // (`jsonUpgradeCandidate` in `differ.ts`, `this.engine === 'postgres'`
+      // only): on DuckDB/SQLite there is no `type_upgrade` path for this
+      // pairing, so flagging it here would be a permanent, unclearable
+      // warning (review finding — the same class already fixed for #2770's
+      // float-width check).
+      if (
+        engine === 'postgres' &&
+        expectedBucket === 'JSON' &&
+        actualBucket === 'TEXT'
+      ) {
+        findings.push({
+          kind: 'column_type_drift',
+          severity: 'warning',
+          table: table.name,
+          target: column.name,
+          origin: table.origin,
+          message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` in the live database but declared \`${column.type}\`.`,
+          recommendation:
+            'Run `smrt db:migrate` to converge this column to native jsonb once its live values are confirmed valid JSON.',
+          details: { expected: column.type, actual: live.type },
+        });
+      } else if (
+        engine === 'postgres' &&
+        expectedBucket === 'UUID' &&
+        actualBucket === 'TEXT' &&
+        isStructuralReference(column)
+      ) {
+        // #2772: the reverse of the uuid tolerance above already has a
+        // framework repair path (`db:migrate-uuid`, #2608) — this differs
+        // from the jsonb case in staying `info`: text/uuid interop on
+        // structural columns is an intentional, long-supported compatibility
+        // shape, not a bug, so this is a pointer to the optional convergence
+        // path rather than a warning.
+        //
+        // Engine-gated to `postgres` to match `db:migrate-uuid`'s own repair
+        // gate (`cli/src/commands/db-migrate-uuid.ts`, `runConvert = ... &&
+        // isPostgres`): on DuckDB there is no native-uuid conversion path for
+        // this pairing, so flagging it here would be a permanent, unclearable
+        // finding (review finding — the same class already fixed for the
+        // jsonb and float-width checks above).
+        findings.push({
+          kind: 'column_type_drift',
+          severity: 'info',
+          table: table.name,
+          target: column.name,
+          origin: table.origin,
+          message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` in the live database but declared \`${column.type}\`; SMRT tolerates text/uuid for structural identifier/reference columns.`,
+          recommendation:
+            'Run `smrt db:migrate-uuid` to converge this column to native uuid, or leave it as-is — this pairing is tolerated indefinitely.',
+          details: { expected: column.type, actual: live.type },
+        });
+      } else if (
+        (engine === 'postgres' || engine === 'duckdb') &&
+        expectedBucket === 'REAL' &&
+        actualBucket === 'REAL'
+      ) {
+        // #2770: REAL/DOUBLE PRECISION/DECIMAL/NUMERIC all normalize into
+        // one 'REAL' bucket above, so single- vs double-precision float
+        // drift never reaches the `!typesAreEquivalent` branch — the same
+        // way int4-vs-int8 drift hides behind the shared 'INTEGER' bucket
+        // (see `legacy_integer_width` below). Detect it here instead.
+        //
+        // Engine-gated to match the differ's own repair gate (`differ.ts`,
+        // `this.engine === 'postgres' || this.engine === 'duckdb'`): SQLite
+        // stores every real as an 8-byte double regardless of the declared
+        // type name, so there is no narrowing and no `type_upgrade` path —
+        // flagging it there would be a permanent, unclearable warning
+        // (review finding).
+        const expectedPrecision = floatPrecisionOf(column.type, engine);
+        const actualPrecision = floatPrecisionOf(live.type, engine);
+        if (
+          expectedPrecision &&
+          actualPrecision &&
+          expectedPrecision !== actualPrecision
+        ) {
+          const widening =
+            expectedPrecision === 'double' && actualPrecision === 'single';
+          findings.push({
+            kind: 'column_type_drift',
+            // Consistent with the other width findings (`legacy_integer_width`
+            // below): a maintenance concern to schedule, not a broken write path.
+            severity: 'warning',
+            table: table.name,
+            target: column.name,
+            origin: table.origin,
+            message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` (${actualPrecision}-precision) in the live database but declared \`${column.type}\` (${expectedPrecision}-precision).`,
+            recommendation: widening
+              ? 'Run `smrt db:migrate` to widen this column to double precision (lossless).'
+              : 'Narrowing to single precision can lose data; confirm the narrower declaration is intentional before repairing it manually.',
+            details: { expected: column.type, actual: live.type },
+          });
+        }
+      }
     }
 
     // A declared-NOT NULL column that is nullable live silently accepts rows
@@ -569,6 +675,37 @@ function typesAreEquivalent(
   }
 
   return false;
+}
+
+/**
+ * Single- vs double-precision float classification for #2770's float-width
+ * drift detection. `null` for anything that isn't unambiguously one or the
+ * other (DECIMAL/NUMERIC have no fixed binary width and are out of scope).
+ *
+ * Bare `FLOAT` is engine-ambiguous and must be classified per `engine`:
+ * PostgreSQL's `information_schema` reports `float4`/`real` as `real` and
+ * `float8`/`double precision` as `double precision` — `FLOAT` alone never
+ * appears there, so treating it as double-precision was previously safe.
+ * DuckDB is different: `information_schema.columns.data_type` normalizes
+ * *both* spellings of its single-precision type (`REAL`, `FLOAT4`) to the
+ * bare string `FLOAT`, and reports its double-precision type as `DOUBLE`
+ * (never `FLOAT`). Classifying DuckDB's `FLOAT` as double-precision — as a
+ * shared, engine-unaware regex previously did — made every converged DuckDB
+ * `REAL` column permanently misreport as narrowing drift with no
+ * `db:migrate` able to clear it (review finding on #2770).
+ */
+function floatPrecisionOf(
+  type: string,
+  engine: DatabaseEngine,
+): 'single' | 'double' | null {
+  const upper = String(type ?? '')
+    .toUpperCase()
+    .trim()
+    .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
+  if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
+  if (engine === 'duckdb' && upper === 'FLOAT') return 'single';
+  if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
+  return null;
 }
 
 function isStructuralReference(column: ExpectedColumn): boolean {
