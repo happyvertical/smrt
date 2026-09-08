@@ -523,12 +523,23 @@ export function foreignKey(
           {
             ...options,
             type: 'foreignKey',
-            related: resolveRelatedClassName(
-              'foreignKey',
-              relatedClass,
-              className,
-              propertyKey,
-            ),
+            related:
+              typeof relatedClass === 'function' &&
+              relatedClass.prototype !== undefined
+                ? (ObjectRegistry.getClassByConstructor(relatedClass as never)
+                    ?.qualifiedName ??
+                  resolveRelatedClassName(
+                    'foreignKey',
+                    relatedClass,
+                    className,
+                    propertyKey,
+                  ))
+                : resolveRelatedClassName(
+                    'foreignKey',
+                    relatedClass,
+                    className,
+                    propertyKey,
+                  ),
           },
           ctor,
         );

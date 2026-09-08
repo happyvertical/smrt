@@ -173,6 +173,32 @@ describe('tenantId decorator compatibility', () => {
     ).toEqual(['slug', 'context']);
   });
 
+  it('does not give a same-name peer without a tenant field a tenant marker', () => {
+    {
+      @smrt({ packageName: '@fixture/tenant-owner-no-field' })
+      @TenantScoped({ mode: 'required' })
+      class Record extends SmrtObject {
+        @tenantId()
+        tenantId = '';
+      }
+    }
+    {
+      @smrt({ packageName: '@fixture/global-peer-no-field' })
+      class Record extends SmrtObject {
+        @field({ type: 'text' })
+        title = '';
+      }
+    }
+    expect(
+      ObjectRegistry.getTenantScopedConfig(
+        '@fixture/global-peer-no-field:Record',
+      ),
+    ).toBeUndefined();
+    expect(
+      ObjectRegistry.getConflictColumns('@fixture/global-peer-no-field:Record'),
+    ).toEqual(['slug', 'context']);
+  });
+
   it('keeps a silent manifest authoritative in either real class-decorator order', () => {
     @TenantScoped({ mode: 'required' })
     @smrt({

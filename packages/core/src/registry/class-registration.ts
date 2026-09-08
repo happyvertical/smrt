@@ -898,9 +898,15 @@ export function register(
 
   // Apply decorator metadata to override/extend manifest fields
   // Decorators take priority over AST-scanned types (Issue #316)
-  const simpleDecorators = getFieldDecorators().get(
-    isolatedManifestEntry ? ctor.name : name,
+  const decoratorKey = isolatedManifestEntry ? ctor.name : name;
+  const hasSameNamePeer = Array.from(getClasses().values()).some(
+    (entry) => entry.name === ctor.name && entry.constructor !== ctor,
   );
+  // A simple-name bucket has no owner. Once that name is shared by another
+  // constructor, only exact decorator metadata may participate in registration.
+  const simpleDecorators = hasSameNamePeer
+    ? undefined
+    : getFieldDecorators().get(decoratorKey);
   const constructorDecorators = getConstructorFieldDecorators().get(ctor);
   const decorators =
     simpleDecorators || constructorDecorators

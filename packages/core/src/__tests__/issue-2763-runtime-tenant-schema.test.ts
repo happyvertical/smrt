@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { field } from '../decorators/index.js';
+import { field, foreignKey } from '../decorators/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
@@ -338,6 +338,28 @@ describe('runtime tenant schema registration (#2763)', () => {
           fieldName: 'parentId',
           targetClass: '@fixture/parent-b:Parent',
         }),
+      ]),
+    );
+  });
+
+  it('keeps a constructor foreign key with its same-package parent', () => {
+    const ParentA = class Parent extends SmrtObject {};
+    const ParentB = class Parent extends SmrtObject {};
+    ObjectRegistry.register(ParentA, { packageName: '@fixture/parent-a' });
+    ObjectRegistry.register(ParentB, { packageName: '@fixture/parent-b' });
+    class Child extends SmrtObject {
+      parentId = '';
+    }
+    foreignKey(ParentB)(Child.prototype, 'parentId');
+    ObjectRegistry.register(Child, { packageName: '@fixture/child-b' });
+    expect(
+      ObjectRegistry.getInverseRelationshipsForSelf('@fixture/parent-a:Parent'),
+    ).toEqual([]);
+    expect(
+      ObjectRegistry.getInverseRelationshipsForSelf('@fixture/parent-b:Parent'),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ fieldName: 'parentId' }),
       ]),
     );
   });
