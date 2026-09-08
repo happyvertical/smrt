@@ -571,11 +571,13 @@ export function register(
     // for schema, so it cannot silently erase a live @TenantScoped contract.
     if (
       config.tenantScoped === undefined &&
-      isolatedManifestEntry.decoratorConfig?.tenantScoped === undefined &&
+      normalizeTenantScopedConfig(
+        isolatedManifestEntry.decoratorConfig?.tenantScoped,
+      ) === undefined &&
       getConstructorTenantScopedDeclarations().get(ctor)
     ) {
       throw new ConfigurationError(
-        `Manifest for '${name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        `Manifest for '${name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
         'CONFIG_TENANT_MANIFEST_CONFLICT',
       );
     }
@@ -824,11 +826,12 @@ export function register(
   if (
     manifestEntry &&
     config.tenantScoped === undefined &&
-    manifestEntry.decoratorConfig?.tenantScoped === undefined &&
+    normalizeTenantScopedConfig(manifestEntry.decoratorConfig?.tenantScoped) ===
+      undefined &&
     runtimeTenantScopedDeclaration
   ) {
     throw new ConfigurationError(
-      `Manifest for '${name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      `Manifest for '${name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
       'CONFIG_TENANT_MANIFEST_CONFLICT',
     );
   }
@@ -1706,11 +1709,11 @@ function mergeManifestIntoExistingRegistration(
     getConstructorTenantScopedDeclarations().get(existing.constructor);
   if (
     existing.tenantScopedConfigSource !== 'explicit' &&
-    manifestConfig.tenantScoped === undefined &&
+    normalizeTenantScopedConfig(manifestConfig.tenantScoped) === undefined &&
     runtimeTenantScopedDeclaration
   ) {
     throw new ConfigurationError(
-      `Manifest for '${existing.qualifiedName || existing.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      `Manifest for '${existing.qualifiedName || existing.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
       'CONFIG_TENANT_MANIFEST_CONFLICT',
     );
   }

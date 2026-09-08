@@ -341,7 +341,10 @@ describe('runtime tenant schema registration (#2763)', () => {
     });
   });
 
-  it('keeps a caught post-registration silent-manifest conflict unavailable to schema and conflict resolution', () => {
+  it.each([
+    ['omits tenantScoped', {}],
+    ['sets tenantScoped: false', { tenantScoped: false }],
+  ] as const)('keeps a caught post-registration manifest conflict unavailable until a scoped manifest recovers it when it %s', (_scenario, decoratorConfig) => {
     class CaughtSilentManifestTenant extends SmrtObject {}
     ObjectRegistry.register(CaughtSilentManifestTenant, {
       packageName: '@test/caught-silent-manifest',
@@ -354,7 +357,7 @@ describe('runtime tenant schema registration (#2763)', () => {
             className: 'CaughtSilentManifestTenant',
             fields: {},
             methods: {},
-            decoratorConfig: {},
+            decoratorConfig,
           },
         },
       },
@@ -369,6 +372,18 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toThrow(ConfigurationError);
 
     const identity = '@test/caught-silent-manifest:CaughtSilentManifestTenant';
+    expect(() =>
+      ObjectRegistry.registerFromManifest(
+        identity,
+        {
+          className: 'CaughtSilentManifestTenant',
+          fields: {},
+          methods: {},
+          decoratorConfig: { tenantScoped: false },
+        },
+        '@test/caught-silent-manifest',
+      ),
+    ).toThrow(ConfigurationError);
     expect(() => ObjectRegistry.getConflictColumns(identity)).toThrow(
       ConfigurationError,
     );
@@ -408,7 +423,10 @@ describe('runtime tenant schema registration (#2763)', () => {
     ]);
   });
 
-  it('rejects a silent isolated manifest before it can promote an exact runtime constructor', () => {
+  it.each([
+    ['omits tenantScoped', {}],
+    ['sets tenantScoped: false', { tenantScoped: false }],
+  ] as const)('rejects an isolated manifest before it can promote an exact runtime constructor when it %s', (_scenario, decoratorConfig) => {
     class PromotedSilentManifestTenant extends SmrtObject {}
     ObjectRegistry.reconcileTenantScopedConfig(
       PromotedSilentManifestTenant,
@@ -430,7 +448,7 @@ describe('runtime tenant schema registration (#2763)', () => {
               className: 'PromotedSilentManifestTenant',
               fields: {},
               methods: {},
-              decoratorConfig: {},
+              decoratorConfig,
             },
           },
         },
@@ -554,7 +572,10 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toEqual(['slug', 'context']);
   });
 
-  it('refuses a late silent manifest without mutating an exact runtime tenancy declaration', () => {
+  it.each([
+    ['omits tenantScoped', {}],
+    ['sets tenantScoped: false', { tenantScoped: false }],
+  ] as const)('refuses a late manifest without mutating an exact runtime tenancy declaration when it %s', (_scenario, decoratorConfig) => {
     class LateManifestReconciledTenant extends SmrtObject {}
     ObjectRegistry.reconcileTenantScopedConfig(
       LateManifestReconciledTenant,
@@ -572,7 +593,7 @@ describe('runtime tenant schema registration (#2763)', () => {
           className: 'LateManifestReconciledTenant',
           fields: {},
           methods: {},
-          decoratorConfig: {},
+          decoratorConfig,
         },
         '@test/late-manifest-reconciled',
       ),

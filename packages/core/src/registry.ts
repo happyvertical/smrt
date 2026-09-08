@@ -3319,7 +3319,7 @@ export class ObjectRegistry {
       'invalid-runtime-manifest-conflict'
     ) {
       throw new ConfigurationError(
-        `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
         'CONFIG_TENANT_MANIFEST_CONFLICT',
       );
     }
@@ -3345,7 +3345,7 @@ export class ObjectRegistry {
         'invalid-runtime-manifest-conflict'
       ) {
         throw new ConfigurationError(
-          `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
           'CONFIG_TENANT_MANIFEST_CONFLICT',
         );
       }
@@ -3356,7 +3356,7 @@ export class ObjectRegistry {
         registered.tenantScopedConfigSource =
           'invalid-runtime-manifest-conflict';
         throw new ConfigurationError(
-          `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
           'CONFIG_TENANT_MANIFEST_CONFLICT',
         );
       }

@@ -279,6 +279,83 @@ describe('tenantId decorator compatibility', () => {
     }).toThrow(/Regenerate the manifest/);
   });
 
+  it('fails closed for an explicitly false manifest in either real class-decorator order', () => {
+    expect(() => {
+      @TenantScoped({ mode: 'required' })
+      @smrt({
+        packageName: '@fixture/false-manifest-outer-tenant',
+        _manifest: {
+          packageName: '@fixture/false-manifest-outer-tenant',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            FalseManifestOuterTenant: {
+              className: 'FalseManifestOuterTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped: false },
+            },
+          },
+        },
+        _manifestKey: 'FalseManifestOuterTenant',
+      })
+      class FalseManifestOuterTenant extends SmrtObject {}
+    }).toThrow(/Regenerate the manifest/);
+
+    expect(() => {
+      @smrt({
+        packageName: '@fixture/false-manifest-inner-tenant',
+        _manifest: {
+          packageName: '@fixture/false-manifest-inner-tenant',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            FalseManifestInnerTenant: {
+              className: 'FalseManifestInnerTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped: false },
+            },
+          },
+        },
+        _manifestKey: 'FalseManifestInnerTenant',
+      })
+      @TenantScoped({ mode: 'required' })
+      class FalseManifestInnerTenant extends SmrtObject {}
+    }).toThrow(/Regenerate the manifest/);
+  });
+
+  it('keeps an explicit core tenantScoped false declaration exempt from manifest conflict rejection', () => {
+    expect(() => {
+      @smrt({
+        packageName: '@fixture/explicit-core-false',
+        tenantScoped: false,
+        _manifest: {
+          packageName: '@fixture/explicit-core-false',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            ExplicitCoreFalseTenant: {
+              className: 'ExplicitCoreFalseTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped: false },
+            },
+          },
+        },
+        _manifestKey: 'ExplicitCoreFalseTenant',
+      })
+      @TenantScoped({ mode: 'required' })
+      class ExplicitCoreFalseTenant extends SmrtObject {}
+    }).not.toThrow();
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig(
+        '@fixture/explicit-core-false:ExplicitCoreFalseTenant',
+      ),
+    ).toBeUndefined();
+  });
+
   it('keeps a caught post-registration decorator conflict unavailable to mutation hooks', () => {
     class CaughtSilentManifestTenant extends SmrtObject {}
     smrt({
@@ -302,6 +379,19 @@ describe('tenantId decorator compatibility', () => {
     expect(() => TenantScoped()(CaughtSilentManifestTenant)).toThrow(
       /Regenerate the manifest/,
     );
+
+    expect(() =>
+      ObjectRegistry.registerFromManifest(
+        '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',
+        {
+          className: 'CaughtSilentManifestTenant',
+          fields: {},
+          methods: {},
+          decoratorConfig: { tenantScoped: false },
+        },
+        '@fixture/caught-silent-manifest',
+      ),
+    ).toThrow(/Regenerate the manifest/);
 
     const interceptor = createTenantInterceptor();
     expect(() =>
