@@ -35,14 +35,12 @@ function registerReportField(metadata: ReportFieldMetadata) {
         const options = {
           __report: metadata,
         };
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, options);
-        if (ctor) {
-          ObjectRegistry.registerFieldDecoratorForConstructor(
-            ctor,
-            propertyKey,
-            options,
-          );
-        }
+        ObjectRegistry.registerFieldDecorator(
+          className,
+          propertyKey,
+          options,
+          ctor,
+        );
       },
     );
   }) as PropertyDecorator;

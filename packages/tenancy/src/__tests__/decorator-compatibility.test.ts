@@ -145,6 +145,9 @@ describe('tenantId decorator compatibility', () => {
       class Record extends SmrtObject {
         @tenantId()
         tenantId = '';
+
+        @field({ type: 'integer' })
+        ownerOnly = 0;
       }
     }
 
@@ -180,6 +183,9 @@ describe('tenantId decorator compatibility', () => {
       class Record extends SmrtObject {
         @tenantId()
         tenantId = '';
+
+        @field({ type: 'integer' })
+        ownerOnly = 0;
       }
     }
     {
@@ -197,6 +203,12 @@ describe('tenantId decorator compatibility', () => {
     expect(
       ObjectRegistry.getConflictColumns('@fixture/global-peer-no-field:Record'),
     ).toEqual(['slug', 'context']);
+    const fields = ObjectRegistry.getFields(
+      '@fixture/global-peer-no-field:Record',
+    );
+    expect(fields.has('tenantId')).toBe(false);
+    expect(fields.has('ownerOnly')).toBe(false);
+    expect(fields.get('title')?.type).toBe('text');
   });
 
   it('keeps a silent manifest authoritative in either real class-decorator order', () => {

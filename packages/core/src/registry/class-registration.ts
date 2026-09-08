@@ -58,8 +58,8 @@ import {
   getConstructorFieldDecorators,
   getConstructorIndex,
   getConstructorTenantScopedDeclarations,
-  getFieldDecorators,
   getInheritanceCache,
+  getLegacyFieldDecorators,
   getSourceFileFromStack,
   getStiSiblingsLoaded,
   verboseLog,
@@ -899,19 +899,15 @@ export function register(
   // Apply decorator metadata to override/extend manifest fields
   // Decorators take priority over AST-scanned types (Issue #316)
   const decoratorKey = isolatedManifestEntry ? ctor.name : name;
-  const hasSameNamePeer = Array.from(getClasses().values()).some(
-    (entry) => entry.name === ctor.name && entry.constructor !== ctor,
-  );
-  // A simple-name bucket has no owner. Once that name is shared by another
-  // constructor, only exact decorator metadata may participate in registration.
-  const simpleDecorators = hasSameNamePeer
-    ? undefined
-    : getFieldDecorators().get(decoratorKey);
+  // Only explicit string-only registrations are ownerless legacy metadata.
+  // Public decorators also expose a simple-name inspection mirror, but that
+  // mirror must never become another constructor's schema.
+  const simpleDecorators = getLegacyFieldDecorators().get(decoratorKey);
   const constructorDecorators = getConstructorFieldDecorators().get(ctor);
-  const decorators =
-    simpleDecorators || constructorDecorators
-      ? new Map([...(simpleDecorators ?? []), ...(constructorDecorators ?? [])])
-      : undefined;
+  const decorators = new Map(simpleDecorators);
+  for (const [fieldName, options] of constructorDecorators ?? []) {
+    decorators.set(fieldName, { ...decorators.get(fieldName), ...options });
+  }
   if (decorators && decorators.size > 0) {
     verboseLog(
       `[registry] Applying ${decorators.size} field decorators for ${name}`,
@@ -1903,7 +1899,7 @@ export function registerFromManifest(
 
   // Convert manifest field definitions to Field objects
   const fields = new Map<string, RegisteredField>();
-  const decorators = getFieldDecorators().get(simpleClassName);
+  const decorators = getLegacyFieldDecorators().get(simpleClassName);
   if (objectDef.fields) {
     for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
       fields.set(fieldName, createFieldFromManifest(fd));

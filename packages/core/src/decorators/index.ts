@@ -25,7 +25,10 @@ import {
 
 export type { FieldUIHints } from '../scanner/types.js';
 
-type CompatibleFieldDecoratorOptions = FieldOptions & { related?: string };
+type CompatibleFieldDecoratorOptions = FieldOptions & {
+  related?: string;
+  relatedConstructor?: Function;
+};
 
 function registerFieldDecoratorForCompatibility(
   className: string,
@@ -33,14 +36,7 @@ function registerFieldDecoratorForCompatibility(
   options: CompatibleFieldDecoratorOptions,
   ctor?: Function,
 ): void {
-  ObjectRegistry.registerFieldDecorator(className, propertyKey, options);
-  if (ctor) {
-    ObjectRegistry.registerFieldDecoratorForConstructor(
-      ctor,
-      propertyKey,
-      options,
-    );
-  }
+  ObjectRegistry.registerFieldDecorator(className, propertyKey, options, ctor);
 }
 
 /**
@@ -310,7 +306,7 @@ function resolveRelatedClassName(
   relatedClass: string | Function,
   className: string,
   propertyKey: string,
-): string {
+): { related: string; relatedConstructor?: Function } {
   const where = `@${decoratorName}() on ${className}.${propertyKey}`;
   const remedy =
     `Pass the target class name as a string instead — ` +
@@ -323,7 +319,7 @@ function resolveRelatedClassName(
         `${where}: target class name is empty. Pass a class, a class name, or a \`() => Target\` thunk.`,
       );
     }
-    return name;
+    return { related: name };
   }
 
   if (typeof relatedClass !== 'function') {
@@ -337,7 +333,7 @@ function resolveRelatedClassName(
   // Target`) is still routed to the thunk branch below instead of registering
   // the variable name as the target class.
   if (relatedClass.name && relatedClass.prototype !== undefined) {
-    return relatedClass.name;
+    return { related: relatedClass.name, relatedConstructor: relatedClass };
   }
 
   // Thunk (`() => Target`, named or inline) — invoke it for the target.
@@ -354,10 +350,10 @@ function resolveRelatedClassName(
   }
 
   if (typeof resolved === 'function' && resolved.name) {
-    return resolved.name;
+    return { related: resolved.name, relatedConstructor: resolved };
   }
   if (typeof resolved === 'string' && resolved.trim()) {
-    return resolved.trim();
+    return { related: resolved.trim() };
   }
 
   throw new Error(
@@ -523,23 +519,12 @@ export function foreignKey(
           {
             ...options,
             type: 'foreignKey',
-            related:
-              typeof relatedClass === 'function' &&
-              relatedClass.prototype !== undefined
-                ? (ObjectRegistry.getClassByConstructor(relatedClass as never)
-                    ?.qualifiedName ??
-                  resolveRelatedClassName(
-                    'foreignKey',
-                    relatedClass,
-                    className,
-                    propertyKey,
-                  ))
-                : resolveRelatedClassName(
-                    'foreignKey',
-                    relatedClass,
-                    className,
-                    propertyKey,
-                  ),
+            ...resolveRelatedClassName(
+              'foreignKey',
+              relatedClass,
+              className,
+              propertyKey,
+            ),
           },
           ctor,
         );
@@ -709,7 +694,7 @@ export function oneToMany(
           {
             ...options,
             type: 'oneToMany',
-            related: resolveRelatedClassName(
+            ...resolveRelatedClassName(
               'oneToMany',
               relatedClass,
               className,
@@ -768,7 +753,7 @@ export function manyToMany(
           {
             ...options,
             type: 'manyToMany',
-            related: resolveRelatedClassName(
+            ...resolveRelatedClassName(
               'manyToMany',
               relatedClass,
               className,

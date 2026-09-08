@@ -860,6 +860,8 @@ export interface RelationshipMetadata {
   fieldName: string;
   /** Target/related class name */
   targetClass: string;
+  /** Canonical target identity; null means an unresolved/ambiguous target. */
+  targetQualifiedClass?: string | null;
   /** Type of relationship */
   type: RelationshipType;
   /** Options for the relationship (onDelete, etc.) — sourced from `field._meta`. */

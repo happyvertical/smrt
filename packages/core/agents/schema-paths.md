@@ -183,6 +183,17 @@ from raw source (never `related: '() => Target'`). An unresolved target silently
 costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
 A thunk resolves at decoration time, so a target declared later in the same
 module is still in its temporal dead zone — use the string form there.
+Runtime decorators retain the resolved constructor alongside the display name.
+Inverse lookup and cascade planning resolve that constructor when queried, so
+the target may register after its child without binding to a same-name class
+in another package. String targets prefer the declaring package; ambiguous
+unqualified targets never match an unrelated package's inverse edge.
+
+Field decorator registration retains constructor ownership separately from the
+simple-name inspection view. Custom decorators should pass the callback's
+constructor as `registerFieldDecorator`'s fourth argument. Omit it only for
+intentional legacy string-only metadata; that legacy metadata still composes
+with constructor-owned options, but mirrored public decorator fields do not.
 
 ### A SQLite type change is a table rebuild (#2370)
 

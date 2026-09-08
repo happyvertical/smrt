@@ -9,7 +9,37 @@
 
 import { findClass } from './name-resolver';
 import { getClasses } from './shared-state';
-import type { RelationshipMetadata } from './types';
+import type {
+  RegisteredClass,
+  RegisteredField,
+  RelationshipMetadata,
+} from './types';
+
+/** Resolve lazily: the target may register after the decorated child. */
+function resolveTarget(
+  registered: RegisteredClass,
+  field: RegisteredField,
+): string | null | undefined {
+  const classes = getClasses();
+  const ctor = field._meta?.relatedConstructor;
+  if (typeof ctor === 'function') {
+    return (
+      Array.from(classes.values()).find((entry) => entry.constructor === ctor)
+        ?.qualifiedName ?? null
+    );
+  }
+  const related = field.related;
+  if (!related) return null;
+  if (related.includes(':'))
+    return findClass(related)?.qualifiedName ?? related;
+  const local = classes.get(`${registered.packageName}:${related}`);
+  if (local) return local.qualifiedName ?? null;
+  const matches = Array.from(classes.values()).filter(
+    (entry) => entry.name === related,
+  );
+  if (matches.length === 0) return undefined;
+  return matches.length === 1 ? (matches[0].qualifiedName ?? null) : null;
+}
 
 /**
  * Build dependency graph from foreignKey relationships.
@@ -90,6 +120,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
           sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'foreignKey',
           options: field._meta,
         });
@@ -102,6 +133,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
           sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'crossPackageRef',
           options: field._meta,
         });
@@ -114,6 +146,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
           sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'oneToMany',
           options: field._meta,
         });
@@ -126,6 +159,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
           sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'manyToMany',
           options: field._meta,
         });

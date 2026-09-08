@@ -127,6 +127,7 @@ import {
   getDiscoveryAttemptCache,
   getFieldDecorators,
   getInheritanceCache,
+  getLegacyFieldDecorators,
   getMethodDecorators,
   getNextDbId,
   getStiSiblingsLoaded,
@@ -231,6 +232,8 @@ interface FieldOptionsView {
  * consumers (`SmrtObject` relationship resolution, schema builder) read back.
  */
 interface FieldDecoratorOptions extends FieldOptions {
+  /** Exact runtime target, retained until the target registers. */
+  relatedConstructor?: Function;
   /** Related class name (foreignKey / crossPackageRef / oneToMany / manyToMany). */
   related?: string;
   /** Inverse foreign-key field name for relationship resolution. */
@@ -635,6 +638,7 @@ export class ObjectRegistry {
    * @param className - Name of the class containing the field
    * @param propertyKey - Name of the property being decorated
    * @param options - Field options (type, constraints, etc.)
+   * @param ctor - Exact declaring constructor; omit only for legacy string-only metadata
    * @example
    * ```typescript
    * // Called internally by decorators
@@ -648,7 +652,20 @@ export class ObjectRegistry {
     className: string,
     propertyKey: string,
     options: FieldDecoratorOptions,
+    ctor?: Function,
   ): void {
+    if (ctor) {
+      ObjectRegistry.registerFieldDecoratorForConstructor(
+        ctor,
+        propertyKey,
+        options,
+      );
+    } else {
+      const legacy = getLegacyFieldDecorators();
+      const fields = legacy.get(className) ?? new Map();
+      fields.set(propertyKey, { ...fields.get(propertyKey), ...options });
+      legacy.set(className, fields);
+    }
     if (!ObjectRegistry.fieldDecorators.has(className)) {
       ObjectRegistry.fieldDecorators.set(className, new Map());
     }
@@ -1862,6 +1879,7 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.constructorFieldDecorators.clear();
+    getLegacyFieldDecorators().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
     // iterate the classes Map directly, so there's no secondary index to
@@ -2991,7 +3009,12 @@ export class ObjectRegistry {
       if (visitedBuckets.has(relationships)) continue;
       visitedBuckets.add(relationships);
       for (const rel of relationships) {
-        if (rel.targetClass === className) {
+        if (
+          rel.targetQualifiedClass !== undefined
+            ? rel.targetQualifiedClass ===
+              (ObjectRegistry.getClass(className)?.qualifiedName ?? className)
+            : rel.targetClass === className
+        ) {
           inverseRelationships.push(rel);
         }
       }
@@ -3055,7 +3078,12 @@ export class ObjectRegistry {
       if (visitedBuckets.has(relationships)) continue;
       visitedBuckets.add(relationships);
       for (const rel of relationships) {
-        if (names.has(rel.targetClass)) {
+        if (
+          rel.targetQualifiedClass !== undefined
+            ? rel.targetQualifiedClass !== null &&
+              names.has(rel.targetQualifiedClass)
+            : names.has(rel.targetClass)
+        ) {
           result.push(rel);
         }
       }

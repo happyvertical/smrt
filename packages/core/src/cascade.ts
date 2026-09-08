@@ -199,18 +199,11 @@ export function buildCascadePlan(
   registry: CascadeRegistryView,
   className: string,
 ): CascadePlan {
-  // `className` is normally already qualified (delete() passes
-  // getResolvedQualifiedName()), but a common same-package `@foreignKey('X')`
-  // still stores its target as the bare simple name `X`. That still matches:
-  // getSelfReferableNames() walks the full ancestor chain (self included) and
-  // adds each ancestor's *simple* name via `getClass(ancestor)?.name`, so the
-  // simple form is already in the seed set below, not just the loop's
-  // qualified-variant augmentation.
+  // Keep canonical self/ancestor identities from the registry. Never resolve
+  // their display aliases again: a shared simple name can select another
+  // package. Legacy relationship views without canonical metadata still use
+  // the simple aliases already included by getSelfReferableNames().
   const targetNames = new Set(registry.getSelfReferableNames(className));
-  for (const name of [...targetNames]) {
-    const qualified = registry.getClass(name)?.qualifiedName;
-    if (qualified) targetNames.add(qualified);
-  }
 
   const references: CascadeReference[] = [];
   const polymorphic: CascadePolymorphicReference[] = [];
@@ -248,7 +241,11 @@ export function buildCascadePlan(
       ) {
         continue;
       }
-      if (!targetNames.has(relationship.targetClass)) continue;
+      const target =
+        relationship.targetQualifiedClass === undefined
+          ? relationship.targetClass
+          : relationship.targetQualifiedClass;
+      if (target === null || !targetNames.has(target)) continue;
 
       // An explicit app-side-only relationship is archival metadata, not a
       // referential-integrity rule. Its identifier is deliberately allowed to

@@ -233,17 +233,11 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
             isTenantIdField: true,
           },
         };
-        if (ctor) {
-          ObjectRegistry.registerFieldDecoratorForConstructor(
-            ctor,
-            propertyKey,
-            fieldOptions,
-          );
-        }
         ObjectRegistry.registerFieldDecorator(
           className,
           propertyKey,
           fieldOptions,
+          ctor,
         );
       },
     );

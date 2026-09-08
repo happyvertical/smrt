@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildCascadePlan } from '../cascade.js';
 import { field, foreignKey } from '../decorators/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
@@ -252,13 +253,15 @@ describe('runtime tenant schema registration (#2763)', () => {
   it('does not leak a same-name tenant marker into an ordinary peer field', () => {
     const TenantRecord = class Record extends SmrtObject {};
     const GlobalRecord = class Record extends SmrtObject {};
-    registerTenantField('Record', { nullable: false });
-    const tenantField = ObjectRegistry.getFieldDecorator('Record', 'tenantId');
-    if (!tenantField) throw new Error('tenant field was not registered');
     ObjectRegistry.registerFieldDecoratorForConstructor(
       TenantRecord,
       'tenantId',
-      tenantField,
+      {
+        type: 'foreignKey',
+        related: 'Tenant',
+        nullable: false,
+        __tenancy: { isTenantIdField: true },
+      },
     );
     ObjectRegistry.registerFieldDecoratorForConstructor(
       GlobalRecord,
@@ -362,6 +365,12 @@ describe('runtime tenant schema registration (#2763)', () => {
         expect.objectContaining({ fieldName: 'parentId' }),
       ]),
     );
+    expect(
+      buildCascadePlan(ObjectRegistry, '@fixture/parent-a:Parent').references,
+    ).toEqual([]);
+    expect(
+      buildCascadePlan(ObjectRegistry, '@fixture/parent-b:Parent').references,
+    ).toEqual(expect.arrayContaining([expect.anything()]));
   });
 
   it('lets a late silent manifest clear provisional field tenancy', () => {

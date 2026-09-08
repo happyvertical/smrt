@@ -6,6 +6,7 @@
  */
 
 import { type Mock, vi } from 'vitest';
+import { getLegacyFieldDecorators } from './registry/shared-state.js';
 import { ObjectRegistry } from './registry.js';
 
 /**
@@ -56,6 +57,12 @@ function getRegistryForTests(): RegistryTestSurface {
  * tests that mutate registry internals at runtime.
  */
 export function snapshotObjectRegistryState(): () => void {
+  const legacyFields = new Map(
+    Array.from(getLegacyFieldDecorators(), ([key, fields]) => [
+      key,
+      new Map(fields),
+    ]),
+  );
   const registry = getRegistryForTests();
   const snapshot: RegistryTestState = {
     classes: new Map(registry.classes),
@@ -71,6 +78,9 @@ export function snapshotObjectRegistryState(): () => void {
 
   return () => {
     registry.clear();
+    for (const [key, value] of legacyFields) {
+      getLegacyFieldDecorators().set(key, new Map(value));
+    }
 
     for (const [key, value] of snapshot.classes) {
       registry.classes.set(key, value);

@@ -45,6 +45,9 @@ declare global {
   var __smrtRegistryFieldDecorators:
     | Map<string, Map<string, Record<string, unknown>>>
     | undefined;
+  var __smrtRegistryLegacyFieldDecorators:
+    | Map<string, Map<string, Record<string, unknown>>>
+    | undefined;
   // Constructor-keyed metadata is necessary for declarations which must not
   // cross package boundaries when two classes share a simple name.
   // eslint-disable-next-line no-var
@@ -266,6 +269,17 @@ export function getConstructorFieldDecorators(): Map<
     globalThis.__smrtRegistryConstructorFieldDecorators = new Map();
   }
   return globalThis.__smrtRegistryConstructorFieldDecorators;
+}
+
+/** Explicit string-only registrations, excluding constructor-owned mirrors. */
+export function getLegacyFieldDecorators(): Map<
+  string,
+  Map<string, Record<string, unknown>>
+> {
+  if (!globalThis.__smrtRegistryLegacyFieldDecorators) {
+    globalThis.__smrtRegistryLegacyFieldDecorators = new Map();
+  }
+  return globalThis.__smrtRegistryLegacyFieldDecorators;
 }
 
 /** Class-level tenancy declarations keyed by their exact constructor. */
