@@ -11,9 +11,10 @@ smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:orphans              # agents/db-orphans.md
-smrt db:migrate              # Apply migrations
+smrt db:migrate              # agents/type-drift.md
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
+smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:migrate-int8         # Explicitly widen pre-#2373 int4 columns after preflight
 smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
@@ -51,7 +52,8 @@ cycles are created without the cyclic clauses first, then receive named
 constraints after both tables exist. When a same-package constraint is missing
 on an existing table, `db:migrate` probes the exact child/parent columns for
 orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
-failed probe stays manual with detector/repair SQL.
+failed probe stays manual with detector/repair SQL by default
+(agents/db-migrate-partial-apply.md).
 
 `db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
 engine-specific dependency plan used for execution, including exact table DDL
@@ -327,33 +329,33 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 ## Architecture
 
 - **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
-- **Manifest discovery**: auto-finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
-- **Aggregate manifest identity**: preload and schema discovery resolve package ownership per entry (`definition.packageName` before the container), so dependency objects retain their qualified registrations
+- **Manifest discovery**: finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
+- **Aggregate manifest identity**: preload/schema discovery resolve package ownership per entry (`definition.packageName` before the container), keeping dependency objects' qualified registrations
 - **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
-- **Object method exposure**: custom methods on SMRT objects auto-become CLI commands
+- **Object method exposure**: custom SMRT object methods auto-become CLI commands
 
 ## Key Files
 
-- `src/cli-generator.ts` — core dispatcher, lazy command loading, class loading
+- `src/cli-generator.ts` — core dispatcher, lazy command/class loading
 - `src/commands/` — individual command implementations
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
-- `src/commands/docs-claude.ts` — downstream AGENTS.md generation plus Claude compatibility alias; uses core knowledge discovery without object scanning
+- `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
 
 ## Gotchas
 
-- **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — could conflict with other test runners
-- **External package load failures silenced**: one package failing doesn't prevent others from loading
+- **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — may conflict with other test runners
+- **External package load failures silenced**: one package failing doesn't block others
 - **Generation command names are hyphenated**: `generate-mcp` and `generate-types` have
-  no colon alias. Only `generate-routes` and `generate-register` declare one, so
-  `smrt generate:mcp` is an unknown command (#2279).
+  no colon alias. Only `generate-routes`/`generate-register` declare one, so
+  `smrt generate:mcp` is unknown (#2279).
 - **Subcommand `--version` beats the global flag**: `parseCliArgs` in
   `@happyvertical/utils` dispatches to the built-in `version` command for a
   `--version` token anywhere in argv. `parseCliCommandArgs` rescopes that token to
   the named subcommand (`smrt generate-mcp --version 0.1.0`) and only leaves it
   global when it appears before or without a subcommand (#2279). `--help` is
   deliberately untouched.
-- **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed generated schema repairs instead of treating all failed rows as current blockers
+- **Schema history nuance**: `db:status`/`db:history` should distinguish active live drift from superseded failed repairs, not treat every failed row as a current blocker
 - **Decorator check follows the Vite major**: doctor requires `oxc.decorator` in
   vite.config on Vite 8+ and accepts tsconfig `experimentalDecorators` only
   below it. The old unconditional tsconfig check flagged correct Vite 8 projects

@@ -17,7 +17,12 @@ import {
   snapshotRegistry,
 } from '@happyvertical/smrt-core';
 import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
-import { bootRuntime, getBootedProjectRoot, type RuntimeBoot } from './boot.js';
+import {
+  bootRuntime,
+  getBootedProjectRoot,
+  getBootStaleness,
+  type RuntimeBoot,
+} from './boot.js';
 import type { RuntimeDatabaseArgs } from './connection.js';
 import {
   type RuntimeDiagnostic,
@@ -43,14 +48,41 @@ function bootDiagnostics(boot: RuntimeBoot): RuntimeDiagnostic[] {
     }));
 }
 
+let bootPreambleSent = false;
+
+/**
+ * The full manifest list is emitted once per process; later envelopes carry
+ * only the identifying fields. Every runtime response re-embedding the same
+ * multi-manifest block was pure repetition for an agent.
+ */
 function bootSummary(boot: RuntimeBoot) {
-  return {
+  const compact = {
     provenance: boot.provenance,
     bootedAt: boot.bootedAt,
     projectName: boot.projectName,
-    manifests: boot.manifests,
     objectCount: boot.objectCount,
+    manifestCount: boot.manifests.length,
   };
+  if (bootPreambleSent) return compact;
+  bootPreambleSent = true;
+  return { ...compact, manifests: boot.manifests };
+}
+
+/** Test seam paired with `resetRuntimeBootForTests()`. */
+export function resetBootPreambleForTests(): void {
+  bootPreambleSent = false;
+}
+
+function stalenessDiagnostics(): RuntimeDiagnostic[] {
+  const staleness = getBootStaleness();
+  if (!staleness.stale) return [];
+  return [
+    {
+      severity: 'warning',
+      code: 'manifest_newer_than_boot',
+      message: `The project manifest changed at ${staleness.manifestModifiedAt} after this process booted at ${staleness.bootedAt}; restart the server to observe the rebuilt registry.`,
+    },
+  ];
 }
 
 export interface RuntimeRegistryArgs extends RuntimeProjectArgs {
@@ -58,6 +90,24 @@ export interface RuntimeRegistryArgs extends RuntimeProjectArgs {
   objects?: string[];
   /** Include field/method detail (default: only when `objects` is given). */
   detail?: boolean;
+  /**
+   * Resume after this object key: the qualified name when the object has
+   * one, otherwise its simple name — exactly the value a previous response
+   * returned as `page.nextCursor` (#2779). Objects are sorted by that key.
+   */
+  cursor?: string;
+  /** Objects per page (default {@link REGISTRY_PAGE_LIMIT}, max 500). */
+  limit?: number;
+}
+
+/** Default objects per `runtime-registry` page. */
+export const REGISTRY_PAGE_LIMIT = 50;
+
+function objectKey(object: {
+  qualifiedName: string | null;
+  name: string;
+}): string {
+  return object.qualifiedName ?? object.name;
 }
 
 /** `runtime-registry`: sanitized snapshot of the booted registry. */
@@ -72,14 +122,41 @@ export async function runtimeRegistry(
     objects: args.objects,
     detail: args.detail ?? Boolean(args.objects?.length),
   });
+  // Page the object list (summary stays global). A 76-object app answered in
+  // 56 KB before paging; an agent hunting one class needs a cursor, not a cut.
+  const limit = Math.min(
+    Math.max(Math.floor(args.limit ?? REGISTRY_PAGE_LIMIT), 1),
+    500,
+  );
+  // The cursor is compared against the same key `page.nextCursor` carries.
+  const cursor =
+    typeof args.cursor === 'string' && args.cursor.length > 0
+      ? args.cursor
+      : null;
+  const all = snapshot.objects;
+  const afterCursor = cursor
+    ? all.filter((object) => objectKey(object).localeCompare(cursor) > 0)
+    : all;
+  const objects = afterCursor.slice(0, limit);
+  const nextCursor =
+    afterCursor.length > objects.length && objects.length > 0
+      ? objectKey(objects[objects.length - 1])
+      : null;
   return {
     ok: true,
     coverage: null,
-    diagnostics: bootDiagnostics(boot),
+    diagnostics: [...bootDiagnostics(boot), ...stalenessDiagnostics()],
     data: {
       provenance: snapshot.provenance,
       boot: bootSummary(boot),
-      snapshot,
+      page: {
+        returned: objects.length,
+        matched: all.length,
+        limit,
+        cursor,
+        nextCursor,
+      },
+      snapshot: { ...snapshot, objects },
     },
   };
 }
@@ -102,7 +179,7 @@ export async function runtimeObject(
     objects: name ? [name] : [],
     detail: true,
   });
-  const diagnostics = bootDiagnostics(boot);
+  const diagnostics = [...bootDiagnostics(boot), ...stalenessDiagnostics()];
   let object: RegistrySnapshotObject | null = snapshot.objects[0] ?? null;
   if (snapshot.objects.length > 1) {
     // Two packages registering the same simple name is legal; picking one
@@ -185,14 +262,22 @@ export async function runtimeSchemaDiff(
         const type = String((change as { type?: unknown }).type ?? 'unknown');
         byType[type] = (byType[type] ?? 0) + 1;
       }
+      // `hasChanges` covers table adds/drops too; count them so the two agree.
+      const addedTables = diff.added_tables.map((t) => t.tableName);
+      if (addedTables.length > 0) byType.add_table = addedTables.length;
+      if (diff.dropped_tables.length > 0)
+        byType.drop_table = diff.dropped_tables.length;
+      const changeCount =
+        diff.changes.length + addedTables.length + diff.dropped_tables.length;
       return {
         data: {
           boot: bootSummary(boot),
           hasChanges: diff.has_changes,
-          addedTables: diff.added_tables.map((t) => t.tableName),
+          addedTables,
           droppedTables: diff.dropped_tables,
           orphanTables: diff.orphan_tables ?? [],
-          changeCount: diff.changes.length,
+          changeCount,
+          columnChangeCount: diff.changes.length,
           changesByType: byType,
           changes: diff.changes.slice(0, SCHEMA_DIFF_CHANGE_LIMIT),
           truncated: diff.changes.length > SCHEMA_DIFF_CHANGE_LIMIT,
@@ -202,6 +287,10 @@ export async function runtimeSchemaDiff(
     },
     'booted registry schemas only; connect a dev database to diff against live tables',
   );
-  envelope.diagnostics = [...bootDiagnostics(boot), ...envelope.diagnostics];
+  envelope.diagnostics = [
+    ...bootDiagnostics(boot),
+    ...stalenessDiagnostics(),
+    ...envelope.diagnostics,
+  ];
   return envelope;
 }

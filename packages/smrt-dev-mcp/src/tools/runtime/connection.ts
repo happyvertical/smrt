@@ -19,6 +19,8 @@
  * that looks like a credential-bearing URL.
  */
 
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getPackageConfig, loadConfig } from '@happyvertical/smrt-config';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
@@ -185,6 +187,36 @@ export function inferDatabaseType(url: string, hint?: string): string {
 }
 
 /**
+ * Normalize the accepted dev-database URL forms to what `getDatabase` opens.
+ *
+ * `@happyvertical/sql` understands `file:` URLs and bare paths for SQLite,
+ * but not a `sqlite:` scheme; passing `sqlite:///abs/dev.db` through verbatim
+ * made the driver treat the whole string as a relative filename and join it
+ * to cwd. Accepted forms:
+ *
+ * - `sqlite:///abs/path.db`, `sqlite://rel/path.db`, `sqlite:path.db` →
+ *   `file:` URL with the path resolved against cwd only when it is relative
+ * - `file:` URLs, `postgres:`/`postgresql:`, `duckdb:` → unchanged
+ * - a bare path → unchanged (the driver resolves it)
+ */
+/**
+ * Whether a configured value means "in-memory, so not a runtime database":
+ * `:memory:` as well as the `sqlite::memory:` / `sqlite://:memory:` spellings.
+ */
+export function isMemoryDatabaseUrl(url: string): boolean {
+  return /^(?:sqlite:(?:\/\/)?)?:memory:$/i.test(url.trim());
+}
+
+export function normalizeDatabaseUrl(url: string): string {
+  const match = /^sqlite:(?:\/\/)?(.*)$/i.exec(url.trim());
+  if (!match) return url.trim();
+  const path = match[1];
+  if (!path) return url.trim();
+  const absolute = path.startsWith('/') ? path : resolve(process.cwd(), path);
+  return pathToFileURL(absolute).href;
+}
+
+/**
  * Resolve the dev-database connection for one tool call.
  *
  * Returns `db: null` (never throws) when no connection is configured; callers
@@ -196,11 +228,14 @@ export async function resolveRuntimeConnection(
   args: RuntimeDatabaseArgs = {},
 ): Promise<ResolvedRuntimeConnection> {
   const argUrl = args.dbUrl?.trim();
-  if (argUrl && argUrl !== ':memory:') {
+  if (argUrl && !isMemoryDatabaseUrl(argUrl)) {
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(argUrl, args.dbType),
     );
-    const db = await getDatabaseInstance({ type: databaseType, url: argUrl });
+    const db = await getDatabaseInstance({
+      type: databaseType,
+      url: normalizeDatabaseUrl(argUrl),
+    });
     return {
       db,
       source: 'argument',
@@ -210,11 +245,14 @@ export async function resolveRuntimeConnection(
   }
 
   const envUrl = process.env.SMRT_DEV_DB_URL?.trim();
-  if (envUrl && envUrl !== ':memory:') {
+  if (envUrl && !isMemoryDatabaseUrl(envUrl)) {
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(envUrl, args.dbType),
     );
-    const db = await getDatabaseInstance({ type: databaseType, url: envUrl });
+    const db = await getDatabaseInstance({
+      type: databaseType,
+      url: normalizeDatabaseUrl(envUrl),
+    });
     return {
       db,
       source: 'environment',
@@ -225,13 +263,13 @@ export async function resolveRuntimeConnection(
 
   const config = await loadCliDatabaseConfig();
   const configUrl = config?.database?.url?.trim();
-  if (configUrl && configUrl !== ':memory:') {
+  if (configUrl && !isMemoryDatabaseUrl(configUrl)) {
     const databaseType = toRuntimeDatabaseType(
       config.database?.type || inferDatabaseType(configUrl, args.dbType),
     );
     const db = await getDatabaseInstance({
       type: databaseType,
-      url: configUrl,
+      url: normalizeDatabaseUrl(configUrl),
     });
     return {
       db,

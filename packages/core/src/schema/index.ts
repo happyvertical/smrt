@@ -7,6 +7,7 @@ export { SchemaCodeGenerator } from './code-generator.js';
 export * from './ddl/index.js';
 export {
   foreignKeyConstraintName,
+  renderForeignKeyAddStatements,
   renderForeignKeyConstraint,
   renderForeignKeyConstraintComment,
   renderForeignKeyConstraintDrop,

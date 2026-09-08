@@ -14,7 +14,7 @@
  * manifest.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
@@ -113,6 +113,43 @@ function registerManifest(
 
 let booted: RuntimeBoot | null = null;
 let bootedProjectRoot: string | null = null;
+let bootedProjectManifestPath: string | null = null;
+let bootedProjectManifestMtimeMs: number | null = null;
+
+/**
+ * Whether the project manifest on disk is newer than the one this process
+ * booted. The registry is process-global and boots once, so this is the only
+ * signal an agent has that a rebuild happened underneath it.
+ */
+export function getBootStaleness(): {
+  stale: boolean;
+  bootedAt: string | null;
+  manifestModifiedAt: string | null;
+} {
+  if (!booted || !bootedProjectManifestPath) {
+    return {
+      stale: false,
+      bootedAt: booted?.bootedAt ?? null,
+      manifestModifiedAt: null,
+    };
+  }
+  try {
+    const mtimeMs = statSync(bootedProjectManifestPath).mtimeMs;
+    return {
+      stale:
+        bootedProjectManifestMtimeMs !== null &&
+        mtimeMs > bootedProjectManifestMtimeMs,
+      bootedAt: booted.bootedAt,
+      manifestModifiedAt: new Date(mtimeMs).toISOString(),
+    };
+  } catch {
+    return {
+      stale: false,
+      bootedAt: booted.bootedAt,
+      manifestModifiedAt: null,
+    };
+  }
+}
 
 /** The boot record for this process, or `null` before {@link bootRuntime}. */
 export function getRuntimeBoot(): RuntimeBoot | null {
@@ -132,6 +169,8 @@ export function getBootedProjectRoot(): string | null {
 export function resetRuntimeBootForTests(): void {
   booted = null;
   bootedProjectRoot = null;
+  bootedProjectManifestPath = null;
+  bootedProjectManifestMtimeMs = null;
 }
 
 export interface BootRuntimeOptions {
@@ -228,6 +267,14 @@ export async function bootRuntime(
   }
 
   bootedProjectRoot = projectRoot;
+  if (projectManifestPath) {
+    bootedProjectManifestPath = projectManifestPath;
+    try {
+      bootedProjectManifestMtimeMs = statSync(projectManifestPath).mtimeMs;
+    } catch {
+      bootedProjectManifestMtimeMs = null;
+    }
+  }
   booted = {
     provenance: DECLARED_PROVENANCE,
     bootedAt: (options.now ?? new Date()).toISOString(),

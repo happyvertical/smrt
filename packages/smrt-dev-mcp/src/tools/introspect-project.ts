@@ -40,6 +40,14 @@ interface IntrospectProjectArgs {
    * therefore somewhat larger than this budget.
    */
   maxChars?: number;
+  /**
+   * Resume after this `className` (objects are sorted alphabetically). Pass
+   * the `nextCursor` from a previous truncated response to read the next page
+   * instead of raising `maxChars` (#2779).
+   */
+  cursor?: string;
+  /** Maximum objects per page, applied before the character budget. */
+  limit?: number;
 }
 
 type DiagnosticSeverity = 'error' | 'warning' | 'info';
@@ -169,6 +177,8 @@ export async function introspectProject(
     includeMethods = true,
     detail = 'summary',
     maxChars = DEFAULT_MAX_CHARS,
+    cursor,
+    limit,
   } = args;
   const projectPath = resolve(directory);
 
@@ -221,8 +231,24 @@ export async function introspectProject(
           }),
         );
   objects.sort((left, right) => left.className.localeCompare(right.className));
-
-  const { kept, omitted } = applyObjectBudget(objects, maxChars);
+  // Paging: skip everything up to and including the cursor, then cap by
+  // `limit` before the character budget trims further.
+  const afterCursor =
+    typeof cursor === 'string' && cursor.length > 0
+      ? objects.filter((object) => object.className.localeCompare(cursor) > 0)
+      : objects;
+  const pageLimit =
+    typeof limit === 'number' && Number.isFinite(limit) && limit >= 1
+      ? Math.floor(limit)
+      : undefined;
+  const window =
+    pageLimit !== undefined ? afterCursor.slice(0, pageLimit) : afterCursor;
+  const { kept, omitted: budgetOmitted } = applyObjectBudget(window, maxChars);
+  const omitted = afterCursor.length - kept.length;
+  const nextCursor =
+    omitted > 0 && kept.length > 0
+      ? kept[kept.length - 1].className
+      : undefined;
 
   const output = {
     projectPath,
@@ -241,14 +267,19 @@ export async function introspectProject(
     objectCount: objects.length,
     scannedFileCount: manifestResult.scannedFileCount,
     parseTimeMs: manifestResult.parseTimeMs,
+    ...(cursor ? { cursor } : {}),
+    ...(nextCursor ? { nextCursor } : {}),
     ...(omitted > 0
       ? {
           truncated: {
             returnedObjectCount: kept.length,
             omittedObjectCount: omitted,
             budgetChars: maxChars,
+            ...(pageLimit !== undefined ? { limit: pageLimit } : {}),
             guidance:
-              'The object list hit its character budget; metadata and diagnostics are still complete. Narrow the scan with `directory` (a single package), keep `detail: "summary"`, or raise `maxChars` deliberately. Object names are sorted alphabetically, so omitted objects are the alphabetical tail.',
+              budgetOmitted > 0
+                ? 'The object list hit its character budget; metadata and diagnostics are still complete. Pass `cursor: nextCursor` to read the next page, narrow the scan with `directory`, keep `detail: "summary"`, or raise `maxChars` deliberately. Objects are sorted alphabetically.'
+                : 'More objects follow this page. Pass `cursor: nextCursor` to continue.',
           },
         }
       : {}),

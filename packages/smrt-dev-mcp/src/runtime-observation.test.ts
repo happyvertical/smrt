@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,7 @@ import {
   resetRuntimeBootForTests,
 } from './tools/runtime/boot.js';
 import {
+  resetBootPreambleForTests,
   runtimeObject,
   runtimeRegistry,
   runtimeSchemaDiff,
@@ -92,6 +94,7 @@ beforeEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
   ObjectRegistry.clear();
   resetRuntimeBootForTests();
+  resetBootPreambleForTests();
   projectRoot = mkdtempSync(join(tmpdir(), 'smrt-1831-'));
   writeProject(projectRoot);
 });
@@ -187,6 +190,58 @@ describe('observation tools (#1831)', () => {
     expect(text).not.toContain('constructor');
   });
 
+  it('pages runtime-registry objects by cursor and limit', async () => {
+    await bootRuntime({ projectRoot });
+    for (const name of ['Beta', 'Alpha', 'Gamma']) {
+      ObjectRegistry.registerFromManifest(
+        name,
+        {
+          className: name,
+          name: name.toLowerCase(),
+          collection: `${name.toLowerCase()}s`,
+          filePath: join(projectRoot, 'src', `${name}.ts`),
+          fields: {},
+          methods: {},
+          decoratorConfig: {},
+        } as never,
+        '@acme/app',
+      );
+    }
+    const first = await runtimeRegistry({ projectPath: projectRoot, limit: 2 });
+    const page1 = first.data.page as {
+      returned: number;
+      matched: number;
+      nextCursor: string | null;
+    };
+    expect(page1.matched).toBe(4);
+    expect(page1.returned).toBe(2);
+    expect(page1.nextCursor).toBe('@acme/app:Article');
+    const names = (
+      first.data.snapshot as { objects: Array<{ name: string }> }
+    ).objects.map((o) => o.name);
+    expect(names).toEqual(['Alpha', 'Article']);
+    const second = await runtimeRegistry({
+      projectPath: projectRoot,
+      limit: 2,
+      cursor: page1.nextCursor ?? undefined,
+    });
+    const page2 = second.data.page as {
+      returned: number;
+      nextCursor: string | null;
+    };
+    expect(
+      (
+        second.data.snapshot as { objects: Array<{ name: string }> }
+      ).objects.map((o) => o.name),
+    ).toEqual(['Beta', 'Gamma']);
+    expect(page2.nextCursor).toBeNull();
+    // summary is global regardless of the page
+    expect(
+      (second.data.snapshot as { summary: { objectCount: number } }).summary
+        .objectCount,
+    ).toBe(4);
+  });
+
   it('ignores a widened projectPath after boot and never relativizes against it', async () => {
     await runtimeRegistry({ projectPath: projectRoot });
     const spoofed = await runtimeRegistry({
@@ -232,6 +287,31 @@ describe('observation tools (#1831)', () => {
     expect(
       (qualified.data.object as { qualifiedName: string }).qualifiedName,
     ).toBe('@acme/app:Article');
+  });
+
+  it('emits the manifest list once per process and flags a rebuilt manifest', async () => {
+    const first = await runtimeRegistry({ projectPath: projectRoot });
+    const second = await runtimeRegistry({ projectPath: projectRoot });
+    expect(
+      (first.data.boot as { manifests?: unknown[] }).manifests,
+    ).toHaveLength(1);
+    expect(
+      (second.data.boot as { manifests?: unknown[] }).manifests,
+    ).toBeUndefined();
+    expect((second.data.boot as { manifestCount: number }).manifestCount).toBe(
+      1,
+    );
+    expect(
+      second.diagnostics.some((d) => d.code === 'manifest_newer_than_boot'),
+    ).toBe(false);
+    // A rebuild touches the manifest after boot.
+    const manifestPath = join(projectRoot, '.smrt', 'manifest.json');
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(manifestPath, future, future);
+    const third = await runtimeRegistry({ projectPath: projectRoot });
+    expect(
+      third.diagnostics.some((d) => d.code === 'manifest_newer_than_boot'),
+    ).toBe(true);
   });
 
   it('runtime-object returns detail and generated DDL, or a not-found diagnostic', async () => {
