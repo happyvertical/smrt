@@ -32,7 +32,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { TenantIdFieldOptions } from './fields.js';
 import {
-  registerTenantScopedClass,
+  registerTenantScopedConstructor,
   type TenantScopedConfig,
 } from './registry.js';
 
@@ -133,8 +133,6 @@ export function TenantScoped(options: TenantScopedOptions = {}) {
   ): T => {
     applyPendingDecoratorRegistrations(target, decoratorContext);
 
-    const className = target.name;
-
     // Merge with defaults
     const config: Partial<TenantScopedConfig> = {
       mode: options.mode ?? 'required',
@@ -145,7 +143,7 @@ export function TenantScoped(options: TenantScopedOptions = {}) {
     };
 
     // Register with the tenancy system
-    registerTenantScopedClass(className, config);
+    registerTenantScopedConstructor(target, config);
 
     // Support either class-decorator order. This declaration replaces only a
     // provisional field fallback; explicit @smrt and manifest policy retain

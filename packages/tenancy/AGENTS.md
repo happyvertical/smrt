@@ -81,6 +81,17 @@ class Doc extends SmrtObject { @tenantId({ nullable: true }) tenantId: string | 
 class Doc extends SmrtObject { tenantId: string | null = null; }
 ```
 
+The exported `registerTenantScopedClass()` also accepts a simple or qualified
+string selector for third-party classes and test doubles. A simple selector is
+bound to the one exact core constructor when that name is uniquely resolvable;
+it may be registered before core. Once bound, a later same-name package peer
+does not inherit its policy. If two core classes exist before the simple
+selector can bind, operations fail closed until the caller registers an exact
+qualified name (for example, `@package/name:Doc`). No lookup strips a namespace
+to guess an owner. If core clears a bound constructor and reuses its qualified
+name, unregister and register the selector again; it will not silently transfer
+policy to the replacement constructor.
+
 Modes: `'required'` (default — throws without context) or `'optional'` (passes through if no context).
 
 ## Adapters
