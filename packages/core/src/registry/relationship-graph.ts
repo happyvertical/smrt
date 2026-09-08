@@ -39,10 +39,13 @@ function resolveTarget(
   const matches = Array.from(classes).filter(
     ([, entry]) => entry.name === related,
   );
-  if (matches.length === 0) return undefined;
-  return matches.length === 1
-    ? (matches[0][1].qualifiedName ?? matches[0][0])
-    : null;
+  const distinct = [
+    ...new Map(matches.map((match) => [match[1], match])).values(),
+  ];
+  if (distinct.length === 0) return undefined;
+  if (distinct.length !== 1) return null;
+  const match = matches.find(([key]) => key.includes(':')) ?? distinct[0];
+  return match[1].qualifiedName ?? match[0];
 }
 
 /** Canonical target of the field's declaring class, including inherited fields. */
@@ -115,7 +118,7 @@ export function getDependencyGraph(): Map<string, string[]> {
 export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   const classes = getClasses();
   const relationshipMap = new Map<string, RelationshipMetadata[]>();
-  const simpleNameCounts = new Map<string, number>();
+  const simpleNameEntries = new Map<string, Set<RegisteredClass>>();
 
   // Initialize map with all registered classes
   for (const [key, entry] of classes) {
@@ -125,10 +128,9 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
     // class's relationships.
     relationshipMap.set(entry.qualifiedName || key, []);
     const simpleName = entry.name || key;
-    simpleNameCounts.set(
-      simpleName,
-      (simpleNameCounts.get(simpleName) ?? 0) + 1,
-    );
+    const entries = simpleNameEntries.get(simpleName) ?? new Set();
+    entries.add(entry);
+    simpleNameEntries.set(simpleName, entries);
   }
 
   // Scan all fields for relationship types
@@ -199,7 +201,7 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   // callers with a constructor must use the qualified bucket above.
   for (const [key, registered] of classes) {
     const simpleName = registered.name || key;
-    if (simpleNameCounts.get(simpleName) !== 1) continue;
+    if (simpleNameEntries.get(simpleName)?.size !== 1) continue;
     const qualifiedName = registered.qualifiedName || key;
     const relationships = relationshipMap.get(qualifiedName);
     if (relationships) relationshipMap.set(simpleName, relationships);

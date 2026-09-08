@@ -239,11 +239,14 @@ describe('constructor provenance (#2763)', () => {
     ).toHaveLength(1);
   });
 
-  it.each([
-    'constructor',
-    'callback',
-    'string',
-  ] as const)('keeps an unqualified %s target on its registered identity through reads, schema, inverses, and cascades', async (form) => {
+  it.each(
+    (['constructor', 'callback', 'string'] as const).flatMap((form) =>
+      [false, true].map((promote) => ({ form, promote })),
+    ),
+  )('keeps an unqualified $form target through reads, schema, inverses, and cascades (promote=$promote)', async ({
+    form,
+    promote,
+  }) => {
     const Parent = class UnqualifiedParent2763 extends SmrtObject {};
     const Child = class UnqualifiedChild2763 extends SmrtObject {
       parentId = '';
@@ -284,15 +287,38 @@ describe('constructor provenance (#2763)', () => {
       }
     }
 
+    if (promote) {
+      ObjectRegistry.registerFromManifest(
+        'UnqualifiedParent2763',
+        {
+          className: 'UnqualifiedParent2763',
+          fields: {},
+          methods: {},
+          decoratorConfig: { tableName: `unqualified_parent_${form}_2763` },
+        },
+        '@promoted/fixture',
+      );
+      expect(ObjectRegistry.getClass('UnqualifiedParent2763')).toBe(
+        ObjectRegistry.getClassByQualifiedName(
+          '@promoted/fixture:UnqualifiedParent2763',
+        ),
+      );
+      expect(
+        ObjectRegistry.getRelationshipMap().has('UnqualifiedParent2763'),
+      ).toBe(true);
+    }
+    const target = promote
+      ? '@promoted/fixture:UnqualifiedParent2763'
+      : 'UnqualifiedParent2763';
     const relationship = ObjectRegistry.getRelationships(
       'UnqualifiedChild2763',
     ).find((candidate) => candidate.fieldName === 'parentId');
-    expect(relationship?.targetQualifiedClass).toBe('UnqualifiedParent2763');
+    expect(relationship?.targetQualifiedClass).toBe(target);
     expect(
       ObjectRegistry.getInverseRelationshipsForSelf('UnqualifiedParent2763'),
     ).toEqual([
       expect.objectContaining({
-        targetQualifiedClass: 'UnqualifiedParent2763',
+        targetQualifiedClass: target,
       }),
     ]);
     expect(
