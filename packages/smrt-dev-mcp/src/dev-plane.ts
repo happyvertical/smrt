@@ -28,6 +28,7 @@ import {
 import { bearerMatches } from './http.js';
 import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { TOOLS } from './tool-catalog.js';
+import { safeErrorMessage } from './tools/runtime/connection.js';
 import {
   runtimeObject,
   runtimeRegistry,
@@ -309,7 +310,8 @@ export function createDevPlane(options: DevPlaneOptions): DevPlane {
             {
               severity: 'warning',
               code: 'dev_plane_tool_error',
-              message: error instanceof Error ? error.message : 'unknown error',
+              // Same redaction the runtime tools apply to driver errors.
+              message: safeErrorMessage(error),
             },
           ],
           data: { provenance: RUNTIME_PROVENANCE },

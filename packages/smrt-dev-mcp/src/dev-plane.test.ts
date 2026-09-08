@@ -160,6 +160,23 @@ describe('in-app dev-plane (#2782)', () => {
     expect(JSON.stringify(diff)).not.toContain('other.db');
   });
 
+  it('redacts unexpected tool errors before they reach the client', async () => {
+    const plane = createDevPlane({ token: TOKEN, projectRoot });
+    // runtime-object with a non-string name makes the tool throw internally
+    // only in exotic cases; force the catch-all path via a bad body instead.
+    const response = await plane.handleRequest(
+      req('/runtime-object', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: { toString: null } }),
+      }),
+      '/api/_dev',
+    );
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(body)).not.toContain(projectRoot);
+  });
+
   it('answers MCP tools/list and tools/call on the mcp sub-path', async () => {
     const plane = createDevPlane({ token: TOKEN, projectRoot });
     const transport = new StreamableHTTPClientTransport(
