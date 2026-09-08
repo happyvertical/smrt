@@ -145,7 +145,11 @@ for (const engine of ['sqlite', 'duckdb', 'postgres'] as const) {
             const db = await getDatabase({
               type: engine,
               url: engine === 'postgres' ? pgUrl : ':memory:',
-            });
+              // getTestDatabase below owns dependency-ordered DDL. The generic
+              // Vitest auto-preparer sees child-first registration and would
+              // create PostgreSQL FKs before their parent tables exist.
+              __smrtSkipVitestSchemaPreparation: true,
+            } as Parameters<typeof getDatabase>[0]);
             try {
               await getTestDatabase({
                 db,

@@ -3897,8 +3897,13 @@ export class SmrtObject extends SmrtClass {
 
       await this.verifyStorageReady();
 
+      // Normalize native DuckDB UUIDs in the data-bearing query, before
+      // relationship IDs reach the string-only hydration boundary.
+      const targetProjection = this.isNativeDuckDb()
+        ? `CAST("${targetColumn}" AS VARCHAR) AS "${targetColumn}"`
+        : `"${targetColumn}"`;
       const junctionRows = await this.db.query(
-        `SELECT "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" = ?`,
+        `SELECT ${targetProjection} FROM "${through}" WHERE "${sourceColumn}" = ?`,
         [this.id],
       );
 

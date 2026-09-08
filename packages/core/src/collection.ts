@@ -3409,10 +3409,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const junctionRowsAll: Array<{
       [key: string]: unknown;
     }> = [];
+    // Keep native DuckDB UUID wrappers out of the string-only identity map.
+    // Project them in the original query without changing its predicates.
+    const junctionProjection = [sourceColumn, targetColumn]
+      .map((column) =>
+        this.getDatabaseEngine() === 'duckdb'
+          ? `CAST("${column}" AS VARCHAR) AS "${column}"`
+          : `"${column}"`,
+      )
+      .join(', ');
     for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
       const placeholders = idChunk.map(() => '?').join(', ');
       const result = await this.db.query(
-        `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
+        `SELECT ${junctionProjection} FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
         idChunk,
       );
       junctionRowsAll.push(...result.rows);
