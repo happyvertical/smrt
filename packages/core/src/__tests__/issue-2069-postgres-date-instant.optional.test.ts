@@ -347,16 +347,24 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
   });
 
   it('fails closed outside UTC and rolls back every system-table ALTER on failure', async () => {
-    await expect(
-      db.transaction(async (tx) => {
+    const migrationFailure = await db
+      .transaction(async (tx) => {
         await tx.query("SET LOCAL TIME ZONE 'America/Edmonton'");
         await migratePostgresSystemTimestamps(
           tx,
           { legacyTimezone: 'UTC' },
           'postgres',
         );
-      }),
-    ).rejects.toThrow('code=P0001');
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(migrationFailure).toBeDefined();
+    const originalError = (
+      migrationFailure as { context?: { originalError?: unknown } }
+    ).context?.originalError;
+    expect(String(originalError ?? migrationFailure)).toContain('code=P0001');
 
     await db.query('DROP VIEW IF EXISTS _smrt_atomic_z_view');
     await db.query('DROP TABLE IF EXISTS _smrt_atomic_a');
