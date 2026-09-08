@@ -199,6 +199,14 @@ export function inferDatabaseType(url: string, hint?: string): string {
  * - `file:` URLs, `postgres:`/`postgresql:`, `duckdb:` → unchanged
  * - a bare path → unchanged (the driver resolves it)
  */
+/**
+ * Whether a configured value means "in-memory, so not a runtime database":
+ * `:memory:` as well as the `sqlite::memory:` / `sqlite://:memory:` spellings.
+ */
+export function isMemoryDatabaseUrl(url: string): boolean {
+  return /^(?:sqlite:(?:\/\/)?)?:memory:$/i.test(url.trim());
+}
+
 export function normalizeDatabaseUrl(url: string): string {
   const match = /^sqlite:(?:\/\/)?(.*)$/i.exec(url.trim());
   if (!match) return url.trim();
@@ -220,7 +228,7 @@ export async function resolveRuntimeConnection(
   args: RuntimeDatabaseArgs = {},
 ): Promise<ResolvedRuntimeConnection> {
   const argUrl = args.dbUrl?.trim();
-  if (argUrl && argUrl !== ':memory:') {
+  if (argUrl && !isMemoryDatabaseUrl(argUrl)) {
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(argUrl, args.dbType),
     );
@@ -237,7 +245,7 @@ export async function resolveRuntimeConnection(
   }
 
   const envUrl = process.env.SMRT_DEV_DB_URL?.trim();
-  if (envUrl && envUrl !== ':memory:') {
+  if (envUrl && !isMemoryDatabaseUrl(envUrl)) {
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(envUrl, args.dbType),
     );
@@ -255,7 +263,7 @@ export async function resolveRuntimeConnection(
 
   const config = await loadCliDatabaseConfig();
   const configUrl = config?.database?.url?.trim();
-  if (configUrl && configUrl !== ':memory:') {
+  if (configUrl && !isMemoryDatabaseUrl(configUrl)) {
     const databaseType = toRuntimeDatabaseType(
       config.database?.type || inferDatabaseType(configUrl, args.dbType),
     );

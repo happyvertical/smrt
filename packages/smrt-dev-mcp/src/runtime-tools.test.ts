@@ -15,6 +15,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  isMemoryDatabaseUrl,
   normalizeDatabaseUrl,
   redactConnectionString,
   safeErrorMessage,
@@ -263,6 +264,23 @@ describe('normalizeDatabaseUrl (#2778)', () => {
     );
     expect(normalizeDatabaseUrl('/tmp/dev.db')).toBe('/tmp/dev.db');
     expect(normalizeDatabaseUrl(' sqlite: ')).toBe('sqlite:');
+  });
+
+  it('treats every :memory: spelling as not configured', async () => {
+    for (const value of [
+      ':memory:',
+      'sqlite::memory:',
+      'sqlite://:memory:',
+      ' SQLITE::MEMORY: ',
+    ]) {
+      expect(isMemoryDatabaseUrl(value), value).toBe(true);
+    }
+    expect(isMemoryDatabaseUrl('sqlite:///tmp/memory.db')).toBe(false);
+    const envelope = await runtimeMigrationStatus({
+      dbUrl: 'sqlite://:memory:',
+    });
+    expect(envelope.data.connected).toBe(false);
+    expect(envelope.data.provenance).toBe('static');
   });
 
   it('opens a sqlite:// URL through the resolver', async () => {

@@ -35,11 +35,6 @@ export const SYSTEM_DIAGNOSTICS_TABLES = {
 export const DIAGNOSTICS_DEFAULT_LIMIT = 50;
 
 /**
- * A category whose table is missing (or whose read failed) on the live
- * database. Callers must surface this as "category unavailable" — never as an
- * empty-but-healthy category and never as a fabricated value.
- */
-/**
  * Columns the reader wanted but the live table lacks (an older system schema).
  * Readers select only the columns that exist and report the rest here, so a
  * dev database that predates a column still answers instead of failing.
@@ -49,6 +44,11 @@ export interface SchemaBehind {
   missingColumns: string[];
 }
 
+/**
+ * A category whose table is missing (or whose read failed) on the live
+ * database. Callers must surface this as "category unavailable" — never as an
+ * empty-but-healthy category and never as a fabricated value.
+ */
 export interface CategoryUnavailable {
   available: false;
   reason: 'table-missing' | 'retired' | 'read-error';
