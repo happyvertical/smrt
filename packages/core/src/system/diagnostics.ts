@@ -35,6 +35,16 @@ export const SYSTEM_DIAGNOSTICS_TABLES = {
 export const DIAGNOSTICS_DEFAULT_LIMIT = 50;
 
 /**
+ * Columns the reader wanted but the live table lacks (an older system schema).
+ * Readers select only the columns that exist and report the rest here, so a
+ * dev database that predates a column still answers instead of failing.
+ */
+export interface SchemaBehind {
+  tableName: string;
+  missingColumns: string[];
+}
+
+/**
  * A category whose table is missing (or whose read failed) on the live
  * database. Callers must surface this as "category unavailable" — never as an
  * empty-but-healthy category and never as a fabricated value.
@@ -44,6 +54,11 @@ export interface CategoryUnavailable {
   reason: 'table-missing' | 'retired' | 'read-error';
   message: string;
   tableName?: string;
+  /**
+   * Driver error text for `read-error` (never a query with values). Callers
+   * that surface it to a client must redact it first.
+   */
+  detail?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +99,8 @@ export interface MigrationStatusSummary {
 export type MigrationStatusResult =
   | {
       available: true;
+      /** Wanted columns absent on this database (older system schema). */
+      schemaBehind: SchemaBehind[];
       summary: MigrationStatusSummary;
       /** Most recently applied migrations, newest first. */
       latest: MigrationStatusRow[];
@@ -115,6 +132,7 @@ export async function readMigrationStatus(
 
   try {
     const p = placeholders(db);
+    const projection = await selectable(db, table, MIGRATION_COLUMNS_LIST);
     const countRows = queryRows(
       await db.query(
         `SELECT status, COUNT(*) AS total FROM ${table} GROUP BY status`,
@@ -135,7 +153,7 @@ export async function readMigrationStatus(
 
     const latest = queryRows(
       await db.query(
-        `SELECT ${MIGRATION_COLUMNS} FROM ${table}
+        `SELECT ${projection.columns} FROM ${table}
           WHERE status = 'completed'
           ORDER BY applied_at DESC, id ASC
           LIMIT ${p(1)}`,
@@ -145,7 +163,7 @@ export async function readMigrationStatus(
 
     const failedRows = queryRows(
       await db.query(
-        `SELECT ${MIGRATION_COLUMNS} FROM ${table}
+        `SELECT ${projection.columns} FROM ${table}
           WHERE status = 'failed'
           ORDER BY applied_at DESC, id ASC
           LIMIT ${p(1)}`,
@@ -155,16 +173,17 @@ export async function readMigrationStatus(
 
     return {
       available: true,
+      schemaBehind: projection.behind ? [projection.behind] : [],
       summary: { total, byStatus, completed, running, failed, rolledBack },
       latest,
       failed: failedRows,
     };
-  } catch {
-    return unavailable(table, 'read-error');
+  } catch (error) {
+    return unavailable(table, 'read-error', undefined, readError(error));
   }
 }
 
-const MIGRATION_COLUMNS = [
+const MIGRATION_COLUMNS_LIST = [
   'id',
   'name',
   'version',
@@ -179,7 +198,8 @@ const MIGRATION_COLUMNS = [
   'rolled_back_at',
   'applied_by',
   'batch',
-].join(', ');
+] as const;
+const MIGRATION_COLUMNS = MIGRATION_COLUMNS_LIST.join(', ');
 
 function toMigrationRow(row: Record<string, unknown>): MigrationStatusRow {
   return {
@@ -254,6 +274,8 @@ export interface JobHealthSummary {
 export type JobHealthResult =
   | {
       available: true;
+      /** Wanted columns absent on this database (older system schema). */
+      schemaBehind: SchemaBehind[];
       summary: JobHealthSummary;
       jobs: JobHealthRow[];
       workers: WorkerHealthRow[];
@@ -310,10 +332,22 @@ export async function readJobHealth(
     // table liveness is unknowable and the heartbeat is the only signal.
     const workersTable = SYSTEM_DIAGNOSTICS_TABLES.workers;
     const workersAvailable = await tableExists(db, workersTable);
-    const stuckRows = queryRows(
-      workersAvailable
-        ? await db.query(
-            `SELECT COUNT(*) AS total FROM ${table} AS j
+    const jobProjection = await selectable(db, table, JOB_COLUMNS_LIST);
+    const workerProjection = workersAvailable
+      ? await selectable(db, workersTable, WORKER_COLUMNS_LIST)
+      : { columns: WORKER_COLUMNS, behind: null };
+    const jobsHaveHeartbeat =
+      !jobProjection.behind?.missingColumns.includes('worker_heartbeat');
+    const canJoinLease =
+      workersAvailable &&
+      !jobProjection.behind?.missingColumns.includes('worker_id') &&
+      !workerProjection.behind?.missingColumns.includes('lease_expires_at');
+    const stuckRows = !jobsHaveHeartbeat
+      ? [{ total: 0 }]
+      : queryRows(
+          canJoinLease
+            ? await db.query(
+                `SELECT COUNT(*) AS total FROM ${table} AS j
               WHERE j.status = 'running'
                 AND (j.worker_heartbeat IS NULL OR j.worker_heartbeat < ${p(1)})
                 AND NOT EXISTS (
@@ -321,16 +355,16 @@ export async function readJobHealth(
                    WHERE w.worker_id = j.worker_id
                      AND w.lease_expires_at > ${p(2)}
                 )`,
-            staleCutoff.toISOString(),
-            now.toISOString(),
-          )
-        : await db.query(
-            `SELECT COUNT(*) AS total FROM ${table}
+                staleCutoff.toISOString(),
+                now.toISOString(),
+              )
+            : await db.query(
+                `SELECT COUNT(*) AS total FROM ${table}
               WHERE status = 'running'
                 AND (worker_heartbeat IS NULL OR worker_heartbeat < ${p(1)})`,
-            staleCutoff.toISOString(),
-          ),
-    );
+                staleCutoff.toISOString(),
+              ),
+        );
     const stuck = toCount(stuckRows[0]?.total);
 
     const jobs = queryRows(
@@ -346,7 +380,7 @@ export async function readJobHealth(
     if (workersAvailable) {
       workers = queryRows(
         await db.query(
-          `SELECT ${WORKER_COLUMNS} FROM ${workersTable}
+          `SELECT ${workerProjection.columns} FROM ${workersTable}
             ORDER BY heartbeat_at DESC, id ASC
             LIMIT ${p(1)}`,
           limit,
@@ -365,16 +399,19 @@ export async function readJobHealth(
 
     return {
       available: true,
+      schemaBehind: [jobProjection.behind, workerProjection.behind].filter(
+        (behind): behind is SchemaBehind => behind !== null,
+      ),
       summary: { total, byStatus, failed, stuck, eventCount },
       jobs,
       workers,
     };
-  } catch {
-    return unavailable(table, 'read-error');
+  } catch (error) {
+    return unavailable(table, 'read-error', undefined, readError(error));
   }
 }
 
-const JOB_COLUMNS = [
+const JOB_COLUMNS_LIST = [
   'id',
   'tenant_id',
   'queue',
@@ -392,9 +429,10 @@ const JOB_COLUMNS = [
   'task_owner_id',
   'worker_id',
   'worker_heartbeat',
-].join(', ');
+] as const;
+const JOB_COLUMNS = JOB_COLUMNS_LIST.join(', ');
 
-const WORKER_COLUMNS = [
+const WORKER_COLUMNS_LIST = [
   'id',
   'worker_id',
   'pid',
@@ -403,7 +441,8 @@ const WORKER_COLUMNS = [
   'heartbeat_at',
   'lease_expires_at',
   'status',
-].join(', ');
+] as const;
+const WORKER_COLUMNS = WORKER_COLUMNS_LIST.join(', ');
 
 function toJobHealthRow(row: Record<string, unknown>): JobHealthRow {
   return {
@@ -484,6 +523,8 @@ export interface ScheduleHealthSummary {
 export type ScheduleHealthResult =
   | {
       available: true;
+      /** Wanted columns absent on this database (older system schema). */
+      schemaBehind: SchemaBehind[];
       summary: ScheduleHealthSummary;
       schedules: ScheduleHealthRow[];
     }
@@ -510,6 +551,7 @@ export async function readScheduleHealth(
 
   try {
     const p = placeholders(db);
+    const projection = await selectable(db, table, SCHEDULE_COLUMNS_LIST);
     const enabledRows = queryRows(
       await db.query(
         `SELECT enabled, status, COUNT(*) AS total FROM ${table} GROUP BY enabled, status`,
@@ -546,7 +588,7 @@ export async function readScheduleHealth(
 
     const schedules = queryRows(
       await db.query(
-        `SELECT ${SCHEDULE_COLUMNS} FROM ${table}
+        `SELECT ${projection.columns} FROM ${table}
           ORDER BY next_run ASC, id ASC
           LIMIT ${p(1)}`,
         limit,
@@ -555,15 +597,16 @@ export async function readScheduleHealth(
 
     return {
       available: true,
+      schemaBehind: projection.behind ? [projection.behind] : [],
       summary: { total, enabled, active, errored, failed, overdue },
       schedules,
     };
-  } catch {
-    return unavailable(table, 'read-error');
+  } catch (error) {
+    return unavailable(table, 'read-error', undefined, readError(error));
   }
 }
 
-const SCHEDULE_COLUMNS = [
+const SCHEDULE_COLUMNS_LIST = [
   'id',
   'tenant_id',
   'agent_type',
@@ -583,7 +626,8 @@ const SCHEDULE_COLUMNS = [
   'running_count',
   'timeout',
   'method',
-].join(', ');
+] as const;
+const SCHEDULE_COLUMNS = SCHEDULE_COLUMNS_LIST.join(', ');
 
 function toScheduleHealthRow(row: Record<string, unknown>): ScheduleHealthRow {
   return {
@@ -660,6 +704,8 @@ export interface DispatchHealthSummary {
 export type DispatchHealthResult =
   | {
       available: true;
+      /** Wanted columns absent on this database (older system schema). */
+      schemaBehind: SchemaBehind[];
       summary: DispatchHealthSummary;
       dispatches: DispatchHealthRow[];
       subscriptions: DispatchSubscriptionHealthRow[];
@@ -684,6 +730,7 @@ export async function readDispatchHealth(
 
   try {
     const p = placeholders(db);
+    const projection = await selectable(db, table, DISPATCH_COLUMNS_LIST);
     const statusRows = queryRows(
       await db.query(
         `SELECT status, COUNT(*) AS total FROM ${table} GROUP BY status`,
@@ -704,7 +751,7 @@ export async function readDispatchHealth(
 
     const dispatches = queryRows(
       await db.query(
-        `SELECT ${DISPATCH_COLUMNS} FROM ${table}
+        `SELECT ${projection.columns} FROM ${table}
           ORDER BY created_at DESC, id ASC
           LIMIT ${p(1)}`,
         limit,
@@ -714,7 +761,13 @@ export async function readDispatchHealth(
     let subscriptions: DispatchSubscriptionHealthRow[] = [];
     let subscriptionCount = 0;
     const subsTable = SYSTEM_DIAGNOSTICS_TABLES.dispatchSubscriptions;
+    let subsProjection: Awaited<ReturnType<typeof selectable>> | null = null;
     if (await tableExists(db, subsTable)) {
+      subsProjection = await selectable(
+        db,
+        subsTable,
+        SUBSCRIPTION_COLUMNS_LIST,
+      );
       // The summary count is a COUNT(*) aggregate, not the listed-page length:
       // `subscriptions` honors the row budget like every other list, so the
       // list length would silently under-report topology above the limit.
@@ -724,7 +777,7 @@ export async function readDispatchHealth(
       subscriptionCount = toCount(countRows[0]?.total);
       const subsRows = queryRows(
         await db.query(
-          `SELECT ${SUBSCRIPTION_COLUMNS} FROM ${subsTable}
+          `SELECT ${subsProjection.columns} FROM ${subsTable}
             ORDER BY created_at DESC, id ASC
             LIMIT ${p(1)}`,
           limit,
@@ -735,6 +788,9 @@ export async function readDispatchHealth(
 
     return {
       available: true,
+      schemaBehind: [projection.behind, subsProjection?.behind ?? null].filter(
+        (behind): behind is SchemaBehind => behind !== null,
+      ),
       summary: {
         total,
         byStatus,
@@ -747,12 +803,12 @@ export async function readDispatchHealth(
       dispatches,
       subscriptions,
     };
-  } catch {
-    return unavailable(table, 'read-error');
+  } catch (error) {
+    return unavailable(table, 'read-error', undefined, readError(error));
   }
 }
 
-const DISPATCH_COLUMNS = [
+const DISPATCH_COLUMNS_LIST = [
   'id',
   'type',
   'source',
@@ -767,9 +823,10 @@ const DISPATCH_COLUMNS = [
   'tenant_id',
   'created_at',
   'updated_at',
-].join(', ');
+] as const;
+const DISPATCH_COLUMNS = DISPATCH_COLUMNS_LIST.join(', ');
 
-const SUBSCRIPTION_COLUMNS = [
+const SUBSCRIPTION_COLUMNS_LIST = [
   'id',
   'signal_type',
   'subscriber',
@@ -779,7 +836,8 @@ const SUBSCRIPTION_COLUMNS = [
   'tenant_id',
   'created_at',
   'updated_at',
-].join(', ');
+] as const;
+const SUBSCRIPTION_COLUMNS = SUBSCRIPTION_COLUMNS_LIST.join(', ');
 
 function toDispatchHealthRow(row: Record<string, unknown>): DispatchHealthRow {
   return {
@@ -877,8 +935,8 @@ export async function readRecentChanges(
         : {}),
       count: page.changes.length,
     };
-  } catch {
-    return unavailable(table, 'read-error');
+  } catch (error) {
+    return unavailable(table, 'read-error', undefined, readError(error));
   }
 }
 
@@ -964,10 +1022,12 @@ function unavailable(
   tableName: string,
   reason: CategoryUnavailable['reason'],
   message?: string,
+  detail?: string,
 ): CategoryUnavailable {
   return {
     available: false,
     reason,
+    ...(detail ? { detail } : {}),
     message:
       message ??
       (reason === 'retired'
@@ -977,6 +1037,58 @@ function unavailable(
           : `Reading ${tableName} failed; the live diagnostic is unavailable.`),
     tableName,
   };
+}
+
+/** Column names of a table, lower-cased; empty when the probe fails. */
+async function tableColumns(
+  db: DatabaseInterface,
+  tableName: string,
+): Promise<Set<string>> {
+  try {
+    const engine = getDatabaseEngine(db);
+    const rows = queryRows(
+      engine === 'postgres'
+        ? await db.query(
+            'SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+            tableName,
+          )
+        : await db.query(`PRAGMA table_info(${tableName})`),
+    );
+    return new Set(
+      rows
+        .map((row) => String(row.name ?? '').toLowerCase())
+        .filter((name) => name.length > 0),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Intersect a reader's wanted projection with the live table. Returns the
+ * SELECT list to use plus a `SchemaBehind` record when anything is missing.
+ * If the probe itself fails (empty set) the full projection is used so the
+ * read error, not a false schema-behind, surfaces.
+ */
+async function selectable(
+  db: DatabaseInterface,
+  tableName: string,
+  wanted: readonly string[],
+): Promise<{ columns: string; behind: SchemaBehind | null }> {
+  const present = await tableColumns(db, tableName);
+  if (present.size === 0) {
+    return { columns: wanted.join(', '), behind: null };
+  }
+  const have = wanted.filter((column) => present.has(column));
+  const missing = wanted.filter((column) => !present.has(column));
+  return {
+    columns: (have.length > 0 ? have : wanted).join(', '),
+    behind: missing.length > 0 ? { tableName, missingColumns: missing } : null,
+  };
+}
+
+function readError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'unknown');
 }
 
 function boundedLimit(

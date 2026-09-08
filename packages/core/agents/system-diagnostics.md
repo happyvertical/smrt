@@ -16,7 +16,12 @@ healthy category, or fabricated data. Callers must surface the reason, never
 paper over it. `_smrt_registry` is a retired system table and is reported as
 retired rather than read — only its existence is probed, never its rows.
 
-Every read is a bounded `SELECT` with an explicit safe-column projection.
+Every read is a bounded `SELECT` with an explicit safe-column projection,
+intersected with the live table's columns first (`selectable()`; PRAGMA on
+SQLite/DuckDB, `information_schema.columns` on PostgreSQL): a dev database
+whose system tables predate a column still answers, reporting the gap in
+`schemaBehind` (#2778). A failed read returns `read-error` with the driver
+message in `detail` so the caller can surface a cause after redaction.
 Sensitive columns are never selected, not selected-then-stripped: job
 `args`/`result_pointer`/task payloads, schedule `agentConfig`/`methodArgs`, and
 dispatch `payload`/`metadata` stay in the database; short error texts

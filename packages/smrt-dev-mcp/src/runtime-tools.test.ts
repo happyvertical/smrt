@@ -15,6 +15,8 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  isMemoryDatabaseUrl,
+  normalizeDatabaseUrl,
   redactConnectionString,
   safeErrorMessage,
 } from './tools/runtime/connection.js';
@@ -243,6 +245,54 @@ async function tableCounts(
   return counts;
 }
 
+describe('normalizeDatabaseUrl (#2778)', () => {
+  it('turns sqlite: forms into file: URLs and leaves other schemes alone', () => {
+    expect(normalizeDatabaseUrl('sqlite:///tmp/dev.db')).toBe(
+      'file:///tmp/dev.db',
+    );
+    expect(normalizeDatabaseUrl('sqlite:/tmp/dev.db')).toBe(
+      'file:///tmp/dev.db',
+    );
+    expect(normalizeDatabaseUrl('sqlite://rel/dev.db')).toMatch(
+      /^file:\/\/\/.*\/rel\/dev\.db$/,
+    );
+    expect(normalizeDatabaseUrl('file:///tmp/dev.db')).toBe(
+      'file:///tmp/dev.db',
+    );
+    expect(normalizeDatabaseUrl('postgres://u:p@h/db')).toBe(
+      'postgres://u:p@h/db',
+    );
+    expect(normalizeDatabaseUrl('/tmp/dev.db')).toBe('/tmp/dev.db');
+    expect(normalizeDatabaseUrl(' sqlite: ')).toBe('sqlite:');
+  });
+
+  it('treats every :memory: spelling as not configured', async () => {
+    for (const value of [
+      ':memory:',
+      'sqlite::memory:',
+      'sqlite://:memory:',
+      ' SQLITE::MEMORY: ',
+    ]) {
+      expect(isMemoryDatabaseUrl(value), value).toBe(true);
+    }
+    expect(isMemoryDatabaseUrl('sqlite:///tmp/memory.db')).toBe(false);
+    const envelope = await runtimeMigrationStatus({
+      dbUrl: 'sqlite://:memory:',
+    });
+    expect(envelope.data.connected).toBe(false);
+    expect(envelope.data.provenance).toBe('static');
+  });
+
+  it('opens a sqlite:// URL through the resolver', async () => {
+    const path = dbUrl.replace(/^file:/, '');
+    const envelope = await runtimeMigrationStatus({
+      dbUrl: `sqlite://${path}`,
+    });
+    expect(envelope.data.connected).toBe(true);
+    expect(envelope.data.provenance).toBe(RUNTIME_PROVENANCE);
+  });
+});
+
 describe('runtime diagnostics tools (#1824)', () => {
   it('returns live state for every tool against the seeded dev database', async () => {
     const results = await Promise.all([
@@ -275,6 +325,32 @@ describe('runtime diagnostics tools (#1824)', () => {
     expect(registry.data.provenance).toBe(RUNTIME_PROVENANCE);
     expect(registry.data.reason).toBe('retired');
     expect(registry.data.stillPresent).toBe(false);
+  });
+
+  it('reports schema_behind instead of failing on a legacy dispatch table', async () => {
+    await admin.query('DROP TABLE _smrt_dispatch');
+    await admin.query(
+      `CREATE TABLE _smrt_dispatch (
+         id TEXT PRIMARY KEY, type TEXT NOT NULL, source TEXT, source_id TEXT, payload TEXT,
+         status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+         processed_at TEXT, processed_by TEXT, target_subscriber TEXT, metadata TEXT,
+         created_at TEXT NOT NULL, updated_at TEXT
+       )`,
+    );
+    await admin.query(
+      `INSERT INTO _smrt_dispatch (id, type, source, status, created_at)
+       VALUES ('d-old', 'x', 'svc', 'pending', '2026-08-29T10:07:00.000Z')`,
+    );
+    const envelope = await runtimeDispatchHealth({ dbUrl });
+    expect(envelope.ok).toBe(true);
+    expect((envelope.data.summary as { total: number }).total).toBe(1);
+    const behind = envelope.diagnostics.find((d) => d.code === 'schema_behind');
+    expect(behind?.message).toContain('correlation_id');
+    expect(
+      envelope.diagnostics.some((d) =>
+        d.code.startsWith('category_unavailable'),
+      ),
+    ).toBe(false);
   });
 
   it('never leaks sensitive columns in any live result', async () => {
