@@ -14,6 +14,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { field, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const TABLE = 'issue_1904_postgres_facets';
@@ -50,6 +51,11 @@ describe.skipIf(!pgUrl)('PostgreSQL facets (#1904)', () => {
     const ddl = ObjectRegistry.getSchemaDDL(className, 'postgres');
     if (!ddl) throw new Error(`Missing schema DDL for ${className}`);
     await db.query(ddl);
+    const schema = ObjectRegistry.getSchema(className);
+    if (!schema) throw new Error(`Missing schema for ${className}`);
+    for (const index of getDDLStrategy('postgres').generateIndexes(schema)) {
+      await db.query(index);
+    }
   }, 60_000);
 
   afterAll(async () => {
