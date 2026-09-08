@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +29,7 @@ import {
   resetRuntimeBootForTests,
 } from './tools/runtime/boot.js';
 import {
+  resetBootPreambleForTests,
   runtimeObject,
   runtimeRegistry,
   runtimeSchemaDiff,
@@ -92,6 +94,7 @@ beforeEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
   ObjectRegistry.clear();
   resetRuntimeBootForTests();
+  resetBootPreambleForTests();
   projectRoot = mkdtempSync(join(tmpdir(), 'smrt-1831-'));
   writeProject(projectRoot);
 });
@@ -232,6 +235,31 @@ describe('observation tools (#1831)', () => {
     expect(
       (qualified.data.object as { qualifiedName: string }).qualifiedName,
     ).toBe('@acme/app:Article');
+  });
+
+  it('emits the manifest list once per process and flags a rebuilt manifest', async () => {
+    const first = await runtimeRegistry({ projectPath: projectRoot });
+    const second = await runtimeRegistry({ projectPath: projectRoot });
+    expect(
+      (first.data.boot as { manifests?: unknown[] }).manifests,
+    ).toHaveLength(1);
+    expect(
+      (second.data.boot as { manifests?: unknown[] }).manifests,
+    ).toBeUndefined();
+    expect((second.data.boot as { manifestCount: number }).manifestCount).toBe(
+      1,
+    );
+    expect(
+      second.diagnostics.some((d) => d.code === 'manifest_newer_than_boot'),
+    ).toBe(false);
+    // A rebuild touches the manifest after boot.
+    const manifestPath = join(projectRoot, '.smrt', 'manifest.json');
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(manifestPath, future, future);
+    const third = await runtimeRegistry({ projectPath: projectRoot });
+    expect(
+      third.diagnostics.some((d) => d.code === 'manifest_newer_than_boot'),
+    ).toBe(true);
   });
 
   it('runtime-object returns detail and generated DDL, or a not-found diagnostic', async () => {

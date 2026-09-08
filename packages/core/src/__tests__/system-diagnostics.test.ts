@@ -630,6 +630,63 @@ describe('system diagnostics reader (#1824)', () => {
     });
   });
 
+  describe('older system schemas (#2778)', () => {
+    it('answers from a legacy _smrt_dispatch without correlation_id/tenant_id and names the gap', async () => {
+      await db.query('DROP TABLE _smrt_dispatch');
+      await db.query(
+        `CREATE TABLE _smrt_dispatch (
+           id TEXT PRIMARY KEY, type TEXT NOT NULL, source TEXT, source_id TEXT,
+           payload TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+           last_error TEXT, processed_at TEXT, processed_by TEXT, target_subscriber TEXT,
+           metadata TEXT, created_at TEXT NOT NULL, updated_at TEXT
+         )`,
+      );
+      await db.query(
+        `INSERT INTO _smrt_dispatch (id, type, source, status, payload, created_at)
+         VALUES ('d-legacy', 'article.published', 'svc', 'pending', '{"secret":1}', ?)`,
+        TS,
+      );
+      const result = await readDispatchHealth(db);
+      expect(result.available).toBe(true);
+      if (!result.available) return;
+      expect(result.summary.total).toBe(1);
+      expect(result.dispatches[0]).toMatchObject({
+        id: 'd-legacy',
+        type: 'article.published',
+      });
+      expect(result.schemaBehind).toEqual([
+        {
+          tableName: '_smrt_dispatch',
+          missingColumns: ['correlation_id', 'tenant_id'],
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain('secret');
+    });
+
+    it('reports an empty schemaBehind on a current schema', async () => {
+      const result = await readDispatchHealth(db);
+      expect(result.available).toBe(true);
+      if (!result.available) return;
+      expect(result.schemaBehind).toEqual([]);
+    });
+
+    it('surfaces the driver error as detail on a read error', async () => {
+      const broken: DatabaseInterface = {
+        ...db,
+        query: async (sql: string): Promise<any> => {
+          if (/^SELECT 1 FROM _smrt_schema_migrations/.test(sql))
+            return [{ '1': 1 }];
+          throw new Error('SQLITE_ERROR: no such column: applied_at');
+        },
+      };
+      const result = await readMigrationStatus(broken);
+      expect(result.available).toBe(false);
+      if (result.available) return;
+      expect(result.reason).toBe('read-error');
+      expect(result.detail).toContain('no such column: applied_at');
+    });
+  });
+
   describe('recent-changes', () => {
     it('never drains the feed: only SELECT statements reach the database', async () => {
       const queries: string[] = [];

@@ -251,10 +251,11 @@ function toEnvelopeParts(rawResult: unknown): {
     const unavailable = result as unknown as {
       reason: string;
       message: string;
+      detail?: string;
       tableName?: string;
       [key: string]: unknown;
     };
-    const { message, ...rest } = unavailable;
+    const { message, detail, ...rest } = unavailable;
     const severity: RuntimeDiagnostic['severity'] =
       unavailable.reason === 'retired' ? 'info' : 'warning';
     return {
@@ -263,12 +264,34 @@ function toEnvelopeParts(rawResult: unknown): {
         {
           severity,
           code: `category_unavailable_${String(unavailable.reason).replace(/-/g, '_')}`,
-          message: String(message),
+          // `detail` is the driver's own error text, already passed through
+          // redactStrings above; surfacing it turns "read failed" into a cause.
+          message: detail
+            ? `${String(message)} Cause: ${detail}`
+            : String(message),
         },
       ],
     };
   }
-  return { data: result as Record<string, unknown>, diagnostics: [] };
+  const data = result as Record<string, unknown>;
+  const diagnostics: RuntimeDiagnostic[] = [];
+  // An older system schema answers with what it has and names the rest.
+  const behind = Array.isArray(data.schemaBehind) ? data.schemaBehind : [];
+  for (const entry of behind as Array<{
+    tableName?: unknown;
+    missingColumns?: unknown;
+  }>) {
+    const columns = Array.isArray(entry.missingColumns)
+      ? entry.missingColumns.map(String)
+      : [];
+    if (columns.length === 0) continue;
+    diagnostics.push({
+      severity: 'info',
+      code: 'schema_behind',
+      message: `${String(entry.tableName ?? 'table')} predates ${columns.join(', ')}; those fields are reported as null. Run db:migrate to bring the system tables current.`,
+    });
+  }
+  return { data, diagnostics };
 }
 
 function readToParts(read: Promise<unknown>): Promise<RuntimeReadParts> {

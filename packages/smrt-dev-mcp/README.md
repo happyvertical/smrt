@@ -592,6 +592,17 @@ anywhere → every runtime tool returns a successful static-only result
 (`provenance: 'static'`, `connected: false`) and the server starts and serves
 all static tools unaffected.
 
+Accepted URL forms: `file:///abs/dev.db`, `sqlite:///abs/dev.db`
+(`sqlite:` is normalised to a `file:` URL; a relative `sqlite:` path resolves
+against the server's working directory), a bare path, `postgres://…`, or
+`duckdb:…`. `:memory:` is treated as not configured.
+
+Older dev databases whose `_smrt_*` tables predate a column are still
+answered: each reader selects only the columns that exist and reports the rest
+in a `schema_behind` diagnostic (and `schemaBehind` on the data) rather than
+failing the category. A read that does fail carries the redacted driver
+message as its cause.
+
 **Provenance labeling.** Live results carry `provenance: 'runtime (live DB)'`;
 static-only results carry `provenance: 'static'`. Never conflate the two: the
 manifest reports what the code declares, runtime tools report what the running
