@@ -61,6 +61,7 @@ import {
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
+  ensureTenantScopedField,
 } from './registry/class-registration';
 import {
   clearRegistryDiagnostics,
@@ -3196,6 +3197,7 @@ export class ObjectRegistry {
    * ```
    */
   static getConflictColumns(className: string): string[] {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return defaultConflictColumns('cti'); // Default for unregistered classes
@@ -3260,6 +3262,7 @@ export class ObjectRegistry {
    * @returns The snake_case tenant column name, e.g. `tenant_id`
    */
   static getTenantColumn(className: string): string | undefined {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     if (!registered) return undefined;
     const ownerName =
@@ -3298,8 +3301,28 @@ export class ObjectRegistry {
   static getTenantScopedConfig(
     className: string,
   ): RegisteredClass['tenantScopedConfig'] | undefined {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     return registered?.tenantScopedConfig;
+  }
+
+  /**
+   * Refuse an object whose generated manifest silently contradicts its exact
+   * runtime `@TenantScoped()` declaration. This remains observable after a
+   * caller catches the registration-time error, so no global conflict target
+   * or interceptor path can be used from the partially loaded class.
+   */
+  static assertTenantScopedRegistrationValid(className: string): void {
+    const registered = ObjectRegistry.findClass(className);
+    if (
+      registered?.tenantScopedConfigSource ===
+      'invalid-runtime-manifest-conflict'
+    ) {
+      throw new ConfigurationError(
+        `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        'CONFIG_TENANT_MANIFEST_CONFLICT',
+      );
+    }
   }
 
   /**
@@ -3318,6 +3341,26 @@ export class ObjectRegistry {
     );
     if (registered) {
       if (
+        registered.tenantScopedConfigSource ===
+        'invalid-runtime-manifest-conflict'
+      ) {
+        throw new ConfigurationError(
+          `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          'CONFIG_TENANT_MANIFEST_CONFLICT',
+        );
+      }
+      if (
+        registered.tenantScopedConfigSource === 'manifest' &&
+        !registered.tenantScopedConfig
+      ) {
+        registered.tenantScopedConfigSource =
+          'invalid-runtime-manifest-conflict';
+        throw new ConfigurationError(
+          `Manifest for '${registered.qualifiedName || registered.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          'CONFIG_TENANT_MANIFEST_CONFLICT',
+        );
+      }
+      if (
         registered.tenantScopedConfigSource === 'explicit' ||
         registered.tenantScopedConfigSource === 'manifest'
       ) {
@@ -3325,6 +3368,11 @@ export class ObjectRegistry {
       }
       registered.tenantScopedConfig = { ...config };
       registered.tenantScopedConfigSource = 'tenant-decorator';
+      ensureTenantScopedField(registered.fields, registered.tenantScopedConfig);
+      // Schema assembly reads the registered fields on every generation pass;
+      // invalidate all inherited-field caches that can otherwise retain the
+      // pre-injection shape (including descendants).
+      _invalidateInheritanceEntries(registered);
       return;
     }
 

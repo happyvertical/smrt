@@ -566,6 +566,19 @@ export function register(
       name,
       explicitPackageName,
     );
+    // Validate before promotion removes or rewrites an existing exact
+    // constructor registration. A generated isolated manifest is authoritative
+    // for schema, so it cannot silently erase a live @TenantScoped contract.
+    if (
+      config.tenantScoped === undefined &&
+      isolatedManifestEntry.decoratorConfig?.tenantScoped === undefined &&
+      getConstructorTenantScopedDeclarations().get(ctor)
+    ) {
+      throw new ConfigurationError(
+        `Manifest for '${name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        'CONFIG_TENANT_MANIFEST_CONFLICT',
+      );
+    }
   }
 
   function upsertExistingEntry(
@@ -806,6 +819,19 @@ export function register(
   if (!manifestEntry) {
     manifestEntry = discoverManifestSync(name);
   }
+  const runtimeTenantScopedDeclaration =
+    getConstructorTenantScopedDeclarations().get(ctor);
+  if (
+    manifestEntry &&
+    config.tenantScoped === undefined &&
+    manifestEntry.decoratorConfig?.tenantScoped === undefined &&
+    runtimeTenantScopedDeclaration
+  ) {
+    throw new ConfigurationError(
+      `Manifest for '${name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      'CONFIG_TENANT_MANIFEST_CONFLICT',
+    );
+  }
   const fields = new Map<string, RegisteredField>();
   const methods = new Map<string, MethodDefinition>();
   let packageName: string | undefined;
@@ -1037,7 +1063,7 @@ export function register(
   let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
   const constructorTenantScopedDeclaration = manifestEntry
     ? undefined
-    : (getConstructorTenantScopedDeclarations().get(ctor) as
+    : (runtimeTenantScopedDeclaration as
         | RegisteredClass['tenantScopedConfig']
         | undefined);
   const fieldTenantScopedConfig = tenantScopedConfigFromFieldMetadata(fields);
@@ -1441,7 +1467,7 @@ function normalizeTenantScopedConfig(
   };
 }
 
-function ensureTenantScopedField(
+export function ensureTenantScopedField(
   fields: Map<string, RegisteredField>,
   tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined,
 ): void {
@@ -1676,6 +1702,18 @@ function mergeManifestIntoExistingRegistration(
   packageName?: string,
 ): void {
   const manifestConfig = objectDef.decoratorConfig || {};
+  const runtimeTenantScopedDeclaration =
+    getConstructorTenantScopedDeclarations().get(existing.constructor);
+  if (
+    existing.tenantScopedConfigSource !== 'explicit' &&
+    manifestConfig.tenantScoped === undefined &&
+    runtimeTenantScopedDeclaration
+  ) {
+    throw new ConfigurationError(
+      `Manifest for '${existing.qualifiedName || existing.name}' omits tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      'CONFIG_TENANT_MANIFEST_CONFLICT',
+    );
+  }
   const manifestTableName =
     objectDef.schema?.tableName ||
     manifestConfig.tableName ||

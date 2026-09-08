@@ -11,6 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildCascadePlan } from '../cascade.js';
 import { field, foreignKey } from '../decorators/index.js';
+import { ConfigurationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
@@ -309,6 +310,143 @@ describe('runtime tenant schema registration (#2763)', () => {
     );
   });
 
+  it('injects the tenant field and refreshes schema assembly when a declaration arrives after registration', () => {
+    class PostRegistrationTenant extends SmrtObject {}
+    ObjectRegistry.register(PostRegistrationTenant, {
+      tableName: 'post_registration_tenants_2763',
+    });
+
+    ObjectRegistry.reconcileTenantScopedConfig(
+      PostRegistrationTenant,
+      tenantConfig('required'),
+    );
+
+    const registered = ObjectRegistry.getClassByConstructor(
+      PostRegistrationTenant,
+    );
+    expect(registered?.fields.get('tenantId')).toMatchObject({
+      type: 'foreignKey',
+      related: 'Tenant',
+    });
+    expect(ObjectRegistry.getConflictColumns('PostRegistrationTenant')).toEqual(
+      ['tenant_id', 'slug', 'context'],
+    );
+    expect(
+      ObjectRegistry.getAllSchemasAsDefinitions().post_registration_tenants_2763
+        ?.indexes,
+    ).toContainEqual({
+      name: 'post_registration_tenants_2763_slug_context_idx',
+      columns: ['tenant_id', 'slug', 'context'],
+      unique: true,
+    });
+  });
+
+  it('keeps a caught post-registration silent-manifest conflict unavailable to schema and conflict resolution', () => {
+    class CaughtSilentManifestTenant extends SmrtObject {}
+    ObjectRegistry.register(CaughtSilentManifestTenant, {
+      packageName: '@test/caught-silent-manifest',
+      _manifest: {
+        packageName: '@test/caught-silent-manifest',
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          CaughtSilentManifestTenant: {
+            className: 'CaughtSilentManifestTenant',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      _manifestKey: 'CaughtSilentManifestTenant',
+    });
+
+    expect(() =>
+      ObjectRegistry.reconcileTenantScopedConfig(
+        CaughtSilentManifestTenant,
+        tenantConfig('required'),
+      ),
+    ).toThrow(ConfigurationError);
+
+    const identity = '@test/caught-silent-manifest:CaughtSilentManifestTenant';
+    expect(() => ObjectRegistry.getConflictColumns(identity)).toThrow(
+      ConfigurationError,
+    );
+    expect(() => ObjectRegistry.getTenantColumn(identity)).toThrow(
+      ConfigurationError,
+    );
+    expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
+      ConfigurationError,
+    );
+
+    expect(() =>
+      ObjectRegistry.reconcileTenantScopedConfig(
+        CaughtSilentManifestTenant,
+        tenantConfig('required'),
+      ),
+    ).toThrow(ConfigurationError);
+
+    ObjectRegistry.registerFromManifest(
+      '@test/caught-silent-manifest:CaughtSilentManifestTenant',
+      {
+        className: 'CaughtSilentManifestTenant',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tenantScoped: { mode: 'required' } },
+      },
+      '@test/caught-silent-manifest',
+    );
+
+    expect(ObjectRegistry.getTenantScopedConfig(identity)).toMatchObject({
+      mode: 'required',
+      field: 'tenantId',
+    });
+    expect(ObjectRegistry.getConflictColumns(identity)).toEqual([
+      'tenant_id',
+      'slug',
+      'context',
+    ]);
+  });
+
+  it('rejects a silent isolated manifest before it can promote an exact runtime constructor', () => {
+    class PromotedSilentManifestTenant extends SmrtObject {}
+    ObjectRegistry.reconcileTenantScopedConfig(
+      PromotedSilentManifestTenant,
+      tenantConfig('required'),
+    );
+    ObjectRegistry.register(PromotedSilentManifestTenant, {
+      tableName: 'promoted_silent_manifest_tenants_2763',
+    });
+
+    expect(() =>
+      ObjectRegistry.register(PromotedSilentManifestTenant, {
+        packageName: '@test/promoted-silent-manifest',
+        _manifest: {
+          packageName: '@test/promoted-silent-manifest',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            PromotedSilentManifestTenant: {
+              className: 'PromotedSilentManifestTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
+          },
+        },
+        _manifestKey: 'PromotedSilentManifestTenant',
+      }),
+    ).toThrow(ConfigurationError);
+
+    expect(
+      ObjectRegistry.getClassByConstructor(PromotedSilentManifestTenant)
+        ?.tenantScopedConfig,
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
+    expect(
+      ObjectRegistry.getConflictColumns('PromotedSilentManifestTenant'),
+    ).toEqual(['tenant_id', 'slug', 'context']);
+  });
+
   it('does not widen inverse relationships across same-name package targets', () => {
     const ParentA = class Parent extends SmrtObject {};
     const ParentB = class Parent extends SmrtObject {};
@@ -416,7 +554,7 @@ describe('runtime tenant schema registration (#2763)', () => {
     ).toEqual(['slug', 'context']);
   });
 
-  it('does not let a later class declaration override a late silent manifest', () => {
+  it('refuses a late silent manifest without mutating an exact runtime tenancy declaration', () => {
     class LateManifestReconciledTenant extends SmrtObject {}
     ObjectRegistry.reconcileTenantScopedConfig(
       LateManifestReconciledTenant,
@@ -427,28 +565,25 @@ describe('runtime tenant schema registration (#2763)', () => {
       tableName: 'late_manifest_reconciled_tenants_2763',
     });
 
-    ObjectRegistry.registerFromManifest(
-      '@test/late-manifest-reconciled:LateManifestReconciledTenant',
-      {
-        className: 'LateManifestReconciledTenant',
-        fields: {},
-        methods: {},
-        decoratorConfig: {},
-      },
-      '@test/late-manifest-reconciled',
-    );
-
-    ObjectRegistry.reconcileTenantScopedConfig(
-      LateManifestReconciledTenant,
-      tenantConfig('required'),
-    );
+    expect(() =>
+      ObjectRegistry.registerFromManifest(
+        '@test/late-manifest-reconciled:LateManifestReconciledTenant',
+        {
+          className: 'LateManifestReconciledTenant',
+          fields: {},
+          methods: {},
+          decoratorConfig: {},
+        },
+        '@test/late-manifest-reconciled',
+      ),
+    ).toThrow(ConfigurationError);
 
     expect(
       ObjectRegistry.getTenantScopedConfig('LateManifestReconciledTenant'),
-    ).toBeUndefined();
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
     expect(
       ObjectRegistry.getConflictColumns('LateManifestReconciledTenant'),
-    ).toEqual(['slug', 'context']);
+    ).toEqual(['tenant_id', 'slug', 'context']);
   });
 
   it('keeps explicit core tenancy when a late manifest is silent', () => {

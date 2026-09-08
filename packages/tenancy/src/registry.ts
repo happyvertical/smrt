@@ -160,6 +160,10 @@ function cloneConfig(config: TenantScopedConfig): TenantScopedConfig {
 function getDirectTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
+  // Core marks caught silent-manifest/runtime-decorator conflicts invalid.
+  // Check before the simple-name decorator mirror so every identity path
+  // fails closed rather than falling through to an unscoped operation.
+  ObjectRegistry.assertTenantScopedRegistrationValid(className);
   // 1. Local registry (explicit @TenantScoped decorator).
   const localConfig = tenantScopedClasses.get(className);
   if (localConfig) {

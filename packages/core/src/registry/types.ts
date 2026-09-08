@@ -1012,7 +1012,9 @@ export interface RegisteredClass {
     | 'explicit'
     | 'manifest'
     | 'tenant-decorator'
-    | 'field-fallback';
+    | 'field-fallback'
+    /** A silent manifest contradicted an exact runtime @TenantScoped declaration. */
+    | 'invalid-runtime-manifest-conflict';
   /**
    * Visibility control for manifest inclusion
    * - 'public': Included in published manifest (default)

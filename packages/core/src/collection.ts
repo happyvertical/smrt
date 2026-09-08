@@ -38,6 +38,10 @@ import {
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
+import {
+  resolveOneToManyInverse,
+  resolveRelationshipTargetName,
+} from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
@@ -1822,46 +1826,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .join(', ');
   }
 
-  private resolveOneToManyInverseForeignKey(
-    relationship: import('./registry').RelationshipMetadata,
-  ): import('./registry').RelationshipMetadata {
-    const inverseCandidates = ObjectRegistry.getInverseRelationshipsForSelf(
-      this.getResolvedItemQualifiedName(),
-    ).filter(
-      (candidate) =>
-        (candidate.sourceClass === relationship.targetClass ||
-          candidate.sourceQualifiedClass === relationship.targetClass) &&
-        candidate.type === 'foreignKey',
-    );
-    const explicitForeignKey = relationship.options?.foreignKey as
-      | string
-      | undefined;
-    const matchedForeignKey = explicitForeignKey
-      ? inverseCandidates.find(
-          (candidate) => candidate.fieldName === explicitForeignKey,
-        )
-      : undefined;
-    if (explicitForeignKey && !matchedForeignKey) {
-      throw new Error(
-        `oneToMany ${relationship.fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((candidate) => candidate.fieldName).join(', ') || '(none)'}`,
-      );
-    }
-
-    const inverseForeignKey =
-      matchedForeignKey ??
-      inverseCandidates.find(
-        (candidate) =>
-          candidate.targetClass === this.getResolvedItemClassName(),
-      ) ??
-      inverseCandidates[0];
-    if (!inverseForeignKey) {
-      throw new Error(
-        `Could not find inverse foreignKey on ${relationship.targetClass} for oneToMany relationship ${relationship.fieldName}`,
-      );
-    }
-    return inverseForeignKey;
-  }
-
   /**
    * Load a page of hydrated parents with one selected latest row from a
    * declared `@oneToMany` relation. The parent page is sliced only after the
@@ -1945,10 +1909,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    const inverseForeignKey =
-      this.resolveOneToManyInverseForeignKey(relationship);
+    const targetName = await resolveRelationshipTargetName(relationship);
+    const inverseForeignKey = resolveOneToManyInverse(
+      itemQualifiedName,
+      relationship,
+      targetName,
+    );
     const relatedCollection = await ObjectRegistry.getCollection(
-      relationship.targetClass,
+      targetName,
       this.options,
     );
     await relatedCollection.ensureStorageReady();
@@ -2422,8 +2390,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ) => SmrtCollection<SmrtObject>);
     if (this.constructor !== SmrtCollection && collectionCtor._itemClass) {
       const itemClass = collectionCtor._itemClass;
+      const registeredItem = ObjectRegistry.getClassByConstructor(itemClass);
       const itemClassName =
-        ObjectRegistry.getClassByConstructor(itemClass)?.name || itemClass.name;
+        registeredItem?.qualifiedName ?? registeredItem?.name ?? itemClass.name;
       ObjectRegistry.registerCollection(itemClassName, collectionCtor);
     }
   }
@@ -3213,11 +3182,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         relationship.type === 'foreignKey' ||
         relationship.type === 'crossPackageRef'
       ) {
-        // crossPackageRef target lives in another package — make sure its
-        // manifest is loaded before we try to instantiate the target collection.
-        if (relationship.type === 'crossPackageRef') {
-          await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
-        }
         // Batch load foreignKey / crossPackageRef relationships
         await this.batchLoadForeignKeys(instances, fieldName, relationship);
       } else if (relationship.type === 'oneToMany') {
@@ -3253,11 +3217,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (foreignKeyValues.size === 0) return;
 
+    const targetName = await resolveRelationshipTargetName(relationship);
     // Get or create cached collection instance
     let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
-        relationship.targetClass,
+        targetName,
         this.options,
       );
     } catch (error) {
@@ -3310,50 +3275,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fieldName: string,
     relationship: import('./registry').RelationshipMetadata,
   ): Promise<void> {
-    // Find the inverse foreignKey field. An instance can satisfy an inverse FK
-    // that targets its own class or any (STI) ancestor it inherits the
-    // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
-    // loading resolve the same inverse side.
-    const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
+    const targetName = await resolveRelationshipTargetName(relationship);
+    const inverseForeignKey = resolveOneToManyInverse(
       this.getResolvedItemQualifiedName(),
+      relationship,
+      targetName,
     );
-    const inverseCandidates = inverseRelationships.filter(
-      (r) =>
-        (r.sourceClass === relationship.targetClass ||
-          r.sourceQualifiedClass === relationship.targetClass) &&
-        r.type === 'foreignKey',
-    );
-    // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
-    // declares multiple foreign keys back to this class; otherwise fall back
-    // to the first match (legacy behavior).
-    const explicitForeignKey = relationship.options?.foreignKey as
-      | string
-      | undefined;
-    const matchedForeignKey = explicitForeignKey
-      ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
-      : undefined;
-    if (explicitForeignKey && !matchedForeignKey) {
-      // A misspelled / stale `foreignKey` is a configuration error, not a
-      // recoverable data condition — fail loudly here too so eager (`include:`)
-      // loading behaves identically to lazy loadRelatedMany rather than
-      // silently producing empty arrays.
-      throw new Error(
-        `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
-      );
-    }
-    // Prefer an inverse FK that targets this exact class before falling back
-    // to an ancestor's (mirrors loadRelatedMany).
-    const inverseForeignKey =
-      matchedForeignKey ??
-      inverseCandidates.find((r) => r.targetClass === this._itemClass.name) ??
-      inverseCandidates[0];
-
-    if (!inverseForeignKey) {
-      logger.warn(
-        `Could not find inverse foreignKey for oneToMany ${fieldName}`,
-      );
-      return;
-    }
 
     // Collect all instance IDs
     const instanceIds = instances
@@ -3366,7 +3293,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
-        relationship.targetClass,
+        targetName,
         this.options,
       );
     } catch (error) {
@@ -3430,6 +3357,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .map((i) => i.id)
       .filter((id): id is string => !!id);
     if (instanceIds.length === 0) return;
+
+    // Resolve outside the legacy join-error handler: ownership failures are fatal.
+    await resolveRelationshipTargetName(relationship);
 
     // Delegate join-coordinate resolution to a sample instance — it shares the
     // same registry metadata as every other instance in this batch.

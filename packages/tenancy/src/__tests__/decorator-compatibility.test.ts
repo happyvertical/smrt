@@ -5,7 +5,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { TenantContextError } from '../context.js';
+import { TenantContextError, withTenant } from '../context.js';
 import { TenantScoped, tenantId } from '../decorators.js';
 import { createTenantInterceptor } from '../interceptor.js';
 
@@ -133,6 +133,28 @@ describe('tenantId decorator compatibility', () => {
         },
       ),
     ).toThrow(TenantContextError);
+
+    expect(() =>
+      interceptor.beforeSave?.({ tenantId: '' } as SmrtObject, {
+        className: 'TenantCollision',
+        qualifiedClassName: '@fixture/tenant-required:TenantCollision',
+        operation: 'save',
+        timestamp: new Date(),
+      }),
+    ).toThrow(TenantContextError);
+
+    withTenant({ tenantId: 'tenant-required-2763' }, () => {
+      const instance = { tenantId: '' } as SmrtObject;
+      interceptor.beforeSave?.(instance, {
+        className: 'TenantCollision',
+        qualifiedClassName: '@fixture/tenant-required:TenantCollision',
+        operation: 'save',
+        timestamp: new Date(),
+      });
+      expect((instance as unknown as { tenantId: string }).tenantId).toBe(
+        'tenant-required-2763',
+      );
+    });
   });
 
   it('does not give an ordinary same-name peer a tenant marker', () => {
@@ -211,56 +233,107 @@ describe('tenantId decorator compatibility', () => {
     expect(fields.get('title')?.type).toBe('text');
   });
 
-  it('keeps a silent manifest authoritative in either real class-decorator order', () => {
-    @TenantScoped({ mode: 'required' })
-    @smrt({
-      packageName: '@fixture/silent-manifest-outer-tenant',
-      _manifest: {
+  it('fails closed for a silent manifest in either real class-decorator order', () => {
+    expect(() => {
+      @TenantScoped({ mode: 'required' })
+      @smrt({
         packageName: '@fixture/silent-manifest-outer-tenant',
-        version: '1.0.0',
-        timestamp: 0,
-        objects: {
-          SilentManifestOuterTenant: {
-            className: 'SilentManifestOuterTenant',
-            fields: {},
-            methods: {},
-            decoratorConfig: {},
+        _manifest: {
+          packageName: '@fixture/silent-manifest-outer-tenant',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            SilentManifestOuterTenant: {
+              className: 'SilentManifestOuterTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
           },
         },
-      },
-      _manifestKey: 'SilentManifestOuterTenant',
-    })
-    class SilentManifestOuterTenant extends SmrtObject {}
+        _manifestKey: 'SilentManifestOuterTenant',
+      })
+      class SilentManifestOuterTenant extends SmrtObject {}
+    }).toThrow(/Regenerate the manifest/);
 
-    @smrt({
-      packageName: '@fixture/silent-manifest-inner-tenant',
-      _manifest: {
+    expect(() => {
+      @smrt({
         packageName: '@fixture/silent-manifest-inner-tenant',
+        _manifest: {
+          packageName: '@fixture/silent-manifest-inner-tenant',
+          version: '1.0.0',
+          timestamp: 0,
+          objects: {
+            SilentManifestInnerTenant: {
+              className: 'SilentManifestInnerTenant',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
+          },
+        },
+        _manifestKey: 'SilentManifestInnerTenant',
+      })
+      @TenantScoped({ mode: 'required' })
+      class SilentManifestInnerTenant extends SmrtObject {}
+    }).toThrow(/Regenerate the manifest/);
+  });
+
+  it('keeps a caught post-registration decorator conflict unavailable to mutation hooks', () => {
+    class CaughtSilentManifestTenant extends SmrtObject {}
+    smrt({
+      packageName: '@fixture/caught-silent-manifest',
+      _manifest: {
+        packageName: '@fixture/caught-silent-manifest',
         version: '1.0.0',
         timestamp: 0,
         objects: {
-          SilentManifestInnerTenant: {
-            className: 'SilentManifestInnerTenant',
+          CaughtSilentManifestTenant: {
+            className: 'CaughtSilentManifestTenant',
             fields: {},
             methods: {},
             decoratorConfig: {},
           },
         },
       },
-      _manifestKey: 'SilentManifestInnerTenant',
-    })
-    @TenantScoped({ mode: 'required' })
-    class SilentManifestInnerTenant extends SmrtObject {}
+      _manifestKey: 'CaughtSilentManifestTenant',
+    })(CaughtSilentManifestTenant);
 
-    for (const className of [
-      'SilentManifestOuterTenant',
-      'SilentManifestInnerTenant',
-    ]) {
-      expect(ObjectRegistry.getTenantScopedConfig(className)).toBeUndefined();
-      expect(ObjectRegistry.getConflictColumns(className)).toEqual([
-        'slug',
-        'context',
-      ]);
-    }
+    expect(() => TenantScoped()(CaughtSilentManifestTenant)).toThrow(
+      /Regenerate the manifest/,
+    );
+
+    const interceptor = createTenantInterceptor();
+    expect(() =>
+      interceptor.beforeList?.(
+        'CaughtSilentManifestTenant',
+        {},
+        {
+          className: 'CaughtSilentManifestTenant',
+          qualifiedClassName:
+            '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',
+          operation: 'list',
+          timestamp: new Date(),
+        },
+      ),
+    ).toThrow(/Regenerate the manifest/);
+    expect(() =>
+      interceptor.beforeGet?.('CaughtSilentManifestTenant', 'row-2763', {
+        className: 'CaughtSilentManifestTenant',
+        qualifiedClassName:
+          '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',
+        operation: 'get',
+        timestamp: new Date(),
+      }),
+    ).toThrow(/Regenerate the manifest/);
+    expect(() =>
+      interceptor.beforeSave?.({ tenantId: '' } as SmrtObject, {
+        className: 'CaughtSilentManifestTenant',
+        qualifiedClassName:
+          '@fixture/caught-silent-manifest:CaughtSilentManifestTenant',
+        operation: 'save',
+        timestamp: new Date(),
+      }),
+    ).toThrow(/Regenerate the manifest/);
   });
 });
