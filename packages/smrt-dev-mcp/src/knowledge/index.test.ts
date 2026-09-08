@@ -317,6 +317,17 @@ describe('SMRT knowledge index', () => {
     expect(context.promptBundle?.contextMarkdown).toContain('SMRT code review');
   });
 
+  it('singularizes idea tokens with one rule each (#2780 review)', async () => {
+    const context = await buildContext({
+      task: 'architecture',
+      rootDir,
+      idea: 'track demos and their entries in batches',
+    });
+    expect(context.selectedPackages.map((pkg) => pkg.name)).toContain(
+      '@happyvertical/smrt-demo',
+    );
+  });
+
   it('build-context architecture ranks the package the idea names first (#2780)', async () => {
     await mkdir(join(rootDir, 'packages', 'newsletters', 'src', 'manifest'), {
       recursive: true,

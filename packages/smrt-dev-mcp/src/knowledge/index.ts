@@ -3819,9 +3819,18 @@ function textTokens(text: string): Set<string> {
   const tokens = new Set<string>();
   for (const raw of text.toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? []) {
     tokens.add(raw);
+    // One singularization rule per token: "entries" → "entry" only, never
+    // the spurious "entri"/"entrie" a stacked chain would also add.
     if (raw.endsWith('ies')) tokens.add(`${raw.slice(0, -3)}y`);
-    if (raw.endsWith('es')) tokens.add(raw.slice(0, -2));
-    if (raw.endsWith('s')) tokens.add(raw.slice(0, -1));
+    else if (
+      raw.endsWith('sses') ||
+      raw.endsWith('xes') ||
+      raw.endsWith('ches') ||
+      raw.endsWith('shes')
+    ) {
+      tokens.add(raw.slice(0, -2));
+    } else if (raw.endsWith('s') && !raw.endsWith('ss'))
+      tokens.add(raw.slice(0, -1));
     else tokens.add(`${raw}s`);
   }
   return tokens;
