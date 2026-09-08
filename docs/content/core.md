@@ -737,7 +737,8 @@ Configure the development server in your `.mcp.json` file:
 
 After restarting your MCP client, use `generate-smrt-class` for model
 scaffolding, `introspect-project` for object and schema discovery, and
-`smrt-review` for deterministic framework-alignment findings.
+`build-context` with `task: "review"` for file-anchored findings, package hints, and a
+review prompt bundle (`smrt-review` remains as a deprecated name for one release).
 
 The same server also carries an optional **runtime** plane, labelled
 separately from static facts. With `SMRT_DEV_DB_URL` (or `cli.database`

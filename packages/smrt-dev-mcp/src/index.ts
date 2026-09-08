@@ -17,14 +17,13 @@ import { getAgentSkill, listAgentSkills } from './agent-skills.js';
 import { startRuntimeHttpHost } from './http.js';
 import {
   buildArchitectureContext,
+  buildContext,
   buildKnowledgeIndex,
   buildPackageSpecialistContext,
   buildReviewContext,
   checkKnowledgeFreshness,
   checkKnowledgeFreshnessFromIndex,
   compactContextResult,
-  smrtArchitecture,
-  smrtReview,
 } from './knowledge/index.js';
 import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
@@ -572,22 +571,11 @@ export function createServer(): Server {
           );
           break;
 
-        case 'check-domain-knowledge':
-          result = JSON.stringify(
-            await checkKnowledgeFreshness(
-              args as unknown as Parameters<typeof checkKnowledgeFreshness>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
-        case 'build-review-context':
-        case 'build-domain-review-context':
+        case 'build-context':
           result = JSON.stringify(
             compactContextResult(
-              await buildReviewContext(
-                args as unknown as Parameters<typeof buildReviewContext>[0],
+              await buildContext(
+                args as unknown as Parameters<typeof buildContext>[0],
               ),
               detailArg(args),
             ),
@@ -597,17 +585,27 @@ export function createServer(): Server {
           break;
 
         case 'smrt-review':
-          result = JSON.stringify(
-            compactContextResult(
-              await smrtReview(
-                args as unknown as Parameters<typeof smrtReview>[0],
-              ),
-              detailArg(args),
-            ),
-            null,
-            2,
-          );
+        case 'smrt-architecture': {
+          // One-release compatibility names for build-context (#2780).
+          const task = name === 'smrt-review' ? 'review' : 'architecture';
+          const context = compactContextResult(
+            await buildContext({
+              ...(args as Record<string, unknown>),
+              task,
+            } as unknown as Parameters<typeof buildContext>[0]),
+            detailArg(args),
+          ) as Record<string, unknown> & { diagnostics?: unknown[] };
+          context.diagnostics = [
+            ...(Array.isArray(context.diagnostics) ? context.diagnostics : []),
+            {
+              severity: 'info',
+              code: 'deprecated_tool_name',
+              message: `${name} is a compatibility name; call build-context with task: '${task}'. It will be removed in the next minor release.`,
+            },
+          ];
+          result = JSON.stringify(context, null, 2);
           break;
+        }
 
         case 'build-package-specialist-context':
           result = JSON.stringify(
@@ -617,35 +615,6 @@ export function createServer(): Server {
                   typeof buildPackageSpecialistContext
                 >[0],
               ),
-            ),
-            null,
-            2,
-          );
-          break;
-
-        case 'build-architecture-context':
-        case 'build-domain-architecture-context':
-          result = JSON.stringify(
-            compactContextResult(
-              await buildArchitectureContext(
-                args as unknown as Parameters<
-                  typeof buildArchitectureContext
-                >[0],
-              ),
-              detailArg(args),
-            ),
-            null,
-            2,
-          );
-          break;
-
-        case 'smrt-architecture':
-          result = JSON.stringify(
-            compactContextResult(
-              await smrtArchitecture(
-                args as unknown as Parameters<typeof smrtArchitecture>[0],
-              ),
-              detailArg(args),
             ),
             null,
             2,

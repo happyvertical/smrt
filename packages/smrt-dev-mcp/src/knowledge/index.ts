@@ -55,7 +55,7 @@ import { TOOLS } from '../tool-catalog.js';
 import { checkMcpToolDocumentation } from './mcp-docs.js';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
-export type KnowledgeIssueSeverity = 'error' | 'warning';
+export type KnowledgeIssueSeverity = 'info' | 'error' | 'warning';
 /**
  * `installed` is the consumer-app scope (#2275): installed
  * `@happyvertical/smrt-*` packages and packages in the known HappyVertical SDK
@@ -291,7 +291,14 @@ export interface KnowledgePromptBundle {
 export interface ReviewContextResult {
   selectedPackages: KnowledgePackage[];
   selectedSdkPackages: KnowledgePackage[];
+  /** Findings anchored to a changed file or a concrete package defect. */
   deterministicFindings: KnowledgeIssue[];
+  /**
+   * Package-level reminders (relationship features, generated MCP surface)
+   * that apply to any change in the package. They are context for a
+   * reviewer, not defects, so they no longer count as findings (#2780).
+   */
+  reviewHints: KnowledgeIssue[];
   promptBundle: KnowledgePromptBundle;
   coverage: KnowledgeCoverage;
   diagnostics: KnowledgeDiagnostic[];
@@ -317,6 +324,7 @@ export interface SmrtReviewResult {
   selectedPackages: KnowledgePackage[];
   selectedSdkPackages: KnowledgePackage[];
   deterministicFindings?: KnowledgeIssue[];
+  reviewHints?: KnowledgeIssue[];
   promptBundle?: KnowledgePromptBundle;
   coverage: KnowledgeCoverage;
   diagnostics: KnowledgeDiagnostic[];
@@ -1371,15 +1379,22 @@ export async function buildReviewContext(
       packageName: options.packageName ?? options.package,
     },
   );
+  const reviewFindings = buildReviewFindings(
+    index,
+    changedFiles,
+    selectedPackages,
+  );
   const deterministicFindings = findStalePatternIssues(
     index.rootDir,
     changedFiles.length > 0 ? changedFiles : undefined,
-  ).concat(buildReviewFindings(index, changedFiles, selectedPackages));
+  ).concat(reviewFindings.findings);
+  const reviewHints = reviewFindings.hints;
 
   return {
     selectedPackages,
     selectedSdkPackages,
     deterministicFindings,
+    reviewHints,
     promptBundle: buildPromptBundle({
       title: 'SMRT code review',
       task: 'Review the changed SMRT code. Prioritize correctness, relationships-v2 invariants, tenancy, SDK usage, prompt/data safety, and stale documentation.',
@@ -1411,7 +1426,10 @@ export async function smrtReview(
     selectedPackages: context.selectedPackages,
     selectedSdkPackages: context.selectedSdkPackages,
     ...(mode !== 'prompt-bundle'
-      ? { deterministicFindings: context.deterministicFindings }
+      ? {
+          deterministicFindings: context.deterministicFindings,
+          reviewHints: context.reviewHints,
+        }
       : {}),
     ...(mode !== 'findings' ? { promptBundle: context.promptBundle } : {}),
     coverage: context.coverage,
@@ -1512,6 +1530,32 @@ export async function buildPackageSpecialistContext(
       extraContext: options.focus,
     }),
   };
+}
+
+export type BuildContextTask = 'review' | 'architecture';
+
+export type BuildContextResult =
+  | ({ task: 'review' } & SmrtReviewResult)
+  | ({ task: 'architecture' } & SmrtArchitectureResult);
+
+/**
+ * The single context entry point (#2780). `task: 'review'` routes changed
+ * files and focus text to package experts and returns findings, hints, and a
+ * prompt bundle; `task: 'architecture'` ranks packages by the idea text and
+ * returns the bundle plus recommendations. Replaces build-review-context,
+ * build-domain-review-context, build-architecture-context, and
+ * build-domain-architecture-context, which dispatched to the same code.
+ */
+export async function buildContext(
+  options: ContextSelectorOptions & {
+    task: BuildContextTask;
+    mode?: 'findings' | 'prompt-bundle' | 'both';
+  },
+): Promise<BuildContextResult> {
+  if (options.task === 'architecture') {
+    return { task: 'architecture', ...(await smrtArchitecture(options)) };
+  }
+  return { task: 'review', ...(await smrtReview(options)) };
 }
 
 export async function smrtArchitecture(
@@ -3323,8 +3367,9 @@ function buildReviewFindings(
   index: SmrtKnowledgeIndex,
   changedFiles: string[],
   selectedPackages: KnowledgePackage[],
-): KnowledgeIssue[] {
+): { findings: KnowledgeIssue[]; hints: KnowledgeIssue[] } {
   const issues: KnowledgeIssue[] = [];
+  const hints: KnowledgeIssue[] = [];
 
   for (const pkg of selectedPackages) {
     const changedPackageFiles = changedFiles.filter((file) =>
@@ -3345,8 +3390,8 @@ function buildReviewFindings(
       changedPackageFiles.some((file) => file.endsWith('.ts')) &&
       pkg.relationshipFeatures.length > 0
     ) {
-      issues.push({
-        severity: 'warning',
+      hints.push({
+        severity: 'info',
         code: 'relationship-sensitive-review',
         message: `Package uses relationships-v2 features: ${pkg.relationshipFeatures.join(', ')}`,
         file: changedPackageFiles.find((file) => file.endsWith('.ts')),
@@ -3358,8 +3403,8 @@ function buildReviewFindings(
       changedPackageFiles.some((file) => file.endsWith('.ts')) &&
       pkg.mcpTools.length > 0
     ) {
-      issues.push({
-        severity: 'warning',
+      hints.push({
+        severity: 'info',
         code: 'mcp-surface-review',
         message: `Package exposes ${pkg.mcpTools.length} generated MCP tool(s); check public tool compatibility`,
         file: changedPackageFiles.find((file) => file.endsWith('.ts')),
@@ -3422,7 +3467,7 @@ function buildReviewFindings(
     });
   }
 
-  return issues;
+  return { findings: issues, hints };
 }
 
 /**
@@ -3710,18 +3755,14 @@ function selectPackages(
   }
 
   const text = (options.text ?? '').toLowerCase();
+  const scores = new Map<KnowledgePackage, number>();
   if (text) {
     for (const pkg of domainPackages(index)) {
       if (!scopeAllowsPackage(pkg, options.scope)) continue;
-      const packageKey = pkg.name.replace('@happyvertical/smrt-', '');
-      if (
-        includesToken(text, packageKey) ||
-        text.includes(pkg.name.toLowerCase()) ||
-        pkg.objects.some((object) =>
-          includesToken(text, object.className.toLowerCase()),
-        )
-      ) {
+      const score = scorePackageForText(pkg, text);
+      if (score > 0) {
         selected.add(pkg);
+        scores.set(pkg, score);
       }
     }
   }
@@ -3764,7 +3805,70 @@ function selectPackages(
     }
   }
 
-  return [...selected].sort((a, b) => a.name.localeCompare(b.name));
+  // Text matches rank by score so the packages the idea actually names come
+  // first; everything else keeps a stable alphabetical order (#2780).
+  return [...selected].sort(
+    (a, b) =>
+      (scores.get(b) ?? 0) - (scores.get(a) ?? 0) ||
+      a.name.localeCompare(b.name),
+  );
+}
+
+/** Word tokens (3+ chars) with naive singular/plural variants. */
+function textTokens(text: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const raw of text.toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? []) {
+    tokens.add(raw);
+    // One singularization rule per token: "entries" → "entry" only, never
+    // the spurious "entri"/"entrie" a stacked chain would also add.
+    if (raw.endsWith('ies')) tokens.add(`${raw.slice(0, -3)}y`);
+    else if (
+      raw.endsWith('sses') ||
+      raw.endsWith('xes') ||
+      raw.endsWith('ches') ||
+      raw.endsWith('shes')
+    ) {
+      tokens.add(raw.slice(0, -2));
+    } else if (raw.endsWith('s') && !raw.endsWith('ss'))
+      tokens.add(raw.slice(0, -1));
+    else tokens.add(`${raw}s`);
+  }
+  return tokens;
+}
+
+/**
+ * Score how strongly free text names a package: its short name, its full
+ * name, its object class names, and its tables/collections/fields. A
+ * request for "newsletter subscription with double opt-in" must rank
+ * `smrt-subscriptions` above the framework default list.
+ */
+function scorePackageForText(pkg: KnowledgePackage, text: string): number {
+  const tokens = textTokens(text);
+  let score = 0;
+  const shortName = pkg.name
+    .replace('@happyvertical/smrt-', '')
+    .replace('@happyvertical/', '')
+    .toLowerCase();
+  if (text.includes(pkg.name.toLowerCase())) score += 5;
+  if (tokens.has(shortName)) score += 4;
+  for (const object of pkg.objects) {
+    const className = object.className.toLowerCase();
+    if (tokens.has(className) || includesToken(text, className)) score += 3;
+    for (const candidate of [object.collection, object.tableName]) {
+      if (candidate && tokens.has(candidate.toLowerCase())) score += 1;
+    }
+    let fieldHits = 0;
+    for (const field of object.fields) {
+      if (tokens.has(field.name.toLowerCase()) && fieldHits < 3) {
+        fieldHits += 1;
+        score += 1;
+      }
+    }
+  }
+  for (const tag of pkg.domainKnowledge?.tags ?? []) {
+    if (tokens.has(String(tag).toLowerCase())) score += 1;
+  }
+  return score;
 }
 
 function selectSdkPackages(

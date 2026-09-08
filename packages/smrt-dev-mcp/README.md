@@ -162,7 +162,7 @@ Knowledge and introspection tools return a **summary** by default and accept
   page. `runtime-registry` pages the
   same way (`page.nextCursor`, `limit` default 50) while its summary stays
   global.
-- `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
+- `build-context` (and its deprecated names `smrt-review`/`smrt-architecture`) lists
   authored `AGENTS.md` and module docs **by path** rather than embedding them,
   and return compact package records. With `detail: "full"`, they embed the package
   AGENTS doc plus module docs matching changed files or request text. Source paths and globs
@@ -349,49 +349,36 @@ Run the same deterministic freshness checks exposed by `pnpm knowledge:check`.
 | `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
 | `strict` | `boolean` | No | Treat stale-pattern findings as errors |
 
-### `check-domain-knowledge`
+### `build-context`
 
-Alias over the deterministic checker that emphasizes downstream
-`smrt-knowledge.json` artifact freshness.
+Build model-ready context for a task. `task: "review"` routes `changedFiles`
+and `focus` to package experts and returns file-anchored deterministic
+findings, package-level `reviewHints` (relationship features, generated MCP
+surface: context for a reviewer, not defects), and a prompt bundle.
+`task: "architecture"` ranks packages by the idea text (package names, object
+classes, tables, fields, tags) and returns the bundle plus recommendations.
+Replaces `build-review-context`, `build-domain-review-context`,
+`build-architecture-context`, and `build-domain-architecture-context`, which
+dispatched to the same code.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
+| `task` | `'review' \| 'architecture'` | Yes | What the context is for |
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
-| `strict` | `boolean` | No | Treat stale-pattern findings as errors |
+| `changedFiles` | `string[]` | No | Files to route to package experts (`task: "review"`) |
+| `focus` | `string` | No | Concern to prioritise |
+| `documentation` | `string` | No | Existing docs, notes, or requirements |
+| `idea` | `string` | No | Product or implementation idea (`task: "architecture"`) |
 | `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
 | `package` | `string` | No | Package name or short name to focus |
-
-### `build-review-context`
-
-Select relevant s-m-r-t and HappyVertical SDK package expertise for changed files,
-then return a model-ready prompt bundle.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `changedFiles` | `string[]` | No | Files to route to package experts |
-| `focus` | `string` | No | Review focus or concern |
-| `documentation` | `string` | No | Additional docs or notes to include |
-| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
-
-### `build-domain-review-context`
-
-Domain-scoped alias for `build-review-context`.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `changedFiles` | `string[]` | No | Files to route to package experts |
-| `focus` | `string` | No | Review focus or concern |
-| `documentation` | `string` | No | Additional docs or notes to include |
-| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
-| `package` | `string` | No | Package name or short name to focus |
+| `mode` | `'findings' \| 'prompt-bundle' \| 'both'` | No | Response mode for `task: "review"` (default: `both`) |
 | `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `smrt-review`
 
-Return deterministic review findings, a prompt bundle, or both.
+Deprecated compatibility name for `build-context` with `task: "review"`;
+removed in the next minor release. Responses carry a `deprecated_tool_name`
+diagnostic.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -400,19 +387,6 @@ Return deterministic review findings, a prompt bundle, or both.
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
 | `mode` | `'findings' \| 'prompt-bundle' \| 'both'` | No | Response mode (default: `both`) |
-| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
-
-### `build-architecture-context`
-
-Select relevant s-m-r-t and SDK package expertise for an idea or documentation,
-then return a model-ready architecture prompt bundle.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `idea` | `string` | No | Product or implementation idea |
-| `documentation` | `string` | No | Existing docs or requirements |
-| `focus` | `string` | No | Architecture concern to prioritize |
 | `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
 
 ### `build-package-specialist-context`
@@ -427,24 +401,11 @@ context.
 | `package` | `string` | Yes | Package name or short package query |
 | `focus` | `string` | No | Package concern to prioritize |
 
-### `build-domain-architecture-context`
-
-Domain-scoped alias for `build-architecture-context`.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `idea` | `string` | No | Product or implementation idea |
-| `documentation` | `string` | No | Existing docs or requirements |
-| `focus` | `string` | No | Architecture concern to prioritize |
-| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
-| `package` | `string` | No | Package name or short name to focus |
-| `detail` | `'summary' \| 'full' \| 'complete'` | No | Default `summary`; `full` embeds package docs and matching modules; `complete` embeds all modules and full package records |
-
 ### `smrt-architecture`
 
-Return package recommendations, SDK recommendations, an object-model sketch,
-risks, questions, and the reusable architecture prompt bundle.
+Deprecated compatibility name for `build-context` with `task: "architecture"`;
+removed in the next minor release. Responses carry a `deprecated_tool_name`
+diagnostic.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
