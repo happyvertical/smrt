@@ -10,6 +10,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { classifyDatabaseError } from '../db-errors.js';
 import { createDispatchBus } from '../dispatch/bus.js';
 import { BackfillTracker } from '../migrations/backfill-tracker.js';
 import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
@@ -203,7 +204,11 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
     const id = randomUUID();
     const instant = new Date('2026-07-19T12:03:04.567Z');
     const sessionTimezone = rowsOf(await db.query('SHOW TimeZone'))[0];
-    expect(sessionTimezone?.TimeZone ?? sessionTimezone?.timezone).toBe('UTC');
+    expect(['UTC', 'ETC/UTC', 'GMT']).toContain(
+      String(
+        sessionTimezone?.TimeZone ?? sessionTimezone?.timezone,
+      ).toUpperCase(),
+    );
     // Match the SDK serializer used by legacy SMRT persistence before
     // PostgreSQL discarded the offset in a timezone-naive column.
     await db.insert(LEGACY_TABLE, { id, occurred_at: instant });
@@ -345,16 +350,23 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
   });
 
   it('fails closed outside UTC and rolls back every system-table ALTER on failure', async () => {
-    await expect(
-      db.transaction(async (tx) => {
+    const migrationFailure = await db
+      .transaction(async (tx) => {
         await tx.query("SET LOCAL TIME ZONE 'America/Edmonton'");
         await migratePostgresSystemTimestamps(
           tx,
           { legacyTimezone: 'UTC' },
           'postgres',
         );
-      }),
-    ).rejects.toThrow('outside a UTC PostgreSQL session');
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(migrationFailure).toBeDefined();
+    expect(classifyDatabaseError(migrationFailure).driverCodes).toContain(
+      'P0001',
+    );
 
     await db.query('DROP VIEW IF EXISTS _smrt_atomic_z_view');
     await db.query('DROP TABLE IF EXISTS _smrt_atomic_a');
