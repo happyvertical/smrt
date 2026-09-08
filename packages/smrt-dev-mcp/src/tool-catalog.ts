@@ -208,6 +208,16 @@ const TOOL_DEFINITIONS: Array<
           description:
             'Character budget for the `objects` payload. Objects past the budget are omitted and reported under `truncated`. Project metadata and diagnostics are always returned in full, so the serialized response is somewhat larger than this budget.',
         },
+        cursor: {
+          type: 'string',
+          description:
+            "Resume after this className (objects are sorted alphabetically). Pass a previous response's `nextCursor` to read the next page instead of raising maxChars.",
+        },
+        limit: {
+          type: 'number',
+          description:
+            'Maximum objects per page, applied before the character budget',
+        },
         includeFields: {
           type: 'boolean',
           description: 'Include field details (detail: "full" only)',
@@ -611,6 +621,15 @@ const TOOL_DEFINITIONS: Array<
           type: 'boolean',
           description:
             'Include field and method detail for every object (default: only when objects is given)',
+        },
+        cursor: {
+          type: 'string',
+          description:
+            "Resume after this qualified object name; pass a previous response's `page.nextCursor`",
+        },
+        limit: {
+          type: 'number',
+          description: 'Objects per page (default 50, capped at 500)',
         },
       },
     },
