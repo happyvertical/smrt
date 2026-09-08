@@ -6,6 +6,12 @@ or architecture prompt bundles.
 
 ## Installation
 
+New to agent-assisted s-m-r-t development? Start with the end-to-end guide on
+the docs site: [Developing a s-m-r-t app with an agent](https://s-m-r-t.dev/docs/agent-tooling)
+(source: `docs/content/agent-tooling.md`). It walks through install, the
+calls that matter in order, provenance labels, and the optional live-database
+and HTTP setups this README details.
+
 ```bash
 pnpm install @happyvertical/smrt-dev-mcp
 ```
