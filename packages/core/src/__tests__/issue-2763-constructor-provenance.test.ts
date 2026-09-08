@@ -28,6 +28,36 @@ describe('constructor provenance (#2763)', () => {
     ).toBe(0);
   });
 
+  it('clears constructor tenancy declarations when the registry resets', () => {
+    class ResetTenantRecord2763 extends SmrtObject {}
+    ObjectRegistry.reconcileTenantScopedConfig(ResetTenantRecord2763, {
+      mode: 'required',
+      field: 'tenantId',
+      autoFilter: true,
+      autoPopulate: true,
+      allowSuperAdminBypass: false,
+    });
+    ObjectRegistry.register(ResetTenantRecord2763, {
+      packageName: '@provenance/reset',
+    });
+    expect(
+      ObjectRegistry.getTenantScopedConfig(
+        '@provenance/reset:ResetTenantRecord2763',
+      )?.mode,
+    ).toBe('required');
+
+    ObjectRegistry.clear();
+    ObjectRegistry.register(ResetTenantRecord2763, {
+      packageName: '@provenance/reset',
+    });
+
+    expect(
+      ObjectRegistry.getTenantScopedConfig(
+        '@provenance/reset:ResetTenantRecord2763',
+      ),
+    ).toBeUndefined();
+  });
+
   it.each([
     false,
     true,

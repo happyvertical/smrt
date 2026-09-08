@@ -555,7 +555,7 @@ export class ObjectRegistry {
     >;
   }
 
-  private static get constructorTenantScopedDeclarations(): WeakMap<
+  private static get constructorTenantScopedDeclarations(): Map<
     Function,
     Record<string, unknown>
   > {
@@ -1881,6 +1881,7 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.constructorFieldDecorators.clear();
+    ObjectRegistry.constructorTenantScopedDeclarations.clear();
     getLegacyFieldDecorators().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups

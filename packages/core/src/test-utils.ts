@@ -24,6 +24,7 @@ interface RegistryTestSurface {
   collections: Map<string, unknown>;
   fieldDecorators: Map<string, Map<string, unknown>>;
   constructorFieldDecorators: Map<Function, Map<string, unknown>>;
+  constructorTenantScopedDeclarations: Map<Function, Record<string, unknown>>;
   nextDbId: number;
   stiSiblingsLoaded: Set<string>;
   clear(): void;
@@ -36,6 +37,7 @@ type RegistryTestState = Pick<
   | 'collections'
   | 'fieldDecorators'
   | 'constructorFieldDecorators'
+  | 'constructorTenantScopedDeclarations'
   | 'nextDbId'
   | 'stiSiblingsLoaded'
 >;
@@ -44,6 +46,12 @@ function cloneNestedMap<Key>(
   source: Map<Key, Map<string, unknown>>,
 ): Map<Key, Map<string, unknown>> {
   return new Map(Array.from(source, ([key, value]) => [key, new Map(value)]));
+}
+
+function cloneRecordMap<Key>(
+  source: Map<Key, Record<string, unknown>>,
+): Map<Key, Record<string, unknown>> {
+  return new Map(Array.from(source, ([key, value]) => [key, { ...value }]));
 }
 
 function getRegistryForTests(): RegistryTestSurface {
@@ -71,6 +79,9 @@ export function snapshotObjectRegistryState(): () => void {
     fieldDecorators: cloneNestedMap(registry.fieldDecorators),
     constructorFieldDecorators: cloneNestedMap(
       registry.constructorFieldDecorators,
+    ),
+    constructorTenantScopedDeclarations: cloneRecordMap(
+      registry.constructorTenantScopedDeclarations,
     ),
     nextDbId: registry.nextDbId,
     stiSiblingsLoaded: new Set(registry.stiSiblingsLoaded),
@@ -100,6 +111,10 @@ export function snapshotObjectRegistryState(): () => void {
 
     for (const [key, value] of snapshot.constructorFieldDecorators) {
       registry.constructorFieldDecorators.set(key, new Map(value));
+    }
+
+    for (const [key, value] of snapshot.constructorTenantScopedDeclarations) {
+      registry.constructorTenantScopedDeclarations.set(key, { ...value });
     }
 
     for (const value of snapshot.stiSiblingsLoaded) {

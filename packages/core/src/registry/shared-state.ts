@@ -56,7 +56,7 @@ declare global {
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryConstructorTenantScopedDeclarations:
-    | WeakMap<Function, Record<string, unknown>>
+    | Map<Function, Record<string, unknown>>
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryMethodDecorators:
@@ -282,14 +282,18 @@ export function getLegacyFieldDecorators(): Map<
   return globalThis.__smrtRegistryLegacyFieldDecorators;
 }
 
-/** Class-level tenancy declarations keyed by their exact constructor. */
-export function getConstructorTenantScopedDeclarations(): WeakMap<
+/**
+ * Class-level tenancy declarations keyed by their exact constructor.
+ *
+ * Unlike method metadata, these declarations participate in the registry's
+ * explicit clear and test snapshot lifecycle, so they use an iterable Map.
+ */
+export function getConstructorTenantScopedDeclarations(): Map<
   Function,
   Record<string, unknown>
 > {
   if (!globalThis.__smrtRegistryConstructorTenantScopedDeclarations) {
-    globalThis.__smrtRegistryConstructorTenantScopedDeclarations =
-      new WeakMap();
+    globalThis.__smrtRegistryConstructorTenantScopedDeclarations = new Map();
   }
   return globalThis.__smrtRegistryConstructorTenantScopedDeclarations;
 }
