@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const TABLE = 'issue_2513_postgres_sti_scope';
@@ -54,6 +55,11 @@ describe.skipIf(!pgUrl)('bounded STI read scope on PostgreSQL (#2513)', () => {
     const ddl = ObjectRegistry.getSchemaDDL(className, 'postgres');
     if (!ddl) throw new Error(`Missing schema DDL for ${className}`);
     await db.query(ddl);
+    const schema = ObjectRegistry.getSchema(className);
+    if (!schema) throw new Error(`Missing schema for ${className}`);
+    for (const index of getDDLStrategy('postgres').generateIndexes(schema)) {
+      await db.query(index);
+    }
 
     const historical = await Issue2513PgHistoricalCollection.create({ db });
     current = await Issue2513PgCurrentCollection.create({ db });
