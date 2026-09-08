@@ -190,6 +190,58 @@ describe('observation tools (#1831)', () => {
     expect(text).not.toContain('constructor');
   });
 
+  it('pages runtime-registry objects by cursor and limit', async () => {
+    await bootRuntime({ projectRoot });
+    for (const name of ['Beta', 'Alpha', 'Gamma']) {
+      ObjectRegistry.registerFromManifest(
+        name,
+        {
+          className: name,
+          name: name.toLowerCase(),
+          collection: `${name.toLowerCase()}s`,
+          filePath: join(projectRoot, 'src', `${name}.ts`),
+          fields: {},
+          methods: {},
+          decoratorConfig: {},
+        } as never,
+        '@acme/app',
+      );
+    }
+    const first = await runtimeRegistry({ projectPath: projectRoot, limit: 2 });
+    const page1 = first.data.page as {
+      returned: number;
+      matched: number;
+      nextCursor: string | null;
+    };
+    expect(page1.matched).toBe(4);
+    expect(page1.returned).toBe(2);
+    expect(page1.nextCursor).toBe('@acme/app:Article');
+    const names = (
+      first.data.snapshot as { objects: Array<{ name: string }> }
+    ).objects.map((o) => o.name);
+    expect(names).toEqual(['Alpha', 'Article']);
+    const second = await runtimeRegistry({
+      projectPath: projectRoot,
+      limit: 2,
+      cursor: page1.nextCursor ?? undefined,
+    });
+    const page2 = second.data.page as {
+      returned: number;
+      nextCursor: string | null;
+    };
+    expect(
+      (
+        second.data.snapshot as { objects: Array<{ name: string }> }
+      ).objects.map((o) => o.name),
+    ).toEqual(['Beta', 'Gamma']);
+    expect(page2.nextCursor).toBeNull();
+    // summary is global regardless of the page
+    expect(
+      (second.data.snapshot as { summary: { objectCount: number } }).summary
+        .objectCount,
+    ).toBe(4);
+  });
+
   it('ignores a widened projectPath after boot and never relativizes against it', async () => {
     await runtimeRegistry({ projectPath: projectRoot });
     const spoofed = await runtimeRegistry({

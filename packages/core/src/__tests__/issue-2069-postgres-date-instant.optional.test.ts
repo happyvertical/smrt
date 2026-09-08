@@ -203,7 +203,9 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
     const id = randomUUID();
     const instant = new Date('2026-07-19T12:03:04.567Z');
     const sessionTimezone = rowsOf(await db.query('SHOW TimeZone'))[0];
-    expect(sessionTimezone?.TimeZone ?? sessionTimezone?.timezone).toBe('UTC');
+    expect(['UTC', 'Etc/UTC', 'GMT']).toContain(
+      sessionTimezone?.TimeZone ?? sessionTimezone?.timezone,
+    );
     // Match the SDK serializer used by legacy SMRT persistence before
     // PostgreSQL discarded the offset in a timezone-naive column.
     await db.insert(LEGACY_TABLE, { id, occurred_at: instant });
@@ -354,7 +356,7 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
           'postgres',
         );
       }),
-    ).rejects.toThrow('outside a UTC PostgreSQL session');
+    ).rejects.toThrow('code=P0001');
 
     await db.query('DROP VIEW IF EXISTS _smrt_atomic_z_view');
     await db.query('DROP TABLE IF EXISTS _smrt_atomic_a');

@@ -90,6 +90,24 @@ export interface RuntimeRegistryArgs extends RuntimeProjectArgs {
   objects?: string[];
   /** Include field/method detail (default: only when `objects` is given). */
   detail?: boolean;
+  /**
+   * Resume after this object key: the qualified name when the object has
+   * one, otherwise its simple name — exactly the value a previous response
+   * returned as `page.nextCursor` (#2779). Objects are sorted by that key.
+   */
+  cursor?: string;
+  /** Objects per page (default {@link REGISTRY_PAGE_LIMIT}, max 500). */
+  limit?: number;
+}
+
+/** Default objects per `runtime-registry` page. */
+export const REGISTRY_PAGE_LIMIT = 50;
+
+function objectKey(object: {
+  qualifiedName: string | null;
+  name: string;
+}): string {
+  return object.qualifiedName ?? object.name;
 }
 
 /** `runtime-registry`: sanitized snapshot of the booted registry. */
@@ -104,6 +122,26 @@ export async function runtimeRegistry(
     objects: args.objects,
     detail: args.detail ?? Boolean(args.objects?.length),
   });
+  // Page the object list (summary stays global). A 76-object app answered in
+  // 56 KB before paging; an agent hunting one class needs a cursor, not a cut.
+  const limit = Math.min(
+    Math.max(Math.floor(args.limit ?? REGISTRY_PAGE_LIMIT), 1),
+    500,
+  );
+  // The cursor is compared against the same key `page.nextCursor` carries.
+  const cursor =
+    typeof args.cursor === 'string' && args.cursor.length > 0
+      ? args.cursor
+      : null;
+  const all = snapshot.objects;
+  const afterCursor = cursor
+    ? all.filter((object) => objectKey(object).localeCompare(cursor) > 0)
+    : all;
+  const objects = afterCursor.slice(0, limit);
+  const nextCursor =
+    afterCursor.length > objects.length && objects.length > 0
+      ? objectKey(objects[objects.length - 1])
+      : null;
   return {
     ok: true,
     coverage: null,
@@ -111,7 +149,14 @@ export async function runtimeRegistry(
     data: {
       provenance: snapshot.provenance,
       boot: bootSummary(boot),
-      snapshot,
+      page: {
+        returned: objects.length,
+        matched: all.length,
+        limit,
+        cursor,
+        nextCursor,
+      },
+      snapshot: { ...snapshot, objects },
     },
   };
 }

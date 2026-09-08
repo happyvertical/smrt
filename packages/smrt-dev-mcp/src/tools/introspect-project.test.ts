@@ -929,6 +929,56 @@ describe('introspectProject response budget', () => {
     expect(parsed.truncated.guidance).toContain('maxChars');
   });
 
+  it('pages with cursor and limit and never repeats or skips an object', async () => {
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const parsed = JSON.parse(
+        await introspectProject({ directory: tmpDir, limit: 10, cursor }),
+      );
+      pages += 1;
+      expect(parsed.objects.length).toBeLessThanOrEqual(10);
+      if (cursor) expect(parsed.cursor).toBe(cursor);
+      seen.push(
+        ...parsed.objects.map((o: { className: string }) => o.className),
+      );
+      cursor = parsed.nextCursor;
+      if (cursor) {
+        expect(parsed.truncated.omittedObjectCount).toBe(
+          OBJECT_COUNT - seen.length,
+        );
+        expect(parsed.truncated.limit).toBe(10);
+        expect(parsed.truncated.guidance).toContain('cursor');
+      } else {
+        expect(parsed.truncated).toBeUndefined();
+      }
+    } while (cursor && pages < 20);
+    expect(pages).toBe(5);
+    expect(new Set(seen).size).toBe(OBJECT_COUNT);
+    expect(seen).toEqual([...seen].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it('offers nextCursor when the character budget truncates', async () => {
+    const first = JSON.parse(
+      await introspectProject({ directory: tmpDir, maxChars: 2_000 }),
+    );
+    expect(first.nextCursor).toBe(
+      first.objects[first.objects.length - 1].className,
+    );
+    const second = JSON.parse(
+      await introspectProject({
+        directory: tmpDir,
+        maxChars: 2_000,
+        cursor: first.nextCursor,
+      }),
+    );
+    expect(
+      second.objects[0].className.localeCompare(first.nextCursor),
+    ).toBeGreaterThan(0);
+    expect(second.objectCount).toBe(OBJECT_COUNT);
+  });
+
   it('keeps at least one object when a single object exceeds the budget', async () => {
     const result = await introspectProject({ directory: tmpDir, maxChars: 1 });
     const parsed = JSON.parse(result);
