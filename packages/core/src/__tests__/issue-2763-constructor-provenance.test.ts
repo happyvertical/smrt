@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildCascadePlan } from '../cascade.js';
 import { field, foreignKey } from '../decorators/index.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
@@ -236,5 +237,83 @@ describe('constructor provenance (#2763)', () => {
     expect(
       ObjectRegistry.getInverseRelationships('@unregistered/pkg:Target2763'),
     ).toHaveLength(1);
+  });
+
+  it.each([
+    'constructor',
+    'callback',
+    'string',
+  ] as const)('keeps an unqualified %s target on its registered identity through reads, schema, inverses, and cascades', async (form) => {
+    const Parent = class UnqualifiedParent2763 extends SmrtObject {};
+    const Child = class UnqualifiedChild2763 extends SmrtObject {
+      parentId = '';
+    };
+    smrt({
+      packageName: '@unqualified/fixture',
+      tableName: `unqualified_parent_${form}_2763`,
+    })(Parent);
+    foreignKey(
+      form === 'constructor'
+        ? Parent
+        : form === 'callback'
+          ? () => Parent
+          : 'UnqualifiedParent2763',
+      { onDelete: 'CASCADE' },
+    )(Child.prototype, 'parentId');
+    smrt({
+      packageName: '@unqualified/fixture',
+      tableName: `unqualified_child_${form}_2763`,
+    })(Child);
+
+    for (const ctor of [Parent, Child]) {
+      const entry = ObjectRegistry.getClassByConstructor(ctor);
+      if (!entry) throw new Error('expected registered unqualified fixture');
+      // Runtime registration supports consumers without package metadata. Keep
+      // the supported simple registry key while removing inferred test-package
+      // identity, as an unscoped consumer would have it.
+      // @ts-expect-error - construct the supported unqualified registry state.
+      for (const [key, candidate] of ObjectRegistry.classes) {
+        if (candidate.constructor !== ctor) continue;
+        // @ts-expect-error - construct the supported unqualified registry state.
+        ObjectRegistry.classes.delete(key);
+        entry.packageName = undefined;
+        entry.qualifiedName = undefined;
+        // @ts-expect-error - construct the supported unqualified registry state.
+        ObjectRegistry.classes.set(entry.name, entry);
+        break;
+      }
+    }
+
+    const relationship = ObjectRegistry.getRelationships(
+      'UnqualifiedChild2763',
+    ).find((candidate) => candidate.fieldName === 'parentId');
+    expect(relationship?.targetQualifiedClass).toBe('UnqualifiedParent2763');
+    expect(
+      ObjectRegistry.getInverseRelationshipsForSelf('UnqualifiedParent2763'),
+    ).toEqual([
+      expect.objectContaining({
+        targetQualifiedClass: 'UnqualifiedParent2763',
+      }),
+    ]);
+    expect(
+      buildCascadePlan(ObjectRegistry, 'UnqualifiedParent2763').references,
+    ).toHaveLength(1);
+    expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).not.toThrow();
+
+    const db = await getTestDatabase({
+      classes: ['UnqualifiedParent2763', 'UnqualifiedChild2763'],
+    });
+    try {
+      const parent = await new Parent({ db }).initialize();
+      await parent.save();
+      const child = await new Child({ db }).initialize();
+      child.parentId = parent.id;
+      await child.save();
+      expect((await child.loadRelated('parentId'))?.id).toBe(parent.id);
+      await parent.delete();
+      expect(await db.list(`unqualified_child_${form}_2763`, {})).toEqual([]);
+    } finally {
+      await db.close();
+    }
   });
 });

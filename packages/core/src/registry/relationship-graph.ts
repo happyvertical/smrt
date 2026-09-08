@@ -24,22 +24,25 @@ function resolveTarget(
   const classes = getClasses();
   const ctor = field._meta?.relatedConstructor;
   if (typeof ctor === 'function') {
-    return (
-      Array.from(classes.values()).find((entry) => entry.constructor === ctor)
-        ?.qualifiedName ?? null
+    const match = Array.from(classes).find(
+      ([, entry]) => entry.constructor === ctor,
     );
+    return match ? (match[1].qualifiedName ?? match[0]) : null;
   }
   const related = field.related;
   if (!related) return null;
   if (related.includes(':'))
     return findClass(related)?.qualifiedName ?? related;
   const local = classes.get(`${registered.packageName}:${related}`);
-  if (local) return local.qualifiedName ?? null;
-  const matches = Array.from(classes.values()).filter(
-    (entry) => entry.name === related,
+  if (local)
+    return local.qualifiedName ?? `${registered.packageName}:${related}`;
+  const matches = Array.from(classes).filter(
+    ([, entry]) => entry.name === related,
   );
   if (matches.length === 0) return undefined;
-  return matches.length === 1 ? (matches[0].qualifiedName ?? null) : null;
+  return matches.length === 1
+    ? (matches[0][1].qualifiedName ?? matches[0][0])
+    : null;
 }
 
 /** Canonical target of the field's declaring class, including inherited fields. */
