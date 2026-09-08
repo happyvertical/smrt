@@ -36,5 +36,6 @@ Then follow the repository's validated [quick start](https://github.com/happyver
 ## Next steps
 
 - Browse **Packages** in the sidebar for install and API guidance.
+- Working with a coding agent? Start with [agent tooling](./agent-tooling.md).
 - Read the [core architecture](./architecture/core-architecture.md).
 - Read the [package standards](./standards.md) before contributing.

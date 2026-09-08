@@ -705,6 +705,10 @@ const generator = new MCPGenerator({
 
 ## SMRT Development MCP
 
+For the end-to-end workflow (install, the calls that matter in order, provenance
+labels, live-database and HTTP options, CLI equivalents) see
+[Developing a s-m-r-t app with an agent](./agent-tooling.md).
+
 Use `@happyvertical/smrt-dev-mcp` for development-time code generation,
 project introspection, ecosystem review, architecture context, and deterministic
 SMRT knowledge. Runtime tool generation remains available from
