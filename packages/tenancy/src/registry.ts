@@ -121,6 +121,14 @@ function getDirectSimpleRegistration(
   const config = directSimpleRegistrations.get(className);
   if (!config) return undefined;
 
+  const binding = directSimpleBindings.get(className);
+  if (binding && !isCurrentDirectSimpleBinding(binding)) {
+    throw new Error(
+      `Stale tenant-scoped class registration '${className}'; ` +
+        'unregister and register it again for the current constructor.',
+    );
+  }
+
   const matches = ObjectRegistry.findClassesByName(className);
   if (matches.length > 1) {
     throw new Error(

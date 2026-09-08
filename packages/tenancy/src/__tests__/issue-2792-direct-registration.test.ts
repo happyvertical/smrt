@@ -283,6 +283,16 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
     expect(() =>
       interceptor.beforeList?.('Document', {}, context('list')),
     ).toThrow(/Stale tenant-scoped class registration 'Document'/);
+    expect(() =>
+      interceptor.beforeList?.(
+        'Document',
+        {},
+        {
+          ...context('list'),
+          qualifiedClassName: undefined,
+        },
+      ),
+    ).toThrow(/Stale tenant-scoped class registration 'Document'/);
 
     unregisterTenantScopedClass('Document');
     registerTenantScopedClass('Document');
@@ -292,6 +302,16 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
           where: { tenantId: TENANT },
         },
       );
+      expect(
+        interceptor.beforeList?.(
+          'Document',
+          {},
+          {
+            ...context('list'),
+            qualifiedClassName: undefined,
+          },
+        ),
+      ).toEqual({ where: { tenantId: TENANT } });
     });
   });
 
