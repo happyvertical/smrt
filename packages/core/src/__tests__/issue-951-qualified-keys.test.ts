@@ -30,6 +30,7 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/index.js';
+import { fieldsFromClass } from '../utils.js';
 
 describe('Issue #951: Qualified Names as Primary Keys', () => {
   let restoreRegistry: () => void;
@@ -207,6 +208,36 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     const matches = ObjectRegistry.findClassesByName('QualifiedTestCPromoted');
     const uniqueQualified = new Set(matches.map((m) => m.qualifiedName));
     expect([...uniqueQualified]).toEqual(['@test/pkg:QualifiedTestCPromoted']);
+  });
+
+  it('counts promoted simple and qualified aliases as one registered class', async () => {
+    class PromotedAlias951 extends SmrtObject {}
+    ObjectRegistry.register(PromotedAlias951, { name: 'PromotedAlias951' });
+    const packageName =
+      ObjectRegistry.getClassByConstructor(PromotedAlias951)?.packageName;
+    expect(packageName).toBeDefined();
+
+    ObjectRegistry.registerFromManifest(
+      'PromotedAlias951',
+      {
+        className: 'PromotedAlias951',
+        fields: { title: { type: 'text', required: true } },
+        methods: {},
+        decoratorConfig: { tableName: 'promoted_alias_951' },
+      },
+      packageName!,
+    );
+
+    expect(ObjectRegistry.getClass('PromotedAlias951')).toBe(
+      ObjectRegistry.getClassByQualifiedName(`${packageName}:PromotedAlias951`),
+    );
+    expect(ObjectRegistry.findClassesByName('PromotedAlias951')).toHaveLength(
+      1,
+    );
+    expect(ObjectRegistry.resolveType('PromotedAlias951')).toBe(
+      `${packageName}:PromotedAlias951`,
+    );
+    expect(await fieldsFromClass(PromotedAlias951)).toHaveProperty('title');
   });
 
   it('should return simple names from getClassNames()', () => {

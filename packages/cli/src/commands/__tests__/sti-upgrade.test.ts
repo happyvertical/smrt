@@ -65,6 +65,31 @@ describe('resolveStiDiscriminatorUpgrade', () => {
     });
   });
 
+  it('upgrades a source registration after public manifest promotion', () => {
+    class PromotedStiUpgrade extends SmrtObject {}
+    ObjectRegistry.register(PromotedStiUpgrade, { name: 'PromotedStiUpgrade' });
+    const packageName =
+      ObjectRegistry.getClassByConstructor(PromotedStiUpgrade)?.packageName;
+    expect(packageName).toBeDefined();
+    ObjectRegistry.registerFromManifest(
+      'PromotedStiUpgrade',
+      {
+        className: 'PromotedStiUpgrade',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: 'promoted_sti_upgrade' },
+      },
+      packageName!,
+    );
+
+    expect(resolveStiDiscriminatorUpgrade('PromotedStiUpgrade')).toEqual({
+      action: 'upgrade',
+      className: 'PromotedStiUpgrade',
+      currentQualifiedName: `${packageName}:PromotedStiUpgrade`,
+      sourceKind: 'simple',
+    });
+  });
+
   it('upgrades stale qualified discriminators to the current package', () => {
     expect(
       resolveStiDiscriminatorUpgrade(

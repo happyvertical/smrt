@@ -306,16 +306,19 @@ export function getClassInPackage(
  * Find all registered classes with a given simple class name.
  */
 export function findClassesByName(className: string): RegisteredClass[] {
-  const matches: RegisteredClass[] = [];
+  const matches = new Set<RegisteredClass>();
   const lowerName = className.toLowerCase();
 
   for (const registered of getClasses().values()) {
     if (registered.name.toLowerCase() === lowerName) {
-      matches.push(registered);
+      // A source registration can retain its simple key while manifest
+      // hydration adds its canonical qualified key. Both aliases designate
+      // one class, so ambiguity means distinct RegisteredClass identities.
+      matches.add(registered);
     }
   }
 
-  return matches;
+  return [...matches];
 }
 
 /**

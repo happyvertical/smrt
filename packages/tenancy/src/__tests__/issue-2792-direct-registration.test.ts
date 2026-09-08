@@ -133,6 +133,56 @@ describe('direct tenant registration resolves qualified core identity (#2792)', 
     });
   }
 
+  it.each([
+    'before-source',
+    'after-source',
+  ] as const)('binds a promoted unqualified alias through a direct selector (%s)', async (order) => {
+    const name = 'PromotedAliasDocument2792';
+    class PromotedAliasDocument2792 extends SmrtObject {}
+
+    if (order === 'before-source') registerTenantScopedClass(name);
+    ObjectRegistry.register(PromotedAliasDocument2792, { name });
+    if (order === 'after-source') registerTenantScopedClass(name);
+    const packageName = ObjectRegistry.getClassByConstructor(
+      PromotedAliasDocument2792,
+    )?.packageName;
+    expect(packageName).toBeDefined();
+    const qualified = `${packageName}:${name}`;
+    ObjectRegistry.registerFromManifest(
+      name,
+      {
+        className: name,
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: `promoted_alias_${order}_2792` },
+      },
+      packageName!,
+    );
+
+    expect(ObjectRegistry.findClassesByName(name)).toHaveLength(1);
+    const interceptor = createTenantInterceptor();
+    const aliasContext = {
+      ...context('list'),
+      className: name,
+      qualifiedClassName: qualified,
+    };
+    expect(() => interceptor.beforeList?.(name, {}, aliasContext)).toThrow(
+      TenantContextError,
+    );
+    await withTenant({ tenantId: TENANT }, async () => {
+      expect(interceptor.beforeList?.(name, {}, aliasContext)).toEqual({
+        where: { tenantId: TENANT },
+      });
+      expect(() =>
+        interceptor.beforeList?.(
+          name,
+          { where: { tenantId: OTHER_TENANT } },
+          aliasContext,
+        ),
+      ).toThrow(TenantIsolationError);
+    });
+  });
+
   it('keeps a uniquely resolved direct registration bound when a same-name peer arrives', async () => {
     registerOwner();
     registerTenantScopedClass('Document');
