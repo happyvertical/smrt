@@ -59,8 +59,9 @@ export interface RuntimeRegistryArgs extends RuntimeProjectArgs {
   /** Include field/method detail (default: only when `objects` is given). */
   detail?: boolean;
   /**
-   * Resume after this qualified (or simple) object name; objects are sorted
-   * by qualified name. Pass a previous response's `page.nextCursor` (#2779).
+   * Resume after this object key: the qualified name when the object has
+   * one, otherwise its simple name — exactly the value a previous response
+   * returned as `page.nextCursor` (#2779). Objects are sorted by that key.
    */
   cursor?: string;
   /** Objects per page (default {@link REGISTRY_PAGE_LIMIT}, max 500). */
@@ -95,6 +96,7 @@ export async function runtimeRegistry(
     Math.max(Math.floor(args.limit ?? REGISTRY_PAGE_LIMIT), 1),
     500,
   );
+  // The cursor is compared against the same key `page.nextCursor` carries.
   const cursor =
     typeof args.cursor === 'string' && args.cursor.length > 0
       ? args.cursor

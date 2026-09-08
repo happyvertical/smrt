@@ -148,11 +148,12 @@ Knowledge and introspection tools return a **summary** by default and accept
 
 - `introspect-project` summary returns one compact record per object
   (`className`, `qualifiedName`, `extends`, `tableName`, `tenantScope`,
-  `fieldCount`, compact relationship strings, `mcpOperations`). A response that
-  exceeds its character budget reports a `truncated` block with the omitted count
-  and filter guidance instead of being silently cut. `maxChars` overrides the
-  budget, and a truncated response carries `nextCursor`; pass it back as
-  `cursor` to read the next alphabetical page. `runtime-registry` pages the
+  `fieldCount`, compact relationship strings, `mcpOperations`). A response
+  that exceeds its character budget, or that was cut short by `limit`, reports
+  a `truncated` block with the omitted count and guidance instead of being
+  silently cut. `maxChars` overrides the budget, and any truncated response
+  carries `nextCursor`; pass it back as `cursor` to read the next alphabetical
+  page. `runtime-registry` pages the
   same way (`page.nextCursor`, `limit` default 50) while its summary stays
   global.
 - `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
