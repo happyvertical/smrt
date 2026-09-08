@@ -41,14 +41,18 @@ absolute `node` and `args` at the installed `dist/index.js` instead of `npx`.
 
 ## 2. The calls that matter, in order
 
-Each call returns an envelope of `{ ok, coverage, diagnostics, data }`. Read
-`diagnostics` first: a tool that cannot answer says why, and never fabricates.
+Every call except `generate-smrt-class` returns an envelope of
+`{ ok, coverage, diagnostics, data }`. Read `diagnostics` first: a tool that
+cannot answer says why, and never fabricates.
 
 1. **`introspect-project`** answers "what objects exist here?" in one compact
    record per object: class, file, `extends`, table, field count, relationship
    summary, MCP operations. Pass `detail: "full"` for fields, schema, and
-   methods. Large projects page: pass the returned `nextCursor` back as
-   `cursor`. This is the cheapest map of the app an agent can get.
+   methods. A large project reports a `truncated` block instead of being
+   silently cut; raise `maxChars` deliberately, or, from the release that
+   includes [#2786](https://github.com/happyvertical/smrt/pull/2786), pass
+   the returned `nextCursor` back as `cursor` to read the next page. This is
+   the cheapest map of the app an agent can get.
 2. **`check-knowledge-freshness`** lists concrete, fixable defects in the
    agent-facing docs and generated knowledge: a stale artifact, a missing
    `AGENTS.md`, a `CLAUDE.md` that is not the required shim. Pass
@@ -63,11 +67,14 @@ Each call returns an envelope of `{ ok, coverage, diagnostics, data }`. Read
 5. **`generate-smrt-class`** scaffolds an idiomatic `@smrt()` class from a
    field list. The output is source text meant to be pasted, not an envelope.
 
-For a change review or a design question, **`build-context`** with
-`task: "review"` (changed files, focus) or `task: "architecture"` (an idea)
-returns the package experts to consult, file-anchored findings, package
-hints, and a prompt bundle. `smrt-review` and `smrt-architecture` remain for
-one release as deprecated names for the same call.
+For a change review or a design question, **`smrt-review`** (changed files,
+focus) and **`smrt-architecture`** (an idea) return the package experts to
+consult, deterministic findings, and a prompt bundle. From the release that
+includes [#2787](https://github.com/happyvertical/smrt/pull/2787) both are
+one tool, **`build-context`** with `task: "review"` or
+`task: "architecture"`, findings are file-anchored, package-level reminders
+move to `reviewHints`, and the two old names remain for one release as
+deprecated aliases.
 
 ## 3. Read the provenance label
 
@@ -115,7 +122,8 @@ The same knowledge and checks are available without an MCP client:
 - `smrt dev:knowledge-index` and `smrt dev:knowledge-check --strict` mirror
   `reflect-knowledge` and `check-knowledge-freshness`.
 - `smrt dev:knowledge-review-context` and
-  `smrt dev:knowledge-architecture-context` mirror `build-context`.
+  `smrt dev:knowledge-architecture-context` mirror `smrt-review` and
+  `smrt-architecture` (`build-context` once #2787 lands).
 - `smrt db:diff` and `smrt runtime:check` cover the schema diff and the
   manifest/registry consistency check from the developer's terminal.
 
