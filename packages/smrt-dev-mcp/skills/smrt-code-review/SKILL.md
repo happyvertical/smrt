@@ -14,7 +14,7 @@ SMRT surfaces.
    - Prefer the user's explicit changed-file list.
    - Otherwise use the active harness's git support or `git diff --name-only`.
    - Include staged files when the user is preparing a commit.
-2. Call MCP tool `smrt-review` from `smrt-dev-mcp` with:
+2. Call MCP tool `build-context` from `smrt-dev-mcp` with `task: "review"` and:
 
 ```json
 {

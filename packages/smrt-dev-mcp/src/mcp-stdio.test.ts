@@ -208,12 +208,8 @@ describe('smrt-dev-mcp stdio server', () => {
         'reflect-knowledge',
         'reflect-domain-knowledge',
         'check-knowledge-freshness',
-        'check-domain-knowledge',
-        'build-review-context',
-        'build-domain-review-context',
-        'build-architecture-context',
-        'build-domain-architecture-context',
         'build-package-specialist-context',
+        'build-context',
         'smrt-review',
         'smrt-architecture',
         'review-smrt-project',
@@ -246,8 +242,9 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(domainReflect.domainKnowledgePackageCount).toBeGreaterThanOrEqual(0);
 
     const reviewResult = await client.callTool({
-      name: 'build-review-context',
+      name: 'build-context',
       arguments: {
+        task: 'review',
         rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
       },
@@ -272,8 +269,9 @@ describe('smrt-dev-mcp stdio server', () => {
     );
 
     const fullReviewResult = await client.callTool({
-      name: 'build-review-context',
+      name: 'build-context',
       arguments: {
+        task: 'review',
         rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
         detail: 'full',
@@ -287,8 +285,9 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(fullPackage.domainKnowledge).toBeUndefined();
     expect(fullReview.detail).toBe('full');
     const completeReviewResult = await client.callTool({
-      name: 'build-review-context',
+      name: 'build-context',
       arguments: {
+        task: 'review',
         rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
         detail: 'complete',
@@ -305,8 +304,9 @@ describe('smrt-dev-mcp stdio server', () => {
     );
 
     const domainReviewResult = await client.callTool({
-      name: 'build-domain-review-context',
+      name: 'build-context',
       arguments: {
+        task: 'review',
         rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
         scope: 'package',
@@ -319,8 +319,9 @@ describe('smrt-dev-mcp stdio server', () => {
     ).toContain('@happyvertical/smrt-content');
 
     const architectureResult = await client.callTool({
-      name: 'build-architecture-context',
+      name: 'build-context',
       arguments: {
+        task: 'architecture',
         rootDir: fixtureRoot,
         idea: 'Publishing workflow with profiles and scheduled social posts',
       },
@@ -334,8 +335,9 @@ describe('smrt-dev-mcp stdio server', () => {
     );
 
     const domainArchitectureResult = await client.callTool({
-      name: 'build-domain-architecture-context',
+      name: 'build-context',
       arguments: {
+        task: 'architecture',
         rootDir: fixtureRoot,
         idea: 'Publishing workflow with profiles and scheduled social posts',
         scope: 'package',
@@ -379,7 +381,7 @@ describe('smrt-dev-mcp stdio server', () => {
     });
     const skill = JSON.parse(textContent(skillResult));
     expect(skill.skillMarkdown).toContain('name: smrt-code-review');
-    expect(skill.skillMarkdown).toContain('Call MCP tool `smrt-review`');
+    expect(skill.skillMarkdown).toContain('Call MCP tool `build-context`');
     expect(skill.referenceFiles[0].content).toContain('SMRT Review Output');
 
     const promptsResult = await client.listPrompts();

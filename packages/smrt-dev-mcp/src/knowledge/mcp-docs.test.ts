@@ -97,7 +97,7 @@ describe('development MCP documentation freshness', () => {
     const issue = checkMcpToolDocumentation(rootDir, packageDir, TOOLS).find(
       (candidate) =>
         candidate.code === 'mcp-readme-schema-drift' &&
-        candidate.message.includes('build-review-context'),
+        candidate.message.includes('build-context'),
     );
 
     expect(issue?.message).toContain('missing: detail');

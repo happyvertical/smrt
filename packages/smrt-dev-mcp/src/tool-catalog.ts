@@ -300,35 +300,48 @@ const TOOL_DEFINITIONS: Array<
     },
   },
   {
-    name: 'check-domain-knowledge',
+    name: 'build-context',
     description:
-      'Run deterministic freshness checks for domain knowledge artifacts',
+      'Build model-ready SMRT context. task: "review" routes changedFiles/focus to package experts and returns file-anchored findings, package hints, and a prompt bundle; task: "architecture" ranks packages by the idea text and returns the bundle plus recommendations. Replaces build-review-context, build-domain-review-context, build-architecture-context, and build-domain-architecture-context.',
     inputSchema: {
       type: 'object',
       properties: {
+        task: {
+          type: 'string',
+          enum: ['review', 'architecture'],
+          description:
+            'review: changed files and focus. architecture: an idea or documentation.',
+        },
         rootDir: { type: 'string' },
-        changed: { type: 'boolean' },
-        strict: { type: 'boolean' },
+        changedFiles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Files to route to package experts (task: review)',
+        },
+        focus: { type: 'string', description: 'Concern to prioritise' },
+        documentation: {
+          type: 'string',
+          description: 'Existing docs, notes, or requirements',
+        },
+        idea: {
+          type: 'string',
+          description: 'Product or implementation idea (task: architecture)',
+        },
         scope: {
           type: 'string',
           enum: ['project', 'local', 'package', 'sdk', 'installed'],
           default: 'project',
         },
-        package: { type: 'string' },
-      },
-    },
-  },
-  {
-    name: 'build-review-context',
-    description:
-      'Build model-ready SMRT review context from changed files and optional focus text',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rootDir: { type: 'string' },
-        changedFiles: { type: 'array', items: { type: 'string' } },
-        focus: { type: 'string' },
-        documentation: { type: 'string' },
+        package: {
+          type: 'string',
+          description: 'Package name or short name to focus',
+        },
+        mode: {
+          type: 'string',
+          enum: ['findings', 'prompt-bundle', 'both'],
+          default: 'both',
+          description: 'task: review only',
+        },
         detail: {
           type: 'string',
           enum: ['summary', 'full', 'complete'],
@@ -336,38 +349,13 @@ const TOOL_DEFINITIONS: Array<
           description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
-    },
-  },
-  {
-    name: 'build-domain-review-context',
-    description:
-      'Build domain-scoped model-ready SMRT review context and prompt bundle',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rootDir: { type: 'string' },
-        changedFiles: { type: 'array', items: { type: 'string' } },
-        focus: { type: 'string' },
-        documentation: { type: 'string' },
-        scope: {
-          type: 'string',
-          enum: ['project', 'local', 'package', 'sdk', 'installed'],
-          default: 'project',
-        },
-        package: { type: 'string' },
-        detail: {
-          type: 'string',
-          enum: ['summary', 'full', 'complete'],
-          default: 'summary',
-          description: KNOWLEDGE_DETAIL_DESCRIPTION,
-        },
-      },
+      required: ['task'],
     },
   },
   {
     name: 'smrt-review',
     description:
-      'Return deterministic review findings and/or a reusable model prompt bundle. For a formal downstream review, first call get-agent-skill with { "name": "smrt-code-review" } or load the smrt-code-review MCP prompt/resource.',
+      'Deprecated compatibility name for build-context with task: "review"; removed in the next minor release. For a formal downstream review, first call get-agent-skill with { "name": "smrt-code-review" }.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -380,26 +368,6 @@ const TOOL_DEFINITIONS: Array<
           enum: ['findings', 'prompt-bundle', 'both'],
           default: 'both',
         },
-        detail: {
-          type: 'string',
-          enum: ['summary', 'full', 'complete'],
-          default: 'summary',
-          description: KNOWLEDGE_DETAIL_DESCRIPTION,
-        },
-      },
-    },
-  },
-  {
-    name: 'build-architecture-context',
-    description:
-      'Build model-ready SMRT architecture context from an idea or documentation',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rootDir: { type: 'string' },
-        idea: { type: 'string' },
-        documentation: { type: 'string' },
-        focus: { type: 'string' },
         detail: {
           type: 'string',
           enum: ['summary', 'full', 'complete'],
@@ -428,35 +396,9 @@ const TOOL_DEFINITIONS: Array<
     },
   },
   {
-    name: 'build-domain-architecture-context',
-    description:
-      'Build domain-scoped model-ready SMRT architecture context and prompt bundle',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        rootDir: { type: 'string' },
-        idea: { type: 'string' },
-        documentation: { type: 'string' },
-        focus: { type: 'string' },
-        scope: {
-          type: 'string',
-          enum: ['project', 'local', 'package', 'sdk', 'installed'],
-          default: 'project',
-        },
-        package: { type: 'string' },
-        detail: {
-          type: 'string',
-          enum: ['summary', 'full', 'complete'],
-          default: 'summary',
-          description: KNOWLEDGE_DETAIL_DESCRIPTION,
-        },
-      },
-    },
-  },
-  {
     name: 'smrt-architecture',
     description:
-      'Suggest SMRT and HappyVertical SDK packages and return an architecture prompt bundle',
+      'Deprecated compatibility name for build-context with task: "architecture"; removed in the next minor release.',
     inputSchema: {
       type: 'object',
       properties: {
