@@ -188,6 +188,12 @@ Inverse lookup and cascade planning resolve that constructor when queried, so
 the target may register after its child without binding to a same-name class
 in another package. String targets prefer the declaring package; ambiguous
 unqualified targets never match an unrelated package's inverse edge.
+Registry schema generation and the merged migration schema resolve the same
+canonical target before selecting both its table and identifier type. The
+manifest generator resolves unqualified targets in the declaring package.
+Keep the merged schema in parity tests: `getTestDatabase()` preserves its
+authoritative FK metadata over the generated columns, so testing only the
+standalone generator cannot prove the constraint that reaches the database.
 
 Field decorator registration retains constructor ownership separately from the
 simple-name inspection view. Custom decorators should pass the callback's

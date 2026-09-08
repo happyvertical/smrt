@@ -7,6 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import { getInheritanceChain } from './inheritance-resolver';
 import { findClass } from './name-resolver';
 import { getClasses } from './shared-state';
 import type {
@@ -39,6 +40,27 @@ function resolveTarget(
   );
   if (matches.length === 0) return undefined;
   return matches.length === 1 ? (matches[0].qualifiedName ?? null) : null;
+}
+
+/** Canonical target of the field's declaring class, including inherited fields. */
+export function resolveRelationshipTarget(
+  className: string,
+  fieldName: string,
+): string | null | undefined {
+  for (const name of [
+    className,
+    ...[...getInheritanceChain(className)].reverse(),
+  ]) {
+    const registered = findClass(name);
+    const field = registered?.fields.get(fieldName);
+    if (registered && field) {
+      return resolveTarget(registered, {
+        ...field,
+        related: field.related?.split('.')[0],
+      });
+    }
+  }
+  return undefined;
 }
 
 /**

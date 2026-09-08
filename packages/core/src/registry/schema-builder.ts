@@ -406,7 +406,17 @@ function applyContributorForeignKeys(
       column.foreignKey = undefined;
       continue;
     }
-    const [targetName, declaredTargetColumn] = field.related.split('.');
+    const [legacyTargetName, declaredTargetColumn] = field.related.split('.');
+    const resolvedTarget = ObjectRegistry.resolveRelationshipTarget(
+      contributor.qualifiedName,
+      fieldName,
+    );
+    if (resolvedTarget === null) {
+      throw new Error(
+        `Cannot resolve foreign key ${contributor.qualifiedName}.${fieldName}: target constructor is unregistered or the target name is ambiguous`,
+      );
+    }
+    const targetName = resolvedTarget ?? legacyTargetName;
     const targetBase = ObjectRegistry.getSTIBase(targetName) || targetName;
     const registeredTarget = ObjectRegistry.getClass(targetBase);
     const targetColumn =

@@ -108,6 +108,7 @@ import {
 import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
+  resolveRelationshipTarget as _resolveRelationshipTarget,
 } from './registry/relationship-graph';
 import {
   getAllSchemas as _getAllSchemas,
@@ -2750,6 +2751,14 @@ export class ObjectRegistry {
    */
   static getRelationshipMap(): Map<string, RelationshipMetadata[]> {
     return _getRelationshipMap();
+  }
+
+  /** Resolve an FK target without changing its public display-name metadata. */
+  static resolveRelationshipTarget(
+    className: string,
+    fieldName: string,
+  ): string | null | undefined {
+    return _resolveRelationshipTarget(className, fieldName);
   }
 
   /**

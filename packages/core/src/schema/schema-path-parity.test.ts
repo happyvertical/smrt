@@ -48,8 +48,10 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { foreignKey } from '../decorators/index.js';
 import { normalizeIndexPredicate } from '../migrations/differ.js';
-import { ObjectRegistry } from '../registry.js';
+import { SmrtObject } from '../object.js';
+import { ObjectRegistry, smrt } from '../registry.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type {
   FieldDefinition,
@@ -62,6 +64,180 @@ import { identifierByteLength, MAX_IDENTIFIER_BYTES } from './index-utils.js';
 import type { IndexDefinition, SchemaDefinition } from './types.js';
 
 const PKG = '@happyvertical/smrt-parity';
+
+describe('same-name physical foreign key parity (#2763)', () => {
+  it.each([
+    'unregistered',
+    'ambiguous',
+  ] as const)('refuses a %s physical target instead of selecting a foreign peer', (mode) => {
+    const restore = snapshotObjectRegistryState();
+    try {
+      const A = class PendingParent2763 extends SmrtObject {};
+      const B = class PendingParent2763 extends SmrtObject {};
+      const Child = class PendingChild2763 extends SmrtObject {};
+      smrt({ packageName: '@pending/a', tableName: 'pending_parent_a_2763' })(
+        A,
+      );
+      if (mode === 'ambiguous')
+        smrt({ packageName: '@pending/b', tableName: 'pending_parent_b_2763' })(
+          B,
+        );
+      foreignKey(mode === 'unregistered' ? B : 'PendingParent2763')(
+        Child.prototype,
+        'parentId',
+      );
+      smrt({ packageName: '@pending/c', tableName: 'pending_child_2763' })(
+        Child,
+      );
+      const key = '@pending/c:PendingChild2763';
+      const generate = () =>
+        new SchemaGenerator().generateSchemaFromRegistry(
+          key,
+          'pending_child_2763',
+          ObjectRegistry.getFields(key),
+          { registry: ObjectRegistry },
+        );
+      expect(generate).toThrow(`Cannot resolve foreign key ${key}.parentId`);
+      expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).toThrow(
+        `Cannot resolve foreign key ${key}.parentId`,
+      );
+      smrt({ packageName: '@pending/c', tableName: 'pending_parent_c_2763' })(
+        B,
+      );
+      expect(generate().columns.parent_id.foreignKey?.table).toBe(
+        'pending_parent_c_2763',
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  it.each([
+    'cti',
+    'sti',
+  ] as const)('preserves declaring-package targets and idType through %s manifest/runtime paths', async (strategy) => {
+    const restore = snapshotObjectRegistryState();
+    try {
+      const packageA = '@fk-parity/a';
+      const packageB = '@fk-parity/b';
+      const A = class ParityParent2763 extends SmrtObject {};
+      const B = class ParityParent2763 extends SmrtObject {};
+      const Child = class ParityChild2763 extends SmrtObject {};
+      smrt({
+        packageName: packageA,
+        tableName: 'fk_parity_a_2763',
+        idType: 'uuid',
+      })(A);
+      foreignKey('ParityParent2763', { onDelete: 'CASCADE' })(
+        Child.prototype,
+        'parentId',
+      );
+      smrt({
+        packageName: packageB,
+        tableName: 'fk_parity_child_2763',
+        tableStrategy: strategy,
+      })(Child);
+      smrt({
+        packageName: packageB,
+        tableName: 'fk_parity_b_2763',
+        idType: 'text',
+      })(B);
+      const key = `${packageB}:ParityChild2763`;
+      const generator = new SchemaGenerator();
+      const fields = await ObjectRegistry.getAllFields(key);
+      const runtime =
+        strategy === 'cti'
+          ? generator.generateSchemaFromRegistry(
+              key,
+              'fk_parity_child_2763',
+              fields,
+              { registry: ObjectRegistry },
+            )
+          : await generator.generateSTISchemaFromRegistry(
+              key,
+              'fk_parity_child_2763',
+              fields,
+              { registry: ObjectRegistry },
+            );
+      const definitions = [
+        {
+          ...objectDef(
+            'ParityParent2763',
+            {},
+            { tableName: 'fk_parity_a_2763', idType: 'uuid' },
+          ),
+          packageName: packageA,
+          qualifiedName: `${packageA}:ParityParent2763`,
+        },
+        {
+          ...objectDef(
+            'ParityParent2763',
+            {},
+            { tableName: 'fk_parity_b_2763', idType: 'text' },
+          ),
+          packageName: packageB,
+          qualifiedName: `${packageB}:ParityParent2763`,
+        },
+        {
+          ...objectDef(
+            'ParityChild2763',
+            {
+              parentId: {
+                type: 'foreignKey',
+                related: 'ParityParent2763',
+                _meta: { onDelete: 'CASCADE' },
+              },
+            },
+            { tableName: 'fk_parity_child_2763', tableStrategy: strategy },
+          ),
+          packageName: packageB,
+          qualifiedName: key,
+        },
+      ];
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: packageB,
+        objects: Object.fromEntries(
+          definitions.map((def) => [def.qualifiedName, def]),
+        ),
+      };
+      new ManifestGenerator().applyGenerationPasses(manifest);
+      const expected = {
+        type: 'TEXT',
+        foreignKey: {
+          table: 'fk_parity_b_2763',
+          column: 'id',
+          onDelete: 'CASCADE',
+        },
+      };
+      expect(runtime.columns.parent_id).toMatchObject(expected);
+      expect(
+        ObjectRegistry.getAllSchemasAsDefinitions().fk_parity_child_2763.columns
+          .parent_id,
+      ).toMatchObject(expected);
+      expect(manifest.objects[key].schema?.columns.parent_id).toMatchObject(
+        expected,
+      );
+      const Derived = class ParityInheritedChild2763 extends Child {};
+      smrt({ packageName: packageA })(Derived);
+      const derivedKey = `${packageA}:ParityInheritedChild2763`;
+      const inheritance = [...ObjectRegistry.getInheritanceChain(derivedKey)];
+      expect(
+        ObjectRegistry.resolveRelationshipTarget(derivedKey, 'parentId'),
+      ).toBe(`${packageB}:ParityParent2763`);
+      expect(ObjectRegistry.getInheritanceChain(derivedKey)).toEqual(
+        inheritance,
+      );
+      expect(
+        ObjectRegistry.getFieldDecorator('ParityChild2763', 'parentId')
+          ?.related,
+      ).toBe('ParityParent2763');
+    } finally {
+      restore();
+    }
+  });
+});
 
 function objectDef(
   className: string,
