@@ -16,6 +16,14 @@
     "./knowledge": {
       "types": "./dist/knowledge.d.ts",
       "import": "./dist/knowledge.js"
+    },
+    "./dev-plane": {
+      "types": "./dist/dev-plane.d.ts",
+      "import": "./dist/dev-plane.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
     }
   },
   "files": [

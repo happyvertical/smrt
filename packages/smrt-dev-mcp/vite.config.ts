@@ -29,6 +29,8 @@ export default defineConfig({
       entry: {
         index: resolve(packageDir, 'src/index.ts'),
         knowledge: resolve(packageDir, 'src/knowledge.ts'),
+        'dev-plane': resolve(packageDir, 'src/dev-plane.ts'),
+        runtime: resolve(packageDir, 'src/runtime.ts'),
       },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,

@@ -141,7 +141,10 @@ export interface RuntimeHttpHost {
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
-function bearerMatches(header: string | undefined, token: string): boolean {
+export function bearerMatches(
+  header: string | undefined,
+  token: string,
+): boolean {
   if (!header?.startsWith('Bearer ')) return false;
   const presented = Buffer.from(header.slice('Bearer '.length));
   const expected = Buffer.from(token);

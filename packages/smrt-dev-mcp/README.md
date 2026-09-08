@@ -657,6 +657,42 @@ SMRT_DEV_MCP_TOKEN=dev-secret smrt-dev-mcp --http --port 3939 --project .
 # → [smrt-dev-mcp] runtime dev-plane listening at http://127.0.0.1:3939/mcp
 ```
 
+## In-App Dev-Plane (Level 3)
+
+The same read-only runtime tools can run *inside* a SvelteKit app's dev
+server, where the real decorated `ObjectRegistry` is already live and the
+app's own database configuration is at hand. Enable the generated route in
+the Vite plugin and install this package as a devDependency of the app:
+
+```ts
+smrtPlugin({ sveltekit: { enabled: true, devPlaneRoute: { enabled: true } } })
+```
+
+The generator writes `src/routes/api/_dev/[...tool]/+server.ts` (marked
+auto-generated), which mounts `createDevPlane` from
+`@happyvertical/smrt-dev-mcp/dev-plane`:
+
+- **JSON**: `GET /api/_dev` lists the catalog; `GET|POST /api/_dev/<tool>`
+  returns the tool's envelope (arguments from the query string or a JSON
+  body). `curl -H "Authorization: Bearer $SMRT_DEV_MCP_TOKEN" http://127.0.0.1:5173/api/_dev/registry-live`
+- **MCP**: `POST /api/_dev/mcp`, the same stateless Streamable HTTP contract
+  as `--http`.
+- **Catalog**: `registry-live` (the app's live registry, no manifest boot,
+  provenance `live (app registry)`) plus the nine Level 2 tools. The static
+  stdio catalog, generated CRUD, custom actions, and `do()` are never mounted.
+
+Boundary: the route 404s outside SvelteKit dev mode and returns 503 until
+`SMRT_DEV_MCP_TOKEN` is set; every request must present that bearer token from
+a loopback `Host` (and loopback `Origin` when present). Per-request
+`projectPath`, `dbUrl`, and `dbType` are dropped: calls are pinned to the app's
+root and to the database from `getSmrtConfig(...).db`, so the SDK's connection
+cache hands the plane the app's own handle. Vite's SSR HMR re-registers classes
+on change, so `registry-live` needs no restart.
+
+From a terminal, `smrt dev:runtime <tool> [--arg key=value]...` calls the
+route when `--url`/`SMRT_DEV_PLANE_URL` is set and otherwise runs the Level 2
+boot locally, so the same envelope is available either way.
+
 ## MCP Resources And Prompts
 
 Resources:
