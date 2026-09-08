@@ -13,14 +13,10 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
 | `reflect-domain-knowledge` | Reports downstream/domain artifact coverage and freshness |
 | `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
-| `check-domain-knowledge` | Alias for deterministic domain artifact freshness checks |
-| `build-review-context` | Builds model-ready SMRT review context and package expert routing |
-| `build-domain-review-context` | Domain-scoped review context builder with `scope`/`package` filters |
-| `smrt-review` | Returns deterministic review findings and a reusable review prompt bundle |
-| `build-architecture-context` | Builds architecture planning context from an idea or docs |
+| `build-context` | One context entry: `task: review` (file-anchored findings + `reviewHints` + prompt bundle) or `task: architecture` (ranked packages + recommendations); replaces the four `build-*-context` tools (#2780) |
+| `smrt-review` | Deprecated name for `build-context` `task: review`; removed next minor |
 | `build-package-specialist-context` | Builds deterministic package-specific Workbench context and source references |
-| `build-domain-architecture-context` | Domain-scoped architecture context builder with `scope`/`package` filters |
-| `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
+| `smrt-architecture` | Deprecated name for `build-context` `task: architecture`; removed next minor |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
 | `migration-status` | Live migration status from the `_smrt_schema_migrations` system table — completed/running/failed/rolled_back counts, latest completed and failed migrations (runtime provenance; read-only; optional live DB, #1824) |
@@ -100,7 +96,7 @@ Per package, objects resolve in this order, and the winner is recorded in
 The index exposes `coverage` and `diagnostics` (added in `schemaVersion: 2`). Zero
 discovered objects is an **error-grade** diagnostic that names the roots and
 artifact paths checked plus the fix, and it propagates into
-`smrt-architecture`/`smrt-review`/`reflect-*` results and prompt bundles.
+`build-context`/`reflect-*` results and prompt bundles.
 
 A workspace-root package has an empty `relativeDirectory`, so package paths are
 built with `packageRelativePath`/`packageDocPaths` rather than interpolation —
@@ -116,7 +112,7 @@ with YAML frontmatter (`name` and `description`) and harness-neutral body text.
 Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT code review workflow.
-  Agents should fetch it with `get-agent-skill`, then call `smrt-review` for
+  Agents should fetch it with `get-agent-skill`, then call `build-context` (`task: review`) for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
 
@@ -147,6 +143,8 @@ launcher or a small wrapper script with an absolute Node path.
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
+- `src/dev-plane.ts` — in-app runtime dev-plane (#2782): `createDevPlane({ token, projectRoot, db })` serves JSON + MCP on one mount with loopback/bearer guards and a positive catalog (`registry-live` + the nine runtime tools); mounted by the generated `_dev/[...tool]` SvelteKit route
+- `src/runtime.ts` — `RUNTIME_TOOLS` map for in-process callers (`smrt dev:runtime` fallback)
 - `src/tools/review-smrt-project.ts` — advisory ecosystem-alignment checks for downstream projects
 
 ## Gotchas

@@ -45,6 +45,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { generateDevPlaneRoute } from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
 import { generateResourcesRoute } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
@@ -75,6 +76,12 @@ export interface SvelteKitOptions {
    * (the route is auth-guarded fail-closed); set `enabled: false` to skip.
    */
   changesRoute?: { enabled?: boolean };
+  /**
+   * Opt-in in-app runtime dev-plane route (`_dev/[...tool]`, #2782). Dev
+   * mode only; requires `@happyvertical/smrt-dev-mcp` in the consumer and
+   * `SMRT_DEV_MCP_TOKEN` at runtime.
+   */
+  devPlaneRoute?: { enabled?: boolean };
   /**
    * Live `_events` SSE route generation (#1763). Enabled by default (the route
    * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
@@ -1407,6 +1414,11 @@ export async function generateSvelteKitRoutes(
   if (generateChangesRoute(projectRoot, manifest, options)) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, '_changes', '+server.ts'),
+    );
+  }
+  if (generateDevPlaneRoute(projectRoot, options)) {
+    generatedRoutePaths.push(
+      join(projectRoot, options.routesDir, '_dev', '[...tool]', '+server.ts'),
     );
   }
   // Live change-signal SSE route (#1763) — cleanup rides the sweep above.

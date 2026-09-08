@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildArchitectureContext,
+  buildContext,
   buildKnowledgeIndex,
   buildPackageSpecialistContext,
   buildReviewContext,
@@ -287,6 +288,113 @@ describe('SMRT knowledge index', () => {
       '@happyvertical/smrt-demo',
     ]);
     expect(index.sdkPackages).toHaveLength(0);
+  });
+
+  it('build-context review separates file-anchored findings from package hints (#2780)', async () => {
+    const context = await buildContext({
+      task: 'review',
+      rootDir,
+      changedFiles: [
+        'packages/demo/src/manifest/manifest.json',
+        'packages/demo/src/index.ts',
+      ],
+    });
+    expect(context.task).toBe('review');
+    if (context.task !== 'review') return;
+    const findingCodes = (context.deterministicFindings ?? []).map(
+      (i) => i.code,
+    );
+    expect(findingCodes).not.toContain('relationship-sensitive-review');
+    expect(findingCodes).not.toContain('mcp-surface-review');
+    for (const finding of context.deterministicFindings ?? []) {
+      expect(finding.file ?? finding.packageName, finding.code).toBeTruthy();
+    }
+    const hintCodes = (context.reviewHints ?? []).map((i) => i.code);
+    expect(hintCodes).toContain('relationship-sensitive-review');
+    expect(
+      (context.reviewHints ?? []).every((h) => h.severity === 'info'),
+    ).toBe(true);
+    expect(context.promptBundle?.contextMarkdown).toContain('SMRT code review');
+  });
+
+  it('singularizes idea tokens with one rule each (#2780 review)', async () => {
+    const context = await buildContext({
+      task: 'architecture',
+      rootDir,
+      idea: 'track demos and their entries in batches',
+    });
+    expect(context.selectedPackages.map((pkg) => pkg.name)).toContain(
+      '@happyvertical/smrt-demo',
+    );
+  });
+
+  it('build-context architecture ranks the package the idea names first (#2780)', async () => {
+    await mkdir(join(rootDir, 'packages', 'newsletters', 'src', 'manifest'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(rootDir, 'packages', 'newsletters', 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-newsletters',
+        version: '1.0.0',
+        type: 'module',
+        files: ['dist', 'AGENTS.md', 'CLAUDE.md'],
+        exports: {
+          '.': { types: './dist/index.d.ts', import: './dist/index.js' },
+        },
+        dependencies: { '@happyvertical/smrt-core': 'workspace:*' },
+      }),
+    );
+    await writeFile(
+      join(rootDir, 'packages', 'newsletters', 'AGENTS.md'),
+      '# Newsletters\n',
+    );
+    await writeFile(
+      join(rootDir, 'packages', 'newsletters', 'CLAUDE.md'),
+      '@AGENTS.md\n',
+    );
+    await writeFile(
+      join(
+        rootDir,
+        'packages',
+        'newsletters',
+        'src',
+        'manifest',
+        'manifest.json',
+      ),
+      JSON.stringify({
+        version: '1',
+        packageName: '@happyvertical/smrt-newsletters',
+        objects: {
+          '@happyvertical/smrt-newsletters:Subscription': {
+            className: 'Subscription',
+            qualifiedName: '@happyvertical/smrt-newsletters:Subscription',
+            extends: 'SmrtObject',
+            collection: 'subscriptions',
+            decoratorConfig: {},
+            fields: {
+              email: { type: 'text', required: true },
+              confirmedAt: { type: 'datetime' },
+            },
+            methods: {},
+          },
+        },
+      }),
+    );
+    const context = await buildContext({
+      task: 'architecture',
+      rootDir,
+      idea: 'add a newsletter subscription object with double opt-in confirmation',
+    });
+    expect(context.task).toBe('architecture');
+    const names = context.selectedPackages.map((pkg) => pkg.name);
+    expect(names[0]).toBe('@happyvertical/smrt-newsletters');
+    expect(names).not.toContain('@happyvertical/smrt-demo');
+    if (context.task === 'architecture') {
+      expect(context.recommendations.smrtPackages[0]).toBe(
+        '@happyvertical/smrt-newsletters',
+      );
+    }
   });
 
   it('builds deterministic package specialist context', async () => {
@@ -1194,14 +1302,14 @@ describe('SMRT knowledge index', () => {
     );
   });
 
-  it('returns deterministic review findings for relationship and MCP surfaces', async () => {
+  it('returns relationship and MCP surface reminders as review hints, not findings', async () => {
     const result = await smrtReview({
       rootDir,
       changedFiles: ['packages/demo/src/Demo.ts'],
       mode: 'both',
     });
 
-    expect(result.deterministicFindings.map((issue) => issue.code)).toEqual(
+    expect(result.reviewHints.map((issue) => issue.code)).toEqual(
       expect.arrayContaining([
         'relationship-sensitive-review',
         'mcp-surface-review',
