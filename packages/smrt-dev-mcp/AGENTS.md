@@ -147,6 +147,8 @@ launcher or a small wrapper script with an absolute Node path.
 - `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
+- `src/dev-plane.ts` — in-app runtime dev-plane (#2782): `createDevPlane({ token, projectRoot, db })` serves JSON + MCP on one mount with loopback/bearer guards and a positive catalog (`registry-live` + the nine runtime tools); mounted by the generated `_dev/[...tool]` SvelteKit route
+- `src/runtime.ts` — `RUNTIME_TOOLS` map for in-process callers (`smrt dev:runtime` fallback)
 - `src/tools/review-smrt-project.ts` — advisory ecosystem-alignment checks for downstream projects
 
 ## Gotchas

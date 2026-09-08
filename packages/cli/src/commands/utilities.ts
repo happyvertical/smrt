@@ -65,6 +65,7 @@ import { dbPruneCommand } from './db-prune.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
+import { devRuntimeCommands } from './dev-runtime.js';
 import { exportCommand } from './export.js';
 import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 import {
@@ -3404,6 +3405,7 @@ export default testManifest;
   'runtime:check': runtimeCheckCommand,
 
   ...devKnowledgeCommands,
+  ...devRuntimeCommands,
 
   // Migration status and history commands (from separate modules)
   'db:status': dbStatusCommand,
