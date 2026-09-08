@@ -2463,6 +2463,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // literal below never reaches the constructor, however it was passed.
     const {
       _className,
+      _deferRuntimeInitialization,
+      _reuseInitializedDb,
       db,
       defaultListLimit, // #2367
       persistence, // Also extract persistence alias
@@ -2478,6 +2480,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const collectionOptions: SmrtCollectionOptions = {
       _className,
+      _deferRuntimeInitialization,
+      _reuseInitializedDb,
       db,
       persistence, // Pass persistence through so initialize() can map it to db
       ai,
