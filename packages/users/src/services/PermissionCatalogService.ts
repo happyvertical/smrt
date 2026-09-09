@@ -658,11 +658,16 @@ export class PermissionCatalogService {
   private getManifestPermissionDefinitions(): PermissionDefinition[] {
     const standardActions = ['list', 'get', 'create', 'update', 'delete'];
     const definitions = new Map<string, PermissionDefinition>();
+    const seenRegistrations = new Set<object>();
 
-    for (const metadata of ObjectRegistry.getAllObjectMetadata()) {
-      const registered =
-        ObjectRegistry.getClassByConstructor(metadata.constructor) ??
-        ObjectRegistry.getClass(metadata.name);
+    for (const [, registered] of ObjectRegistry.getAllClasses()) {
+      // A source registration can retain its simple key while manifest
+      // hydration adds its qualified key. Build the catalog once per concrete
+      // registration, preserving package identity instead of a simple-name
+      // first-match lookup.
+      if (seenRegistrations.has(registered)) continue;
+      seenRegistrations.add(registered);
+
       const manifestEntry = registered?.qualifiedName
         ? findManifestEntryByQualifiedName(registered.qualifiedName)
         : undefined;
@@ -671,9 +676,9 @@ export class PermissionCatalogService {
         continue;
       }
 
-      const className = metadata.name;
-      const qualifiedName = registered?.qualifiedName;
-      const objectConfig = manifestEntry?.decoratorConfig ?? metadata.config;
+      const className = registered.name;
+      const qualifiedName = registered.qualifiedName;
+      const objectConfig = manifestEntry?.decoratorConfig ?? registered.config;
       const rawCollection = (
         objectConfig as { collection?: unknown } | undefined
       )?.collection;
@@ -684,7 +689,7 @@ export class PermissionCatalogService {
       const collection =
         configuredCollection ??
         manifestEntry?.collection ??
-        deriveCollectionName(metadata.name);
+        deriveCollectionName(className);
 
       const readExposed =
         isOperationEnabled(objectConfig.api, 'list') ||
@@ -705,7 +710,7 @@ export class PermissionCatalogService {
       const fieldEntries = manifestEntry?.fields
         ? Object.entries(manifestEntry.fields)
         : Array.from(
-            (registered?.inheritedFields ?? metadata.fields).entries(),
+            (registered.inheritedFields ?? registered.fields).entries(),
           );
       for (const [fieldName, fieldDef] of fieldEntries) {
         const field = fieldDef as FieldReadPermissionCandidate;
@@ -747,7 +752,7 @@ export class PermissionCatalogService {
 
       const methodEntries = manifestEntry?.methods
         ? Object.values(manifestEntry.methods)
-        : Array.from(metadata.methods.entries());
+        : Array.from(registered.methods.entries());
       const publicCustomMethodNames = getPublicCustomMethodNames(
         methodEntries,
         standardActions,

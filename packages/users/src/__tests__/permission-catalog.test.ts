@@ -2,8 +2,14 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { snapshotObjectRegistryState } from '../../../core/src/test-utils.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
   generatePostgresPermissionSql,
@@ -86,6 +92,7 @@ describe('PermissionCatalogService', () => {
   const dbPaths: string[] = [];
 
   afterEach(() => {
+    vi.restoreAllMocks();
     clearCache();
     while (cleanupFns.length > 0) {
       cleanupFns.pop()?.();
@@ -95,6 +102,222 @@ describe('PermissionCatalogService', () => {
       if (existsSync(dbPath)) {
         rmSync(dbPath, { force: true });
       }
+    }
+  });
+
+  it('derives each current supplied registry snapshot once without metadata or relationship projection', () => {
+    class SharedPermissionRecord2802 extends SmrtObject {}
+    class OtherPermissionRecord2802 extends SmrtObject {}
+
+    const shared = {
+      config: {
+        collection: 'catalog_a_2802',
+        api: { include: ['list', 'create'] },
+        mcp: { include: ['publish', 'hidden'] },
+      },
+      constructor: SharedPermissionRecord2802,
+      fields: new Map([['ignored', { type: 'text' }]]),
+      inheritedFields: new Map([
+        [
+          'inheritedVisible',
+          {
+            _meta: {
+              readPermission: 'catalog_a_2802.read.inherited',
+            },
+            type: 'text',
+          },
+        ],
+      ]),
+      methods: new Map([
+        ['publish', { isPublic: true, name: 'publish' }],
+        ['hidden', { isPublic: false, name: 'hidden' }],
+      ]),
+      name: 'SharedPermissionRecord2802',
+      packageName: '@catalog/a',
+      qualifiedName: '@catalog/a:SharedPermissionRecord2802',
+    } as unknown as ReturnType<typeof ObjectRegistry.getAllClasses> extends Map<
+      string,
+      infer Registered
+    >
+      ? Registered
+      : never;
+    const other = {
+      config: {
+        collection: 'catalog_b_2802',
+        api: { include: ['list', 'delete'] },
+        mcp: { include: ['publish'] },
+      },
+      constructor: OtherPermissionRecord2802,
+      fields: new Map(),
+      methods: new Map([['publish', { isPublic: true, name: 'publish' }]]),
+      name: 'SharedPermissionRecord2802',
+      packageName: '@catalog/b',
+      qualifiedName: '@catalog/b:SharedPermissionRecord2802',
+    } as typeof shared;
+
+    const registrations = new Map([
+      ['@catalog/a:SharedPermissionRecord2802', shared],
+      ['SharedPermissionRecord2802', shared],
+      ['@catalog/b:SharedPermissionRecord2802', other],
+    ]);
+    const getAllClasses = vi
+      .spyOn(ObjectRegistry, 'getAllClasses')
+      .mockReturnValue(registrations);
+    const getAllMetadata = vi
+      .spyOn(ObjectRegistry, 'getAllObjectMetadata')
+      .mockImplementation(() => {
+        throw new Error('catalog must not project all object metadata');
+      });
+    const getRelationshipMap = vi
+      .spyOn(ObjectRegistry, 'getRelationshipMap')
+      .mockImplementation(() => {
+        throw new Error('catalog must not project relationships');
+      });
+
+    const service = PermissionCatalogService.create();
+    const first = service.getCatalog().permissions;
+    const firstSlugs = first.map((permission) => permission.slug);
+    expect(firstSlugs).toEqual(
+      expect.arrayContaining([
+        'catalog_a_2802.read',
+        'catalog_a_2802.read.inherited',
+        'catalog_a_2802.create',
+        'catalog_a_2802.publish',
+        'catalog_b_2802.read',
+        'catalog_b_2802.delete',
+        'catalog_b_2802.publish',
+      ]),
+    );
+    expect(firstSlugs).not.toContain('catalog_a_2802.hidden');
+    expect(
+      firstSlugs.filter((slug) => slug === 'catalog_a_2802.read'),
+    ).toHaveLength(1);
+    expect(
+      first.find((permission) => permission.slug === 'catalog_a_2802.read'),
+    ).toMatchObject({ qualifiedName: '@catalog/a:SharedPermissionRecord2802' });
+    expect(
+      first.find((permission) => permission.slug === 'catalog_b_2802.read'),
+    ).toMatchObject({ qualifiedName: '@catalog/b:SharedPermissionRecord2802' });
+    expect(getAllMetadata).not.toHaveBeenCalled();
+    expect(getRelationshipMap).not.toHaveBeenCalled();
+
+    getAllClasses.mockReturnValue(
+      new Map([['@catalog/b:SharedPermissionRecord2802', other]]),
+    );
+    const afterSnapshotChange = service
+      .getCatalog()
+      .permissions.map((permission) => permission.slug);
+    expect(afterSnapshotChange).toContain('catalog_b_2802.read');
+    expect(afterSnapshotChange).not.toContain('catalog_a_2802.read');
+  });
+
+  it('uses current qualified public registrations for colliding names after registry restoration', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
+    const register = (
+      packageName: string,
+      collection: string,
+      include: string[],
+    ) => {
+      ObjectRegistry.registerFromManifest(
+        `${packageName}:PermissionCatalogPeer2802`,
+        {
+          className: 'PermissionCatalogPeer2802',
+          decoratorConfig: {
+            api: { include },
+            collection,
+            mcp: { include: ['publish', 'hidden'] },
+          },
+          fields: {
+            visible: {
+              _meta: { readPermission: `${collection}.read.inherited` },
+              type: 'text',
+            },
+          },
+          methods: {
+            hidden: { isPublic: false, name: 'hidden' },
+            publish: { isPublic: true, name: 'publish' },
+          },
+        },
+        packageName,
+      );
+      const registered = ObjectRegistry.getClassByQualifiedName(
+        `${packageName}:PermissionCatalogPeer2802`,
+      );
+      if (!registered) throw new Error('expected registered catalog fixture');
+      return registered;
+    };
+
+    try {
+      const first = register('@catalog/integration-a', 'catalog_real_a_2802', [
+        'list',
+        'create',
+      ]);
+      const second = register('@catalog/integration-b', 'catalog_real_b_2802', [
+        'list',
+        'delete',
+      ]);
+
+      const service = PermissionCatalogService.create();
+      const initial = service.getCatalog().permissions;
+      expect(initial.map((permission) => permission.slug)).toEqual(
+        expect.arrayContaining([
+          'catalog_real_a_2802.read',
+          'catalog_real_a_2802.read.inherited',
+          'catalog_real_a_2802.create',
+          'catalog_real_a_2802.publish',
+          'catalog_real_b_2802.read',
+          'catalog_real_b_2802.read.inherited',
+          'catalog_real_b_2802.delete',
+          'catalog_real_b_2802.publish',
+        ]),
+      );
+      expect(initial.map((permission) => permission.slug)).not.toContain(
+        'catalog_real_a_2802.hidden',
+      );
+      expect(
+        initial.find(
+          (permission) => permission.slug === 'catalog_real_a_2802.read',
+        ),
+      ).toMatchObject({ qualifiedName: first.qualifiedName });
+      expect(
+        initial.find(
+          (permission) => permission.slug === 'catalog_real_b_2802.read',
+        ),
+      ).toMatchObject({ qualifiedName: second.qualifiedName });
+
+      restoreBaseline();
+      const restoredPeer = register(
+        '@catalog/integration-b',
+        'catalog_real_b_2802',
+        ['list', 'delete'],
+      );
+      const newPeer = register(
+        '@catalog/integration-c',
+        'catalog_real_c_2802',
+        ['list'],
+      );
+      const afterRestore = service
+        .getCatalog()
+        .permissions.map((permission) => permission.slug);
+      expect(afterRestore).toContain('catalog_real_b_2802.read');
+      expect(afterRestore).toContain('catalog_real_c_2802.read');
+      expect(afterRestore).not.toContain('catalog_real_a_2802.read');
+      expect(
+        service
+          .getCatalog()
+          .permissions.find(
+            (permission) => permission.slug === 'catalog_real_b_2802.read',
+          ),
+      ).toMatchObject({ qualifiedName: restoredPeer.qualifiedName });
+      expect(
+        service
+          .getCatalog()
+          .permissions.find(
+            (permission) => permission.slug === 'catalog_real_c_2802.read',
+          ),
+      ).toMatchObject({ qualifiedName: newPeer.qualifiedName });
+    } finally {
+      restoreBaseline();
     }
   });
 
