@@ -166,6 +166,53 @@ describe('Tenancy read gaps (#2365)', () => {
   // Shared handle for constructing fixture objects directly.
   let db: any;
 
+  it('reconciles core registration with the authoritative class tenancy mode', () => {
+    expect(ObjectRegistry.getTenantScopedConfig('ReadGapDoc')).toMatchObject({
+      mode: 'optional',
+      field: 'tenantId',
+    });
+    expect(
+      ObjectRegistry.getTenantScopedConfig('ReadGapStrictDoc'),
+    ).toMatchObject({
+      mode: 'required',
+      field: 'tenantId',
+    });
+  });
+
+  it('preserves class-level tenancy authority in either decorator order without replacing explicit core policy', () => {
+    class TenantBeforeSmrt extends SmrtObject {}
+    ObjectRegistry.registerFieldDecorator('TenantBeforeSmrt', 'tenantId', {
+      type: 'foreignKey',
+      nullable: true,
+      __tenancy: { isTenantIdField: true },
+    });
+    TenantScoped({ mode: 'required' })(TenantBeforeSmrt);
+    expect(
+      ObjectRegistry.getFieldDecorator('TenantBeforeSmrt', 'tenantId')
+        ?.__tenancy,
+    ).toMatchObject({ isTenantIdField: true, mode: 'required' });
+    smrt()(TenantBeforeSmrt);
+    expect(
+      ObjectRegistry.getTenantScopedConfig('TenantBeforeSmrt'),
+    ).toMatchObject({ mode: 'required', field: 'tenantId' });
+
+    class ExplicitSmrtBeforeTenant extends SmrtObject {}
+    ObjectRegistry.registerFieldDecorator(
+      'ExplicitSmrtBeforeTenant',
+      'tenantId',
+      {
+        type: 'foreignKey',
+        nullable: true,
+        __tenancy: { isTenantIdField: true },
+      },
+    );
+    smrt({ tenantScoped: { mode: 'optional' } })(ExplicitSmrtBeforeTenant);
+    TenantScoped({ mode: 'required' })(ExplicitSmrtBeforeTenant);
+    expect(
+      ObjectRegistry.getTenantScopedConfig('ExplicitSmrtBeforeTenant'),
+    ).toMatchObject({ mode: 'optional', field: 'tenantId' });
+  });
+
   beforeAll(async () => {
     ObjectRegistry.registerCollection('ReadGapDoc', ReadGapDocCollection);
     ObjectRegistry.registerCollection(

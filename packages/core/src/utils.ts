@@ -149,9 +149,19 @@ export async function fieldsFromClass(
   // `getClassByConstructor` expects the registry's `SmrtObjectConstructor`
   // (`new (...args: any[]) => SmrtObject`); the narrower `never[]` param type
   // is contravariantly assignable, so this widening cast is purely structural.
+  const registered = ObjectRegistry.getClassByConstructor(
+    ClassType as SmrtObjectConstructor,
+  );
+  // A collection has the exact item constructor even when relation metadata
+  // uses a legacy simple name. Keep that constructor's qualified identity for
+  // field lookup so a same-named class in another package cannot supply an
+  // empty or unrelated field bag.
   const className =
-    ObjectRegistry.getClassByConstructor(ClassType as SmrtObjectConstructor)
-      ?.name || ClassType.name;
+    registered?.qualifiedName &&
+    registered.name &&
+    ObjectRegistry.findClassesByName(registered.name).length > 1
+      ? registered.qualifiedName
+      : (registered?.name ?? ClassType.name);
   // NEW: Use getAllFields() to include inherited fields from parent classes
   const cachedFields = await ObjectRegistry.getAllFields(className);
 

@@ -10,6 +10,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { SmrtObject } from '../object.js';
+import type { SmrtObjectConstructor } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type { FieldDefinition } from '../scanner/types.js';
 import { tableNameFromClass } from '../utils.js';
@@ -71,7 +72,11 @@ export async function generateSchema(
   providedFields?: Map<string, FieldDefinition>,
   options: { engine?: DatabaseEngine } = {},
 ) {
-  const className = ClassType.name;
+  // Identity-only lookup; no constructor arguments are invoked by the registry.
+  const owner = ObjectRegistry.getClassByConstructor(
+    ClassType as unknown as SmrtObjectConstructor,
+  );
+  const className = owner?.qualifiedName ?? owner?.name ?? ClassType.name;
   const tableName = tableNameFromClass(ClassType);
 
   // For external packages, ensure manifest is loaded before proceeding

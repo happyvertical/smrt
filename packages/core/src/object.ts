@@ -45,6 +45,10 @@ import {
 } from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
+import {
+  resolveOneToManyInverse,
+  resolveRelationshipTargetName,
+} from './relationship-loader';
 import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -1225,19 +1229,19 @@ export class SmrtObject extends SmrtClass {
             this._tableName = baseSchema.tableName;
           } else {
             // Fallback to own schema tableName
-            const ownSchema = ObjectRegistry.getSchema(className);
+            const ownSchema = ObjectRegistry.getSchema(qualifiedName);
             this._tableName =
               ownSchema?.tableName || tableNameFromClass(this.constructor);
           }
         } else {
           // Fallback to own schema tableName
-          const ownSchema = ObjectRegistry.getSchema(className);
+          const ownSchema = ObjectRegistry.getSchema(qualifiedName);
           this._tableName =
             ownSchema?.tableName || tableNameFromClass(this.constructor);
         }
       } else {
         // CTI: Use own schema tableName
-        const ownSchema = ObjectRegistry.getSchema(className);
+        const ownSchema = ObjectRegistry.getSchema(qualifiedName);
         this._tableName =
           ownSchema?.tableName || tableNameFromClass(this.constructor);
       }
@@ -1890,7 +1894,13 @@ export class SmrtObject extends SmrtClass {
     filter: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const className = this.getResolvedClassName();
-    const interceptorContext = createInterceptorContext(className, 'get');
+    const interceptorContext = createInterceptorContext(
+      className,
+      'get',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
+    );
     const intercepted = await GlobalInterceptors.executeBeforeGet(
       className,
       filter,
@@ -2108,7 +2118,13 @@ export class SmrtObject extends SmrtClass {
       await this.validateCrossPackageRefs();
 
       // Execute beforeSave interceptors (e.g., tenancy validation)
-      const interceptorContext = createInterceptorContext(className, 'save');
+      const interceptorContext = createInterceptorContext(
+        className,
+        'save',
+        undefined,
+        undefined,
+        this.getResolvedQualifiedName(),
+      );
       await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
 
       if (!this.id) {
@@ -2468,7 +2484,13 @@ export class SmrtObject extends SmrtClass {
     // omitting domain mutation and after-save hooks.
     await GlobalInterceptors.executeBeforeSave(
       this,
-      createInterceptorContext(className, 'save'),
+      createInterceptorContext(
+        className,
+        'save',
+        undefined,
+        undefined,
+        this.getResolvedQualifiedName(),
+      ),
     );
 
     const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
@@ -3345,6 +3367,9 @@ export class SmrtObject extends SmrtClass {
     const interceptorContext = createInterceptorContext(
       this.constructor.name,
       'delete',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
     );
     await GlobalInterceptors.executeBeforeDelete(this, interceptorContext);
 
@@ -3628,11 +3653,11 @@ export class SmrtObject extends SmrtClass {
 
     // Ensure manifest is loaded for external packages before accessing relationships
     // This is critical for cross-package relationship resolution (Issue #746)
-    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+    await ObjectRegistry.ensureManifestLoaded(this.getResolvedQualifiedName());
 
     // Get relationship metadata from ObjectRegistry
     const relationships = ObjectRegistry.getRelationships(
-      this.constructor.name,
+      this.getResolvedQualifiedName(),
     );
     const relationship = relationships.find(
       (r) =>
@@ -3655,18 +3680,8 @@ export class SmrtObject extends SmrtClass {
       return null;
     }
 
-    // For crossPackageRef, the target is a qualified name and the target package's
-    // manifest may not be loaded yet — ensure it's available before lookup.
-    if (relationship.type === 'crossPackageRef') {
-      await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
-    }
-
-    // Get the target class constructor (try qualified name first for crossPackageRef)
-    const targetClassInfo =
-      relationship.type === 'crossPackageRef'
-        ? (ObjectRegistry.getClassByQualifiedName(relationship.targetClass) ??
-          ObjectRegistry.getClass(relationship.targetClass))
-        : ObjectRegistry.getClass(relationship.targetClass);
+    const targetName = await resolveRelationshipTargetName(relationship);
+    const targetClassInfo = ObjectRegistry.getClassByQualifiedName(targetName);
     if (!targetClassInfo) {
       throw RuntimeError.invalidState(
         `Target class ${relationship.targetClass} not found in ObjectRegistry`,
@@ -3675,9 +3690,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Check if target class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(
-      relationship.targetClass,
-    );
+    const tableStrategy = ObjectRegistry.getTableStrategy(targetName);
     const isSTI = tableStrategy === 'sti';
 
     // For STI classes, we need to determine the actual subclass from the database row
@@ -3828,11 +3841,11 @@ export class SmrtObject extends SmrtClass {
 
     // Ensure manifest is loaded for external packages before accessing relationships
     // This is critical for cross-package relationship resolution (Issue #746)
-    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+    await ObjectRegistry.ensureManifestLoaded(this.getResolvedQualifiedName());
 
     // Get relationship metadata from ObjectRegistry
     const relationships = ObjectRegistry.getRelationships(
-      this.constructor.name,
+      this.getResolvedQualifiedName(),
     );
     const relationship = relationships.find((r) => r.fieldName === fieldName);
 
@@ -3844,59 +3857,14 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (relationship.type === 'oneToMany') {
-      // Find the inverse foreignKey field on the target class. An instance can
-      // satisfy an inverse FK that targets its own class OR any (STI) ancestor
-      // it inherits the oneToMany from — the FK is declared against the base
-      // class name, while `this.constructor.name` may be a subclass (e.g. a
-      // Person inheriting Profile.relationshipsFrom).
-      const inverseRelationships =
-        ObjectRegistry.getInverseRelationshipsForSelf(this.constructor.name);
-      const inverseCandidates = inverseRelationships.filter(
-        (r) =>
-          r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
+      const targetName = await resolveRelationshipTargetName(relationship);
+      const inverseForeignKey = resolveOneToManyInverse(
+        this.getResolvedQualifiedName(),
+        relationship,
+        targetName,
       );
-      // When the target declares multiple foreign keys back to this class
-      // (e.g. ProfileRelationship.fromProfileId / toProfileId), honor an
-      // explicit `@oneToMany(Target, { foreignKey })` to pick the right side.
-      // Otherwise fall back to the first match (legacy behavior).
-      const explicitForeignKey = relationship.options?.foreignKey as
-        | string
-        | undefined;
-      const matchedForeignKey = explicitForeignKey
-        ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
-        : undefined;
-      if (explicitForeignKey && !matchedForeignKey) {
-        // A misspelled / stale `foreignKey` must fail loudly rather than
-        // silently resolving the wrong inverse side.
-        throw RuntimeError.invalidState(
-          `oneToMany ${fieldName} on ${this.constructor.name} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
-          {
-            fieldName,
-            targetClass: relationship.targetClass,
-            foreignKey: explicitForeignKey,
-          },
-        );
-      }
-      // Prefer an inverse FK that targets this exact class before falling back
-      // to one inherited from an (STI) ancestor — preserves the pre-fallback
-      // selection when a target declares FKs to multiple levels of the chain.
-      const inverseForeignKey =
-        matchedForeignKey ??
-        inverseCandidates.find(
-          (r) => r.targetClass === this.constructor.name,
-        ) ??
-        inverseCandidates[0];
-
-      if (!inverseForeignKey) {
-        throw RuntimeError.invalidState(
-          `Could not find inverse foreignKey on ${relationship.targetClass} for oneToMany relationship ${fieldName}`,
-          { fieldName, targetClass: relationship.targetClass },
-        );
-      }
-
-      // Get or create cached collection instance
       const collection = await ObjectRegistry.getCollection(
-        relationship.targetClass,
+        targetName,
         this.options,
       );
 
@@ -3929,8 +3897,13 @@ export class SmrtObject extends SmrtClass {
 
       await this.verifyStorageReady();
 
+      // Normalize native DuckDB UUIDs in the data-bearing query, before
+      // relationship IDs reach the string-only hydration boundary.
+      const targetProjection = this.isNativeDuckDb()
+        ? `CAST("${targetColumn}" AS VARCHAR) AS "${targetColumn}"`
+        : `"${targetColumn}"`;
       const junctionRows = await this.db.query(
-        `SELECT "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" = ?`,
+        `SELECT ${targetProjection} FROM "${through}" WHERE "${sourceColumn}" = ?`,
         [this.id],
       );
 
@@ -3980,21 +3953,14 @@ export class SmrtObject extends SmrtClass {
    */
   protected async resolveManyToManyJoin(
     fieldName: string,
-    relationship: {
-      sourceClass: string;
-      targetClass: string;
-      options?: Record<string, unknown>;
-    },
+    relationship: import('./registry').RelationshipMetadata,
   ): Promise<{
     through: string;
     sourceColumn: string;
     targetColumn: string;
     targetClassName: string;
   }> {
-    const decorator = ObjectRegistry.getFieldDecorator(
-      relationship.sourceClass,
-      fieldName,
-    );
+    const targetName = await resolveRelationshipTargetName(relationship);
     const opts: Record<string, unknown> = relationship.options || {};
     // `_meta` is an open metadata bag whose junction keys are read positionally
     // through `??` fallbacks; narrow it to an indexable view once here.
@@ -4003,7 +3969,7 @@ export class SmrtObject extends SmrtClass {
         ? (opts._meta as Record<string, unknown>)
         : undefined;
 
-    const through = decorator?.through ?? opts.through ?? optsMeta?.through;
+    const through = opts.through ?? optsMeta?.through;
     if (!through) {
       throw RuntimeError.invalidState(
         `manyToMany field ${fieldName} on ${relationship.sourceClass} is missing the 'through' join table name`,
@@ -4020,12 +3986,10 @@ export class SmrtObject extends SmrtClass {
       : relationship.sourceClass;
 
     const sourceColumn =
-      decorator?.sourceKey ??
       opts.sourceKey ??
       optsMeta?.sourceKey ??
       `${toSnakeCase(sourceSimpleName)}_id`;
     const targetColumn =
-      decorator?.targetKey ??
       opts.targetKey ??
       optsMeta?.targetKey ??
       `${toSnakeCase(targetSimpleName)}_id`;
@@ -4034,7 +3998,7 @@ export class SmrtObject extends SmrtClass {
       through: String(through),
       sourceColumn: String(sourceColumn),
       targetColumn: String(targetColumn),
-      targetClassName: relationship.targetClass,
+      targetClassName: targetName,
     };
   }
 
@@ -4080,11 +4044,11 @@ export class SmrtObject extends SmrtClass {
 
     // Ensure manifest is loaded for external packages before accessing relationships
     // This is critical for cross-package relationship resolution (Issue #746)
-    await ObjectRegistry.ensureManifestLoaded(this.constructor.name);
+    await ObjectRegistry.ensureManifestLoaded(this.getResolvedQualifiedName());
 
     // Determine relationship type
     const relationships = ObjectRegistry.getRelationships(
-      this.constructor.name,
+      this.getResolvedQualifiedName(),
     );
     const relationship = relationships.find((r) => r.fieldName === fieldName);
 
@@ -4549,9 +4513,8 @@ export class SmrtObject extends SmrtClass {
     // Known limitation (#1579, won't-fix): keyed by the *simple* runtime class
     // name (`this.constructor.name`), so two classes with the same simple name
     // in different packages but different embeddings config could collide
-    // (R5-canon). This mirrors the deliberate simple-name keying elsewhere
-    // (relationship graph, `loadRelated`'s `this.constructor.name` lookups —
-    // the tested #951 contract). Accepted as low-risk: duplicate simple class
+    // (R5-canon). Unlike relationship I/O, this config lookup still uses the
+    // legacy simple-name key. Accepted as low-risk: duplicate simple class
     // names carrying *different* embeddings config is rare, and switching to
     // qualified names would need consistent instance→qualified-name resolution
     // across STI and non-STI, a coordinated change beyond this config lookup.

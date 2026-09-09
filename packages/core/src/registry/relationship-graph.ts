@@ -7,9 +7,67 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import { getInheritanceChain } from './inheritance-resolver';
 import { findClass } from './name-resolver';
 import { getClasses } from './shared-state';
-import type { RelationshipMetadata } from './types';
+import type {
+  RegisteredClass,
+  RegisteredField,
+  RelationshipMetadata,
+} from './types';
+
+/** Resolve lazily: the target may register after the decorated child. */
+function resolveTarget(
+  registered: RegisteredClass,
+  field: RegisteredField,
+): string | null | undefined {
+  const classes = getClasses();
+  const ctor = field._meta?.relatedConstructor;
+  if (typeof ctor === 'function') {
+    const match = Array.from(classes).find(
+      ([, entry]) => entry.constructor === ctor,
+    );
+    return match ? (match[1].qualifiedName ?? match[0]) : null;
+  }
+  const related = field.related;
+  if (!related) return null;
+  if (related.includes(':'))
+    return findClass(related)?.qualifiedName ?? related;
+  const local = classes.get(`${registered.packageName}:${related}`);
+  if (local)
+    return local.qualifiedName ?? `${registered.packageName}:${related}`;
+  const matches = Array.from(classes).filter(
+    ([, entry]) => entry.name === related,
+  );
+  const distinct = [
+    ...new Map(matches.map((match) => [match[1], match])).values(),
+  ];
+  if (distinct.length === 0) return undefined;
+  if (distinct.length !== 1) return null;
+  const match = matches.find(([key]) => key.includes(':')) ?? distinct[0];
+  return match[1].qualifiedName ?? match[0];
+}
+
+/** Canonical target of the field's declaring class, including inherited fields. */
+export function resolveRelationshipTarget(
+  className: string,
+  fieldName: string,
+): string | null | undefined {
+  for (const name of [
+    className,
+    ...[...getInheritanceChain(className)].reverse(),
+  ]) {
+    const registered = findClass(name);
+    const field = registered?.fields.get(fieldName);
+    if (registered && field) {
+      return resolveTarget(registered, {
+        ...field,
+        related: field.related?.split('.')[0],
+      });
+    }
+  }
+  return undefined;
+}
 
 /**
  * Build dependency graph from foreignKey relationships.
@@ -60,15 +118,25 @@ export function getDependencyGraph(): Map<string, string[]> {
 export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
   const classes = getClasses();
   const relationshipMap = new Map<string, RelationshipMetadata[]>();
+  const simpleNameEntries = new Map<string, Set<RegisteredClass>>();
 
   // Initialize map with all registered classes
-  for (const [_key, entry] of classes) {
-    relationshipMap.set(entry.name || _key, []);
+  for (const [key, entry] of classes) {
+    // The registry is qualified-name keyed. Keep relationship buckets on that
+    // canonical identity as well: classes in separate packages may share a
+    // simple name, and a later empty declaration must not overwrite an earlier
+    // class's relationships.
+    relationshipMap.set(entry.qualifiedName || key, []);
+    const simpleName = entry.name || key;
+    const entries = simpleNameEntries.get(simpleName) ?? new Set();
+    entries.add(entry);
+    simpleNameEntries.set(simpleName, entries);
   }
 
   // Scan all fields for relationship types
-  for (const [_key, registered] of classes) {
-    const simpleName = registered.name || _key;
+  for (const [key, registered] of classes) {
+    const simpleName = registered.name || key;
+    const sourceQualifiedClass = registered.qualifiedName || key;
     const relationships: RelationshipMetadata[] = [];
 
     for (const [fieldName, field] of registered.fields) {
@@ -76,8 +144,10 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'foreignKey' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'foreignKey',
           options: field._meta,
         });
@@ -87,8 +157,10 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'crossPackageRef' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'crossPackageRef',
           options: field._meta,
         });
@@ -98,8 +170,10 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'oneToMany' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'oneToMany',
           options: field._meta,
         });
@@ -109,15 +183,28 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
       if (field.type === 'manyToMany' && field.related) {
         relationships.push({
           sourceClass: simpleName,
+          sourceQualifiedClass,
           fieldName,
           targetClass: field.related,
+          targetQualifiedClass: resolveTarget(registered, field),
           type: 'manyToMany',
           options: field._meta,
         });
       }
     }
 
-    relationshipMap.set(simpleName, relationships);
+    relationshipMap.set(registered.qualifiedName || key, relationships);
+  }
+
+  // Preserve the public simple-name map contract where that name identifies
+  // exactly one registered class. Colliding names intentionally have no alias:
+  // callers with a constructor must use the qualified bucket above.
+  for (const [key, registered] of classes) {
+    const simpleName = registered.name || key;
+    if (simpleNameEntries.get(simpleName)?.size !== 1) continue;
+    const qualifiedName = registered.qualifiedName || key;
+    const relationships = relationshipMap.get(qualifiedName);
+    if (relationships) relationshipMap.set(simpleName, relationships);
   }
 
   return relationshipMap;

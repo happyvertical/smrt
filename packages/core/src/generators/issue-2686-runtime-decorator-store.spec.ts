@@ -251,7 +251,9 @@ describe('#2686 the live store never resurrects a non-public method', () => {
   // an explicit expose.
   class Ledger extends SmrtObject {
     @method({ expose: true })
-    async publicAction(): Promise<void> {}
+    async publicAction(): Promise<void> {
+      await this.privateAction();
+    }
 
     @method({ expose: true })
     private async privateAction(): Promise<void> {}

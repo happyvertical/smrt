@@ -61,6 +61,7 @@ import {
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
+  ensureTenantScopedField,
 } from './registry/class-registration';
 import {
   clearRegistryDiagnostics,
@@ -108,6 +109,7 @@ import {
 import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
+  resolveRelationshipTarget as _resolveRelationshipTarget,
 } from './registry/relationship-graph';
 import {
   getAllSchemas as _getAllSchemas,
@@ -121,10 +123,13 @@ import {
   getCollectionCache,
   getCollections,
   getCollectionTableNames,
+  getConstructorFieldDecorators,
+  getConstructorTenantScopedDeclarations,
   getDbInstanceIds,
   getDiscoveryAttemptCache,
   getFieldDecorators,
   getInheritanceCache,
+  getLegacyFieldDecorators,
   getMethodDecorators,
   getNextDbId,
   getStiSiblingsLoaded,
@@ -229,6 +234,8 @@ interface FieldOptionsView {
  * consumers (`SmrtObject` relationship resolution, schema builder) read back.
  */
 interface FieldDecoratorOptions extends FieldOptions {
+  /** Exact runtime target, retained until the target registers. */
+  relatedConstructor?: Function;
   /** Related class name (foreignKey / crossPackageRef / oneToMany / manyToMany). */
   related?: string;
   /** Inverse foreign-key field name for relationship resolution. */
@@ -538,6 +545,23 @@ export class ObjectRegistry {
     >;
   }
 
+  private static get constructorFieldDecorators(): Map<
+    Function,
+    Map<string, FieldDecoratorOptions>
+  > {
+    return getConstructorFieldDecorators() as Map<
+      Function,
+      Map<string, FieldDecoratorOptions>
+    >;
+  }
+
+  private static get constructorTenantScopedDeclarations(): Map<
+    Function,
+    Record<string, unknown>
+  > {
+    return getConstructorTenantScopedDeclarations();
+  }
+
   /**
    * Storage for `@method()` decorator metadata (#2686).
    * Maps className → Map<methodName, MethodOptions>.
@@ -616,6 +640,7 @@ export class ObjectRegistry {
    * @param className - Name of the class containing the field
    * @param propertyKey - Name of the property being decorated
    * @param options - Field options (type, constraints, etc.)
+   * @param ctor - Exact declaring constructor; omit only for legacy string-only metadata
    * @example
    * ```typescript
    * // Called internally by decorators
@@ -629,7 +654,20 @@ export class ObjectRegistry {
     className: string,
     propertyKey: string,
     options: FieldDecoratorOptions,
+    ctor?: Function,
   ): void {
+    if (ctor) {
+      ObjectRegistry.registerFieldDecoratorForConstructor(
+        ctor,
+        propertyKey,
+        options,
+      );
+    } else {
+      const legacy = getLegacyFieldDecorators();
+      const fields = legacy.get(className) ?? new Map();
+      fields.set(propertyKey, { ...fields.get(propertyKey), ...options });
+      legacy.set(className, fields);
+    }
     if (!ObjectRegistry.fieldDecorators.has(className)) {
       ObjectRegistry.fieldDecorators.set(className, new Map());
     }
@@ -648,6 +686,23 @@ export class ObjectRegistry {
     } else {
       classDecorators.set(propertyKey, options);
     }
+  }
+
+  /**
+   * Register identity-sensitive field metadata for one exact constructor.
+   * String-keyed metadata remains available to legacy decorators, but must not
+   * be used to reconcile tenancy across package boundaries.
+   */
+  static registerFieldDecoratorForConstructor(
+    ctor: Function,
+    propertyKey: string,
+    options: FieldDecoratorOptions,
+  ): void {
+    const decorators = ObjectRegistry.constructorFieldDecorators;
+    const existing = decorators.get(ctor)?.get(propertyKey);
+    const fields = decorators.get(ctor) ?? new Map();
+    fields.set(propertyKey, existing ? { ...existing, ...options } : options);
+    decorators.set(ctor, fields);
   }
 
   /**
@@ -1825,6 +1880,9 @@ export class ObjectRegistry {
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
+    ObjectRegistry.constructorFieldDecorators.clear();
+    ObjectRegistry.constructorTenantScopedDeclarations.clear();
+    getLegacyFieldDecorators().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
     // iterate the classes Map directly, so there's no secondary index to
@@ -2697,6 +2755,14 @@ export class ObjectRegistry {
     return _getRelationshipMap();
   }
 
+  /** Resolve an FK target without changing its public display-name metadata. */
+  static resolveRelationshipTarget(
+    className: string,
+    fieldName: string,
+  ): string | null | undefined {
+    return _resolveRelationshipTarget(className, fieldName);
+  }
+
   /**
    * Get relationships for a specific class
    *
@@ -2709,7 +2775,9 @@ export class ObjectRegistry {
    * ```
    */
   static getRelationships(className: string): RelationshipMetadata[] {
-    return ObjectRegistry.getRelationshipMap().get(className) || [];
+    const registered = ObjectRegistry.getClass(className);
+    const key = registered?.qualifiedName || className;
+    return ObjectRegistry.getRelationshipMap().get(key) || [];
   }
 
   /**
@@ -2946,10 +3014,18 @@ export class ObjectRegistry {
   static getInverseRelationships(className: string): RelationshipMetadata[] {
     const allRelationships = ObjectRegistry.getRelationshipMap();
     const inverseRelationships: RelationshipMetadata[] = [];
+    const visitedBuckets = new Set<RelationshipMetadata[]>();
 
     for (const [_sourceClass, relationships] of allRelationships) {
+      if (visitedBuckets.has(relationships)) continue;
+      visitedBuckets.add(relationships);
       for (const rel of relationships) {
-        if (rel.targetClass === className) {
+        if (
+          rel.targetQualifiedClass !== undefined
+            ? rel.targetQualifiedClass ===
+              (ObjectRegistry.getClass(className)?.qualifiedName ?? className)
+            : rel.targetClass === className
+        ) {
           inverseRelationships.push(rel);
         }
       }
@@ -2973,6 +3049,13 @@ export class ObjectRegistry {
    */
   static getSelfReferableNames(className: string): Set<string> {
     const names = new Set<string>([className]);
+    const registered = ObjectRegistry.getClass(className);
+    if (registered?.name) {
+      names.add(registered.name);
+    }
+    if (registered?.qualifiedName) {
+      names.add(registered.qualifiedName);
+    }
     for (const ancestor of ObjectRegistry.getInheritanceChain(className)) {
       names.add(ancestor);
       const simple = ObjectRegistry.getClass(ancestor)?.name;
@@ -3001,9 +3084,17 @@ export class ObjectRegistry {
   ): RelationshipMetadata[] {
     const names = ObjectRegistry.getSelfReferableNames(className);
     const result: RelationshipMetadata[] = [];
+    const visitedBuckets = new Set<RelationshipMetadata[]>();
     for (const [, relationships] of ObjectRegistry.getRelationshipMap()) {
+      if (visitedBuckets.has(relationships)) continue;
+      visitedBuckets.add(relationships);
       for (const rel of relationships) {
-        if (names.has(rel.targetClass)) {
+        if (
+          rel.targetQualifiedClass !== undefined
+            ? rel.targetQualifiedClass !== null &&
+              names.has(rel.targetQualifiedClass)
+            : names.has(rel.targetClass)
+        ) {
           result.push(rel);
         }
       }
@@ -3107,6 +3198,7 @@ export class ObjectRegistry {
    * ```
    */
   static getConflictColumns(className: string): string[] {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return defaultConflictColumns('cti'); // Default for unregistered classes
@@ -3162,15 +3254,16 @@ export class ObjectRegistry {
    * otherwise) is not tenant-scoped (#2360).
    *
    * Resolved from the owner's normalized `tenantScoped` configuration
-   * (`@smrt({ tenantScoped })`, or `@TenantScoped()` carried by the
-   * manifest), never from the standalone tenancy registry: the schema
-   * generator and `getConflictColumns()` must agree before any interceptor
-   * is enabled.
+   * using precedence: explicit `@smrt`, a manifest (including a silent
+   * manifest), `@TenantScoped()` reconciliation, then marked-field fallback.
+   * It never reads the standalone tenancy registry, so schema generation and
+   * `getConflictColumns()` agree before any interceptor is enabled.
    *
    * @param className - Name of the class (simple or qualified)
    * @returns The snake_case tenant column name, e.g. `tenant_id`
    */
   static getTenantColumn(className: string): string | undefined {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     if (!registered) return undefined;
     const ownerName =
@@ -3209,8 +3302,106 @@ export class ObjectRegistry {
   static getTenantScopedConfig(
     className: string,
   ): RegisteredClass['tenantScopedConfig'] | undefined {
+    ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
     return registered?.tenantScopedConfig;
+  }
+
+  /**
+   * Refuse an object whose generated manifest silently contradicts its exact
+   * runtime `@TenantScoped()` declaration. This remains observable after a
+   * caller catches the registration-time error, so no global conflict target
+   * or interceptor path can be used from the partially loaded class.
+   */
+  static assertTenantScopedRegistrationValid(className: string): void {
+    const registered = ObjectRegistry.findClass(className);
+    if (
+      registered?.tenantScopedConfigSource ===
+      'invalid-runtime-manifest-conflict'
+    ) {
+      throw new ConfigurationError(
+        `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        'CONFIG_TENANT_MANIFEST_CONFLICT',
+      );
+    }
+  }
+
+  /**
+   * Reconcile an external class-level tenancy declaration without allowing it
+   * to replace explicit core or manifest policy. Before `@smrt()` runs, carry
+   * the declaration through the marked tenant field so registration consumes it
+   * in either class-decorator order.
+   */
+  static reconcileTenantScopedConfig(
+    ctor: Function,
+    config: NonNullable<RegisteredClass['tenantScopedConfig']>,
+  ): void {
+    ObjectRegistry.constructorTenantScopedDeclarations.set(ctor, { ...config });
+    const registered = ObjectRegistry.getClassByConstructor(
+      ctor as SmrtObjectConstructor,
+    );
+    if (registered) {
+      if (
+        registered.tenantScopedConfigSource ===
+        'invalid-runtime-manifest-conflict'
+      ) {
+        throw new ConfigurationError(
+          `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          'CONFIG_TENANT_MANIFEST_CONFLICT',
+        );
+      }
+      if (
+        registered.tenantScopedConfigSource === 'manifest' &&
+        !registered.tenantScopedConfig
+      ) {
+        registered.tenantScopedConfigSource =
+          'invalid-runtime-manifest-conflict';
+        throw new ConfigurationError(
+          `Manifest for '${registered.qualifiedName || registered.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+          'CONFIG_TENANT_MANIFEST_CONFLICT',
+        );
+      }
+      if (
+        registered.tenantScopedConfigSource === 'explicit' ||
+        registered.tenantScopedConfigSource === 'manifest'
+      ) {
+        return;
+      }
+      registered.tenantScopedConfig = { ...config };
+      registered.tenantScopedConfigSource = 'tenant-decorator';
+      ensureTenantScopedField(registered.fields, registered.tenantScopedConfig);
+      // Schema assembly reads the registered fields on every generation pass;
+      // invalidate all inherited-field caches that can otherwise retain the
+      // pre-injection shape (including descendants).
+      _invalidateInheritanceEntries(registered);
+      return;
+    }
+
+    const reconcileDeclaration = (
+      decorators: Map<string, FieldDecoratorOptions> | undefined,
+    ): boolean => {
+      if (!decorators) return false;
+      for (const [fieldName, fieldOptions] of decorators) {
+        const tenancy = fieldOptions.__tenancy as
+          | { isTenantIdField?: unknown; [key: string]: unknown }
+          | undefined;
+        if (tenancy?.isTenantIdField !== true) continue;
+        decorators.set(fieldName, {
+          ...fieldOptions,
+          __tenancy: { ...tenancy, ...config, isTenantIdField: true },
+        });
+        return true;
+      }
+      return false;
+    };
+
+    // The constructor store drives registration. Mirror to the legacy
+    // string-keyed view only for its established public inspection contract;
+    // subsequent registration overlays the exact constructor metadata.
+    reconcileDeclaration(ObjectRegistry.constructorFieldDecorators.get(ctor));
+    // Legacy callers can only provide a simple-name declaration. They keep
+    // the historic behavior; decorator paths overlay the exact metadata above.
+    reconcileDeclaration(ObjectRegistry.fieldDecorators.get(ctor.name));
   }
 
   /**
@@ -3768,7 +3959,11 @@ export function smrt(config: SmartObjectConfig = {}) {
       // structurally, so it is passed through a documented prototype view.
       applyOneToManyChildAccessors(
         ctor as unknown as { prototype?: unknown },
-        ObjectRegistry.getRelationships(ctor.name),
+        ObjectRegistry.getRelationships(
+          ObjectRegistry.getClassByConstructor(
+            ctor as unknown as SmrtObjectConstructor,
+          )?.qualifiedName ?? ctor.name,
+        ),
       );
     }
 

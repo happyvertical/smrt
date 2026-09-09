@@ -121,6 +121,13 @@ const DEFAULT_OPTIONS: TenantInterceptorOptions = {
   rawQueryPolicy: 'throw',
 };
 
+function getTenancyIdentity(
+  className: string,
+  context: InterceptorContext,
+): string {
+  return context.qualifiedClassName ?? className;
+}
+
 /**
  * Extract a plain-object snapshot of an instance for dispatch payloads.
  *
@@ -219,7 +226,8 @@ export function createTenantInterceptor(
       context: InterceptorContext,
     ): ListOptions | undefined {
       // Check if this class is tenant-scoped
-      if (!isTenantScopedClass(className)) {
+      const tenancyIdentity = getTenancyIdentity(className, context);
+      if (!isTenantScopedClass(tenancyIdentity)) {
         return; // Not tenant-scoped, pass through
       }
 
@@ -233,7 +241,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(className);
+      const config = getTenantScopedConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
 
       // If no tenant context and mode is 'required', throw
@@ -352,7 +360,8 @@ export function createTenantInterceptor(
       filter: string | Record<string, unknown>,
       context: InterceptorContext,
     ): string | Record<string, unknown> | undefined {
-      if (!isTenantScopedClass(className)) {
+      const tenancyIdentity = getTenancyIdentity(className, context);
+      if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
 
@@ -365,7 +374,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(className);
+      const config = getTenantScopedConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
 
       if (!tenantContext) {
@@ -442,7 +451,8 @@ export function createTenantInterceptor(
       queryOptions: QueryOptions,
       context: InterceptorContext,
     ): QueryInterceptResult | undefined {
-      if (!isTenantScopedClass(className)) {
+      const tenancyIdentity = getTenancyIdentity(className, context);
+      if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
 
@@ -501,7 +511,8 @@ export function createTenantInterceptor(
         };
       }
 
-      if (!isTenantScopedClass(className)) {
+      const tenancyIdentity = getTenancyIdentity(className, context);
+      if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
 
@@ -514,7 +525,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(className);
+      const config = getTenantScopedConfig(tenancyIdentity);
       const tenantField = config?.field || 'tenantId';
       const instanceRecord = instance as unknown as Record<string, unknown>;
       const instanceTenantId = instanceRecord[tenantField];
@@ -566,7 +577,8 @@ export function createTenantInterceptor(
       // Use context.className which is always correct
       const className = context.className;
 
-      if (!isTenantScopedClass(className)) {
+      const tenancyIdentity = getTenancyIdentity(className, context);
+      if (!isTenantScopedClass(tenancyIdentity)) {
         return;
       }
 
@@ -579,7 +591,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(className);
+      const config = getTenantScopedConfig(tenancyIdentity);
       const tenantField = config?.field || 'tenantId';
       const instanceTenantId = (instance as unknown as Record<string, unknown>)[
         tenantField

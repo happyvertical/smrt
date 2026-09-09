@@ -45,6 +45,19 @@ declare global {
   var __smrtRegistryFieldDecorators:
     | Map<string, Map<string, Record<string, unknown>>>
     | undefined;
+  var __smrtRegistryLegacyFieldDecorators:
+    | Map<string, Map<string, Record<string, unknown>>>
+    | undefined;
+  // Constructor-keyed metadata is necessary for declarations which must not
+  // cross package boundaries when two classes share a simple name.
+  // eslint-disable-next-line no-var
+  var __smrtRegistryConstructorFieldDecorators:
+    | Map<Function, Map<string, Record<string, unknown>>>
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRegistryConstructorTenantScopedDeclarations:
+    | Map<Function, Record<string, unknown>>
+    | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryMethodDecorators:
     | WeakMap<
@@ -241,6 +254,48 @@ export function getFieldDecorators(): Map<
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;
+}
+
+/**
+ * Field-decorator metadata keyed by the exact runtime constructor. This is
+ * used for identity-sensitive declarations while the string-keyed map remains
+ * the compatibility store for legacy decorator consumers.
+ */
+export function getConstructorFieldDecorators(): Map<
+  Function,
+  Map<string, Record<string, unknown>>
+> {
+  if (!globalThis.__smrtRegistryConstructorFieldDecorators) {
+    globalThis.__smrtRegistryConstructorFieldDecorators = new Map();
+  }
+  return globalThis.__smrtRegistryConstructorFieldDecorators;
+}
+
+/** Explicit string-only registrations, excluding constructor-owned mirrors. */
+export function getLegacyFieldDecorators(): Map<
+  string,
+  Map<string, Record<string, unknown>>
+> {
+  if (!globalThis.__smrtRegistryLegacyFieldDecorators) {
+    globalThis.__smrtRegistryLegacyFieldDecorators = new Map();
+  }
+  return globalThis.__smrtRegistryLegacyFieldDecorators;
+}
+
+/**
+ * Class-level tenancy declarations keyed by their exact constructor.
+ *
+ * Unlike method metadata, these declarations participate in the registry's
+ * explicit clear and test snapshot lifecycle, so they use an iterable Map.
+ */
+export function getConstructorTenantScopedDeclarations(): Map<
+  Function,
+  Record<string, unknown>
+> {
+  if (!globalThis.__smrtRegistryConstructorTenantScopedDeclarations) {
+    globalThis.__smrtRegistryConstructorTenantScopedDeclarations = new Map();
+  }
+  return globalThis.__smrtRegistryConstructorTenantScopedDeclarations;
 }
 
 /**

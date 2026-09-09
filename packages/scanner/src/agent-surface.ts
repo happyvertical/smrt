@@ -1084,7 +1084,7 @@ export function extractAgentSurface(
     }
 
     const argument = unwrapTypeWrappers(args[0]);
-    if (!argument || argument.type !== 'ObjectExpression') {
+    if (argument?.type !== 'ObjectExpression') {
       report(
         'non-literal-argument',
         helper,

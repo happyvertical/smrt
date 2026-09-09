@@ -23,6 +23,13 @@
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
 
+Relationship I/O resolves canonical source and target identities, not the public
+display names. `relationship-loader.ts` owns target manifest hydration and inverse
+selection for lazy, eager, junction and latest-related reads. An unresolved exact
+constructor or ambiguous target fails before querying or caching a foreign peer;
+legacy external string targets retain manifest discovery. Junction column naming
+conventions still use display names. Cached reads retain their tenant rechecks.
+
 
 ## SmrtCollection Query
 

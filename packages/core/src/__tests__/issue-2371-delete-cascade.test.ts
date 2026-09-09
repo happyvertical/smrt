@@ -591,6 +591,13 @@ describe('delete() referential integrity (#2371)', () => {
         action: 'CASCADE',
         declared: false,
       });
+      expect(
+        new Set(
+          plan.references.map(
+            (reference) => `${reference.className}:${reference.column}`,
+          ),
+        ).size,
+      ).toBe(plan.references.length);
     });
   });
 

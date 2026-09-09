@@ -51,6 +51,8 @@ import type { SmrtObject } from './object.js';
 export interface InterceptorContext {
   /** Name of the SMRT class being operated on */
   className: string;
+  /** Exact registered identity when the simple class name is ambiguous. */
+  qualifiedClassName?: string;
   /** Name of the collection (if applicable) */
   collectionName?: string;
   /** Timestamp of the operation */
@@ -617,6 +619,7 @@ export function createInterceptorContext(
   operation: InterceptorContext['operation'],
   collectionName?: string,
   metadata?: Record<string, unknown>,
+  qualifiedClassName?: string,
 ): InterceptorContext {
   return {
     className,
@@ -624,5 +627,6 @@ export function createInterceptorContext(
     operation,
     timestamp: new Date(),
     metadata,
+    qualifiedClassName,
   };
 }

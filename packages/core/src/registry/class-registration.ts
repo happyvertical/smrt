@@ -55,9 +55,11 @@ import {
 import {
   getClasses,
   getCollections,
+  getConstructorFieldDecorators,
   getConstructorIndex,
-  getFieldDecorators,
+  getConstructorTenantScopedDeclarations,
   getInheritanceCache,
+  getLegacyFieldDecorators,
   getSourceFileFromStack,
   getStiSiblingsLoaded,
   verboseLog,
@@ -564,6 +566,21 @@ export function register(
       name,
       explicitPackageName,
     );
+    // Validate before promotion removes or rewrites an existing exact
+    // constructor registration. A generated isolated manifest is authoritative
+    // for schema, so it cannot silently erase a live @TenantScoped contract.
+    if (
+      config.tenantScoped === undefined &&
+      normalizeTenantScopedConfig(
+        isolatedManifestEntry.decoratorConfig?.tenantScoped,
+      ) === undefined &&
+      getConstructorTenantScopedDeclarations().get(ctor)
+    ) {
+      throw new ConfigurationError(
+        `Manifest for '${name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+        'CONFIG_TENANT_MANIFEST_CONFLICT',
+      );
+    }
   }
 
   function upsertExistingEntry(
@@ -804,6 +821,20 @@ export function register(
   if (!manifestEntry) {
     manifestEntry = discoverManifestSync(name);
   }
+  const runtimeTenantScopedDeclaration =
+    getConstructorTenantScopedDeclarations().get(ctor);
+  if (
+    manifestEntry &&
+    config.tenantScoped === undefined &&
+    normalizeTenantScopedConfig(manifestEntry.decoratorConfig?.tenantScoped) ===
+      undefined &&
+    runtimeTenantScopedDeclaration
+  ) {
+    throw new ConfigurationError(
+      `Manifest for '${name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      'CONFIG_TENANT_MANIFEST_CONFLICT',
+    );
+  }
   const fields = new Map<string, RegisteredField>();
   const methods = new Map<string, MethodDefinition>();
   let packageName: string | undefined;
@@ -896,9 +927,16 @@ export function register(
 
   // Apply decorator metadata to override/extend manifest fields
   // Decorators take priority over AST-scanned types (Issue #316)
-  const decorators = getFieldDecorators().get(
-    isolatedManifestEntry ? ctor.name : name,
-  );
+  const decoratorKey = isolatedManifestEntry ? ctor.name : name;
+  // Only explicit string-only registrations are ownerless legacy metadata.
+  // Public decorators also expose a simple-name inspection mirror, but that
+  // mirror must never become another constructor's schema.
+  const simpleDecorators = getLegacyFieldDecorators().get(decoratorKey);
+  const constructorDecorators = getConstructorFieldDecorators().get(ctor);
+  const decorators = new Map(simpleDecorators);
+  for (const [fieldName, options] of constructorDecorators ?? []) {
+    decorators.set(fieldName, { ...decorators.get(fieldName), ...options });
+  }
   if (decorators && decorators.size > 0) {
     verboseLog(
       `[registry] Applying ${decorators.size} field decorators for ${name}`,
@@ -1020,20 +1058,39 @@ export function register(
   // Handle tenantScoped configuration (Issue #688)
   // External manifests can carry tenantScoped only in decoratorConfig, so
   // registration must honor the merged view rather than only explicit config.
+  // `@TenantScoped()` is intentionally implemented by smrt-tenancy, not core;
+  // when a standalone runtime imports an external model before its manifest is
+  // cached, the tenant field decorator is the core-visible declaration of that
+  // contract. Preserve it here so runtime registration and the manifest path
+  // agree on the conflict target (#2763).
   let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
+  const constructorTenantScopedDeclaration = manifestEntry
+    ? undefined
+    : (runtimeTenantScopedDeclaration as
+        | RegisteredClass['tenantScopedConfig']
+        | undefined);
+  const fieldTenantScopedConfig = tenantScopedConfigFromFieldMetadata(fields);
+  const tenantScopedConfigSource: RegisteredClass['tenantScopedConfigSource'] =
+    config.tenantScoped !== undefined
+      ? 'explicit'
+      : manifestEntry?.decoratorConfig?.tenantScoped !== undefined
+        ? 'manifest'
+        : manifestEntry
+          ? 'manifest'
+          : constructorTenantScopedDeclaration
+            ? 'tenant-decorator'
+            : fieldTenantScopedConfig
+              ? 'field-fallback'
+              : undefined;
   const effectiveTenantScoped =
-    config.tenantScoped ?? manifestEntry?.decoratorConfig?.tenantScoped;
+    config.tenantScoped ??
+    manifestEntry?.decoratorConfig?.tenantScoped ??
+    (manifestEntry
+      ? undefined
+      : (constructorTenantScopedDeclaration ?? fieldTenantScopedConfig));
   if (effectiveTenantScoped) {
-    // Normalize boolean or object config into full options
-    const tenantOpts =
-      typeof effectiveTenantScoped === 'boolean' ? {} : effectiveTenantScoped;
-    tenantScopedConfig = {
-      mode: tenantOpts.mode ?? 'required',
-      field: tenantOpts.field ?? 'tenantId',
-      autoFilter: tenantOpts.autoFilter ?? true,
-      autoPopulate: tenantOpts.autoPopulate ?? true,
-      allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
-    };
+    tenantScopedConfig = normalizeTenantScopedConfig(effectiveTenantScoped);
+    if (!tenantScopedConfig) return;
 
     // Inject or enrich tenantId field
     const fieldName = tenantScopedConfig.field;
@@ -1249,6 +1306,7 @@ export function register(
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
     extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
+    tenantScopedConfigSource,
     visibility, // Visibility control for manifest filtering
     // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
     // it lazily using the `extends` field. This ensures correct chain for both
@@ -1319,6 +1377,45 @@ export function register(
   }
 }
 
+/**
+ * Resolve the core-visible tenancy contract from a `@tenantId()` field when a
+ * runtime registration has no manifest entry. `@TenantScoped()` lives in the
+ * tenancy package, so core cannot import its registry without a cycle; the
+ * field decorator runs before `@smrt()`. A nullable tenant identifier is the
+ * runtime representation of optional tenancy used by that decorator.
+ */
+function tenantScopedConfigFromFieldMetadata(
+  fields: Map<string, RegisteredField>,
+): SmartObjectConfig['tenantScoped'] | undefined {
+  for (const [fieldName, field] of fields) {
+    const tenancy = field._meta?.__tenancy as
+      | {
+          isTenantIdField?: unknown;
+          mode?: unknown;
+          field?: unknown;
+          autoFilter?: unknown;
+          autoPopulate?: unknown;
+          allowSuperAdminBypass?: unknown;
+        }
+      | undefined;
+    if (tenancy?.isTenantIdField !== true) continue;
+
+    return {
+      mode:
+        tenancy.mode === 'required'
+          ? 'required'
+          : tenancy.mode === 'optional' || field._meta?.nullable === true
+            ? 'optional'
+            : 'required',
+      field: typeof tenancy.field === 'string' ? tenancy.field : fieldName,
+      autoFilter: tenancy.autoFilter !== false,
+      autoPopulate: tenancy.autoPopulate !== false,
+      allowSuperAdminBypass: tenancy.allowSuperAdminBypass === true,
+    };
+  }
+  return undefined;
+}
+
 export function registerCollection(
   objectName: string,
   // `new (options: any) => SmrtCollection<any>` is the irreducible
@@ -1373,7 +1470,7 @@ function normalizeTenantScopedConfig(
   };
 }
 
-function ensureTenantScopedField(
+export function ensureTenantScopedField(
   fields: Map<string, RegisteredField>,
   tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined,
 ): void {
@@ -1608,6 +1705,18 @@ function mergeManifestIntoExistingRegistration(
   packageName?: string,
 ): void {
   const manifestConfig = objectDef.decoratorConfig || {};
+  const runtimeTenantScopedDeclaration =
+    getConstructorTenantScopedDeclarations().get(existing.constructor);
+  if (
+    existing.tenantScopedConfigSource !== 'explicit' &&
+    normalizeTenantScopedConfig(manifestConfig.tenantScoped) === undefined &&
+    runtimeTenantScopedDeclaration
+  ) {
+    throw new ConfigurationError(
+      `Manifest for '${existing.qualifiedName || existing.name}' omits or disables tenantScoped but its runtime constructor is decorated with @TenantScoped(). Regenerate the manifest so tenancy schema and runtime enforcement agree.`,
+      'CONFIG_TENANT_MANIFEST_CONFLICT',
+    );
+  }
   const manifestTableName =
     objectDef.schema?.tableName ||
     manifestConfig.tableName ||
@@ -1637,12 +1746,18 @@ function mergeManifestIntoExistingRegistration(
     }
   }
 
-  const tenantScopedConfig = normalizeTenantScopedConfig(
-    existing.config.tenantScoped,
-  );
-  if (tenantScopedConfig) {
+  // An explicit core declaration remains authoritative. Otherwise a manifest
+  // is authoritative even when it is silent: discard provisional decorator or
+  // field-fallback tenancy so lazy manifest loading matches preloaded runtime.
+  if (existing.tenantScopedConfigSource !== 'explicit') {
+    const tenantScopedConfig = normalizeTenantScopedConfig(
+      manifestConfig.tenantScoped,
+    );
     existing.tenantScopedConfig = tenantScopedConfig;
-    ensureTenantScopedField(existing.fields, tenantScopedConfig);
+    existing.tenantScopedConfigSource = 'manifest';
+    if (tenantScopedConfig) {
+      ensureTenantScopedField(existing.fields, tenantScopedConfig);
+    }
   }
 
   if (objectDef.methods) {
@@ -1825,7 +1940,7 @@ export function registerFromManifest(
 
   // Convert manifest field definitions to Field objects
   const fields = new Map<string, RegisteredField>();
-  const decorators = getFieldDecorators().get(simpleClassName);
+  const decorators = getLegacyFieldDecorators().get(simpleClassName);
   if (objectDef.fields) {
     for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
       fields.set(fieldName, createFieldFromManifest(fd));

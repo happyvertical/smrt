@@ -293,4 +293,35 @@ describe('snapshotObjectRegistryState', () => {
     first();
     second();
   });
+
+  it('restores pre-registration constructor tenancy declarations and discards later updates', () => {
+    class SnapshotTenantDeclaration extends SmrtObject {}
+    ObjectRegistry.reconcileTenantScopedConfig(SnapshotTenantDeclaration, {
+      mode: 'optional',
+      field: 'tenantId',
+      autoFilter: true,
+      autoPopulate: true,
+      allowSuperAdminBypass: false,
+    });
+    restore = snapshotObjectRegistryState();
+
+    ObjectRegistry.reconcileTenantScopedConfig(SnapshotTenantDeclaration, {
+      mode: 'required',
+      field: 'tenantId',
+      autoFilter: true,
+      autoPopulate: true,
+      allowSuperAdminBypass: false,
+    });
+    ObjectRegistry.register(SnapshotTenantDeclaration);
+    expect(
+      ObjectRegistry.getTenantScopedConfig('SnapshotTenantDeclaration')?.mode,
+    ).toBe('required');
+
+    restore();
+    restore = undefined;
+    ObjectRegistry.register(SnapshotTenantDeclaration);
+    expect(
+      ObjectRegistry.getTenantScopedConfig('SnapshotTenantDeclaration')?.mode,
+    ).toBe('optional');
+  });
 });

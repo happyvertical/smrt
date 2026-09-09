@@ -854,10 +854,14 @@ export type RelationshipType =
 export interface RelationshipMetadata {
   /** Source class name */
   sourceClass: string;
+  /** Canonical source identity retained for collision-safe internal matching. */
+  sourceQualifiedClass?: string;
   /** Field name on the source class */
   fieldName: string;
   /** Target/related class name */
   targetClass: string;
+  /** Canonical target identity; null means an unresolved/ambiguous target. */
+  targetQualifiedClass?: string | null;
   /** Type of relationship */
   type: RelationshipType;
   /** Options for the relationship (onDelete, etc.) — sourced from `field._meta`. */
@@ -1003,6 +1007,14 @@ export interface RegisteredClass {
     autoPopulate: boolean;
     allowSuperAdminBypass: boolean;
   };
+  /** Origin used to enforce tenancy declaration precedence at runtime. */
+  tenantScopedConfigSource?:
+    | 'explicit'
+    | 'manifest'
+    | 'tenant-decorator'
+    | 'field-fallback'
+    /** A manifest that omitted or disabled tenancy contradicted runtime @TenantScoped. */
+    | 'invalid-runtime-manifest-conflict';
   /**
    * Visibility control for manifest inclusion
    * - 'public': Included in published manifest (default)

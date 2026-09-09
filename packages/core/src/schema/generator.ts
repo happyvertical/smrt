@@ -98,6 +98,10 @@ type SchemaGeneratorConfig = {
    */
   indexes?: DeclaredIndexDefinition[];
   registry?: {
+    resolveRelationshipTarget?(
+      className: string,
+      fieldName: string,
+    ): string | null | undefined;
     getConfig?(className: string): { idType?: 'uuid' | 'text' };
     getDescendants(baseClassName: string): string[];
     getAllFields(className: string): Promise<Map<string, RegistryField>>;
@@ -193,7 +197,7 @@ export class SchemaGenerator {
       return undefined;
     }
 
-    const targetName = relatedName.split('.')[0];
+    const targetName = relatedName;
     const targetNames = [targetName];
     const stiBase = registry.getSTIBase?.(targetName);
     if (stiBase && !targetNames.includes(stiBase)) {
@@ -214,6 +218,7 @@ export class SchemaGenerator {
   }
 
   private reconcileRegistryForeignKeyColumnTypes(
+    className: string,
     columns: Record<string, ColumnDefinition>,
     fields: Map<string, RegistryField>,
     registry: SchemaGeneratorConfig['registry'] | undefined,
@@ -228,7 +233,12 @@ export class SchemaGenerator {
       }
 
       const targetIdType = this.getRegistryTargetIdColumnType(
-        field.related,
+        this.resolveRegistryForeignKeyTarget(
+          className,
+          fieldName,
+          field,
+          registry,
+        ),
         registry,
       );
       if (!targetIdType) {
@@ -246,6 +256,7 @@ export class SchemaGenerator {
   }
 
   private applyRegistryForeignKeys(
+    className: string,
     columns: Record<string, ColumnDefinition>,
     fields: Map<string, RegistryField>,
     conflictColumns: readonly string[],
@@ -271,7 +282,14 @@ export class SchemaGenerator {
         continue;
       }
 
-      const [targetName, declaredTargetColumn] = field.related.split('.');
+      const [, declaredTargetColumn] = field.related.split('.');
+      const targetName = this.resolveRegistryForeignKeyTarget(
+        className,
+        fieldName,
+        field,
+        registry,
+      );
+      if (!targetName) continue;
       const targetBase = registry?.getSTIBase?.(targetName) || targetName;
       const registeredTargetTable = registry?.getTableName?.(targetBase);
       if (registry && !registeredTargetTable) {
@@ -301,6 +319,21 @@ export class SchemaGenerator {
           : {}),
       };
     }
+  }
+
+  private resolveRegistryForeignKeyTarget(
+    className: string,
+    fieldName: string,
+    field: RegistryField,
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): string | undefined {
+    const target = registry?.resolveRelationshipTarget?.(className, fieldName);
+    if (target === null) {
+      throw new Error(
+        `Cannot resolve foreign key ${className}.${fieldName}: target constructor is unregistered or the target name is ambiguous`,
+      );
+    }
+    return target ?? field.related?.split('.')[0];
   }
 
   /**
@@ -1214,6 +1247,7 @@ export class SchemaGenerator {
     }
 
     this.reconcileRegistryForeignKeyColumnTypes(
+      className,
       columns,
       fields,
       config?.registry,
@@ -1221,6 +1255,7 @@ export class SchemaGenerator {
 
     const resolvedConflict = this.resolveConflictTarget('cti', columns, config);
     this.applyRegistryForeignKeys(
+      className,
       columns,
       fields,
       resolvedConflict.conflictColumns,
@@ -1557,11 +1592,13 @@ export class SchemaGenerator {
     for (const className of allClassNames) {
       const classFields = await ObjectRegistry.getAllFields(className);
       this.reconcileRegistryForeignKeyColumnTypes(
+        className,
         columns,
         classFields,
         ObjectRegistry,
       );
       this.applyRegistryForeignKeys(
+        className,
         columns,
         classFields,
         resolvedConflict.conflictColumns,

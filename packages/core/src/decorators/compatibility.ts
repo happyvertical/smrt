@@ -279,7 +279,11 @@ export function registerCompatibleMethodDecorator<
 export function registerCompatibleFieldDecorator<This, Value>(
   targetOrValue: LegacyPropertyDecoratorTarget | undefined,
   propertyKeyOrContext: CompatiblePropertyDecoratorContext<This, Value>,
-  registerFieldDecorator: (className: string, propertyKey: string) => void,
+  registerFieldDecorator: (
+    className: string,
+    propertyKey: string,
+    ctor?: Function,
+  ) => void,
 ): void {
   if (
     typeof propertyKeyOrContext === 'string' ||
@@ -287,7 +291,11 @@ export function registerCompatibleFieldDecorator<This, Value>(
   ) {
     const className = resolveDecoratorClassName(targetOrValue);
     if (className) {
-      registerFieldDecorator(className, String(propertyKeyOrContext));
+      registerFieldDecorator(
+        className,
+        String(propertyKeyOrContext),
+        getDecoratorConstructor(targetOrValue),
+      );
     }
     return;
   }
@@ -295,10 +303,11 @@ export function registerCompatibleFieldDecorator<This, Value>(
   const context = propertyKeyOrContext;
   const propertyKey = String(context.name);
   // The shared queue passes the CONSTRUCTOR (the method arm needs an identity a
-  // simple name cannot provide); field registration keeps its name-keyed store,
-  // so it derives the name here.
+  // simple name cannot provide). Keep that identity for field metadata too:
+  // the legacy name-keyed store remains for compatibility, while consumers that
+  // need constructor isolation can retain the exact owner.
   const register = (ctor: Function) => {
-    if (ctor.name) registerFieldDecorator(ctor.name, propertyKey);
+    if (ctor.name) registerFieldDecorator(ctor.name, propertyKey, ctor);
   };
   const metadata = getDecoratorMetadata(context);
 

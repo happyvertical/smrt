@@ -25,6 +25,20 @@ import {
 
 export type { FieldUIHints } from '../scanner/types.js';
 
+type CompatibleFieldDecoratorOptions = FieldOptions & {
+  related?: string;
+  relatedConstructor?: Function;
+};
+
+function registerFieldDecoratorForCompatibility(
+  className: string,
+  propertyKey: string,
+  options: CompatibleFieldDecoratorOptions,
+  ctor?: Function,
+): void {
+  ObjectRegistry.registerFieldDecorator(className, propertyKey, options, ctor);
+}
+
 /**
  * Meta type wrapper for STI (Single Table Inheritance) meta fields
  *
@@ -292,7 +306,7 @@ function resolveRelatedClassName(
   relatedClass: string | Function,
   className: string,
   propertyKey: string,
-): string {
+): { related: string; relatedConstructor?: Function } {
   const where = `@${decoratorName}() on ${className}.${propertyKey}`;
   const remedy =
     `Pass the target class name as a string instead — ` +
@@ -305,7 +319,7 @@ function resolveRelatedClassName(
         `${where}: target class name is empty. Pass a class, a class name, or a \`() => Target\` thunk.`,
       );
     }
-    return name;
+    return { related: name };
   }
 
   if (typeof relatedClass !== 'function') {
@@ -319,7 +333,7 @@ function resolveRelatedClassName(
   // Target`) is still routed to the thunk branch below instead of registering
   // the variable name as the target class.
   if (relatedClass.name && relatedClass.prototype !== undefined) {
-    return relatedClass.name;
+    return { related: relatedClass.name, relatedConstructor: relatedClass };
   }
 
   // Thunk (`() => Target`, named or inline) — invoke it for the target.
@@ -336,10 +350,10 @@ function resolveRelatedClassName(
   }
 
   if (typeof resolved === 'function' && resolved.name) {
-    return resolved.name;
+    return { related: resolved.name, relatedConstructor: resolved };
   }
   if (typeof resolved === 'string' && resolved.trim()) {
-    return resolved.trim();
+    return { related: resolved.trim() };
   }
 
   throw new Error(
@@ -398,8 +412,13 @@ export function field(
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, options);
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          options,
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;
@@ -493,17 +512,22 @@ export function foreignKey(
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-          ...options,
-          type: 'foreignKey',
-          related: resolveRelatedClassName(
-            'foreignKey',
-            relatedClass,
-            className,
-            propertyKey,
-          ),
-        });
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          {
+            ...options,
+            type: 'foreignKey',
+            ...resolveRelatedClassName(
+              'foreignKey',
+              relatedClass,
+              className,
+              propertyKey,
+            ),
+          },
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;
@@ -566,12 +590,17 @@ export function crossPackageRef(
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-          ...options,
-          type: 'crossPackageRef',
-          related: qualifiedName,
-        });
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          {
+            ...options,
+            type: 'crossPackageRef',
+            related: qualifiedName,
+          },
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;
@@ -658,18 +687,23 @@ export function oneToMany(
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-          ...options,
-          type: 'oneToMany',
-          related: resolveRelatedClassName(
-            'oneToMany',
-            relatedClass,
-            className,
-            propertyKey,
-          ),
-          transient: true, // Relationship fields are not database columns
-        });
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          {
+            ...options,
+            type: 'oneToMany',
+            ...resolveRelatedClassName(
+              'oneToMany',
+              relatedClass,
+              className,
+              propertyKey,
+            ),
+            transient: true, // Relationship fields are not database columns
+          },
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;
@@ -712,18 +746,23 @@ export function manyToMany(
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-          ...options,
-          type: 'manyToMany',
-          related: resolveRelatedClassName(
-            'manyToMany',
-            relatedClass,
-            className,
-            propertyKey,
-          ),
-          transient: true, // Relationship fields are not database columns
-        });
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          {
+            ...options,
+            type: 'manyToMany',
+            ...resolveRelatedClassName(
+              'manyToMany',
+              relatedClass,
+              className,
+              propertyKey,
+            ),
+            transient: true, // Relationship fields are not database columns
+          },
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;
@@ -771,11 +810,16 @@ export function meta(options: FieldOptions = {}) {
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-          ...options,
-          type: 'meta', // Mark this field as a meta field for STI
-        });
+      (className, propertyKey, ctor) => {
+        registerFieldDecoratorForCompatibility(
+          className,
+          propertyKey,
+          {
+            ...options,
+            type: 'meta', // Mark this field as a meta field for STI
+          },
+          ctor,
+        );
       },
     );
   }) as CompatiblePropertyDecorator;

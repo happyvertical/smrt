@@ -943,6 +943,7 @@ export class ManifestGenerator {
           field.related,
           manifest,
           schemaByTable,
+          obj.packageName,
         );
         if (!targetSchema) {
           for (const sourceSchema of sourceSchemas) {
@@ -1024,13 +1025,14 @@ export class ManifestGenerator {
     related: string,
     manifest: SmartObjectManifest,
     schemaByTable: Map<string, ManifestSchema>,
+    sourcePackageName?: string,
   ): ManifestSchema | undefined {
     const relatedTarget = related.split('.')[0];
     if (schemaByTable.has(relatedTarget)) {
       return schemaByTable.get(relatedTarget);
     }
 
-    const targetObj = Object.values(manifest.objects).find(
+    const candidates = Object.values(manifest.objects).filter(
       (candidate) =>
         candidate.className === relatedTarget ||
         candidate.qualifiedName === relatedTarget ||
@@ -1038,6 +1040,15 @@ export class ManifestGenerator {
         candidate.decoratorConfig?.tableName === relatedTarget ||
         candidate.schema?.tableName === relatedTarget,
     );
+    const localTarget = candidates.find(
+      (candidate) => candidate.packageName === sourcePackageName,
+    );
+    if (!localTarget && candidates.length > 1) {
+      throw new Error(
+        `Ambiguous foreign key target ${relatedTarget} from package ${sourcePackageName}`,
+      );
+    }
+    const targetObj = localTarget ?? candidates[0];
 
     if (!targetObj && relatedTarget.includes(':')) {
       return undefined;

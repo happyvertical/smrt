@@ -38,6 +38,10 @@ import {
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
+import {
+  resolveOneToManyInverse,
+  resolveRelationshipTargetName,
+} from './relationship-loader';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
@@ -1635,9 +1639,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const schema =
       ObjectRegistry.getSchema(itemQualifiedName) ??
       ObjectRegistry.getSchema(itemClassName);
-    const schemaColumnNames = schema?.columns
-      ? new Set(Object.keys(schema.columns))
-      : undefined;
+    // Runtime-only declarations can carry an intentionally empty generated
+    // schema while their registered fields remain authoritative. Do not turn
+    // that absence of column metadata into a projection deny-all; normal
+    // registered-field, sensitive, and permission validation still applies.
+    const schemaColumnNames =
+      schema?.columns && Object.keys(schema.columns).length > 0
+        ? new Set(Object.keys(schema.columns))
+        : undefined;
     const registeredFields = ObjectRegistry.getFields(itemQualifiedName);
     const explicitFields =
       registeredFields.size > 0
@@ -1817,44 +1826,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .join(', ');
   }
 
-  private resolveOneToManyInverseForeignKey(
-    relationship: import('./registry').RelationshipMetadata,
-  ): import('./registry').RelationshipMetadata {
-    const inverseCandidates = ObjectRegistry.getInverseRelationshipsForSelf(
-      this._itemClass.name,
-    ).filter(
-      (candidate) =>
-        candidate.sourceClass === relationship.targetClass &&
-        candidate.type === 'foreignKey',
-    );
-    const explicitForeignKey = relationship.options?.foreignKey as
-      | string
-      | undefined;
-    const matchedForeignKey = explicitForeignKey
-      ? inverseCandidates.find(
-          (candidate) => candidate.fieldName === explicitForeignKey,
-        )
-      : undefined;
-    if (explicitForeignKey && !matchedForeignKey) {
-      throw new Error(
-        `oneToMany ${relationship.fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((candidate) => candidate.fieldName).join(', ') || '(none)'}`,
-      );
-    }
-
-    const inverseForeignKey =
-      matchedForeignKey ??
-      inverseCandidates.find(
-        (candidate) => candidate.targetClass === this._itemClass.name,
-      ) ??
-      inverseCandidates[0];
-    if (!inverseForeignKey) {
-      throw new Error(
-        `Could not find inverse foreignKey on ${relationship.targetClass} for oneToMany relationship ${relationship.fieldName}`,
-      );
-    }
-    return inverseForeignKey;
-  }
-
   /**
    * Load a page of hydrated parents with one selected latest row from a
    * declared `@oneToMany` relation. The parent page is sliced only after the
@@ -1905,6 +1876,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -1924,7 +1897,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     where = resolveMetaTypeInWhere(where);
 
     const relationship = ObjectRegistry.getRelationships(
-      this._itemClass.name,
+      itemQualifiedName,
     ).find(
       (candidate) =>
         candidate.fieldName === latestOptions.relation &&
@@ -1936,10 +1909,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    const inverseForeignKey =
-      this.resolveOneToManyInverseForeignKey(relationship);
+    const targetName = await resolveRelationshipTargetName(relationship);
+    const inverseForeignKey = resolveOneToManyInverse(
+      itemQualifiedName,
+      relationship,
+      targetName,
+    );
     const relatedCollection = await ObjectRegistry.getCollection(
-      relationship.targetClass,
+      targetName,
       this.options,
     );
     await relatedCollection.ensureStorageReady();
@@ -1958,6 +1935,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       relatedItemClassName,
       'list',
       relatedCollection.constructor.name,
+      undefined,
+      relatedQualifiedName,
     );
     const relatedInterceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -2411,8 +2390,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ) => SmrtCollection<SmrtObject>);
     if (this.constructor !== SmrtCollection && collectionCtor._itemClass) {
       const itemClass = collectionCtor._itemClass;
+      const registeredItem = ObjectRegistry.getClassByConstructor(itemClass);
       const itemClassName =
-        ObjectRegistry.getClassByConstructor(itemClass)?.name || itemClass.name;
+        registeredItem?.qualifiedName ?? registeredItem?.name ?? itemClass.name;
       ObjectRegistry.registerCollection(itemClassName, collectionCtor);
     }
   }
@@ -2872,6 +2852,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'get',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedFilter = await GlobalInterceptors.executeBeforeGet(
       itemClassName,
@@ -3050,6 +3032,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -3185,7 +3169,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     for (const fieldName of relationships) {
       // Get relationship metadata
       const relationshipMeta = ObjectRegistry.getRelationships(
-        this._itemClass.name,
+        this.getResolvedItemQualifiedName(),
       );
       const relationship = relationshipMeta.find(
         (r) => r.fieldName === fieldName,
@@ -3202,11 +3186,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         relationship.type === 'foreignKey' ||
         relationship.type === 'crossPackageRef'
       ) {
-        // crossPackageRef target lives in another package — make sure its
-        // manifest is loaded before we try to instantiate the target collection.
-        if (relationship.type === 'crossPackageRef') {
-          await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
-        }
         // Batch load foreignKey / crossPackageRef relationships
         await this.batchLoadForeignKeys(instances, fieldName, relationship);
       } else if (relationship.type === 'oneToMany') {
@@ -3242,11 +3221,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (foreignKeyValues.size === 0) return;
 
+    const targetName = await resolveRelationshipTargetName(relationship);
     // Get or create cached collection instance
     let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
-        relationship.targetClass,
+        targetName,
         this.options,
       );
     } catch (error) {
@@ -3299,48 +3279,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fieldName: string,
     relationship: import('./registry').RelationshipMetadata,
   ): Promise<void> {
-    // Find the inverse foreignKey field. An instance can satisfy an inverse FK
-    // that targets its own class or any (STI) ancestor it inherits the
-    // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
-    // loading resolve the same inverse side.
-    const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
-      this._itemClass.name,
+    const targetName = await resolveRelationshipTargetName(relationship);
+    const inverseForeignKey = resolveOneToManyInverse(
+      this.getResolvedItemQualifiedName(),
+      relationship,
+      targetName,
     );
-    const inverseCandidates = inverseRelationships.filter(
-      (r) =>
-        r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
-    );
-    // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
-    // declares multiple foreign keys back to this class; otherwise fall back
-    // to the first match (legacy behavior).
-    const explicitForeignKey = relationship.options?.foreignKey as
-      | string
-      | undefined;
-    const matchedForeignKey = explicitForeignKey
-      ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
-      : undefined;
-    if (explicitForeignKey && !matchedForeignKey) {
-      // A misspelled / stale `foreignKey` is a configuration error, not a
-      // recoverable data condition — fail loudly here too so eager (`include:`)
-      // loading behaves identically to lazy loadRelatedMany rather than
-      // silently producing empty arrays.
-      throw new Error(
-        `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
-      );
-    }
-    // Prefer an inverse FK that targets this exact class before falling back
-    // to an ancestor's (mirrors loadRelatedMany).
-    const inverseForeignKey =
-      matchedForeignKey ??
-      inverseCandidates.find((r) => r.targetClass === this._itemClass.name) ??
-      inverseCandidates[0];
-
-    if (!inverseForeignKey) {
-      logger.warn(
-        `Could not find inverse foreignKey for oneToMany ${fieldName}`,
-      );
-      return;
-    }
 
     // Collect all instance IDs
     const instanceIds = instances
@@ -3353,7 +3297,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
-        relationship.targetClass,
+        targetName,
         this.options,
       );
     } catch (error) {
@@ -3418,6 +3362,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .filter((id): id is string => !!id);
     if (instanceIds.length === 0) return;
 
+    // Resolve outside the legacy join-error handler: ownership failures are fatal.
+    await resolveRelationshipTargetName(relationship);
+
     // Delegate join-coordinate resolution to a sample instance — it shares the
     // same registry metadata as every other instance in this batch.
     let through: string;
@@ -3466,10 +3413,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const junctionRowsAll: Array<{
       [key: string]: unknown;
     }> = [];
+    // Keep native DuckDB UUID wrappers out of the string-only identity map.
+    // Project them in the original query without changing its predicates.
+    const junctionProjection = [sourceColumn, targetColumn]
+      .map((column) =>
+        this.getDatabaseEngine() === 'duckdb'
+          ? `CAST("${column}" AS VARCHAR) AS "${column}"`
+          : `"${column}"`,
+      )
+      .join(', ');
     for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
       const placeholders = idChunk.map(() => '?').join(', ');
       const result = await this.db.query(
-        `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
+        `SELECT ${junctionProjection} FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
         idChunk,
       );
       junctionRowsAll.push(...result.rows);
@@ -3956,8 +3912,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     // Fallback to ObjectRegistry sync method if cache not populated
     // This handles edge cases where collection wasn't created via static create()
-    const className = this.getResolvedItemClassName();
-    const fields = ObjectRegistry.getFields(className);
+    const fields = ObjectRegistry.getFields(
+      this.getResolvedItemQualifiedName(),
+    );
     // Convert Map to Record for consistency with getFields() return type.
     // Registry `RegisteredField`s are a structural superset of the members the
     // collection reads (`type`, `sensitive`, `_meta`); view through `unknown`.
@@ -4006,17 +3963,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
             this._tableName = baseSchema.tableName;
           } else {
             // Fallback to own schema tableName
-            const ownSchema = ObjectRegistry.getSchema(className);
+            const ownSchema = ObjectRegistry.getSchema(qualifiedName);
             this._tableName = ownSchema?.tableName || fallbackTableName;
           }
         } else {
           // Fallback to own schema tableName
-          const ownSchema = ObjectRegistry.getSchema(className);
+          const ownSchema = ObjectRegistry.getSchema(qualifiedName);
           this._tableName = ownSchema?.tableName || fallbackTableName;
         }
       } else {
         // CTI: Use own schema tableName
-        const ownSchema = ObjectRegistry.getSchema(className);
+        const ownSchema = ObjectRegistry.getSchema(qualifiedName);
         this._tableName = ownSchema?.tableName || fallbackTableName;
       }
     }
@@ -4118,6 +4075,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ) {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // Security (#1540): count() is a list-shaped read, so run the same
     // `beforeList` interceptors (tenant filtering, etc.). Without this, count()
@@ -4127,6 +4085,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -4212,6 +4172,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      itemQualifiedName,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
@@ -4413,6 +4375,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this._itemClass.name,
       'query',
       this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
     );
     const interceptedQuery = await GlobalInterceptors.executeBeforeQuery(
       this._itemClass.name,
@@ -5217,6 +5181,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       itemClassName,
       'list',
       this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
     );
     const tenantPrefilter = await GlobalInterceptors.executeBeforeList(
       itemClassName,

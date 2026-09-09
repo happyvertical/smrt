@@ -81,6 +81,17 @@ class Doc extends SmrtObject { @tenantId({ nullable: true }) tenantId: string | 
 class Doc extends SmrtObject { tenantId: string | null = null; }
 ```
 
+The exported `registerTenantScopedClass()` also accepts a simple or qualified
+string selector for third-party classes and test doubles. A simple selector is
+bound to the one exact core constructor when that name is uniquely resolvable;
+it may be registered before core. Once bound, a later same-name package peer
+does not inherit its policy. If two core classes exist before the simple
+selector can bind, operations fail closed until the caller registers an exact
+qualified name (for example, `@package/name:Doc`). No lookup strips a namespace
+to guess an owner. If core clears a bound constructor and reuses its qualified
+name, unregister and register the selector again; it will not silently transfer
+policy to the replacement constructor.
+
 Modes: `'required'` (default — throws without context) or `'optional'` (passes through if no context).
 
 ## Adapters
@@ -100,7 +111,8 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 - **Auto-populate only if empty**: if tenantId already set, interceptor validates (not overwrites)
 - **Isolation checked at query time**: `list({ where: { tenantId: 'other' } })` throws immediately
 - **Testing**: `resetTenancy()` + `setupTestTenancy()` in beforeEach; `testTenantIsolation()` helper
-- **Natural keys are per tenant (smrt#2360)**: a tenant-scoped class with no explicit `conflictColumns` upserts on, and indexes, `(tenant_id, slug, context[, _meta_type])` — `save()` from tenant B with tenant A's slug is a second row, never an overwrite; within a tenant the natural key still dedups; NULL-tenant (`optional` mode, no context) rows dedup among themselves through the SDK's null-aware upsert but not through the index (NULLs are distinct), so raw SQL `ON CONFLICT (slug, context…)` on such a table no longer binds — use `WHERE NOT EXISTS`, and on PostgreSQL an advisory lock, as `ProfileTypeCollection.getOrCreateGlobalBySlug()` does. Core recognizes the class as tenant-scoped through the manifest's `decoratorConfig.tenantScoped` (the scanner folds `@TenantScoped()` in), never through the tenancy registry, so the schema and the upsert agree before `enableTenancy()` runs. Rollout: deploy the code and `smrt db:migrate` together (neither version's create works against the other's index), and backfill `tenant_id` on legacy NULL-tenant rows first — a tenant-context save no longer adopts a `(NULL, slug)` row, it inserts beside it and that tenant stops seeing the legacy one (details in `packages/core/agents/schema-paths.md`).
+- **Natural keys are per tenant (smrt#2360)**: a tenant-scoped class with no explicit `conflictColumns` upserts on, and indexes, `(tenant_id, slug, context[, _meta_type])` — `save()` from tenant B with tenant A's slug is a second row, never an overwrite; within a tenant the natural key still dedups; NULL-tenant (`optional` mode, no context) rows dedup among themselves through the SDK's null-aware upsert but not through the index (NULLs are distinct), so raw SQL `ON CONFLICT (slug, context…)` on such a table no longer binds — use `WHERE NOT EXISTS`, and on PostgreSQL an advisory lock, as `ProfileTypeCollection.getOrCreateGlobalBySlug()` does. Core resolves tenant schema policy in order: explicit `@smrt`, manifest (including an omitted `tenantScoped`), exact-constructor `@TenantScoped()` reconciliation, then marked-field fallback; it never reads the standalone tenancy registry. This keeps schema and upsert behavior aligned before `enableTenancy()` runs. Rollout: deploy the code and `smrt db:migrate` together (neither version's create works against the other's index), and backfill `tenant_id` on legacy NULL-tenant rows first — a tenant-context save no longer adopts a `(NULL, slug)` row, it inserts beside it and that tenant stops seeing the legacy one (details in `packages/core/agents/schema-paths.md`).
+- **Manifest/runtime mismatch fails closed (smrt#2763)**: if a cached manifest omits or sets `tenantScoped: false` while the exact runtime constructor carries `@TenantScoped()`, registration is rejected; regenerate the manifest. A rejected late manifest or conflicting promotion preserves a previously valid scoped registration. Applying `@TenantScoped()` to an already-global manifest registration that omits or disables tenancy instead marks that class unavailable to conflict-key, schema, and tenancy interceptor operations until a corrected manifest explicitly declares tenancy. This prevents a global unique key from conflicting with tenant-enforced reads or writes.
 
 ## Known exceptions to monorepo standards
 

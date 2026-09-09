@@ -31,10 +31,16 @@ function registerReportField(metadata: ReportFieldMetadata) {
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
-      (className, propertyKey) => {
-        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+      (className, propertyKey, ctor) => {
+        const options = {
           __report: metadata,
-        });
+        };
+        ObjectRegistry.registerFieldDecorator(
+          className,
+          propertyKey,
+          options,
+          ctor,
+        );
       },
     );
   }) as PropertyDecorator;

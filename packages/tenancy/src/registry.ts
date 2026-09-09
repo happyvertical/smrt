@@ -67,20 +67,108 @@ const DEFAULT_CONFIG: TenantScopedConfig = {
   allowSuperAdminBypass: false,
 };
 
-// Registry storing tenant-scoped class configurations
+// Registry snapshot exposed by getAllTenantScopedClasses().
 const tenantScopedClasses = new Map<string, TenantScopedConfig>();
+
+// Direct callers select a class by string. Keep simple and qualified selectors
+// separate: a simple selector may be bound only after core proves that exactly
+// one constructor owns that name.
+const directSimpleRegistrations = new Map<string, TenantScopedConfig>();
+const directQualifiedRegistrations = new Map<string, TenantScopedConfig>();
+const directSimpleBindings = new Map<
+  string,
+  { qualifiedName: string; constructor: Function }
+>();
+
+// Decorators retain a simple mirror only until core has registered their
+// authoritative qualified policy. Qualified runtime resolution always defers
+// to core, preserving manifest and explicit-@smrt precedence.
+const unregisteredDecoratorRegistrations = new Map<
+  string,
+  TenantScopedConfig
+>();
+
+function isQualifiedClassName(className: string): boolean {
+  return className.includes(':');
+}
+
+function isCurrentDirectSimpleBinding(binding: {
+  qualifiedName: string;
+  constructor: Function;
+}): boolean {
+  return (
+    ObjectRegistry.getClassByQualifiedName(binding.qualifiedName)
+      ?.constructor === binding.constructor
+  );
+}
+
+function bindDirectSimpleRegistration(className: string): void {
+  const config = directSimpleRegistrations.get(className);
+  if (!config || directSimpleBindings.has(className)) return;
+
+  const matches = ObjectRegistry.findClassesByName(className);
+  if (matches.length !== 1 || !matches[0].qualifiedName) return;
+
+  directSimpleBindings.set(className, {
+    qualifiedName: matches[0].qualifiedName,
+    constructor: matches[0].constructor,
+  });
+}
+
+function getDirectSimpleRegistration(
+  className: string,
+): TenantScopedConfig | undefined {
+  const config = directSimpleRegistrations.get(className);
+  if (!config) return undefined;
+
+  const binding = directSimpleBindings.get(className);
+  if (binding && !isCurrentDirectSimpleBinding(binding)) {
+    throw new Error(
+      `Stale tenant-scoped class registration '${className}'; ` +
+        'unregister and register it again for the current constructor.',
+    );
+  }
+
+  const matches = ObjectRegistry.findClassesByName(className);
+  if (matches.length > 1) {
+    throw new Error(
+      `Ambiguous tenant-scoped class registration '${className}'; ` +
+        'register an explicit qualified class name instead.',
+    );
+  }
+
+  return config;
+}
+
+/** @internal Used by TenantScoped; direct callers must use the string API. */
+export function registerTenantScopedConstructor(
+  target: Function,
+  config: Partial<TenantScopedConfig> = {},
+): void {
+  const resolved = { ...DEFAULT_CONFIG, ...config };
+  unregisteredDecoratorRegistrations.set(target.name, resolved);
+  tenantScopedClasses.set(target.name, resolved);
+}
 
 /**
  * Register a class as tenant-scoped with the given configuration.
  *
- * Called automatically by the `@TenantScoped()` decorator.  You can also call
- * this directly when you cannot use decorators (e.g., third-party classes or
- * plain objects in tests).  Defaults from `DEFAULT_CONFIG` are merged over any
- * omitted options.
+ * Call this directly when you cannot use decorators (e.g., third-party classes
+ * or plain objects in tests). Defaults from `DEFAULT_CONFIG` are merged over
+ * any omitted options. `@TenantScoped()` has its own constructor-aware mirror
+ * and reconciles its authoritative policy in core.
  *
- * Calling this again for the same `className` overwrites the previous entry.
+ * A simple selector binds to its exact core constructor when one owner is
+ * uniquely resolvable, including when registration happens before core. Once
+ * bound it remains attached to that constructor if a same-name peer appears.
+ * If core clears that constructor and reuses its qualified name, the selector
+ * fails closed until the caller explicitly unregisters and re-registers it.
+ * If ownership is ambiguous before binding, interception fails closed until a
+ * caller registers an explicit qualified selector. Calling this again for the
+ * same selector overwrites that selector's previous entry.
  *
- * @param className - The class's `name` property (e.g., `'Document'`).
+ * @param className - A simple class name (e.g., `'Document'`) or exact core
+ * qualified name (e.g., `'@package/name:Document'`).
  * @param config - Partial tenancy configuration; omitted fields receive defaults.
  *
  * @example
@@ -96,10 +184,23 @@ export function registerTenantScopedClass(
   className: string,
   config: Partial<TenantScopedConfig> = {},
 ): void {
-  tenantScopedClasses.set(className, {
+  const resolved = {
     ...DEFAULT_CONFIG,
     ...config,
-  });
+  };
+  tenantScopedClasses.set(className, resolved);
+
+  if (isQualifiedClassName(className)) {
+    directQualifiedRegistrations.set(className, resolved);
+    return;
+  }
+
+  directSimpleRegistrations.set(className, resolved);
+  const existingBinding = directSimpleBindings.get(className);
+  if (existingBinding && !isCurrentDirectSimpleBinding(existingBinding)) {
+    directSimpleBindings.delete(className);
+  }
+  bindDirectSimpleRegistration(className);
 }
 
 /**
@@ -115,21 +216,14 @@ export function registerTenantScopedClass(
  */
 export function unregisterTenantScopedClass(className: string): void {
   tenantScopedClasses.delete(className);
-}
+  if (isQualifiedClassName(className)) {
+    directQualifiedRegistrations.delete(className);
+    return;
+  }
 
-/**
- * Strip a qualified `@scope/pkg:ClassName` name down to its bare class name.
- *
- * `@TenantScoped` registers classes by their simple name (`target.name`), but
- * `ObjectRegistry.getInheritanceChain()` emits **qualified** names where a
- * class has package context. The simple-name bridge this enables is confined to
- * the inheritance walk (`getInheritedTenantScopedConfig`) — never the direct
- * lookup — so a *direct* qualified lookup can't strip the namespace and
- * cross-match a same-simple-name class in another package.
- */
-function toSimpleClassName(className: string): string {
-  const idx = className.lastIndexOf(':');
-  return idx === -1 ? className : className.slice(idx + 1);
+  directSimpleRegistrations.delete(className);
+  directSimpleBindings.delete(className);
+  unregisteredDecoratorRegistrations.delete(className);
 }
 
 /**
@@ -146,24 +240,80 @@ function cloneConfig(config: TenantScopedConfig): TenantScopedConfig {
  * Resolve a class's OWN tenancy configuration — no STI inheritance, EXACT name
  * match only.
  *
- * Checks the two registration mechanisms in order, with the local registry
- * taking precedence:
- * 1. The local registry populated by `@TenantScoped()` (keyed by simple name).
- * 2. The core `ObjectRegistry` populated by `@smrt({ tenantScoped: true })`.
+ * Checks the registration mechanisms in order: an explicit direct selector,
+ * then core's declared policy. `@TenantScoped()` reconciles its policy in core;
+ * its simple-name mirror is used only for unregistered test doubles.
  *
  * Lookups are by exact name only — no simple-name fallback — so a qualified
  * lookup (e.g. `@happyvertical/smrt-affiliates:Payout`, explicitly not scoped)
  * can never strip its namespace and match a same-simple-name scoped class in
- * another package (e.g. `@happyvertical/smrt-commerce:Payout`). The
- * namespace-stripping bridge lives only in the inheritance walk. (#1598 review)
+ * another package (e.g. `@happyvertical/smrt-commerce:Payout`). (#1598 review)
  */
 function getDirectTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
-  // 1. Local registry (explicit @TenantScoped decorator).
-  const localConfig = tenantScopedClasses.get(className);
-  if (localConfig) {
-    return cloneConfig(localConfig);
+  // Core marks caught silent-manifest/runtime-decorator conflicts invalid.
+  // Check before the simple-name decorator mirror so every identity path
+  // fails closed rather than falling through to an unscoped operation.
+  ObjectRegistry.assertTenantScopedRegistrationValid(className);
+  // 1. Explicit direct qualified selector.
+  const directQualified = directQualifiedRegistrations.get(className);
+  if (directQualified) {
+    return cloneConfig(directQualified);
+  }
+
+  const registered = isQualifiedClassName(className)
+    ? ObjectRegistry.getClassByQualifiedName(className)
+    : ObjectRegistry.getClass(className);
+
+  // A direct simple selector can bind lazily after registration-before-core.
+  // It is never inferred from a qualified name when more than one core class
+  // owns that simple name.
+  if (registered) {
+    const simple = registered.name;
+    const bound = directSimpleBindings.get(simple);
+    if (bound) {
+      if (
+        bound.qualifiedName === className &&
+        bound.constructor === registered.constructor
+      ) {
+        return cloneConfig(directSimpleRegistrations.get(simple)!);
+      }
+      // Core can clear and re-register a qualified name with a different
+      // constructor. Never transfer the old selector binding to it: the caller
+      // must explicitly unregister/re-register after that lifecycle reset.
+      if (!isCurrentDirectSimpleBinding(bound)) {
+        throw new Error(
+          `Stale tenant-scoped class registration '${simple}'; ` +
+            'unregister and register it again for the current constructor.',
+        );
+      }
+    }
+    if (!bound && directSimpleRegistrations.has(simple)) {
+      const matches = ObjectRegistry.findClassesByName(simple);
+      if (matches.length > 1) {
+        throw new Error(
+          `Ambiguous tenant-scoped class registration '${simple}'; ` +
+            'register an explicit qualified class name instead.',
+        );
+      }
+      bindDirectSimpleRegistration(simple);
+      const rebound = directSimpleBindings.get(simple);
+      if (
+        rebound?.qualifiedName === className &&
+        rebound.constructor === registered.constructor
+      ) {
+        return cloneConfig(directSimpleRegistrations.get(simple)!);
+      }
+    }
+  }
+
+  if (!isQualifiedClassName(className)) {
+    // Explicit direct selectors retain their established precedence. For
+    // plain-object/test-double paths this is the historical simple-selector
+    // fallback, subject to the existing ambiguity checks.
+    const directSimple = getDirectSimpleRegistration(className);
+    if (directSimple) return cloneConfig(directSimple);
   }
 
   // 2. Core registry (@smrt({ tenantScoped: true }) pattern - Issue #688).
@@ -179,6 +329,13 @@ function getDirectTenantScopedConfig(
       autoPopulate: coreConfig.autoPopulate,
       allowSuperAdminBypass: coreConfig.allowSuperAdminBypass,
     };
+  }
+
+  // A decorator mirror is only authoritative when core has no registration.
+  // A registered unqualified consumer still has a canonical simple identity.
+  if (!registered && !isQualifiedClassName(className)) {
+    const decoratorConfig = unregisteredDecoratorRegistrations.get(className);
+    if (decoratorConfig) return cloneConfig(decoratorConfig);
   }
 
   return undefined;
@@ -229,22 +386,10 @@ function getInheritedTenantScopedConfig(
       return direct;
     }
 
-    // @TenantScoped registers by SIMPLE name (`target.name`), but the chain
-    // emits QUALIFIED names. Bridge to the simple-keyed local registry here —
-    // scoped to the inheritance walk only, so a direct qualified lookup never
-    // strips the namespace (see getDirectTenantScopedConfig). The chain entry
-    // is a verified ancestor of `className`, so matching its simple name is the
-    // intended hop. (Residual: the @TenantScoped registry is simple-keyed, so
-    // two DISTINCT same-simple-name classes that are BOTH @TenantScoped across
-    // packages could cross-match here — a pre-existing decorator-keying limit,
-    // not the direct-lookup hazard fixed above.)
-    const simple = toSimpleClassName(ancestor);
-    if (simple !== ancestor) {
-      const bySimple = tenantScopedClasses.get(simple);
-      if (bySimple) {
-        return cloneConfig(bySimple);
-      }
-    }
+    // Do not bridge a qualified ancestor back to a simple registration here.
+    // The exact lookup above reaches the core declaration reconciled by the
+    // decorator. Stripping would let an unrelated same-name peer lend its
+    // direct or decorator policy to this inheritance chain.
   }
   return undefined;
 }
@@ -322,4 +467,8 @@ export function getAllTenantScopedClasses(): Map<string, TenantScopedConfig> {
  */
 export function clearTenantScopedRegistry(): void {
   tenantScopedClasses.clear();
+  directSimpleRegistrations.clear();
+  directQualifiedRegistrations.clear();
+  directSimpleBindings.clear();
+  unregisteredDecoratorRegistrations.clear();
 }
