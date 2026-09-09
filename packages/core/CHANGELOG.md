@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.49.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - avoid repeated registry metadata projections (#2803) (users)
+  - @happyvertical/smrt-config@0.49.1
+  - @happyvertical/smrt-types@0.49.1
+  - @happyvertical/smrt-scanner@0.49.1
+
 ## 1.0.0
 
 ### Minor Changes
