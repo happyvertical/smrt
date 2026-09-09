@@ -9,6 +9,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { snapshotObjectRegistryState } from '../../../core/src/test-utils.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
   generatePostgresPermissionSql,
@@ -210,16 +211,8 @@ describe('PermissionCatalogService', () => {
     expect(afterSnapshotChange).not.toContain('catalog_a_2802.read');
   });
 
-  it('uses current qualified public registrations for colliding names and removes only its own fixtures', () => {
-    // `getAllClasses()` intentionally returns a copy. Reach through this
-    // test-only boundary solely to remove the fixtures this test registers;
-    // catalog construction itself continues to use the public snapshot API.
-    const classes = (
-      ObjectRegistry as unknown as {
-        classes: Map<string, { packageName?: string }>;
-      }
-    ).classes;
-    const owned = new Set<object>();
+  it('uses current qualified public registrations for colliding names after registry restoration', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
     const register = (
       packageName: string,
       collection: string,
@@ -229,13 +222,21 @@ describe('PermissionCatalogService', () => {
         `${packageName}:PermissionCatalogPeer2802`,
         {
           className: 'PermissionCatalogPeer2802',
-          collection,
           decoratorConfig: {
             api: { include },
+            collection,
             mcp: { include: ['publish', 'hidden'] },
           },
-          fields: {},
-          methods: {},
+          fields: {
+            visible: {
+              _meta: { readPermission: `${collection}.read.inherited` },
+              type: 'text',
+            },
+          },
+          methods: {
+            hidden: { isPublic: false, name: 'hidden' },
+            publish: { isPublic: true, name: 'publish' },
+          },
         },
         packageName,
       );
@@ -243,23 +244,6 @@ describe('PermissionCatalogService', () => {
         `${packageName}:PermissionCatalogPeer2802`,
       );
       if (!registered) throw new Error('expected registered catalog fixture');
-      owned.add(registered);
-      Object.assign(registered.config, {
-        api: { include },
-        collection,
-        mcp: { include: ['publish', 'hidden'] },
-      });
-      registered.inheritedFields = new Map([
-        [
-          'visible',
-          {
-            _meta: { readPermission: `${collection}.read.inherited` },
-            type: 'text',
-          },
-        ],
-      ]);
-      registered.methods.set('publish', { isPublic: true, name: 'publish' });
-      registered.methods.set('hidden', { isPublic: false, name: 'hidden' });
       return registered;
     };
 
@@ -272,7 +256,6 @@ describe('PermissionCatalogService', () => {
         'list',
         'delete',
       ]);
-      classes.set('PermissionCatalogPeer2802', first);
 
       const service = PermissionCatalogService.create();
       const initial = service.getCatalog().permissions;
@@ -302,25 +285,39 @@ describe('PermissionCatalogService', () => {
         ),
       ).toMatchObject({ qualifiedName: second.qualifiedName });
 
-      for (const [key, registered] of classes) {
-        if (registered.packageName === '@catalog/integration-a') {
-          classes.delete(key);
-        }
-      }
-      const afterRemoval = service
+      restoreBaseline();
+      const restoredPeer = register(
+        '@catalog/integration-b',
+        'catalog_real_b_2802',
+        ['list', 'delete'],
+      );
+      const newPeer = register(
+        '@catalog/integration-c',
+        'catalog_real_c_2802',
+        ['list'],
+      );
+      const afterRestore = service
         .getCatalog()
         .permissions.map((permission) => permission.slug);
-      expect(afterRemoval).toContain('catalog_real_b_2802.read');
-      expect(afterRemoval).not.toContain('catalog_real_a_2802.read');
-
-      register('@catalog/integration-c', 'catalog_real_c_2802', ['list']);
+      expect(afterRestore).toContain('catalog_real_b_2802.read');
+      expect(afterRestore).toContain('catalog_real_c_2802.read');
+      expect(afterRestore).not.toContain('catalog_real_a_2802.read');
       expect(
-        service.getCatalog().permissions.map((permission) => permission.slug),
-      ).toContain('catalog_real_c_2802.read');
+        service
+          .getCatalog()
+          .permissions.find(
+            (permission) => permission.slug === 'catalog_real_b_2802.read',
+          ),
+      ).toMatchObject({ qualifiedName: restoredPeer.qualifiedName });
+      expect(
+        service
+          .getCatalog()
+          .permissions.find(
+            (permission) => permission.slug === 'catalog_real_c_2802.read',
+          ),
+      ).toMatchObject({ qualifiedName: newPeer.qualifiedName });
     } finally {
-      for (const [key, registered] of classes) {
-        if (owned.has(registered)) classes.delete(key);
-      }
+      restoreBaseline();
     }
   });
 
