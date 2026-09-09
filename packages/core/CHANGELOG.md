@@ -16,6 +16,39 @@
 
   ### Bug Fixes
 
+  - preserve tenant and relationship identity in runtime schemas (#2792) (core)
+  - reserve interrupted 0.48.0 cohort (#2794) (release)
+  - repair PostgreSQL validation lane (#2791) (core)
+  - dev tooling audit follow-ups (patch train #2778) (#2784) (tooling)
+  - converge float-width, text->timestamptz, and text->jsonb drift (#2774) (core)
+
+  ### Other Changes
+
+  - docs: one end-to-end guide for developing a s-m-r-t app with an agent (#2788)
+  - test: isolate build fixtures and browser storage (#2773)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - collapse the review/architecture context family into build-context (#2787) (dev-mcp)
+
+  ### Features
+
+  - in-app runtime dev-plane with JSON routes, an MCP route, and a CLI client (#2789) (dev-mcp)
+  - cursor paging for introspect-project and runtime-registry (#2786) (dev-mcp)
+  - db:migrate --apply-unblocked and --null-orphans (#2785) (cli)
+
+  ### Bug Fixes
+
   - repair PostgreSQL validation lane (#2791) (core)
   - dev tooling audit follow-ups (patch train #2778) (#2784) (tooling)
   - converge float-width, text->timestamptz, and text->jsonb drift (#2774) (core)
