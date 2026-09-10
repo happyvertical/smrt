@@ -53,6 +53,7 @@ import { generateSyncApplyRoute } from './sync-apply-route.js';
 import {
   computeWebManifestHash,
   isCollectionManifestClass,
+  orderedManifestObjectEntries,
   resolveCollectionItemObject,
   resolveCollectionItemTypeName,
 } from './web-collections.js';
@@ -1362,7 +1363,7 @@ export async function generateSvelteKitRoutes(
   const generatedRoutePaths: string[] = [];
   let generatedCount = 0;
   let skippedCollections = 0;
-  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+  for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
     // The framework's own abstract base classes (SmrtObject,
     // SmrtCollection, ...) are scaffolding, not resources — never generate
     // a route directory for them, regardless of config (#2642).

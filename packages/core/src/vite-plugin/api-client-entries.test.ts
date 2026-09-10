@@ -462,16 +462,83 @@ describe('selectApiClientEntries', () => {
         objects,
       }).map(({ clientKey, crudMethods }) => [clientKey, crudMethods]);
 
-    // Base writes the collection file; the later child replaces the item file.
+    // Deterministic emission order (#2754): route files are written in
+    // qualified-identity order, so the later-identity RecordChild is the
+    // final writer of the item file regardless of manifest scan order, and
+    // RecordBase's collection file (list, create) survives because
+    // RecordChild's include list emits no collection handlers.
     expect(summarize({ RecordBase: base, RecordChild: child })).toEqual([
       ['records', ['list', 'get', 'create', 'update']],
       ['recordChild', ['list', 'get', 'create', 'update']],
     ]);
 
-    // Reversing manifest order makes the base the final writer of both files.
+    // Reversing manifest order must not change the emitted action set —
+    // insertion-order last-writer-wins was the #2754 bug.
     expect(summarize({ RecordChild: child, RecordBase: base })).toEqual([
-      ['records', ['list', 'get', 'create']],
-      ['recordChild', ['list', 'get', 'create']],
+      ['records', ['list', 'get', 'create', 'update']],
+      ['recordChild', ['list', 'get', 'create', 'update']],
+    ]);
+  });
+
+  it('breaks shared-collection ties by qualified identity, not class name (#2754)', () => {
+    // qualifiedName order deliberately OPPOSES className order: '@a/pkg'
+    // sorts before '@z/pkg', so ZebraBase emits first and '@z/pkg:AlphaChild'
+    // is the final writer of the item file — even though 'AlphaChild' sorts
+    // before 'ZebraBase' by class name. A className-driven order would make
+    // ZebraBase the item-file winner and drop `update`; pinning the union
+    // proves the qualified-identity tiebreak is what resolves the tie.
+    const zebraBase = {
+      className: 'ZebraBase',
+      qualifiedName: '@a/pkg:ZebraBase',
+      packageName: '@a/pkg',
+      name: 'zebraBase',
+      filePath: '/test/a/zebra-base.ts',
+      collection: 'mixedIdentities',
+      extends: 'SmrtObject',
+      fields: { label: { type: 'text' } },
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
+    } as SmartObjectDefinition;
+    const alphaChild = {
+      className: 'AlphaChild',
+      qualifiedName: '@z/pkg:AlphaChild',
+      packageName: '@z/pkg',
+      name: 'alphaChild',
+      filePath: '/test/z/alpha-child.ts',
+      collection: 'mixedIdentities',
+      extends: 'SmrtObject',
+      fields: { note: { type: 'text' } },
+      methods: {},
+      decoratorConfig: { api: { include: ['get', 'update'] } },
+    } as SmartObjectDefinition;
+
+    const summarize = (
+      objects: Record<string, SmartObjectDefinition>,
+    ): Array<[string, ApiClientCrudMethod[]]> =>
+      selectApiClientEntries({
+        version: '1.0.0',
+        timestamp: 1,
+        objects,
+      }).map(({ clientKey, crudMethods }) => [clientKey, crudMethods]);
+
+    expect(
+      summarize({
+        '@a/pkg:ZebraBase': zebraBase,
+        '@z/pkg:AlphaChild': alphaChild,
+      }),
+    ).toEqual([
+      ['mixedIdentities', ['list', 'get', 'create', 'update']],
+      ['alphaChild', ['list', 'get', 'create', 'update']],
+    ]);
+
+    expect(
+      summarize({
+        '@z/pkg:AlphaChild': alphaChild,
+        '@a/pkg:ZebraBase': zebraBase,
+      }),
+    ).toEqual([
+      ['mixedIdentities', ['list', 'get', 'create', 'update']],
+      ['alphaChild', ['list', 'get', 'create', 'update']],
     ]);
   });
 

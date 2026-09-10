@@ -183,6 +183,27 @@ export function compareText(left: string, right: string): number {
   return 0;
 }
 
+/**
+ * Deterministic manifest iteration order shared by every consumer that must
+ * visit manifest objects the same way (#2749, #2754): the manifest index,
+ * generated route emission, and the client-declaration mirror of emitted
+ * CRUD surfaces. Sorting by qualified identity (falling back to the manifest
+ * key) resolves shared-endpoint last-writer-wins ties identically regardless
+ * of manifest scan/insertion order; unique manifest keys make the secondary
+ * key compare a total tie-break.
+ */
+export function orderedManifestObjectEntries(
+  manifest: SmartObjectManifest,
+): Array<[string, SmartObjectDefinition]> {
+  return Object.entries(manifest.objects).sort(
+    ([leftKey, left], [rightKey, right]) =>
+      compareText(
+        left.qualifiedName || leftKey,
+        right.qualifiedName || rightKey,
+      ) || compareText(leftKey, rightKey),
+  );
+}
+
 function manifestObjectPackage(
   manifestKey: string | undefined,
   obj: SmartObjectDefinition,
@@ -216,13 +237,7 @@ function getManifestObjectIndex(
   const cached = manifestObjectIndexes.get(manifest.objects);
   if (cached) return cached;
 
-  const entries = Object.entries(manifest.objects).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  const entries = orderedManifestObjectEntries(manifest);
   const index: ManifestObjectIndex = {
     byExactName: new Map(),
     byPackageAndClass: new Map(),
