@@ -22,9 +22,13 @@
 - `normalizePersistenceData(data)` is the synchronous final derived-column hook:
   shared save preparation passes read-only snake-case row data after the complete polymorphic
   `toJSON()` / `transformJSON()` chain and UUID coercion, then merges the returned
-  columns before every insert/update/upsert branch. Derive only schema-backed
-  columns; do not change source, identity, tenant or revision columns or perform
-  I/O. Preserve `super` results. It does not alter plain/public serialization;
+  columns before every insert/update/upsert branch. Declare permitted snake-case
+  columns with `getPersistenceDerivedColumns()`, preserving super declarations.
+  Declarations must name registered schema fields; framework identity, tenant,
+  revision, STI metadata and natural conflict columns are always rejected.
+  Undeclared return keys reject before persistence. The hook receives a frozen
+  shallow row copy. Derive only the declared columns; do not perform I/O.
+  Preserve `super` results. It does not alter plain/public serialization;
   use `transformJSON()` for that existing contract. Ordinary saves and eligible
   junction batches share this preparation. A custom normalization override makes
   a junction ineligible for batching, preserving its virtual per-row save path.

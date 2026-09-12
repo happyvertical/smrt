@@ -118,6 +118,9 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             data: Readonly<Record<string, unknown>>,
           ): Record<string, unknown> | undefined;
         };
+        const declaration = vi
+          .spyOn(link as any, 'getPersistenceDerivedColumns')
+          .mockReturnValue(['sort_order']);
         const normalize = vi
           .spyOn(custom, 'normalizePersistenceData')
           .mockImplementation((row) => {
@@ -135,6 +138,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
           );
         } finally {
           normalize.mockRestore();
+          declaration.mockRestore();
         }
       });
 

@@ -6,6 +6,7 @@
  */
 
 import {
+  classifyDatabaseError,
   isPostgresDatabase,
   SmrtCollection,
   type SmrtCreateInput,
@@ -279,6 +280,16 @@ export class FactCollection extends SmrtCollection<Fact> {
           ...scopeParams,
         )
         .catch((cause: unknown) => {
+          const diagnostic = classifyDatabaseError(cause);
+          const missingStorage = diagnostic.sqlstate
+            ? ['42703', '42P01'].includes(diagnostic.sqlstate)
+            : ['unknown', 'undefined_object'].includes(diagnostic.kind) &&
+              diagnostic.driverMessages.some((message) =>
+                /no such (?:table|column):|Catalog Error: Table with name .+ does not exist|Binder Error: Referenced column .+ not found/i.test(
+                  message,
+                ),
+              );
+          if (!missingStorage) throw cause;
           throw new Error(
             'Fact catalog search storage is unavailable: run db:migrate and backfillCatalogSearch() before text searches.',
             { cause },

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtObject, type SmrtObjectOptions } from '../object';
-import { smrt } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
 
 @smrt()
@@ -22,6 +22,10 @@ class PersistenceNormalizationProbe extends SmrtObject {
       ...super.transformJSON(data),
       sourceText: `serialized:${data.sourceText}`,
     };
+  }
+
+  protected override getPersistenceDerivedColumns(): readonly string[] {
+    return [...super.getPersistenceDerivedColumns(), 'derived_text'];
   }
 
   protected override normalizePersistenceData(
@@ -62,9 +66,173 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       }
     });
     afterEach(async () => {
+      vi.restoreAllMocks();
       await db?.close?.();
     });
 
+    it('normalization cannot restore the previous framework revision', async () => {
+      const instance = new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'first',
+      });
+      await instance.initialize();
+      await instance.save();
+      const oldRevision = instance.updated_at;
+      const transform = (instance as any).transformJSON.bind(instance);
+      vi.spyOn(instance as any, 'transformJSON').mockImplementation(
+        (data: any) => ({ ...transform(data), updated_at: oldRevision }),
+      );
+      instance.sourceText = 'transform only';
+      await instance.save();
+      const afterTransform = await db.query(
+        `SELECT updated_at FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      expect(
+        new Date(afterTransform.rows[0].updated_at as any).getTime(),
+      ).toBeGreaterThan(new Date(oldRevision!).getTime());
+      const revision = instance.updated_at;
+      vi.spyOn(instance as any, 'normalizePersistenceData').mockReturnValue({
+        updated_at: revision,
+      });
+      instance.sourceText = 'normalizer override';
+      await expect(instance.save()).rejects.toThrow(
+        'Undeclared persistence derived column',
+      );
+      const afterNormalization = await db.query(
+        `SELECT updated_at FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      expect(
+        new Date(afterNormalization.rows[0].updated_at as any).getTime(),
+      ).toBe(new Date(revision!).getTime());
+      expect(instance.updated_at).toEqual(revision);
+    });
+    it.each([
+      'id',
+      'tenant_id',
+      'updated_at',
+      'source_text',
+      'unknown_column',
+    ])('rejects undeclared %s without writing', async (column) => {
+      const instance = await new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'retained',
+      }).initialize();
+      await instance.save();
+      const originalRevision = instance.updated_at;
+      const before = await db.query(
+        `SELECT * FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      vi.spyOn(instance as any, 'normalizePersistenceData').mockReturnValue({
+        [column]: 'replacement',
+      });
+      await expect(instance.save()).rejects.toThrow(
+        'Undeclared persistence derived column',
+      );
+      const after = await db.query(
+        `SELECT * FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      expect(after.rows).toEqual(before.rows);
+      expect(instance.updated_at).toEqual(originalRevision);
+    });
+    it.each([
+      'id',
+      'slug',
+      'tenant_id',
+      'created_at',
+      'updated_at',
+      '_meta_type',
+      '_meta_data',
+      'unknown_column',
+    ])('rejects invalid %s declaration before normalization', async (column) => {
+      const instance = await new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'retained',
+      }).initialize();
+      await instance.save();
+      const originalRevision = instance.updated_at;
+      const before = await db.query(
+        `SELECT * FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      vi.spyOn(instance as any, 'getPersistenceDerivedColumns').mockReturnValue(
+        [column],
+      );
+      const normalize = vi.spyOn(instance as any, 'normalizePersistenceData');
+      await expect(instance.save()).rejects.toThrow(
+        'Invalid persistence derived column declaration',
+      );
+      expect(normalize).not.toHaveBeenCalled();
+      const after = await db.query(
+        `SELECT * FROM ${instance.tableName} WHERE id = ?`,
+        instance.id,
+      );
+      expect(after.rows).toEqual(before.rows);
+      expect(instance.updated_at).toEqual(originalRevision);
+    });
+    it('rejects a declared custom tenant field before normalization', async () => {
+      const instance = await new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'retained',
+      }).initialize();
+      await instance.save();
+      const getFields = ObjectRegistry.getFields.bind(ObjectRegistry);
+      vi.spyOn(ObjectRegistry, 'getFields').mockImplementation((name) => {
+        const fields = new Map(getFields(name));
+        const source = fields.get('sourceText');
+        if (source)
+          fields.set('sourceText', {
+            ...source,
+            __tenancy: { isTenantIdField: true },
+          });
+        return fields;
+      });
+      vi.spyOn(instance as any, 'getPersistenceDerivedColumns').mockReturnValue(
+        ['source_text'],
+      );
+      const normalize = vi.spyOn(instance as any, 'normalizePersistenceData');
+      await expect(instance.save()).rejects.toThrow(
+        'Invalid persistence derived column declaration',
+      );
+      expect(normalize).not.toHaveBeenCalled();
+    });
+    it('rejects a declared natural conflict column before normalization', async () => {
+      const instance = await new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'retained',
+      }).initialize();
+      await instance.save();
+      vi.spyOn(ObjectRegistry, 'getConflictColumns').mockReturnValue([
+        'source_text',
+      ]);
+      vi.spyOn(instance as any, 'getPersistenceDerivedColumns').mockReturnValue(
+        ['source_text'],
+      );
+      const normalize = vi.spyOn(instance as any, 'normalizePersistenceData');
+      await expect(instance.save()).rejects.toThrow(
+        'Invalid persistence derived column declaration',
+      );
+      expect(normalize).not.toHaveBeenCalled();
+    });
+    it('passes a frozen final-row copy to normalization', async () => {
+      const instance = await new PersistenceNormalizationProbe({
+        db,
+        sourceText: 'retained',
+      }).initialize();
+      const normalize = (instance as any).normalizePersistenceData.bind(
+        instance,
+      );
+      vi.spyOn(instance as any, 'normalizePersistenceData').mockImplementation(
+        (row: any) => {
+          expect(Object.isFrozen(row)).toBe(true);
+          return normalize(row);
+        },
+      );
+      await instance.save();
+    });
     for (const insertOnly of [false, true]) {
       it(`merges returned derived columns into ${insertOnly ? 'strict insert' : 'upsert'} and subsequent update`, async () => {
         const instance = new PersistenceNormalizationProbe({

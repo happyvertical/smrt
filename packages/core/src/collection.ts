@@ -5240,37 +5240,38 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         limit,
         minSimilarity,
         eligible: async (ids) => {
-          // Each EXISTS is a PK lookup AND the complete read predicate. A
-          // single fixed-size bit string crosses the application DB boundary,
-          // never the potentially unbounded set of eligible application IDs.
-          const params: unknown[] = [];
-          const cases = ids.map((id) => {
-            const parameterOffset = params.length + 1;
-            params.push(id, ...whereValues);
-            const predicate = whereSql
-              .trim()
-              .replace(/^WHERE\s+/i, '')
-              .replace(
-                /\$(\d+)/g,
-                (_, index) => `$${Number(index) + parameterOffset}`,
-              );
-            return `CASE WHEN EXISTS (SELECT 1 FROM ${this.tableName}
-              WHERE id = $${parameterOffset}${predicate ? ` AND (${predicate})` : ''})
-              THEN '1' ELSE '0' END`;
-          });
-          const { rows } = await this.db.query(
-            `SELECT ${cases.join(' || ')} AS eligibility`,
-            ...params,
-          );
-          const mask = rows[0]?.eligibility;
-          if (
-            typeof mask !== 'string' ||
-            !/^[01]+$/.test(mask) ||
-            mask.length !== ids.length
-          ) {
-            throw new Error('Invalid semantic search eligibility result');
+          // Bind the full scoped predicate once, not once per embedding. Only
+          // a scalar mask crosses the application DB boundary. Keep candidate
+          // binds within the remaining conservative SQLite budget; predicates
+          // already larger than that budget retain their existing support.
+          const chunkSize = Math.max(1, 999 - whereValues.length);
+          const eligible: boolean[] = [];
+          for (let offset = 0; offset < ids.length; offset += chunkSize) {
+            const chunk = ids.slice(offset, offset + chunkSize);
+            const cases = chunk.map(
+              (_, index) =>
+                `CASE WHEN EXISTS (SELECT 1 FROM eligible_scope
+                WHERE eligible_id = $${whereValues.length + index + 1})
+                THEN '1' ELSE '0' END`,
+            );
+            const { rows } = await this.db.query(
+              `WITH eligible_scope AS (
+                SELECT id AS eligible_id FROM ${this.tableName} ${whereSql}
+              ) SELECT ${cases.join(' || ')} AS eligibility`,
+              ...whereValues,
+              ...chunk,
+            );
+            const mask = rows[0]?.eligibility;
+            if (
+              typeof mask !== 'string' ||
+              !/^[01]+$/.test(mask) ||
+              mask.length !== chunk.length
+            ) {
+              throw new Error('Invalid semantic search eligibility result');
+            }
+            eligible.push(...[...mask].map((bit) => bit === '1'));
           }
-          return [...mask].map((bit) => bit === '1');
+          return eligible;
         },
       },
     );

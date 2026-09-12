@@ -236,3 +236,10 @@ Text fallback is selected by core's provider-origin availability result: only
 missing embedding configuration or a failed query embedding enables it. Errors
 from authorization, ranking, SQL, hydration, or result hooks propagate unchanged,
 even when a caller throws `EmbeddingUnavailableError` from those operations.
+
+Catalog text-read readiness preserves database permission, transient and unknown
+errors unchanged. Only recognized missing-table/column driver diagnostics receive
+the migration/backfill instruction, retaining the original error as cause.
+`Fact` declares `catalog_search` as its permitted final derived column; custom
+normalization must preserve that declaration and cannot replace framework
+identity, tenant, revision or conflict columns.

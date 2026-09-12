@@ -228,7 +228,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       );
       expect(applicationCalls).toHaveLength(3);
       for (const [sql] of applicationCalls) {
-        expect(sql).toMatch(/^SELECT CASE WHEN EXISTS/);
+        expect(sql).toMatch(/^WITH eligible_scope AS/);
         expect(sql).toContain('AS eligibility');
         expect(sql).not.toMatch(/SELECT (?:\*|id) FROM/);
         expect(
@@ -242,6 +242,32 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       expect(
         embeddingCalls.every(([sql]) => String(sql).includes('LIMIT 64')),
       ).toBe(true);
+    });
+    it.each([
+      900, 970, 1100,
+    ])('supports a %i-ID predicate without multiplying eligibility binds', async (count) => {
+      await seed(70);
+      const ids = Array.from({ length: count }, (_, index) => idFor(index + 2));
+      const result = await collection.semanticSearchIds('query', {
+        limit: 3,
+        where: { 'id in': ids, category: 'wanted' },
+      });
+      expect(result.map((row) => row.id)).toEqual([
+        idFor(70),
+        idFor(69),
+        idFor(68),
+      ]);
+      const calls = appQuery.mock.calls.filter(([sql]) =>
+        String(sql).includes('AS eligibility'),
+      );
+      const chunkSize = Math.max(1, 999 - (count + 2));
+      expect(calls).toHaveLength(
+        Math.ceil(64 / chunkSize) + Math.ceil(6 / chunkSize),
+      );
+      for (const [sql, ...params] of calls) {
+        expect(params.length).toBeLessThanOrEqual(Math.max(999, count + 3));
+        expect(String(sql).match(/category/g)).toHaveLength(1);
+      }
     });
     it('honors OR predicates, candidate IDs and child scope, with stable ties', async () => {
       await seed(6);

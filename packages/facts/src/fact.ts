@@ -124,6 +124,10 @@ export class Fact extends SmrtObject {
     }
   }
 
+  protected override getPersistenceDerivedColumns(): readonly string[] {
+    return [...super.getPersistenceDerivedColumns(), 'catalog_search'];
+  }
+
   protected override normalizePersistenceData(
     data: Readonly<Record<string, unknown>>,
   ): Record<string, unknown> {

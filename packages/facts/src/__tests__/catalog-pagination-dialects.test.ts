@@ -1149,6 +1149,67 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         );
       });
 
+      it.each([
+        'permission',
+        'transient',
+        'unknown',
+      ])('preserves %s readiness failure identity', async (kind) => {
+        await facts.create({
+          textRefined: 'readiness sentinel',
+          status: 'active',
+        });
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+          new Error('provider offline'),
+        );
+        const rejection = Object.assign(new Error('readiness sentinel'), {
+          code:
+            kind === 'permission'
+              ? '42501'
+              : kind === 'transient'
+                ? '40001'
+                : 'CUSTOM',
+        });
+        const originalQuery = db.query.bind(db);
+        vi.spyOn(db, 'query').mockImplementation(async (sql, ...params) => {
+          if (String(sql).includes('AS pending')) throw rejection;
+          return originalQuery(sql, ...params);
+        });
+        await expect(
+          facts.browseCatalog('sentinel', { latestOnly: false }),
+        ).rejects.toBe(rejection);
+      });
+      it.each([
+        'column',
+        'table',
+      ])('diagnoses actual missing readiness %s', async (missing) => {
+        await facts.create({
+          textRefined: 'readiness schema',
+          status: 'active',
+        });
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+          new Error('provider offline'),
+        );
+        const originalQuery = db.query.bind(db);
+        vi.spyOn(db, 'query').mockImplementation(async (sql, ...params) => {
+          const query = String(sql).includes('AS pending')
+            ? missing === 'column'
+              ? String(sql).replace(
+                  'catalog_search',
+                  'unavailable_catalog_search',
+                )
+              : String(sql).replace('FROM facts', 'FROM unavailable_facts')
+            : sql;
+          return originalQuery(query, ...params);
+        });
+        const failure = await facts
+          .browseCatalog('schema', { latestOnly: false })
+          .catch((error) => error);
+        expect(failure).toBeInstanceOf(Error);
+        expect(failure.message).toContain(
+          'run db:migrate and backfillCatalogSearch()',
+        );
+        expect(failure.cause).toBeDefined();
+      });
       it('scopes readiness and subtype backfill without widening active tenancy', async () => {
         const tenantA = randomUUID();
         const tenantB = randomUUID();

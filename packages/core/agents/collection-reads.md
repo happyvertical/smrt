@@ -83,3 +83,9 @@ override failures propagate regardless of their error class. Public
 `semanticSearchIds()` keeps its array/throw contract by throwing the returned
 provider error. Consumers must branch on availability, never classify thrown
 `EmbeddingUnavailableError` values from an entire search as provider failures.
+
+Semantic ID eligibility binds its complete beforeList/STI/where predicate once
+in a CTE per candidate chunk. Only the scalar eligibility mask leaves the
+application database. Candidate chunks use the remaining conservative 999-bind
+budget (minimum 1); a predicate already larger than that budget retains the
+adapter’s existing capacity instead of being rejected by a new API limit.
