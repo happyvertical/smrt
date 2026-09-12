@@ -666,7 +666,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
-  private getResolvedItemClassName(): string {
+  protected getResolvedItemClassName(): string {
     return this.getRegisteredItemClass()?.name || this._itemClass.name;
   }
 
@@ -3521,6 +3521,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
   public async create(options: SmrtCreateInput<ModelType>) {
+    const instance = await this.createUnsaved(options);
+    await instance.save();
+    return instance;
+  }
+
+  /** @internal Test creation overrides inside the owning protected boundary. */
+  public static hasBaseCreateLifecycle<T extends SmrtObject>(
+    collection: SmrtCollection<T>,
+  ): boolean {
+    return (
+      collection.create === SmrtCollection.prototype.create &&
+      collection.createUnsaved === SmrtCollection.prototype.createUnsaved
+    );
+  }
+
+  /** Initialize using the same owning path as create(), without persistence. */
+  protected async createUnsaved(options: SmrtCreateInput<ModelType>) {
     let itemClassName = this.getResolvedItemClassName();
 
     // Ensure manifest is loaded before creating instance metadata; save() will
@@ -3549,7 +3566,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (options._insertOnly === true) {
         instance.requireInsertOnSave();
       }
-      await instance.save();
       return instance;
     }
 
@@ -3588,7 +3604,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (options._insertOnly === true) {
       instance.requireInsertOnSave();
     }
-    await instance.save();
     return instance;
   }
 

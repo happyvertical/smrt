@@ -62,6 +62,59 @@ explicit wildcards. Adding operators requires SQL support first.
 STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [query-bounds.md](query-bounds.md).
 
 
+## Junction reads and compatible writes
+
+`byLeft(id, { relationship: 'attachment', limit: 20, offset: 40 })` and
+`byRight()` forward `limit`/`offset` to the collection's existing bounds parser;
+other options remain field filters. Pagination is read-only: `detach()` still
+requires field filters and never deletes a page. Cursor pagination is not part
+of this API; callers can use deterministic limit/offset pages.
+
+`setLinks()` preserves replacement semantics: even retained right IDs get new
+junction IDs/timestamps and delete/create change entries. `detach()` and
+`setLinks()` batch compatible models automatically. Within 100 removed + added
+rows and 900 inserted bind values, a warm SQLite/DuckDB/PostgreSQL operation uses
+constant framework SQL: one snapshot, grouped owned-memory cleanup and delete,
+one multi-row natural-key upsert, and one feed append per nonempty mutation
+phase. Bootstrap, retries, and caller-defined work are excluded. The read
+snapshot and in-memory work remain proportional to link count.
+
+Eligibility is deliberately conservative and rechecked each call: base runtime
+methods/accessors and collection create/attach behavior, one non-STI table,
+compiler-owned declarative validators, no validated cross-package references,
+no embedding generation, no incoming typed references, non-NULL unique
+conflict values with no duplicate input conflict keys, and explicit consent
+from every mutation interceptor. Otherwise the original virtual per-row path
+runs. Larger sets retain that fallback; there is no truncated replacement.
+Polymorphic association cleanup remains grouped through the owning cascade API
+and invalidates every affected table. JSON export adapters retain their ordinary
+lifecycle; unrecognized transaction-only DuckDB handles also fall back.
+The tenancy interceptor consents only without directory dispatch/custom error
+callbacks. Tenant checks and auto-population still run per row. The change-feed
+interceptor appends every row and preserves tenant IDs and tombstones.
+
+Bulk lifecycle preparation and completion are owned by `SmrtObject`; collection
+initialization shares `createUnsaved()` with `create()`. Additional interceptors
+may supply `bulkMutation.compatible()` only if grouped before/persist/after
+phases preserve their behavior and before hooks have no side effects beyond
+instance/context mutation. Preparation can discover an unsupported shape and
+fall back; before hooks must tolerate that rehearsal. Unknown interceptors never
+opt in implicitly.
+The compiler marks its own callback-free validators by function identity.
+
+The whole replacement remains nontransactional unless the caller supplies a
+transaction. A delete group is atomic with its owned-memory cleanup and each
+multi-row insert is atomic, so database failure can leave the deletion phase
+committed without new links. No per-row prefix is promised for a failed batch.
+The batch delete reuses an existing DuckDB transaction when the SDK explicitly
+refuses savepoint nesting before running any work; it never replays a callback.
+The legacy fallback retains its existing detectable nested-transaction refusal
+for ordinary deletes inside caller-owned DuckDB transactions
+([#2824](https://github.com/happyvertical/smrt/issues/2824)).
+Public ordinary `save()` still owns revision CAS; batches only create new
+instances and never use this path to overwrite a loaded revision.
+
+
 ## DispatchBus
 
 - `emit(signalType, payload, metadata)` → creates persistent Dispatch record

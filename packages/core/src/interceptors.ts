@@ -63,6 +63,24 @@ export interface InterceptorContext {
   metadata?: Record<string, unknown>;
 }
 
+/** One instance and its original context in a compatible bulk lifecycle. */
+export interface BulkMutationEntry {
+  instance: SmrtObject;
+  context: InterceptorContext;
+}
+
+/**
+ * Explicit consent to grouped persistence. Unknown mutation interceptors retain
+ * the sequential lifecycle. Compatibility must not perform I/O or mutate state.
+ * Before hooks must be pure apart from instance/context mutation: preparation
+ * can discover an unsupported row shape and return to the ordinary lifecycle.
+ */
+export interface BulkMutationCapability {
+  compatible(className: string): boolean;
+  afterSave?(entries: BulkMutationEntry[]): Promise<void>;
+  afterDelete?(entries: BulkMutationEntry[]): Promise<void>;
+}
+
 /**
  * Options for list operations
  */
@@ -104,6 +122,9 @@ export interface QueryInterceptResult {
  * or return modified data to transform the operation.
  */
 export interface CollectionInterceptor {
+  /** Opt in only when grouping before/persist/after phases is safe. */
+  bulkMutation?: BulkMutationCapability;
+
   /** Unique identifier for this interceptor (for debugging/unregistration) */
   name?: string;
 
@@ -517,6 +538,36 @@ export class GlobalInterceptors {
     }
 
     return result;
+  }
+
+  /** Whether every registered mutation interceptor consents to batching. */
+  static supportsBulkMutation(className: string): boolean {
+    return this.interceptors.every(
+      (interceptor) =>
+        !(
+          interceptor.beforeSave ||
+          interceptor.afterSave ||
+          interceptor.beforeDelete ||
+          interceptor.afterDelete
+        ) || interceptor.bulkMutation?.compatible(className) === true,
+    );
+  }
+
+  /** Run the approved completion once per interceptor, preserving priority. */
+  static async executeBulkAfter(
+    operation: 'afterSave' | 'afterDelete',
+    entries: BulkMutationEntry[],
+  ): Promise<void> {
+    for (const interceptor of this.interceptors) {
+      const bulk = interceptor.bulkMutation?.[operation];
+      if (bulk) {
+        await bulk(entries);
+      } else {
+        for (const { instance, context } of entries) {
+          await interceptor[operation]?.(instance, context);
+        }
+      }
+    }
   }
 
   /**

@@ -709,6 +709,9 @@ async function resolveReferences(
   }
 
   for (const association of plan.polymorphic) {
+    // A caught missing-table DELETE still aborts PostgreSQL's transaction.
+    // Optional/abstract association tables must be checked before mutation.
+    if (!(await ctx.db.tableExists(association.tableName))) continue;
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
       const where: Record<string, unknown> = {
         ...idPredicate('meta_id', batch),

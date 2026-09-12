@@ -314,6 +314,14 @@ describe('classifyDialectMessage keeps DuckDB wording separable (#1578)', () => 
     ).toBe('unique_violation');
   });
 
+  it('recognizes DuckDB multi-row unique violations', () => {
+    expect(
+      classifyDialectMessage(
+        'Constraint Error: PRIMARY KEY or UNIQUE constraint violation: duplicate key "0"',
+      ),
+    ).toBe('unique_violation');
+  });
+
   it('does not read DuckDB foreign-key/check wording as unique', () => {
     expect(
       classifyDialectMessage(

@@ -238,7 +238,7 @@ const DIALECT_MESSAGE_RULES: ReadonlyArray<{
   {
     kind: 'unique_violation',
     pattern:
-      /UNIQUE constraint failed|violates unique constraint|violates primary key constraint|duplicate key value violates/i,
+      /UNIQUE constraint failed|violates unique constraint|violates primary key constraint|duplicate key value violates|PRIMARY KEY or UNIQUE constraint violation/i,
   },
   {
     kind: 'invalid_input',

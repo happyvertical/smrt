@@ -148,6 +148,8 @@ import {
   ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
   FRAMEWORK_OPERATIONAL_TABLES,
+  POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
@@ -320,6 +322,9 @@ export interface AppendChangeInput {
   tenantId?: string | null;
 }
 
+/** A batch of mutations to append as one framework database statement. */
+export type AppendChangeBatch = readonly AppendChangeInput[];
+
 /** Retention bounds for {@link pruneChangeFeed}. At least one is required. */
 export interface ChangeFeedRetention {
   /** Prune entries older than this many milliseconds. */
@@ -472,6 +477,8 @@ const VALID_OPERATIONS: ReadonlySet<string> = new Set([
 type DatabaseWithConfig = DatabaseInterface & {
   config?: { type?: string; url?: string };
   type?: string;
+  exportTable?: unknown;
+  client?: { constructor?: { name?: string }; connection?: unknown };
 };
 
 function getEngine(
@@ -479,10 +486,22 @@ function getEngine(
   typeHint?: string,
 ): ReturnType<typeof detectEngine> {
   const withConfig = db as DatabaseWithConfig;
-  return detectEngine(
+  const engine = detectEngine(
     db.url || withConfig.config?.url || '',
     typeHint || withConfig.type || withConfig.config?.type,
   );
+  // DuckDB can use ':memory:' like SQLite, so URL detection alone resolves it
+  // to SQLite. The public connection identity survives transaction wrappers,
+  // unlike root-only adapter methods; both native and JSON-on-DuckDB need
+  // DuckDB's JSON string extraction.
+  const clientName = withConfig.client?.constructor?.name?.toLowerCase() ?? '';
+  const isDuckDbConnection =
+    clientName.includes('duckdb') ||
+    (withConfig.client !== undefined && 'connection' in withConfig.client);
+  if (engine === 'sqlite' && isDuckDbConnection) {
+    return 'duckdb';
+  }
+  return engine;
 }
 
 /**
@@ -584,12 +603,14 @@ async function postgresChangeFeedHelpersCurrent(
     await db.query(
       `SELECT
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name`,
     ),
   );
   return Boolean(
     rows[0]?.function_name &&
+      rows[0]?.batch_function_name &&
       rows[0]?.drain_function_name &&
       rows[0]?.pending_table_name,
   );
@@ -600,6 +621,7 @@ async function getPostgresChangeFeedSchemaState(
 ): Promise<{
   tableExists: boolean;
   functionExists: boolean;
+  batchFunctionExists: boolean;
   pendingTableExists: boolean;
   drainFunctionExists: boolean;
   createdAtType: string | null;
@@ -609,6 +631,7 @@ async function getPostgresChangeFeedSchemaState(
       `SELECT
          to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
+         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name,
          ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
          (
@@ -623,6 +646,7 @@ async function getPostgresChangeFeedSchemaState(
   return {
     tableExists: Boolean(rows[0]?.table_name),
     functionExists: Boolean(rows[0]?.function_name),
+    batchFunctionExists: Boolean(rows[0]?.batch_function_name),
     pendingTableExists: Boolean(rows[0]?.pending_table_name),
     drainFunctionExists: Boolean(rows[0]?.drain_function_name),
     createdAtType: rows[0]?.created_at_type
@@ -704,6 +728,7 @@ export async function ensurePostgresChangeFeedHelpers(
   if (state.createdAtType !== 'timestamp with time zone') return;
   if (
     state.functionExists &&
+    state.batchFunctionExists &&
     state.pendingTableExists &&
     state.drainFunctionExists
   ) {
@@ -722,6 +747,7 @@ export async function ensureChangeFeedTable(
     if (
       state.tableExists &&
       state.functionExists &&
+      state.batchFunctionExists &&
       state.pendingTableExists &&
       state.drainFunctionExists &&
       state.createdAtType === 'timestamp with time zone'
@@ -906,6 +932,122 @@ export async function appendChange(
   // Unreachable: the loop returns a seq or throws on the final attempt. Present
   // so the function satisfies its `Promise<number | null>` contract structurally.
   throw new Error('appendChange exhausted retries without allocating a seq');
+}
+
+/**
+ * Append a mutation batch with one feed row per input entry.
+ *
+ * The batch is deliberately one statement per supported dialect.  In
+ * particular, PostgreSQL enters the existing append helper from one
+ * framework-owned function call, so a caller transaction still stages every
+ * entry, preserves rollback/failure isolation, and never waits on the feed
+ * head.  Direct batches allocate contiguous sequences in input order.
+ */
+export async function appendChanges(
+  db: DatabaseInterface,
+  inputs: AppendChangeBatch,
+): Promise<Array<number | null>> {
+  if (inputs.length === 0) return [];
+  const entries = inputs.map((input) => {
+    const table = input.table?.trim();
+    if (!table)
+      throw new Error('appendChanges requires a non-empty table name');
+    const operation = input.operation ?? 'update';
+    if (!VALID_OPERATIONS.has(operation)) {
+      throw new Error(
+        `appendChanges operation must be one of create/update/delete, got '${String(input.operation)}'`,
+      );
+    }
+    return {
+      table,
+      rowId: input.rowId ?? null,
+      operation,
+      tenantId: input.tenantId ?? null,
+      timestamp: new Date().toISOString(),
+    };
+  });
+  const engine = getEngine(db);
+  const p = placeholders(db);
+  const payload = JSON.stringify(entries);
+  const sql =
+    engine === 'postgres'
+      ? `SELECT entry_index, allocated_seq, error_code, error_message FROM ${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME}(${p(1)}::jsonb)`
+      : engine === 'sqlite'
+        ? `WITH input AS (SELECT CAST(key AS INTEGER) AS entry_index, json_extract(value, '$.table') AS table_name, json_extract(value, '$.rowId') AS row_id, json_extract(value, '$.operation') AS operation, json_extract(value, '$.tenantId') AS tenant_id, json_extract(value, '$.timestamp') AS created_at FROM json_each(${p(1)})), numbered AS (SELECT *, COALESCE((SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE}), 0) + row_number() OVER (ORDER BY entry_index) AS seq FROM input) INSERT INTO ${CHANGE_FEED_TABLE} (seq, table_name, row_id, operation, tenant_id, created_at) SELECT seq, table_name, row_id, operation, tenant_id, created_at FROM numbered RETURNING seq`
+        : `WITH input AS (SELECT CAST(key AS INTEGER) AS entry_index, json_extract_string(value, '$.table') AS table_name, json_extract_string(value, '$.rowId') AS row_id, json_extract_string(value, '$.operation') AS operation, json_extract_string(value, '$.tenantId') AS tenant_id, CAST(json_extract_string(value, '$.timestamp') AS TIMESTAMP) AS created_at FROM json_each(${p(1)})), numbered AS (SELECT *, COALESCE((SELECT MAX(seq) FROM ${CHANGE_FEED_TABLE}), 0) + row_number() OVER (ORDER BY entry_index) AS seq FROM input) INSERT INTO ${CHANGE_FEED_TABLE} (seq, table_name, row_id, operation, tenant_id, created_at) SELECT seq, table_name, row_id, operation, tenant_id, created_at FROM numbered RETURNING seq`;
+  const drainedSignals = await drainBeforeAppend(db);
+  const settleDrainedSignals = (sequenced: boolean): void => {
+    if (drainedSignals.length === 0) return;
+    if (sequenced) publishSignals(db, drainedSignals);
+    else queueDeferredSignals(db, drainedSignals);
+  };
+  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+    try {
+      const rows = getQueryRows(
+        await withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+          db.query(sql, payload),
+        ),
+      );
+      if (engine === 'postgres') {
+        const failure = rows.find((row) => row.error_code != null);
+        if (failure) {
+          const error = new Error(
+            String(
+              failure.error_message ||
+                'PostgreSQL change-feed batch append failed',
+            ),
+          ) as Error & { code: string };
+          error.code = String(failure.error_code);
+          throw error;
+        }
+        if (rows.length !== entries.length) {
+          throw new Error(
+            'PostgreSQL change-feed batch append returned an incomplete result',
+          );
+        }
+        const result = Array<number | null>(entries.length).fill(null);
+        const seenIndexes = new Set<number>();
+        for (const row of rows) {
+          const index = Number(row.entry_index);
+          if (
+            !Number.isInteger(index) ||
+            index < 0 ||
+            index >= result.length ||
+            seenIndexes.has(index)
+          ) {
+            throw new Error(
+              'PostgreSQL change-feed batch append returned invalid indexes',
+            );
+          }
+          seenIndexes.add(index);
+          result[index] =
+            row.allocated_seq == null ? null : toSeqNumber(row.allocated_seq);
+        }
+        if (result.some((seq) => seq === null)) noteStagedAppend(db);
+        settleDrainedSignals(!result.some((seq) => seq === null));
+        for (const seq of result)
+          if (seq != null) recordUncommittedDrainMark(db, seq);
+        return result;
+      }
+      if (rows.length !== entries.length)
+        throw new Error(
+          'Change feed batch append returned an incomplete result',
+        );
+      const result = rows
+        .map((row) => toSeqNumber(row.seq))
+        .sort((a, b) => a - b);
+      settleDrainedSignals(true);
+      return result;
+    } catch (error) {
+      if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+        queueDeferredSignals(db, drainedSignals);
+        throw error;
+      }
+    }
+  }
+  throw new Error(
+    'appendChanges exhausted retries without allocating a sequence',
+  );
 }
 
 /**
@@ -1791,6 +1933,26 @@ export function registerChangeFeedWriter(): void {
     async afterDelete(instance: SmrtObject): Promise<void> {
       await appendForInstance(instance, 'delete');
     },
+
+    bulkMutation: {
+      compatible: () => true,
+      async afterSave(entries): Promise<void> {
+        await recordInstanceChanges(
+          entries.map(({ instance, context }) => ({
+            instance,
+            operation:
+              context.metadata?.[CHANGE_FEED_WAS_PERSISTED_KEY] === true
+                ? 'update'
+                : 'create',
+          })),
+        );
+      },
+      async afterDelete(entries): Promise<void> {
+        await recordInstanceChanges(
+          entries.map(({ instance }) => ({ instance, operation: 'delete' })),
+        );
+      },
+    },
   });
 }
 
@@ -1859,6 +2021,74 @@ async function appendForInstance(
     }
   } catch (error) {
     warnAppendFailureOnce(db, table, error);
+  }
+}
+
+/**
+ * Record a collection mutation through one batch append and publish its direct
+ * entries in feed order.  The collection lifecycle supplies one database
+ * context; malformed or framework-owned instances are skipped just as the
+ * single-instance writer does.
+ */
+export async function recordInstanceChanges(
+  entries: readonly { instance: SmrtObject; operation: ChangeOperation }[],
+): Promise<void> {
+  const prepared: Array<{
+    db: DatabaseInterface;
+    input: AppendChangeInput;
+  }> = [];
+  for (const entry of entries) {
+    try {
+      const table = entry.instance.tableName;
+      if (!isChangeFeedObservableTable(table)) continue;
+      const id = (entry.instance as { id?: unknown }).id;
+      const tenantId = (entry.instance as unknown as Record<string, unknown>)
+        .tenantId;
+      prepared.push({
+        db: entry.instance.db,
+        input: {
+          table,
+          rowId: typeof id === 'string' && id ? id : null,
+          operation: entry.operation,
+          tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+        },
+      });
+    } catch {
+      // Preserve the best-effort behavior of appendForInstance for test
+      // doubles and partially initialized instances.
+    }
+  }
+  if (prepared.length === 0) return;
+  const db = prepared[0].db;
+  if (prepared.some((entry) => entry.db !== db)) {
+    await Promise.all(
+      prepared.map(({ input, db: entryDb }) => appendChange(entryDb, input)),
+    );
+    return;
+  }
+  try {
+    const sequences = await appendChanges(
+      db,
+      prepared.map(({ input }) => input),
+    );
+    for (let index = 0; index < prepared.length; index++) {
+      const seq = sequences[index];
+      if (seq == null) continue;
+      const input = prepared[index].input;
+      try {
+        publishChangeSignal(db, {
+          table: input.table,
+          operation: input.operation ?? 'update',
+          rowId: input.rowId ?? null,
+          tenantId: input.tenantId ?? null,
+          seq,
+        });
+      } catch (error) {
+        warnSignalPublishFailureOnce(db, input.table, error);
+      }
+    }
+  } catch (error) {
+    warnAppendFailureOnce(db, prepared[0].input.table, error);
   }
 }
 

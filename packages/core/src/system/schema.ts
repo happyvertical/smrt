@@ -354,11 +354,18 @@ export const CREATE_POSTGRES_SMRT_CHANGES_TABLE =
 /** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
 
+/** PostgreSQL one-statement batch wrapper around the isolated append helper. */
+export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME =
+  '_smrt_append_changes';
+
 /** Legacy helper identity used before PostgreSQL Date values became instants. */
 export const LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp without time zone)`;
 
 /** Exact PostgreSQL identity used for catalog lookup of the append helper. */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp with time zone)`;
+
+/** PostgreSQL identity of the one-statement batch append helper. */
+export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME}(jsonb)`;
 
 /**
  * Body marker stamped into both PostgreSQL change-feed helpers (#2649).
@@ -369,7 +376,7 @@ export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_
  * replaced. Bump it whenever either helper's body changes in a way an existing
  * database must pick up.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v3';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v4';
 
 /** PostgreSQL helper that sequences staged change-feed appends (#2649). */
 export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME = '_smrt_drain_changes';
@@ -671,6 +678,104 @@ END;
 $smrt_change_feed$;
 `;
 
+/**
+ * PostgreSQL batch append helper. It makes the staged/direct decision before
+ * its own writes, then appends every element through that one path. This is
+ * necessary because a direct first insert assigns the transaction id that
+ * later entries must not mistake for a caller-owned write transaction.
+ */
+export const CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME}(
+  p_entries JSONB
+)
+RETURNS TABLE(
+  entry_index INTEGER,
+  allocated_seq BIGINT,
+  error_code TEXT,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $smrt_change_feed_batch$
+-- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+DECLARE
+  v_deferred BOOLEAN;
+  v_error_code TEXT;
+  v_error_message TEXT;
+BEGIN
+  BEGIN
+    v_deferred := pg_current_xact_id_if_assigned() IS NOT NULL
+      AND to_regclass('_smrt_changes_pending') IS NOT NULL;
+
+    IF v_deferred THEN
+      RETURN QUERY
+      WITH input AS (
+        SELECT entries.ordinality::INTEGER - 1 AS entry_index, entries.value
+        FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+          WITH ORDINALITY AS entries(value, ordinality)
+      ), staged AS (
+        INSERT INTO _smrt_changes_pending (
+          table_name, row_id, operation, tenant_id, created_at
+        )
+        SELECT
+          input.value->>'table',
+          input.value->>'rowId',
+          input.value->>'operation',
+          input.value->>'tenantId',
+          (input.value->>'timestamp')::TIMESTAMPTZ
+        FROM input
+        ORDER BY input.entry_index
+        RETURNING 1
+      )
+      SELECT input.entry_index, NULL::BIGINT, NULL::TEXT, NULL::TEXT
+      FROM input
+      ORDER BY input.entry_index;
+      RETURN;
+    END IF;
+
+    RETURN QUERY
+    WITH input AS (
+      SELECT entries.ordinality::INTEGER - 1 AS entry_index, entries.value
+      FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+        WITH ORDINALITY AS entries(value, ordinality)
+    ), numbered AS (
+      SELECT
+        input.*,
+        COALESCE((SELECT MAX(seq) FROM _smrt_changes), 0)
+          + row_number() OVER (ORDER BY input.entry_index) AS new_seq
+      FROM input
+    ), inserted AS (
+      INSERT INTO _smrt_changes (
+        seq, table_name, row_id, operation, tenant_id, created_at
+      )
+      SELECT
+        numbered.new_seq,
+        numbered.value->>'table',
+        numbered.value->>'rowId',
+        numbered.value->>'operation',
+        numbered.value->>'tenantId',
+        (numbered.value->>'timestamp')::TIMESTAMPTZ
+      FROM numbered
+      ORDER BY numbered.entry_index
+      RETURNING seq
+    )
+    SELECT
+      numbered.entry_index,
+      numbered.new_seq,
+      NULL::TEXT,
+      NULL::TEXT
+    FROM numbered
+    ORDER BY numbered.entry_index;
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT NULL::INTEGER, NULL::BIGINT, v_error_code, v_error_message;
+  END;
+END;
+$smrt_change_feed_batch$;
+`;
+
 const POSTGRES_CHANGE_FEED_PENDING_DDL =
   CREATE_POSTGRES_SMRT_CHANGES_PENDING_TABLE.split(';')
     .map((statement) => statement.trim())
@@ -704,6 +809,9 @@ $smrt_change_feed_drain_ddl$;
   EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
+  EXECUTE $smrt_change_feed_batch_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION.trim()}
+$smrt_change_feed_batch_ddl$;
 END;
 $smrt_replace_change_feed$;
 `;
@@ -736,6 +844,10 @@ BEGIN
       FROM pg_proc
       WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}')
         AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+    ) OR NOT EXISTS (
+      SELECT 1 FROM pg_proc
+      WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY}')
+        AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
     );
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
   DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
@@ -746,6 +858,9 @@ $smrt_change_feed_drain_ddl$;
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
+    EXECUTE $smrt_change_feed_batch_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION.trim()}
+$smrt_change_feed_batch_ddl$;
   END IF;
 END;
 $smrt_ensure_change_feed$;
@@ -784,6 +899,10 @@ BEGIN
       FROM pg_proc
       WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}')
         AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+    ) OR NOT EXISTS (
+      SELECT 1 FROM pg_proc
+      WHERE oid = to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY}')
+        AND prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
     );
 ${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
 ${POSTGRES_CHANGE_FEED_PENDING_DDL}
@@ -795,6 +914,9 @@ $smrt_change_feed_drain_ddl$;
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
+    EXECUTE $smrt_change_feed_batch_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION.trim()}
+$smrt_change_feed_batch_ddl$;
   END IF;
 END;
 $smrt_ensure_change_feed_schema$;

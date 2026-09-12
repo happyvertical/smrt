@@ -24,7 +24,8 @@
  */
 
 import { SmrtCollection, type SmrtCreateInput } from './collection';
-import type { SmrtObject } from './object';
+import { GlobalInterceptors } from './interceptors';
+import { SmrtObject } from './object';
 
 /**
  * Options passed to `attach` / `setLinks` — written into the created junction row.
@@ -37,10 +38,16 @@ import type { SmrtObject } from './object';
 export type JunctionAttachOptions = Record<string, unknown>;
 
 /**
- * Options passed to `byLeft` / `byRight` / `detach` — additional WHERE filters
- * narrowing the operation. Keys must match camelCase column names.
+ * Options passed to `byLeft` / `byRight` / `detach`.
+ *
+ * `limit` and `offset` bound reads made through `byLeft` / `byRight`; all
+ * remaining keys are additional WHERE filters narrowing the operation. Keys
+ * must match camelCase column names.
  */
-export type JunctionFilterOptions = Record<string, unknown>;
+export type JunctionFilterOptions = Record<string, unknown> & {
+  limit?: number;
+  offset?: number;
+};
 
 function camelToSnake(name: string): string {
   return name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
@@ -96,11 +103,14 @@ export abstract class SmrtJunction<
     leftId: string,
     opts: JunctionFilterOptions = {},
   ): Promise<TItem[]> {
+    const { limit, offset, ...where } = opts;
     return (await this.list({
       // Spread opts FIRST so the fixed key always wins — prevents a
       // caller-supplied `{ [leftField]: otherId }` from retargeting the
       // query when opts is forwarded from untrusted input.
-      where: { ...opts, [this.leftField]: leftId },
+      where: { ...where, [this.leftField]: leftId },
+      limit,
+      offset,
       ...(this.sortField
         ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
         : {}),
@@ -115,8 +125,11 @@ export abstract class SmrtJunction<
     rightId: string,
     opts: JunctionFilterOptions = {},
   ): Promise<TItem[]> {
+    const { limit, offset, ...where } = opts;
     return (await this.list({
-      where: { ...opts, [this.rightField]: rightId },
+      where: { ...where, [this.rightField]: rightId },
+      limit,
+      offset,
       ...(this.sortField
         ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
         : {}),
@@ -165,13 +178,18 @@ export abstract class SmrtJunction<
     rightId: string,
     opts: JunctionFilterOptions = {},
   ): Promise<void> {
+    // Read bounds never narrow the mutation snapshot.
+    const filters = { ...opts };
+    delete filters.limit;
+    delete filters.offset;
     const links = (await this.list({
       where: {
-        ...opts,
+        ...filters,
         [this.leftField]: leftId,
         [this.rightField]: rightId,
       },
     })) as TItem[];
+    if (await SmrtObject.tryJunctionBatch(links, [])) return;
     for (const link of links) {
       await (link as unknown as { delete(): Promise<void> }).delete();
     }
@@ -185,6 +203,9 @@ export abstract class SmrtJunction<
    *  2. Creates a new row for each `rightId`, spreading `opts` into the row data.
    *  3. If `positionField` is set and `opts` doesn't specify it, assigns the array index.
    *
+   * Compatible models use grouped persistence while preserving delete/create
+   * identity and feed semantics. Unsupported hooks, overrides, shapes, or batch
+   * bounds retain the sequential path; see agents/object-runtime.md.
    * Not transactional — partial failure leaves the table in a mixed state.
    * For atomic replaces, wrap the call in your own DB transaction.
    */
@@ -203,6 +224,37 @@ export abstract class SmrtJunction<
     const existing = (await this.list({
       where: { ...snapshotOpts, [this.leftField]: leftId },
     })) as TItem[];
+    // Custom create/attach implementations remain authoritative. No opt-in is
+    // inferred from a method name, class name, or interceptor registration name.
+    if (
+      SmrtObject.hasBaseJunctionLifecycle(this._itemClass.prototype) &&
+      GlobalInterceptors.supportsBulkMutation(
+        this.getResolvedItemClassName(),
+      ) &&
+      new Set(rightIds).size === rightIds.length &&
+      this.attach === SmrtJunction.prototype.attach &&
+      SmrtCollection.hasBaseCreateLifecycle(this) &&
+      rightIds.length + existing.length <= 100 &&
+      !Object.keys(opts).some(
+        (key) =>
+          key.startsWith('_') || ['db', 'ai', 'id', 'slug'].includes(key),
+      )
+    ) {
+      const added: TItem[] = [];
+      for (let i = 0; i < rightIds.length; i++) {
+        added.push(
+          (await this.createUnsaved({
+            ...opts,
+            ...(this.positionField && opts[this.positionField] === undefined
+              ? { [this.positionField]: i }
+              : {}),
+            [this.leftField]: leftId,
+            [this.rightField]: rightIds[i],
+          } as SmrtCreateInput<TItem>)) as TItem,
+        );
+      }
+      if (await SmrtObject.tryJunctionBatch(existing, added)) return;
+    }
     for (const link of existing) {
       await (link as unknown as { delete(): Promise<void> }).delete();
     }

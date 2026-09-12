@@ -24,6 +24,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendChange,
+  appendChanges,
   bumpChangeFeed,
   CHANGE_FEED_INTERCEPTOR_NAME,
   CHANGE_FEED_TABLE,
@@ -740,6 +741,7 @@ describe('change feed spine (issue #1758)', () => {
             rows: [
               {
                 created_at_type: 'timestamp with time zone',
+                batch_function_name: '_smrt_append_changes',
                 drain_function_name: '_smrt_drain_changes',
                 function_name: '_smrt_append_change',
                 pending_table_name: '_smrt_changes_pending',
@@ -900,6 +902,44 @@ describe('change feed spine (issue #1758)', () => {
   });
 
   describe('manual bump escape hatch', () => {
+    it('appends one ordered feed row per batch mutation', async () => {
+      const query = vi.spyOn(db, 'query');
+      const sequences = await appendChanges(db, [
+        { table: 'batch_widgets', rowId: 'one', operation: 'create' },
+        {
+          table: 'batch_widgets',
+          rowId: 'two',
+          operation: 'update',
+          tenantId: 'tenant-a',
+        },
+        { table: 'batch_widgets', rowId: 'three', operation: 'delete' },
+      ]);
+
+      expect(sequences).toEqual([1, 2, 3]);
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(await allChanges(db)).toMatchObject([
+        { seq: 1, table: 'batch_widgets', rowId: 'one', operation: 'create' },
+        {
+          seq: 2,
+          table: 'batch_widgets',
+          rowId: 'two',
+          operation: 'update',
+          tenantId: 'tenant-a',
+        },
+        { seq: 3, table: 'batch_widgets', rowId: 'three', operation: 'delete' },
+      ]);
+    });
+
+    it('validates every batch mutation before issuing the append', async () => {
+      await expect(
+        appendChanges(db, [
+          { table: 'batch_widgets', rowId: 'one' },
+          { table: '', rowId: 'two' },
+        ]),
+      ).rejects.toThrow(/non-empty table/);
+      expect(await allChanges(db)).toHaveLength(0);
+    });
+
     it('appends a synthetic change row for out-of-band writes', async () => {
       // Raw SQL bypasses the framework write path — invisible to the feed.
       await db.query(

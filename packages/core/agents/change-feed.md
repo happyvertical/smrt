@@ -15,3 +15,22 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 - `getTableVersion(db, table) → number`: the per-table change version (`MAX(seq)` for the table **plus that table's staged-but-undrained count**, so a staged write still moves the ETag and cannot false-304 a client; the sum is monotonic because draining `n` staged rows raises the table's `MAX(seq)` by at least `n`, and both terms are read in ONE statement — separate reads let a drain be counted twice, minting a version a later write re-mints; replica-stable, with no per-process divergence), the ETag source for zero-query conditional GETs (#1765). Advances on any framework write to the table (CRUD and sync-apply, which all `save()`/`delete()`). A table with no retained entry of its own falls back to the global horizon (never a resettable low value) so an all-pruned table cannot false-304 a stale client; only 0 when the feed is empty.
 - Generated `_changes` routes: REST (`GET {basePath}/_changes`, requires `authMiddleware`, otherwise 401 — per-model `api.public` does NOT apply) and SvelteKit (`{routesDir}/_changes/+server.ts`, requires an authenticated principal on `locals`; opt out via `sveltekit.changesRoute.enabled: false`). Query params: `since`, `tables` (comma-separated), `limit`. Responses stay HTTP 200 in the resync state — `resyncRequired` is protocol state, not an error, and `resyncCursor` is the resume cursor after the client completes a full refetch.
 - Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows?, dryRun? })` — scheduled since #2375 by `runRetentionSweep()` (30-day default), so nothing needs to call it directly; `dryRun` counts the same predicate instead of deleting. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable. The age bound is a **prefix** bound — everything below the oldest entry still inside the window — because `created_at` and `seq` are not co-monotonic (writer clocks skew, and a staged entry carries its stage-time stamp into a later-assigned sequence); deleting by timestamp alone could punch a hole in the middle of the retained run, where `since < floor - 1` cannot see it and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
+
+
+## Compatible bulk mutations (#2818)
+
+`appendChanges(db, entries)` validates all inputs before writing and returns one
+sequence (or PostgreSQL staged `null`) per entry in input order. A nonempty batch
+uses one client SQL statement and one set-based insert. The PostgreSQL
+`_smrt_append_changes(jsonb)` helper chooses the staged/direct path once before
+its own writes assign a transaction ID, and retains the same exception isolation
+as the single-row helper. Bootstrap refreshes its body marker and runtime grants
+include this exact helper signature.
+
+The registered feed interceptor explicitly supports grouped lifecycle completion.
+`recordInstanceChanges()` retains observable-table filtering, row/tenant IDs,
+per-row operations, and best-effort failure handling. It publishes each direct
+sequence in order; staged entries publish through the existing committed drain.
+A batch is never replaced with a table-level bump or a single aggregate event.
+The junction caller bounds its batch; the low-level append API does not split
+one logical append into partially committed chunks.
