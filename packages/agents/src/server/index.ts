@@ -27,6 +27,7 @@
  * @module @happyvertical/smrt-agents/server
  */
 
+export type { DataSurfaceActionRowOutcome } from '@happyvertical/smrt-types';
 export type {
   AgentActionContext,
   AgentActionHandler,
@@ -47,7 +48,6 @@ export {
   type DataSurfaceActionEligibility,
   type DataSurfaceActionExecution,
   type DataSurfaceActionPayloadValidation,
-  type DataSurfaceActionRowOutcome,
   type DataSurfaceActionStateStore,
   type DataSurfaceBackgroundActionEnvelope,
   type DataSurfaceBackgroundActionJob,
