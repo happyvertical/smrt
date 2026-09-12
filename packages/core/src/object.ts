@@ -48,6 +48,7 @@ import {
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
+import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { isBatchSafeValidator } from './registry/validator';
@@ -89,6 +90,137 @@ function isDuckDbHugeInt(value: unknown): boolean {
       'hugeint' in value &&
       (typeof value.hugeint === 'number' || typeof value.hugeint === 'bigint'),
   );
+}
+
+const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
+
+type PlainJSONValue =
+  | null
+  | boolean
+  | number
+  | string
+  | PlainJSONValue[]
+  | { [key: string]: PlainJSONValue };
+
+/**
+ * Materialize the values JSON.stringify() would emit without first encoding
+ * them into a string. This keeps toPlainObject() suitable for SvelteKit while
+ * avoiding an encode/decode round trip for every model in a collection.
+ */
+function toPlainJSONValue(
+  value: unknown,
+  key: string,
+  ancestors: object[],
+  applyToJSON = true,
+): PlainJSONValue | typeof PLAIN_JSON_OMITTED {
+  if (value === null) {
+    return null;
+  }
+
+  let valueType = typeof value;
+  if (
+    applyToJSON &&
+    (valueType === 'object' ||
+      valueType === 'function' ||
+      valueType === 'bigint')
+  ) {
+    const toJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === 'function') {
+      value = Reflect.apply(toJSON, value, [key]);
+      if (value === null) return null;
+      valueType = typeof value;
+    }
+  }
+
+  switch (valueType) {
+    case 'string':
+    case 'boolean':
+      return value as string | boolean;
+    case 'number':
+      return Number.isFinite(value as number)
+        ? (value as number) === 0
+          ? 0
+          : (value as number)
+        : null;
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return PLAIN_JSON_OMITTED;
+    case 'bigint':
+      throw new TypeError('Do not know how to serialize a BigInt');
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  // Arrays cannot carry boxed primitive slots; avoid brand checks on this hot path.
+  const isArray = Array.isArray(objectValue);
+  // rawJSON contains an already-encoded primitive. Decode that literal once;
+  // ordinary payloads never encode or decode an intermediate JSON string.
+  if (!isArray && isRawJSON(objectValue)) {
+    return JSON.parse(objectValue.rawJSON) as PlainJSONValue;
+  }
+  switch (isArray ? undefined : getBoxedPrimitiveKind(objectValue)) {
+    case 'number': {
+      const numberValue = +(objectValue as unknown as number);
+      return Number.isFinite(numberValue)
+        ? numberValue === 0
+          ? 0
+          : numberValue
+        : null;
+    }
+    case 'string':
+      return String(objectValue);
+    case 'boolean':
+      return Boolean.prototype.valueOf.call(objectValue);
+    case 'bigint':
+      throw new TypeError('Do not know how to serialize a BigInt');
+  }
+
+  // JSON tracks only the active path: shared siblings are copied independently.
+  // A short stack avoids Set allocation and hashing for typical row payloads.
+  if (ancestors.includes(objectValue)) {
+    throw new TypeError('Converting circular structure to JSON');
+  }
+  ancestors.push(objectValue);
+
+  try {
+    if (isArray) {
+      const result: PlainJSONValue[] = [];
+      // ToLength is observable for array proxies; coerce once before iteration.
+      const length = Math.min(
+        Math.max(Math.trunc(+objectValue.length) || 0, 0),
+        Number.MAX_SAFE_INTEGER,
+      );
+      for (let index = 0; index < length; index++) {
+        const item = toPlainJSONValue(
+          objectValue[index],
+          String(index),
+          ancestors,
+        );
+        result.push(item === PLAIN_JSON_OMITTED ? null : item);
+      }
+      return result;
+    }
+
+    const result: { [key: string]: PlainJSONValue } = {};
+    for (const property of Object.keys(objectValue)) {
+      const item = toPlainJSONValue(objectValue[property], property, ancestors);
+      if (item !== PLAIN_JSON_OMITTED) {
+        if (property === '__proto__') {
+          Object.defineProperty(result, property, {
+            configurable: true,
+            enumerable: true,
+            value: item,
+            writable: true,
+          });
+        } else {
+          result[property] = item;
+        }
+      }
+    }
+    return result;
+  } finally {
+    ancestors.pop();
+  }
 }
 
 /**
@@ -1575,7 +1707,10 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   toPlainObject(): Record<string, unknown> {
-    return JSON.parse(JSON.stringify(this));
+    return toPlainJSONValue(this.toJSON(), '', [], false) as Record<
+      string,
+      unknown
+    >;
   }
 
   /**

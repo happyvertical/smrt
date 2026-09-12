@@ -31,6 +31,25 @@ legacy external string targets retain manifest discovery. Junction column naming
 conventions still use display names. Cached reads retain their tenant rechecks.
 
 
+## Plain-object serialization
+
+`toPlainObject()` materializes the `toJSON()` / `transformJSON()` result directly,
+without an intermediate JSON string for ordinary payloads. Native `JSON.rawJSON()`
+literals are decoded once with `JSON.parse()`. Nested hooks and JSON omission/coercion
+rules still apply. The active ancestor stack rejects cycles while allowing
+shared siblings, which become independent plain copies. Arrays skip boxed-value
+brand checks; other objects use intrinsic brand checks without reading user
+`Symbol.toStringTag` getters. Customize the payload through `transformJSON()`.
+The focused `to-plain-object.test.ts` suite compares legacy output and reports
+warmed, interleaved per-row timings without a flaky timing assertion.
+
+`pnpm --filter @happyvertical/smrt-core test:browser` bundles the production
+`src/plain-json.ts` helper and executes it in Chromium with `process` and
+`JSON.isRawJSON` unavailable. It is an opt-in local/browser release gate rather
+than part of the default core suite: it requires the repository's
+`playwright-core` dependency and an installed Chromium binary. The normal test
+suite covers the same helper through `toPlainObject()` on Node.
+
 ## SmrtCollection Query
 
 Projection, latest-related, facets, counts, and bounded read plans are
