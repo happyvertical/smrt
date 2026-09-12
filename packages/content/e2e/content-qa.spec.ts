@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './fixtures.js';
+import type { Page } from '@playwright/test';
 
 function uniqueSlug(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -12,6 +13,12 @@ function trackPageErrors(page: Page) {
   return errors;
 }
 
+test('content API denies an anonymous browser context', async ({ request }) => {
+  const response = await request.get('/api/v1/contents');
+
+  expect(response.status()).toBe(401);
+});
+
 test('root playground route renders the shared content previews', async ({
   page,
 }) => {
@@ -23,18 +30,35 @@ test('root playground route renders the shared content previews', async ({
     page.getByRole('heading', { name: 'Content Playground' }),
   ).toBeVisible();
   await expect(page.getByText('Reference package previews for')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Article Card/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Content Editor/ })).toBeVisible();
   await expect(
-    page.getByRole('button', { name: /Governance Manager/ }),
+    page.locator(
+      'button[data-playground-entry="@happyvertical/smrt-content:article-card"]',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator(
+      'button[data-playground-entry="@happyvertical/smrt-content:content-editor"]',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.locator(
+      'button[data-playground-entry="@happyvertical/smrt-content:governance-manager"]',
+    ),
   ).toBeVisible();
   await expect(page.locator('[data-hydrated="true"]')).toBeVisible();
 
-  await page.getByRole('button', { name: /Content Editor/ }).click();
+  await page
+    .locator(
+      'button[data-playground-entry="@happyvertical/smrt-content:content-editor"]',
+    )
+    .click();
   await expect(page.getByRole('heading', { name: 'Content Editor' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Edit Content' })).toBeVisible();
 
-  await page.getByRole('button', { name: /Governance Manager/ }).click();
+  await page
+    .locator(
+      'button[data-playground-entry="@happyvertical/smrt-content:governance-manager"]',
+    )
+    .click();
   await expect(
     page.getByRole('heading', { name: 'Governance Manager' }),
   ).toBeVisible();
@@ -54,31 +78,25 @@ test('workspace route supports governed editing and published article viewing', 
   await page.goto('/workspace');
 
   await expect(
-    page.getByRole('heading', { name: 'Contents', exact: true }),
+    page.getByRole('heading', { name: 'Content workspace', exact: true }),
   ).toBeVisible();
-  const nav = page.getByRole('navigation', { name: 'Content QA navigation' });
+  const nav = page.getByRole('navigation', { name: 'Content navigation' });
   await expect(nav.getByRole('link', { name: 'Workspace' })).toBeVisible();
-  await expect(nav.getByRole('link', { name: 'Governance QA' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Governance' })).toBeVisible();
   await expect(
-    nav.getByRole('link', { name: 'Contribution QA' }),
+    nav.getByRole('link', { name: 'Contributions' }),
   ).toBeVisible();
 
-  await page.getByRole('button', { name: 'Add governed article' }).click();
+  await page.getByRole('button', { name: 'Create governed article' }).click();
 
-  await expect(
-    page.getByRole('heading', { name: 'Add New Content' }),
-  ).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Facts' })).toBeVisible();
-
-  await page.locator('#content-edit-form').getByLabel('Title:').fill(articleTitle);
+  await page.locator('input.document-title-input').fill(articleTitle);
   await page
-    .locator('#content-edit-form')
-    .getByLabel('Body:')
+    .locator('[contenteditable="true"]')
     .fill('This governed article was created by the Playwright browser suite.');
   await page
     .getByLabel('Description:')
     .fill('Browser-created governed content for QA coverage.');
-  await page.getByLabel('Status:').selectOption('published');
+  await page.getByLabel('Status').selectOption('published');
 
   await page.getByRole('button', { name: 'Update Content' }).click();
 
@@ -94,11 +112,11 @@ test('workspace route supports governed editing and published article viewing', 
 
   await page.getByRole('link', { name: 'Back to content workspace' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Contents', exact: true }),
+    page.getByRole('heading', { name: 'Content workspace', exact: true }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Governance QA' }).click();
+  await nav.getByRole('link', { name: 'Governance' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Governance Admin' }),
+    page.getByRole('heading', { name: 'Governance rules' }),
   ).toBeVisible();
 
   expect(pageErrors).toEqual([]);
@@ -119,7 +137,7 @@ test('governance admin persists policy, profile, and assignment overrides', asyn
   await page.goto('/governance');
 
   await expect(
-    page.getByRole('heading', { name: 'Governance Admin' }),
+    page.getByRole('heading', { name: 'Governance rules' }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Add policy' }).click();
@@ -185,7 +203,7 @@ test('contribution QA route supports submission, moderation, promotion, and work
   await page.goto('/contributions');
 
   await expect(
-    page.getByRole('heading', { name: 'Contribution Intake and Review' }),
+    page.getByRole('heading', { name: 'Contribution operations' }),
   ).toBeVisible();
 
   const typesSection = page.locator('section', {

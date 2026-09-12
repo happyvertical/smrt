@@ -100,6 +100,7 @@
   "devDependencies": {
     "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "^2.69.1",
     "@sveltejs/package": "^2.5.8",
