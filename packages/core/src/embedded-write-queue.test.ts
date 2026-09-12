@@ -23,8 +23,15 @@
  * it just fails on a wrong `order` array instead of a slow timeout.
  */
 
+import {
+  type DatabaseInterface,
+  NestedTransactionError,
+} from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
-import { withEmbeddedWriteQueue } from './embedded-write-queue';
+import {
+  withEmbeddedWriteQueue,
+  withEmbeddedWriteTransaction,
+} from './embedded-write-queue';
 
 /** A minimal deferred promise for controlling operation completion order. */
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -90,5 +97,65 @@ describe('withEmbeddedWriteQueue', () => {
     const url = '/tmp/embedded-write-queue-test.db';
     const order = await raceTwoWrites({ url }, { url });
     expect(order).toEqual(['A-start', 'A-end', 'B']);
+  });
+});
+
+describe('batch reuse of no-savepoint transactions', () => {
+  it('uses the supplied transaction only after a pre-callback nesting refusal', async () => {
+    const db = {
+      transaction: async () => {
+        throw new NestedTransactionError('no savepoint');
+      },
+    } as unknown as DatabaseInterface;
+    let calls = 0;
+    expect(
+      await withEmbeddedWriteTransaction(
+        db,
+        false,
+        async (bound) => {
+          expect(bound).toBe(db);
+          calls++;
+          return 'complete';
+        },
+        true,
+      ),
+    ).toBe('complete');
+    expect(calls).toBe(1);
+  });
+
+  it('never replays a callback that itself throws a nested-transaction error', async () => {
+    const db = {
+      transaction: async (
+        callback: (bound: DatabaseInterface) => Promise<void>,
+      ) => callback(db),
+    } as unknown as DatabaseInterface;
+    let calls = 0;
+    await expect(
+      withEmbeddedWriteTransaction(
+        db,
+        false,
+        async () => {
+          calls++;
+          throw new NestedTransactionError('callback failed');
+        },
+        true,
+      ),
+    ).rejects.toThrow('callback failed');
+    expect(calls).toBe(1);
+  });
+
+  it('keeps ordinary transaction refusal unchanged without explicit reuse', async () => {
+    const db = {
+      transaction: async () => {
+        throw new NestedTransactionError('no savepoint');
+      },
+    } as unknown as DatabaseInterface;
+    let calls = 0;
+    await expect(
+      withEmbeddedWriteTransaction(db, false, async () => {
+        calls++;
+      }),
+    ).rejects.toThrow('no savepoint');
+    expect(calls).toBe(0);
   });
 });

@@ -497,6 +497,15 @@ export function createTenantInterceptor(
     /**
      * Before save: Validate tenant ID is set and matches context
      */
+    bulkMutation: {
+      // Directory dispatch observes individual writes and remains sequential.
+      // Custom error callbacks may observe partial progress, so also fall back.
+      compatible: (className: string) =>
+        !(opts.dispatchBus && opts.directoryClasses?.includes(className)) &&
+        !opts.onMissingContext &&
+        !opts.onIsolationViolation,
+    },
+
     beforeSave(instance: SmrtObject, context: InterceptorContext): void {
       // Use context.className which is always correct
       // (instance.constructor.name may not match for proxies or plain objects in tests)

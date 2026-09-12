@@ -35,8 +35,10 @@ export {
 // Adapter-agnostic change feed — _smrt_changes log, cursor reads, retention,
 // manual bump escape hatch (issue #1758)
 export {
+  type AppendChangeBatch,
   type AppendChangeInput,
   appendChange,
+  appendChanges,
   bumpChangeFeed,
   CHANGE_FEED_INTERCEPTOR_NAME,
   CHANGE_FEED_TABLE,

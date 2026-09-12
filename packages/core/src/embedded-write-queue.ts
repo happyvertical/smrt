@@ -1,5 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  NestedTransactionError,
+} from '@happyvertical/sql';
 
 /**
  * In-process write serialization for embedded database engines (#2360).
@@ -147,19 +150,37 @@ export async function withEmbeddedWriteTransaction<T>(
   db: DatabaseInterface,
   serialize: boolean,
   operation: (transaction: DatabaseInterface) => Promise<T>,
+  reuseUnsupportedNested = false,
 ): Promise<T> {
   const transaction = db.transaction?.bind(db);
   if (!transaction) {
     throw new Error('Database transaction support is required');
   }
-  return withEmbeddedWriteQueue(db, serialize, () =>
-    transaction((bound) => {
-      if (!serialize) return operation(bound);
-      const active = activeQueueKeys.getStore();
-      return activeQueueKeys.run(
-        new Set([...(active ?? []), queueKey(bound)]),
-        () => operation(bound),
-      );
-    }),
-  );
+  return withEmbeddedWriteQueue(db, serialize, async () => {
+    let entered = false;
+    try {
+      return await transaction((bound) => {
+        entered = true;
+        if (!serialize) return operation(bound);
+        const active = activeQueueKeys.getStore();
+        return activeQueueKeys.run(
+          new Set([...(active ?? []), queueKey(bound)]),
+          () => operation(bound),
+        );
+      });
+    } catch (error) {
+      // The SDK explicitly refuses no-savepoint nesting before invoking the
+      // callback or touching the enclosing transaction. A helper that needs
+      // the caller's atomic scope can use that existing handle directly. Never
+      // replay work when the callback ran, even if it threw the same error.
+      if (
+        reuseUnsupportedNested &&
+        !entered &&
+        error instanceof NestedTransactionError
+      ) {
+        return operation(db);
+      }
+      throw error;
+    }
+  });
 }

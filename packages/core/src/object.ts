@@ -1,7 +1,11 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
-import { runCascadeDelete } from './cascade';
+import {
+  buildCascadePlan,
+  cascadeReferencesTo,
+  runCascadeDelete,
+} from './cascade';
 import {
   CHANGE_FEED_WAS_PERSISTED_KEY,
   recordInstanceChange,
@@ -39,12 +43,14 @@ import {
   ValidationError,
 } from './errors';
 import {
+  type BulkMutationEntry,
   createInterceptorContext,
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
+import { isBatchSafeValidator } from './registry/validator';
 import {
   resolveOneToManyInverse,
   resolveRelationshipTargetName,
@@ -70,6 +76,11 @@ import {
 const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
+
+// A transaction handle may omit adapter capabilities. Remember only a positively
+// identified native DuckDB client; JSON shares its engine but requires export
+// behavior that a raw multi-row statement must never bypass.
+const nativeJunctionClients = new WeakSet<object>();
 
 function isDuckDbHugeInt(value: unknown): boolean {
   return Boolean(
@@ -2035,6 +2046,456 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Conservative eligibility for junction batching. Additional methods are fine;
+   * replacing any runtime method/accessor requires the sequential lifecycle.
+   * Re-evaluate for every call: registry and interceptor registration is dynamic.
+   * @internal
+   */
+  public supportsJunctionBatch(): boolean {
+    if (!SmrtObject.hasBaseJunctionLifecycle(this)) return false;
+    const name = this.getResolvedQualifiedName();
+    if (
+      ObjectRegistry.getTableStrategy(name) === 'sti' ||
+      this._insertOnly ||
+      !GlobalInterceptors.supportsBulkMutation(this.getResolvedClassName()) ||
+      buildCascadePlan(ObjectRegistry, name).references.length > 0 ||
+      ObjectRegistry.resolveEmbeddingConfig(this.getResolvedClassName())
+    )
+      return false;
+    const config = this.getRegisteredClassInfo()?.config;
+    if (config?.hooks && Object.keys(config.hooks).length > 0) return false;
+    // Only declarative validation is known to be free of user I/O/side effects.
+    if (
+      ObjectRegistry.getValidationRules(this.getResolvedClassName()) ===
+        undefined &&
+      (ObjectRegistry.getValidators(this.getResolvedClassName()) ?? []).some(
+        (validator) => !isBatchSafeValidator(validator),
+      )
+    )
+      return false;
+    for (const field of ObjectRegistry.getFields(name).values()) {
+      if (field.type === 'crossPackageRef' && (field._meta || field).validate)
+        return false;
+    }
+    return true;
+  }
+
+  /** Check overrides before initialization can execute custom model code. */
+  public static hasBaseJunctionLifecycle(candidate: object): boolean {
+    let prototype: object | null = candidate;
+    while (prototype && prototype !== SmrtObject.prototype) {
+      for (const key of Object.getOwnPropertyNames(prototype)) {
+        if (key === 'constructor') continue;
+        const own = Object.getOwnPropertyDescriptor(prototype, key);
+        if (own?.get || own?.set) return false;
+        let base: object | null = SmrtObject.prototype;
+        while (base) {
+          const original = Object.getOwnPropertyDescriptor(base, key);
+          if (original) {
+            if (
+              (typeof original.value === 'function' &&
+                own?.value !== original.value) ||
+              (original.get && own?.get !== original.get) ||
+              (original.set && own?.set !== original.set)
+            )
+              return false;
+            break;
+          }
+          base = Object.getPrototypeOf(base);
+        }
+      }
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    return true;
+  }
+
+  /**
+   * Persist a bounded compatible junction replacement through owned lifecycle
+   * preparation/completion. False means no persistence occurred; callers retain
+   * their virtual per-row path. Unsupported shapes never use raw SQL shortcuts.
+   * @internal
+   */
+  public static async tryJunctionBatch(
+    removed: SmrtObject[],
+    added: SmrtObject[],
+  ): Promise<boolean> {
+    const all = [...removed, ...added];
+    const first = all[0];
+    if (!first) return true;
+    if (
+      all.length > 100 ||
+      all.some(
+        (item) =>
+          item.db !== first.db ||
+          item.tableName !== first.tableName ||
+          item.constructor !== first.constructor ||
+          !SmrtObject.prototype.supportsJunctionBatch.call(item),
+      ) ||
+      added.some((item) => item.isPersisted) ||
+      removed.some((item) => !item.id)
+    )
+      return false;
+    const dbCapabilities = first.db as typeof first.db & {
+      getTableSchema?: unknown;
+      client?: object;
+    };
+    if (first.getDatabaseEngineHint() === 'json') return false;
+    const duck = first.isNativeDuckDb();
+    if (duck) {
+      const client = dbCapabilities.client;
+      if (!client) return false;
+      if (
+        typeof dbCapabilities.getTableSchema === 'function' ||
+        first.getDatabaseEngineHint() === 'duckdb'
+      )
+        nativeJunctionClients.add(client);
+      if (!nativeJunctionClients.has(client)) return false;
+    }
+    const engine = isPostgresDatabase(first.db)
+      ? 'postgres'
+      : duck
+        ? 'duckdb'
+        : detectEngine(first.db.url ?? '', first.getDatabaseEngineHint());
+    if (!['sqlite', 'duckdb', 'postgres'].includes(engine)) return false;
+    const prepared: Array<Awaited<ReturnType<SmrtObject['prepareSave']>>> = [];
+    // Eligible preparation is side-effect-free apart from new instance state.
+    // On refusal/validation failure, let the legacy path retain its error and
+    // partial-progress behavior, including any virtual create implementation.
+    try {
+      for (const item of added)
+        prepared.push(await item.prepareSave(undefined));
+    } catch {
+      return false;
+    }
+    const columns = prepared[0] ? Object.keys(prepared[0].data) : [];
+    const conflict = prepared[0]?.conflictColumns ?? [];
+    const identities = new Set<string>();
+    if (
+      columns.length * added.length > 900 ||
+      prepared.some((entry) => {
+        if (
+          entry.writePlan.type !== 'upsert' ||
+          JSON.stringify(Object.keys(entry.data)) !== JSON.stringify(columns) ||
+          JSON.stringify(entry.conflictColumns) !== JSON.stringify(conflict) ||
+          conflict.some((key) => entry.data[key] == null)
+        )
+          return true;
+        const identity = JSON.stringify(conflict.map((key) => entry.data[key]));
+        if (identities.has(identity)) return true;
+        identities.add(identity);
+        return false;
+      })
+    )
+      return false;
+    const deletions: BulkMutationEntry[] = [];
+    for (const instance of removed) {
+      const context = createInterceptorContext(
+        instance.constructor.name,
+        'delete',
+        undefined,
+        undefined,
+        instance.getResolvedQualifiedName(),
+      );
+      await GlobalInterceptors.executeBeforeDelete(instance, context);
+      await instance.runHook('beforeDelete');
+      await instance.verifyStorageReady();
+      deletions.push({ instance, context });
+    }
+    // Consent is mutable global state; a preparation hook cannot silently
+    // introduce an unapproved interceptor before the persistence boundary.
+    if (!GlobalInterceptors.supportsBulkMutation(first.getResolvedClassName()))
+      return false;
+    if (removed.length > 0) {
+      const cascade = await withEmbeddedWriteTransaction(
+        first.db,
+        isEmbeddedDatabase(first.db),
+        async (db) => {
+          const ids = removed.map((item) => item.id as string);
+          const result = await cascadeReferencesTo(db, ObjectRegistry, {
+            className: first.getResolvedQualifiedName(),
+            tableName: first.tableName,
+            ids,
+          });
+          await db.delete(first.tableName, { 'id in': ids });
+          return result;
+        },
+        true,
+      );
+      for (const instance of removed) {
+        instance._persisted = false;
+        instance.invalidateCollectionReadCache();
+        await instance.runHook('afterDelete');
+      }
+      for (const table of cascade.affectedTables) {
+        first.invalidateCollectionReadCache(
+          table,
+          cascade.affectedTableClasses.get(table),
+        );
+      }
+      await GlobalInterceptors.executeBulkAfter('afterDelete', deletions);
+    }
+    if (added.length > 0) {
+      const quote = (identifier: string) =>
+        `"${identifier.replaceAll('"', '""')}"`;
+      const values: unknown[] = [];
+      const tuples = prepared.map(
+        ({ data }) =>
+          `(${columns
+            .map((column) => {
+              const value = data[column];
+              values.push(
+                value instanceof Date
+                  ? value.toISOString()
+                  : value === undefined
+                    ? null
+                    : value !== null && typeof value === 'object'
+                      ? JSON.stringify(value)
+                      : typeof value === 'boolean' && engine === 'sqlite'
+                        ? Number(value)
+                        : value,
+              );
+              return engine === 'postgres' ? `$${values.length}` : '?';
+            })
+            .join(', ')})`,
+      );
+      const updates = columns
+        .map((column) => `${quote(column)} = excluded.${quote(column)}`)
+        .join(', ');
+      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates}`;
+      await withEmbeddedWriteQueue(first.db, isEmbeddedDatabase(first.db), () =>
+        ErrorUtils.withRetry(
+          async () => {
+            try {
+              await first.db.query(sql, ...values);
+            } catch (error) {
+              if (!(error instanceof Error)) throw error;
+              const classification = classifyDatabaseError(error);
+              const field = first.extractConstraintFieldFromChain(
+                error,
+                classification,
+              );
+              if (classification.kind === 'unique_violation')
+                throw ValidationError.uniqueConstraint(
+                  field,
+                  first.getFieldValue(field),
+                );
+              if (classification.kind === 'not_null_violation')
+                throw ValidationError.requiredField(
+                  field,
+                  first.getResolvedClassName(),
+                );
+              throw DatabaseError.queryFailed(
+                `UPSERT INTO ${first.tableName}`,
+                error,
+              );
+            }
+          },
+          3,
+          500,
+        ),
+      );
+      const completions: BulkMutationEntry[] = [];
+      for (let i = 0; i < added.length; i++) {
+        await added[i].completeSave(prepared[i].interceptorContext, false);
+        completions.push({
+          instance: added[i],
+          context: prepared[i].interceptorContext,
+        });
+      }
+      await GlobalInterceptors.executeBulkAfter('afterSave', completions);
+    }
+    return true;
+  }
+
+  /** Shared preparation for ordinary saves and compatible bulk creates. */
+  private async prepareSave(revisionGuard: Date | string | undefined) {
+    const className = this.getResolvedClassName();
+    // Validate object state before saving
+    await this.validateBeforeSave();
+
+    // Validate cross-package references that opted into save-time validation
+    await this.validateCrossPackageRefs();
+
+    // Execute beforeSave interceptors (e.g., tenancy validation)
+    const interceptorContext = createInterceptorContext(
+      className,
+      'save',
+      undefined,
+      undefined,
+      this.getResolvedQualifiedName(),
+    );
+    await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
+
+    if (!this.id) {
+      this.id = crypto.randomUUID();
+    }
+
+    if (!this.slug) {
+      this.slug = await this.getSlug();
+    }
+
+    // Every persisted write must advance beyond the loaded revision. If an
+    // ordinary writer saves in the same clock millisecond and keeps the old
+    // timestamp, a later guarded writer could still match and overwrite it.
+    this.updated_at = this.nextRevisionTimestamp(revisionGuard);
+
+    if (!this.created_at) {
+      this.created_at = new Date();
+    }
+
+    await this.verifyStorageReady();
+
+    // Execute save operation with retry logic for transient failures
+    // Use per-adapter upsert method instead of generating SQL.
+    // R5-canon: qualified-key lookup avoids cross-package collisions.
+
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
+
+    // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
+    if (process.env.NODE_ENV === 'development') {
+      const hasOverride = this.toJSON !== SmrtObject.prototype.toJSON;
+      const usesSTI = tableStrategy === 'sti';
+
+      if (hasOverride && usesSTI) {
+        logger.warn(
+          `[SMRT STI Warning] ${this.constructor.name} overrides toJSON() but uses STI.\n` +
+            `Ensure super.toJSON() is called or _meta_type is set manually.\n` +
+            `This can cause "Missing _meta_type discriminator" errors.\n` +
+            `Prefer using the transformJSON() hook instead of overriding toJSON().\n` +
+            `See issue #377: https://github.com/happyvertical/smrt/issues/377`,
+        );
+      }
+    }
+
+    if (tableStrategy === 'sti') {
+      // Release C (#1134) retired the SMRT_SKIP_STI_REHYDRATE env flag.
+      // PR #1131's unconditional rehydration stays the single behavior:
+      // it repairs stale-but-present `inheritedFields` caches that the
+      // conservative hydration path would skip (see
+      // external-runtime-hydration.test.ts:1071). Further optimizing
+      // this loop away via eager invalidation at re-registration time
+      // is tracked as a separate follow-up (#1139).
+      warnIfSkipRehydrateSet();
+      // R5-canon (Copilot follow-up): pass the qualified name to
+      // `getSTIHierarchyMembers` so STI sibling discovery is
+      // collision-safe across packages with same-simple-name classes.
+      const qualifiedName = this.getResolvedQualifiedName();
+      const classesNeedingFreshSTIFieldState = Array.from(
+        new Set([qualifiedName, ...getSTIHierarchyMembers(qualifiedName)]),
+      );
+      for (const stiClassName of classesNeedingFreshSTIFieldState) {
+        await ObjectRegistry.getAllFields(stiClassName);
+      }
+    }
+
+    const jsonData = this.toJSON();
+
+    // STI: Fail-fast validation for _meta_type discriminator
+    if (tableStrategy === 'sti') {
+      if (!jsonData._meta_type) {
+        throw new Error(
+          `STI validation failed: Missing _meta_type discriminator when saving ${className}. ` +
+            `This should have been set automatically by toJSON(). Please report this bug.`,
+        );
+      }
+      // Accept both simple class name and qualified name (namespace isolation - Issue #713)
+      if (!isValidMetaType(jsonData._meta_type, className)) {
+        throw new Error(
+          `STI validation failed: _meta_type mismatch when saving ${className}. ` +
+            `Expected '${getExpectedMetaType(className)}' but got '${jsonData._meta_type}'. ` +
+            `This should not happen - please report this bug.`,
+        );
+      }
+    }
+
+    // Convert camelCase keys to snake_case for database columns
+    // Preserve leading underscore for special fields like _meta_type, _meta_data
+    const data: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(jsonData)) {
+      if (key.startsWith('_')) {
+        // Preserve leading underscore for special fields
+        data[key] = value;
+      } else {
+        data[toSnakeCase(key)] = value;
+      }
+    }
+    // `updated_at` is the framework revision token. A legacy model field
+    // named `updatedAt` also snake-cases to this column, so assert the
+    // freshly issued framework value after serializing model fields.
+    data.updated_at = this.updated_at;
+
+    // Coerce empty-string values to NULL for native UUID columns (declared
+    // FKs / cross-package refs). The TypeScript default for an unset
+    // `string`-typed FK is `''`, which Postgres rejects on a `uuid` column
+    // ("invalid input syntax for type uuid"). This framework-level coercion
+    // fixes every optional/unset declared-FK field uniformly.
+    await this.coerceEmptyUuidValuesToNull(className, data);
+
+    // Get conflict columns from registry (supports custom columns for junction tables)
+    const conflictColumns = ObjectRegistry.getConflictColumns(className);
+    const writePlan = await this.planPersistenceWrite(
+      className,
+      tableStrategy,
+      data,
+      conflictColumns,
+    );
+
+    return { interceptorContext, data, writePlan, conflictColumns };
+  }
+
+  private async completeSave(
+    interceptorContext: BulkMutationEntry['context'],
+    runInterceptors = true,
+  ): Promise<void> {
+    const className = this.getResolvedClassName();
+    // The row now exists, so any further save() must update it by primary
+    // key even if natural-key fields change afterwards (issue #1472).
+    this._persisted = true;
+
+    // Bust cached collection reads for this table (issue #1498). SMRT owns
+    // every mutation path, so this is the write-invalidation guarantee the
+    // opt-in read cache relies on.
+    this.invalidateCollectionReadCache();
+
+    // Execute afterSave interceptors (e.g., tenant audit logging)
+    if (runInterceptors) {
+      await GlobalInterceptors.executeAfterSave(this, interceptorContext);
+    }
+
+    // Auto-generate embeddings only when an AI client is configured. Manual
+    // generation can still use local embeddings, but save-time background
+    // work should not unexpectedly load a local transformer model.
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(className);
+    const skipAutoEmbeddings = this.options._skipAutoEmbeddings === true;
+    if (
+      embeddingConfig &&
+      embeddingConfig.autoGenerate !== false &&
+      !skipAutoEmbeddings
+    ) {
+      const aiClient = await this.getOptionalAiClient();
+
+      // Check if any embedding field content has changed
+      if (aiClient) {
+        const isStale = await this.hasStaleEmbeddings();
+        if (isStale) {
+          // Generate embeddings in background to avoid blocking save
+          this.generateEmbeddings().catch((error) => {
+            logger.warn(
+              `Failed to auto-generate embeddings for ${this.constructor.name}`,
+              { error: error instanceof Error ? error.message : error },
+            );
+          });
+        }
+      }
+    }
+    if (skipAutoEmbeddings) {
+      this.options._skipAutoEmbeddings = false;
+    }
+  }
+
+  /**
    * Persists this object to the database using an upsert (insert or update).
    *
    * Steps performed on every save:
@@ -2111,137 +2572,8 @@ export class SmrtObject extends SmrtClass {
           { className },
         );
       }
-      // Validate object state before saving
-      await this.validateBeforeSave();
-
-      // Validate cross-package references that opted into save-time validation
-      await this.validateCrossPackageRefs();
-
-      // Execute beforeSave interceptors (e.g., tenancy validation)
-      const interceptorContext = createInterceptorContext(
-        className,
-        'save',
-        undefined,
-        undefined,
-        this.getResolvedQualifiedName(),
-      );
-      await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
-
-      if (!this.id) {
-        this.id = crypto.randomUUID();
-      }
-
-      if (!this.slug) {
-        this.slug = await this.getSlug();
-      }
-
-      // Every persisted write must advance beyond the loaded revision. If an
-      // ordinary writer saves in the same clock millisecond and keeps the old
-      // timestamp, a later guarded writer could still match and overwrite it.
-      this.updated_at = this.nextRevisionTimestamp(revisionGuard);
-
-      if (!this.created_at) {
-        this.created_at = new Date();
-      }
-
-      await this.verifyStorageReady();
-
-      // Execute save operation with retry logic for transient failures
-      // Use per-adapter upsert method instead of generating SQL.
-      // R5-canon: qualified-key lookup avoids cross-package collisions.
-
-      const tableStrategy = ObjectRegistry.getTableStrategy(
-        this.getResolvedQualifiedName(),
-      );
-
-      // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
-      if (process.env.NODE_ENV === 'development') {
-        const hasOverride = this.toJSON !== SmrtObject.prototype.toJSON;
-        const usesSTI = tableStrategy === 'sti';
-
-        if (hasOverride && usesSTI) {
-          logger.warn(
-            `[SMRT STI Warning] ${this.constructor.name} overrides toJSON() but uses STI.\n` +
-              `Ensure super.toJSON() is called or _meta_type is set manually.\n` +
-              `This can cause "Missing _meta_type discriminator" errors.\n` +
-              `Prefer using the transformJSON() hook instead of overriding toJSON().\n` +
-              `See issue #377: https://github.com/happyvertical/smrt/issues/377`,
-          );
-        }
-      }
-
-      if (tableStrategy === 'sti') {
-        // Release C (#1134) retired the SMRT_SKIP_STI_REHYDRATE env flag.
-        // PR #1131's unconditional rehydration stays the single behavior:
-        // it repairs stale-but-present `inheritedFields` caches that the
-        // conservative hydration path would skip (see
-        // external-runtime-hydration.test.ts:1071). Further optimizing
-        // this loop away via eager invalidation at re-registration time
-        // is tracked as a separate follow-up (#1139).
-        warnIfSkipRehydrateSet();
-        // R5-canon (Copilot follow-up): pass the qualified name to
-        // `getSTIHierarchyMembers` so STI sibling discovery is
-        // collision-safe across packages with same-simple-name classes.
-        const qualifiedName = this.getResolvedQualifiedName();
-        const classesNeedingFreshSTIFieldState = Array.from(
-          new Set([qualifiedName, ...getSTIHierarchyMembers(qualifiedName)]),
-        );
-        for (const stiClassName of classesNeedingFreshSTIFieldState) {
-          await ObjectRegistry.getAllFields(stiClassName);
-        }
-      }
-
-      const jsonData = this.toJSON();
-
-      // STI: Fail-fast validation for _meta_type discriminator
-      if (tableStrategy === 'sti') {
-        if (!jsonData._meta_type) {
-          throw new Error(
-            `STI validation failed: Missing _meta_type discriminator when saving ${className}. ` +
-              `This should have been set automatically by toJSON(). Please report this bug.`,
-          );
-        }
-        // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-        if (!isValidMetaType(jsonData._meta_type, className)) {
-          throw new Error(
-            `STI validation failed: _meta_type mismatch when saving ${className}. ` +
-              `Expected '${getExpectedMetaType(className)}' but got '${jsonData._meta_type}'. ` +
-              `This should not happen - please report this bug.`,
-          );
-        }
-      }
-
-      // Convert camelCase keys to snake_case for database columns
-      // Preserve leading underscore for special fields like _meta_type, _meta_data
-      const data: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(jsonData)) {
-        if (key.startsWith('_')) {
-          // Preserve leading underscore for special fields
-          data[key] = value;
-        } else {
-          data[toSnakeCase(key)] = value;
-        }
-      }
-      // `updated_at` is the framework revision token. A legacy model field
-      // named `updatedAt` also snake-cases to this column, so assert the
-      // freshly issued framework value after serializing model fields.
-      data.updated_at = this.updated_at;
-
-      // Coerce empty-string values to NULL for native UUID columns (declared
-      // FKs / cross-package refs). The TypeScript default for an unset
-      // `string`-typed FK is `''`, which Postgres rejects on a `uuid` column
-      // ("invalid input syntax for type uuid"). This framework-level coercion
-      // fixes every optional/unset declared-FK field uniformly.
-      await this.coerceEmptyUuidValuesToNull(className, data);
-
-      // Get conflict columns from registry (supports custom columns for junction tables)
-      const conflictColumns = ObjectRegistry.getConflictColumns(className);
-      const writePlan = await this.planPersistenceWrite(
-        className,
-        tableStrategy,
-        data,
-        conflictColumns,
-      );
+      const { interceptorContext, data, writePlan, conflictColumns } =
+        await this.prepareSave(revisionGuard);
 
       // Issue #1472: objects backed by an existing row must conflict on the
       // primary key. With natural-key conflict columns, editing a natural-key
@@ -2384,47 +2716,7 @@ export class SmrtObject extends SmrtClass {
       }
       revisionPersisted = true;
 
-      // The row now exists, so any further save() must update it by primary
-      // key even if natural-key fields change afterwards (issue #1472).
-      this._persisted = true;
-
-      // Bust cached collection reads for this table (issue #1498). SMRT owns
-      // every mutation path, so this is the write-invalidation guarantee the
-      // opt-in read cache relies on.
-      this.invalidateCollectionReadCache();
-
-      // Execute afterSave interceptors (e.g., tenant audit logging)
-      await GlobalInterceptors.executeAfterSave(this, interceptorContext);
-
-      // Auto-generate embeddings only when an AI client is configured. Manual
-      // generation can still use local embeddings, but save-time background
-      // work should not unexpectedly load a local transformer model.
-      const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(className);
-      const skipAutoEmbeddings = this.options._skipAutoEmbeddings === true;
-      if (
-        embeddingConfig &&
-        embeddingConfig.autoGenerate !== false &&
-        !skipAutoEmbeddings
-      ) {
-        const aiClient = await this.getOptionalAiClient();
-
-        // Check if any embedding field content has changed
-        if (aiClient) {
-          const isStale = await this.hasStaleEmbeddings();
-          if (isStale) {
-            // Generate embeddings in background to avoid blocking save
-            this.generateEmbeddings().catch((error) => {
-              logger.warn(
-                `Failed to auto-generate embeddings for ${this.constructor.name}`,
-                { error: error instanceof Error ? error.message : error },
-              );
-            });
-          }
-        }
-      }
-      if (skipAutoEmbeddings) {
-        this.options._skipAutoEmbeddings = false;
-      }
+      await this.completeSave(interceptorContext);
 
       return this;
     } catch (error) {

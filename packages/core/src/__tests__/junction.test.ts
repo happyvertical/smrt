@@ -7,14 +7,17 @@
  *    junction key fields (regression test for round-4 codex finding)
  */
 
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getChangesSince, registerChangeFeedWriter } from '../change-feed';
 import { field } from '../decorators/index';
+import { GlobalInterceptors } from '../interceptors';
 import { SmrtJunction } from '../junction';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
 
 @smrt({
   tableName: 'junction_test_links',
@@ -79,6 +82,244 @@ describe('SmrtJunction', () => {
     if (existsSync(dbPath)) unlinkSync(dbPath);
   });
 
+  describe('compatible bulk lifecycle', () => {
+    it('replaces rows in bounded statements with IDs, positions, and per-row feed entries', async () => {
+      registerChangeFeedWriter();
+      const counts: number[] = [];
+      for (const size of [2, 35]) {
+        const owner = `batch-${size}`;
+        const oldIds = Array.from({ length: size }, (_, i) => `old-${i}`);
+        const newIds = Array.from({ length: size }, (_, i) => `new-${i}`);
+        await links.setLinks(owner, oldIds);
+        const before = await links.byLeft(owner);
+        expect(before).toHaveLength(size);
+        expect(before.every((item) => item.supportsJunctionBatch())).toBe(true);
+        const cursor = (
+          await getChangesSince(links.db, { since: 0, limit: 1000 })
+        ).cursor;
+        // Instrument the real SQLite executor, including transaction executors,
+        // so system cleanup and feed SQL cannot hide behind adapter methods.
+        const driver = links.db.client as any;
+        let statementCount = 0;
+        const executeOriginal = driver.execute.bind(driver);
+        const execute = vi
+          .spyOn(driver, 'execute')
+          .mockImplementation((...args: any[]) => {
+            statementCount++;
+            return executeOriginal(...args);
+          });
+        const transactionOriginal = driver.transaction.bind(driver);
+        const transaction = vi
+          .spyOn(driver, 'transaction')
+          .mockImplementation(async (...args: any[]) => {
+            const tx = await transactionOriginal(...args);
+            const executeTx = tx.execute.bind(tx);
+            tx.execute = (...queryArgs: any[]) => {
+              statementCount++;
+              return executeTx(...queryArgs);
+            };
+            return tx;
+          });
+        const query = vi.spyOn(links.db, 'query');
+        const upsert = vi.spyOn(links.db, 'upsert');
+        await links.setLinks(owner, newIds);
+        counts.push(statementCount);
+        expect(statementCount).toBeGreaterThan(0);
+        execute.mockRestore();
+        transaction.mockRestore();
+        expect(upsert).not.toHaveBeenCalled();
+        expect(
+          query.mock.calls.filter(([sql]) =>
+            String(sql).startsWith('INSERT INTO "junction_test_links"'),
+          ),
+        ).toHaveLength(1);
+        query.mockRestore();
+        upsert.mockRestore();
+        const after = await links.byLeft(owner);
+        expect(after.map((item) => item.assetId)).toEqual(newIds);
+        expect(after.map((item) => item.sortOrder)).toEqual(
+          newIds.map((_, i) => i),
+        );
+        expect(
+          after.every(
+            (item) =>
+              item.id && item.slug && item.created_at && item.updated_at,
+          ),
+        ).toBe(true);
+        const changes = (
+          await getChangesSince(links.db, { since: cursor, limit: 1000 })
+        ).changes;
+        expect(
+          changes
+            .filter((entry) => entry.table === 'junction_test_links')
+            .map((entry) => entry.operation),
+        ).toEqual([
+          ...oldIds.map(() => 'delete'),
+          ...newIds.map(() => 'create'),
+        ]);
+      }
+      expect(counts[1]).toBe(counts[0]);
+    });
+
+    it('keeps natural-key upsert behavior for a link created after the snapshot', async () => {
+      const queryOriginal = links.db.query.bind(links.db);
+      let competitorId: string | null = null;
+      const query = vi
+        .spyOn(links.db, 'query')
+        .mockImplementation(async (sql, ...args) => {
+          if (
+            !competitorId &&
+            sql.startsWith('INSERT INTO "junction_test_links"')
+          ) {
+            competitorId = (await links.attach('owner-race', 'a')).id;
+          }
+          return queryOriginal(sql, ...args);
+        });
+      await links.setLinks('owner-race', ['a', 'b']);
+      query.mockRestore();
+      const rows = await links.byLeft('owner-race');
+      expect(rows.map((row) => row.assetId)).toEqual(['a', 'b']);
+      expect(rows[0].id).not.toBe(competitorId);
+    });
+
+    it('retries a transient batch failure without duplicating feed entries', async () => {
+      const queryOriginal = links.db.query.bind(links.db);
+      let attempts = 0;
+      const query = vi
+        .spyOn(links.db, 'query')
+        .mockImplementation(async (sql, ...args) => {
+          if (
+            sql.startsWith('INSERT INTO "junction_test_links"') &&
+            ++attempts === 1
+          ) {
+            throw Object.assign(new Error('busy'), { code: 'SQLITE_BUSY' });
+          }
+          return queryOriginal(sql, ...args);
+        });
+      await links.setLinks('owner-retry', ['a', 'b']);
+      query.mockRestore();
+      expect(attempts).toBe(2);
+      const rows = await links.byLeft('owner-retry');
+      const ids = new Set(rows.map((row) => row.id));
+      const changes = (
+        await getChangesSince(links.db, { since: 0, limit: 1000 })
+      ).changes.filter((change) => ids.has(change.rowId));
+      expect(changes).toHaveLength(2);
+    });
+
+    it('invalidates cached reads and removes only the deleted rows’ owned memory', async () => {
+      await links.setLinks('owner-cache', ['a', 'b']);
+      const before = await links.list({
+        where: { ownerId: 'owner-cache' },
+        cache: { ttl: 60_000 },
+      });
+      const id = before[0].id!;
+      for (const [memoryId, ownerClass] of [
+        ['own', 'JunctionTestLink'],
+        ['peer', 'OtherClass'],
+      ]) {
+        await links.db.insert('_smrt_contexts', {
+          id: memoryId,
+          owner_class: ownerClass,
+          owner_id: id,
+          scope: 'test',
+          key: 'test',
+        });
+      }
+      await links.setLinks('owner-cache', ['c']);
+      expect(
+        (
+          await links.list({
+            where: { ownerId: 'owner-cache' },
+            cache: { ttl: 60_000 },
+          })
+        ).map((row) => row.assetId),
+      ).toEqual(['c']);
+      expect(await links.db.get('_smrt_contexts', { id: 'own' })).toBeNull();
+      expect(
+        await links.db.get('_smrt_contexts', { id: 'peer' }),
+      ).not.toBeNull();
+    });
+
+    it('retains the JSON adapter persistence lifecycle', async () => {
+      const directory = mkdtempSync(join(tmpdir(), 'junction-json-'));
+      const db = await getTestDatabase({
+        type: 'json',
+        url: directory,
+        classes: ['JunctionTestLink'],
+      });
+      try {
+        const jsonLinks = await JunctionTestLinkCollection.create({ db });
+        const upsert = vi.spyOn(db, 'upsert');
+        await jsonLinks.setLinks('owner-json', ['a', 'b']);
+        expect(upsert).toHaveBeenCalledTimes(2);
+        upsert.mockRestore();
+        expect(await jsonLinks.byLeft('owner-json')).toHaveLength(2);
+      } finally {
+        await db.close?.();
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('falls back above the documented single-batch bound', async () => {
+      const upsert = vi.spyOn(links.db, 'upsert');
+      await links.setLinks(
+        'owner-large',
+        Array.from({ length: 101 }, (_, i) => `asset-${i}`),
+      );
+      expect(upsert).toHaveBeenCalledTimes(101);
+      upsert.mockRestore();
+      expect(await links.byLeft('owner-large')).toHaveLength(101);
+    });
+
+    it('retains virtual attach behavior and duplicate-input last-write semantics', async () => {
+      const original = links.attach.bind(links);
+      const attach = vi.spyOn(links, 'attach').mockImplementation(original);
+      await links.setLinks('owner-custom', ['a', 'a', 'b']);
+      expect(attach).toHaveBeenCalledTimes(3);
+      const rows = await links.byLeft('owner-custom');
+      expect(rows.map((item) => [item.assetId, item.sortOrder])).toEqual([
+        ['a', 1],
+        ['b', 2],
+      ]);
+      attach.mockRestore();
+    });
+
+    it('retains the sequential lifecycle for unmarked mutation interceptors', async () => {
+      const calls: string[] = [];
+      const interceptor = {
+        beforeSave: (item: SmrtObject) => {
+          calls.push(`before:${(item as JunctionTestLink).assetId}`);
+        },
+        afterSave: (item: SmrtObject) => {
+          calls.push(`after:${(item as JunctionTestLink).assetId}`);
+        },
+      };
+      GlobalInterceptors.register(interceptor);
+      try {
+        await links.setLinks('owner-hooks', ['a', 'b']);
+        expect(calls).toEqual(['before:a', 'after:a', 'before:b', 'after:b']);
+      } finally {
+        GlobalInterceptors.unregister(interceptor);
+      }
+    });
+
+    it('retains IDs only until replacement and batches detach tombstones', async () => {
+      registerChangeFeedWriter();
+      await links.setLinks('owner-repeat', ['a', 'b']);
+      const before = await links.byLeft('owner-repeat');
+      await links.setLinks('owner-repeat', ['a', 'b']);
+      const after = await links.byLeft('owner-repeat');
+      expect(
+        after.every((item) => !before.some((old) => old.id === item.id)),
+      ).toBe(true);
+      await links.detach('owner-repeat', 'a');
+      expect(
+        (await links.byLeft('owner-repeat')).map((item) => item.assetId),
+      ).toEqual(['b']);
+    });
+  });
+
   describe('byLeft / byRight', () => {
     it('finds rows by left and right fields', async () => {
       await links.attach('owner-1', 'asset-a');
@@ -101,6 +342,41 @@ describe('SmrtJunction', () => {
       });
       expect(thumbs).toHaveLength(1);
       expect(thumbs[0]?.assetId).toBe('asset-a');
+    });
+
+    it('threads limit and offset through byLeft without treating them as filters', async () => {
+      await links.attach('owner-1', 'asset-0', { sortOrder: 0 });
+      await links.attach('owner-1', 'asset-1', { sortOrder: 1 });
+      await links.attach('owner-1', 'asset-2', { sortOrder: 2 });
+
+      const page = await links.byLeft('owner-1', { limit: 1, offset: 1 });
+
+      expect(page).toHaveLength(1);
+      expect(page[0]?.assetId).toBe('asset-1');
+    });
+
+    it('threads limit and offset through byRight without treating them as filters', async () => {
+      await links.attach('owner-0', 'asset-a', { sortOrder: 0 });
+      await links.attach('owner-1', 'asset-a', { sortOrder: 1 });
+      await links.attach('owner-2', 'asset-a', { sortOrder: 2 });
+
+      const page = await links.byRight('asset-a', { limit: 1, offset: 1 });
+
+      expect(page).toHaveLength(1);
+      expect(page[0]?.ownerId).toBe('owner-1');
+    });
+
+    it('preserves collection query-bound validation through junction reads', async () => {
+      await expect(
+        links.byLeft('owner-1', { limit: -1 }),
+      ).rejects.toMatchObject({
+        status: 400,
+      });
+      await expect(
+        links.byRight('asset-a', { offset: Number.NaN }),
+      ).rejects.toMatchObject({
+        status: 400,
+      });
     });
   });
 

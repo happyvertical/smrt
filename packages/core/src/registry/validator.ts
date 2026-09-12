@@ -11,6 +11,13 @@ import type { SmrtObject } from '../object';
 import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
 import type { ValidatorFunction } from './types';
 
+// Function identity, not a name or inferred source text, proves that the owning
+// compiler generated these validators without user callbacks.
+const batchSafeValidators = new WeakSet<ValidatorFunction>();
+export function isBatchSafeValidator(validator: ValidatorFunction): boolean {
+  return batchSafeValidators.has(validator);
+}
+
 /**
  * Read a runtime field value off a SmrtObject instance by dynamic field name.
  *
@@ -41,6 +48,7 @@ export function compileValidators(
   fields: Map<string, FieldDefinition>,
 ): ValidatorFunction[] {
   const validators: ValidatorFunction[] = [];
+  let custom = false;
 
   for (const [fieldName, field] of fields) {
     const options: FieldMeta = field._meta ?? {};
@@ -172,6 +180,7 @@ export function compileValidators(
     // string shapes the validator relies on.
     const customValidate = options.validate;
     if (typeof customValidate === 'function') {
+      custom = true;
       const validateFn = customValidate as (
         value: unknown,
       ) => boolean | Promise<boolean>;
@@ -206,5 +215,8 @@ export function compileValidators(
     }
   }
 
+  if (!custom) {
+    for (const validator of validators) batchSafeValidators.add(validator);
+  }
   return validators;
 }

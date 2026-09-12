@@ -3,6 +3,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   appendChange,
+  appendChanges,
   drainChangeFeed,
   ensureChangeFeedTable,
 } from '../change-feed.js';
@@ -158,6 +159,12 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
         operation: 'update',
       });
       expect(seq).not.toBeNull();
+      expect(
+        await appendChanges(runtimeDb, [
+          { table: 'items', rowId: 'runtime-batch-a', operation: 'update' },
+          { table: 'items', rowId: 'runtime-batch-b', operation: 'delete' },
+        ]),
+      ).toEqual([2, 3]);
       await drainChangeFeed(runtimeDb);
       await expect(
         runtimeDb.query(
@@ -301,9 +308,17 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
       owner,
       'CREATE FUNCTION app._smrt_drain_changes(p_extra text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN END $$',
     );
+    await as(
+      owner,
+      'CREATE FUNCTION app._smrt_append_changes(p_extra text) RETURNS void LANGUAGE plpgsql AS $$ BEGIN END $$',
+    );
     const plan = await planPostgresPermissions(db, contract);
     expect(plan.canApply).toBe(false);
-    for (const name of ['_smrt_append_change', '_smrt_drain_changes'])
+    for (const name of [
+      '_smrt_append_change',
+      '_smrt_append_changes',
+      '_smrt_drain_changes',
+    ])
       expect(plan.diagnostics).toContainEqual(
         expect.objectContaining({
           code: 'unsupported-routines',

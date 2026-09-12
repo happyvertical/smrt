@@ -36,6 +36,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   appendChange,
+  appendChanges,
   drainChangeFeed,
   ensureChangeFeedTable,
   ensurePostgresChangeFeedAppendFunction,
@@ -409,6 +410,63 @@ postgresDescribe('change-feed append deadlock (optional, #2649)', () => {
     expect(drained).toBe(1);
     const page = await getChangesSince(setup, { since: 0 });
     expect(page.changes.map((change) => change.rowId)).toEqual([ROW_A]);
+  }, 120_000);
+
+  it('stages an entire batch after caller writes, rolls it back as a unit, and drains committed rows contiguously', async () => {
+    await runTransaction(crawl, async (tx) => {
+      await tx.query(
+        `UPDATE ${ROWS_TABLE} SET status = 'batch-staged' WHERE id = $1`,
+        ROW_A,
+      );
+      expect(
+        await appendChanges(tx, [
+          { table: FEED_TABLE, rowId: 'batch-a', operation: 'update' },
+          { table: FEED_TABLE, rowId: 'batch-b', operation: 'delete' },
+        ]),
+      ).toEqual([null, null]);
+    });
+
+    await expect(
+      runTransaction(owner, async (tx) => {
+        await tx.query(
+          `UPDATE ${ROWS_TABLE} SET status = 'batch-rollback' WHERE id = $1`,
+          ROW_B,
+        );
+        await appendChanges(tx, [
+          { table: FEED_TABLE, rowId: 'rolled-back-a', operation: 'update' },
+          { table: FEED_TABLE, rowId: 'rolled-back-b', operation: 'delete' },
+        ]);
+        throw new Error('batch rollback');
+      }),
+    ).rejects.toThrow('batch rollback');
+
+    expect(await drainChangeFeed(setup)).toBe(2);
+    const page = await getChangesSince(setup, { since: 0 });
+    expect(page.changes.map((change) => [change.seq, change.rowId])).toEqual([
+      [1, 'batch-a'],
+      [2, 'batch-b'],
+    ]);
+  }, 120_000);
+
+  it('allocates a direct PostgreSQL batch contiguously in input order', async () => {
+    expect(
+      await appendChanges(setup, [
+        { table: FEED_TABLE, rowId: 'direct-a', operation: 'create' },
+        { table: FEED_TABLE, rowId: 'direct-b', operation: 'update' },
+        { table: FEED_TABLE, rowId: 'direct-c', operation: 'delete' },
+      ]),
+    ).toEqual([1, 2, 3]);
+    expect(
+      (await getChangesSince(setup, { since: 0 })).changes.map((change) => [
+        change.seq,
+        change.rowId,
+        change.operation,
+      ]),
+    ).toEqual([
+      [1, 'direct-a', 'create'],
+      [2, 'direct-b', 'update'],
+      [3, 'direct-c', 'delete'],
+    ]);
   }, 120_000);
 
   /**
