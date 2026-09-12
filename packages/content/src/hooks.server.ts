@@ -242,4 +242,4 @@ const sessionHandle = createSessionHandler({
   enterTenantContext: true,
 }) as unknown as Handle;
 
-export const handle = sequence(sessionHandle, bootstrapHandle);
+export const handle = sequence(bootstrapHandle, sessionHandle);
