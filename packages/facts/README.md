@@ -121,3 +121,36 @@ const briefing = await facts.getEntityBriefing('Place', placeId);
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Catalog pagination
+
+`browseCatalog(query, { limit, offset, latestOnly, tenantId })` defaults to 25
+results and resolves evolution chains unless `latestOnly: false` is supplied.
+Empty-query browsing and successful semantic search hydrate only the requested
+SQL page. Empty-query candidate eligibility remains bounded to
+`offset + 2 * limit`; resolving and deduplicating chains can therefore return a
+short page. Semantic candidate retrieval remains bounded to `offset + limit`.
+These SQL windows use the requested pagination values rather than the collection
+`defaultListLimit`. The full tenant-visible successor set is available to chain resolution, even
+when a successor lies outside the candidate window or status filter. Implicit-scope
+confidence ties retain the newest successor, matching the previous ordered read.
+
+Without an explicit tenant, the default candidate status is `active`; with an
+explicit tenant, tenant and global candidates exclude only `superseded`.
+`includeSuperseded` removes that status filter. Active tenant context continues
+to constrain implicit reads, and requesting another tenant is rejected. STI child
+collections constrain both candidates and successors to their discriminator.
+
+When semantic search is unavailable, all text fallback queries retain the
+legacy JavaScript Unicode case matching and chain traversal. That fallback is
+an intentional exception to bounded SQL pagination; it can hydrate the legacy
+candidate set (including its collection `defaultListLimit`) and issue individual
+chain queries. Portable normalized search
+storage would be needed before replacing its matching behavior with SQL.
+
+PostgreSQL and SQLite run canonical pagination integration tests. DuckDB query
+coverage uses an explicitly identified SQL-only fixture: canonical Fact schema
+creation currently rejects its evolution self-reference, tracked in
+[#2830](https://github.com/happyvertical/smrt/issues/2830). DuckDB hydration issues
+one `DESCRIBE` plus one data query per page; PostgreSQL and SQLite use one data
+query after semantic candidate retrieval, if any.

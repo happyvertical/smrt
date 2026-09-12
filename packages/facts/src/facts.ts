@@ -5,7 +5,11 @@
  * Implements reconcile(), branch(), evolution tree, and confidence methods.
  */
 
-import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
+import {
+  isPostgresDatabase,
+  SmrtCollection,
+  type SmrtCreateInput,
+} from '@happyvertical/smrt-core';
 import {
   type PromptConfigOverrideInput,
   type ResolvedPromptAI,
@@ -251,6 +255,12 @@ export class FactCollection extends SmrtCollection<Fact> {
       }
     }
 
+    const metaType = this.getStiChildMetaType();
+    if (metaType) {
+      scopeSql += ' AND _meta_type = ?';
+      scopeParams.push(metaType);
+    }
+
     const statusSql = includeSuperseded
       ? ''
       : tenantId === undefined || tenantId === null
@@ -288,7 +298,11 @@ export class FactCollection extends SmrtCollection<Fact> {
       : [...scopeParams, ...statusParams, ...textParams, candidateLimit];
     const semanticCandidatesSql = rankedCandidates
       ? `semantic_candidates(id, candidate_order) AS (VALUES ${rankedCandidates
-          .map(() => '(?, ?)')
+          .map(() =>
+            isPostgresDatabase(this.db)
+              ? '(CAST(? AS UUID), CAST(? AS INTEGER))'
+              : '(?, ?)',
+          )
           .join(', ')})`
       : '';
     const semanticCandidatesPrefix = semanticCandidatesSql
@@ -322,7 +336,7 @@ export class FactCollection extends SmrtCollection<Fact> {
           SELECT id, previous_fact_id,
             ROW_NUMBER() OVER (
               PARTITION BY previous_fact_id
-              ORDER BY confidence DESC
+              ORDER BY confidence DESC${tenantId === undefined || tenantId === null ? ', updated_at DESC' : ''}
             ) AS successor_rank
           FROM ${this.tableName}
           WHERE ${scopeSql}
