@@ -1096,6 +1096,7 @@ export class ManifestGenerator {
         name: index.name,
         columns: index.columns,
         unique: index.unique,
+        ...(index.nullsNotDistinct ? { nullsNotDistinct: true } : {}),
         where: index.where,
         jsonPath: index.jsonPath,
       })),

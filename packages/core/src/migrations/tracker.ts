@@ -10,6 +10,7 @@ import { hostname } from 'node:os';
 import { createLogger } from '@happyvertical/logger';
 import { parsePostgresTimeoutMs } from '../postgres-timeouts.js';
 import { detectEngine } from '../schema/ddl/index.js';
+import { NULL_EQUAL_INDEX_MARKER } from '../schema/ddl/null-equal-index.js';
 // DatabaseEngine comes from the DDL layer (the json-inclusive type that
 // `detectEngine` actually returns), matching `SchemaComparer` in differ.ts.
 // The migration stack supports the JSON adapter post-R11, so the tracker's
@@ -1428,6 +1429,15 @@ export function planPostgresStatements(
   const regular: string[] = [];
 
   for (const sql of statements) {
+    if (sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
+      if (useConcurrentIndexes) {
+        throw new Error(
+          'NULL-equal conflict index DDL requires an atomic maintenance-window migration; retry without --postgres-safe. Existing indexes require db:migrate-null-equal-indexes.',
+        );
+      }
+      regular.push(sql);
+      continue;
+    }
     if (concurrentRegex.test(sql)) {
       concurrent.push(sql);
       continue;

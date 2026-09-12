@@ -51,6 +51,8 @@ export interface IndexDefinition {
   name: string;
   columns: string[];
   unique?: boolean;
+  /** SMRT-owned nullable upsert identity; PostgreSQL 15+ uses NULLS NOT DISTINCT. */
+  nullsNotDistinct?: boolean;
   where?: string; // Partial index condition
   description?: string;
   /**

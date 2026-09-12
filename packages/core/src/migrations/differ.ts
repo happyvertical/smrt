@@ -7,6 +7,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   CANONICAL_UUID_PATTERN,
@@ -3488,6 +3489,9 @@ export class SchemaComparer {
    * (SQLite, PostgreSQL, DuckDB) accept the clause.
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
+    if (this.engine === 'postgres' && idx.nullsNotDistinct) {
+      return renderNullEqualConflictIndex(tableName, idx);
+    }
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(idx, this.engine);
     let sql = `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;

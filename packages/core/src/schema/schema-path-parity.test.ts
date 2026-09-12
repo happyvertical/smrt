@@ -621,7 +621,7 @@ function indexSet(indexes: ReadonlyArray<IndexDefinition>): {
       const target = i.jsonPath
         ? `json:${i.jsonPath.column}.${i.jsonPath.path}`
         : (i.columns ?? []).join(',');
-      return `${target}|${Boolean(i.unique)}|${normalizeIndexPredicate(i.where)}`;
+      return `${target}|${Boolean(i.unique)}|${Boolean(i.nullsNotDistinct)}|${normalizeIndexPredicate(i.where)}`;
     })
     .sort();
   return { names, signatures };
@@ -651,6 +651,7 @@ function manifestSchemaAsDefinition(
       name: idx.name,
       columns: idx.columns,
       unique: idx.unique,
+      ...(idx.nullsNotDistinct ? { nullsNotDistinct: true } : {}),
       where: idx.where,
       jsonPath: idx.jsonPath,
     })),

@@ -6,7 +6,10 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
-import { conflictIndexName } from '../schema/conflict-target.js';
+import {
+  conflictIndexName,
+  nullableConflictIdentity,
+} from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
@@ -316,16 +319,6 @@ function withConflictIndex(
     return indexes;
   }
 
-  const hasConflictIndex = indexes.some(
-    (index) =>
-      index.unique === true &&
-      !index.where &&
-      !index.jsonPath &&
-      index.columns.length === conflictColumns.length &&
-      index.columns.every((column) => conflictColumns.includes(column)),
-  );
-  if (hasConflictIndex) return indexes;
-
   // Same stable naming as SchemaGenerator (`schema/conflict-target.ts`), so
   // a manifest built before the runtime learned the tenant-aware default
   // (#2360) has its stale `<table>_slug_context_idx` REPLACED in place here
@@ -341,10 +334,28 @@ function withConflictIndex(
   const name = shortenIdentifier(
     conflictIndexName(tableName, conflictColumns, tenantColumn),
   );
+  const canonical = indexes.find((index) => index.name === name);
+  if (
+    !canonical &&
+    indexes.some(
+      (index) =>
+        index.unique === true &&
+        !index.where &&
+        !index.jsonPath &&
+        index.columns.length === conflictColumns.length &&
+        index.columns.every((column) => conflictColumns.includes(column)),
+    )
+  ) {
+    // A user-owned equivalent unique index is not permission to change its NULL semantics.
+    return indexes;
+  }
   const conflictIndex: IndexDefinition = {
     name,
     columns: conflictColumns,
     unique: true,
+    ...(nullableConflictIdentity(conflictColumns, columns)
+      ? { nullsNotDistinct: true }
+      : {}),
   };
   if (indexes.some((index) => index.name === name)) {
     return indexes.map((index) =>

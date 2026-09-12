@@ -254,6 +254,8 @@ export interface ManifestIndexDefinition {
   name: string;
   columns: string[];
   unique?: boolean;
+  /** SMRT-owned nullable upsert identity; PostgreSQL 15+ uses NULLS NOT DISTINCT. */
+  nullsNotDistinct?: boolean;
   where?: string;
   /**
    * Expression-based index target — when set, the DDL strategy renders the

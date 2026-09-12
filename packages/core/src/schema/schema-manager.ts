@@ -133,7 +133,9 @@ export class SchemaManager {
     const dbWithSync = this.db as DatabaseInterface & {
       syncSchema?: (schema: string) => Promise<void>;
     };
-    if (dbWithSync.syncSchema) {
+    // PostgreSQL schema blocks must remain intact: the SDK syncSchema splitter
+    // separates on semicolons inside version-gated DO blocks (#2834).
+    if (dbWithSync.syncSchema && this.engine !== 'postgres') {
       // Combine DDL into single schema string for adapter's syncSchema
       const fullSchema = [
         ddl.createTable,

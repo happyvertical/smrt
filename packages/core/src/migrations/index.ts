@@ -91,6 +91,17 @@ export {
   preflightMinorUnitsRescale,
   rescaleMoneyColumnsToMinorUnits,
 } from './minor-units.js';
+export {
+  collectNullEqualIndexTargets,
+  migrateNullEqualIndexes,
+  type NullEqualIndexOptions,
+  type NullEqualIndexPreflight,
+  type NullEqualIndexReport,
+  type NullEqualIndexTarget,
+  nullEqualDuplicateDetector,
+  nullEqualIndexStatements,
+  preflightNullEqualIndexes,
+} from './null-equal-indexes.js';
 // High-level schema orchestration over ObjectRegistry
 export {
   getPendingSchemaStatements,
@@ -119,7 +130,6 @@ export {
   parsePostgresTimeoutMs,
   planPostgresStatements,
 } from './tracker.js';
-
 // Types
 export type {
   ApplyMigrationsOptions,
