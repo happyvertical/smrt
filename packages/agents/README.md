@@ -172,7 +172,7 @@ before returning accepted, skipped, and failed row outcomes. Actions declared
 with `confirmation: 'none'` may apply directly with an idempotency key; every
 other apply must include its current preview token. Callers must supply a durable
 shared `DataSurfaceActionStateStore` with atomic token and idempotency operations.
-`createSqlDataSurfaceActionStateStore()` uses the application's migrated SMRT
+`createSqlDataSurfaceActionStateStore()` uses the application's migrated s-m-r-t
 database; token consumption and apply reservation commit together, while
 preview tokens and reservation owner nonces are stored as hashes. An
 orphaned reservation is never expired or retried automatically because its
