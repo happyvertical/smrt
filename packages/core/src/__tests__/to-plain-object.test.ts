@@ -191,6 +191,36 @@ describe('SmrtObject.toPlainObject', () => {
     }
   });
 
+  it('matches legacy coercion without observing Symbol.toStringTag', () => {
+    const overriddenToString = Object.assign(new String('abc'), {
+      toString: () => 'changed',
+    });
+    const overriddenPrimitive = Object.assign(new String('abc'), {
+      [Symbol.toPrimitive]: () => 'primitive',
+    });
+    const taggedNumber = Object.assign(new Number(3), {
+      [Symbol.toStringTag]: 'custom',
+    });
+    const throwingTagNumber = new Number(4);
+    Object.defineProperty(throwingTagNumber, Symbol.toStringTag, {
+      get() {
+        throw new Error('tag getter must not run');
+      },
+    });
+    const data = {
+      overriddenPrimitive,
+      overriddenToString,
+      taggedNumber,
+      throwingTagNumber,
+    };
+    const object = new PlainObjectSerializationProbe();
+    object.transformJSON = (base) => ({ ...base, ...data });
+
+    expect(object.toPlainObject()).toMatchObject(
+      JSON.parse(JSON.stringify(data)),
+    );
+  });
+
   it('reports representative per-call benchmark measurements without timing assertions', () => {
     const object = new PlainObjectSerializationProbe();
     const callsPerSample = 2_000;

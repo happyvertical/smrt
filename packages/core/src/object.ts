@@ -1,3 +1,4 @@
+import { types as nodeTypes } from 'node:util';
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
@@ -93,38 +94,12 @@ type PlainJSONValue =
 type BoxedPrimitiveKind = 'bigint' | 'boolean' | 'number' | 'string';
 
 function getBoxedPrimitiveKind(value: object): BoxedPrimitiveKind | undefined {
-  switch (Object.prototype.toString.call(value)) {
-    case '[object Number]':
-      try {
-        Number.prototype.valueOf.call(value);
-        return 'number';
-      } catch {
-        return undefined;
-      }
-    case '[object String]':
-      try {
-        String.prototype.valueOf.call(value);
-        return 'string';
-      } catch {
-        return undefined;
-      }
-    case '[object Boolean]':
-      try {
-        Boolean.prototype.valueOf.call(value);
-        return 'boolean';
-      } catch {
-        return undefined;
-      }
-    case '[object BigInt]':
-      try {
-        BigInt.prototype.valueOf.call(value);
-        return 'bigint';
-      } catch {
-        return undefined;
-      }
-    default:
-      return undefined;
-  }
+  if (!nodeTypes.isBoxedPrimitive(value)) return undefined;
+  if (nodeTypes.isNumberObject(value)) return 'number';
+  if (nodeTypes.isStringObject(value)) return 'string';
+  if (nodeTypes.isBooleanObject(value)) return 'boolean';
+  if (nodeTypes.isBigIntObject(value)) return 'bigint';
+  return undefined;
 }
 
 /**
@@ -184,7 +159,7 @@ function toPlainJSONValue(
         : null;
     }
     case 'string':
-      return String.prototype.valueOf.call(objectValue);
+      return String(objectValue);
     case 'boolean':
       return Boolean.prototype.valueOf.call(objectValue);
     case 'bigint':
