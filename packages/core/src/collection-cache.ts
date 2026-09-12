@@ -12,8 +12,11 @@
  * - SMRT owns every mutation path (`save()`/`delete()` back
  *   `collection.create()`, `getOrUpsert()`, junction attach/detach), so all
  *   writes invalidate the affected table's entries in-process automatically.
- * - Entries are scoped per database identity (`db.url`) and per table, so
- *   multi-DB processes and STI siblings (which share a table) stay coherent.
+ * - Entries and flights are partitioned by the concrete DatabaseInterface
+ *   object, final SQL and parameters. Distinct transaction/connection handles
+ *   never share rows or failures, even when their database URL is identical.
+ * - Invalidation remains URL/table scoped, so a write clears every handle's
+ *   entries and STI siblings (which share a table) stay coherent.
  * - Caches are per-process. With multiple replicas, a local invalidation
  *   leaves peers stale until TTL unless cross-process invalidation is opted
  *   into (`crossProcess: true`), which broadcasts over the database
@@ -192,10 +195,10 @@ export function getCacheGeneration(dbKey: string, tableName: string): number {
 }
 
 /**
- * Fallback identities for database instances that expose no URL
- * (each such instance gets its own scope, never shared).
+ * Concrete executor identities. URL equality does not imply transaction or
+ * snapshot equality; each public database-interface object has its own scope.
  */
-const fallbackDbKeys = new WeakMap<object, string>();
+const dbInstanceKeys = new WeakMap<object, string>();
 
 /**
  * Resolve a stable cache scope for a database instance.
@@ -213,10 +216,14 @@ export function resolveDbCacheKey(db: DatabaseInterface): string {
   const url = db.url || dbWithConfig.config?.url;
   if (url && url !== ':memory:') return url;
 
-  let key = fallbackDbKeys.get(db);
+  return resolveDbInstanceKey(db);
+}
+
+function resolveDbInstanceKey(db: DatabaseInterface): string {
+  let key = dbInstanceKeys.get(db);
   if (!key) {
     key = `smrt-db:${crypto.randomUUID()}`;
-    fallbackDbKeys.set(db, key);
+    dbInstanceKeys.set(db, key);
   }
   return key;
 }
@@ -225,9 +232,17 @@ export function resolveDbCacheKey(db: DatabaseInterface): string {
  * Build the cache key for a query. The final SQL and bound parameters fully
  * normalize the query shape — they already include STI discriminator
  * filters, interceptor-injected tenant filters, ORDER BY, LIMIT and OFFSET.
+ * Collection reads also supply their concrete executor so neither pending
+ * reads nor completed rows cross connection/transaction boundaries. The
+ * surrounding URL/table scope remains shared for invalidation generations.
  */
-export function buildQueryCacheKey(sql: string, params: unknown[]): string {
-  return `${sql}\0${JSON.stringify(params)}`;
+export function buildQueryCacheKey(
+  sql: string,
+  params: unknown[],
+  db?: DatabaseInterface,
+): string {
+  const executor = db ? `${resolveDbInstanceKey(db)}\0` : '';
+  return `${executor}${sql}\0${JSON.stringify(params)}`;
 }
 
 /**

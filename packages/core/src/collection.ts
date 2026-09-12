@@ -2698,7 +2698,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Execute a SELECT, optionally through the collection read cache.
    *
-   * The cache key is the final SQL + bound parameters — computed after
+   * The cache key includes the concrete database-interface object and final
+   * SQL + bound parameters — computed after
    * interceptors (tenancy filters) and STI discriminators are applied, so
    * differently-scoped queries can never share an entry. Cached values are
    * raw rows; callers still run their normal post-query formatting path.
@@ -2718,7 +2719,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const dbKey = resolveDbCacheKey(this.db);
-    const queryKey = buildQueryCacheKey(sql, params);
+    const queryKey = buildQueryCacheKey(sql, params, this.db);
 
     // Start consuming peer invalidations before the first cached read so
     // a remote write can't go unseen for longer than necessary, and record
