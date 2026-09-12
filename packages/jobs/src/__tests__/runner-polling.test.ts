@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskRunner } from '../runner.js';
 
 type PollingInternals = {
@@ -11,6 +11,41 @@ function pollingInternals(runner: TaskRunner): PollingInternals {
 }
 
 describe('TaskRunner idle polling (#2820)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  async function runIdleWindow(idlePollInterval: number): Promise<number> {
+    vi.useFakeTimers();
+    const runner = new TaskRunner({ pollInterval: 1_000, idlePollInterval });
+    const internal = runner as unknown as {
+      collection: { claimReady: ReturnType<typeof vi.fn> };
+      db: object;
+      running: boolean;
+      recoverStaleJobs(): Promise<void>;
+      startPolling(): void;
+      pollTimer: ReturnType<typeof setTimeout> | null;
+    };
+    const claimReady = vi.fn().mockResolvedValue([]);
+    internal.collection = { claimReady };
+    internal.db = {};
+    internal.recoverStaleJobs = async () => {};
+    internal.running = true;
+    internal.startPolling();
+    await vi.advanceTimersByTimeAsync(30_000);
+    claimReady.mockClear();
+    await vi.advanceTimersByTimeAsync(60_000);
+    internal.running = false;
+    if (internal.pollTimer) clearTimeout(internal.pollTimer);
+    return claimReady.mock.calls.length;
+  }
+
+  it('measures a tenfold lower steady idle query count through the poll loop', async () => {
+    const before = await runIdleWindow(1_000);
+    const after = await runIdleWindow(10_000);
+
+    expect(before).toBe(60);
+    expect(after).toBe(6);
+  });
+
   it('backs empty queue checks off to one tenth of the configured polling rate', () => {
     const runner = new TaskRunner({ pollInterval: 1_000 });
     const polling = pollingInternals(runner);
