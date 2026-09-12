@@ -141,6 +141,7 @@ export {
   assertTenantReadAllowed,
   queryGlobal,
   queryWithGlobals,
+  withTenantGlobalRead,
 } from './tenant-global-queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

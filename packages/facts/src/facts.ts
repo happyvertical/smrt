@@ -6,6 +6,7 @@
  */
 
 import {
+  EmbeddingUnavailableError,
   isPostgresDatabase,
   SmrtCollection,
   type SmrtCreateInput,
@@ -23,7 +24,7 @@ import {
   isTenancyEnabled,
   queryGlobal,
   queryWithGlobals,
-  withSystemContext,
+  withTenantGlobalRead,
 } from '@happyvertical/smrt-tenancy';
 import { encodeCatalogSearch } from './catalog-search';
 import { Fact } from './fact';
@@ -231,11 +232,12 @@ export class FactCollection extends SmrtCollection<Fact> {
     limit: number,
     offset: number,
     candidateLimit: number,
+    readScope: { sql: string; values: unknown[] },
     textQuery?: string,
     rankedCandidateIds?: string[],
   ): Promise<Fact[]> {
     let scopeSql = '1 = 1';
-    let scopeParams: string[] = [];
+    let scopeParams: unknown[] = [];
 
     if (tenantId !== undefined && tenantId !== null) {
       assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
@@ -258,6 +260,9 @@ export class FactCollection extends SmrtCollection<Fact> {
       scopeSql += ' AND _meta_type = ?';
       scopeParams.push(metaType);
     }
+
+    scopeSql = `(${scopeSql}) AND (${readScope.sql})`;
+    scopeParams.push(...readScope.values);
 
     const statusSql = includeSuperseded
       ? ''
@@ -302,9 +307,9 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     const candidateSql = rankedCandidates
       ? `SELECT facts.id, semantic_candidates.candidate_order
-          FROM ${this.tableName} AS facts
-          INNER JOIN semantic_candidates ON semantic_candidates.id = facts.id
-          WHERE ${scopeSql}${statusSql}`
+          FROM (SELECT * FROM ${this.tableName}
+            WHERE ${scopeSql}${statusSql}) AS facts
+          INNER JOIN semantic_candidates ON semantic_candidates.id = facts.id`
       : `SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC) AS candidate_order
           FROM ${this.tableName}
           WHERE ${scopeSql}${statusSql}${textSql}
@@ -520,6 +525,16 @@ export class FactCollection extends SmrtCollection<Fact> {
       : 0;
     const pageEnd = safeOffset + safeLimit;
     const latestResolutionLimit = pageEnd + safeLimit;
+    const explicitTenant = tenantId !== undefined && tenantId !== null;
+    if (explicitTenant) assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
+    // Resolve authorization before embedding work and outside its fallback catch.
+    // The narrow tenant/global capability preserves the original actor for all
+    // custom policies. Predicates apply to candidates AND every successor.
+    const readScope = explicitTenant
+      ? await withTenantGlobalRead(tenantId, () =>
+          this.resolveListReadPredicate([[{ tenantId }], [{ tenantId: null }]]),
+        )
+      : await this.resolveListReadPredicate();
 
     if (!query.trim()) {
       return await this.listCatalogPage(
@@ -529,16 +544,14 @@ export class FactCollection extends SmrtCollection<Fact> {
         safeLimit,
         safeOffset,
         latestResolutionLimit,
+        readScope,
       );
     }
 
     try {
-      const explicitTenant = tenantId !== undefined && tenantId !== null;
-      if (explicitTenant)
-        assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
       const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
       const matches = explicitTenant
-        ? await withSystemContext(() =>
+        ? await withTenantGlobalRead(tenantId, () =>
             this.semanticSearchIds(query, {
               ...searchOptions,
               where: [
@@ -571,6 +584,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         safeLimit,
         safeOffset,
         latestResolutionLimit,
+        readScope,
         undefined,
         rankedCandidateIds,
       );
@@ -589,7 +603,8 @@ export class FactCollection extends SmrtCollection<Fact> {
         }
         return fact;
       });
-    } catch {
+    } catch (error) {
+      if (!(error instanceof EmbeddingUnavailableError)) throw error;
       return await this.listCatalogPage(
         tenantId,
         includeSuperseded,
@@ -597,6 +612,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         safeLimit,
         safeOffset,
         latestResolutionLimit,
+        readScope,
         query,
       );
     }

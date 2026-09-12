@@ -120,3 +120,15 @@ Optional peers: `svelte`, `@happyvertical/smrt-users`, `@happyvertical/smrt-svel
 ## License
 
 MIT
+
+### Authorized tenant/global list reads
+
+`withTenantGlobalRead(tenantId, callback)` permits list-family reads of the named
+tenant plus global rows after validating the caller's tenant. It preserves the
+original actor, permissions, and system status for business interceptors; it does
+not turn ordinary callers into system callers. The built-in tenancy `beforeList`
+hook ANDs this scope into every existing predicate branch, and rechecks identity
+if nested code changes tenants. Point reads, raw queries, and writes retain their
+normal guards. The capability is async-local, restores after exceptions, and does
+not affect concurrent requests. Real system/super-admin callers retain their
+existing bypass behavior. Use bounded collection reads inside the callback.

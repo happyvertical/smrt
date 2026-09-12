@@ -592,6 +592,9 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {
   maxListLimit?: number;
 }
 
+/** Only provider/configuration unavailability permits a caller's text fallback. */
+export class EmbeddingUnavailableError extends Error {}
+
 // S4 #1579: the constructor `options` and static `create(options)` params are
 // left as `any` deliberately. This type is satisfied by every concrete model
 // class (`static readonly _itemClass = Product`), whose constructor/`create`
@@ -5032,6 +5035,37 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     });
   }
 
+  /** Compile normal list authorization for a subclass's bounded SQL read. */
+  protected async resolveListReadPredicate(
+    where: SmrtListWhereClause<ModelType> = {},
+  ): Promise<{ sql: string; values: unknown[] }> {
+    await this.ensureStorageReady();
+    const className = this.getResolvedItemClassName();
+    const options = await GlobalInterceptors.executeBeforeList(
+      className,
+      { where },
+      createInterceptorContext(
+        className,
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
+    const scoped = resolveMetaTypeInWhere(
+      this.applyStiReadScope(options.where, undefined),
+    );
+    const predicate = buildWhere(this.convertWhereKeys(scoped || {}));
+    return {
+      sql:
+        predicate.sql
+          .trim()
+          .replace(/^WHERE\s+/i, '')
+          .replace(/\$\d+/g, '?') || '1 = 1',
+      values: predicate.values,
+    };
+  }
+
   /**
    * Search text without hydrating objects. All read predicates (including
    * `where`, tenancy and STI) apply BEFORE exact cosine ranking. Unlike the
@@ -5048,7 +5082,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ): Promise<Array<{ id: string; similarity: number }>> {
     const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
     if (!config) {
-      throw new Error(
+      throw new EmbeddingUnavailableError(
         `No embedding configuration found for ${this._itemClass.name}.`,
       );
     }
@@ -5068,7 +5102,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       },
       this.ai,
     );
-    const [embedding] = await provider.embed(query);
+    let embedding: number[];
+    try {
+      [embedding] = await provider.embed(query);
+    } catch (cause) {
+      throw new EmbeddingUnavailableError('Query embedding is unavailable', {
+        cause,
+      });
+    }
     return this.findSimilarIdsToEmbedding(embedding, { ...options, field });
   }
 

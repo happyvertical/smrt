@@ -141,7 +141,17 @@ explicit tenant, tenant and global candidates exclude only `superseded`.
 to constrain implicit reads, and requesting another tenant is rejected. STI child
 collections constrain both candidates and successors to their discriminator.
 
-When semantic search is unavailable, text fallback matches the exact JavaScript
+Catalog reads apply normal `beforeList` authorization predicates to candidates,
+readiness checks, and the complete successor graph, including empty queries.
+Explicit tenant/global reads use `withTenantGlobalRead`, which grants the built-in
+tenancy list hook that narrow scope while business hooks keep the original user,
+permissions, tenant context, and system/non-system identity. Actual system calls
+remain system calls. Interceptor rejection and application SQL failures propagate
+to the caller.
+Only unavailable embedding configuration or query-embedding provider failure
+permits text fallback; a semantic authorization failure never does.
+
+When query embeddings are unavailable, text fallback matches the exact JavaScript
 expression `` `${textRefined} ${textRaw}`.toLowerCase().includes(query.toLowerCase()) ``.
 It uses persisted `catalogSearch` storage and the same bounded SQL page traversal.
 The storage encodes lowercased UTF-16 units as aligned ASCII tokens, preserving

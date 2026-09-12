@@ -32,3 +32,9 @@ O(limit + 64); the exact fallback still scans all matching stored embeddings.
 The embedding primary key supports the cursor and application primary keys
 support eligibility probes; no new application index is needed. Pagination
 callers can request offset + limit scored IDs, then hydrate only their page.
+
+`semanticSearchIds` reports missing embedding configuration/provider failure as
+`EmbeddingUnavailableError`; authorization/interceptor and application SQL errors
+remain distinct and must not be caught as text-fallback signals. Subclass SQL
+readers can compile normal beforeList + STI predicates with the protected
+`resolveListReadPredicate()` (ordered values and portable `?` placeholders).

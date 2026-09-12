@@ -476,7 +476,7 @@ describe('getEntityBriefing', () => {
       type: 'assertion',
       status: 'active',
     });
-    vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
 
@@ -498,7 +498,7 @@ describe('getEntityBriefing', () => {
       type: 'assertion',
       status: 'active',
     });
-    vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
 

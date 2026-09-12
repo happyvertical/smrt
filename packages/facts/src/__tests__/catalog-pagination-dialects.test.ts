@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   EmbeddingProvider,
   EmbeddingStorage,
+  GlobalInterceptors,
   getTestDatabase,
   ObjectRegistry,
   smrt,
@@ -14,6 +15,8 @@ import { getDDLStrategy } from '@happyvertical/smrt-core/schema';
 import {
   disableTenancy,
   enableTenancy,
+  getCurrentTenant,
+  isSystemContext,
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
@@ -67,9 +70,259 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         facts = await FactCollection.create({ db });
       });
       afterEach(async () => {
+        GlobalInterceptors.unregister('catalog-authorization');
         disableTenancy();
         vi.restoreAllMocks();
         await cleanup?.();
+      });
+
+      for (const queryText of ['', 'K']) {
+        it(`preserves narrowing beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {
+          const special = await CatalogSpecialFacts.create({ db });
+          const tenantA = randomUUID();
+          const tenantB = randomUUID();
+          const owned = await special.create({
+            tenantId: tenantA,
+            textRefined: 'K owned',
+            status: 'active',
+            domain: 'allowed',
+          });
+          const global = await special.create({
+            textRefined: 'K global',
+            status: 'active',
+            domain: 'allowed',
+          });
+          await special.create({
+            tenantId: tenantA,
+            textRefined: 'K forbidden successor',
+            status: 'active',
+            domain: 'denied',
+            previousFactId: owned.id,
+            confidence: 1,
+          });
+          await special.create({
+            tenantId: tenantB,
+            textRefined: 'K foreign',
+            status: 'active',
+            domain: 'allowed',
+          });
+          await facts.create({
+            tenantId: tenantA,
+            textRefined: 'K wrong subtype',
+            status: 'active',
+            domain: 'allowed',
+          });
+          vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+            new Error('offline'),
+          );
+          GlobalInterceptors.register({
+            name: 'catalog-authorization',
+            beforeList: (_name, options) => ({
+              ...options,
+              where: Array.isArray(options.where)
+                ? options.where.map((group) => [
+                    ...group,
+                    { domain: 'allowed' },
+                  ])
+                : { ...options.where, domain: 'allowed' },
+            }),
+          });
+          enableTenancy();
+          const expectExplicit = async () => {
+            for (const latestOnly of [false, true]) {
+              const result = await special.browseCatalog(queryText, {
+                tenantId: tenantA,
+                latestOnly,
+              });
+              expect(result.map((row) => row.id).sort()).toEqual(
+                [owned.id, global.id].sort(),
+              );
+            }
+          };
+          await expectExplicit();
+          await withTenant({ tenantId: tenantA }, async () => {
+            await expectExplicit();
+            expect(
+              (await special.browseCatalog(queryText)).map((row) => row.id),
+            ).toEqual([owned.id]);
+            await expect(
+              special.browseCatalog(queryText, { tenantId: tenantB }),
+            ).rejects.toThrow();
+          });
+          await withSystemContext(expectExplicit);
+        });
+
+        it(`propagates rejecting beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {
+          await facts.create({ textRefined: 'K forbidden', status: 'active' });
+          const embed = vi
+            .spyOn(EmbeddingProvider.prototype, 'embed')
+            .mockRejectedValue(new Error('offline'));
+          GlobalInterceptors.register({
+            name: 'catalog-authorization',
+            beforeList: () => {
+              throw new Error('catalog access denied');
+            },
+          });
+          const reads = vi.spyOn(db, 'query');
+          await expect(facts.browseCatalog(queryText)).rejects.toThrow(
+            'catalog access denied',
+          );
+          expect(embed).not.toHaveBeenCalled();
+          expect(
+            reads.mock.calls.filter(([sql]) => /FROM facts/.test(String(sql))),
+          ).toHaveLength(0);
+        });
+      }
+
+      it('preserves caller identity for custom authorization that trusts actual system calls', async () => {
+        const tenantA = randomUUID();
+        const owned = await facts.create({
+          tenantId: tenantA,
+          textRefined: 'K owned',
+          domain: 'allowed',
+          status: 'active',
+        });
+        const global = await facts.create({
+          textRefined: 'K global',
+          domain: 'allowed',
+          status: 'active',
+        });
+        const denied = await facts.create({
+          tenantId: tenantA,
+          textRefined: 'K denied',
+          domain: 'denied',
+          status: 'active',
+        });
+        GlobalInterceptors.register({
+          name: 'catalog-authorization',
+          beforeList: (_name, options) => {
+            if (isSystemContext()) return options;
+            if (getCurrentTenant())
+              expect(getCurrentTenant()?.userId).toBe('catalog-user');
+            return {
+              ...options,
+              where: Array.isArray(options.where)
+                ? options.where.map((group) => [
+                    ...group,
+                    { domain: 'allowed' },
+                  ])
+                : { ...options.where, domain: 'allowed' },
+            };
+          },
+        });
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+          new Error('offline'),
+        );
+        enableTenancy();
+        const checkCaller = async () => {
+          for (const query of ['', 'K']) {
+            expect(
+              (await facts.browseCatalog(query, { tenantId: tenantA }))
+                .map((row) => row.id)
+                .sort(),
+            ).toEqual([owned.id, global.id].sort());
+          }
+        };
+        await checkCaller();
+        await withTenant(
+          {
+            tenantId: tenantA,
+            userId: 'catalog-user',
+            permissions: new Set(['read']),
+          },
+          checkCaller,
+        );
+        vi.mocked(EmbeddingProvider.prototype.embed).mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(EmbeddingProvider.prototype, 'getModelName').mockReturnValue(
+          'catalog-policy-test',
+        );
+        for (const row of [owned, global, denied]) {
+          await EmbeddingStorage.upsert(facts.systemDb, {
+            objectClass: 'Fact',
+            objectId: row.id as string,
+            fieldName: 'textRefined',
+            contentHash: 'policy',
+            embedding: [1, 0],
+            model: 'catalog-policy-test',
+            dimensions: 2,
+          });
+        }
+        await withTenant(
+          {
+            tenantId: tenantA,
+            userId: 'catalog-user',
+            permissions: new Set(['read']),
+          },
+          async () => {
+            expect(
+              (
+                await facts.browseCatalog('semantic', {
+                  tenantId: tenantA,
+                  latestOnly: false,
+                })
+              )
+                .map((row) => row.id)
+                .sort(),
+            ).toEqual([owned.id, global.id].sort());
+          },
+        );
+        await withSystemContext(async () => {
+          expect(
+            (await facts.browseCatalog('', { tenantId: tenantA }))
+              .map((row) => row.id)
+              .sort(),
+          ).toEqual([owned.id, global.id, denied.id].sort());
+        });
+      });
+
+      it('retains beforeList ID predicates in semantic page SQL without ambiguous joins', async () => {
+        const allowed = await facts.create({
+          textRefined: 'allowed',
+          status: 'active',
+        });
+        const denied = await facts.create({
+          textRefined: 'denied',
+          status: 'active',
+        });
+        GlobalInterceptors.register({
+          name: 'catalog-authorization',
+          beforeList: (_name, options) => ({
+            ...options,
+            where: { ...options.where, id: allowed.id },
+          }),
+        });
+        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([
+          { id: denied.id as string, similarity: 1 },
+          { id: allowed.id as string, similarity: 0.9 },
+        ]);
+        for (const latestOnly of [false, true]) {
+          expect(
+            (await facts.browseCatalog('semantic', { latestOnly })).map(
+              (row) => row.id,
+            ),
+          ).toEqual([allowed.id]);
+        }
+      });
+
+      it('does not reinterpret a later semantic interceptor rejection as provider unavailability', async () => {
+        await facts.create({ textRefined: 'K forbidden', status: 'active' });
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        let calls = 0;
+        GlobalInterceptors.register({
+          name: 'catalog-authorization',
+          beforeList: (_name, options) => {
+            if (++calls === 2) throw new Error('semantic access denied');
+            return options;
+          },
+        });
+        await expect(facts.browseCatalog('K')).rejects.toThrow(
+          'semantic access denied',
+        );
+        expect(calls).toBe(2);
       });
 
       it('migrates historical search storage and safely resumes bounded backfill', async () => {
@@ -180,7 +433,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         } else {
           await db.query('ALTER TABLE facts DROP COLUMN catalog_search');
         }
-        vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('offline'),
         );
         await expect(facts.browseCatalog('k')).rejects.toThrow(
@@ -215,7 +468,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           ]);
           await migrationDb.query(`DROP TABLE ${migrationTable}`);
         }
-        vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('offline'),
         );
         await expect(facts.browseCatalog('k')).rejects.toThrow(
@@ -301,7 +554,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
             remaining: 0,
           });
         });
-        vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('offline'),
         );
         expect(
@@ -338,7 +591,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           foreign.id,
           otherType.id,
         );
-        vi.spyOn(special, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('offline'),
         );
         enableTenancy();
@@ -465,7 +718,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         );
         const page = await facts.browseCatalog('', { limit: 1 });
         expect(page.map((f) => f.id)).toEqual([newer.id]);
-        vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('Embeddings unavailable'),
         );
         expect(
@@ -493,7 +746,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         expect(new Set(page.map((f) => f.id))).toEqual(
           new Set([root.id, leaf.id]),
         );
-        vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('Embeddings unavailable'),
         );
         const fallback = await facts.browseCatalog('cycle', { limit: 5 });
@@ -588,7 +841,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           previousFactId: root.id,
           confidence: 1,
         });
-        vi.spyOn(special, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('Embeddings unavailable'),
         );
         enableTenancy();
@@ -645,7 +898,7 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           '2026-02-01T00:00:00.000Z',
           root.id,
         );
-        vi.spyOn(special, 'semanticSearchIds').mockRejectedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
           new Error('Embeddings unavailable'),
         );
         expect((await special.browseCatalog('k')).map((f) => f.id)).toEqual([
