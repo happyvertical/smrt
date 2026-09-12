@@ -1481,5 +1481,6 @@ export function createContentListActionAdapter(
   return {
     preview: (request, context) => invoke('preview', request, context),
     apply: (request, context) => invoke('apply', request, context),
+    executeDeferred: (envelope) => generic.executeDeferred(envelope),
   };
 }

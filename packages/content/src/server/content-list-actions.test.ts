@@ -1910,7 +1910,8 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(formatBody).not.toHaveBeenCalled();
     expect(queued?.rowIds).toEqual(['a', 'b']);
 
-    const executed = await queued?.run();
+    if (!queued) throw new Error('background job was not queued');
+    const executed = await setup.adapter.executeDeferred(queued.envelope);
     const replayed = await queued?.run();
     expect(executed).toMatchObject({
       ok: true,
