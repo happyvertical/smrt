@@ -254,7 +254,7 @@ describe('getEntityBriefing', () => {
     );
   });
 
-  it('caps latest-chain resolution when browsing an empty catalog query', async () => {
+  it('resolves latest catalog facts from one batched query', async () => {
     const browseFacts = await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -264,10 +264,8 @@ describe('getEntityBriefing', () => {
         }),
       ),
     );
-    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
-    const latestSpy = vi
-      .spyOn(facts, 'getLatestInChain')
-      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
 
     const results = await facts.browseCatalog('', {
       limit: 5,
@@ -275,11 +273,50 @@ describe('getEntityBriefing', () => {
     });
 
     expect(results).toHaveLength(5);
-    expect(latestSpy).toHaveBeenCalledTimes(5);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(1);
+    const browseFactIds = new Set(browseFacts.map((fact) => fact.id));
+    expect(results.every((fact) => browseFactIds.has(fact.id))).toBe(true);
   });
 
-  it('caps latest-chain resolution in the text fallback browse path', async () => {
-    const browseFacts = await Promise.all(
+  it('selects the highest-confidence latest leaf without chain queries', async () => {
+    const root = await facts.create({
+      textRefined: 'Catalog root fact',
+      type: 'assertion',
+      status: 'active',
+      confidence: 0.1,
+    });
+    await facts.create({
+      textRefined: 'Lower-confidence successor',
+      type: 'assertion',
+      status: 'active',
+      previousFactId: root.id as string,
+      confidence: 0.3,
+    });
+    const latest = await facts.create({
+      textRefined: 'Higher-confidence successor',
+      type: 'assertion',
+      status: 'active',
+      previousFactId: root.id as string,
+      confidence: 0.9,
+    });
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
+
+    const results = await facts.browseCatalog('', {
+      limit: 5,
+      latestOnly: true,
+    });
+
+    expect(results.map((fact) => fact.id)).toContain(latest.id);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(1);
+  });
+
+  it('resolves latest catalog facts in the text fallback without chain queries', async () => {
+    await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
           textRefined: `Catalog fallback fact ${index + 1}`,
@@ -288,13 +325,11 @@ describe('getEntityBriefing', () => {
         }),
       ),
     );
-    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
     vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
-    const latestSpy = vi
-      .spyOn(facts, 'getLatestInChain')
-      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
 
     const results = await facts.browseCatalog('fallback', {
       limit: 5,
@@ -303,6 +338,36 @@ describe('getEntityBriefing', () => {
     });
 
     expect(results).toHaveLength(5);
-    expect(latestSpy).toHaveBeenCalledTimes(15);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(1);
+  });
+
+  it('follows a successor outside the active catalog filter', async () => {
+    const root = await facts.create({
+      textRefined: 'Active catalog root',
+      type: 'assertion',
+      status: 'active',
+      confidence: 0.1,
+    });
+    const latest = await facts.create({
+      textRefined: 'Superseded successor',
+      type: 'assertion',
+      status: 'superseded',
+      previousFactId: root.id as string,
+      confidence: 0.9,
+    });
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
+
+    const results = await facts.browseCatalog('', {
+      latestOnly: true,
+      includeSuperseded: false,
+    });
+
+    expect(results.map((fact) => fact.id)).toEqual([latest.id]);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(1);
   });
 });
