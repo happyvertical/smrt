@@ -2589,7 +2589,7 @@ export class SmrtObject extends SmrtClass {
       'updated_at',
       '_meta_type',
       '_meta_data',
-      ...conflictColumns,
+      ...conflictColumns.map(toSnakeCase),
     ]);
     for (const [name, field] of registeredFields) {
       if (

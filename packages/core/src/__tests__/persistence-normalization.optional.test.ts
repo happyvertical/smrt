@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { field } from '../decorators/index.js';
 import { SmrtObject, type SmrtObjectOptions } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -39,6 +40,20 @@ class PersistenceNormalizationProbe extends SmrtObject {
   }
 }
 
+@smrt({ conflictColumns: ['externalId'] })
+class CamelConflictNormalizationProbe extends SmrtObject {
+  @field({ type: 'text' })
+  externalId = 'original';
+
+  protected override getPersistenceDerivedColumns(): readonly string[] {
+    return ['external_id'];
+  }
+
+  protected override normalizePersistenceData(): Record<string, unknown> {
+    return { external_id: 'replacement' };
+  }
+}
+
 for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
   const suite =
     dialect === 'postgres' && !process.env.SMRT_TEST_POSTGRES_URL
@@ -70,6 +85,37 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       await db?.close?.();
     });
 
+    it('protects a real camelCase registry conflict column before strict insertion', async () => {
+      expect(
+        ObjectRegistry.getConflictColumns('CamelConflictNormalizationProbe'),
+      ).toEqual(['externalId']);
+      expect(
+        ObjectRegistry.getFields('CamelConflictNormalizationProbe').get(
+          'externalId',
+        )?.type,
+      ).toBe('text');
+      // Real registry configuration, pre-provisioned physical columns. Default
+      // schema generation's camelCase conflict-index mapping is a separate edge.
+      const uuid = dialect === 'sqlite' ? 'TEXT' : 'UUID';
+      await db.query(
+        'DROP TABLE IF EXISTS camel_conflict_normalization_probes',
+      );
+      await db.query(`CREATE TABLE camel_conflict_normalization_probes (
+        id ${uuid} PRIMARY KEY, external_id TEXT UNIQUE,
+        slug TEXT, context TEXT, created_at TIMESTAMP, updated_at TIMESTAMP)`);
+      const instance = await new CamelConflictNormalizationProbe({
+        db,
+      }).initialize();
+      instance.requireInsertOnSave();
+      const normalize = vi.spyOn(instance as any, 'normalizePersistenceData');
+      await expect(instance.save()).rejects.toThrow(
+        'Invalid persistence derived column declaration: external_id',
+      );
+      expect(normalize).not.toHaveBeenCalled();
+      expect(
+        (await db.query(`SELECT id FROM ${instance.tableName}`)).rows,
+      ).toEqual([]);
+    });
     it('normalization cannot restore the previous framework revision', async () => {
       const instance = new PersistenceNormalizationProbe({
         db,
