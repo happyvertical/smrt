@@ -178,9 +178,13 @@ export abstract class SmrtJunction<
     rightId: string,
     opts: JunctionFilterOptions = {},
   ): Promise<void> {
+    // Read bounds never narrow the mutation snapshot.
+    const filters = { ...opts };
+    delete filters.limit;
+    delete filters.offset;
     const links = (await this.list({
       where: {
-        ...opts,
+        ...filters,
         [this.leftField]: leftId,
         [this.rightField]: rightId,
       },

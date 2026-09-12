@@ -424,6 +424,47 @@ describe('SmrtJunction', () => {
       expect(attackerRows).toHaveLength(0);
     });
 
+    it.each([
+      false,
+      true,
+    ])('detach ignores read bounds and deletes every scoped row (legacy=%s)', async (legacy) => {
+      await links.attach('owner-1', 'asset-a', {
+        relationship: 'one',
+        sortOrder: 7,
+      });
+      await links.attach('owner-1', 'asset-a', {
+        relationship: 'two',
+        sortOrder: 7,
+      });
+      await links.attach('owner-1', 'asset-a', {
+        relationship: 'keep',
+        sortOrder: 8,
+      });
+      await links.attach('owner-1', 'asset-b', { sortOrder: 7 });
+      await links.attach('owner-2', 'asset-a', { sortOrder: 7 });
+      const interceptor = { beforeDelete: vi.fn() };
+      if (legacy) GlobalInterceptors.register(interceptor);
+      try {
+        await links.detach('owner-1', 'asset-a', {
+          limit: 1,
+          offset: 1,
+          sortOrder: 7,
+        });
+        const remaining = await links.byLeft('owner-1');
+        expect(remaining).toHaveLength(2);
+        expect(remaining.map((row) => [row.assetId, row.relationship])).toEqual(
+          expect.arrayContaining([
+            ['asset-a', 'keep'],
+            ['asset-b', 'attachment'],
+          ]),
+        );
+        expect(await links.byLeft('owner-2')).toHaveLength(1);
+        if (legacy) expect(interceptor.beforeDelete).toHaveBeenCalledTimes(2);
+      } finally {
+        if (legacy) GlobalInterceptors.unregister(interceptor);
+      }
+    });
+
     it('detach: opts cannot override leftField or rightField in the WHERE', async () => {
       await links.attach('owner-1', 'asset-a');
       await links.attach('owner-2', 'asset-b');
