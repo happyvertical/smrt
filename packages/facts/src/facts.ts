@@ -355,7 +355,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return [...latestById.values()].slice(safeOffset, pageEnd);
     };
 
-    const baseList =
+    const chainFacts =
       tenantId === undefined || tenantId === null
         ? await this.list({
             orderBy: 'updated_at DESC',
@@ -363,8 +363,12 @@ export class FactCollection extends SmrtCollection<Fact> {
         : await this.findWithGlobals(tenantId);
 
     const tenantScoped = includeSuperseded
-      ? baseList
-      : baseList.filter((fact) => fact.status !== 'superseded');
+      ? chainFacts
+      : chainFacts.filter((fact) =>
+          tenantId === undefined || tenantId === null
+            ? fact.status === 'active'
+            : fact.status !== 'superseded',
+        );
     const tenantScopedIds = new Set(
       tenantScoped
         .map((fact) => fact.id)
@@ -376,7 +380,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
       }
 
-      return resolveLatestPage(tenantScoped, baseList);
+      return resolveLatestPage(tenantScoped, chainFacts);
     }
 
     let matches: Fact[] = [];
@@ -404,7 +408,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
-    return resolveLatestPage(matches, baseList);
+    return resolveLatestPage(matches, chainFacts);
   }
 
   /**

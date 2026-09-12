@@ -343,7 +343,7 @@ describe('getEntityBriefing', () => {
     ).toHaveLength(1);
   });
 
-  it('follows a successor outside the active catalog filter', async () => {
+  it('keeps no-tenant catalog candidates active while following filtered successors', async () => {
     const root = await facts.create({
       textRefined: 'Active catalog root',
       type: 'assertion',
@@ -356,6 +356,16 @@ describe('getEntityBriefing', () => {
       status: 'superseded',
       previousFactId: root.id as string,
       confidence: 0.9,
+    });
+    await facts.create({
+      textRefined: 'Pending catalog fact',
+      type: 'assertion',
+      status: 'pending',
+    });
+    await facts.create({
+      textRefined: 'Rejected catalog fact',
+      type: 'assertion',
+      status: 'rejected',
     });
     const querySpy = vi.spyOn((facts as any).db, 'query');
     querySpy.mockClear();
