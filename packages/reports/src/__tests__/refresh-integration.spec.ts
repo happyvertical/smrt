@@ -922,6 +922,58 @@ describe('report refresh integration', () => {
     }
   });
 
+  it('does not replace a global runner tenant with persisted task configuration', async () => {
+    const db = await setupDb();
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: 'IntegrationRevenueReport',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        maxAttempts: 1,
+        integritySigner: JOB_SIGNER,
+        executionAuthority: {
+          version: 1,
+          hostId: 'missing-host',
+          principal: {
+            version: 1,
+            actorUserId: 'user-a',
+            tenantId: 'tenant-a',
+          },
+        },
+      });
+      const persisted = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const args = JSON.parse(String(persisted.rows[0]?.args));
+      args._agentConfig = { tenantId: 'tenant-a' };
+      await db.query(
+        'UPDATE _smrt_jobs SET tenant_id = NULL, args = ? WHERE id = ?',
+        JSON.stringify(args),
+        job.id,
+      );
+      await taskRunner.initialize(db);
+      const failure = new Promise<Error>((resolve, reject) => {
+        taskRunner.once('job:failed', (_job, error) => resolve(error as Error));
+        taskRunner.once('runner:error', reject);
+      });
+      await taskRunner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid report refresh execution tenant',
+      });
+    } finally {
+      await taskRunner.stop();
+      await db.close?.();
+    }
+  });
+
   it('recomputes affected groups incrementally, including avg and empty-group deletes', async () => {
     const db = await setupDb();
     await insertInvoice(db, {

@@ -318,4 +318,58 @@ describe('smrtConsumer registration generation', () => {
       expect.objectContaining({ name: 'ExternalThing' }),
     );
   });
+
+  it('preserves producer knowledge configuration after merging consumer objects', async () => {
+    writeFileSync(
+      join(tmpDir, 'smrt.config.json'),
+      JSON.stringify({
+        knowledge: {
+          includeDocs: false,
+          includePrompts: false,
+          tags: ['producer-tag'],
+          summary: 'producer summary',
+          risks: ['producer risk'],
+        },
+      }),
+    );
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const knowledge = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(knowledge).toMatchObject({
+      tags: ['producer-tag'],
+      summary: 'producer summary',
+      risks: ['producer risk'],
+      prompts: [],
+    });
+  });
+
+  it('fails aggregation without publishing a new manifest when knowledge cannot be written', async () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(join(smrtDir, 'smrt-knowledge.json'), { recursive: true });
+    writeFileSync(
+      join(smrtDir, 'manifest.json'),
+      JSON.stringify({ version: '1.0.0', timestamp: 1, objects: {} }),
+    );
+    const before = readFileSync(join(smrtDir, 'manifest.json'), 'utf-8');
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      'Failed to save aggregated manifest',
+    );
+    expect(readFileSync(join(smrtDir, 'manifest.json'), 'utf-8')).toBe(before);
+  });
 });

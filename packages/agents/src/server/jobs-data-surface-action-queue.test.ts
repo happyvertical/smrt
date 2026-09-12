@@ -89,16 +89,64 @@ describe('jobs-backed data-surface action queue', () => {
       unregister();
     }
   });
+
+  it('keeps a runner-owned global tenant from persisted configuration', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const envelope = actionEnvelope(null);
+    const queued = await queue.enqueue(actionJob(envelope));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      {
+        args: JSON.stringify(args),
+      },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
+      runner.once('job:completed', (_job, result) =>
+        resolve(result as { result?: unknown }),
+      );
+      runner.once('job:failed', (_job, error) => reject(error));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(completion).resolves.toEqual({ result: actionResult() });
+      expect(execute).toHaveBeenCalledWith(envelope);
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
 });
 
-function actionEnvelope(): DataSurfaceBackgroundActionEnvelope {
+function actionEnvelope(
+  tenantId: string | null = 'tenant-a',
+): DataSurfaceBackgroundActionEnvelope {
   return {
     binding: { version: 1, keyId: 'test', signature: 'test-binding' },
     version: 1,
     handlerId: 'orders-actions-v1',
     principal: {
       runAsUserId: 'user-a',
-      tenantId: 'tenant-a',
+      tenantId,
       actsAsProfileId: null,
       onBehalfOfUserId: 'requester-a',
     },

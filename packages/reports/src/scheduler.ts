@@ -453,8 +453,19 @@ export class SmrtReportRefreshTask extends SmrtObject {
     const trigger = args.trigger ?? 'job';
 
     const reportCtor = resolveReportClass(reportClass);
-    const jobTenantId =
-      executionContext?.job.tenantId ?? tenantIdFromInstance(this);
+    // A runner context, including its explicit global `null` tenant, owns the
+    // scope. Only direct callers without runner context may use instance scope.
+    const runnerTenantId = executionContext?.job.tenantId;
+    if (
+      executionContext &&
+      runnerTenantId !== null &&
+      (typeof runnerTenantId !== 'string' || runnerTenantId.length === 0)
+    ) {
+      throw new Error('Invalid report refresh execution tenant');
+    }
+    const jobTenantId = executionContext
+      ? runnerTenantId
+      : tenantIdFromInstance(this);
     await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
     return refreshReport(reportCtor, {
       db: this.db,

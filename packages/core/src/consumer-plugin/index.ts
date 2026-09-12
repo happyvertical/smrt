@@ -5,7 +5,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
+import type {
+  DomainKnowledgeAgentSurface,
+  DomainKnowledgeConfig,
+} from '@happyvertical/smrt-types';
 import type { Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
@@ -525,9 +528,6 @@ async function saveAggregatedManifest(
       }
     }
 
-    // Write manifest
-    fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
-
     // smrtPlugin writes the local knowledge artifact before this consumer
     // plugin merges external package entries into the same manifest. Refresh
     // the artifact from the merged manifest so its source hash always names
@@ -549,25 +549,96 @@ async function saveAggregatedManifest(
     const packageJson = fs.existsSync(packageJsonPath)
       ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
       : undefined;
+    const knowledgeConfig = await resolveConsumerKnowledgeConfig(
+      projectRoot,
+      merged as unknown as SmartObjectManifest,
+    );
+    if (knowledgeConfig.enabled === false) {
+      fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+      return;
+    }
     const knowledge = buildDomainKnowledgeManifest({
       manifest: merged as unknown as SmartObjectManifest,
       rootDir: projectRoot,
       packageJson,
       manifestPath,
+      config: knowledgeConfig,
       agentSurface,
     });
+    // Build the knowledge artifact before publishing either output. Any
+    // construction/write failure is a generation failure, never a warning that
+    // leaves callers believing the artifact pair is current.
     fs.writeFileSync(
       knowledgePath,
       JSON.stringify(knowledge, null, 2),
       'utf-8',
     );
+    fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
 
     console.log(
       `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(merged.objects).length} objects)`,
     );
   } catch (error) {
-    console.warn('[smrt:consumer] Failed to save aggregated manifest:', error);
+    throw new Error('[smrt:consumer] Failed to save aggregated manifest', {
+      cause: error,
+    });
   }
+}
+
+async function resolveConsumerKnowledgeConfig(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+): Promise<DomainKnowledgeConfig> {
+  const defaults: DomainKnowledgeConfig = {
+    enabled: true,
+    api: {
+      enabled: false,
+      basePath: '/__smrt/knowledge',
+      requireAdmin: true,
+      includeDocs: false,
+      includePrompts: false,
+    },
+    includeDocs: true,
+    includePrompts: true,
+  };
+  const packageName = manifest.packageName;
+  try {
+    const previousCwd = process.cwd();
+    process.chdir(projectRoot);
+    try {
+      const { loadConfig } = await import('@happyvertical/smrt-config');
+      const config = await loadConfig({ cache: false });
+      return mergeConsumerKnowledgeConfig(
+        defaults,
+        config.knowledge as DomainKnowledgeConfig | undefined,
+        packageName
+          ? (config.packages?.[packageName]?.knowledge as
+              | DomainKnowledgeConfig
+              | undefined)
+          : undefined,
+      );
+    } finally {
+      process.chdir(previousCwd);
+    }
+  } catch {
+    return defaults;
+  }
+}
+
+function mergeConsumerKnowledgeConfig(
+  ...configs: Array<DomainKnowledgeConfig | undefined>
+): DomainKnowledgeConfig {
+  const merged: DomainKnowledgeConfig = {};
+  for (const next of configs) {
+    if (!next) continue;
+    const api =
+      merged.api || next.api
+        ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
+        : undefined;
+    Object.assign(merged, next);
+    if (api) merged.api = api;
+  }
+  return merged;
 }
 
 /**
