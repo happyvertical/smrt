@@ -1288,7 +1288,6 @@ describe('report refresh integration', () => {
 
     const runner = new ReportScheduleRunner({
       pollInterval: 1000,
-      integritySigner: JOB_SIGNER,
     });
     await runner.initialize(db);
     await runner.poll();
@@ -1331,7 +1330,6 @@ describe('report refresh integration', () => {
     const unregister = registerReportRefreshInterceptor({
       db,
       reports: [IntegrationRevenueReport],
-      integritySigner: JOB_SIGNER,
     });
     const invoice = new IntegrationInvoice({
       db,

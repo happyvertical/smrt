@@ -189,6 +189,21 @@ export function registerReportRefreshJobIntegritySigner(
   };
 }
 
+/**
+ * Maintenance callers historically configured only their runner/interceptor;
+ * they do not have a request host from which to obtain a signer. When one
+ * worker-shared signer is registered, use it as the application default. More
+ * than one key is ambiguous and remains fail-closed until the caller selects
+ * one explicitly.
+ */
+function resolveReportRefreshIntegritySigner(
+  configured: DurableJobPayloadSigner | undefined,
+): DurableJobPayloadSigner | undefined {
+  if (configured) return configured;
+  if (jobIntegritySigners.size !== 1) return undefined;
+  return jobIntegritySigners.values().next().value;
+}
+
 function unsignedReportRefreshJobArgs(
   args: ReportRefreshJobArgs,
 ): Omit<ReportRefreshJobArgs, 'integrity'> {
@@ -472,7 +487,10 @@ export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
 export async function enqueueReportRefresh(
   options: EnqueueReportRefreshOptions,
 ): Promise<SmrtJob> {
-  if (!options.integritySigner) {
+  const integritySigner = resolveReportRefreshIntegritySigner(
+    options.integritySigner,
+  );
+  if (!integritySigner) {
     throw new Error(
       'Report refresh queue requires a durable job integrity signer',
     );
@@ -519,7 +537,7 @@ export async function enqueueReportRefresh(
     scheduleId,
     executionAuthority: options.executionAuthority,
   };
-  const integrity = options.integritySigner.sign(unsignedArgs);
+  const integrity = integritySigner.sign(unsignedArgs);
   if (
     !jobIntegritySigners.get(integrity.keyId)?.verify(unsignedArgs, integrity)
   ) {
