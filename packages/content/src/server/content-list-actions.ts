@@ -33,15 +33,15 @@ import {
   MAX_DATA_QUERY_PAGE_LIMIT,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
-import type { DataQueryRequest } from '@happyvertical/smrt-types';
 import type {
+  DataQueryRequest,
   DataSurfaceActionResult,
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceJsonObject,
   DataSurfaceJsonValue,
   DataSurfaceRowId,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import type { ContentBodyFormat } from '../body-format.js';
 import type { Content } from '../content.js';
 import {
@@ -554,6 +554,9 @@ export interface ContentListActionAdapterOptions {
   ) => boolean | Promise<boolean>;
   handlers?: ContentListWorkflowHandlers;
   backgroundQueue?: DataSurfaceBackgroundQueue;
+  backgroundHandlerId?: string;
+  /** In-process secret used to authenticate the durable background envelope. */
+  deferredEnvelopeSigningKey?: string | Uint8Array;
   descriptor?: DataSurfaceDescriptor;
   maxSelectionSize?: number;
   representativeLimit?: number;
@@ -1333,6 +1336,8 @@ export function createContentListActionAdapter(
     putToken: (...args) => options.state.putToken(...args),
     getToken: (...args) => options.state.getToken(...args),
     markTokenConsumed: (...args) => options.state.markTokenConsumed(...args),
+    consumeTokenAndReserveIdempotency: (...args) =>
+      options.state.consumeTokenAndReserveIdempotency(...args),
     getIdempotency: (...args) => options.state.getIdempotency(...args),
     reserveIdempotency: (...args) => options.state.reserveIdempotency(...args),
     completeIdempotency: (key, ownerToken, result) => {
@@ -1350,6 +1355,8 @@ export function createContentListActionAdapter(
   const generic = createDataSurfaceActionAdapter({
     state,
     backgroundQueue: options.backgroundQueue,
+    backgroundHandlerId: options.backgroundHandlerId,
+    deferredEnvelopeSigningKey: options.deferredEnvelopeSigningKey,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
     resolveDeferredPrincipal: options.resolveDeferredPrincipal,
@@ -1474,5 +1481,6 @@ export function createContentListActionAdapter(
   return {
     preview: (request, context) => invoke('preview', request, context),
     apply: (request, context) => invoke('apply', request, context),
+    executeDeferred: (envelope) => generic.executeDeferred(envelope),
   };
 }

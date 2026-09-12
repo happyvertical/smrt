@@ -1,4 +1,5 @@
 import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
+import type { DurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
 import { getTenantId, withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   type DatabaseInterface,
@@ -7,6 +8,7 @@ import {
 } from '@happyvertical/sql';
 import type { ReportRefreshActionDescriptor } from './adapter.js';
 import { buildReportDefinition } from './compiler.js';
+import type { ReportRefreshExecutionAuthority } from './scheduler.js';
 import { enqueueReportRefresh } from './scheduler.js';
 import {
   assertReportTablesReady,
@@ -99,8 +101,22 @@ export interface ReportRefreshActionContext {
 
 /** Authority and audit stay with the application action host, not reports. */
 export interface ReportRefreshActionHost {
-  authorize(context: ReportRefreshActionContext): Promise<void> | void;
-  audit(context: ReportRefreshActionContext): Promise<void> | void;
+  authorize(
+    context: ReportRefreshActionContext,
+    authority?: ReportRefreshExecutionAuthority,
+  ): Promise<void> | void;
+  audit(
+    context: ReportRefreshActionContext,
+    authority?: ReportRefreshExecutionAuthority,
+  ): Promise<void> | void;
+  /** Capture only a non-secret identity reference for worker-time reauthorization. */
+  executionAuthority?(
+    context: ReportRefreshActionContext,
+  ): ReportRefreshExecutionAuthority | Promise<ReportRefreshExecutionAuthority>;
+  /** Server-only signer shared with report worker processes. */
+  jobIntegritySigner?(
+    context: ReportRefreshActionContext,
+  ): DurableJobPayloadSigner | Promise<DurableJobPayloadSigner>;
 }
 
 export interface PreviewReportRefreshOptions extends ReportLifecycleOptions {
@@ -121,6 +137,7 @@ export interface ReportRefreshPreview {
 }
 
 export interface ApplyReportRefreshOptions extends PreviewReportRefreshOptions {
+  jobIntegritySigner?: DurableJobPayloadSigner;
   queue?: string;
   priority?: number;
   timeout?: number;
@@ -444,8 +461,20 @@ export async function applyReportRefresh(
     mode,
     options.refreshAction,
   );
-  await options.host.authorize(action);
-  await options.host.audit(action);
+  const executionAuthority = await options.host.executionAuthority?.(action);
+  if (!executionAuthority) {
+    throw new Error('Manual report refresh requires execution-time authority');
+  }
+  await options.host.authorize(action, executionAuthority);
+  await options.host.audit(action, executionAuthority);
+  const integritySigner =
+    options.jobIntegritySigner ??
+    (await options.host.jobIntegritySigner?.(action));
+  if (!integritySigner) {
+    throw new Error(
+      'Report refresh queue requires a durable job integrity signer',
+    );
+  }
   const tenantId = lifecycleTenantId(reportCtor);
   const enqueue = () =>
     enqueueReportRefresh({
@@ -454,11 +483,13 @@ export async function applyReportRefresh(
       mode,
       trigger: 'manual',
       tenantId,
+      executionAuthority,
       queue: options.queue,
       priority: options.priority,
       timeout: options.timeout,
       maxAttempts: options.maxAttempts,
       tenantJobCap: options.tenantJobCap,
+      integritySigner,
     });
   const job =
     tenantId === null && getTenantId()

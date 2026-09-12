@@ -89,6 +89,23 @@ export {
   MAX_SMRT_WEB_DATA_QUERY_WARNINGS,
   normalizeSmrtWebDataQueryResult,
 } from './data-query.js';
+export type {
+  SmrtWebDataSurfaceActionRequest,
+  SmrtWebDataSurfaceActionResult,
+  SmrtWebDataSurfaceActionTransport,
+  SmrtWebDataSurfaceIdentity,
+  SmrtWebDataSurfaceJsonPrimitive,
+  SmrtWebDataSurfaceJsonValue,
+  SmrtWebDataSurfaceSelection,
+} from './data-surface-actions.js';
+export {
+  executeSmrtWebDataSurfaceAction,
+  MAX_SMRT_WEB_DATA_SURFACE_ACTION_CONTAINER_ITEMS,
+  MAX_SMRT_WEB_DATA_SURFACE_ACTION_IDENTIFIER_LENGTH,
+  MAX_SMRT_WEB_DATA_SURFACE_ACTION_JSON_DEPTH,
+  MAX_SMRT_WEB_DATA_SURFACE_ACTION_RESULT_BYTES,
+  normalizeSmrtWebDataSurfaceActionResult,
+} from './data-surface-actions.js';
 export type { DurableResource, DurableStoreKey } from './durable-store.js';
 export {
   durableStoreNamespace,

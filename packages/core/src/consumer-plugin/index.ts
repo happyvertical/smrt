@@ -5,15 +5,20 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
 import type { Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
+import { buildDomainKnowledgeManifest } from '../knowledge.js';
+import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
+import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
@@ -135,6 +140,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
+  let producerApi: SmrtPluginApi | undefined;
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -161,6 +167,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           },
         },
       };
+    },
+
+    configResolved(resolvedConfig) {
+      producerApi = (resolvedConfig.plugins ?? []).find(
+        (plugin) => plugin?.name === 'smrt-auto-service',
+      )?.api as SmrtPluginApi | undefined;
     },
 
     async buildStart() {
@@ -193,9 +205,20 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
         // Aggregate type manifests from discovered packages
         typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot);
+        // Wait before reading .smrt/manifest.json: a producer's parallel
+        // buildStart writes its current local manifest after scanning. Reading
+        // first could merge an older local manifest with a newer surface.
+        const agentSurface = producerApi
+          ? await producerApi.resolveKnowledgeAgentSurface()
+          : undefined;
 
         // Save aggregated manifest for CLI discovery
-        await saveAggregatedManifest(typeManifest, projectRoot);
+        await saveAggregatedManifest(
+          typeManifest,
+          projectRoot,
+          producerApi?.resolveKnowledgeConfig,
+          agentSurface,
+        );
 
         // Generate registration file for CLI class loading
         await generateRegistrationFile(typeManifest, projectRoot);
@@ -487,6 +510,8 @@ function determineImportPath(packageJson: ConsumerPackageJson): string {
 async function saveAggregatedManifest(
   manifest: ConsumerManifest,
   projectRoot: string,
+  resolveKnowledgeConfig?: SmrtPluginApi['resolveKnowledgeConfig'],
+  agentSurface?: DomainKnowledgeAgentSurface,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const manifestPath = path.join(smrtDir, 'manifest.json');
@@ -523,14 +548,57 @@ async function saveAggregatedManifest(
       }
     }
 
-    // Write manifest
-    fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+    // smrtPlugin writes the local knowledge artifact before this consumer
+    // plugin merges external package entries into the same manifest. Refresh
+    // the artifact from the merged manifest so its source hash always names
+    // the manifest that CLI discovery and server runtimes actually consume.
+    // The consumer deliberately does not load the scanner. Only carry a
+    // surface from the current producer scan: a prior artifact can describe
+    // declarations that have since changed while retaining the same path.
+    // Re-hashing that current path under a stale declaration would make an
+    // incorrect agent contract look fresh.
+    const knowledgePath = path.join(smrtDir, 'smrt-knowledge.json');
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    const packageJson = fs.existsSync(packageJsonPath)
+      ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+      : undefined;
+    const knowledgeConfig = resolveKnowledgeConfig
+      ? await resolveKnowledgeConfig(merged as unknown as SmartObjectManifest)
+      : await resolveFileKnowledgeConfig(
+          projectRoot,
+          merged.packageName ?? packageJson?.name,
+        );
+    if (knowledgeConfig.enabled === false) {
+      publishArtifactFiles([
+        { path: manifestPath, content: JSON.stringify(merged, null, 2) },
+      ]);
+      return;
+    }
+    const knowledge = buildDomainKnowledgeManifest({
+      manifest: merged as unknown as SmartObjectManifest,
+      rootDir: projectRoot,
+      packageJson,
+      manifestPath,
+      config: knowledgeConfig,
+      agentSurface,
+    });
+    // Stage both artifacts before replacing either. Renames are individually
+    // atomic; if a synchronous later rename fails, restore every earlier
+    // replacement. A process crash between renames cannot be made pair-atomic
+    // with ordinary filesystem operations, so the next generation remains the
+    // freshness repair path for that distinct failure mode.
+    publishArtifactFiles([
+      { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
+      { path: manifestPath, content: JSON.stringify(merged, null, 2) },
+    ]);
 
     console.log(
       `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(merged.objects).length} objects)`,
     );
   } catch (error) {
-    console.warn('[smrt:consumer] Failed to save aggregated manifest:', error);
+    throw new Error('[smrt:consumer] Failed to save aggregated manifest', {
+      cause: error,
+    });
   }
 }
 

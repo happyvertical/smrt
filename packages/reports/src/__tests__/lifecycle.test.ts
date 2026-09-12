@@ -3,6 +3,7 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
+import { createHmacDurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
 import {
   disableTenancy,
   enableTenancy,
@@ -21,12 +22,36 @@ import {
   previewReportRefresh,
   reportRefreshOutcome,
 } from '../lifecycle.js';
+import {
+  enqueueReportRefresh,
+  registerReportRefreshExecutionAuthorityHost,
+  registerReportRefreshJobIntegritySigner,
+  SmrtPrincipalReportRefreshTask,
+  SmrtReportRefreshTask,
+} from '../scheduler.js';
 
 class LifecycleInvoice extends SmrtObject {}
 class LifecycleReport extends SmrtObject {}
 class GlobalLifecycleReport extends SmrtObject {}
 
 const NOW = new Date('2026-08-23T16:30:00.000Z');
+const JOB_SIGNER = createHmacDurableJobPayloadSigner({
+  keyId: 'test-reports-v1',
+  key: 'test-only-report-job-integrity-key',
+});
+let unregisterJobSigner: (() => void) | undefined;
+
+function executionAuthority(tenantId: string | null) {
+  return {
+    version: 1 as const,
+    hostId: 'test-report-authority',
+    principal: {
+      version: 1 as const,
+      actorUserId: 'user-a',
+      tenantId,
+    },
+  };
+}
 
 function registerFixture() {
   ObjectRegistry.registerFromManifest(
@@ -235,9 +260,11 @@ describe('report lifecycle', () => {
     registerFixture();
     registerJobsManifest();
     enableTenancy();
+    unregisterJobSigner = registerReportRefreshJobIntegritySigner(JOB_SIGNER);
   });
 
   afterEach(() => {
+    unregisterJobSigner?.();
     disableTenancy();
     ObjectRegistry.clear();
   });
@@ -495,7 +522,12 @@ describe('report lifecycle', () => {
     const db = await setupDb();
     const authorize = vi.fn();
     const audit = vi.fn();
-    const host = { authorize, audit };
+    const host = {
+      authorize,
+      audit,
+      executionAuthority: () => executionAuthority('tenant-a'),
+      jobIntegritySigner: () => JOB_SIGNER,
+    };
     try {
       const descriptor = await buildReportAdapterDescriptor(LifecycleReport, {
         refreshPermission: 'reports.rebuild',
@@ -536,7 +568,7 @@ describe('report lifecycle', () => {
         expect.objectContaining({ requiredPermission: 'reports.rebuild' }),
       );
       const jobs = await db.query(
-        'SELECT tenant_id, queue, method, priority FROM _smrt_jobs',
+        'SELECT tenant_id, queue, method, priority, object_type FROM _smrt_jobs',
       );
       expect(jobs.rows).toEqual([
         {
@@ -544,6 +576,9 @@ describe('report lifecycle', () => {
           queue: 'reports',
           method: 'run',
           priority: 90,
+          object_type: expect.stringContaining(
+            'SmrtPrincipalReportRefreshTask',
+          ),
         },
       ]);
     } finally {
@@ -551,9 +586,87 @@ describe('report lifecycle', () => {
     }
   });
 
+  it('uses the authority derived and approved by the host, never an apply option', async () => {
+    const db = await setupDb();
+    const approvedAuthority = {
+      ...executionAuthority('tenant-a'),
+      principal: {
+        version: 1 as const,
+        actorUserId: 'host-approved-user',
+        tenantId: 'tenant-a',
+      },
+    };
+    const authorize = vi.fn();
+    const audit = vi.fn();
+    const host = {
+      authorize,
+      audit,
+      executionAuthority: () => approvedAuthority,
+      jobIntegritySigner: () => JOB_SIGNER,
+    };
+    try {
+      await withTenant({ tenantId: 'tenant-a' }, () =>
+        applyReportRefresh(LifecycleReport, {
+          db,
+          host,
+          // Runtime-only hostile input must not select the queued actor.
+          executionAuthority: executionAuthority('tenant-a'),
+        } as never),
+      );
+
+      expect(authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        approvedAuthority,
+      );
+      expect(audit).toHaveBeenCalledWith(expect.anything(), approvedAuthority);
+      const jobs = await db.query('SELECT args FROM _smrt_jobs');
+      expect(JSON.parse(String(jobs.rows[0]?.args))).toMatchObject({
+        executionAuthority: {
+          principal: { actorUserId: 'host-approved-user' },
+        },
+      });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('allows an explicit enqueue signer without registering it in this process', async () => {
+    const db = await setupDb();
+    const explicitSigner = createHmacDurableJobPayloadSigner({
+      keyId: 'enqueue-only-reports-v1',
+      key: 'test-only-enqueue-only-report-key',
+    });
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        trigger: 'schedule',
+        tenantId: 'tenant-a',
+        integritySigner: explicitSigner,
+      });
+      expect(job.status).toBe('pending');
+      const stored = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      await expect(
+        task.run(JSON.parse(String(stored.rows[0]?.args))),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('queues global reports outside an ambient tenant scope', async () => {
     const db = await setupDb();
-    const host = { authorize: vi.fn(), audit: vi.fn() };
+    const host = {
+      authorize: vi.fn(),
+      audit: vi.fn(),
+      executionAuthority: () => executionAuthority(null),
+      jobIntegritySigner: () => JOB_SIGNER,
+    };
     try {
       await withTenant({ tenantId: 'tenant-a' }, () =>
         applyReportRefresh(GlobalLifecycleReport, { db, host }),
@@ -564,6 +677,221 @@ describe('report lifecycle', () => {
       expect(JSON.parse(String(jobs.rows[0]?.args))).toMatchObject({
         tenantId: null,
       });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('reauthorizes a persisted manual refresh and audits denial before execution', async () => {
+    const db = await setupDb();
+    const audit = vi.fn();
+    const unregister = registerReportRefreshExecutionAuthorityHost(
+      'test-report-authority',
+      {
+        authorize: () => {
+          throw new Error('membership revoked');
+        },
+        audit,
+      },
+    );
+    try {
+      const task = new SmrtPrincipalReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      const unsignedArgs = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      } as const;
+      const args = {
+        ...unsignedArgs,
+        integrity: JOB_SIGNER.sign(unsignedArgs),
+      };
+      await expect(task.run(args)).rejects.toThrow(
+        'Report refresh execution authority denied',
+      );
+      await expect(task.run(args)).rejects.toThrow(
+        'Report refresh execution authority denied',
+      );
+      expect(audit).toHaveBeenCalledTimes(2);
+      expect(audit).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          phase: 'execute',
+          outcome: 'denied',
+          tenantId: 'tenant-a',
+          reason: 'current_authority_denied',
+        }),
+      );
+    } finally {
+      unregister();
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects an authority binding when the queued tenant payload changes', async () => {
+    const db = await setupDb();
+    try {
+      await expect(
+        enqueueReportRefresh({
+          db,
+          reportClass: await lifecycleClassName(),
+          tenantId: 'tenant-b',
+          executionAuthority: executionAuthority('tenant-a'),
+          integritySigner: JOB_SIGNER,
+        }),
+      ).rejects.toThrow('Invalid report refresh execution authority');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('fails closed when a persisted manual refresh loses its authority binding', async () => {
+    const db = await setupDb();
+    try {
+      const task = new SmrtPrincipalReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      const unsignedArgs = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild' as const,
+        trigger: 'manual' as const,
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      };
+      const altered = {
+        ...unsignedArgs,
+        trigger: 'schedule' as const,
+        executionAuthority: undefined,
+        integrity: JOB_SIGNER.sign(unsignedArgs),
+      };
+      for (const task of [
+        new SmrtPrincipalReportRefreshTask({ db }),
+        new SmrtReportRefreshTask({ db }),
+      ]) {
+        task.tenantId = 'tenant-a';
+        await expect(task.run(altered)).rejects.toThrow(
+          'Invalid durable report refresh job integrity binding',
+        );
+      }
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects tenant fanout for a principal-bound refresh', async () => {
+    const db = await setupDb();
+    try {
+      await expect(
+        enqueueReportRefresh({
+          db,
+          reportClass: await lifecycleClassName(),
+          trigger: 'manual',
+          tenantId: 'tenant-a',
+          tenantIds: ['tenant-a', 'tenant-b'],
+          executionAuthority: executionAuthority('tenant-a'),
+          integritySigner: JOB_SIGNER,
+        }),
+      ).rejects.toThrow(
+        'Principal-bound report refresh requires one manual tenant scope',
+      );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects tenant fanout added after a principal refresh was signed', async () => {
+    const db = await setupDb();
+    try {
+      const task = new SmrtPrincipalReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      const unsignedArgs = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild' as const,
+        trigger: 'manual' as const,
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      };
+      await expect(
+        task.run({
+          ...unsignedArgs,
+          tenantIds: ['tenant-a', 'tenant-b'],
+          integrity: JOB_SIGNER.sign(unsignedArgs),
+        }),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects a persisted principal job routed to the maintenance target', async () => {
+    const db = await setupDb();
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+        integritySigner: JOB_SIGNER,
+      });
+      const stored = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const altered = JSON.parse(String(stored.rows[0]?.args)) as Record<
+        string,
+        unknown
+      >;
+      altered.trigger = 'schedule';
+      delete altered.executionAuthority;
+      const maintenanceType =
+        ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask)
+          ?.qualifiedName ?? SmrtReportRefreshTask.name;
+      await db.query(
+        'UPDATE _smrt_jobs SET object_type = ?, args = ? WHERE id = ?',
+        maintenanceType,
+        JSON.stringify(altered),
+        job.id,
+      );
+
+      const routed = await db.query(
+        'SELECT tenant_id, object_type, args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      expect(String(routed.rows[0]?.object_type)).toBe(maintenanceType);
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = String(routed.rows[0]?.tenant_id);
+      await expect(
+        task.run(JSON.parse(String(routed.rows[0]?.args))),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('keeps scheduled maintenance refreshes compatible without a user binding', async () => {
+    const db = await setupDb();
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        trigger: 'schedule',
+        tenantId: 'tenant-a',
+        integritySigner: JOB_SIGNER,
+      });
+      expect(job).toMatchObject({
+        tenantId: 'tenant-a',
+        status: 'pending',
+      });
+      const persisted = await db.query(
+        'SELECT tenant_id, args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      expect(persisted.rows[0]?.tenant_id).toBe('tenant-a');
+      expect(JSON.parse(String(persisted.rows[0]?.args))).not.toHaveProperty(
+        'executionAuthority',
+      );
     } finally {
       if (typeof db.close === 'function') await db.close();
     }

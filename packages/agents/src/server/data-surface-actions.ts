@@ -7,17 +7,22 @@
  * checks have passed.
  */
 import { createHash, randomBytes } from 'node:crypto';
+import {
+  createHmacDurableJobPayloadSigner,
+  type DurableJobPayloadIntegrity,
+} from '@happyvertical/smrt-jobs';
 import type {
   DataSurfaceActionDescriptor,
-  DataSurfaceActionRequest,
   DataSurfaceActionResult,
+  DataSurfaceActionRowOutcome,
+  DataSurfaceActionWireRequest,
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceJsonObject,
   DataSurfaceJsonValue,
   DataSurfaceRowId,
   DataSurfaceSelectionReference,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import {
   type ExecuteAsPrincipalOptions,
   executeAsPrincipal,
@@ -35,14 +40,6 @@ export interface DataSurfaceActionEligibility {
 export type DataSurfaceActionPayloadValidation =
   | { valid: true }
   | { valid: false; reason?: string };
-
-export interface DataSurfaceActionRowOutcome {
-  rowId: DataSurfaceRowId;
-  status: 'accepted' | 'skipped' | 'failed';
-  reason?: string;
-  /** Serializable per-row result returned by the action implementation. */
-  metadata?: DataSurfaceJsonObject;
-}
 
 export interface ResolvedDataSurfaceSelection {
   /** Fresh server-side revision of the selected surface/query. */
@@ -109,15 +106,29 @@ export interface ResolvedDataSurfaceActions {
 }
 
 export interface DataSurfaceServerActionRequest
-  extends DataSurfaceActionRequest {
-  /** Required on apply and bound into the preview token. */
-  expectedRevision: number;
-  /** Required on apply. Identical retries replay the first terminal result. */
-  idempotencyKey?: string;
-}
+  extends DataSurfaceActionWireRequest {}
 
 export interface DataSurfaceActionContext {
   principal: ExecuteAsPrincipalOptions;
+}
+
+export interface DataSurfaceDeferredPrincipalReference {
+  runAsUserId: string;
+  tenantId: string | null;
+  actsAsProfileId: string | null;
+  onBehalfOfUserId: string | null;
+  agentClass?: string;
+}
+
+/** Serializable, versioned payload persisted by a durable background queue. */
+export interface DataSurfaceBackgroundActionEnvelope {
+  version: 1;
+  handlerId: string;
+  request: DataSurfaceServerActionRequest;
+  principal: DataSurfaceDeferredPrincipalReference;
+  previewToken?: DataSurfacePreviewTokenRecord;
+  /** Server-authenticated binding over every other persisted envelope field. */
+  binding: DurableJobPayloadIntegrity;
 }
 
 export interface DataSurfaceBackgroundActionJob {
@@ -125,6 +136,7 @@ export interface DataSurfaceBackgroundActionJob {
   identity: DataSurfaceIdentity;
   actionId: string;
   rowIds: DataSurfaceRowId[];
+  envelope: DataSurfaceBackgroundActionEnvelope;
   /**
    * The queue must call this task to perform the work. It re-enters the bound
    * principal and repeats descriptor, authorization, selection, and eligibility
@@ -168,7 +180,14 @@ export type DataSurfaceIdempotencyRecord =
       status: 'completed';
       requestFingerprint: string;
       result: DataSurfaceActionResult;
+      recovery?: DataSurfaceIdempotencyRecoveryEvidence;
     };
+
+export interface DataSurfaceIdempotencyRecoveryEvidence {
+  authorizedBy: string;
+  evidence: string;
+  reconciledAt: number;
+}
 
 export interface DataSurfaceIdempotencyReservation {
   requestFingerprint: string;
@@ -191,6 +210,16 @@ export interface DataSurfaceActionStateStore {
     token: string,
     idempotencyKey: string,
   ): Promise<boolean> | boolean;
+  /** Atomically consume a preview token and create/read its apply reservation. */
+  consumeTokenAndReserveIdempotency(
+    token: string,
+    idempotencyKey: string,
+    scope: string,
+    reservation: DataSurfaceIdempotencyReservation,
+  ):
+    | Promise<DataSurfaceIdempotencyRecord | undefined>
+    | DataSurfaceIdempotencyRecord
+    | undefined;
   getIdempotency(
     key: string,
   ):
@@ -237,6 +266,27 @@ export class InMemoryDataSurfaceActionStateStore
     if (record.consumedBy && record.consumedBy !== idempotencyKey) return false;
     record.consumedBy = idempotencyKey;
     return true;
+  }
+
+  consumeTokenAndReserveIdempotency(
+    token: string,
+    idempotencyKey: string,
+    scope: string,
+    reservation: DataSurfaceIdempotencyReservation,
+  ): DataSurfaceIdempotencyRecord | undefined {
+    const tokenRecord = this.tokens.get(token);
+    if (
+      !tokenRecord ||
+      (tokenRecord.consumedBy && tokenRecord.consumedBy !== idempotencyKey)
+    ) {
+      return undefined;
+    }
+    const existing = this.idempotency.get(scope);
+    if (!existing) {
+      this.idempotency.set(scope, { status: 'reserved', ...reservation });
+    }
+    tokenRecord.consumedBy = idempotencyKey;
+    return this.idempotency.get(scope);
   }
 
   getIdempotency(key: string): DataSurfaceIdempotencyRecord | undefined {
@@ -291,6 +341,10 @@ export interface DataSurfaceActionAdapterOptions {
     selection: DataSurfaceSelectionReference,
   ): Promise<ResolvedDataSurfaceSelection>;
   backgroundQueue?: DataSurfaceBackgroundQueue;
+  /** Stable worker registration key required by durable background queues. */
+  backgroundHandlerId?: string;
+  /** Secret used only in-process to authenticate durable background envelopes. */
+  deferredEnvelopeSigningKey?: string | Uint8Array;
   /** Required durable, shared backend in production; memory storage is opt-in. */
   state: DataSurfaceActionStateStore;
   tokenTtlMs?: number;
@@ -332,6 +386,10 @@ export interface DataSurfaceActionAdapter {
   apply(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
+  ): Promise<DataSurfaceActionResult>;
+  /** Worker entry point; re-resolves current authority before any mutation. */
+  executeDeferred(
+    envelope: DataSurfaceBackgroundActionEnvelope,
   ): Promise<DataSurfaceActionResult>;
 }
 
@@ -411,6 +469,34 @@ function stable(value: unknown): string {
 
 function fingerprint(value: unknown): string {
   return createHash('sha256').update(stable(value)).digest('hex');
+}
+
+function envelopeBinding(
+  envelope: Omit<DataSurfaceBackgroundActionEnvelope, 'binding'>,
+  key: string | Uint8Array,
+): DurableJobPayloadIntegrity {
+  return createHmacDurableJobPayloadSigner({
+    keyId: 'data-surface-envelope-v1',
+    key,
+  }).sign(envelope);
+}
+
+function validSigningKey(key: string | Uint8Array | undefined): boolean {
+  return (
+    key !== undefined &&
+    (typeof key === 'string' ? Buffer.byteLength(key) : key.byteLength) >= 32
+  );
+}
+
+function bindingMatches(
+  envelope: DataSurfaceBackgroundActionEnvelope,
+  key: string | Uint8Array,
+): boolean {
+  const { binding, ...unsigned } = envelope;
+  return createHmacDurableJobPayloadSigner({
+    keyId: 'data-surface-envelope-v1',
+    key,
+  }).verify(unsigned, binding);
 }
 
 function identityKey(identity: DataSurfaceIdentity): string {
@@ -820,15 +906,8 @@ export function createDataSurfaceActionAdapter(
 
   async function executeBackgroundOnce(
     request: DataSurfaceServerActionRequest,
-    context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
-    reference: Readonly<{
-      runAsUserId: string;
-      tenantId: string | null;
-      actsAsProfileId: string | null;
-      onBehalfOfUserId: string | null;
-      agentClass?: string;
-    }>,
+    reference: Readonly<DataSurfaceDeferredPrincipalReference>,
   ): Promise<DataSurfaceActionResult> {
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
@@ -862,40 +941,71 @@ export function createDataSurfaceActionAdapter(
       if (winner.status === 'completed')
         return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
-        let executed: DataSurfaceActionResult;
+        let refreshed: ExecuteAsPrincipalOptions;
         try {
           // A queued job may run long after the request that created it. The
           // complete persona binding (including the TenantAgent-capped tool
           // allow-list) must therefore be resolved again at execution time.
-          const refreshed = await options.resolveDeferredPrincipal?.(reference);
+          const resolved = await options.resolveDeferredPrincipal?.(reference);
           if (
-            !refreshed ||
-            refreshed.principal.runAsUserId !== reference.runAsUserId ||
-            refreshed.principal.tenantId !== reference.tenantId ||
-            (refreshed.principal.actsAsProfileId ?? null) !==
+            !resolved ||
+            resolved.principal.runAsUserId !== reference.runAsUserId ||
+            resolved.principal.tenantId !== reference.tenantId ||
+            (resolved.principal.actsAsProfileId ?? null) !==
               reference.actsAsProfileId ||
-            (refreshed.onBehalfOfUserId ?? null) !==
+            (resolved.onBehalfOfUserId ?? null) !==
               reference.onBehalfOfUserId ||
-            (refreshed.agentClass ?? null) !== (reference.agentClass ?? null) ||
-            !Array.isArray(refreshed.principal.allowedTools)
+            (resolved.agentClass ?? null) !== (reference.agentClass ?? null) ||
+            !Array.isArray(resolved.principal.allowedTools)
           ) {
             throw new Error(
               'Deferred data-surface action principal binding could not be resolved safely',
             );
           }
+          refreshed = resolved;
+        } catch (error) {
+          const reason = options.mapError?.(error, request);
+          if (!reason) {
+            // No side effect has started, so a later queue attempt may safely
+            // acquire a fresh reservation and re-check current authority.
+            await state.releaseIdempotency(executionScope, ownerToken);
+            throw error;
+          }
+          const denied = result(request, false, reason);
+          if (
+            !(await state.completeIdempotency(
+              executionScope,
+              ownerToken,
+              denied,
+            ))
+          ) {
+            throw new Error('Lost background action idempotency reservation');
+          }
+          return denied;
+        }
+        let executed: DataSurfaceActionResult;
+        let mutationStarted = false;
+        try {
           // Permission snapshots are never carried across the queue boundary;
           // executeAsPrincipal resolves current RBAC/membership immediately.
           const { permissions: _permissions, ...livePrincipal } = refreshed;
           executed = await authorizedApply(
             request,
-            { ...context, principal: livePrincipal },
+            { principal: livePrincipal },
             token,
             false,
+            () => {
+              mutationStarted = true;
+            },
           );
         } catch (error) {
           const reason = options.mapError?.(error, request);
           if (!reason) {
-            await state.releaseIdempotency(executionScope, ownerToken);
+            if (!mutationStarted) {
+              await state.releaseIdempotency(executionScope, ownerToken);
+            }
+            // Once mutation starts, effects are unknown; retain the reservation
+            // until evidence-based reconciliation rather than retrying blindly.
             throw error;
           }
           executed = result(request, false, reason);
@@ -928,6 +1038,7 @@ export function createDataSurfaceActionAdapter(
     context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
     allowBackground: boolean,
+    beforeMutation?: () => void,
   ): Promise<DataSurfaceActionResult> {
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
@@ -977,21 +1088,37 @@ export function createDataSurfaceActionAdapter(
           return result(request, false, 'stale_revision');
         }
         if (invocation.action.execution === 'background' && allowBackground) {
-          if (!options.backgroundQueue || !options.resolveDeferredPrincipal) {
+          if (
+            !options.backgroundQueue ||
+            !validIdentifier(options.backgroundHandlerId) ||
+            !options.resolveDeferredPrincipal ||
+            !validSigningKey(options.deferredEnvelopeSigningKey)
+          ) {
             return result(request, false, 'background_unavailable');
           }
+          const { confirmationToken: _confirmationToken, ...deferredRequest } =
+            request;
+          const unsignedEnvelope = {
+            version: 1,
+            handlerId: options.backgroundHandlerId ?? '',
+            request: deferredRequest,
+            principal: deferredPrincipalReference,
+            ...(token ? { previewToken: token } : {}),
+          } as const;
           const queued = await options.backgroundQueue.enqueue({
             idempotencyKey,
             identity: request.identity,
             actionId: request.actionId,
             rowIds: invocation.selection.rowIds,
-            run: () =>
-              executeBackgroundOnce(
-                request,
-                context,
-                token,
-                deferredPrincipalReference,
+            envelope: {
+              ...unsignedEnvelope,
+              binding: envelopeBinding(
+                unsignedEnvelope,
+                options.deferredEnvelopeSigningKey as string | Uint8Array,
               ),
+            },
+            run: () =>
+              executeBackgroundOnce(request, token, deferredPrincipalReference),
           });
           return result(request, true, undefined, {
             accepted: invocation.selection.rowIds.length,
@@ -1006,6 +1133,7 @@ export function createDataSurfaceActionAdapter(
             jobRequestId: request.requestId,
           });
         }
+        beforeMutation?.();
         return executeForeground(request, invocation);
       },
     );
@@ -1065,24 +1193,71 @@ export function createDataSurfaceActionAdapter(
       ) {
         return result(request, false, 'confirmation_mismatch');
       }
-      if (!(await state.markTokenConsumed(confirmationToken, idempotencyKey))) {
-        return result(request, false, 'confirmation_replayed');
-      }
     }
+    // Resolve and validate deferred execution before consuming a one-time
+    // confirmation or reserving idempotency. Execution re-authorizes below;
+    // this preflight only prevents broken worker configuration from burning a
+    // retryable preview.
+    const backgroundPreflight = await runAsPrincipal(
+      {
+        ...boundContext.principal,
+        action: 'data_surface.action.apply',
+        auditMetadata: boundContext.principal.auditMetadata,
+      },
+      async (run) => {
+        const surface = await options.resolveSurface(run, request.identity);
+        if (
+          identityKey(surface.descriptor.identity) !==
+          identityKey(request.identity)
+        )
+          return undefined;
+        const action = surface.actions[request.actionId];
+        const declared = surface.descriptor.actions.find(
+          ({ id }) => id === request.actionId,
+        );
+        if (!action || !declared || action.descriptor.id !== declared.id)
+          return undefined;
+        if (
+          action.execution === 'background' &&
+          (!options.backgroundQueue ||
+            !validIdentifier(options.backgroundHandlerId) ||
+            !options.resolveDeferredPrincipal ||
+            !validSigningKey(options.deferredEnvelopeSigningKey))
+        ) {
+          return result(request, false, 'background_unavailable');
+        }
+        return undefined;
+      },
+    );
+    if (backgroundPreflight) return backgroundPreflight;
     // Ownership is an internal compare-and-set nonce. Keep it independent of
     // the injectable preview-token factory, which tests or callers may make
     // deterministic without weakening concurrent winner selection.
     const ownerToken = randomBytes(16).toString('base64url');
+    const reservation = {
+      requestFingerprint: requestFingerprintValue,
+      ownerToken,
+      reservedAt: now(),
+    };
+    let firstWinner: DataSurfaceIdempotencyRecord | undefined;
+    if (confirmationToken) {
+      firstWinner = await state.consumeTokenAndReserveIdempotency(
+        confirmationToken,
+        idempotencyKey,
+        idempotencyScope,
+        reservation,
+      );
+      if (!firstWinner) return result(request, false, 'confirmation_replayed');
+    }
     const maxPolls = Math.max(
       1,
       Math.ceil(idempotencyWaitTimeoutMs / idempotencyPollIntervalMs),
     );
     for (let poll = 0; poll <= maxPolls; poll += 1) {
-      const winner = await state.reserveIdempotency(idempotencyScope, {
-        requestFingerprint: requestFingerprintValue,
-        ownerToken,
-        reservedAt: now(),
-      });
+      const winner =
+        poll === 0 && firstWinner
+          ? firstWinner
+          : await state.reserveIdempotency(idempotencyScope, reservation);
       if (winner.requestFingerprint !== requestFingerprintValue)
         return result(request, false, 'idempotency_conflict');
       if (winner.status === 'completed')
@@ -1127,5 +1302,43 @@ export function createDataSurfaceActionAdapter(
     return result(request, false, 'idempotency_in_progress');
   }
 
-  return { preview, apply };
+  async function executeDeferred(
+    envelope: DataSurfaceBackgroundActionEnvelope,
+  ): Promise<DataSurfaceActionResult> {
+    if (
+      !validSigningKey(options.deferredEnvelopeSigningKey) ||
+      !bindingMatches(
+        envelope,
+        options.deferredEnvelopeSigningKey as string | Uint8Array,
+      )
+    ) {
+      throw new Error('Invalid durable data-surface action envelope binding');
+    }
+    const principal = envelope.principal;
+    if (
+      envelope.version !== 1 ||
+      !options.backgroundHandlerId ||
+      envelope.handlerId !== options.backgroundHandlerId ||
+      !principal ||
+      !validIdentifier(principal.runAsUserId) ||
+      (principal.tenantId !== null && !validIdentifier(principal.tenantId)) ||
+      (principal.actsAsProfileId !== null &&
+        !validIdentifier(principal.actsAsProfileId)) ||
+      (principal.onBehalfOfUserId !== null &&
+        !validIdentifier(principal.onBehalfOfUserId)) ||
+      (principal.agentClass !== undefined &&
+        !validIdentifier(principal.agentClass))
+    ) {
+      return result(envelope.request, false, 'invalid_request');
+    }
+    const invalid = validateRequest(envelope.request, 'apply');
+    if (invalid) return result(envelope.request, false, invalid);
+    return executeBackgroundOnce(
+      snapshotRequest(envelope.request),
+      envelope.previewToken,
+      Object.freeze({ ...envelope.principal }),
+    );
+  }
+
+  return { preview, apply, executeDeferred };
 }
