@@ -586,6 +586,79 @@ describe('report lifecycle', () => {
     }
   });
 
+  it('uses the authority derived and approved by the host, never an apply option', async () => {
+    const db = await setupDb();
+    const approvedAuthority = {
+      ...executionAuthority('tenant-a'),
+      principal: {
+        version: 1 as const,
+        actorUserId: 'host-approved-user',
+        tenantId: 'tenant-a',
+      },
+    };
+    const authorize = vi.fn();
+    const audit = vi.fn();
+    const host = {
+      authorize,
+      audit,
+      executionAuthority: () => approvedAuthority,
+      jobIntegritySigner: () => JOB_SIGNER,
+    };
+    try {
+      await withTenant({ tenantId: 'tenant-a' }, () =>
+        applyReportRefresh(LifecycleReport, {
+          db,
+          host,
+          // Runtime-only hostile input must not select the queued actor.
+          executionAuthority: executionAuthority('tenant-a'),
+        } as never),
+      );
+
+      expect(authorize).toHaveBeenCalledWith(
+        expect.anything(),
+        approvedAuthority,
+      );
+      expect(audit).toHaveBeenCalledWith(expect.anything(), approvedAuthority);
+      const jobs = await db.query('SELECT args FROM _smrt_jobs');
+      expect(JSON.parse(String(jobs.rows[0]?.args))).toMatchObject({
+        executionAuthority: {
+          principal: { actorUserId: 'host-approved-user' },
+        },
+      });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('allows an explicit enqueue signer without registering it in this process', async () => {
+    const db = await setupDb();
+    const explicitSigner = createHmacDurableJobPayloadSigner({
+      keyId: 'enqueue-only-reports-v1',
+      key: 'test-only-enqueue-only-report-key',
+    });
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        trigger: 'schedule',
+        tenantId: 'tenant-a',
+        integritySigner: explicitSigner,
+      });
+      expect(job.status).toBe('pending');
+      const stored = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      await expect(
+        task.run(JSON.parse(String(stored.rows[0]?.args))),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('queues global reports outside an ambient tenant scope', async () => {
     const db = await setupDb();
     const host = {

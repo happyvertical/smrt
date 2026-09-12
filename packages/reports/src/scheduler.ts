@@ -476,7 +476,7 @@ export class SmrtReportRefreshTask extends SmrtObject {
       db: this.db,
       mode,
       trigger,
-      tenantId: args.tenantId,
+      tenantId: jobTenantId,
       tenantIds: args.tenantIds,
       adapterType: args.adapterType,
       scheduleId: args.scheduleId ?? args._scheduleId,
@@ -554,11 +554,9 @@ export async function enqueueReportRefresh(
     executionAuthority: options.executionAuthority,
   };
   const integrity = integritySigner.sign(unsignedArgs);
-  if (
-    !jobIntegritySigners.get(integrity.keyId)?.verify(unsignedArgs, integrity)
-  ) {
+  if (!integritySigner.verify(unsignedArgs, integrity)) {
     throw new Error(
-      'Report refresh job integrity signer must be registered before enqueue',
+      'Report refresh job integrity signer rejected its queued payload',
     );
   }
   return collection.enqueueJob(

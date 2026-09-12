@@ -101,8 +101,14 @@ export interface ReportRefreshActionContext {
 
 /** Authority and audit stay with the application action host, not reports. */
 export interface ReportRefreshActionHost {
-  authorize(context: ReportRefreshActionContext): Promise<void> | void;
-  audit(context: ReportRefreshActionContext): Promise<void> | void;
+  authorize(
+    context: ReportRefreshActionContext,
+    authority?: ReportRefreshExecutionAuthority,
+  ): Promise<void> | void;
+  audit(
+    context: ReportRefreshActionContext,
+    authority?: ReportRefreshExecutionAuthority,
+  ): Promise<void> | void;
   /** Capture only a non-secret identity reference for worker-time reauthorization. */
   executionAuthority?(
     context: ReportRefreshActionContext,
@@ -131,11 +137,6 @@ export interface ReportRefreshPreview {
 }
 
 export interface ApplyReportRefreshOptions extends PreviewReportRefreshOptions {
-  /**
-   * Serializable non-secret principal binding reauthorized by the worker.
-   * Required for manual/user-triggered refreshes.
-   */
-  executionAuthority?: ReportRefreshExecutionAuthority;
   jobIntegritySigner?: DurableJobPayloadSigner;
   queue?: string;
   priority?: number;
@@ -460,14 +461,12 @@ export async function applyReportRefresh(
     mode,
     options.refreshAction,
   );
-  await options.host.authorize(action);
-  await options.host.audit(action);
-  const executionAuthority =
-    options.executionAuthority ??
-    (await options.host.executionAuthority?.(action));
+  const executionAuthority = await options.host.executionAuthority?.(action);
   if (!executionAuthority) {
     throw new Error('Manual report refresh requires execution-time authority');
   }
+  await options.host.authorize(action, executionAuthority);
+  await options.host.audit(action, executionAuthority);
   const integritySigner =
     options.jobIntegritySigner ??
     (await options.host.jobIntegritySigner?.(action));

@@ -974,6 +974,56 @@ describe('report refresh integration', () => {
     }
   });
 
+  it('passes an explicit global runner scope to refresh instead of ambient tenancy', async () => {
+    const db = await setupDb();
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    try {
+      await insertInvoice(db, {
+        id: 'global-runner-a',
+        tenantId: 'tenant-a',
+        customerId: 'customer-a',
+        amount: 10,
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      });
+      await insertInvoice(db, {
+        id: 'global-runner-b',
+        tenantId: 'tenant-b',
+        customerId: 'customer-b',
+        amount: 20,
+        updatedAt: '2026-03-01T00:00:00.000Z',
+      });
+      await enqueueReportRefresh({
+        db,
+        reportClass: 'IntegrationRevenueReport',
+        trigger: 'schedule',
+        maxAttempts: 1,
+        integritySigner: JOB_SIGNER,
+      });
+      await taskRunner.initialize(db);
+      const completion = new Promise<{ result?: unknown }>(
+        (resolve, reject) => {
+          taskRunner.once('job:completed', (_job, result) =>
+            resolve(result as { result?: unknown }),
+          );
+          taskRunner.once('job:failed', (_job, error) => reject(error));
+          taskRunner.once('runner:error', reject);
+        },
+      );
+      await withTenant({ tenantId: 'tenant-a' }, () => taskRunner.start());
+      await expect(completion).resolves.toMatchObject({
+        result: { tenantId: null },
+      });
+    } finally {
+      await taskRunner.stop();
+      await db.close?.();
+    }
+  });
+
   it('rejects an empty runner tenant without using persisted task configuration', async () => {
     const db = await setupDb();
     const taskRunner = createTaskRunner({
