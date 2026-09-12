@@ -2735,7 +2735,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const generation = getCacheGeneration(dbKey, this.tableName);
-    return await getOrCreateInFlightRead(
+    const rows = await getOrCreateInFlightRead(
       dbKey,
       this.tableName,
       queryKey,
@@ -2761,6 +2761,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         return rows;
       },
     );
+    return structuredClone(rows);
   }
 
   /**

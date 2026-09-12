@@ -253,6 +253,18 @@ describe('collection read cache (issue #1498)', () => {
       expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
     });
 
+    it('gives concurrent cache-miss callers independent result rows', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      const [first, second] = await Promise.all([
+        products.list({ select: ['name'], cache: { ttl: 60_000 } }),
+        products.list({ select: ['name'], cache: { ttl: 60_000 } }),
+      ]);
+      first[0].name = 'Mutated locally';
+      expect(second[0].name).toBe('Widget');
+    });
+
     it('does not single-flight distinct query keys', async () => {
       const products = await CacheTestProductCollection.create({ db });
       await products.create({ name: 'Cheap', price: 1 });
