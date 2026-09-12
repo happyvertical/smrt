@@ -11,7 +11,15 @@ import {
   type ResolvedPromptAI,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  assertTenantReadAllowed,
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+  queryGlobal,
+  queryWithGlobals,
+} from '@happyvertical/smrt-tenancy';
 import { Fact } from './fact';
 import { FactSourceCollection } from './fact-sources';
 import { FactSubjectCollection } from './fact-subjects';
@@ -206,6 +214,120 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
 
+  /**
+   * Fetch one catalog page in SQL. The recursive branch walk may inspect more
+   * rows inside the database, but the outer query only materializes the page.
+   */
+  private async listCatalogPage(
+    tenantId: string | null | undefined,
+    includeSuperseded: boolean,
+    latestOnly: boolean,
+    limit: number,
+    offset: number,
+    candidateLimit: number,
+  ): Promise<Fact[]> {
+    let scopeSql = '1 = 1';
+    let scopeParams: string[] = [];
+
+    if (tenantId !== undefined && tenantId !== null) {
+      assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
+      scopeSql = '(tenant_id = ? OR tenant_id IS NULL)';
+      scopeParams = [tenantId];
+    } else if (
+      isTenancyEnabled() &&
+      !isSystemContext() &&
+      !isSuperAdminBypass()
+    ) {
+      const tenant = getCurrentTenant();
+      if (tenant) {
+        scopeSql = 'tenant_id = ?';
+        scopeParams = [tenant.tenantId];
+      }
+    }
+
+    const statusSql = includeSuperseded ? '' : ' AND status != ?';
+    const statusParams = includeSuperseded ? [] : ['superseded'];
+
+    if (!latestOnly) {
+      return await this.query(
+        `SELECT * FROM ${this.tableName} WHERE ${scopeSql}${statusSql} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+        [...scopeParams, ...statusParams, limit, offset],
+        { allowRawOnTenantScoped: true },
+      );
+    }
+
+    return await this.query(
+      `WITH RECURSIVE
+        catalog_candidates AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC) AS candidate_order
+          FROM ${this.tableName}
+          WHERE ${scopeSql}${statusSql}
+          ORDER BY updated_at DESC
+          LIMIT ?
+        ),
+        successor_choices AS (
+          SELECT id, previous_fact_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY previous_fact_id
+              ORDER BY confidence DESC
+            ) AS successor_rank
+          FROM ${this.tableName}
+          WHERE ${scopeSql}
+        ),
+        resolved(source_id, candidate_order, current_id, visited, cycle) AS (
+          SELECT id, candidate_order, id, ',' || CAST(id AS TEXT) || ',', 0
+          FROM catalog_candidates
+          UNION ALL
+          SELECT resolved.source_id,
+            resolved.candidate_order,
+            successor_choices.id,
+            resolved.visited || CAST(successor_choices.id AS TEXT) || ',',
+            CASE
+              WHEN resolved.visited LIKE '%,' || CAST(successor_choices.id AS TEXT) || ',%'
+              THEN 1
+              ELSE 0
+            END
+          FROM resolved
+          INNER JOIN successor_choices
+            ON successor_choices.previous_fact_id = resolved.current_id
+            AND successor_choices.successor_rank = 1
+          WHERE resolved.cycle = 0
+        ),
+        terminal_latest AS (
+          SELECT resolved.current_id AS latest_id, resolved.candidate_order
+          FROM resolved
+          LEFT JOIN successor_choices
+            ON successor_choices.previous_fact_id = resolved.current_id
+            AND successor_choices.successor_rank = 1
+          WHERE successor_choices.id IS NULL OR resolved.cycle = 1
+        ),
+        distinct_latest AS (
+          SELECT latest_id, candidate_order,
+            ROW_NUMBER() OVER (
+              PARTITION BY latest_id
+              ORDER BY candidate_order
+            ) AS duplicate_rank
+          FROM terminal_latest
+        )
+        SELECT facts.*
+        FROM ${this.tableName} AS facts
+        INNER JOIN distinct_latest
+          ON distinct_latest.latest_id = facts.id
+        WHERE distinct_latest.duplicate_rank = 1
+        ORDER BY distinct_latest.candidate_order
+        LIMIT ? OFFSET ?`,
+      [
+        ...scopeParams,
+        ...statusParams,
+        candidateLimit,
+        ...scopeParams,
+        limit,
+        offset,
+      ],
+      { allowRawOnTenantScoped: true },
+    );
+  }
+
   // =========================================================================
   // Simple Query Methods
   // =========================================================================
@@ -317,6 +439,18 @@ export class FactCollection extends SmrtCollection<Fact> {
       : 0;
     const pageEnd = safeOffset + safeLimit;
     const latestResolutionLimit = pageEnd + safeLimit;
+
+    if (!query.trim()) {
+      return await this.listCatalogPage(
+        tenantId,
+        includeSuperseded,
+        latestOnly,
+        safeLimit,
+        safeOffset,
+        latestResolutionLimit,
+      );
+    }
+
     const resolveLatestPage = (facts: Fact[], chainFacts: Fact[]): Fact[] => {
       const successorsByPreviousId = new Map<string, Fact[]>();
       for (const fact of chainFacts) {
@@ -355,52 +489,25 @@ export class FactCollection extends SmrtCollection<Fact> {
       return [...latestById.values()].slice(safeOffset, pageEnd);
     };
 
-    const hasExplicitTenant = tenantId !== undefined && tenantId !== null;
-    // Chain traversal must see every scoped row. Use an unbounded sibling
-    // collection because browseCatalog's correctness cannot depend on a
-    // caller-facing default list limit: a successor can sort beyond a page.
-    const collectionConstructor = this.constructor as typeof FactCollection;
-    const unboundedFacts = await collectionConstructor.create({
-      ...this.options,
-      defaultListLimit: undefined,
-      maxListLimit: undefined,
-    });
-    const chainFacts = latestOnly
-      ? hasExplicitTenant
-        ? await this.findWithGlobals(tenantId)
-        : await unboundedFacts.list({ orderBy: 'updated_at DESC' })
-      : undefined;
-
-    // Keep the no-tenant active predicate in SQL before any list bound. Apart
-    // from preserving the active-status index, this prevents newer pending or
-    // rejected rows from consuming a collection defaultListLimit before the
-    // display candidates are selected.
-    const tenantScoped = includeSuperseded
-      ? (chainFacts ??
-        (hasExplicitTenant
-          ? await this.findWithGlobals(tenantId)
-          : await unboundedFacts.list({ orderBy: 'updated_at DESC' })))
-      : hasExplicitTenant
-        ? (chainFacts ?? (await this.findWithGlobals(tenantId))).filter(
-            (fact) => fact.status !== 'superseded',
-          )
-        : await unboundedFacts.list({
-            where: { status: 'active' },
+    const chainFacts =
+      tenantId === undefined || tenantId === null
+        ? await this.list({
             orderBy: 'updated_at DESC',
-          });
+          })
+        : await this.findWithGlobals(tenantId);
+
+    const tenantScoped = includeSuperseded
+      ? chainFacts
+      : chainFacts.filter((fact) =>
+          tenantId === undefined || tenantId === null
+            ? fact.status === 'active'
+            : fact.status !== 'superseded',
+        );
     const tenantScopedIds = new Set(
       tenantScoped
         .map((fact) => fact.id)
         .filter((factId): factId is string => typeof factId === 'string'),
     );
-
-    if (!query.trim()) {
-      if (!latestOnly) {
-        return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
-      }
-
-      return resolveLatestPage(tenantScoped, chainFacts ?? tenantScoped);
-    }
 
     let matches: Fact[] = [];
     try {
@@ -427,7 +534,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
-    return resolveLatestPage(matches, chainFacts ?? tenantScoped);
+    return resolveLatestPage(matches, chainFacts);
   }
 
   /**

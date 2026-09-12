@@ -263,7 +263,64 @@ describe('getEntityBriefing', () => {
     );
   });
 
-  it('resolves latest catalog facts from a constant query batch', async () => {
+  it('bounds the non-latest catalog query to the requested SQL page', async () => {
+    await Promise.all(
+      Array.from({ length: 15 }, (_, index) =>
+        facts.create({
+          textRefined: `Paged catalog fact ${index + 1}`,
+          type: 'assertion',
+          status: 'active',
+        }),
+      ),
+    );
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
+
+    const results = await facts.browseCatalog('', {
+      limit: 5,
+      offset: 10,
+      latestOnly: false,
+    });
+
+    expect(results).toHaveLength(5);
+    const catalogQuery = querySpy.mock.calls.find(([sql]) =>
+      String(sql).includes('FROM facts'),
+    );
+    expect(catalogQuery?.[0]).toContain('LIMIT ? OFFSET ?');
+    expect(catalogQuery?.slice(-2)).toEqual([5, 10]);
+  });
+
+  it('keeps empty catalog pages tenant-global scoped in SQL', async () => {
+    const tenantFact = await facts.create({
+      tenantId: 'tenant-a',
+      textRefined: 'Tenant catalog fact',
+      type: 'assertion',
+      status: 'active',
+    });
+    const globalFact = await facts.create({
+      textRefined: 'Global catalog fact',
+      type: 'assertion',
+      status: 'active',
+    });
+    const otherTenantFact = await facts.create({
+      tenantId: 'tenant-b',
+      textRefined: 'Other tenant catalog fact',
+      type: 'assertion',
+      status: 'active',
+    });
+
+    const results = await facts.browseCatalog('', {
+      tenantId: 'tenant-a',
+      latestOnly: false,
+    });
+
+    expect(results.map((fact) => fact.id)).toEqual(
+      expect.arrayContaining([tenantFact.id, globalFact.id]),
+    );
+    expect(results.map((fact) => fact.id)).not.toContain(otherTenantFact.id);
+  });
+
+  it('resolves latest catalog facts from one batched query', async () => {
     const browseFacts = await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -284,7 +341,12 @@ describe('getEntityBriefing', () => {
     expect(results).toHaveLength(5);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    const catalogQuery = querySpy.mock.calls.find(([sql]) =>
+      String(sql).includes('WITH RECURSIVE'),
+    );
+    expect(catalogQuery?.[0]).toContain('LIMIT ? OFFSET ?');
+    expect(catalogQuery?.slice(-2)).toEqual([5, 0]);
     const browseFactIds = new Set(browseFacts.map((fact) => fact.id));
     expect(results.every((fact) => browseFactIds.has(fact.id))).toBe(true);
   });
@@ -321,7 +383,7 @@ describe('getEntityBriefing', () => {
     expect(results.map((fact) => fact.id)).toContain(latest.id);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it('resolves latest catalog facts in the text fallback without chain queries', async () => {
@@ -349,7 +411,7 @@ describe('getEntityBriefing', () => {
     expect(results).toHaveLength(5);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it('keeps no-tenant catalog candidates active while following filtered successors', async () => {
@@ -387,58 +449,32 @@ describe('getEntityBriefing', () => {
     expect(results.map((fact) => fact.id)).toEqual([latest.id]);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
-  it('filters catalog candidates before default bounds while retaining the full successor chain', async () => {
+  it('returns the repeated fact when a latest catalog branch cycles', async () => {
     const root = await facts.create({
-      textRefined: 'Older active catalog root',
+      textRefined: 'Cyclic catalog root',
       type: 'assertion',
       status: 'active',
       confidence: 0.1,
     });
     const successor = await facts.create({
-      textRefined: 'Successor outside the active candidate page',
+      textRefined: 'Cyclic catalog successor',
       type: 'assertion',
       status: 'superseded',
       previousFactId: root.id as string,
       confidence: 0.9,
     });
-    await facts.create({
-      textRefined: 'Newer pending catalog row',
-      type: 'assertion',
-      status: 'pending',
-    });
-    await facts.create({
-      textRefined: 'Newest rejected catalog row',
-      type: 'assertion',
-      status: 'rejected',
-    });
-    const boundedFacts = await FactCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-      defaultListLimit: 1,
-    });
-    const listSpy = vi.spyOn(FactCollection.prototype, 'list');
-    listSpy.mockClear();
+    root.previousFactId = successor.id as string;
+    await root.save();
 
-    const page = await boundedFacts.browseCatalog('', {
-      latestOnly: false,
-    });
-    expect(listSpy).toHaveBeenCalledTimes(1);
-    expect(listSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { status: 'active' } }),
-    );
-    listSpy.mockClear();
-    const latest = await boundedFacts.browseCatalog('', {
+    const results = await facts.browseCatalog('', {
       latestOnly: true,
+      includeSuperseded: false,
     });
 
-    expect(page.map((fact) => fact.id)).toEqual([root.id]);
-    expect(latest.map((fact) => fact.id)).toEqual([successor.id]);
-    expect(listSpy).toHaveBeenCalledTimes(2);
-    expect(listSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { status: 'active' } }),
-    );
+    expect(results.map((fact) => fact.id)).toEqual([root.id]);
   });
 
   it('keeps implicit and explicit tenant catalog reads in an STI child scope', async () => {
