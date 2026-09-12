@@ -193,8 +193,16 @@ roll forward by rerunning migration/backfill rather than dropping historical dat
 `Fact.save()`, collection create/get-or-insert/get-or-upsert, and generated model
 updates maintain search storage from the source fields. `catalogSearch` is derived;
 callers must not author it, and generated transport surfaces exclude it using
-readonly/sensitive field metadata. Direct SQL writers must set `catalog_search = NULL`
-whenever either source text changes, then run backfill before text reads resume.
+readonly/sensitive field metadata. Derivation uses final serialized text after
+mutable `beforeSave` hooks, keeping persisted text and search storage consistent.
+Direct SQL writers must set `catalog_search = NULL` whenever either source text
+changes, then run backfill before text reads resume.
+If a custom writer or a pre-release implementation produced a known stale
+non-NULL search value, explicitly set that affected row's `catalog_search` to
+NULL and run the same bounded backfill. Backfill intentionally selects NULL
+markers; it does not scan or repair non-NULL values. This is a targeted repair,
+not an additional step for a fresh column migration.
+
 Do not keep old application writers active after backfill: they cannot maintain
 this new invariant. Future changes to JavaScript lowercasing/encoding require an
 explicit new backfill; the format is not locale dependent.

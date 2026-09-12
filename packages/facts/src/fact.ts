@@ -115,11 +115,16 @@ export class Fact extends SmrtObject {
     }
   }
 
-  protected override async validateBeforeSave(): Promise<void> {
+  protected override transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const serialized = super.transformJSON(data);
+    // save() serializes after mutable beforeSave hooks. Use these final source
+    // values (including serialization defaults), not the pre-hook instance.
     this.catalogSearch = encodeCatalogSearch(
-      `${this.textRefined} ${this.textRaw}`,
+      `${serialized.textRefined} ${serialized.textRaw}`,
     );
-    await super.validateBeforeSave();
+    return { ...serialized, catalogSearch: this.catalogSearch };
   }
 
   getMetadata(): FactMetadata {

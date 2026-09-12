@@ -71,10 +71,93 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       });
       afterEach(async () => {
         GlobalInterceptors.unregister('catalog-authorization');
+        GlobalInterceptors.unregister('catalog-save-mutation');
         disableTenancy();
         vi.restoreAllMocks();
         await cleanup?.();
       });
+
+      for (const subtype of [false, true]) {
+        it(`derives search from final beforeSave text for ${subtype ? 'STI child' : 'base'} facts`, async () => {
+          const collection = subtype
+            ? await CatalogSpecialFacts.create({ db })
+            : facts;
+          GlobalInterceptors.register({
+            name: 'catalog-save-mutation',
+            beforeSave: (instance) => {
+              if (instance instanceof Fact) {
+                instance.textRefined = 'K new refined';
+                instance.textRaw = 'É new raw';
+                instance.catalogSearch = 'stale hook value';
+              }
+            },
+          });
+          const fact = await collection.create({
+            textRefined: 'old refined',
+            textRaw: 'old raw',
+            status: 'active',
+          });
+          const expected = encodeCatalogSearch('K new refined É new raw');
+          expect(fact.catalogSearch).toBe(expected);
+          fact.textRefined = 'old again';
+          fact.textRaw = 'old raw again';
+          await fact.save();
+          const { rows } = await db.query(
+            'SELECT text_refined, text_raw, catalog_search FROM facts WHERE id = ?',
+            fact.id,
+          );
+          expect(rows[0]).toMatchObject({
+            text_refined: 'K new refined',
+            text_raw: 'É new raw',
+            catalog_search: expected,
+          });
+          expect(fact.catalogSearch).toBe(rows[0].catalog_search);
+          expect(fact.toJSON()).toMatchObject({
+            textRefined: rows[0].text_refined,
+            textRaw: rows[0].text_raw,
+            catalogSearch: expected,
+          });
+          expect(fact.toPublicJSON()).not.toHaveProperty('catalogSearch');
+          vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+            new Error('offline'),
+          );
+          expect(
+            (
+              await collection.browseCatalog('k new refined é', {
+                latestOnly: false,
+              })
+            ).map((row) => row.id),
+          ).toEqual([fact.id]);
+          expect(
+            await collection.browseCatalog('old', { latestOnly: false }),
+          ).toEqual([]);
+
+          // Repair only known stale values from a custom writer/pre-release
+          // implementation; ordinary saves never require this extra step.
+          await db.query(
+            'UPDATE facts SET catalog_search = ? WHERE id = ?',
+            encodeCatalogSearch('old'),
+            fact.id,
+          );
+          await db.query(
+            'UPDATE facts SET catalog_search = NULL WHERE id = ?',
+            fact.id,
+          );
+          await expect(collection.browseCatalog('new')).rejects.toThrow(
+            'backfillCatalogSearch',
+          );
+          expect(
+            await withSystemContext(() => collection.backfillCatalogSearch(1)),
+          ).toEqual({ remaining: 0 });
+          expect(
+            (
+              await collection.browseCatalog('k new refined é', {
+                latestOnly: false,
+              })
+            ).map((row) => row.id),
+          ).toEqual([fact.id]);
+        });
+      }
 
       for (const queryText of ['', 'K']) {
         it(`preserves narrowing beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {
