@@ -54,14 +54,19 @@ cc355e952516990f82419eaed566f8c8b6855469`, then copy only the acceptance test fi
 from the harness revision into the same relative path. The framework source and
 lockfile must remain at the baseline. Run the identical commands on merged main
 with output filenames `query-after-sqlite.json` and `query-after-postgres.json`.
+Record `expected_candidate_sha` from the independently verified merged framework
+revision measured by the after run (the recorded result below uses
+`e1916a0365c933b7dc403952e18722e3d3196cf8`). Future runs must supply their actual
+merged revision; do not derive this expected value from the report being checked.
 Compare using the harness revision's script:
 
 ```sh
-node scripts/compare-query-layer-acceptance.mjs /tmp/query-before-sqlite.json /tmp/query-after-sqlite.json
-node scripts/compare-query-layer-acceptance.mjs /tmp/query-before-postgres.json /tmp/query-after-postgres.json
+node scripts/compare-query-layer-acceptance.mjs /tmp/query-before-sqlite.json /tmp/query-after-sqlite.json "$expected_candidate_sha"
+node scripts/compare-query-layer-acceptance.mjs /tmp/query-before-postgres.json /tmp/query-after-postgres.json "$expected_candidate_sha"
 ```
 
-The comparison requires the exact baseline SHA, identical ordered results, and
+The comparison requires the exact baseline SHA, the supplied full candidate SHA,
+identical ordered results, and
 at least 10x fewer catalog and aggregate request statements. A failed threshold
 is evidence that the goal has not been demonstrated; do not change the fixture
 to manufacture a pass.

@@ -2,11 +2,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const [beforePath, afterPath] = process.argv.slice(2);
+const [beforePath, afterPath, expectedCandidate] = process.argv.slice(2);
 assert(
-  beforePath && afterPath,
-  'Usage: node scripts/compare-query-layer-acceptance.mjs BEFORE.json AFTER.json',
+  beforePath && afterPath && expectedCandidate,
+  'Usage: node scripts/compare-query-layer-acceptance.mjs BEFORE.json AFTER.json EXPECTED_CANDIDATE_SHA',
 );
+assert.match(expectedCandidate, /^[a-f0-9]{40}$/, 'Expected full candidate SHA');
 const before = JSON.parse(readFileSync(beforePath, 'utf8'));
 const after = JSON.parse(readFileSync(afterPath, 'utf8'));
 assert.equal(
@@ -14,6 +15,7 @@ assert.equal(
   'cc355e952516990f82419eaed566f8c8b6855469',
   'Expected exact pre-epic baseline',
 );
+assert.equal(after.revision, expectedCandidate, 'Expected exact candidate revision');
 assert.equal(before.fixture, after.fixture);
 assert.match(
   before.harnessSha256,
