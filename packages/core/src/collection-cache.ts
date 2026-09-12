@@ -115,7 +115,7 @@ const store = new Map<string, Map<string, Map<string, CacheEntry>>>();
  */
 const inFlightReads = new Map<
   string,
-  Map<string, Map<string, Promise<Record<string, unknown>[]>>>
+  Map<string, Map<string, Map<number, Promise<Record<string, unknown>[]>>>>
 >();
 
 /**
@@ -127,6 +127,7 @@ export function getOrCreateInFlightRead(
   dbKey: string,
   tableName: string,
   queryKey: string,
+  generation: number,
   read: () => Promise<Record<string, unknown>[]>,
 ): Promise<Record<string, unknown>[]> {
   let tables = inFlightReads.get(dbKey);
@@ -140,20 +141,30 @@ export function getOrCreateInFlightRead(
     tables.set(tableName, entries);
   }
 
-  const existing = entries.get(queryKey);
+  let generations = entries.get(queryKey);
+  if (!generations) {
+    generations = new Map();
+    entries.set(queryKey, generations);
+  }
+  const existing = generations.get(generation);
   if (existing) return existing;
 
   let inFlight: Promise<Record<string, unknown>[]>;
   inFlight = read().finally(() => {
-    if (entries.get(queryKey) === inFlight) {
-      entries.delete(queryKey);
-      if (entries.size === 0) {
-        tables.delete(tableName);
-        if (tables.size === 0) inFlightReads.delete(dbKey);
+    if (generations.get(generation) === inFlight) {
+      generations.delete(generation);
+      if (generations.size === 0 && entries.get(queryKey) === generations) {
+        entries.delete(queryKey);
+        if (entries.size === 0 && tables.get(tableName) === entries) {
+          tables.delete(tableName);
+          if (tables.size === 0 && inFlightReads.get(dbKey) === tables) {
+            inFlightReads.delete(dbKey);
+          }
+        }
       }
     }
   });
-  entries.set(queryKey, inFlight);
+  generations.set(generation, inFlight);
   return inFlight;
 }
 

@@ -273,6 +273,36 @@ describe('collection read cache (issue #1498)', () => {
       expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
     });
 
+    it('does not join a pre-invalidation read after a write', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Before', price: 1 });
+      const originalQuery = db.query.bind(db);
+      let releaseOldRead: (() => void) | undefined;
+      const oldRead = new Promise<void>((resolve) => {
+        releaseOldRead = resolve;
+      });
+      let selectCount = 0;
+      const querySpy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          if (sql.startsWith('SELECT') && sql.includes('cache_test_products')) {
+            selectCount++;
+            if (selectCount === 1) await oldRead;
+          }
+          return await originalQuery(sql, ...params);
+        });
+
+      const stale = products.list({ cache: { ttl: 60_000 } });
+      await vi.waitFor(() => expect(selectCount).toBe(1));
+      await products.create({ name: 'After', price: 2 });
+      const fresh = products.list({ cache: { ttl: 60_000 } });
+      await vi.waitFor(() => expect(selectCount).toBe(2));
+      await expect(fresh).resolves.toHaveLength(2);
+      releaseOldRead?.();
+      await stale;
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
+    });
+
     it('serves repeated queries from cache without hitting the database', async () => {
       const products = await CacheTestProductCollection.create({ db });
       await products.create({ name: 'Widget', price: 9.99 });
