@@ -43,6 +43,13 @@ brand checks; other objects use intrinsic brand checks without reading user
 The focused `to-plain-object.test.ts` suite compares legacy output and reports
 warmed, interleaved per-row timings without a flaky timing assertion.
 
+`pnpm --filter @happyvertical/smrt-core test:browser` bundles the production
+`src/plain-json.ts` helper and executes it in Chromium with `process` and
+`JSON.isRawJSON` unavailable. It is an opt-in local/browser release gate rather
+than part of the default core suite: it requires the repository's
+`playwright-core` dependency and an installed Chromium binary. The normal test
+suite covers the same helper through `toPlainObject()` on Node.
+
 ## SmrtCollection Query
 
 Projection, latest-related, facets, counts, and bounded read plans are

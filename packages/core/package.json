@@ -173,6 +173,7 @@
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "node scripts/generate-test-manifest.js && vitest run",
+    "test:browser": "node scripts/browser-plain-json-regression.mjs",
     "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:integration": "TEST_INTEGRATION=1 vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "node scripts/generate-test-manifest.js && vitest",

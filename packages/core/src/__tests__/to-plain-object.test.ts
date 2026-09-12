@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
 
 class PlainObjectSerializationProbe extends SmrtObject {
@@ -219,6 +219,40 @@ describe('SmrtObject.toPlainObject', () => {
       } else {
         Reflect.deleteProperty(BigInt.prototype, 'toJSON');
       }
+    }
+  });
+
+  it('uses intrinsic boxed-value probes when Node built-ins are unavailable', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'getBuiltinModule',
+    );
+    Object.defineProperty(process, 'getBuiltinModule', {
+      configurable: true,
+      value: undefined,
+      writable: true,
+    });
+
+    try {
+      vi.resetModules();
+      const { getBoxedPrimitiveKind } = await import(
+        '../plain-json?browser-fallback'
+      );
+      const [boxedBoolean, boxedNumber, boxedString] = runInNewContext(
+        '[new Boolean(true), new Number(3), new String("abc")]',
+      );
+      expect([
+        getBoxedPrimitiveKind(boxedBoolean),
+        getBoxedPrimitiveKind(boxedNumber),
+        getBoxedPrimitiveKind(boxedString),
+      ]).toEqual(['boolean', 'number', 'string']);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(process, 'getBuiltinModule', descriptor);
+      } else {
+        Reflect.deleteProperty(process, 'getBuiltinModule');
+      }
+      vi.resetModules();
     }
   });
 

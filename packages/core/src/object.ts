@@ -1,4 +1,3 @@
-import { types as nodeTypes } from 'node:util';
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
@@ -44,6 +43,7 @@ import {
   GlobalInterceptors,
   resolveGetStringFilter,
 } from './interceptors';
+import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import {
@@ -82,10 +82,6 @@ function isDuckDbHugeInt(value: unknown): boolean {
 }
 
 const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
-// Available on supported Node versions; the project's ES2023 lib predates it.
-const nativeJSON = JSON as typeof JSON & {
-  isRawJSON(value: unknown): value is { rawJSON: string };
-};
 
 type PlainJSONValue =
   | null
@@ -94,17 +90,6 @@ type PlainJSONValue =
   | string
   | PlainJSONValue[]
   | { [key: string]: PlainJSONValue };
-
-type BoxedPrimitiveKind = 'bigint' | 'boolean' | 'number' | 'string';
-
-function getBoxedPrimitiveKind(value: object): BoxedPrimitiveKind | undefined {
-  if (!nodeTypes.isBoxedPrimitive(value)) return undefined;
-  if (nodeTypes.isNumberObject(value)) return 'number';
-  if (nodeTypes.isStringObject(value)) return 'string';
-  if (nodeTypes.isBooleanObject(value)) return 'boolean';
-  if (nodeTypes.isBigIntObject(value)) return 'bigint';
-  return undefined;
-}
 
 /**
  * Materialize the values JSON.stringify() would emit without first encoding
@@ -159,7 +144,7 @@ function toPlainJSONValue(
   const isArray = Array.isArray(objectValue);
   // rawJSON contains an already-encoded primitive. Decode that literal once;
   // ordinary payloads never encode or decode an intermediate JSON string.
-  if (!isArray && nativeJSON.isRawJSON(objectValue)) {
+  if (!isArray && isRawJSON(objectValue)) {
     return JSON.parse(objectValue.rawJSON) as PlainJSONValue;
   }
   switch (isArray ? undefined : getBoxedPrimitiveKind(objectValue)) {
