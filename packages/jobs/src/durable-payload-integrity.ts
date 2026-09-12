@@ -86,7 +86,10 @@ function canonicalJson(value: unknown): string {
       seen.delete(item);
       return result;
     }
-    const result: Record<string, unknown> = {};
+    // JSON may contain an own `__proto__` property. A normal object would invoke
+    // Object.prototype's legacy prototype setter here and omit that property
+    // from the signed representation.
+    const result: Record<string, unknown> = Object.create(null);
     for (const key of Object.keys(item as Record<string, unknown>).sort()) {
       const entry = canonicalize((item as Record<string, unknown>)[key]);
       if (entry !== undefined) result[key] = entry;
