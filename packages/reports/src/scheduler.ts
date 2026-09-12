@@ -371,6 +371,18 @@ export class SmrtReportRefreshTask extends SmrtObject {
   }
 }
 
+/** Worker target whose authority requirement cannot be downgraded by job args. */
+@TenantScoped({ mode: 'optional' })
+@smrt({
+  tableName: '_smrt_principal_report_refresh_tasks',
+  ...INTERNAL_SURFACE,
+})
+export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
+  override async run(args: ReportRefreshJobArgs = {}): Promise<unknown> {
+    return super.run({ ...args, trigger: 'manual' });
+  }
+}
+
 export async function enqueueReportRefresh(
   options: EnqueueReportRefreshOptions,
 ): Promise<SmrtJob> {
@@ -388,9 +400,21 @@ export async function enqueueReportRefresh(
   ) {
     throw new Error('Invalid report refresh execution authority');
   }
+  if (
+    options.executionAuthority &&
+    (options.trigger !== 'manual' || (options.tenantIds?.length ?? 0) > 0)
+  ) {
+    throw new Error(
+      'Principal-bound report refresh requires one manual tenant scope',
+    );
+  }
   await ObjectRegistry.ensureManifestLoaded('SmrtJob');
   const collection = await SmrtJobCollection.create({ db: options.db });
-  const taskType = canonicalClassName(SmrtReportRefreshTask);
+  const taskType = canonicalClassName(
+    options.trigger === 'manual'
+      ? SmrtPrincipalReportRefreshTask
+      : SmrtReportRefreshTask,
+  );
   const scheduleId = options.scheduleId ?? options._scheduleId;
 
   return collection.enqueueJob(

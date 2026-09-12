@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SqlDataSurfaceActionStateStore } from './sql-data-surface-action-state.js';
@@ -90,7 +90,9 @@ postgresDescribe('SQL data-surface action state on PostgreSQL', () => {
     const winningApply = consumedAndReserved[0] ? 'apply-a' : 'apply-b';
     await expect(
       first.getToken('postgres-secret-token'),
-    ).resolves.toMatchObject({ consumedBy: winningApply });
+    ).resolves.toMatchObject({
+      consumedBy: createHash('sha256').update(winningApply).digest('hex'),
+    });
 
     const reservations = await Promise.all([
       first.reserveIdempotency('postgres-shared-scope', {

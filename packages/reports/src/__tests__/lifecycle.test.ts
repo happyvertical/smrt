@@ -24,6 +24,7 @@ import {
 import {
   enqueueReportRefresh,
   registerReportRefreshExecutionAuthorityHost,
+  SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
 } from '../scheduler.js';
 
@@ -557,7 +558,7 @@ describe('report lifecycle', () => {
         expect.objectContaining({ requiredPermission: 'reports.rebuild' }),
       );
       const jobs = await db.query(
-        'SELECT tenant_id, queue, method, priority FROM _smrt_jobs',
+        'SELECT tenant_id, queue, method, priority, object_type FROM _smrt_jobs',
       );
       expect(jobs.rows).toEqual([
         {
@@ -565,6 +566,9 @@ describe('report lifecycle', () => {
           queue: 'reports',
           method: 'run',
           priority: 90,
+          object_type: expect.stringContaining(
+            'SmrtPrincipalReportRefreshTask',
+          ),
         },
       ]);
     } finally {
@@ -607,7 +611,7 @@ describe('report lifecycle', () => {
       },
     );
     try {
-      const task = new SmrtReportRefreshTask({ db });
+      const task = new SmrtPrincipalReportRefreshTask({ db });
       task.tenantId = 'tenant-a';
       const args = {
         reportClass: await lifecycleClassName(),
@@ -656,16 +660,36 @@ describe('report lifecycle', () => {
   it('fails closed when a persisted manual refresh loses its authority binding', async () => {
     const db = await setupDb();
     try {
-      const task = new SmrtReportRefreshTask({ db });
+      const task = new SmrtPrincipalReportRefreshTask({ db });
       task.tenantId = 'tenant-a';
       await expect(
         task.run({
           reportClass: await lifecycleClassName(),
           mode: 'rebuild',
-          trigger: 'manual',
+          trigger: 'schedule',
           tenantId: 'tenant-a',
         }),
       ).rejects.toThrow('Manual report refresh execution authority is missing');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects tenant fanout for a principal-bound refresh', async () => {
+    const db = await setupDb();
+    try {
+      await expect(
+        enqueueReportRefresh({
+          db,
+          reportClass: await lifecycleClassName(),
+          trigger: 'manual',
+          tenantId: 'tenant-a',
+          tenantIds: ['tenant-a', 'tenant-b'],
+          executionAuthority: executionAuthority('tenant-a'),
+        }),
+      ).rejects.toThrow(
+        'Principal-bound report refresh requires one manual tenant scope',
+      );
     } finally {
       if (typeof db.close === 'function') await db.close();
     }

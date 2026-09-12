@@ -149,7 +149,7 @@ export class SqlDataSurfaceActionStateStore
           SET consumed_by = ?, updated_at = ?
         WHERE token_hash = ? AND consumed_by IS NULL
         RETURNING token_hash`,
-      idempotencyKey,
+      secretHash(idempotencyKey),
       new Date(this.now()).toISOString(),
       secretHash(token),
     );
@@ -176,10 +176,10 @@ export class SqlDataSurfaceActionStateStore
           WHERE token_hash = ?
             AND (consumed_by IS NULL OR consumed_by = ?)
           RETURNING token_hash`,
-        idempotencyKey,
+        secretHash(idempotencyKey),
         timestamp,
         secretHash(token),
-        idempotencyKey,
+        secretHash(idempotencyKey),
       );
       if (consumed.rows.length !== 1) return undefined;
       await tx.query(

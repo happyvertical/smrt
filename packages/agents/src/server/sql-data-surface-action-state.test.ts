@@ -42,7 +42,9 @@ describe('SqlDataSurfaceActionStateStore', () => {
     expect(consumed.filter(Boolean)).toHaveLength(1);
     await expect(first.getToken('secret-preview-token')).resolves.toMatchObject(
       {
-        consumedBy: consumed[0] ? 'apply-a' : 'apply-b',
+        consumedBy: createHash('sha256')
+          .update(consumed[0] ? 'apply-a' : 'apply-b')
+          .digest('hex'),
       },
     );
 
