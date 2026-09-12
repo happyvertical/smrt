@@ -653,6 +653,32 @@ describe('report lifecycle', () => {
     }
   });
 
+  it('keeps scheduled maintenance refreshes compatible without a user binding', async () => {
+    const db = await setupDb();
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        trigger: 'schedule',
+        tenantId: 'tenant-a',
+      });
+      expect(job).toMatchObject({
+        tenantId: 'tenant-a',
+        status: 'pending',
+      });
+      const persisted = await db.query(
+        'SELECT tenant_id, args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      expect(persisted.rows[0]?.tenant_id).toBe('tenant-a');
+      expect(JSON.parse(String(persisted.rows[0]?.args))).not.toHaveProperty(
+        'executionAuthority',
+      );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('returns fanout outcomes without tenant identifiers', () => {
     const outcome = reportRefreshOutcome({
       rowCount: 3,
