@@ -18,8 +18,10 @@ import {
   ensureSchema,
   generateSchema,
 } from '@happyvertical/smrt-core/schema/utils';
+import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
+import { sequence } from '@sveltejs/kit/hooks';
 import { seedContents } from '$lib/server/seed-contents';
 import { getSmrtConfig } from '$lib/server/smrt';
 import { workspacePackageRoots } from '../workspace-aliases.js';
@@ -39,6 +41,7 @@ const dependencyPackageLoaders = [
   () => import('@happyvertical/smrt-images'),
   () => import('@happyvertical/smrt-messages'),
   () => import('@happyvertical/smrt-profiles'),
+  () => import('@happyvertical/smrt-users'),
 ] as const;
 
 function resolveWorkspaceManifestPaths(): string[] {
@@ -222,10 +225,21 @@ function requestNeedsSchemaBootstrap(pathname: string): boolean {
   return pathname.startsWith('/api/');
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
+const bootstrapHandle: Handle = async ({ event, resolve }) => {
   if (requestNeedsSchemaBootstrap(event.url.pathname)) {
     await bootstrapSchema();
   }
 
   return resolve(event);
 };
+
+// The published users helper types its cookie callback against its own broad
+// SvelteKit cookie record. The content app's generated `App.Locals` supplies
+// SvelteKit's stricter cookie type, which is runtime-compatible with that
+// record but cannot be inferred across package boundaries.
+const sessionHandle = createSessionHandler({
+  ...getSmrtConfig('@happyvertical/smrt-content:Content'),
+  enterTenantContext: true,
+}) as unknown as Handle;
+
+export const handle = sequence(bootstrapHandle, sessionHandle);
