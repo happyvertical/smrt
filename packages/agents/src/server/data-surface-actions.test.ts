@@ -187,7 +187,10 @@ function harness(options: {
       };
     },
     ...(options.enqueue
-      ? { backgroundQueue: { enqueue: options.enqueue } }
+      ? {
+          backgroundHandlerId: 'orders-actions-v1',
+          backgroundQueue: { enqueue: options.enqueue },
+        }
       : {}),
     requestFingerprintExtension: options.requestFingerprintExtension,
     mapError: options.mapError,
@@ -854,6 +857,8 @@ describe('data-surface action adapter', () => {
     expect(setup.calls).toHaveLength(2);
 
     if (!queued) throw new Error('background job was not queued');
+    expect(queued.envelope.request.confirmationToken).toBeUndefined();
+    expect(JSON.stringify(queued.envelope)).not.toContain('permissions');
     const firstDelivery = queued.run();
     const concurrentDelivery = queued.run();
     await vi.waitFor(() => expect(applyRow).toHaveBeenCalledTimes(1));
@@ -913,7 +918,10 @@ describe('data-surface action adapter', () => {
     );
 
     permissionsRevoked = true;
-    await expect(queued?.run()).rejects.toThrow('permission revoked');
+    if (!queued) throw new Error('background job was not queued');
+    await expect(
+      setup.adapter.executeDeferred(queued.envelope),
+    ).rejects.toThrow('permission revoked');
     expect(applyRow).not.toHaveBeenCalled();
   });
 

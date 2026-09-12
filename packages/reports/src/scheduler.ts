@@ -48,6 +48,47 @@ export interface ReportRefreshJobArgs {
   adapterType?: SqlAdapterType;
   changedRows?: Record<string, unknown>[];
   _scheduleId?: string;
+  executionAuthority?: ReportRefreshExecutionAuthority;
+}
+
+export interface ReportExecutionPrincipalReference {
+  version: 1;
+  actorUserId: string;
+  tenantId: string | null;
+  onBehalfOfUserId?: string | null;
+  actsAsProfileId?: string | null;
+  agentClass?: string | null;
+}
+
+export interface ReportRefreshExecutionAuthority {
+  version: 1;
+  hostId: string;
+  principal: ReportExecutionPrincipalReference;
+}
+
+export interface ReportRefreshExecutionAuthorityContext {
+  phase: 'execute';
+  reportClass: string;
+  mode: ReportRefreshMode;
+  trigger: ReportRefreshTrigger;
+  tenantId: string | null;
+}
+
+export interface ReportRefreshExecutionAuditEvent
+  extends ReportRefreshExecutionAuthorityContext {
+  outcome: 'allowed' | 'denied';
+  principal: ReportExecutionPrincipalReference;
+  reason?: string;
+}
+
+export interface ReportRefreshExecutionAuthorityHost {
+  authorize(
+    principal: Readonly<ReportExecutionPrincipalReference>,
+    context: Readonly<ReportRefreshExecutionAuthorityContext>,
+  ): Promise<void> | void;
+  audit(
+    event: Readonly<ReportRefreshExecutionAuditEvent>,
+  ): Promise<void> | void;
 }
 
 export interface EnqueueReportRefreshOptions extends ReportRefreshJobArgs {
@@ -114,6 +155,34 @@ const INTERNAL_SURFACE = {
   },
   mcp: false,
 };
+
+const executionAuthorityHosts = new Map<
+  string,
+  ReportRefreshExecutionAuthorityHost
+>();
+
+export function registerReportRefreshExecutionAuthorityHost(
+  hostId: string,
+  host: ReportRefreshExecutionAuthorityHost,
+): () => void {
+  if (!hostId || hostId.length > 256) {
+    throw new Error(
+      'Report refresh authority hostId must contain 1-256 characters',
+    );
+  }
+  const existing = executionAuthorityHosts.get(hostId);
+  if (existing && existing !== host) {
+    throw new Error(
+      `Report refresh authority host already registered: ${hostId}`,
+    );
+  }
+  executionAuthorityHosts.set(hostId, host);
+  return () => {
+    if (executionAuthorityHosts.get(hostId) === host) {
+      executionAuthorityHosts.delete(hostId);
+    }
+  };
+}
 
 function stableUuid(values: unknown[]): string {
   const hash = createHash('sha256')
@@ -201,6 +270,61 @@ function changedRowSnapshot(instance: SmrtObject): Record<string, unknown> {
     : {};
 }
 
+async function authorizeReportRefreshExecution(
+  args: ReportRefreshJobArgs,
+  reportClass: string,
+  jobTenantId: string | null,
+): Promise<void> {
+  const authority = args.executionAuthority;
+  // Scheduled and on-change maintenance jobs predate user-bound actions and
+  // intentionally run under the worker's system authority.
+  if (!authority) return;
+  const principal = authority.principal;
+  const tenantId = args.tenantId ?? null;
+  if (
+    authority.version !== 1 ||
+    principal?.version !== 1 ||
+    !authority.hostId ||
+    !principal.actorUserId ||
+    principal.tenantId !== tenantId ||
+    principal.tenantId !== jobTenantId
+  ) {
+    throw new Error('Invalid report refresh execution authority');
+  }
+  const host = executionAuthorityHosts.get(authority.hostId);
+  if (!host) {
+    throw new Error(
+      `No report refresh authority host registered for ${authority.hostId}`,
+    );
+  }
+  const context: ReportRefreshExecutionAuthorityContext = {
+    phase: 'execute',
+    reportClass,
+    mode: args.mode ?? 'incremental',
+    trigger: args.trigger ?? 'job',
+    tenantId,
+  };
+  try {
+    await host.authorize(
+      Object.freeze({ ...principal }),
+      Object.freeze(context),
+    );
+  } catch {
+    await host.audit({
+      ...context,
+      outcome: 'denied',
+      principal: Object.freeze({ ...principal }),
+      reason: 'current_authority_denied',
+    });
+    throw new Error('Report refresh execution authority denied');
+  }
+  await host.audit({
+    ...context,
+    outcome: 'allowed',
+    principal: Object.freeze({ ...principal }),
+  });
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: '_smrt_report_refresh_tasks',
@@ -230,6 +354,7 @@ export class SmrtReportRefreshTask extends SmrtObject {
     }
 
     const reportCtor = resolveReportClass(reportClass);
+    await authorizeReportRefreshExecution(args, reportClass, this.tenantId);
     return refreshReport(reportCtor, {
       db: this.db,
       mode: args.mode ?? this.mode,
@@ -246,6 +371,20 @@ export class SmrtReportRefreshTask extends SmrtObject {
 export async function enqueueReportRefresh(
   options: EnqueueReportRefreshOptions,
 ): Promise<SmrtJob> {
+  if (options.trigger === 'manual' && !options.executionAuthority) {
+    throw new Error('Manual report refresh requires execution-time authority');
+  }
+  if (
+    options.executionAuthority &&
+    (options.executionAuthority.version !== 1 ||
+      options.executionAuthority.principal?.version !== 1 ||
+      !options.executionAuthority.hostId ||
+      !options.executionAuthority.principal.actorUserId ||
+      options.executionAuthority.principal.tenantId !==
+        (options.tenantId ?? null))
+  ) {
+    throw new Error('Invalid report refresh execution authority');
+  }
   await ObjectRegistry.ensureManifestLoaded('SmrtJob');
   const collection = await SmrtJobCollection.create({ db: options.db });
   const taskType = canonicalClassName(SmrtReportRefreshTask);
@@ -268,6 +407,7 @@ export async function enqueueReportRefresh(
         changedRows: options.changedRows,
         scheduleId,
         _scheduleId: scheduleId,
+        executionAuthority: options.executionAuthority,
       },
       priority: options.priority ?? 70,
       timeout: options.timeout ?? 3600000,

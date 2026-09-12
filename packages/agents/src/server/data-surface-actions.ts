@@ -120,11 +120,29 @@ export interface DataSurfaceActionContext {
   principal: ExecuteAsPrincipalOptions;
 }
 
+export interface DataSurfaceDeferredPrincipalReference {
+  runAsUserId: string;
+  tenantId: string | null;
+  actsAsProfileId: string | null;
+  onBehalfOfUserId: string | null;
+  agentClass?: string;
+}
+
+/** Serializable, versioned payload persisted by a durable background queue. */
+export interface DataSurfaceBackgroundActionEnvelope {
+  version: 1;
+  handlerId: string;
+  request: DataSurfaceServerActionRequest;
+  principal: DataSurfaceDeferredPrincipalReference;
+  previewToken?: DataSurfacePreviewTokenRecord;
+}
+
 export interface DataSurfaceBackgroundActionJob {
   idempotencyKey: string;
   identity: DataSurfaceIdentity;
   actionId: string;
   rowIds: DataSurfaceRowId[];
+  envelope: DataSurfaceBackgroundActionEnvelope;
   /**
    * The queue must call this task to perform the work. It re-enters the bound
    * principal and repeats descriptor, authorization, selection, and eligibility
@@ -168,7 +186,14 @@ export type DataSurfaceIdempotencyRecord =
       status: 'completed';
       requestFingerprint: string;
       result: DataSurfaceActionResult;
+      recovery?: DataSurfaceIdempotencyRecoveryEvidence;
     };
+
+export interface DataSurfaceIdempotencyRecoveryEvidence {
+  authorizedBy: string;
+  evidence: string;
+  reconciledAt: number;
+}
 
 export interface DataSurfaceIdempotencyReservation {
   requestFingerprint: string;
@@ -291,6 +316,8 @@ export interface DataSurfaceActionAdapterOptions {
     selection: DataSurfaceSelectionReference,
   ): Promise<ResolvedDataSurfaceSelection>;
   backgroundQueue?: DataSurfaceBackgroundQueue;
+  /** Stable worker registration key required by durable background queues. */
+  backgroundHandlerId?: string;
   /** Required durable, shared backend in production; memory storage is opt-in. */
   state: DataSurfaceActionStateStore;
   tokenTtlMs?: number;
@@ -332,6 +359,10 @@ export interface DataSurfaceActionAdapter {
   apply(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
+  ): Promise<DataSurfaceActionResult>;
+  /** Worker entry point; re-resolves current authority before any mutation. */
+  executeDeferred(
+    envelope: DataSurfaceBackgroundActionEnvelope,
   ): Promise<DataSurfaceActionResult>;
 }
 
@@ -820,15 +851,8 @@ export function createDataSurfaceActionAdapter(
 
   async function executeBackgroundOnce(
     request: DataSurfaceServerActionRequest,
-    context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
-    reference: Readonly<{
-      runAsUserId: string;
-      tenantId: string | null;
-      actsAsProfileId: string | null;
-      onBehalfOfUserId: string | null;
-      agentClass?: string;
-    }>,
+    reference: Readonly<DataSurfaceDeferredPrincipalReference>,
   ): Promise<DataSurfaceActionResult> {
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
@@ -862,40 +886,71 @@ export function createDataSurfaceActionAdapter(
       if (winner.status === 'completed')
         return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
-        let executed: DataSurfaceActionResult;
+        let refreshed: ExecuteAsPrincipalOptions;
         try {
           // A queued job may run long after the request that created it. The
           // complete persona binding (including the TenantAgent-capped tool
           // allow-list) must therefore be resolved again at execution time.
-          const refreshed = await options.resolveDeferredPrincipal?.(reference);
+          const resolved = await options.resolveDeferredPrincipal?.(reference);
           if (
-            !refreshed ||
-            refreshed.principal.runAsUserId !== reference.runAsUserId ||
-            refreshed.principal.tenantId !== reference.tenantId ||
-            (refreshed.principal.actsAsProfileId ?? null) !==
+            !resolved ||
+            resolved.principal.runAsUserId !== reference.runAsUserId ||
+            resolved.principal.tenantId !== reference.tenantId ||
+            (resolved.principal.actsAsProfileId ?? null) !==
               reference.actsAsProfileId ||
-            (refreshed.onBehalfOfUserId ?? null) !==
+            (resolved.onBehalfOfUserId ?? null) !==
               reference.onBehalfOfUserId ||
-            (refreshed.agentClass ?? null) !== (reference.agentClass ?? null) ||
-            !Array.isArray(refreshed.principal.allowedTools)
+            (resolved.agentClass ?? null) !== (reference.agentClass ?? null) ||
+            !Array.isArray(resolved.principal.allowedTools)
           ) {
             throw new Error(
               'Deferred data-surface action principal binding could not be resolved safely',
             );
           }
+          refreshed = resolved;
+        } catch (error) {
+          const reason = options.mapError?.(error, request);
+          if (!reason) {
+            // No side effect has started, so a later queue attempt may safely
+            // acquire a fresh reservation and re-check current authority.
+            await state.releaseIdempotency(executionScope, ownerToken);
+            throw error;
+          }
+          const denied = result(request, false, reason);
+          if (
+            !(await state.completeIdempotency(
+              executionScope,
+              ownerToken,
+              denied,
+            ))
+          ) {
+            throw new Error('Lost background action idempotency reservation');
+          }
+          return denied;
+        }
+        let executed: DataSurfaceActionResult;
+        let mutationStarted = false;
+        try {
           // Permission snapshots are never carried across the queue boundary;
           // executeAsPrincipal resolves current RBAC/membership immediately.
           const { permissions: _permissions, ...livePrincipal } = refreshed;
           executed = await authorizedApply(
             request,
-            { ...context, principal: livePrincipal },
+            { principal: livePrincipal },
             token,
             false,
+            () => {
+              mutationStarted = true;
+            },
           );
         } catch (error) {
           const reason = options.mapError?.(error, request);
           if (!reason) {
-            await state.releaseIdempotency(executionScope, ownerToken);
+            if (!mutationStarted) {
+              await state.releaseIdempotency(executionScope, ownerToken);
+            }
+            // Once mutation starts, effects are unknown; retain the reservation
+            // until evidence-based reconciliation rather than retrying blindly.
             throw error;
           }
           executed = result(request, false, reason);
@@ -928,6 +983,7 @@ export function createDataSurfaceActionAdapter(
     context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
     allowBackground: boolean,
+    beforeMutation?: () => void,
   ): Promise<DataSurfaceActionResult> {
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
@@ -980,18 +1036,22 @@ export function createDataSurfaceActionAdapter(
           if (!options.backgroundQueue || !options.resolveDeferredPrincipal) {
             return result(request, false, 'background_unavailable');
           }
+          const { confirmationToken: _confirmationToken, ...deferredRequest } =
+            request;
           const queued = await options.backgroundQueue.enqueue({
             idempotencyKey,
             identity: request.identity,
             actionId: request.actionId,
             rowIds: invocation.selection.rowIds,
+            envelope: {
+              version: 1,
+              handlerId: options.backgroundHandlerId ?? '',
+              request: deferredRequest,
+              principal: deferredPrincipalReference,
+              ...(token ? { previewToken: token } : {}),
+            },
             run: () =>
-              executeBackgroundOnce(
-                request,
-                context,
-                token,
-                deferredPrincipalReference,
-              ),
+              executeBackgroundOnce(request, token, deferredPrincipalReference),
           });
           return result(request, true, undefined, {
             accepted: invocation.selection.rowIds.length,
@@ -1006,6 +1066,7 @@ export function createDataSurfaceActionAdapter(
             jobRequestId: request.requestId,
           });
         }
+        beforeMutation?.();
         return executeForeground(request, invocation);
       },
     );
@@ -1127,5 +1188,34 @@ export function createDataSurfaceActionAdapter(
     return result(request, false, 'idempotency_in_progress');
   }
 
-  return { preview, apply };
+  async function executeDeferred(
+    envelope: DataSurfaceBackgroundActionEnvelope,
+  ): Promise<DataSurfaceActionResult> {
+    const principal = envelope.principal;
+    if (
+      envelope.version !== 1 ||
+      !options.backgroundHandlerId ||
+      envelope.handlerId !== options.backgroundHandlerId ||
+      !principal ||
+      !validIdentifier(principal.runAsUserId) ||
+      (principal.tenantId !== null && !validIdentifier(principal.tenantId)) ||
+      (principal.actsAsProfileId !== null &&
+        !validIdentifier(principal.actsAsProfileId)) ||
+      (principal.onBehalfOfUserId !== null &&
+        !validIdentifier(principal.onBehalfOfUserId)) ||
+      (principal.agentClass !== undefined &&
+        !validIdentifier(principal.agentClass))
+    ) {
+      return result(envelope.request, false, 'invalid_request');
+    }
+    const invalid = validateRequest(envelope.request, 'apply');
+    if (invalid) return result(envelope.request, false, invalid);
+    return executeBackgroundOnce(
+      snapshotRequest(envelope.request),
+      envelope.previewToken,
+      Object.freeze({ ...envelope.principal }),
+    );
+  }
+
+  return { preview, apply, executeDeferred };
 }

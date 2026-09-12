@@ -21,12 +21,29 @@ import {
   previewReportRefresh,
   reportRefreshOutcome,
 } from '../lifecycle.js';
+import {
+  enqueueReportRefresh,
+  registerReportRefreshExecutionAuthorityHost,
+  SmrtReportRefreshTask,
+} from '../scheduler.js';
 
 class LifecycleInvoice extends SmrtObject {}
 class LifecycleReport extends SmrtObject {}
 class GlobalLifecycleReport extends SmrtObject {}
 
 const NOW = new Date('2026-08-23T16:30:00.000Z');
+
+function executionAuthority(tenantId: string | null) {
+  return {
+    version: 1 as const,
+    hostId: 'test-report-authority',
+    principal: {
+      version: 1 as const,
+      actorUserId: 'user-a',
+      tenantId,
+    },
+  };
+}
 
 function registerFixture() {
   ObjectRegistry.registerFromManifest(
@@ -495,7 +512,11 @@ describe('report lifecycle', () => {
     const db = await setupDb();
     const authorize = vi.fn();
     const audit = vi.fn();
-    const host = { authorize, audit };
+    const host = {
+      authorize,
+      audit,
+      executionAuthority: () => executionAuthority('tenant-a'),
+    };
     try {
       const descriptor = await buildReportAdapterDescriptor(LifecycleReport, {
         refreshPermission: 'reports.rebuild',
@@ -553,7 +574,11 @@ describe('report lifecycle', () => {
 
   it('queues global reports outside an ambient tenant scope', async () => {
     const db = await setupDb();
-    const host = { authorize: vi.fn(), audit: vi.fn() };
+    const host = {
+      authorize: vi.fn(),
+      audit: vi.fn(),
+      executionAuthority: () => executionAuthority(null),
+    };
     try {
       await withTenant({ tenantId: 'tenant-a' }, () =>
         applyReportRefresh(GlobalLifecycleReport, { db, host }),
@@ -564,6 +589,65 @@ describe('report lifecycle', () => {
       expect(JSON.parse(String(jobs.rows[0]?.args))).toMatchObject({
         tenantId: null,
       });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('reauthorizes a persisted manual refresh and audits denial before execution', async () => {
+    const db = await setupDb();
+    const audit = vi.fn();
+    const unregister = registerReportRefreshExecutionAuthorityHost(
+      'test-report-authority',
+      {
+        authorize: () => {
+          throw new Error('membership revoked');
+        },
+        audit,
+      },
+    );
+    try {
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      const args = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      } as const;
+      await expect(task.run(args)).rejects.toThrow(
+        'Report refresh execution authority denied',
+      );
+      await expect(task.run(args)).rejects.toThrow(
+        'Report refresh execution authority denied',
+      );
+      expect(audit).toHaveBeenCalledTimes(2);
+      expect(audit).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          phase: 'execute',
+          outcome: 'denied',
+          tenantId: 'tenant-a',
+          reason: 'current_authority_denied',
+        }),
+      );
+    } finally {
+      unregister();
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects an authority binding when the queued tenant payload changes', async () => {
+    const db = await setupDb();
+    try {
+      await expect(
+        enqueueReportRefresh({
+          db,
+          reportClass: await lifecycleClassName(),
+          tenantId: 'tenant-b',
+          executionAuthority: executionAuthority('tenant-a'),
+        }),
+      ).rejects.toThrow('Invalid report refresh execution authority');
     } finally {
       if (typeof db.close === 'function') await db.close();
     }

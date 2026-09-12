@@ -49,10 +49,13 @@ export {
   type DataSurfaceActionPayloadValidation,
   type DataSurfaceActionRowOutcome,
   type DataSurfaceActionStateStore,
+  type DataSurfaceBackgroundActionEnvelope,
   type DataSurfaceBackgroundActionJob,
   type DataSurfaceBackgroundQueue,
   type DataSurfaceConfirmationPolicy,
+  type DataSurfaceDeferredPrincipalReference,
   type DataSurfaceIdempotencyRecord,
+  type DataSurfaceIdempotencyRecoveryEvidence,
   type DataSurfaceIdempotencyReservation,
   type DataSurfacePreviewTokenRecord,
   type DataSurfaceServerActionDefinition,
@@ -62,6 +65,15 @@ export {
   type ResolvedDataSurfaceActions,
   type ResolvedDataSurfaceSelection,
 } from './data-surface-actions.js';
+export type {
+  DataSurfaceActionJobArgs,
+  JobsDataSurfaceBackgroundQueueOptions,
+} from './jobs-data-surface-action-queue.js';
+export {
+  createJobsDataSurfaceBackgroundQueue,
+  registerDataSurfaceBackgroundActionHandler,
+  SmrtDataSurfaceActionTask,
+} from './jobs-data-surface-action-queue.js';
 export {
   extractAgentManifest,
   extractAgentPackagesFromConfig,
@@ -73,3 +85,12 @@ export {
   type SerializedAgent,
   serializeResolvedAgent,
 } from './serialization.js';
+export {
+  createSqlDataSurfaceActionStateStore,
+  DataSurfaceActionIdempotencyState,
+  DataSurfaceActionStateCorruptionError,
+  DataSurfaceActionTokenState,
+  type DataSurfaceIdempotencyRecoveryRequest,
+  SqlDataSurfaceActionStateStore,
+  type SqlDataSurfaceActionStateStoreOptions,
+} from './sql-data-surface-action-state.js';

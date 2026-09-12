@@ -7,6 +7,7 @@ import {
 } from '@happyvertical/sql';
 import type { ReportRefreshActionDescriptor } from './adapter.js';
 import { buildReportDefinition } from './compiler.js';
+import type { ReportRefreshExecutionAuthority } from './scheduler.js';
 import { enqueueReportRefresh } from './scheduler.js';
 import {
   assertReportTablesReady,
@@ -101,6 +102,10 @@ export interface ReportRefreshActionContext {
 export interface ReportRefreshActionHost {
   authorize(context: ReportRefreshActionContext): Promise<void> | void;
   audit(context: ReportRefreshActionContext): Promise<void> | void;
+  /** Capture only a non-secret identity reference for worker-time reauthorization. */
+  executionAuthority?(
+    context: ReportRefreshActionContext,
+  ): ReportRefreshExecutionAuthority | Promise<ReportRefreshExecutionAuthority>;
 }
 
 export interface PreviewReportRefreshOptions extends ReportLifecycleOptions {
@@ -121,6 +126,11 @@ export interface ReportRefreshPreview {
 }
 
 export interface ApplyReportRefreshOptions extends PreviewReportRefreshOptions {
+  /**
+   * Serializable non-secret principal binding reauthorized by the worker.
+   * Required for manual/user-triggered refreshes.
+   */
+  executionAuthority?: ReportRefreshExecutionAuthority;
   queue?: string;
   priority?: number;
   timeout?: number;
@@ -446,6 +456,12 @@ export async function applyReportRefresh(
   );
   await options.host.authorize(action);
   await options.host.audit(action);
+  const executionAuthority =
+    options.executionAuthority ??
+    (await options.host.executionAuthority?.(action));
+  if (!executionAuthority) {
+    throw new Error('Manual report refresh requires execution-time authority');
+  }
   const tenantId = lifecycleTenantId(reportCtor);
   const enqueue = () =>
     enqueueReportRefresh({
@@ -454,6 +470,7 @@ export async function applyReportRefresh(
       mode,
       trigger: 'manual',
       tenantId,
+      executionAuthority,
       queue: options.queue,
       priority: options.priority,
       timeout: options.timeout,

@@ -170,11 +170,25 @@ surface/action, selection, query fingerprint, and revision. Apply verifies that
 binding for confirmation-required actions and repeats its principal-bound checks
 before returning accepted, skipped, and failed row outcomes. Actions declared
 with `confirmation: 'none'` may apply directly with an idempotency key; every
-other apply must include its current preview token. Callers must supply a durable shared
-`DataSurfaceActionStateStore` with atomic token and idempotency operations.
-`InMemoryDataSurfaceActionStateStore` is for single-process test harnesses only.
-Background queues must invoke the supplied job `run()` callback so checks are
-repeated at execution time.
+other apply must include its current preview token. Callers must supply a durable
+shared `DataSurfaceActionStateStore` with atomic token and idempotency operations.
+`createSqlDataSurfaceActionStateStore()` uses the application's migrated SMRT
+database; preview tokens and reservation owner nonces are stored as hashes. An
+orphaned reservation is never expired or retried automatically because its
+external effects may be unknown. A host may only reconcile it to a terminal
+result through `reconcileIdempotency()` after the configured live-authority
+callback accepts evidence for the exact request fingerprint and reservation
+timestamp. `InMemoryDataSurfaceActionStateStore` is for single-process test
+harnesses only.
+
+`createJobsDataSurfaceBackgroundQueue()` persists a versioned envelope in
+`@happyvertical/smrt-jobs`. The envelope contains the request and a non-secret
+principal reference, never permission snapshots or confirmation-token secrets.
+Register the same stable handler ID in every worker process and configure the
+adapter with that `backgroundHandlerId`; worker delivery calls
+`adapter.executeDeferred()`, which resolves current principal authority again
+before mutation. The original `job.run()` callback remains available for
+in-process queue adapters.
 
 ### UI Export (`@happyvertical/smrt-agents/ui`)
 
