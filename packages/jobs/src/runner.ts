@@ -68,13 +68,15 @@ export interface TaskRunnerConfig {
   concurrency?: number;
   /** Queues to process (default: ['default']) */
   queues?: string[];
-  /** Polling interval in milliseconds */
+  /** Base polling interval in milliseconds, capped at the effective lease TTL. */
   pollInterval?: number;
   /**
    * Longest delay between empty queue checks in milliseconds.
    *
    * Empty checks back off exponentially from {@link pollInterval} to this
-   * value. Leave unset to cap idle checks at ten times `pollInterval`.
+   * value. Leave unset to cap idle checks at twenty times `pollInterval`.
+   * Every delay is bounded by the effective worker lease TTL (plus query and
+   * event-loop time), including a base interval larger than that TTL.
    */
   idlePollInterval?: number;
   /** Heartbeat interval in milliseconds */
@@ -122,7 +124,7 @@ export interface TaskRunnerEvents {
  * falling back to main-loop renewal (guards against a hung connect in-thread).
  */
 const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
-const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 10;
+const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 
 /**
  * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
@@ -209,10 +211,23 @@ export class TaskRunner extends EventEmitter {
     };
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
-    this.maxIdlePollIntervalMs = Math.max(
-      this.config.pollInterval,
-      config.idlePollInterval ??
-        this.config.pollInterval * DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER,
+    for (const [name, value] of [
+      ['pollInterval', this.config.pollInterval],
+      ['idlePollInterval', config.idlePollInterval ?? this.config.pollInterval],
+    ] as const) {
+      if (!Number.isFinite(value) || value < 1 || value > 2_147_483_647) {
+        throw new RangeError(
+          `${name} must be between 1 and 2147483647 milliseconds`,
+        );
+      }
+    }
+    this.maxIdlePollIntervalMs = Math.min(
+      2_147_483_647,
+      Math.max(
+        this.config.pollInterval,
+        config.idlePollInterval ??
+          this.config.pollInterval * DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER,
+      ),
     );
     this.idlePollDelayMs = this.config.pollInterval;
     this.effectiveLeaseTtlMs = getEffectiveLeaseTtlMs(
@@ -397,12 +412,21 @@ export class TaskRunner extends EventEmitter {
   private nextPollDelay(foundWork: boolean): number {
     if (foundWork) {
       this.resetIdlePollDelay();
-      return this.config.pollInterval;
+      return this.boundPollDelay(this.config.pollInterval);
     }
 
     const delay = this.idlePollDelayMs;
     this.idlePollDelayMs = Math.min(delay * 2, this.maxIdlePollIntervalMs);
-    return delay;
+    return this.boundPollDelay(delay);
+  }
+
+  private boundPollDelay(delay: number): number {
+    // A throttled sweep may have been skipped on this poll. Bound the next
+    // wait by the remaining recovery budget, not a fresh TTL from this poll.
+    const elapsed = this.workersTableVerified
+      ? Date.now() - this.lastRecoverySweepAt
+      : 0;
+    return Math.min(delay, Math.max(1, this.effectiveLeaseTtlMs - elapsed));
   }
 
   private resetIdlePollDelay(): void {

@@ -1,5 +1,8 @@
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TaskRunner } from '../runner.js';
+import { SmrtJobCollection } from '../smrt-job.js';
+import { SmrtWorkerCollection } from '../smrt-worker.js';
 
 type PollingInternals = {
   nextPollDelay(foundWork: boolean): number;
@@ -12,37 +15,113 @@ function pollingInternals(runner: TaskRunner): PollingInternals {
 describe('TaskRunner idle polling (#2820)', () => {
   afterEach(() => vi.useRealTimers());
 
-  async function runIdleWindow(idlePollInterval: number): Promise<number> {
+  async function runIdleSqlWindow(idlePollInterval?: number) {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const runner = new TaskRunner({ idlePollInterval, retention: false });
+    await runner.initialize(db);
     vi.useFakeTimers();
-    const runner = new TaskRunner({ pollInterval: 1_000, idlePollInterval });
-    const internal = runner as unknown as {
-      collection: { claimReady: ReturnType<typeof vi.fn> };
-      db: object;
-      running: boolean;
-      recoverStaleJobs(): Promise<void>;
-      startPolling(): void;
-      pollTimer: ReturnType<typeof setTimeout> | null;
-    };
-    const claimReady = vi.fn().mockResolvedValue([]);
-    internal.collection = { claimReady };
-    internal.db = {};
-    internal.recoverStaleJobs = async () => {};
-    internal.running = true;
-    internal.startPolling();
-    await vi.advanceTimersByTimeAsync(30_000);
-    claimReady.mockClear();
-    await vi.advanceTimersByTimeAsync(60_000);
-    internal.running = false;
-    if (internal.pollTimer) clearTimeout(internal.pollTimer);
-    return claimReady.mock.calls.length;
+    vi.setSystemTime(new Date('2026-09-12T00:00:00Z'));
+    // Observe the actual adapter boundary, including claim UPDATE and recovery
+    // SELECT. Neither poll(), recoverStaleJobs(), nor claimReady() is mocked.
+    const query = vi.spyOn(db, 'query');
+    try {
+      await runner.start();
+      await vi.advanceTimersByTimeAsync(120_000);
+      query.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const sql = query.mock.calls
+        .map(([statement]) => statement)
+        .filter((statement) => /\b_smrt_jobs\b/i.test(statement));
+      return {
+        total: sql.length,
+        claims: sql.filter((statement) => /UPDATE _smrt_jobs/i.test(statement))
+          .length,
+        recovery: sql.filter(
+          (statement) =>
+            /FROM _smrt_jobs/i.test(statement) &&
+            !/UPDATE _smrt_jobs/i.test(statement),
+        ).length,
+      };
+    } finally {
+      await runner.stop();
+      query.mockRestore();
+      vi.useRealTimers();
+      await db.close();
+    }
   }
 
-  it('measures a tenfold lower steady idle query count through the poll loop', async () => {
-    const before = await runIdleWindow(1_000);
-    const after = await runIdleWindow(10_000);
+  it('reduces all adapter jobs SQL at least tenfold over equal idle minutes', async () => {
+    // A cap equal to the base reproduces pre-backoff fixed polling. Production
+    // defaults are used for the after window, including lease/recovery timers.
+    const before = await runIdleSqlWindow(1_000);
+    const after = await runIdleSqlWindow();
+    expect(before).toEqual({ total: 66, claims: 60, recovery: 6 });
+    expect(after).toEqual({ total: 6, claims: 3, recovery: 3 });
+    expect(before.total / after.total).toBeGreaterThanOrEqual(10);
+  });
 
-    expect(before).toBe(60);
-    expect(after).toBe(6);
+  it.each([
+    NaN,
+    Infinity,
+    -Infinity,
+    -1,
+    0,
+    2_147_483_648,
+  ])('rejects unsafe polling intervals (%s)', (value) => {
+    expect(() => new TaskRunner({ idlePollInterval: value })).toThrow(
+      RangeError,
+    );
+    expect(() => new TaskRunner({ pollInterval: value })).toThrow(RangeError);
+  });
+
+  it('keeps a skipped sweep inside the remaining recovery deadline', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(9_999);
+    const runner = new TaskRunner({ pollInterval: 60_000 });
+    const internal = runner as unknown as {
+      workersTableVerified: boolean;
+      lastRecoverySweepAt: number;
+    };
+    internal.workersTableVerified = true;
+    internal.lastRecoverySweepAt = 0;
+    // A poll just before the 10s sweep throttle opens must not schedule an
+    // additional full 30s TTL and push recovery out to 39,999ms.
+    expect(pollingInternals(runner).nextPollDelay(false)).toBe(20_001);
+    expect(pollingInternals(runner).nextPollDelay(true)).toBe(20_001);
+  });
+
+  it('bounds orphan recovery by the lease TTL with a one-minute base interval', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const runner = new TaskRunner({ pollInterval: 60_000, retention: false });
+    await runner.initialize(db);
+    const jobs = await SmrtJobCollection.create({ db });
+    const workers = await SmrtWorkerCollection.create({ db });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-12T00:00:00Z'));
+    try {
+      await workers.registerWorker({
+        workerKey: 'expired-peer',
+        leaseTtlMs: 20_000,
+      });
+      const job = await jobs.create({
+        objectType: 'OrphanProbe',
+        method: 'run',
+      });
+      job.status = 'running';
+      job.workerId = 'expired-peer';
+      await job.save();
+      await runner.start();
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect((await jobs.get({ id: job.id ?? '' }))?.status).toBe('running');
+      // At most one TTL between recovery sweeps, even though the requested
+      // base is 60s and its uncapped idle delay would grow to twenty minutes.
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await jobs.get({ id: job.id ?? '' }))?.status).toBe('failed');
+    } finally {
+      await runner.stop();
+      vi.useRealTimers();
+      await db.close();
+    }
   });
 
   function lifecycleRunner() {
@@ -138,7 +217,7 @@ describe('TaskRunner idle polling (#2820)', () => {
     await runner.stop();
   });
 
-  it('backs empty queue checks off to one tenth of the configured polling rate', () => {
+  it('backs empty queue checks off to the default twentyfold cap', () => {
     const runner = new TaskRunner({ pollInterval: 1_000 });
     const polling = pollingInternals(runner);
 
@@ -148,7 +227,8 @@ describe('TaskRunner idle polling (#2820)', () => {
       polling.nextPollDelay(false),
       polling.nextPollDelay(false),
       polling.nextPollDelay(false),
-    ]).toEqual([1_000, 2_000, 4_000, 8_000, 10_000]);
+      polling.nextPollDelay(false),
+    ]).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 20_000]);
   });
 
   it('resets the delay progression when the poll reports activity', () => {

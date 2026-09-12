@@ -18,7 +18,7 @@ Status: `pending → running → completed/failed/cancelled`.
 
 ## TaskRunner
 
-Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 10× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`.
+Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range.
 
 1. `start()` calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
 2. Polls `claimReady()` to atomically claim pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`)
