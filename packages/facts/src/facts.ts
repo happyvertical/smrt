@@ -211,6 +211,10 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
     : null;
 }
 
+function literalContainsPattern(value: string): string {
+  return `%${value.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
 
@@ -225,6 +229,8 @@ export class FactCollection extends SmrtCollection<Fact> {
     limit: number,
     offset: number,
     candidateLimit: number,
+    textQuery?: string,
+    rankedCandidateIds?: string[],
   ): Promise<Fact[]> {
     let scopeSql = '1 = 1';
     let scopeParams: string[] = [];
@@ -245,25 +251,72 @@ export class FactCollection extends SmrtCollection<Fact> {
       }
     }
 
-    const statusSql = includeSuperseded ? '' : ' AND status != ?';
-    const statusParams = includeSuperseded ? [] : ['superseded'];
+    const statusSql = includeSuperseded
+      ? ''
+      : tenantId === undefined || tenantId === null
+        ? ' AND status = ?'
+        : ' AND status != ?';
+    const statusParams = includeSuperseded
+      ? []
+      : [tenantId === undefined || tenantId === null ? 'active' : 'superseded'];
+    const textSql = textQuery
+      ? " AND LOWER(text_refined || ' ' || text_raw) LIKE ? ESCAPE '\\'"
+      : '';
+    const textParams = textQuery ? [literalContainsPattern(textQuery)] : [];
+    const rankedCandidates = rankedCandidateIds?.filter(Boolean);
+
+    if (rankedCandidates && rankedCandidates.length === 0) {
+      return [];
+    }
+
+    const candidateSql = rankedCandidates
+      ? `SELECT facts.id, semantic_candidates.candidate_order
+          FROM ${this.tableName} AS facts
+          INNER JOIN semantic_candidates ON semantic_candidates.id = facts.id
+          WHERE ${scopeSql}${statusSql}`
+      : `SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC) AS candidate_order
+          FROM ${this.tableName}
+          WHERE ${scopeSql}${statusSql}${textSql}
+          ORDER BY updated_at DESC
+          LIMIT ?`;
+    const candidateParams = rankedCandidates
+      ? [
+          ...rankedCandidates.flatMap((id, index) => [id, index + 1]),
+          ...scopeParams,
+          ...statusParams,
+        ]
+      : [...scopeParams, ...statusParams, ...textParams, candidateLimit];
+    const semanticCandidatesSql = rankedCandidates
+      ? `semantic_candidates(id, candidate_order) AS (VALUES ${rankedCandidates
+          .map(() => '(?, ?)')
+          .join(', ')})`
+      : '';
+    const semanticCandidatesPrefix = semanticCandidatesSql
+      ? `${semanticCandidatesSql},`
+      : '';
 
     if (!latestOnly) {
       return await this.query(
-        `SELECT * FROM ${this.tableName} WHERE ${scopeSql}${statusSql} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
-        [...scopeParams, ...statusParams, limit, offset],
+        `WITH ${semanticCandidatesPrefix}
+          catalog_candidates AS (
+            ${candidateSql}
+          )
+          SELECT facts.*
+          FROM ${this.tableName} AS facts
+          INNER JOIN catalog_candidates
+            ON catalog_candidates.id = facts.id
+          ORDER BY catalog_candidates.candidate_order
+          LIMIT ? OFFSET ?`,
+        [...candidateParams, limit, offset],
         { allowRawOnTenantScoped: true },
       );
     }
 
     return await this.query(
       `WITH RECURSIVE
+        ${semanticCandidatesPrefix}
         catalog_candidates AS (
-          SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC) AS candidate_order
-          FROM ${this.tableName}
-          WHERE ${scopeSql}${statusSql}
-          ORDER BY updated_at DESC
-          LIMIT ?
+          ${candidateSql}
         ),
         successor_choices AS (
           SELECT id, previous_fact_id,
@@ -316,14 +369,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         WHERE distinct_latest.duplicate_rank = 1
         ORDER BY distinct_latest.candidate_order
         LIMIT ? OFFSET ?`,
-      [
-        ...scopeParams,
-        ...statusParams,
-        candidateLimit,
-        ...scopeParams,
-        limit,
-        offset,
-      ],
+      [...candidateParams, ...scopeParams, limit, offset],
       { allowRawOnTenantScoped: true },
     );
   }
@@ -451,90 +497,51 @@ export class FactCollection extends SmrtCollection<Fact> {
       );
     }
 
-    const resolveLatestPage = (facts: Fact[], chainFacts: Fact[]): Fact[] => {
-      const successorsByPreviousId = new Map<string, Fact[]>();
-      for (const fact of chainFacts) {
-        if (!fact.previousFactId) continue;
-
-        const successors =
-          successorsByPreviousId.get(fact.previousFactId) ?? [];
-        successors.push(fact);
-        successorsByPreviousId.set(fact.previousFactId, successors);
-      }
-
-      const latestById = new Map<string, Fact>();
-
-      for (const fact of facts.slice(0, latestResolutionLimit)) {
-        let latest = fact;
-        const visited = new Set<string>();
-        while (true) {
-          const latestId = latest.id as string;
-          if (!latestId || visited.has(latestId)) break;
-          visited.add(latestId);
-
-          const successors = successorsByPreviousId.get(latestId);
-          if (!successors?.length) break;
-
-          latest = successors.reduce((best, successor) =>
-            successor.confidence > best.confidence ? successor : best,
-          );
-        }
-
-        latestById.set(latest.id as string, latest);
-        if (latestById.size >= pageEnd) {
-          break;
-        }
-      }
-
-      return [...latestById.values()].slice(safeOffset, pageEnd);
-    };
-
-    const chainFacts =
-      tenantId === undefined || tenantId === null
-        ? await this.list({
-            orderBy: 'updated_at DESC',
-          })
-        : await this.findWithGlobals(tenantId);
-
-    const tenantScoped = includeSuperseded
-      ? chainFacts
-      : chainFacts.filter((fact) =>
-          tenantId === undefined || tenantId === null
-            ? fact.status === 'active'
-            : fact.status !== 'superseded',
-        );
-    const tenantScopedIds = new Set(
-      tenantScoped
-        .map((fact) => fact.id)
-        .filter((factId): factId is string => typeof factId === 'string'),
-    );
-
-    let matches: Fact[] = [];
     try {
-      matches = await this.semanticSearch(query, {
+      const matches = await this.semanticSearch(query, {
         limit: safeOffset + safeLimit,
         minSimilarity,
         where: includeSuperseded ? undefined : { status: 'active' },
       });
+      const rankedCandidateIds = matches
+        .map((fact) => fact.id)
+        .filter((factId): factId is string => typeof factId === 'string');
+      const page = await this.listCatalogPage(
+        tenantId,
+        includeSuperseded,
+        latestOnly,
+        safeLimit,
+        safeOffset,
+        latestResolutionLimit,
+        undefined,
+        rankedCandidateIds,
+      );
 
-      if (tenantScopedIds.size > 0) {
-        matches = matches.filter(
-          (fact) => typeof fact.id === 'string' && tenantScopedIds.has(fact.id),
-        );
+      if (latestOnly) {
+        return page;
       }
-    } catch {
-      const normalizedQuery = query.toLowerCase();
-      matches = tenantScoped.filter((fact) => {
-        const haystack = `${fact.textRefined} ${fact.textRaw}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
+
+      const similarityById = new Map(
+        matches.map((fact) => [fact.id as string, fact._similarity]),
+      );
+      return page.map((fact) => {
+        const similarity = similarityById.get(fact.id as string);
+        if (similarity !== undefined) {
+          (fact as Fact & { _similarity: number })._similarity = similarity;
+        }
+        return fact;
       });
+    } catch {
+      return await this.listCatalogPage(
+        tenantId,
+        includeSuperseded,
+        latestOnly,
+        safeLimit,
+        safeOffset,
+        latestResolutionLimit,
+        query.toLowerCase(),
+      );
     }
-
-    if (!latestOnly) {
-      return matches.slice(safeOffset, safeOffset + safeLimit);
-    }
-
-    return resolveLatestPage(matches, chainFacts);
   }
 
   /**

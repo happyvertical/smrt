@@ -243,6 +243,8 @@ describe('getEntityBriefing', () => {
     );
 
     vi.spyOn(facts, 'semanticSearch').mockResolvedValue(browseFacts as any);
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
 
     const results = await facts.browseCatalog('catalog', {
       limit: 5,
@@ -257,6 +259,11 @@ describe('getEntityBriefing', () => {
       'Catalog fact 14',
       'Catalog fact 15',
     ]);
+    expect(
+      querySpy.mock.calls.filter(([sql]) =>
+        String(sql).includes('semantic_candidates'),
+      ),
+    ).toHaveLength(1);
     expect(facts.semanticSearch).toHaveBeenCalledWith(
       'catalog',
       expect.objectContaining({ limit: 15 }),
@@ -318,6 +325,40 @@ describe('getEntityBriefing', () => {
       expect.arrayContaining([tenantFact.id, globalFact.id]),
     );
     expect(results.map((fact) => fact.id)).not.toContain(otherTenantFact.id);
+  });
+
+  it('keeps the catalog status policy distinct for global and tenant pages', async () => {
+    const globalActive = await facts.create({
+      textRefined: 'Global active catalog fact',
+      type: 'assertion',
+      status: 'active',
+    });
+    const globalPending = await facts.create({
+      textRefined: 'Global pending catalog fact',
+      type: 'assertion',
+      status: 'pending',
+    });
+    const tenantPending = await facts.create({
+      tenantId: 'tenant-a',
+      textRefined: 'Tenant pending catalog fact',
+      type: 'assertion',
+      status: 'pending',
+    });
+
+    const globalResults = await facts.browseCatalog('', { latestOnly: false });
+    const tenantResults = await facts.browseCatalog('', {
+      tenantId: 'tenant-a',
+      latestOnly: false,
+    });
+
+    expect(globalResults.map((fact) => fact.id)).toEqual([globalActive.id]);
+    expect(tenantResults.map((fact) => fact.id)).toEqual(
+      expect.arrayContaining([
+        globalActive.id,
+        globalPending.id,
+        tenantPending.id,
+      ]),
+    );
   });
 
   it('resolves latest catalog facts from one batched query', async () => {
@@ -414,7 +455,24 @@ describe('getEntityBriefing', () => {
     ).toHaveLength(1);
   });
 
-  it('keeps no-tenant catalog candidates active while following filtered successors', async () => {
+  it('treats text fallback wildcard characters as literal text', async () => {
+    const fact = await facts.create({
+      textRefined: 'Catalog value 100%_\\ retained',
+      type: 'assertion',
+      status: 'active',
+    });
+    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+      new Error('Embeddings unavailable'),
+    );
+
+    const results = await facts.browseCatalog('100%_\\', {
+      latestOnly: false,
+    });
+
+    expect(results.map((result) => result.id)).toEqual([fact.id]);
+  });
+
+  it('follows a successor outside the active catalog filter', async () => {
     const root = await facts.create({
       textRefined: 'Active catalog root',
       type: 'assertion',
@@ -427,16 +485,6 @@ describe('getEntityBriefing', () => {
       status: 'superseded',
       previousFactId: root.id as string,
       confidence: 0.9,
-    });
-    await facts.create({
-      textRefined: 'Pending catalog fact',
-      type: 'assertion',
-      status: 'pending',
-    });
-    await facts.create({
-      textRefined: 'Rejected catalog fact',
-      type: 'assertion',
-      status: 'rejected',
     });
     const querySpy = vi.spyOn((facts as any).db, 'query');
     querySpy.mockClear();
