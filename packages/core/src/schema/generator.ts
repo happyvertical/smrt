@@ -16,6 +16,7 @@ import { classnameToTablename } from '../utils/naming.js';
 import {
   type ConflictTableStrategy,
   conflictIndexName,
+  nullableConflictIdentity,
   resolveConflictColumns,
   resolveTenantColumn,
   servesSlugLookup,
@@ -926,10 +927,12 @@ export class SchemaGenerator {
       columns: string[];
       unique?: boolean;
       description?: string;
+      nullsNotDistinct?: boolean;
     }>,
     columns: Record<
       string,
-      { referenceKind?: string; primaryKey?: boolean } | undefined
+      | { referenceKind?: string; primaryKey?: boolean; notNull?: boolean }
+      | undefined
     >,
     tableName: string,
     config: SchemaGeneratorConfig | undefined,
@@ -944,6 +947,9 @@ export class SchemaGenerator {
       name: conflictIndexName(tableName, conflictColumns, tenantColumn),
       columns: conflictColumns,
       unique: true,
+      ...(nullableConflictIdentity(conflictColumns, columns)
+        ? { nullsNotDistinct: true }
+        : {}),
     });
   }
 
@@ -1277,6 +1283,9 @@ export class SchemaGenerator {
           name: conflictIndexName(tableName, conflictColumns, tenantColumn),
           columns: conflictColumns,
           unique: true,
+          ...(nullableConflictIdentity(conflictColumns, columns)
+            ? { nullsNotDistinct: true }
+            : {}),
           description: `Unique conflict index for ${className}`,
         });
       }
@@ -1945,6 +1954,7 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        ...(idx.nullsNotDistinct ? { nullsNotDistinct: true } : {}),
         where: idx.where,
         jsonPath: idx.jsonPath,
       })),
@@ -2106,6 +2116,9 @@ export class SchemaGenerator {
         name: conflictIndexName(tableName, conflictColumns, tenantColumn),
         columns: conflictColumns,
         unique: true,
+        ...(nullableConflictIdentity(conflictColumns, columns)
+          ? { nullsNotDistinct: true }
+          : {}),
       });
     }
 
@@ -2152,6 +2165,7 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        ...(idx.nullsNotDistinct ? { nullsNotDistinct: true } : {}),
         where: idx.where,
         jsonPath: idx.jsonPath,
       })),

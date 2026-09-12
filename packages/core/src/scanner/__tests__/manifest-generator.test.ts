@@ -7,6 +7,63 @@ import type {
 } from '../types';
 
 describe('ManifestGenerator', () => {
+  it('does not invent independent persistence schemas for collection access classes (#2834)', () => {
+    const model: SmartObjectDefinition = {
+      name: 'identity',
+      className: 'Identity2834',
+      collection: 'identities',
+      filePath: 'identity.ts',
+      fields: { code: { type: 'text', _meta: { required: true } } },
+      methods: {},
+      decoratorConfig: {
+        tableName: 'identity_2834',
+        conflictColumns: ['code'],
+      },
+      exportName: 'Identity2834',
+      collectionExportName: 'Identity2834Collection',
+    };
+    const collection: SmartObjectDefinition = {
+      ...model,
+      name: 'identityCollection',
+      className: 'Identity2834Collection',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Identity2834',
+      fields: {},
+      decoratorConfig: { tableName: 'identity_2834' },
+      schema: {
+        tableName: 'identity_2834',
+        columns: {},
+        indexes: [],
+        ddl: '',
+      } as SmartObjectDefinition['schema'],
+    };
+    const manifest: SmartObjectManifest = {
+      version: '1',
+      timestamp: 0,
+      objects: { model, collection },
+    };
+    const namedModel = {
+      ...model,
+      className: 'StampCollection',
+      extends: 'SmrtObject',
+      extendsTypeArg: 'StampOptions',
+    };
+    const indirect = {
+      ...collection,
+      className: 'FilteredIdentities',
+      extends: 'Identity2834Collection',
+      extendsTypeArg: undefined,
+    };
+    manifest.objects.namedModel = namedModel;
+    manifest.objects.indirect = indirect;
+    new ManifestGenerator().generateSchemas(manifest);
+    expect(model.schema?.tableName).toBe('identity_2834');
+    expect(namedModel.schema?.tableName).toBe('identity_2834');
+    expect(collection.schema).toEqual(model.schema);
+    expect(indirect.schema).toEqual(model.schema);
+    expect(collection.schema).not.toBe(model.schema);
+  });
+
   describe('class name collision detection', () => {
     it('should throw an error when duplicate class names are found', () => {
       const generator = new ManifestGenerator();

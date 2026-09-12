@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379243051,
+  "timestamp": 0,
   "packageName": "@happyvertical/smrt-events",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.49.2",
   "objects": {
     "@happyvertical/smrt-events:EventAssetCollection": {
       "name": "eventassetcollection",
@@ -209,13 +209,13 @@
       "collectionExportName": "EventAssetCollectionCollection",
       "schema": {
         "tableName": "event_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"event_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -235,25 +235,75 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "event_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false,
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "asset_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": true,
+            "unique": false
+          },
+          "relationship": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "sort_order": {
+            "type": "INTEGER",
+            "notNull": true,
+            "unique": false,
+            "default": 0
           }
         },
         "indexes": [
           {
-            "name": "event_assets_id_idx",
+            "name": "event_assets_event_id_asset_id_idx",
             "columns": [
-              "id"
-            ]
+              "event_id",
+              "asset_id",
+              "relationship"
+            ],
+            "unique": true
           },
           {
             "name": "event_assets_slug_context_idx",
             "columns": [
               "slug",
               "context"
-            ],
-            "unique": true
+            ]
+          },
+          {
+            "name": "event_assets_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_assets_asset_id_idx",
+            "columns": [
+              "asset_id"
+            ]
           }
         ],
-        "version": "53d08f89"
+        "version": "aeebedc6"
       }
     },
     "@happyvertical/smrt-events:EventCollection": {
@@ -533,14 +583,14 @@
       "exportName": "EventCollection",
       "collectionExportName": "EventCollectionCollection",
       "schema": {
-        "tableName": "event_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "events",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" UUID,\n  \"type_id\" UUID,\n  \"place_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" INTEGER,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -551,6 +601,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -560,25 +618,152 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "parent_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "series_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "event_series",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
+          },
+          "type_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "event_types",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
+          },
+          "place_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "start_date": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "end_date": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "scheduled"
+          },
+          "round": {
+            "type": "INTEGER",
+            "notNull": false
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
           {
-            "name": "event_collections_id_idx",
+            "name": "events_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "events_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "event_collections_slug_context_idx",
+            "name": "events_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "events_parent_id_idx",
+            "columns": [
+              "parent_id"
+            ]
+          },
+          {
+            "name": "events_series_id_idx",
+            "columns": [
+              "series_id"
+            ]
+          },
+          {
+            "name": "events_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
+          },
+          {
+            "name": "events_place_id_idx",
+            "columns": [
+              "place_id"
+            ]
           }
         ],
-        "version": "94538784"
+        "version": "373ccc72"
       }
     },
     "@happyvertical/smrt-events:EventParticipantCollection": {
@@ -837,14 +1022,14 @@
       "exportName": "EventParticipantCollection",
       "collectionExportName": "EventParticipantCollectionCollection",
       "schema": {
-        "tableName": "event_participant_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participant_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "event_participants",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"event_id\" UUID,\n  \"profile_id\" UUID,\n  \"role\" TEXT DEFAULT '',\n  \"placement\" INTEGER,\n  \"group_id\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -864,25 +1049,96 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "event_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "unique": false,
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "profile_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false,
+            "unique": false
+          },
+          "role": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "placement": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "group_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
           {
-            "name": "event_participant_collections_id_idx",
+            "name": "event_participants_event_id_profile_id_idx",
             "columns": [
-              "id"
-            ]
+              "event_id",
+              "profile_id",
+              "role"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
-            "name": "event_participant_collections_slug_context_idx",
+            "name": "event_participants_slug_context_idx",
             "columns": [
               "slug",
               "context"
-            ],
-            "unique": true
+            ]
+          },
+          {
+            "name": "event_participants_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_participants_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
           }
         ],
-        "version": "3e50d31f"
+        "version": "c2faac84"
       }
     },
     "@happyvertical/smrt-events:EventSeriesCollection": {
@@ -1006,14 +1262,14 @@
       "exportName": "EventSeriesCollection",
       "collectionExportName": "EventSeriesCollectionCollection",
       "schema": {
-        "tableName": "event_series_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "event_series",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" UUID,\n  \"organizer_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"recurrence\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1024,6 +1280,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -1033,25 +1297,101 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "type_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "event_types",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "organizer_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "start_date": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "end_date": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "recurrence": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "metadata": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
           {
-            "name": "event_series_collections_id_idx",
+            "name": "event_series_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "event_series_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "event_series_collections_slug_context_idx",
+            "name": "event_series_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_series_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
+          },
+          {
+            "name": "event_series_organizer_id_idx",
+            "columns": [
+              "organizer_id"
+            ]
           }
         ],
-        "version": "b309d9f7"
+        "version": "c79f5863"
       }
     },
     "@happyvertical/smrt-events:EventTypeCollection": {
@@ -1147,14 +1487,14 @@
       "exportName": "EventTypeCollection",
       "collectionExportName": "EventTypeCollectionCollection",
       "schema": {
-        "tableName": "event_type_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_type_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "event_types",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1165,6 +1505,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -1174,25 +1522,60 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "schema": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "participant_schema": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
           }
         },
         "indexes": [
           {
-            "name": "event_type_collections_id_idx",
+            "name": "event_types_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "event_types_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "event_type_collections_slug_context_idx",
+            "name": "event_types_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "a447fd5d"
+        "version": "922ae3b0"
       }
     },
     "@happyvertical/smrt-events:Event": {
@@ -1216,12 +1599,32 @@
           "required": false,
           "related": "Event",
           "_meta": {
-            "nullable": true
+            "nullable": true,
+            "constraint": {
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
           }
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -1231,12 +1634,28 @@
         "seriesId": {
           "type": "foreignKey",
           "required": false,
-          "related": "EventSeries"
+          "related": "EventSeries",
+          "_meta": {
+            "constraint": {
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
+          }
         },
         "typeId": {
           "type": "foreignKey",
           "required": false,
-          "related": "EventType"
+          "related": "EventType",
+          "_meta": {
+            "constraint": {
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
+          }
         },
         "placeId": {
           "type": "crossPackageRef",
@@ -1286,422 +1705,11 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getParent": {
           "name": "getParent",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<null>",
+          "returnType": "Promise<this | null>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1709,7 +1717,7 @@
           "name": "getChildren",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1717,7 +1725,7 @@
           "name": "getAncestors",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1725,7 +1733,7 @@
           "name": "getDescendants",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1733,7 +1741,7 @@
           "name": "getHierarchy",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<HierarchyView>",
+          "returnType": "Promise<HierarchyView<this>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1743,8 +1751,19 @@
           "parameters": [
             {
               "name": "newParent",
-              "type": "string | null",
-              "optional": false
+              "type": "this | string | null",
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "this"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           ],
           "returnType": "Promise<void>",
@@ -1755,7 +1774,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1765,7 +1784,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -1779,7 +1798,7 @@
           "parameters": [
             {
               "name": "updates",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -1935,7 +1954,18 @@
             "update"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtHierarchical",
       "exportName": "Event",
@@ -1947,8 +1977,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1979,13 +2009,23 @@
           },
           "parent_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -1994,18 +2034,38 @@
           },
           "series_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "event_series",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
           },
           "type_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "event_types",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE",
+              "engines": [
+                "postgres",
+                "sqlite"
+              ]
+            }
           },
           "place_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "crossPackageRef"
+            "referenceKind": "crossPackageRef",
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
@@ -2043,28 +2103,55 @@
         },
         "indexes": [
           {
-            "name": "events_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "events_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "events_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "events_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "events_parent_id_idx",
+            "columns": [
+              "parent_id"
+            ]
+          },
+          {
+            "name": "events_series_id_idx",
+            "columns": [
+              "series_id"
+            ]
+          },
+          {
+            "name": "events_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
+          },
+          {
+            "name": "events_place_id_idx",
+            "columns": [
+              "place_id"
+            ]
           }
         ],
-        "version": "8a381a21"
+        "version": "373ccc72"
       }
     },
     "@happyvertical/smrt-events:EventAsset": {
@@ -2077,7 +2164,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "eventId": {
           "type": "foreignKey",
@@ -2115,7 +2216,10 @@
         ],
         "api": false,
         "mcp": false,
-        "cli": false
+        "cli": false,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "EventAsset",
@@ -2149,8 +2253,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2173,21 +2277,27 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "event_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
             "unique": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
           },
           "asset_id": {
             "type": "UUID",
+            "referenceKind": "crossPackageRef",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "crossPackageRef"
+            "unique": false
           },
           "relationship": {
             "type": "TEXT",
@@ -2203,12 +2313,6 @@
         },
         "indexes": [
           {
-            "name": "event_assets_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "event_assets_event_id_asset_id_idx",
             "columns": [
               "event_id",
@@ -2216,9 +2320,29 @@
               "relationship"
             ],
             "unique": true
+          },
+          {
+            "name": "event_assets_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "event_assets_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_assets_asset_id_idx",
+            "columns": [
+              "asset_id"
+            ]
           }
         ],
-        "version": "684609f5"
+        "version": "aeebedc6"
       }
     },
     "@happyvertical/smrt-events:EventParticipant": {
@@ -2231,7 +2355,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "eventId": {
           "type": "foreignKey",
@@ -2282,7 +2420,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2292,7 +2430,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -2306,7 +2444,7 @@
           "parameters": [
             {
               "name": "updates",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -2378,7 +2516,12 @@
             "update"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "EventParticipant",
@@ -2390,8 +2533,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2414,21 +2557,27 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "event_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
             "unique": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "events",
+              "column": "id",
+              "onDelete": "CASCADE",
+              "onUpdate": "CASCADE"
+            }
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "crossPackageRef",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "crossPackageRef"
+            "unique": false
           },
           "role": {
             "type": "TEXT",
@@ -2464,22 +2613,37 @@
         },
         "indexes": [
           {
-            "name": "event_participants_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "event_participants_event_id_profile_id_idx",
             "columns": [
               "event_id",
               "profile_id",
               "role"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "event_participants_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "event_participants_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_participants_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
           }
         ],
-        "version": "dd97eb53"
+        "version": "c2faac84"
       }
     },
     "@happyvertical/smrt-events:EventSeries": {
@@ -2500,7 +2664,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -2555,417 +2733,6 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getRecurrence": {
           "name": "getRecurrence",
           "async": false,
@@ -2992,7 +2759,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3002,7 +2769,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -3016,7 +2783,7 @@
           "parameters": [
             {
               "name": "updates",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -3076,7 +2843,18 @@
             "update"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "EventSeries",
@@ -3088,8 +2866,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3120,8 +2898,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -3130,13 +2908,19 @@
           },
           "type_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "event_types",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "organizer_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "crossPackageRef"
+            "referenceKind": "crossPackageRef",
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
@@ -3169,28 +2953,43 @@
         },
         "indexes": [
           {
-            "name": "event_series_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "event_series_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "event_series_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "event_series_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "event_series_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
+          },
+          {
+            "name": "event_series_organizer_id_idx",
+            "columns": [
+              "organizer_id"
+            ]
           }
         ],
-        "version": "ca161261"
+        "version": "c79f5863"
       }
     },
     "@happyvertical/smrt-events:EventType": {
@@ -3211,7 +3010,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -3246,422 +3059,11 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getSchema": {
           "name": "getSchema",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3671,7 +3073,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -3683,7 +3085,7 @@
           "name": "getParticipantSchema",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3693,7 +3095,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -3734,7 +3136,18 @@
             "create"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "EventType",
@@ -3753,8 +3166,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3785,8 +3198,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -3811,28 +3224,31 @@
         },
         "indexes": [
           {
-            "name": "event_types_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "event_types_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "event_types_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "event_types_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "af2ba9bf"
+        "version": "922ae3b0"
       }
     }
   },
@@ -3842,6 +3258,8 @@
     "@happyvertical/smrt-core",
     "@happyvertical/smrt-places",
     "@happyvertical/smrt-profiles",
-    "@happyvertical/smrt-tenancy"
+    "@happyvertical/smrt-tenancy",
+    "@happyvertical/smrt-types",
+    "@happyvertical/smrt-ui"
   ]
 }

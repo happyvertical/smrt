@@ -10,12 +10,25 @@
  */
 
 import { shortenIdentifier } from '../index-utils.js';
-import type { SQLDataType, TriggerDefinition } from '../types.js';
+import type {
+  SchemaDefinition,
+  SQLDataType,
+  TriggerDefinition,
+} from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
+import { renderNullEqualConflictIndex } from './null-equal-index.js';
 import type { DatabaseEngine } from './types.js';
 
 export class PostgresStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'postgres';
+
+  generateIndexes(schema: SchemaDefinition): string[] {
+    return (schema.indexes ?? []).flatMap((index) =>
+      index.nullsNotDistinct
+        ? [renderNullEqualConflictIndex(schema.tableName, index)]
+        : super.generateIndexes({ ...schema, indexes: [index] }),
+    );
+  }
 
   /**
    * Map types for PostgreSQL

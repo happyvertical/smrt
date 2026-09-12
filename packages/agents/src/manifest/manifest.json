@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379246364,
+  "timestamp": 0,
   "packageName": "@happyvertical/smrt-agents",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.49.2",
   "objects": {
     "@happyvertical/smrt-agents:Agent": {
       "name": "agent",
@@ -22,7 +22,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "status": {
           "type": "text",
@@ -31,414 +45,33 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
+        "getInstanceKey": {
+          "name": "getInstanceKey",
           "async": false,
           "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
+          "returnType": "string | null",
           "isStatic": false,
           "isPublic": true
         },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
+        "getConfigOwnerId": {
+          "name": "getConfigOwnerId",
           "async": false,
           "parameters": [
             {
-              "name": "fieldName",
+              "name": "slotId",
               "type": "string",
-              "optional": false
+              "optional": true
             }
           ],
-          "returnType": "boolean",
+          "returnType": "string | null",
           "isStatic": false,
           "isPublic": true
         },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
+        "getDispatchSubscriber": {
+          "name": "getDispatchSubscriber",
           "async": false,
           "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
+          "returnType": "string",
           "isStatic": false,
           "isPublic": true
         },
@@ -454,7 +87,7 @@
           "name": "loadConfigs",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string, Record<string, unknown>>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -469,7 +102,7 @@
             },
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -487,7 +120,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<Record<string, unknown>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -498,10 +131,13 @@
             {
               "name": "options",
               "type": "object",
-              "optional": true
+              "optional": true,
+              "memberTypes": [
+                "boolean"
+              ]
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<Record<string, unknown>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -519,7 +155,7 @@
           "parameters": [
             {
               "name": "_payload",
-              "type": "any",
+              "type": "unknown",
               "optional": false
             },
             {
@@ -537,6 +173,22 @@
           "async": true,
           "parameters": [],
           "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getLearningMemory": {
+          "name": "getLearningMemory",
+          "async": false,
+          "parameters": [],
+          "returnType": "LearningMemory | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<this>",
           "isStatic": false,
           "isPublic": true
         },
@@ -577,7 +229,16 @@
         "cli": false,
         "api": false,
         "mcp": false,
-        "tableStrategy": "sti"
+        "tableStrategy": "sti",
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "Agent",
@@ -594,8 +255,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -626,8 +287,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "status": {
             "type": "TEXT",
@@ -637,28 +298,31 @@
         },
         "indexes": [
           {
-            "name": "agents_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "agents_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "agents_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "agents_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "d7a23769"
+        "version": "dde8777b"
       }
     },
     "@happyvertical/smrt-agents:AgentConfig": {
@@ -671,7 +335,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "agentId": {
           "type": "text",
@@ -691,7 +369,10 @@
         "configData": {
           "type": "json",
           "required": false,
-          "_meta": {}
+          "_meta": {
+            "sensitive": true
+          },
+          "sensitive": true
         },
         "schemaVersion": {
           "type": "integer",
@@ -715,7 +396,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string, Record<string, unknown>>>",
           "isStatic": true,
           "isPublic": true
         },
@@ -734,7 +415,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<Map<string, Map<string, any>>>",
+          "returnType": "Promise<Map<string, Map<string, Record<string, unknown>>>>",
           "isStatic": true,
           "isPublic": true
         },
@@ -758,7 +439,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | undefined>",
+          "returnType": "Promise<Record<string, unknown> | undefined>",
           "isStatic": true,
           "isPublic": true
         },
@@ -769,7 +450,11 @@
             {
               "name": "data",
               "type": "object",
-              "optional": false
+              "optional": false,
+              "memberTypes": [
+                "string",
+                "Record<string, unknown>"
+              ]
             },
             {
               "name": "options",
@@ -799,7 +484,17 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AgentConfig",
@@ -811,8 +506,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -835,9 +530,9 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "agent_id": {
             "type": "TEXT",
@@ -867,21 +562,24 @@
         },
         "indexes": [
           {
-            "name": "agent_configs_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "agent_configs_slug_context_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "agent_configs_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "e515bf45"
+        "version": "25c6ac4c"
       }
     },
     "@happyvertical/smrt-agents:AgentConfigCollection": {
@@ -939,13 +637,13 @@
       "collectionExportName": "AgentConfigCollectionCollection",
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -965,25 +663,59 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_class": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "slot_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "config_data": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false
+          },
+          "schema_version": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
           {
-            "name": "agent_configs_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "agent_configs_slug_context_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "agent_configs_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "10ae297c"
+        "version": "25c6ac4c"
       }
     },
     "@happyvertical/smrt-agents:AgentSchedule": {
@@ -996,7 +728,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "agentType": {
           "type": "text",
@@ -1014,8 +760,10 @@
           "type": "json",
           "required": false,
           "_meta": {
-            "sqlType": "TEXT"
-          }
+            "sqlType": "TEXT",
+            "sensitive": true
+          },
+          "sensitive": true
         },
         "cron": {
           "type": "text",
@@ -1186,14 +934,33 @@
             "delete",
             "enable",
             "disable"
-          ]
+          ],
+          "skipApiCheck": true
         },
         "mcp": {
           "include": [
             "list",
             "get"
           ]
-        }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_agent_schedules_enabled_status_next_run_idx",
+            "columns": [
+              "enabled",
+              "status",
+              "nextRun"
+            ]
+          }
+        ],
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AgentSchedule",
@@ -1205,8 +972,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1229,9 +996,9 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "agent_type": {
             "type": "TEXT",
@@ -1331,21 +1098,32 @@
         },
         "indexes": [
           {
-            "name": "_smrt_agent_schedules_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "_smrt_agent_schedules_slug_context_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "_smrt_agent_schedules_enabled_status_next_run_idx",
+            "columns": [
+              "enabled",
+              "status",
+              "next_run"
+            ]
+          },
+          {
+            "name": "_smrt_agent_schedules_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "1a6959d4"
+        "version": "c21a1f29"
       }
     },
     "@happyvertical/smrt-agents:AgentScheduleCollection": {
@@ -1400,12 +1178,23 @@
             {
               "name": "status",
               "type": "ScheduleStatus | ScheduleStatus[]",
-              "optional": false
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "ScheduleStatus"
+                },
+                {
+                  "type": "ScheduleStatus[]"
+                }
+              ]
             },
             {
               "name": "options",
               "type": "object",
-              "optional": true
+              "optional": true,
+              "memberTypes": [
+                "number"
+              ]
             }
           ],
           "returnType": "Promise<AgentSchedule[]>",
@@ -1424,7 +1213,11 @@
             {
               "name": "options",
               "type": "object",
-              "optional": true
+              "optional": true,
+              "memberTypes": [
+                "number",
+                "boolean"
+              ]
             }
           ],
           "returnType": "Promise<AgentSchedule[]>",
@@ -1441,13 +1234,13 @@
       "collectionExportName": "AgentScheduleCollectionCollection",
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1467,25 +1260,137 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_config": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "cron": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "timezone": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "enabled": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "unique": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "last_run": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "next_run": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "last_status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "last_error": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "run_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "success_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "failure_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "max_concurrent": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "running_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "timeout": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "method": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "method_args": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
           {
-            "name": "_smrt_agent_schedules_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "_smrt_agent_schedules_slug_context_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "_smrt_agent_schedules_enabled_status_next_run_idx",
+            "columns": [
+              "enabled",
+              "status",
+              "next_run"
+            ]
+          },
+          {
+            "name": "_smrt_agent_schedules_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "6ba9791d"
+        "version": "c21a1f29"
       }
     },
     "@happyvertical/smrt-agents:TenantAgent": {
@@ -1498,8 +1403,20 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "agentClass": {
           "type": "text",
@@ -1522,8 +1439,10 @@
           "type": "json",
           "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "nullable": true,
+            "sensitive": true
+          },
+          "sensitive": true
         }
       },
       "methods": {},
@@ -1553,20 +1472,24 @@
         "conflictColumns": [
           "tenant_id",
           "agent_class"
-        ]
+        ],
+        "tenantScoped": {
+          "mode": "required"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "TenantAgent",
       "collectionExportName": "TenantAgentCollection",
+      "validationRules": [],
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1589,9 +1512,9 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
           },
           "agent_class": {
             "type": "TEXT",
@@ -1616,21 +1539,30 @@
         },
         "indexes": [
           {
-            "name": "tenant_agents_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "tenant_agents_tenant_id_agent_class_idx",
             "columns": [
               "tenant_id",
               "agent_class"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "tenant_agents_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "tenant_agents_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "b23631f9"
+        "version": "9892a054"
       }
     },
     "@happyvertical/smrt-agents:TenantAgentCollection": {
@@ -1776,13 +1708,13 @@
       "collectionExportName": "TenantAgentCollectionCollection",
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1802,33 +1734,73 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "agent_class": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "permissions": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false
+          },
+          "config": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
           {
-            "name": "tenant_agents_id_idx",
+            "name": "tenant_agents_tenant_id_agent_class_idx",
             "columns": [
-              "id"
-            ]
+              "tenant_id",
+              "agent_class"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "tenant_agents_slug_context_idx",
             "columns": [
               "slug",
               "context"
-            ],
-            "unique": true
+            ]
+          },
+          {
+            "name": "tenant_agents_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "f20fc7ee"
+        "version": "9892a054"
       }
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
+    "@happyvertical/smrt-config",
     "@happyvertical/smrt-core",
+    "@happyvertical/smrt-playbooks",
+    "@happyvertical/smrt-reports",
     "@happyvertical/smrt-secrets",
     "@happyvertical/smrt-tenancy",
+    "@happyvertical/smrt-types",
+    "@happyvertical/smrt-ui",
     "@happyvertical/smrt-users"
   ]
 }

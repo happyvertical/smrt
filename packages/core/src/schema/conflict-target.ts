@@ -22,8 +22,9 @@
  * NULL-tenant rows (`mode: 'optional'` outside a tenant context) keep the
  * SDK's null-aware upsert semantics: `@happyvertical/sql` matches conflict
  * columns with `IS NOT DISTINCT FROM`, so `(NULL, 'widget', '')` updates the
- * existing `(NULL, 'widget', '')` row through the model layer even though the
- * database index treats NULLs as distinct. Global rows therefore dedup among
+ * existing `(NULL, 'widget', '')` row through the model layer. PostgreSQL 15+
+ * framework indexes additionally enforce this with NULLS NOT DISTINCT (#2834);
+ * older engines and unmigrated indexes retain the fallback. Global rows dedup among
  * themselves exactly as every row did before, and per-tenant rows dedup per
  * tenant.
  *
@@ -180,4 +181,18 @@ export function resolveTenantColumn(
 ): string | undefined {
   if (!tenantField || !hasField(tenantField)) return undefined;
   return toColumn(tenantField);
+}
+
+/** Only the framework conflict identity opts into NULL-equal uniqueness. */
+export function nullableConflictIdentity(
+  conflictColumns: readonly string[],
+  columns: Record<
+    string,
+    { notNull?: boolean; primaryKey?: boolean } | undefined
+  >,
+): boolean {
+  return conflictColumns.some((name) => {
+    const column = columns[name];
+    return column !== undefined && !column.notNull && !column.primaryKey;
+  });
 }

@@ -8,6 +8,7 @@
 import { createLogger } from '@happyvertical/logger';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import { materializeManifestDDLForEngine } from '../schema/ddl/materialize-manifest.js';
+import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import {
   planForeignKeyCreation,
   renderDeferredForeignKeyDrop,
@@ -576,6 +577,9 @@ ${downStatementsStr}
     tableName: string,
     index: import('../schema/types.js').IndexDefinition,
   ): string {
+    if (this.engine === 'postgres' && index.nullsNotDistinct) {
+      return renderNullEqualConflictIndex(tableName, index);
+    }
     const uniqueStr = index.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(index, this.engine);
     // Partial-index predicate. DuckDB (and the JSON adapter backed by it)

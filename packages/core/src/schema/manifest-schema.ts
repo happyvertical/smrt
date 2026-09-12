@@ -61,6 +61,7 @@ export interface ManifestIndexLike {
   name: string;
   columns?: string[];
   unique?: boolean;
+  nullsNotDistinct?: boolean;
   where?: string;
   jsonPath?: IndexDefinition['jsonPath'];
 }
@@ -119,6 +120,8 @@ export function manifestIndexesToDefinitions(
       columns: Array.isArray(index.columns) ? [...index.columns] : [],
     };
     if (index.unique !== undefined) definition.unique = index.unique;
+    if (index.nullsNotDistinct !== undefined)
+      definition.nullsNotDistinct = index.nullsNotDistinct;
     if (index.where) definition.where = index.where;
     if (index.jsonPath?.column && index.jsonPath.path) {
       definition.jsonPath = { ...index.jsonPath };
@@ -176,7 +179,7 @@ export interface CollectedManifestTable {
   tableName: string;
   /**
    * Structured union of every contributor: columns first-wins by name,
-   * indexes deduplicated by name.
+   * indexes reconciled by name with conflicting definitions rejected.
    */
   definition: SchemaDefinition;
   /**
@@ -210,12 +213,31 @@ export function mergeSchemaDefinitionInto(
       target.columns[name] = column;
     }
   }
-  const indexNames = new Set(target.indexes.map((index) => index.name));
+  const indexes = new Map(target.indexes.map((index) => [index.name, index]));
   for (const index of incoming.indexes) {
-    if (!indexNames.has(index.name)) {
-      indexNames.add(index.name);
-      target.indexes.push(index);
+    const existing = indexes.get(index.name);
+    if (!existing) {
+      const copy = { ...index };
+      indexes.set(index.name, copy);
+      target.indexes.push(copy);
+      continue;
     }
+    if (
+      JSON.stringify(existing.columns) !== JSON.stringify(index.columns) ||
+      Boolean(existing.unique) !== Boolean(index.unique) ||
+      (existing.where || '') !== (index.where || '') ||
+      existing.jsonPath?.column !== index.jsonPath?.column ||
+      existing.jsonPath?.path !== index.jsonPath?.path ||
+      (existing.nullsNotDistinct !== undefined &&
+        index.nullsNotDistinct !== undefined &&
+        existing.nullsNotDistinct !== index.nullsNotDistinct)
+    ) {
+      throw new Error(
+        `Conflicting manifest index definitions for ${target.tableName}.${index.name}; regenerate all contributing package manifests before provisioning.`,
+      );
+    }
+    if (index.nullsNotDistinct !== undefined)
+      existing.nullsNotDistinct = index.nullsNotDistinct;
   }
   const foreignKeyKeys = new Set(
     target.foreignKeys.map(

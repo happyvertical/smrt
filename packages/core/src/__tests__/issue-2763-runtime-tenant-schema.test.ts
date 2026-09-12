@@ -94,6 +94,7 @@ describe('runtime tenant schema registration (#2763)', () => {
         name: `${tableName}_slug_context_idx`,
         columns: ['tenant_id', 'slug', 'context'],
         unique: true,
+        nullsNotDistinct: true,
       });
     }
   });

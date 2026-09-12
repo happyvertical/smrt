@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379235055,
+  "timestamp": 0,
   "packageName": "@happyvertical/smrt-analytics",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.49.2",
   "objects": {
     "@happyvertical/smrt-analytics:AnalyticsDataStreamCollection": {
       "name": "analyticsdatastreamcollection",
@@ -144,14 +144,14 @@
       "exportName": "AnalyticsDataStreamCollection",
       "collectionExportName": "AnalyticsDataStreamCollectionCollection",
       "schema": {
-        "tableName": "analytics_data_stream_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_stream_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "analytics_data_streams",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -162,6 +162,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -171,25 +179,105 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "property_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "display_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "stream_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "measurement_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "firebase_app_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "default_uri": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "bundle_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "package_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "enhanced_measurement": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
           }
         },
         "indexes": [
           {
-            "name": "analytics_data_stream_collections_id_idx",
+            "name": "analytics_data_streams_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "analytics_data_streams_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "analytics_data_stream_collections_slug_context_idx",
+            "name": "analytics_data_streams_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_data_streams_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "196caa89"
+        "version": "851609ba"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsEventCollection": {
@@ -411,6 +499,12 @@
               "name": "now",
               "type": "Date",
               "optional": true
+            },
+            {
+              "name": "timeZone",
+              "type": "string",
+              "optional": true,
+              "default": "UTC"
             }
           ],
           "returnType": "Promise<PropertyStatsWithTrend>",
@@ -430,6 +524,12 @@
               "name": "now",
               "type": "Date",
               "optional": true
+            },
+            {
+              "name": "timeZone",
+              "type": "string",
+              "optional": true,
+              "default": "UTC"
             }
           ],
           "returnType": "Promise<Map<string, PropertyStatsWithTrend>>",
@@ -443,14 +543,14 @@
       "exportName": "AnalyticsEventCollection",
       "collectionExportName": "AnalyticsEventCollectionCollection",
       "schema": {
-        "tableName": "analytics_event_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_event_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "analytics_events",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -461,6 +561,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -470,25 +578,129 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "property_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "event_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "client_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "user_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "params": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "{}"
+          },
+          "event_timestamp": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "sent_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "error_message": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "retry_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "non_personalized_ads": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "session_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "page_path": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "page_title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "user_agent": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "ip_address": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
           }
         },
         "indexes": [
           {
-            "name": "analytics_event_collections_id_idx",
+            "name": "analytics_events_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "analytics_events_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "analytics_event_collections_slug_context_idx",
+            "name": "analytics_events_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_events_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "4b399770"
+        "version": "bee09e1d"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsPropertyCollection": {
@@ -628,14 +840,14 @@
       "exportName": "AnalyticsPropertyCollection",
       "collectionExportName": "AnalyticsPropertyCollectionCollection",
       "schema": {
-        "tableName": "analytics_property_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_property_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "analytics_properties",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -646,6 +858,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -655,25 +875,107 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "display_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "provider": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "measurement_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "api_secret": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "site_domain": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "time_zone": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "America/Los_Angeles"
+          },
+          "currency_code": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "USD"
+          },
+          "industry_category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "service_level": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "STANDARD"
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "last_sync_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "provider_metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "{}"
           }
         },
         "indexes": [
           {
-            "name": "analytics_property_collections_id_idx",
+            "name": "analytics_properties_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "analytics_properties_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "analytics_property_collections_slug_context_idx",
+            "name": "analytics_properties_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "bfe200c6"
+        "version": "f38a20b9"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsReportCollection": {
@@ -815,14 +1117,14 @@
       "exportName": "AnalyticsReportCollection",
       "collectionExportName": "AnalyticsReportCollectionCollection",
       "schema": {
-        "tableName": "analytics_report_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_report_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "analytics_reports",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -833,6 +1135,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -842,25 +1152,138 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "property_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "dimensions": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "metrics": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "date_range_start": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "7daysAgo"
+          },
+          "date_range_end": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "today"
+          },
+          "dimension_filter": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "metric_filter": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "order_by": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "max_results": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "frequency": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "last_run_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "next_run_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "result_data": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "row_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "last_error": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
           }
         },
         "indexes": [
           {
-            "name": "analytics_report_collections_id_idx",
+            "name": "analytics_reports_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "analytics_reports_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "analytics_report_collections_slug_context_idx",
+            "name": "analytics_reports_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_reports_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "68cfc4d7"
+        "version": "22ce0f1c"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsDataStream": {
@@ -878,6 +1301,24 @@
         "updated_at": {
           "type": "datetime",
           "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "propertyId": {
           "type": "foreignKey",
@@ -934,417 +1375,6 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "isWeb": {
           "name": "isWeb",
           "async": false,
@@ -1402,20 +1432,31 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AnalyticsDataStream",
       "collectionExportName": "AnalyticsDataStreamCollection",
       "schema": {
         "tableName": "analytics_data_streams",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1444,10 +1485,21 @@
             "notNull": true,
             "default": "current_timestamp"
           },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
           "property_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "display_name": {
             "type": "TEXT",
@@ -1500,28 +1552,37 @@
         },
         "indexes": [
           {
-            "name": "analytics_data_streams_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "analytics_data_streams_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "analytics_data_streams_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "analytics_data_streams_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_data_streams_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "4e3cab4b"
+        "version": "851609ba"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsEvent": {
@@ -1539,6 +1600,24 @@
         "updated_at": {
           "type": "datetime",
           "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "propertyId": {
           "type": "foreignKey",
@@ -1619,417 +1698,6 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getParams": {
           "name": "getParams",
           "async": false,
@@ -2064,7 +1732,18 @@
             {
               "name": "value",
               "type": "string | number | boolean",
-              "optional": false
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
             }
           ],
           "returnType": "void",
@@ -2156,20 +1835,31 @@
             "track"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AnalyticsEvent",
       "collectionExportName": "AnalyticsEventCollection",
       "schema": {
         "tableName": "analytics_events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2198,10 +1888,21 @@
             "notNull": true,
             "default": "current_timestamp"
           },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
           "property_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "event_name": {
             "type": "TEXT",
@@ -2278,28 +1979,37 @@
         },
         "indexes": [
           {
-            "name": "analytics_events_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "analytics_events_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "analytics_events_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "analytics_events_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_events_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "7da163fe"
+        "version": "bee09e1d"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsProperty": {
@@ -2317,6 +2027,24 @@
         "updated_at": {
           "type": "datetime",
           "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -2345,7 +2073,11 @@
         "apiSecret": {
           "type": "text",
           "required": false,
-          "default": ""
+          "default": "",
+          "_meta": {
+            "sensitive": true
+          },
+          "sensitive": true
         },
         "siteDomain": {
           "type": "text",
@@ -2383,421 +2115,14 @@
         "providerMetadata": {
           "type": "text",
           "required": false,
-          "default": "{}"
+          "default": "{}",
+          "_meta": {
+            "sensitive": true
+          },
+          "sensitive": true
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "isGA4": {
           "name": "isGA4",
           "async": false,
@@ -2826,7 +2151,7 @@
           "name": "getProviderMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string>",
+          "returnType": "Record<string, unknown>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2836,7 +2161,7 @@
           "parameters": [
             {
               "name": "metadata",
-              "type": "Record<string>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -2859,7 +2184,10 @@
             {
               "name": "options",
               "type": "object",
-              "optional": true
+              "optional": true,
+              "memberTypes": [
+                "string"
+              ]
             }
           ],
           "returnType": "Promise<object>",
@@ -2893,20 +2221,31 @@
             "runReport"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AnalyticsProperty",
       "collectionExportName": "AnalyticsPropertyCollection",
       "schema": {
         "tableName": "analytics_properties",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2934,6 +2273,11 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -3005,28 +2349,31 @@
         },
         "indexes": [
           {
-            "name": "analytics_properties_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "analytics_properties_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "analytics_properties_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "analytics_properties_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
           }
         ],
-        "version": "1701c6ac"
+        "version": "f38a20b9"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsReport": {
@@ -3044,6 +2391,24 @@
         "updated_at": {
           "type": "datetime",
           "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "propertyId": {
           "type": "foreignKey",
@@ -3133,417 +2498,6 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getDimensions": {
           "name": "getDimensions",
           "async": false,
@@ -3559,7 +2513,10 @@
             {
               "name": "dimensions",
               "type": "Array<object>",
-              "optional": false
+              "optional": false,
+              "memberTypes": [
+                "string"
+              ]
             }
           ],
           "returnType": "void",
@@ -3581,7 +2538,10 @@
             {
               "name": "metrics",
               "type": "Array<object>",
-              "optional": false
+              "optional": false,
+              "memberTypes": [
+                "string"
+              ]
             }
           ],
           "returnType": "void",
@@ -3592,7 +2552,7 @@
           "name": "getResultData",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string> | null",
+          "returnType": "Record<string, unknown> | null",
           "isStatic": false,
           "isPublic": true
         },
@@ -3602,7 +2562,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string>",
+              "type": "Record<string, unknown>",
               "optional": false
             }
           ],
@@ -3668,7 +2628,7 @@
           "parameters": [
             {
               "name": "_options",
-              "type": "any",
+              "type": "Record<string, unknown>",
               "optional": true
             }
           ],
@@ -3704,20 +2664,31 @@
             "analyze"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "AnalyticsReport",
       "collectionExportName": "AnalyticsReportCollection",
       "schema": {
         "tableName": "analytics_reports",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3746,10 +2717,21 @@
             "notNull": true,
             "default": "current_timestamp"
           },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
           "property_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "analytics_properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "name": {
             "type": "TEXT",
@@ -3835,28 +2817,37 @@
         },
         "indexes": [
           {
-            "name": "analytics_reports_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "analytics_reports_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "analytics_reports_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "analytics_reports_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "analytics_reports_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "c56776b9"
+        "version": "22ce0f1c"
       }
     }
   },
@@ -3864,6 +2855,8 @@
   "smrtDependencies": [
     "@happyvertical/smrt-core",
     "@happyvertical/smrt-prompts",
-    "@happyvertical/smrt-tenancy"
+    "@happyvertical/smrt-tenancy",
+    "@happyvertical/smrt-types",
+    "@happyvertical/smrt-ui"
   ]
 }

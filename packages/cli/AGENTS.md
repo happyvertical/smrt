@@ -1,6 +1,6 @@
 # @happyvertical/smrt-cli
 
-Developer CLI with lazy-loaded commands, manifest discovery, and class introspection.
+CLI with lazy-loaded commands, manifest discovery, and class introspection.
 
 ## Commands
 
@@ -16,7 +16,8 @@ smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate --apply-unblocked / --null-orphans # agents/db-migrate-partial-apply.md
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
-smrt db:migrate-int8         # Explicitly widen pre-#2373 int4 columns after preflight
+smrt db:migrate-int8
+smrt db:migrate-null-equal-indexes # ../core/agents/null-equal-indexes.md
 smrt db:drop-framework-base-tables # One-time drop of the five #2644-orphaned framework-base tables
 smrt db:drop-framework-base-tables --dry-run # Print the drop plan without executing
 smrt db:diff                 # Show schema differences without generating migration files

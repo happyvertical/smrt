@@ -74,13 +74,13 @@ divergence is a bug in the generator, not an exception to add to the test.
   migration replaces a same-name global unique with tenant-led columns. That
   prefix serves tenant and tenant-scoped slug reads; a legacy standalone tenant
   index is dropped only with `--drop-indexes`.
-- **Optional NULL tenants** dedup through SDK null-aware upsert (PostgreSQL
-  `IS NOT DISTINCT FROM` plus advisory lock; SQLite process lock), not the
-  unique index: raw SQL can duplicate NULL-tenant keys. Raw global inserts need
-  `WHERE NOT EXISTS` and a PostgreSQL advisory lock; an old global `ON CONFLICT`
-  target no longer binds. Save serializes an unset tenant explicitly as NULL,
-  because every conflict column must be present. PostgreSQL `NULLS NOT DISTINCT`
-  remains a potential follow-up, not current enforcement.
+- **Optional NULL tenants** retain the SDK's NULL-equal upsert identity. Generated
+  framework conflict indexes with nullable keys carry `nullsNotDistinct: true`;
+  PostgreSQL 15+ creates `UNIQUE NULLS NOT DISTINCT`, enabling warm single-statement
+  native upserts. Earlier PostgreSQL, SQLite and DuckDB retain adapter fallback
+  semantics. Existing ordinary indexes are upgraded only through the explicit
+  [NULL-equal maintenance migration](null-equal-indexes.md). Optional business
+  unique fields remain NULLS DISTINCT; this marker is not inferred from them.
 - **Tenant-key rollout requires a maintenance window.** Old code/new indexes
   and new code/old indexes both fail new-object saves because conflict column
   sets must match exactly; persisted ID-based saves still work. Backfill legacy

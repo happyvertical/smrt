@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379250353,
+  "timestamp": 0,
   "packageName": "@happyvertical/smrt-properties",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.49.2",
   "objects": {
     "@happyvertical/smrt-properties:PropertyCollection": {
       "name": "propertycollection",
@@ -89,7 +89,11 @@
             {
               "name": "defaults",
               "type": "object",
-              "optional": true
+              "optional": true,
+              "memberTypes": [
+                "string",
+                "string | null"
+              ]
             }
           ],
           "returnType": "Promise<Property>",
@@ -147,14 +151,14 @@
       "exportName": "PropertyCollection",
       "collectionExportName": "PropertyCollectionCollection",
       "schema": {
-        "tableName": "property_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"property_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "properties",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"domain\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"repository_id\" UUID,\n  \"owner_id\" UUID,\n  \"status\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -165,6 +169,14 @@
             "notNull": true,
             "default": ""
           },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
           "created_at": {
             "type": "TIMESTAMP",
             "notNull": true,
@@ -174,25 +186,92 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "domain": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "url": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "repository_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "owner_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "active"
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "default": {}
           }
         },
         "indexes": [
           {
-            "name": "property_collections_id_idx",
+            "name": "properties_slug_context_meta_type_idx",
             "columns": [
-              "id"
+              "tenant_id",
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "properties_meta_type_idx",
+            "columns": [
+              "_meta_type"
             ]
           },
           {
-            "name": "property_collections_slug_context_idx",
+            "name": "properties_tenant_id_created_at_idx",
             "columns": [
-              "slug",
-              "context"
-            ],
-            "unique": true
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "properties_repository_id_idx",
+            "columns": [
+              "repository_id"
+            ]
+          },
+          {
+            "name": "properties_owner_id_idx",
+            "columns": [
+              "owner_id"
+            ]
           }
         ],
-        "version": "0339cbd1"
+        "version": "6431d246"
       }
     },
     "@happyvertical/smrt-properties:ZoneCollection": {
@@ -395,7 +474,15 @@
             {
               "name": "newParentId",
               "type": "string | null",
-              "optional": false
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           ],
           "returnType": "Promise<Zone | null>",
@@ -464,14 +551,14 @@
       "exportName": "ZoneCollection",
       "collectionExportName": "ZoneCollectionCollection",
       "schema": {
-        "tableName": "zone_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"zone_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "tableName": "zones",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"zones\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT '',\n  \"path\" TEXT DEFAULT '',\n  \"selector\" TEXT DEFAULT '',\n  \"position\" TEXT DEFAULT '',\n  \"width\" INTEGER,\n  \"height\" INTEGER,\n  \"allowed_formats\" JSON DEFAULT '[]',\n  \"default_content_id\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -491,25 +578,127 @@
             "type": "TIMESTAMP",
             "notNull": true,
             "default": "current_timestamp"
+          },
+          "parent_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "unique": false,
+            "foreignKey": {
+              "table": "zones",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "property_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false,
+            "unique": false,
+            "foreignKey": {
+              "table": "properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "path": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "selector": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "position": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "width": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "height": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          },
+          "allowed_formats": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false,
+            "default": []
+          },
+          "default_content_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false,
+            "default": {}
           }
         },
         "indexes": [
           {
-            "name": "zone_collections_id_idx",
+            "name": "zones_slug_context_idx",
             "columns": [
-              "id"
-            ]
-          },
-          {
-            "name": "zone_collections_slug_context_idx",
-            "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "zones_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "zones_parent_id_idx",
+            "columns": [
+              "parent_id"
+            ]
+          },
+          {
+            "name": "zones_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "b359922a"
+        "version": "a9fed5be"
       }
     },
     "@happyvertical/smrt-properties:Property": {
@@ -530,7 +719,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -574,422 +777,11 @@
         }
       },
       "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "getZones": {
           "name": "getZones",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "any",
           "isStatic": false,
           "isPublic": true
         },
@@ -997,7 +789,7 @@
           "name": "getZoneTree",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "any",
           "isStatic": false,
           "isPublic": true
         },
@@ -1007,11 +799,12 @@
           "parameters": [
             {
               "name": "options",
-              "type": "Omit<'propertyId'>",
-              "optional": false
+              "type": "any",
+              "optional": false,
+              "typeUnresolved": true
             }
           ],
-          "returnType": "Promise",
+          "returnType": "any",
           "isStatic": false,
           "isPublic": true
         },
@@ -1050,7 +843,18 @@
             "create"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context",
+          "_meta_type"
+        ]
       },
       "extends": "SmrtObject",
       "exportName": "Property",
@@ -1062,8 +866,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1094,8 +898,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -1119,13 +923,13 @@
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "crossPackageRef"
+            "referenceKind": "crossPackageRef",
+            "notNull": false
           },
           "owner_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "crossPackageRef"
+            "referenceKind": "crossPackageRef",
+            "notNull": false
           },
           "status": {
             "type": "TEXT",
@@ -1140,28 +944,43 @@
         },
         "indexes": [
           {
-            "name": "properties_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "properties_slug_context_meta_type_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context",
               "_meta_type"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "properties_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "properties_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "properties_repository_id_idx",
+            "columns": [
+              "repository_id"
+            ]
+          },
+          {
+            "name": "properties_owner_id_idx",
+            "columns": [
+              "owner_id"
+            ]
           }
         ],
-        "version": "66a7ac4d"
+        "version": "6431d246"
       }
     },
     "@happyvertical/smrt-properties:Zone": {
@@ -1182,7 +1001,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "propertyId": {
           "type": "foreignKey",
@@ -1242,7 +1075,7 @@
           "name": "getParent",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<null>",
+          "returnType": "Promise<this | null>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1250,7 +1083,7 @@
           "name": "getChildren",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1258,7 +1091,7 @@
           "name": "getAncestors",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1266,7 +1099,7 @@
           "name": "getDescendants",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<this[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1274,7 +1107,7 @@
           "name": "getHierarchy",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<HierarchyView>",
+          "returnType": "Promise<HierarchyView<this>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1284,8 +1117,19 @@
           "parameters": [
             {
               "name": "newParent",
-              "type": "string | null",
-              "optional": false
+              "type": "this | string | null",
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "this"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           ],
           "returnType": "Promise<void>",
@@ -1320,7 +1164,7 @@
           "name": "getProperty",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<null>",
+          "returnType": "any",
           "isStatic": false,
           "isPublic": true
         },
@@ -1394,7 +1238,17 @@
             "create"
           ]
         },
-        "cli": true
+        "cli": {
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
       },
       "extends": "SmrtHierarchical",
       "exportName": "Zone",
@@ -1406,8 +1260,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1430,21 +1284,33 @@
           },
           "parent_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
             "unique": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "zones",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "property_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
             "unique": false,
-            "referenceKind": "foreignKey"
+            "foreignKey": {
+              "table": "properties",
+              "column": "id",
+              "onDelete": "NO ACTION",
+              "onUpdate": "CASCADE"
+            }
           },
           "name": {
             "type": "TEXT",
@@ -1506,29 +1372,42 @@
         },
         "indexes": [
           {
-            "name": "zones_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "zones_slug_context_idx",
             "columns": [
+              "tenant_id",
               "slug",
               "context"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "zones_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          },
+          {
+            "name": "zones_parent_id_idx",
+            "columns": [
+              "parent_id"
+            ]
+          },
+          {
+            "name": "zones_property_id_idx",
+            "columns": [
+              "property_id"
+            ]
           }
         ],
-        "version": "9b05650b"
+        "version": "a9fed5be"
       }
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
     "@happyvertical/smrt-core",
-    "@happyvertical/smrt-profiles",
-    "@happyvertical/smrt-projects",
     "@happyvertical/smrt-prompts",
     "@happyvertical/smrt-tenancy"
   ]
