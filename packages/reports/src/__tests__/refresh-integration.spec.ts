@@ -808,9 +808,31 @@ describe('report refresh integration', () => {
       const maintenanceType =
         ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask)
           ?.qualifiedName ?? SmrtReportRefreshTask.name;
+      const principalType =
+        ObjectRegistry.getClassByConstructor(SmrtPrincipalReportRefreshTask)
+          ?.qualifiedName ?? SmrtPrincipalReportRefreshTask.name;
+      const persisted = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const injectedArgs = JSON.parse(String(persisted.rows[0]?.args));
+      const signedArgs = { ...injectedArgs };
+      injectedArgs._mcpTask = {
+        invocationArgs: [
+          signedArgs,
+          {
+            job: {
+              objectType: principalType,
+              method: 'run',
+              tenantId: 'tenant-a',
+            },
+          },
+        ],
+      };
       await db.query(
-        'UPDATE _smrt_jobs SET object_type = ? WHERE id = ?',
+        'UPDATE _smrt_jobs SET object_type = ?, args = ? WHERE id = ?',
         maintenanceType,
+        JSON.stringify(injectedArgs),
         job.id,
       );
       await taskRunner.initialize(db);
@@ -823,7 +845,7 @@ describe('report refresh integration', () => {
       });
       await taskRunner.start();
       await expect(failure).resolves.toMatchObject({
-        message: 'Invalid durable report refresh job target',
+        message: 'Invalid durable report refresh job context',
       });
       expect(authorize).not.toHaveBeenCalled();
       expect(audit).not.toHaveBeenCalled();

@@ -145,6 +145,7 @@ export {
 // Task runner
 export {
   createTaskRunner,
+  isRunnerExecutionContext,
   JobTimeoutError,
   TaskRunner,
   type TaskRunnerConfig,

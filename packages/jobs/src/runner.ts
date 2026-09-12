@@ -58,6 +58,22 @@ import {
   unregisterLiveWorker,
 } from './worker-liveness.js';
 
+// Job rows are durable but untrusted transport. This marker is deliberately
+// module-private: a JSON task invocation cannot synthesize the runner-owned
+// execution context that security-sensitive task targets receive.
+const RUNNER_EXECUTION_CONTEXT = Symbol('smrt.runnerExecutionContext');
+
+/** True only for an execution context constructed by this TaskRunner module. */
+export function isRunnerExecutionContext(
+  value: unknown,
+): value is JobExecutionContext {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<PropertyKey, unknown>)[RUNNER_EXECUTION_CONTEXT] === true
+  );
+}
+
 /**
  * TaskRunner configuration
  */
@@ -901,7 +917,7 @@ export class TaskRunner extends EventEmitter {
       method: job.method,
     };
 
-    return {
+    const context: JobExecutionContext = {
       job: jobContext,
       logger: contextLogger,
       event: async (input: JobEventInput) => {
@@ -951,6 +967,8 @@ export class TaskRunner extends EventEmitter {
           }
         : {}),
     };
+    Object.defineProperty(context, RUNNER_EXECUTION_CONTEXT, { value: true });
+    return context;
   }
 
   private async appendJobEvent(

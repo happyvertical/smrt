@@ -13,6 +13,7 @@ import {
   type DurableJobPayloadIntegrity,
   type DurableJobPayloadSigner,
   getNextCronDate,
+  isRunnerExecutionContext,
   type JobExecutionContext,
   type SmrtJob,
   SmrtJobCollection,
@@ -216,6 +217,9 @@ function assertReportRefreshJobTarget(
   context: JobExecutionContext | undefined,
 ): void {
   if (!context) return;
+  if (!isRunnerExecutionContext(context)) {
+    throw new Error('Invalid durable report refresh job context');
+  }
   const expectedType = canonicalClassName(
     (args.trigger ?? 'job') === 'manual'
       ? SmrtPrincipalReportRefreshTask
