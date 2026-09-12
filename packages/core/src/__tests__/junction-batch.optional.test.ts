@@ -87,6 +87,57 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         await db?.close?.();
       });
 
+      it('runs final normalization in shared compatible batch preparation', async () => {
+        const base = SmrtObject.prototype as unknown as {
+          normalizePersistenceData(
+            data: Readonly<Record<string, unknown>>,
+          ): Record<string, unknown> | undefined;
+        };
+        const normalize = vi.spyOn(base, 'normalizePersistenceData');
+        try {
+          await links.setLinks('prepared-owner', ['first', 'second']);
+          expect(normalize).toHaveBeenCalledTimes(2);
+          expect(normalize.mock.calls.map(([row]) => row.asset_id)).toEqual([
+            'first',
+            'second',
+          ]);
+          expect(
+            (await links.byLeft('prepared-owner')).map((row) => row.assetId),
+          ).toEqual(['first', 'second']);
+        } finally {
+          normalize.mockRestore();
+        }
+      });
+
+      it('refuses custom normalization batches and preserves ordinary save normalization', async () => {
+        const link = await new JunctionBatchDialectLink({ db }).initialize();
+        link.ownerId = 'normalized-owner';
+        link.assetId = 'asset';
+        const custom = link as unknown as {
+          normalizePersistenceData(
+            data: Readonly<Record<string, unknown>>,
+          ): Record<string, unknown> | undefined;
+        };
+        const normalize = vi
+          .spyOn(custom, 'normalizePersistenceData')
+          .mockImplementation((row) => {
+            expect(row.asset_id).toBe('asset');
+            return { sort_order: 42 };
+          });
+        try {
+          expect(await SmrtObject.tryJunctionBatch([], [link])).toBe(false);
+          expect(normalize).not.toHaveBeenCalled();
+          expect(await links.byLeft('normalized-owner')).toEqual([]);
+          await link.save();
+          expect(normalize).toHaveBeenCalledTimes(1);
+          expect((await links.byLeft('normalized-owner'))[0].sortOrder).toBe(
+            42,
+          );
+        } finally {
+          normalize.mockRestore();
+        }
+      });
+
       it('uses one upsert for many links and hydrates canonical IDs and timestamps', async () => {
         const query = vi.spyOn(db, 'query');
         await links.setLinks(
