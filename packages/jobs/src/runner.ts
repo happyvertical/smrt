@@ -2,6 +2,7 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import './__smrt-register__.js';
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
@@ -62,6 +63,7 @@ import {
 // module-private: a JSON task invocation cannot synthesize the runner-owned
 // execution context that security-sensitive task targets receive.
 const RUNNER_EXECUTION_CONTEXT = Symbol('smrt.runnerExecutionContext');
+const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
 
 /** True only for an execution context constructed by this TaskRunner module. */
 export function isRunnerExecutionContext(
@@ -72,6 +74,13 @@ export function isRunnerExecutionContext(
     value !== null &&
     (value as Record<PropertyKey, unknown>)[RUNNER_EXECUTION_CONTEXT] === true
   );
+}
+
+/** The runner-owned context for the currently executing task, if any. */
+export function getActiveJobExecutionContext():
+  | JobExecutionContext
+  | undefined {
+  return runnerExecutionContexts.getStore();
 }
 
 /**
@@ -790,11 +799,15 @@ export class TaskRunner extends EventEmitter {
       }
 
       const taskMarker = getMcpTaskMarker(job);
-      const result = taskMarker
-        ? await (
-            method as (...args: unknown[]) => Promise<unknown> | unknown
-          ).call(instance, ...taskMarker.invocationArgs, executionContext)
-        : await method.call(instance, methodArgs, executionContext);
+      const result = await runnerExecutionContexts.run(
+        executionContext,
+        async () =>
+          taskMarker
+            ? await (
+                method as (...args: unknown[]) => Promise<unknown> | unknown
+              ).call(instance, ...taskMarker.invocationArgs, executionContext)
+            : await method.call(instance, methodArgs, executionContext),
+      );
 
       // Generated custom actions use an explicit `{ ok: false, ... }` return
       // convention. A task must surface that as a failed terminal state, not

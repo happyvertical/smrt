@@ -145,6 +145,7 @@ export {
 // Task runner
 export {
   createTaskRunner,
+  getActiveJobExecutionContext,
   isRunnerExecutionContext,
   JobTimeoutError,
   TaskRunner,

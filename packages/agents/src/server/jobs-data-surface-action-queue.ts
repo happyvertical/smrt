@@ -6,6 +6,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   backgroundEligible,
+  getActiveJobExecutionContext,
   isRunnerExecutionContext,
   type JobExecutionContext,
   type SmrtJob,
@@ -75,11 +76,12 @@ export class SmrtDataSurfaceActionTask extends SmrtObject {
     context?: JobExecutionContext,
   ): Promise<DataSurfaceActionResult> {
     const envelope = args?.envelope;
-    if (context && !isRunnerExecutionContext(context)) {
+    const executionContext = getActiveJobExecutionContext() ?? context;
+    if (executionContext && !isRunnerExecutionContext(executionContext)) {
       throw new Error('Invalid durable data-surface action job context');
     }
     const jobTenantId =
-      context?.job.tenantId ?? this.tenantId ?? getTenantId() ?? null;
+      executionContext?.job.tenantId ?? this.tenantId ?? getTenantId() ?? null;
     if (
       args?.version !== 1 ||
       envelope?.version !== 1 ||

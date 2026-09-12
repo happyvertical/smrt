@@ -12,6 +12,7 @@ import {
   backgroundEligible,
   type DurableJobPayloadIntegrity,
   type DurableJobPayloadSigner,
+  getActiveJobExecutionContext,
   getNextCronDate,
   isRunnerExecutionContext,
   type JobExecutionContext,
@@ -427,7 +428,8 @@ export class SmrtReportRefreshTask extends SmrtObject {
     context?: JobExecutionContext,
   ): Promise<unknown> {
     assertReportRefreshJobIntegrity(args);
-    assertReportRefreshJobTarget(args, context);
+    const executionContext = getActiveJobExecutionContext() ?? context;
+    assertReportRefreshJobTarget(args, executionContext);
     const reportClass = args.reportClass;
     if (!reportClass) {
       throw new Error('Report refresh job requires reportClass');
@@ -436,7 +438,8 @@ export class SmrtReportRefreshTask extends SmrtObject {
     const trigger = args.trigger ?? 'job';
 
     const reportCtor = resolveReportClass(reportClass);
-    const jobTenantId = context?.job.tenantId ?? tenantIdFromInstance(this);
+    const jobTenantId =
+      executionContext?.job.tenantId ?? tenantIdFromInstance(this);
     await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
     return refreshReport(reportCtor, {
       db: this.db,

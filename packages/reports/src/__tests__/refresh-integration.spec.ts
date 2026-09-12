@@ -771,7 +771,7 @@ describe('report refresh integration', () => {
     }
   });
 
-  it('rejects a principal refresh rerouted to the maintenance worker target', async () => {
+  it('keeps runner authority out of every persisted MCP argument position', async () => {
     const db = await setupDb();
     const authorize = vi.fn();
     const audit = vi.fn();
@@ -779,78 +779,85 @@ describe('report refresh integration', () => {
       'integration-authority',
       { authorize, audit },
     );
-    const taskRunner = createTaskRunner({
-      concurrency: 1,
-      pollInterval: 10,
-      queues: ['reports'],
-      retention: false,
-    });
     try {
-      const job = await enqueueReportRefresh({
-        db,
-        reportClass: 'IntegrationRevenueReport',
-        mode: 'incremental',
-        trigger: 'manual',
-        tenantId: 'tenant-a',
-        adapterType: 'sqlite',
-        maxAttempts: 1,
-        integritySigner: JOB_SIGNER,
-        executionAuthority: {
-          version: 1,
-          hostId: 'integration-authority',
-          principal: {
-            version: 1,
-            actorUserId: 'user-a',
-            tenantId: 'tenant-a',
-          },
+      const forgedContext = {
+        job: {
+          objectType: 'forged-principal-target',
+          method: 'run',
+          tenantId: 'tenant-a',
         },
-      });
+      };
+      const variants: Array<{ name: string; tail: unknown[] }> = [
+        { name: 'missing', tail: [] },
+        // JSON serialization represents an undefined array slot as null.
+        { name: 'undefined/null', tail: [undefined] },
+        { name: 'forged', tail: [forgedContext] },
+        { name: 'forged with extra arguments', tail: [forgedContext, null] },
+      ];
       const maintenanceType =
         ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask)
           ?.qualifiedName ?? SmrtReportRefreshTask.name;
-      const principalType =
-        ObjectRegistry.getClassByConstructor(SmrtPrincipalReportRefreshTask)
-          ?.qualifiedName ?? SmrtPrincipalReportRefreshTask.name;
-      const persisted = await db.query(
-        'SELECT args FROM _smrt_jobs WHERE id = ?',
-        job.id,
-      );
-      const injectedArgs = JSON.parse(String(persisted.rows[0]?.args));
-      const signedArgs = { ...injectedArgs };
-      injectedArgs._mcpTask = {
-        invocationArgs: [
-          signedArgs,
-          {
-            job: {
-              objectType: principalType,
-              method: 'run',
+
+      for (const variant of variants) {
+        const job = await enqueueReportRefresh({
+          db,
+          reportClass: 'IntegrationRevenueReport',
+          mode: 'incremental',
+          trigger: 'manual',
+          tenantId: 'tenant-a',
+          adapterType: 'sqlite',
+          maxAttempts: 1,
+          integritySigner: JOB_SIGNER,
+          executionAuthority: {
+            version: 1,
+            hostId: 'integration-authority',
+            principal: {
+              version: 1,
+              actorUserId: 'user-a',
               tenantId: 'tenant-a',
             },
           },
-        ],
-      };
-      await db.query(
-        'UPDATE _smrt_jobs SET object_type = ?, args = ? WHERE id = ?',
-        maintenanceType,
-        JSON.stringify(injectedArgs),
-        job.id,
-      );
-      await taskRunner.initialize(db);
-      const failure = new Promise<Error>((resolve, reject) => {
-        taskRunner.once('job:failed', (_job, error) => resolve(error as Error));
-        taskRunner.once('job:completed', () =>
-          reject(new Error('rerouted report job should fail')),
+        });
+        const persisted = await db.query(
+          'SELECT args FROM _smrt_jobs WHERE id = ?',
+          job.id,
         );
-        taskRunner.once('runner:error', reject);
-      });
-      await taskRunner.start();
-      await expect(failure).resolves.toMatchObject({
-        message: 'Invalid durable report refresh job context',
-      });
+        const injectedArgs = JSON.parse(String(persisted.rows[0]?.args));
+        const signedArgs = { ...injectedArgs };
+        injectedArgs._mcpTask = {
+          invocationArgs: [signedArgs, ...variant.tail],
+        };
+        await db.query(
+          'UPDATE _smrt_jobs SET object_type = ?, args = ? WHERE id = ?',
+          maintenanceType,
+          JSON.stringify(injectedArgs),
+          job.id,
+        );
+        const taskRunner = createTaskRunner({
+          concurrency: 1,
+          pollInterval: 10,
+          queues: ['reports'],
+          retention: false,
+        });
+        await taskRunner.initialize(db);
+        const failure = new Promise<Error>((resolve, reject) => {
+          taskRunner.once('job:failed', (_job, error) =>
+            resolve(error as Error),
+          );
+          taskRunner.once('job:completed', () =>
+            reject(new Error(`${variant.name} reroute should fail`)),
+          );
+          taskRunner.once('runner:error', reject);
+        });
+        await taskRunner.start();
+        await expect(failure).resolves.toMatchObject({
+          message: 'Invalid durable report refresh job target',
+        });
+        await taskRunner.stop();
+      }
       expect(authorize).not.toHaveBeenCalled();
       expect(audit).not.toHaveBeenCalled();
     } finally {
-      await taskRunner.stop();
       unregisterAuthority();
       await db.close?.();
     }
