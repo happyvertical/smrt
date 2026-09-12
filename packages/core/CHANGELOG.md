@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.49.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - reserve interrupted 0.49.1 cohort (#2805) (release)
+  - avoid repeated registry metadata projections (#2803) (users)
+  - @happyvertical/smrt-config@0.49.2
+  - @happyvertical/smrt-types@0.49.2
+  - @happyvertical/smrt-scanner@0.49.2
+
 ## 0.49.1
 
 ### Patch Changes
