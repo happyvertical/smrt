@@ -1446,6 +1446,9 @@ describe('report refresh integration', () => {
     });
     (invoice as IntegrationInvoice & { tenantId: string }).tenantId =
       'tenant-b';
+    (invoice as IntegrationInvoice & { updatedAt: Date }).updatedAt = new Date(
+      '2026-09-12T12:34:56.789Z',
+    );
     await GlobalInterceptors.executeAfterSave(invoice, {
       className: 'IntegrationInvoice',
       operation: 'save',
@@ -1454,13 +1457,45 @@ describe('report refresh integration', () => {
     unregister();
 
     jobs = await db.query(
-      "SELECT queue, object_type, method, tenant_id FROM _smrt_jobs WHERE queue = 'reports' ORDER BY created_at",
+      "SELECT queue, object_type, method, tenant_id, args FROM _smrt_jobs WHERE queue = 'reports' ORDER BY created_at",
     );
     expect(jobs.rows).toHaveLength(2);
     expect(jobs.rows[1]).toMatchObject({
       method: 'run',
       tenant_id: 'tenant-b',
     });
+
+    const changedArgs = JSON.parse(String(jobs.rows[1]?.args)) as {
+      changedRows?: Array<{ updatedAt?: string }>;
+    };
+    expect(changedArgs.changedRows?.[0]?.updatedAt).toBe(
+      '2026-09-12T12:34:56.789Z',
+    );
+
+    const changedTaskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    await changedTaskRunner.initialize(db);
+    const changedCompletion = new Promise<{ result?: unknown }>(
+      (resolve, reject) => {
+        changedTaskRunner.once('job:completed', (_job, result) =>
+          resolve(result as { result?: unknown }),
+        );
+        changedTaskRunner.once('job:failed', (_job, error) => reject(error));
+        changedTaskRunner.once('runner:error', reject);
+      },
+    );
+    await changedTaskRunner.start();
+    try {
+      await expect(changedCompletion).resolves.toMatchObject({
+        result: { tenantId: 'tenant-b' },
+      });
+    } finally {
+      await changedTaskRunner.stop();
+    }
   });
 
   it('runs the stateless refresh task used by queued jobs', async () => {

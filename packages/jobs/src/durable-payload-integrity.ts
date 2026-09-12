@@ -60,6 +60,19 @@ export function createHmacDurableJobPayloadSigner(options: {
 }
 
 function canonicalJson(value: unknown): string {
+  // Jobs persist `args` as JSON. Normalize through that exact representation
+  // before sorting keys so a value with JSON serialization (notably Date) is
+  // signed identically before enqueue and after the worker reloads the row.
+  let persisted: string | undefined;
+  try {
+    persisted = JSON.stringify(value);
+  } catch {
+    throw new Error('Durable job integrity payload must be acyclic JSON');
+  }
+  if (persisted === undefined) {
+    throw new Error('Durable job integrity payload must be JSON-serializable');
+  }
+
   const seen = new Set<object>();
   const canonicalize = (item: unknown, inArray = false): unknown => {
     if (
@@ -97,5 +110,5 @@ function canonicalJson(value: unknown): string {
     seen.delete(item);
     return result;
   };
-  return JSON.stringify(canonicalize(value));
+  return JSON.stringify(canonicalize(JSON.parse(persisted)));
 }

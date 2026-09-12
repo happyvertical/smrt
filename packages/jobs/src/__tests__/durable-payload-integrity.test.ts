@@ -26,6 +26,29 @@ describe('durable job payload integrity', () => {
     );
   });
 
+  it('signs the persisted JSON representation of Date values', () => {
+    const signer = createHmacDurableJobPayloadSigner({
+      keyId: 'jobs-v1',
+      key: 'test-only-durable-job-integrity-key',
+    });
+    const payload = {
+      changedRows: [
+        {
+          updatedAt: new Date('2026-09-12T12:34:56.789Z'),
+          nested: { issuedAt: new Date('2026-09-11T00:00:00.000Z') },
+        },
+      ],
+    };
+    const persisted = JSON.parse(JSON.stringify(payload)) as {
+      changedRows: Array<{ updatedAt: string; nested: { issuedAt: string } }>;
+    };
+    const integrity = signer.sign(payload);
+
+    expect(signer.verify(persisted, integrity)).toBe(true);
+    persisted.changedRows[0]!.updatedAt = '2026-09-12T12:34:56.790Z';
+    expect(signer.verify(persisted, integrity)).toBe(false);
+  });
+
   it('binds own __proto__ fields at every JSON object depth', () => {
     const signer = createHmacDurableJobPayloadSigner({
       keyId: 'jobs-v1',
