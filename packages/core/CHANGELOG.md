@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.49.3
+
+### Patch Changes
+
+- ### Features
+
+  - add membership tenant-user index (#2828) (users)
+
+  ### Bug Fixes
+
+  - forward bespoke WebMCP execution context (#2826) (web)
+  - reserve interrupted 0.49.1 cohort (#2805) (release)
+  - avoid repeated registry metadata projections (#2803) (users)
+
+  ### Other Changes
+
+  - perf: reduce idle runner polling (#2825) (jobs)
+  - chore: recover published 0.49.2 metadata (#2829) (release)
+  - @happyvertical/smrt-config@0.49.3
+  - @happyvertical/smrt-types@0.49.3
+  - @happyvertical/smrt-scanner@0.49.3
+
 ## 0.49.2
 
 ### Patch Changes
