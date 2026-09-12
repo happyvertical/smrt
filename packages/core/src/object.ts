@@ -2568,8 +2568,60 @@ export class SmrtObject extends SmrtClass {
     // fixes every optional/unset declared-FK field uniformly.
     await this.coerceEmptyUuidValuesToNull(className, data);
 
-    // Get conflict columns from registry (supports custom columns for junction tables)
+    // Finalize derived columns after the complete polymorphic serialization
+    // chain. Ordinary saves and eligible batches consume this prepared row.
     const conflictColumns = ObjectRegistry.getConflictColumns(className);
+    const derivedColumns = this.getPersistenceDerivedColumns();
+    const registeredFields = ObjectRegistry.getFields(className);
+    const registeredColumns = new Set(
+      [...registeredFields]
+        .filter(
+          ([, field]) =>
+            field.type !== 'oneToMany' && field.type !== 'manyToMany',
+        )
+        .map(([name]) => toSnakeCase(name)),
+    );
+    const protectedColumns = new Set([
+      'id',
+      'slug',
+      'tenant_id',
+      'created_at',
+      'updated_at',
+      '_meta_type',
+      '_meta_data',
+      ...conflictColumns.map(toSnakeCase),
+    ]);
+    for (const [name, field] of registeredFields) {
+      if (
+        field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField
+      ) {
+        protectedColumns.add(toSnakeCase(name));
+      }
+    }
+    for (const column of derivedColumns) {
+      if (!registeredColumns.has(column) || protectedColumns.has(column)) {
+        throw RuntimeError.invalidState(
+          `Invalid persistence derived column declaration: ${column}`,
+          { className, column },
+        );
+      }
+    }
+    const normalizedColumns = this.normalizePersistenceData(
+      Object.freeze({ ...data }),
+    );
+    if (normalizedColumns) {
+      for (const column of Object.keys(normalizedColumns)) {
+        if (!derivedColumns.includes(column)) {
+          throw RuntimeError.invalidState(
+            `Undeclared persistence derived column: ${column}`,
+            { className, column },
+          );
+        }
+      }
+      Object.assign(data, normalizedColumns);
+    }
+
     const writePlan = await this.planPersistenceWrite(
       className,
       tableStrategy,
@@ -3082,6 +3134,28 @@ export class SmrtObject extends SmrtClass {
     }
     const name = candidate?.name;
     return name === 'TenantIsolationError' || name === 'TenantContextError';
+  }
+
+  /** Declare permitted snake-case derived schema columns; preserve super entries. */
+  protected getPersistenceDerivedColumns(): readonly string[] {
+    return [];
+  }
+
+  /**
+   * Return derived schema-column values for the final persistence row.
+   * Runs synchronously after beforeSave, the complete toJSON/transformJSON
+   * chain, snake-case mapping and UUID coercion; returned columns are merged
+   * before every save branch. This does not change public serialization.
+   * Only derive columns from this read-only snapshot: do not modify source,
+   * identity, tenant or revision columns, and do not perform I/O. Overrides
+   * should preserve any columns returned by super. Declare permitted snake-case
+   * schema columns in getPersistenceDerivedColumns(), preserving super entries.
+   * Framework identity, tenant, revision and conflict columns cannot be declared.
+   */
+  protected normalizePersistenceData(
+    _data: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> | undefined {
+    return undefined;
   }
 
   /**

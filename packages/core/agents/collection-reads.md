@@ -68,3 +68,24 @@ the first error.
 `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, and `like`. Arrays imply `IN`,
 and null values render `IS NULL`/`IS NOT NULL`. `contains` and dot-notation JSON
 paths are intentionally rejected until the SQL layer supports them.
+
+For subclass-owned bounded SQL, `resolveListReadPredicate()` provides SQL scope
+plus `finish(instances)`. Call `finish` exactly once on the final hydrated page
+(including empty pages), after raw-query hooks and annotations, outside provider
+fallback catches. It invokes normal `afterList` using the original `beforeList`
+context and model identity. It does not fetch replacement rows after filtering.
+ID-only consumers have no hydrated page and do not call this completion step.
+
+`semanticSearchIdsWithAvailability()` is the protected fallback-aware boundary:
+only absent embedding configuration or a failed `provider.embed()` returns
+`available: false`. Invalid options, authorization, ranking, query, and caller
+override failures propagate regardless of their error class. Public
+`semanticSearchIds()` keeps its array/throw contract by throwing the returned
+provider error. Consumers must branch on availability, never classify thrown
+`EmbeddingUnavailableError` values from an entire search as provider failures.
+
+Semantic ID eligibility binds its complete beforeList/STI/where predicate once
+in a CTE per candidate chunk. Only the scalar eligibility mask leaves the
+application database. Candidate chunks use the remaining conservative 999-bind
+budget (minimum 1); a predicate already larger than that budget retains the
+adapter’s existing capacity instead of being rejected by a new API limit.

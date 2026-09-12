@@ -592,6 +592,9 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {
   maxListLimit?: number;
 }
 
+/** Only provider/configuration unavailability permits a caller's text fallback. */
+export class EmbeddingUnavailableError extends Error {}
+
 // S4 #1579: the constructor `options` and static `create(options)` params are
 // left as `any` deliberately. This type is satisfied by every concrete model
 // class (`static readonly _itemClass = Product`), whose constructor/`create`
@@ -5030,6 +5033,252 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       minSimilarity,
       where,
     });
+  }
+
+  /**
+   * Prepare normal list authorization for a subclass's bounded hydrated SQL read.
+   * Call finish exactly once on the final page, after query hooks/annotations,
+   * outside provider fallback catches. It preserves the beforeList context and
+   * applies the normal afterList pipeline without fetching replacement rows.
+   */
+  protected async resolveListReadPredicate(
+    where: SmrtListWhereClause<ModelType> = {},
+  ): Promise<{
+    sql: string;
+    values: unknown[];
+    finish(instances: ModelType[]): Promise<ModelType[]>;
+  }> {
+    await this.ensureStorageReady();
+    const className = this.getResolvedItemClassName();
+    const context = createInterceptorContext(
+      className,
+      'list',
+      this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
+    );
+    const options = await GlobalInterceptors.executeBeforeList(
+      className,
+      { where },
+      context,
+    );
+    const scoped = resolveMetaTypeInWhere(
+      this.applyStiReadScope(options.where, undefined),
+    );
+    const predicate = buildWhere(this.convertWhereKeys(scoped || {}));
+    return {
+      sql:
+        predicate.sql
+          .trim()
+          .replace(/^WHERE\s+/i, '')
+          .replace(/\$\d+/g, '?') || '1 = 1',
+      values: predicate.values,
+      finish: (instances) =>
+        GlobalInterceptors.executeAfterList(className, instances, context),
+    };
+  }
+
+  /**
+   * Search text without hydrating objects. All read predicates (including
+   * `where`, tenancy and STI) apply BEFORE exact cosine ranking. Unlike the
+   * legacy semanticSearch API, a nonmatching high score cannot consume limit.
+   */
+  public async semanticSearchIds(
+    query: string,
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<Array<{ id: string; similarity: number }>> {
+    const result = await this.semanticSearchIdsWithAvailability(query, options);
+    if (!result.available) throw result.error;
+    return result.matches;
+  }
+
+  /**
+   * Provider-origin availability for bounded subclass reads. Only missing
+   * configuration or provider.embed failure returns unavailable; all option,
+   * authorization, ranking and database failures propagate unchanged.
+   */
+  protected async semanticSearchIdsWithAvailability(
+    query: string,
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<
+    | { available: true; matches: Array<{ id: string; similarity: number }> }
+    | { available: false; error: EmbeddingUnavailableError }
+  > {
+    const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
+    if (!config) {
+      return {
+        available: false,
+        error: new EmbeddingUnavailableError(
+          `No embedding configuration found for ${this._itemClass.name}.`,
+        ),
+      };
+    }
+    const field = options.field || config.fields[0];
+    if (!getSearchableEmbeddingFields(config).includes(field)) {
+      throw new Error(
+        `Field '${field}' is not configured for embeddings on ${this._itemClass.name}.`,
+      );
+    }
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider: config.provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      this.ai,
+    );
+    let embedding: number[];
+    try {
+      [embedding] = await provider.embed(query);
+    } catch (cause) {
+      return {
+        available: false,
+        error: new EmbeddingUnavailableError('Query embedding is unavailable', {
+          cause,
+        }),
+      };
+    }
+    return {
+      available: true,
+      matches: await this.findSimilarIdsToEmbedding(embedding, {
+        ...options,
+        field,
+      }),
+    };
+  }
+
+  /**
+   * Return scored IDs using bounded embedding batches and scalar SQL scope
+   * masks. Application rows are never fetched; separate system/app databases
+   * are supported. Equal scores sort by object ID for stable pagination.
+   */
+  public async findSimilarIdsToEmbedding(
+    embedding: number[],
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<Array<{ id: string; similarity: number }>> {
+    const { limit = 10, minSimilarity = 0 } = options;
+    if (!Number.isSafeInteger(limit) || limit < 0) {
+      throw new Error(
+        'Semantic ID search limit must be a nonnegative safe integer',
+      );
+    }
+    if (
+      !Number.isFinite(minSimilarity) ||
+      minSimilarity < -1 ||
+      minSimilarity > 1
+    ) {
+      throw new Error(
+        'Semantic ID search minSimilarity must be between -1 and 1',
+      );
+    }
+    await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const intercepted = await GlobalInterceptors.executeBeforeList(
+      itemClassName,
+      { where: options.where || {} },
+      createInterceptorContext(
+        itemClassName,
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
+    const scopedWhere = resolveMetaTypeInWhere(
+      this.applyStiReadScope(intercepted.where, undefined),
+    );
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(scopedWhere || {}),
+    );
+    const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
+    if (!config) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+    const field = options.field || config.fields[0];
+    if (!getSearchableEmbeddingFields(config).includes(field)) {
+      throw new Error(
+        `Field '${field}' is not configured for embeddings on ${this._itemClass.name}.`,
+      );
+    }
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider: config.provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      this.ai,
+    );
+    if (limit === 0) return [];
+    const scored = await EmbeddingStorage.searchSimilarBatched(
+      this.systemDb,
+      this._itemClass.name,
+      embedding,
+      {
+        field,
+        model: provider.getModelName(),
+        limit,
+        minSimilarity,
+        eligible: async (ids) => {
+          // Bind the full scoped predicate once, not once per embedding. Only
+          // a scalar mask crosses the application DB boundary. Keep candidate
+          // binds within the remaining conservative SQLite budget; predicates
+          // already larger than that budget retain their existing support.
+          const chunkSize = Math.max(1, 999 - whereValues.length);
+          const eligible: boolean[] = [];
+          for (let offset = 0; offset < ids.length; offset += chunkSize) {
+            const chunk = ids.slice(offset, offset + chunkSize);
+            const cases = chunk.map(
+              (_, index) =>
+                `CASE WHEN EXISTS (SELECT 1 FROM eligible_scope
+                WHERE eligible_id = $${whereValues.length + index + 1})
+                THEN '1' ELSE '0' END`,
+            );
+            const { rows } = await this.db.query(
+              `WITH eligible_scope AS (
+                SELECT id AS eligible_id FROM ${this.tableName} ${whereSql}
+              ) SELECT ${cases.join(' || ')} AS eligibility`,
+              ...whereValues,
+              ...chunk,
+            );
+            const mask = rows[0]?.eligibility;
+            if (
+              typeof mask !== 'string' ||
+              !/^[01]+$/.test(mask) ||
+              mask.length !== chunk.length
+            ) {
+              throw new Error('Invalid semantic search eligibility result');
+            }
+            eligible.push(...[...mask].map((bit) => bit === '1'));
+          }
+          return eligible;
+        },
+      },
+    );
+    return scored.map(({ objectId, similarity }) => ({
+      id: objectId,
+      similarity,
+    }));
   }
 
   /**

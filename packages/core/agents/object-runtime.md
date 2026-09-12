@@ -19,6 +19,19 @@
   persisted rows must use `getCanonicalPersistedRow()` so UUID identities are
   cast in the same coherent read before reuse.
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
+- `normalizePersistenceData(data)` is the synchronous final derived-column hook:
+  shared save preparation passes read-only snake-case row data after the complete polymorphic
+  `toJSON()` / `transformJSON()` chain and UUID coercion, then merges the returned
+  columns before every insert/update/upsert branch. Declare permitted snake-case
+  columns with `getPersistenceDerivedColumns()`, preserving super declarations.
+  Declarations must name registered schema fields; framework identity, tenant,
+  revision, STI metadata and natural conflict columns are always rejected.
+  Undeclared return keys reject before persistence. The hook receives a frozen
+  shallow row copy. Derive only the declared columns; do not perform I/O.
+  Preserve `super` results. It does not alter plain/public serialization;
+  use `transformJSON()` for that existing contract. Ordinary saves and eligible
+  junction batches share this preparation. A custom normalization override makes
+  a junction ineligible for batching, preserving its virtual per-row save path.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)

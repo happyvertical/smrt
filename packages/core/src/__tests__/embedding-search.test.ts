@@ -213,6 +213,24 @@ describe('Semantic Search', () => {
     return created;
   }
 
+  it('returns scoped semantic IDs from a real collection without hydration', async () => {
+    const documents = await seedDocuments();
+    const list = vi.spyOn(collection, 'list');
+    const ids = await collection.semanticSearchIds('software and AI', {
+      limit: 2,
+      where: { category: 'sports' },
+    });
+    expect(new Set(ids.map((row) => row.id))).toEqual(
+      new Set(
+        documents
+          .filter((doc) => doc.category === 'sports')
+          .map((doc) => doc.id),
+      ),
+    );
+    expect(ids.every((row) => Number.isFinite(row.similarity))).toBe(true);
+    expect(list).not.toHaveBeenCalled();
+  });
+
   describe('semanticSearch', () => {
     it('should find documents similar to query text', async () => {
       await seedDocuments();

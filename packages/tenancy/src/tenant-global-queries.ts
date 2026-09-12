@@ -45,6 +45,8 @@ import {
   TenantIsolationError,
 } from './context.js';
 
+import { runTenantGlobalReadScope } from './tenant-global-read-scope.js';
+
 /**
  * Fail closed when an active tenant context requests a different tenant's rows.
  *
@@ -66,6 +68,23 @@ export function assertTenantReadAllowed(tenantId: string, label: string): void {
       { tenantId: tenantContext.tenantId, attemptedTenantId: tenantId },
     );
   }
+}
+
+/**
+ * Allow list reads of an authorized tenant and global rows without changing
+ * actor identity. Only the built-in tenancy beforeList hook consumes this
+ * capability; custom authorization hooks still see the original caller.
+ * Other operations (get/query/save/delete) retain their normal guards.
+ */
+export async function withTenantGlobalRead<T>(
+  tenantId: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw new Error('withTenantGlobalRead requires a nonempty tenant ID');
+  }
+  assertTenantReadAllowed(tenantId, 'withTenantGlobalRead');
+  return runTenantGlobalReadScope(tenantId, callback);
 }
 
 /**

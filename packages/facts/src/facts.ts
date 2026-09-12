@@ -5,13 +5,28 @@
  * Implements reconcile(), branch(), evolution tree, and confidence methods.
  */
 
-import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
+import {
+  classifyDatabaseError,
+  isPostgresDatabase,
+  SmrtCollection,
+  type SmrtCreateInput,
+} from '@happyvertical/smrt-core';
 import {
   type PromptConfigOverrideInput,
   type ResolvedPromptAI,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import {
+  assertTenantReadAllowed,
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+  queryGlobal,
+  queryWithGlobals,
+  withTenantGlobalRead,
+} from '@happyvertical/smrt-tenancy';
+import { encodeCatalogSearch } from './catalog-search';
 import { Fact } from './fact';
 import { FactSourceCollection } from './fact-sources';
 import { FactSubjectCollection } from './fact-subjects';
@@ -206,6 +221,209 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
 
+  /**
+   * Fetch one catalog page in SQL. The recursive branch walk may inspect more
+   * rows inside the database, but the outer query only materializes the page.
+   */
+  private async listCatalogPage(
+    tenantId: string | null | undefined,
+    includeSuperseded: boolean,
+    latestOnly: boolean,
+    limit: number,
+    offset: number,
+    candidateLimit: number,
+    readScope: { sql: string; values: unknown[] },
+    textQuery?: string,
+    rankedCandidateIds?: string[],
+  ): Promise<Fact[]> {
+    let scopeSql = '1 = 1';
+    let scopeParams: unknown[] = [];
+
+    if (tenantId !== undefined && tenantId !== null) {
+      assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
+      scopeSql = '(tenant_id = ? OR tenant_id IS NULL)';
+      scopeParams = [tenantId];
+    } else if (
+      isTenancyEnabled() &&
+      !isSystemContext() &&
+      !isSuperAdminBypass()
+    ) {
+      const tenant = getCurrentTenant();
+      if (tenant) {
+        scopeSql = 'tenant_id = ?';
+        scopeParams = [tenant.tenantId];
+      }
+    }
+
+    const metaType = this.getStiChildMetaType();
+    if (metaType) {
+      scopeSql += ' AND _meta_type = ?';
+      scopeParams.push(metaType);
+    }
+
+    scopeSql = `(${scopeSql}) AND (${readScope.sql})`;
+    scopeParams.push(...readScope.values);
+
+    const statusSql = includeSuperseded
+      ? ''
+      : tenantId === undefined || tenantId === null
+        ? ' AND status = ?'
+        : ' AND status != ?';
+    const statusParams = includeSuperseded
+      ? []
+      : [tenantId === undefined || tenantId === null ? 'active' : 'superseded'];
+    if (textQuery !== undefined) {
+      const { rows } = await this.db
+        .query(
+          `SELECT COUNT(*) AS pending FROM ${this.tableName}
+          WHERE ${scopeSql} AND catalog_search IS NULL`,
+          ...scopeParams,
+        )
+        .catch((cause: unknown) => {
+          const diagnostic = classifyDatabaseError(cause);
+          const missingStorage = diagnostic.sqlstate
+            ? ['42703', '42P01'].includes(diagnostic.sqlstate)
+            : ['unknown', 'undefined_object'].includes(diagnostic.kind) &&
+              diagnostic.driverMessages.some((message) =>
+                /no such (?:table|column):|Catalog Error: Table with name .+ does not exist|Binder Error: Referenced column .+ not found/i.test(
+                  message,
+                ),
+              );
+          if (!missingStorage) throw cause;
+          throw new Error(
+            'Fact catalog search storage is unavailable: run db:migrate and backfillCatalogSearch() before text searches.',
+            { cause },
+          );
+        });
+      if (Number(rows[0]?.pending) > 0) {
+        throw new Error(
+          'Fact catalog search is not ready: run db:migrate and backfillCatalogSearch() before text searches.',
+        );
+      }
+    }
+    const textSql =
+      textQuery !== undefined
+        ? isPostgresDatabase(this.db)
+          ? ' AND strpos(catalog_search, ?) > 0'
+          : ' AND instr(catalog_search, ?) > 0'
+        : '';
+    const textParams =
+      textQuery !== undefined ? [encodeCatalogSearch(textQuery)] : [];
+    const rankedCandidates = rankedCandidateIds?.filter(Boolean);
+
+    if (rankedCandidates && rankedCandidates.length === 0) {
+      return [];
+    }
+
+    const candidateSql = rankedCandidates
+      ? `SELECT facts.id, semantic_candidates.candidate_order
+          FROM (SELECT * FROM ${this.tableName}
+            WHERE ${scopeSql}${statusSql}) AS facts
+          INNER JOIN semantic_candidates ON semantic_candidates.id = facts.id`
+      : `SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC) AS candidate_order
+          FROM ${this.tableName}
+          WHERE ${scopeSql}${statusSql}${textSql}
+          ORDER BY updated_at DESC
+          LIMIT ?`;
+    const candidateParams = rankedCandidates
+      ? [
+          ...rankedCandidates.flatMap((id, index) => [id, index + 1]),
+          ...scopeParams,
+          ...statusParams,
+        ]
+      : [...scopeParams, ...statusParams, ...textParams, candidateLimit];
+    const semanticCandidatesSql = rankedCandidates
+      ? `semantic_candidates(id, candidate_order) AS (VALUES ${rankedCandidates
+          .map(() =>
+            isPostgresDatabase(this.db)
+              ? '(CAST(? AS UUID), CAST(? AS INTEGER))'
+              : '(?, ?)',
+          )
+          .join(', ')})`
+      : '';
+    const semanticCandidatesPrefix = semanticCandidatesSql
+      ? `${semanticCandidatesSql},`
+      : '';
+
+    if (!latestOnly) {
+      return await this.query(
+        `WITH ${semanticCandidatesPrefix}
+          catalog_candidates AS (
+            ${candidateSql}
+          )
+          SELECT facts.*
+          FROM ${this.tableName} AS facts
+          INNER JOIN catalog_candidates
+            ON catalog_candidates.id = facts.id
+          ORDER BY catalog_candidates.candidate_order
+          LIMIT ? OFFSET ?`,
+        [...candidateParams, limit, offset],
+        { allowRawOnTenantScoped: true },
+      );
+    }
+
+    return await this.query(
+      `WITH RECURSIVE
+        ${semanticCandidatesPrefix}
+        catalog_candidates AS (
+          ${candidateSql}
+        ),
+        successor_choices AS (
+          SELECT id, previous_fact_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY previous_fact_id
+              ORDER BY confidence DESC${tenantId === undefined || tenantId === null ? ', updated_at DESC' : ''}
+            ) AS successor_rank
+          FROM ${this.tableName}
+          WHERE ${scopeSql}
+        ),
+        resolved(source_id, candidate_order, current_id, visited, cycle) AS (
+          SELECT id, candidate_order, id, ',' || CAST(id AS TEXT) || ',', 0
+          FROM catalog_candidates
+          UNION ALL
+          SELECT resolved.source_id,
+            resolved.candidate_order,
+            successor_choices.id,
+            resolved.visited || CAST(successor_choices.id AS TEXT) || ',',
+            CASE
+              WHEN resolved.visited LIKE '%,' || CAST(successor_choices.id AS TEXT) || ',%'
+              THEN 1
+              ELSE 0
+            END
+          FROM resolved
+          INNER JOIN successor_choices
+            ON successor_choices.previous_fact_id = resolved.current_id
+            AND successor_choices.successor_rank = 1
+          WHERE resolved.cycle = 0
+        ),
+        terminal_latest AS (
+          SELECT resolved.current_id AS latest_id, resolved.candidate_order
+          FROM resolved
+          LEFT JOIN successor_choices
+            ON successor_choices.previous_fact_id = resolved.current_id
+            AND successor_choices.successor_rank = 1
+          WHERE successor_choices.id IS NULL OR resolved.cycle = 1
+        ),
+        distinct_latest AS (
+          SELECT latest_id, candidate_order,
+            ROW_NUMBER() OVER (
+              PARTITION BY latest_id
+              ORDER BY candidate_order
+            ) AS duplicate_rank
+          FROM terminal_latest
+        )
+        SELECT facts.*
+        FROM ${this.tableName} AS facts
+        INNER JOIN distinct_latest
+          ON distinct_latest.latest_id = facts.id
+        WHERE distinct_latest.duplicate_rank = 1
+        ORDER BY distinct_latest.candidate_order
+        LIMIT ? OFFSET ?`,
+      [...candidateParams, ...scopeParams, limit, offset],
+      { allowRawOnTenantScoped: true },
+    );
+  }
+
   // =========================================================================
   // Simple Query Methods
   // =========================================================================
@@ -317,117 +535,130 @@ export class FactCollection extends SmrtCollection<Fact> {
       : 0;
     const pageEnd = safeOffset + safeLimit;
     const latestResolutionLimit = pageEnd + safeLimit;
-    const resolveLatestPage = (facts: Fact[], chainFacts: Fact[]): Fact[] => {
-      const successorsByPreviousId = new Map<string, Fact[]>();
-      for (const fact of chainFacts) {
-        if (!fact.previousFactId) continue;
-
-        const successors =
-          successorsByPreviousId.get(fact.previousFactId) ?? [];
-        successors.push(fact);
-        successorsByPreviousId.set(fact.previousFactId, successors);
-      }
-
-      const latestById = new Map<string, Fact>();
-
-      for (const fact of facts.slice(0, latestResolutionLimit)) {
-        let latest = fact;
-        const visited = new Set<string>();
-        while (true) {
-          const latestId = latest.id as string;
-          if (!latestId || visited.has(latestId)) break;
-          visited.add(latestId);
-
-          const successors = successorsByPreviousId.get(latestId);
-          if (!successors?.length) break;
-
-          latest = successors.reduce((best, successor) =>
-            successor.confidence > best.confidence ? successor : best,
-          );
-        }
-
-        latestById.set(latest.id as string, latest);
-        if (latestById.size >= pageEnd) {
-          break;
-        }
-      }
-
-      return [...latestById.values()].slice(safeOffset, pageEnd);
-    };
-
-    const hasExplicitTenant = tenantId !== undefined && tenantId !== null;
-    // Chain traversal must see every scoped row. Use an unbounded sibling
-    // collection because browseCatalog's correctness cannot depend on a
-    // caller-facing default list limit: a successor can sort beyond a page.
-    const collectionConstructor = this.constructor as typeof FactCollection;
-    const unboundedFacts = await collectionConstructor.create({
-      ...this.options,
-      defaultListLimit: undefined,
-      maxListLimit: undefined,
-    });
-    const chainFacts = latestOnly
-      ? hasExplicitTenant
-        ? await this.findWithGlobals(tenantId)
-        : await unboundedFacts.list({ orderBy: 'updated_at DESC' })
-      : undefined;
-
-    // Keep the no-tenant active predicate in SQL before any list bound. Apart
-    // from preserving the active-status index, this prevents newer pending or
-    // rejected rows from consuming a collection defaultListLimit before the
-    // display candidates are selected.
-    const tenantScoped = includeSuperseded
-      ? (chainFacts ??
-        (hasExplicitTenant
-          ? await this.findWithGlobals(tenantId)
-          : await unboundedFacts.list({ orderBy: 'updated_at DESC' })))
-      : hasExplicitTenant
-        ? (chainFacts ?? (await this.findWithGlobals(tenantId))).filter(
-            (fact) => fact.status !== 'superseded',
-          )
-        : await unboundedFacts.list({
-            where: { status: 'active' },
-            orderBy: 'updated_at DESC',
-          });
-    const tenantScopedIds = new Set(
-      tenantScoped
-        .map((fact) => fact.id)
-        .filter((factId): factId is string => typeof factId === 'string'),
-    );
+    const explicitTenant = tenantId !== undefined && tenantId !== null;
+    if (explicitTenant) assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
+    // Resolve authorization before embedding work and outside its fallback catch.
+    // The narrow tenant/global capability preserves the original actor for all
+    // custom policies. Predicates apply to candidates AND every successor.
+    const readScope = explicitTenant
+      ? await withTenantGlobalRead(tenantId, () =>
+          this.resolveListReadPredicate([[{ tenantId }], [{ tenantId: null }]]),
+        )
+      : await this.resolveListReadPredicate();
 
     if (!query.trim()) {
-      if (!latestOnly) {
-        return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
+      const page = await this.listCatalogPage(
+        tenantId,
+        includeSuperseded,
+        latestOnly,
+        safeLimit,
+        safeOffset,
+        latestResolutionLimit,
+        readScope,
+      );
+      return await readScope.finish(page);
+    }
+
+    const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
+    const result = explicitTenant
+      ? await withTenantGlobalRead(tenantId, () =>
+          this.semanticSearchIdsWithAvailability(query, {
+            ...searchOptions,
+            where: [
+              [
+                {
+                  tenantId,
+                  ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                },
+              ],
+              [
+                {
+                  tenantId: null,
+                  ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                },
+              ],
+            ],
+          }),
+        )
+      : await this.semanticSearchIdsWithAvailability(query, {
+          ...searchOptions,
+          where: includeSuperseded ? undefined : { status: 'active' },
+        });
+    const matches = result.available ? result.matches : undefined;
+
+    const page = await this.listCatalogPage(
+      tenantId,
+      includeSuperseded,
+      latestOnly,
+      safeLimit,
+      safeOffset,
+      latestResolutionLimit,
+      readScope,
+      matches === undefined ? query : undefined,
+      matches?.map((match) => match.id).filter((id) => typeof id === 'string'),
+    );
+    if (matches && !latestOnly) {
+      const similarityById = new Map(
+        matches.map((match) => [match.id, match.similarity]),
+      );
+      for (const fact of page) {
+        const similarity = similarityById.get(fact.id as string);
+        if (similarity !== undefined) {
+          (fact as Fact & { _similarity: number })._similarity = similarity;
+        }
       }
-
-      return resolveLatestPage(tenantScoped, chainFacts ?? tenantScoped);
     }
+    // Hooks see final annotations and the original actor/context. Filtering may
+    // shorten a page; never refill it or catch policy rejection as provider loss.
+    return await readScope.finish(page);
+  }
 
-    let matches: Fact[] = [];
-    try {
-      matches = await this.semanticSearch(query, {
-        limit: safeOffset + safeLimit,
-        minSimilarity,
-        where: includeSuperseded ? undefined : { status: 'active' },
-      });
-
-      if (tenantScopedIds.size > 0) {
-        matches = matches.filter(
-          (fact) => typeof fact.id === 'string' && tenantScopedIds.has(fact.id),
-        );
-      }
-    } catch {
-      const normalizedQuery = query.toLowerCase();
-      matches = tenantScoped.filter((fact) => {
-        const haystack = `${fact.textRefined} ${fact.textRaw}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
-      });
+  /**
+   * Explicit data migration after db:migrate adds catalog_search. Run under
+   * withSystemContext with old writers stopped. Repeating a batch is safe;
+   * concurrent source changes are protected by compare-and-set predicates.
+   * A subtype collection backfills only its STI discriminator.
+   */
+  async backfillCatalogSearch(batchSize = 100): Promise<{ remaining: number }> {
+    if (!isSystemContext()) {
+      throw new Error('backfillCatalogSearch requires withSystemContext');
     }
-
-    if (!latestOnly) {
-      return matches.slice(safeOffset, safeOffset + safeLimit);
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
+      throw new Error('batchSize must be an integer between 1 and 1000');
     }
-
-    return resolveLatestPage(matches, chainFacts ?? tenantScoped);
+    const metaType = this.getStiChildMetaType();
+    const scope = metaType ? ' AND _meta_type = ?' : '';
+    const params = metaType ? [metaType] : [];
+    const { rows } = await this.db.query(
+      `SELECT CAST(id AS TEXT) AS id, text_refined, text_raw FROM ${this.tableName}
+        WHERE catalog_search IS NULL${scope} ORDER BY id LIMIT ?`,
+      ...params,
+      batchSize,
+    );
+    for (const row of rows) {
+      await this.query(
+        `UPDATE ${this.tableName} SET catalog_search = ?
+          WHERE id = ? AND catalog_search IS NULL${scope}
+            AND (text_refined = ? OR (text_refined IS NULL AND CAST(? AS TEXT) IS NULL))
+            AND (text_raw = ? OR (text_raw IS NULL AND CAST(? AS TEXT) IS NULL))`,
+        [
+          encodeCatalogSearch(`${row.text_refined} ${row.text_raw}`),
+          row.id,
+          ...params,
+          row.text_refined,
+          row.text_refined,
+          row.text_raw,
+          row.text_raw,
+        ],
+        { allowRawOnTenantScoped: true },
+      );
+    }
+    const { rows: counts } = await this.db.query(
+      `SELECT COUNT(*) AS remaining FROM ${this.tableName}
+        WHERE catalog_search IS NULL${scope}`,
+      ...params,
+    );
+    return { remaining: Number(counts[0]?.remaining ?? 0) };
   }
 
   /**

@@ -121,3 +121,125 @@ const briefing = await facts.getEntityBriefing('Place', placeId);
 
 See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
 and contributor guidance.
+
+## Catalog pagination
+
+`browseCatalog(query, { limit, offset, latestOnly, tenantId })` defaults to 25
+results and resolves evolution chains unless `latestOnly: false` is supplied.
+Empty-query browsing and successful semantic search hydrate only the requested
+SQL page. Empty-query candidate eligibility remains bounded to
+`offset + 2 * limit`; resolving and deduplicating chains can therefore return a
+short page. Semantic candidate retrieval remains bounded to `offset + limit`.
+These SQL windows use the requested pagination values rather than the collection
+`defaultListLimit`. The full tenant-visible successor set is available to chain resolution, even
+when a successor lies outside the candidate window or status filter. Implicit-scope
+confidence ties retain the newest successor, matching the previous ordered read.
+
+Without an explicit tenant, the default candidate status is `active`; with an
+explicit tenant, tenant and global candidates exclude only `superseded`.
+`includeSuperseded` removes that status filter. Active tenant context continues
+to constrain implicit reads, and requesting another tenant is rejected. STI child
+collections constrain both candidates and successors to their discriminator.
+
+Catalog reads apply normal `beforeList` authorization predicates to candidates,
+readiness checks, and the complete successor graph, including empty queries.
+Explicit tenant/global reads use `withTenantGlobalRead`, which grants the built-in
+tenancy list hook that narrow scope while business hooks keep the original user,
+permissions, tenant context, and system/non-system identity. Actual system calls
+remain system calls. Interceptor rejection and application SQL failures propagate
+to the caller.
+Only unavailable embedding configuration or query-embedding provider failure
+permits text fallback; a semantic authorization failure never does.
+
+When query embeddings are unavailable, text fallback matches the exact JavaScript
+expression `` `${textRefined} ${textRaw}`.toLowerCase().includes(query.toLowerCase()) ``.
+It uses persisted `catalogSearch` storage and the same bounded SQL page traversal.
+The storage encodes lowercased UTF-16 units as aligned ASCII tokens, preserving
+Unicode, whitespace, literal wildcard characters, and code-unit boundaries without
+SQL collation or case-folding differences. A scalar readiness check precedes text
+search; it throws with backfill instructions if any permitted row is unbackfilled.
+The database may scan matching rows and evolution edges internally, but only the
+requested Fact page crosses the database boundary. Arbitrary substring matching
+cannot use a normal B-tree index; no misleading search-column index is added.
+
+### Existing deployment migration
+
+This is an explicit schema and data migration; ordinary reads never create schema.
+Stop old application writers, deploy the new manifest/code, and run `smrt db:migrate`
+(and `smrt db:status --parity`). This adds nullable `catalog_search`; historical
+rows remain NULL. Before enabling catalog text reads, run the following with your
+application's database configuration and repeat until `remaining` is zero:
+
+```typescript
+import { FactCollection } from '@happyvertical/smrt-facts';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
+
+const facts = await FactCollection.create({ db });
+await withSystemContext(async () => {
+  while ((await facts.backfillCatalogSearch(100)).remaining > 0) {
+    // Each call is independently resumable; record progress in your job runner.
+  }
+});
+```
+
+Backfill requires explicit system context, processes at most 100 rows per call by
+default (maximum 1000), and updates only NULL values whose source texts still match
+the read snapshot. It changes no source text, timestamps, embeddings, or revisions.
+A crash or concurrent write is safe to retry; sustained old writers must be stopped
+so the operation can finish. A subtype collection backfills only its discriminator;
+use the base collection for the full deployment. Back up before schema changes;
+roll forward by rerunning migration/backfill rather than dropping historical data.
+
+`Fact.save()`, collection create/get-or-insert/get-or-upsert, and generated model
+updates maintain search storage from the source fields. `catalogSearch` is derived;
+callers must not author it, and generated transport surfaces exclude it using
+readonly/sensitive field metadata. Derivation uses the final persistence row after
+mutable `beforeSave` hooks and the complete subclass `transformJSON` chain,
+keeping persisted text and search storage consistent. If a custom transform omits a source column, returns a value other than a string
+or explicit NULL, or returns a string with an unpaired UTF-16 surrogate, the write
+retains its ordinary adapter semantics (retention, defaults, or coercion); search storage is
+invalidated to NULL rather than guessed from instance values. Catalog text reads
+then fail with the readiness error until privileged bounded backfill reads the
+actual persisted columns. Run that backfill after such custom writes before
+resuming catalog text reads. Only well-formed strings and explicit NULL source
+values are known before persistence. Query encoding remains exact UTF-16
+code-unit matching, including queries containing an unpaired surrogate.
+Plain/public serialization
+retains the saved marker instead of recomputing from pre-transform instance text.
+Direct SQL writers must set `catalog_search = NULL` whenever either source text
+changes, then run backfill before text reads resume.
+If a custom writer or a pre-release implementation produced a known stale
+non-NULL search value, explicitly set that affected row's `catalog_search` to
+NULL and run the same bounded backfill. Backfill intentionally selects NULL
+markers; it does not scan or repair non-NULL values. This is a targeted repair,
+not an additional step for a fresh column migration.
+
+Do not keep old application writers active after backfill: they cannot maintain
+this new invariant. Future changes to JavaScript lowercasing/encoding require an
+explicit new backfill; the format is not locale dependent.
+
+PostgreSQL and SQLite run canonical pagination integration tests. DuckDB query
+coverage uses an explicitly identified SQL-only fixture: canonical Fact schema
+creation currently rejects its evolution self-reference, tracked in
+[#2830](https://github.com/happyvertical/smrt/issues/2830). DuckDB hydration issues
+one `DESCRIBE` plus one data query per page; PostgreSQL and SQLite use one data
+query after semantic candidate retrieval, if any. Text fallback also performs one
+scalar readiness query.
+
+Catalog reads preserve hydrated `afterList` policies on every final bounded page,
+including empty pages, after raw-query hooks and similarity annotations. The same
+list context and original caller identity reach before/after hooks. Filtering or
+redaction may shorten a page; browsing does not refill it. Policy rejection
+propagates and never triggers the embedding-unavailable text fallback.
+
+Text fallback is selected by core's provider-origin availability result: only
+missing embedding configuration or a failed query embedding enables it. Errors
+from authorization, ranking, SQL, hydration, or result hooks propagate unchanged,
+even when a caller throws `EmbeddingUnavailableError` from those operations.
+
+Catalog text-read readiness preserves database permission, transient and unknown
+errors unchanged. Only recognized missing-table/column driver diagnostics receive
+the migration/backfill instruction, retaining the original error as cause.
+`Fact` declares `catalog_search` as its permitted final derived column; custom
+normalization must preserve that declaration and cannot replace framework
+identity, tenant, revision or conflict columns.

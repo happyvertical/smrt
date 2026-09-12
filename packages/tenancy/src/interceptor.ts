@@ -36,6 +36,9 @@ import { isTenancyEnabled, setTenancyEnabled } from './enabled-state.js';
 import { runTenantScopedEntryPoint } from './entry-point.js';
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
+import { assertTenantReadAllowed } from './tenant-global-queries.js';
+import { getTenantGlobalReadScope } from './tenant-global-read-scope.js';
+
 const logger = createLogger({ level: 'info' });
 
 /**
@@ -243,6 +246,24 @@ export function createTenantInterceptor(
 
       const config = getTenantScopedConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
+      const globalReadTenant = getTenantGlobalReadScope();
+      if (globalReadTenant !== undefined) {
+        // Recheck if nested code changed actors after entering the capability.
+        assertTenantReadAllowed(globalReadTenant, 'tenant/global list');
+        const tenantField = config?.field || 'tenantId';
+        const where = listOptions.where || {};
+        const groups = Array.isArray(where) ? where : [[where]];
+        if (!groups.length || groups.some((group) => !group.length)) {
+          throw new Error('Invalid DNF where clause for tenant/global list');
+        }
+        return {
+          ...listOptions,
+          where: groups.flatMap((group) => [
+            [...group, { [tenantField]: globalReadTenant }],
+            [...group, { [tenantField]: null }],
+          ]),
+        };
+      }
 
       // If no tenant context and mode is 'required', throw
       if (!tenantContext) {

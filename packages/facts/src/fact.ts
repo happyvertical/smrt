@@ -15,6 +15,7 @@
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { encodeCatalogSearch } from './catalog-search';
 import type {
   EvolutionType,
   FactMetadata,
@@ -22,6 +23,15 @@ import type {
   FactStatus,
   FactType,
 } from './types';
+
+// Unicode mode treats valid surrogate pairs as complete code points; this range
+// therefore matches only unpaired surrogates that UTF-8 drivers may replace.
+function isKnownPersistedText(value: unknown): value is string | null {
+  return (
+    value === null ||
+    (typeof value === 'string' && !/[\uD800-\uDFFF]/u.test(value))
+  );
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -45,6 +55,10 @@ export class Fact extends SmrtObject {
 
   @field()
   textRaw: string = '';
+
+  /** Derived search storage. NULL requires the explicit catalog backfill. */
+  @field({ type: 'text', nullable: true, readonly: true, sensitive: true })
+  catalogSearch: string | null = null;
 
   @field({ required: true })
   type: string = 'assertion';
@@ -108,6 +122,26 @@ export class Fact extends SmrtObject {
         this.metadata = JSON.stringify(options.metadata);
       }
     }
+  }
+
+  protected override getPersistenceDerivedColumns(): readonly string[] {
+    return [...super.getPersistenceDerivedColumns(), 'catalog_search'];
+  }
+
+  protected override normalizePersistenceData(
+    data: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> {
+    // Unknown source values may be omitted, defaulted or coerced by adapters.
+    // Invalidate instead of guessing from pre-serialization values.
+    this.catalogSearch =
+      !isKnownPersistedText(data.text_refined) ||
+      !isKnownPersistedText(data.text_raw)
+        ? null
+        : encodeCatalogSearch(`${data.text_refined} ${data.text_raw}`);
+    return {
+      ...super.normalizePersistenceData(data),
+      catalog_search: this.catalogSearch,
+    };
   }
 
   getMetadata(): FactMetadata {
