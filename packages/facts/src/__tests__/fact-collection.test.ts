@@ -427,7 +427,7 @@ describe('getEntityBriefing', () => {
     ).toHaveLength(1);
   });
 
-  it('resolves latest catalog facts in the text fallback without chain queries', async () => {
+  it('preserves legacy latest-chain resolution in the text fallback', async () => {
     await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -452,7 +452,7 @@ describe('getEntityBriefing', () => {
     expect(results).toHaveLength(5);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(1);
+    ).toHaveLength(31);
   });
 
   it('treats text fallback wildcard characters as literal text', async () => {
@@ -470,6 +470,33 @@ describe('getEntityBriefing', () => {
     });
 
     expect(results.map((result) => result.id)).toEqual([fact.id]);
+  });
+
+  it('preserves Unicode case folding in the text fallback', async () => {
+    const kelvin = await facts.create({
+      textRefined: 'Temperature is 300K',
+      type: 'assertion',
+      status: 'active',
+    });
+    const accent = await facts.create({
+      textRefined: 'Café catalog fact',
+      type: 'assertion',
+      status: 'active',
+    });
+    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+      new Error('Embeddings unavailable'),
+    );
+
+    expect(
+      (await facts.browseCatalog('k', { latestOnly: false })).map(
+        (fact) => fact.id,
+      ),
+    ).toContain(kelvin.id);
+    expect(
+      (await facts.browseCatalog('É', { latestOnly: false })).map(
+        (fact) => fact.id,
+      ),
+    ).toContain(accent.id);
   });
 
   it('follows a successor outside the active catalog filter', async () => {
