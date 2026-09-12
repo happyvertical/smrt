@@ -26,6 +26,11 @@ collection class and its populated model share an endpoint, the model owns the
 canonical collection key and row payload schema; the collection class remains
 available under a deterministic class-derived secondary key. Selection and
 collision suffixes must not depend on manifest insertion order (#2027).
+Route emission iterates manifest objects in the same deterministic
+qualified-identity order (`orderedManifestObjectEntries`), so when two models
+share one collection the last writer of each route file — and therefore the
+CRUD method set `resolveGeneratedEndpointCrudMethods` mirrors into
+`smrt-client.d.ts` — is stable across scan orders (#2754).
 For aggregated manifests, inheritance and item-type references resolve exact
 qualified names first, then package-local simple names, then a stable identity
 fallback so duplicate class names across packages cannot reintroduce ordering.

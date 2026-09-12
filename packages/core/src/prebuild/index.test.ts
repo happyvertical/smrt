@@ -336,19 +336,13 @@ describe('generateDeclarations', () => {
   it('emits byte-identical declarations regardless of manifest object insertion order (#2749)', async () => {
     // Regression for a discovery-order-dependent codegen: two manifests with
     // the same objects inserted in reversed key order must produce
-    // byte-identical smrt-objects.d.ts, smrt-types.d.ts, and smrt-web.d.ts,
-    // not just semantically-equivalent output.
+    // byte-identical smrt-objects.d.ts, smrt-types.d.ts, smrt-web.d.ts, and
+    // smrt-client.d.ts, not just semantically-equivalent output.
     //
-    // Known remaining scope (#2754): smrt-client.d.ts is NOT covered here.
-    // Its per-collection CRUD method set can still differ across runs when
-    // two non-collection models share one `collection` with different
-    // `api.include` configs — resolveGeneratedEndpointCrudMethods()
-    // (vite-plugin/api-client-entries.ts) deliberately mirrors real
-    // SvelteKit route-file emission's insertion-order last-writer-wins
-    // semantics for that case, so sorting only the declaration would make it
-    // describe methods that were never actually emitted. See #2754 for why
-    // that needs a route-generation-determinism fix, not a codegen-ordering
-    // one, and is out of this patch-class train's scope.
+    // Shared-collection CRUD-method content in smrt-client.d.ts is covered
+    // separately below with differing api.include configs (#2754): the
+    // collection-and-model fixture here does not share endpoints, so this
+    // test pins the general ordering, not the shared-endpoint tie.
     const forwardManifest = buildManifest();
     const forwardEntries = Object.entries(forwardManifest.objects);
     const reversedManifest: SmartObjectManifest = {
@@ -372,6 +366,7 @@ describe('generateDeclarations', () => {
       'smrt-objects.d.ts',
       'smrt-types.d.ts',
       'smrt-web.d.ts',
+      'smrt-client.d.ts',
     ]) {
       const forwardContent = readFileSync(join(forwardDir, file), 'utf-8');
       const reversedContent = readFileSync(join(reversedDir, file), 'utf-8');
@@ -386,6 +381,78 @@ describe('generateDeclarations', () => {
     );
     expect(objectsContent).toContain('export interface ArticleData {');
     expect(objectsContent).toContain('export interface AuthorData {');
+  });
+
+  it('emits byte-identical smrt-client.d.ts for shared collections with differing api.include configs (#2754)', async () => {
+    // The #2749 fixture set does not share one `collection` between two
+    // non-collection models, so its byte-identity guarantee said nothing
+    // about the shared-endpoint tie. Two models sharing `sharedRecords`
+    // with different include lists resolve that tie differently depending
+    // on which model writes each route file last: route emission now
+    // iterates the deterministic qualified-identity order (#2754), and
+    // resolveGeneratedEndpointCrudMethods mirrors the same order, so the
+    // declared CRUD method set must be identical across insertion orders.
+    const baseRecord = {
+      className: 'BaseRecord',
+      collection: 'sharedRecords',
+      extends: 'SmrtObject',
+      fields: { label: { type: 'text', required: true } },
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
+    } as any;
+    const childRevision = {
+      className: 'ChildRevision',
+      collection: 'sharedRecords',
+      extends: 'SmrtObject',
+      fields: { note: { type: 'text' } },
+      methods: {},
+      decoratorConfig: { api: { include: ['get', 'update'] } },
+    } as any;
+
+    const build = (reversed: boolean): SmartObjectManifest =>
+      ({
+        version: '1.0.0',
+        timestamp: 1,
+        objects: Object.fromEntries(
+          reversed
+            ? [
+                ['ChildRevision', childRevision],
+                ['BaseRecord', baseRecord],
+              ]
+            : [
+                ['BaseRecord', baseRecord],
+                ['ChildRevision', childRevision],
+              ],
+        ),
+      }) as SmartObjectManifest;
+
+    const forwardDir = join(outDir, 'shared-forward');
+    const reversedDir = join(outDir, 'shared-reversed');
+
+    await generateDeclarations({ manifest: build(false), outDir: forwardDir });
+    await generateDeclarations({ manifest: build(true), outDir: reversedDir });
+
+    const forwardClient = readFileSync(
+      join(forwardDir, 'smrt-client.d.ts'),
+      'utf-8',
+    );
+    const reversedClient = readFileSync(
+      join(reversedDir, 'smrt-client.d.ts'),
+      'utf-8',
+    );
+    expect(reversedClient).toBe(forwardClient);
+
+    // Pin the resolved winner, not just equality: deterministic emission
+    // order writes BaseRecord's collection handlers (list, create) and
+    // ChildRevision's item handlers (get, update), so every alias for the
+    // shared endpoint carries the union. Under the old insertion-order
+    // last-writer-wins the reversed manifest dropped `update`.
+    expect(forwardClient).toContain(
+      '"sharedRecords": Pick<CrudOperations<BaseRecordData>, "list" | "get" | "create" | "update">;',
+    );
+    expect(forwardClient).toContain(
+      '"childRevision": Pick<CrudOperations<ChildRevisionData>, "list" | "get" | "create" | "update">;',
+    );
   });
 
   it('declares a hidden item companion as custom-only without phantom CRUD', async () => {

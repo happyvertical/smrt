@@ -1866,6 +1866,105 @@ describe('SvelteKit Route Generator', () => {
     });
   });
 
+  describe('Shared-collection emission determinism (#2754)', () => {
+    // Two models sharing one collection write the same route files; the
+    // last writer of each file wins. Emission must visit models in the
+    // deterministic qualified-identity order so the winning content — and
+    // the CRUD surface mirrored into smrt-client.d.ts — cannot vary with
+    // manifest scan order.
+    const projectRoot = '/test/project';
+    const options = {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+    };
+
+    const baseRecord = {
+      className: 'BaseRecord',
+      collection: 'sharedRecords',
+      extends: 'SmrtObject',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
+    } as any;
+    const childRevision = {
+      className: 'ChildRevision',
+      collection: 'sharedRecords',
+      extends: 'SmrtObject',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['get', 'update'] } },
+    } as any;
+
+    async function sharedCollectionRouteContents(
+      manifest: SmartObjectManifest,
+    ): Promise<{ collection: string; item: string }> {
+      vi.clearAllMocks();
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue('');
+      vi.mocked(readdirSync).mockReturnValue([]);
+
+      await generateSvelteKitRoutes(projectRoot, manifest, options);
+
+      const calls = vi.mocked(writeFileSync).mock.calls;
+      // Route files are overwritten per writer; the LAST write of each path
+      // is the final file content, so resolve it from the tail of the call
+      // log (a `.find()` would observe the first writer's intermediate
+      // content and miss the deterministic winner entirely).
+      const collectionCall = [...calls]
+        .reverse()
+        .find((call) =>
+          call[0].toString().endsWith('sharedRecords/+server.ts'),
+        );
+      const itemCall = [...calls]
+        .reverse()
+        .find((call) =>
+          call[0].toString().endsWith('sharedRecords/[id]/+server.ts'),
+        );
+      if (!collectionCall || !itemCall) {
+        throw new Error('shared-collection route files were not both written');
+      }
+      return {
+        collection: collectionCall[1] as string,
+        item: itemCall[1] as string,
+      };
+    }
+
+    it('emits the same shared-collection route files in both manifest orders', async () => {
+      const baseFirstManifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 1,
+        objects: { BaseRecord: baseRecord, ChildRevision: childRevision },
+      };
+      const childFirstManifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 1,
+        objects: { ChildRevision: childRevision, BaseRecord: baseRecord },
+      };
+      const baseFirst = await sharedCollectionRouteContents(baseFirstManifest);
+      const childFirst =
+        await sharedCollectionRouteContents(childFirstManifest);
+
+      // Byte-identical output across insertion orders.
+      expect(childFirst.collection).toBe(baseFirst.collection);
+      expect(childFirst.item).toBe(baseFirst.item);
+
+      // Pin the deterministic winner: BaseRecord owns the collection file
+      // (list/create; ChildRevision emits no collection handlers to replace
+      // it), and ChildRevision — the later qualified identity — owns the
+      // item file (get/update). Under insertion-order last-writer-wins the
+      // child-first manifest wrote BaseRecord's get-only item file instead.
+      expectGetCollectionCall(baseFirst.collection, 'BaseRecord', 'BaseRecord');
+      expect(baseFirst.collection).toContain('export const GET');
+      expect(baseFirst.collection).toContain('export const POST');
+      expect(baseFirst.collection).not.toContain('export const PUT');
+      expectGetCollectionCall(baseFirst.item, 'ChildRevision', 'ChildRevision');
+      expect(baseFirst.item).toContain('export const GET');
+      expect(baseFirst.item).toContain('export const PUT');
+      expect(baseFirst.item).not.toContain('export const DELETE');
+    });
+  });
+
   describe('.gitignore Updates', () => {
     it('should add exact generated route paths to .gitignore', async () => {
       vi.mocked(existsSync).mockReturnValue(true);

@@ -20,6 +20,7 @@ import { resolveApiActionRouteConfig } from './sveltekit-generator.js';
 import {
   findManifestObjectByName,
   isCollectionManifestClass,
+  orderedManifestObjectEntries,
   resolveCollectionItemObject,
 } from './web-collections.js';
 
@@ -234,18 +235,15 @@ function resolveCrudObject(
   if (itemObject) return itemObject;
 
   // A non-conventional collection can still share an endpoint with a model.
-  return Object.values(manifest.objects)
+  // Iterating the deterministic qualified-identity order (#2754) gives this
+  // fallback the same total tie-break as every other manifest consumer.
+  return orderedManifestObjectEntries(manifest)
     .filter(
-      (candidate) =>
+      ([, candidate]) =>
         candidate.collection === obj.collection &&
         !isCollectionManifestClass(manifest, candidate),
     )
-    .sort((left, right) =>
-      compareText(
-        left.qualifiedName ?? left.className,
-        right.qualifiedName ?? right.className,
-      ),
-    )[0];
+    .map(([, candidate]) => candidate)[0];
 }
 
 function resolveGeneratedClientCrudMethods(
@@ -284,10 +282,12 @@ function resolveGeneratedClientCrudMethods(
  * Resolve the CRUD surface that the generated route files actually expose for
  * one shared collection endpoint.
  *
- * Route generation processes manifest objects in insertion order. Collection
- * and item handlers live in separate files, and the last model that emits each
- * file replaces the earlier file. Mirror that behavior here so every client
- * alias for a shared endpoint has the same, real action set.
+ * Route generation processes manifest objects in the deterministic
+ * qualified-identity order of {@link orderedManifestObjectEntries} (#2754):
+ * collection and item handlers live in separate files, and the last model
+ * that emits each file replaces the earlier file. Mirror that behavior here
+ * by iterating the same order, so every client alias for a shared endpoint
+ * has the same, real action set regardless of manifest scan order.
  */
 function resolveGeneratedEndpointCrudMethods(
   collection: string,
@@ -296,7 +296,7 @@ function resolveGeneratedEndpointCrudMethods(
   let collectionMethods: ApiClientCrudMethod[] = [];
   let itemMethods: ApiClientCrudMethod[] = [];
 
-  for (const obj of Object.values(manifest.objects)) {
+  for (const [, obj] of orderedManifestObjectEntries(manifest)) {
     if (
       obj.collection !== collection ||
       isCollectionManifestClass(manifest, obj)

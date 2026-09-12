@@ -12,7 +12,7 @@ import {
   selectApiClientEntries,
 } from '../vite-plugin/api-client-entries.js';
 import {
-  compareText,
+  orderedManifestObjectEntries,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections.js';
 
@@ -82,13 +82,7 @@ async function generateObjectTypeDeclarations(
   // Generate interfaces for each discovered SMRT object. Manifest key order
   // follows scan/discovery order, which is not stable across runs (#2749),
   // so sort deterministically before emitting.
-  const sortedObjectEntries = Object.entries(manifest.objects).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  const sortedObjectEntries = orderedManifestObjectEntries(manifest);
   for (const [_objectName, objectMeta] of sortedObjectEntries) {
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
@@ -297,14 +291,7 @@ declare module '@smrt/mcp' {
 
   // Generate types module declaration with object imports. Sorted for the
   // same reason as generateObjectTypeDeclarations (#2749).
-  const objectImports = Object.entries(manifest.objects)
-    .sort(
-      ([leftKey, left], [rightKey, right]) =>
-        compareText(
-          left.qualifiedName || leftKey,
-          right.qualifiedName || rightKey,
-        ) || compareText(leftKey, rightKey),
-    )
+  const objectImports = orderedManifestObjectEntries(manifest)
     .map(
       ([, obj]) =>
         `  export type ${obj.className}Data = import('./smrt-objects').${obj.className}Data;`,
