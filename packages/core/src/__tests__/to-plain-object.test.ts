@@ -29,6 +29,20 @@ class PlainObjectSerializationProbe extends SmrtObject {
   }
 }
 
+class ProtoKeySerializationProbe extends SmrtObject {
+  protected transformJSON(data: Record<string, unknown>) {
+    const nested: Record<string, unknown> = {};
+    Object.defineProperty(nested, '__proto__', {
+      configurable: true,
+      enumerable: true,
+      value: { retained: true },
+      writable: true,
+    });
+
+    return { ...data, nested };
+  }
+}
+
 describe('SmrtObject.toPlainObject', () => {
   it('preserves JSON-compatible values from transformJSON without a string round trip', () => {
     const object = new PlainObjectSerializationProbe();
@@ -51,6 +65,20 @@ describe('SmrtObject.toPlainObject', () => {
 
     expect(() => object.toPlainObject()).toThrow(
       'Do not know how to serialize a BigInt',
+    );
+  });
+
+  it('preserves own __proto__ keys without changing a plain object prototype', () => {
+    const object = new ProtoKeySerializationProbe();
+    const plain = object.toPlainObject();
+    const legacy = JSON.parse(JSON.stringify(object));
+    const nested = plain.nested as Record<string, unknown>;
+
+    expect(plain).toEqual(legacy);
+    expect(Object.getPrototypeOf(nested)).toBe(Object.prototype);
+    expect(Object.hasOwn(nested, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(nested, '__proto__')?.value).toEqual(
+      { retained: true },
     );
   });
 

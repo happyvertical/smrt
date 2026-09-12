@@ -158,7 +158,16 @@ function toPlainJSONValue(
     for (const property of Object.keys(objectValue)) {
       const item = toPlainJSONValue(objectValue[property], property, ancestors);
       if (item !== PLAIN_JSON_OMITTED) {
-        result[property] = item;
+        if (property === '__proto__') {
+          Object.defineProperty(result, property, {
+            configurable: true,
+            enumerable: true,
+            value: item,
+            writable: true,
+          });
+        } else {
+          result[property] = item;
+        }
       }
     }
     return result;
