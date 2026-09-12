@@ -8,9 +8,18 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { smrt } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Fact } from '../fact';
 import { FactSubjectCollection } from '../fact-subjects';
 import { FactCollection } from '../facts';
+
+@smrt({ tableStrategy: 'sti' })
+class CatalogFactSubtype extends Fact {}
+
+class CatalogFactSubtypeCollection extends FactCollection {
+  static readonly _itemClass = CatalogFactSubtype;
+}
 
 describe('getEntityBriefing', () => {
   let tempDir: string;
@@ -254,7 +263,7 @@ describe('getEntityBriefing', () => {
     );
   });
 
-  it('caps latest-chain resolution when browsing an empty catalog query', async () => {
+  it('resolves latest catalog facts from a constant query batch', async () => {
     const browseFacts = await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -264,10 +273,8 @@ describe('getEntityBriefing', () => {
         }),
       ),
     );
-    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
-    const latestSpy = vi
-      .spyOn(facts, 'getLatestInChain')
-      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
 
     const results = await facts.browseCatalog('', {
       limit: 5,
@@ -275,11 +282,50 @@ describe('getEntityBriefing', () => {
     });
 
     expect(results).toHaveLength(5);
-    expect(latestSpy).toHaveBeenCalledTimes(5);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(2);
+    const browseFactIds = new Set(browseFacts.map((fact) => fact.id));
+    expect(results.every((fact) => browseFactIds.has(fact.id))).toBe(true);
   });
 
-  it('caps latest-chain resolution in the text fallback browse path', async () => {
-    const browseFacts = await Promise.all(
+  it('selects the highest-confidence latest leaf without chain queries', async () => {
+    const root = await facts.create({
+      textRefined: 'Catalog root fact',
+      type: 'assertion',
+      status: 'active',
+      confidence: 0.1,
+    });
+    await facts.create({
+      textRefined: 'Lower-confidence successor',
+      type: 'assertion',
+      status: 'active',
+      previousFactId: root.id as string,
+      confidence: 0.3,
+    });
+    const latest = await facts.create({
+      textRefined: 'Higher-confidence successor',
+      type: 'assertion',
+      status: 'active',
+      previousFactId: root.id as string,
+      confidence: 0.9,
+    });
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
+
+    const results = await facts.browseCatalog('', {
+      limit: 5,
+      latestOnly: true,
+    });
+
+    expect(results.map((fact) => fact.id)).toContain(latest.id);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(2);
+  });
+
+  it('resolves latest catalog facts in the text fallback without chain queries', async () => {
+    await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
           textRefined: `Catalog fallback fact ${index + 1}`,
@@ -288,13 +334,11 @@ describe('getEntityBriefing', () => {
         }),
       ),
     );
-    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
     vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
-    const latestSpy = vi
-      .spyOn(facts, 'getLatestInChain')
-      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
 
     const results = await facts.browseCatalog('fallback', {
       limit: 5,
@@ -303,6 +347,136 @@ describe('getEntityBriefing', () => {
     });
 
     expect(results).toHaveLength(5);
-    expect(latestSpy).toHaveBeenCalledTimes(15);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(2);
+  });
+
+  it('keeps no-tenant catalog candidates active while following filtered successors', async () => {
+    const root = await facts.create({
+      textRefined: 'Active catalog root',
+      type: 'assertion',
+      status: 'active',
+      confidence: 0.1,
+    });
+    const latest = await facts.create({
+      textRefined: 'Superseded successor',
+      type: 'assertion',
+      status: 'superseded',
+      previousFactId: root.id as string,
+      confidence: 0.9,
+    });
+    await facts.create({
+      textRefined: 'Pending catalog fact',
+      type: 'assertion',
+      status: 'pending',
+    });
+    await facts.create({
+      textRefined: 'Rejected catalog fact',
+      type: 'assertion',
+      status: 'rejected',
+    });
+    const querySpy = vi.spyOn((facts as any).db, 'query');
+    querySpy.mockClear();
+
+    const results = await facts.browseCatalog('', {
+      latestOnly: true,
+      includeSuperseded: false,
+    });
+
+    expect(results.map((fact) => fact.id)).toEqual([latest.id]);
+    expect(
+      querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
+    ).toHaveLength(2);
+  });
+
+  it('filters catalog candidates before default bounds while retaining the full successor chain', async () => {
+    const root = await facts.create({
+      textRefined: 'Older active catalog root',
+      type: 'assertion',
+      status: 'active',
+      confidence: 0.1,
+    });
+    const successor = await facts.create({
+      textRefined: 'Successor outside the active candidate page',
+      type: 'assertion',
+      status: 'superseded',
+      previousFactId: root.id as string,
+      confidence: 0.9,
+    });
+    await facts.create({
+      textRefined: 'Newer pending catalog row',
+      type: 'assertion',
+      status: 'pending',
+    });
+    await facts.create({
+      textRefined: 'Newest rejected catalog row',
+      type: 'assertion',
+      status: 'rejected',
+    });
+    const boundedFacts = await FactCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+      defaultListLimit: 1,
+    });
+    const listSpy = vi.spyOn(FactCollection.prototype, 'list');
+    listSpy.mockClear();
+
+    const page = await boundedFacts.browseCatalog('', {
+      latestOnly: false,
+    });
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(listSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'active' } }),
+    );
+    listSpy.mockClear();
+    const latest = await boundedFacts.browseCatalog('', {
+      latestOnly: true,
+    });
+
+    expect(page.map((fact) => fact.id)).toEqual([root.id]);
+    expect(latest.map((fact) => fact.id)).toEqual([successor.id]);
+    expect(listSpy).toHaveBeenCalledTimes(2);
+    expect(listSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'active' } }),
+    );
+  });
+
+  it('keeps implicit and explicit tenant catalog reads in an STI child scope', async () => {
+    const subtypeFacts = await CatalogFactSubtypeCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const baseFact = await facts.create({
+      textRefined: 'Base fact outside subtype scope',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+    });
+    const childFact = await subtypeFacts.create({
+      textRefined: 'Subtype fact inside scope',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+    });
+    const baseSuccessor = await facts.create({
+      textRefined: 'Base successor outside subtype chain',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+      previousFactId: childFact.id as string,
+      confidence: 1,
+    });
+
+    const implicit = await subtypeFacts.browseCatalog('', {
+      latestOnly: true,
+    });
+    const explicit = await subtypeFacts.browseCatalog('', {
+      tenantId: 'tenant-a',
+      latestOnly: true,
+    });
+
+    expect(implicit.map((fact) => fact.id)).toEqual([childFact.id]);
+    expect(explicit.map((fact) => fact.id)).toEqual([childFact.id]);
+    expect(implicit.map((fact) => fact.id)).not.toContain(baseFact.id);
+    expect(explicit.map((fact) => fact.id)).not.toContain(baseSuccessor.id);
   });
 });

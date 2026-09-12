@@ -317,16 +317,35 @@ export class FactCollection extends SmrtCollection<Fact> {
       : 0;
     const pageEnd = safeOffset + safeLimit;
     const latestResolutionLimit = pageEnd + safeLimit;
-    const resolveLatestPage = async (facts: Fact[]): Promise<Fact[]> => {
+    const resolveLatestPage = (facts: Fact[], chainFacts: Fact[]): Fact[] => {
+      const successorsByPreviousId = new Map<string, Fact[]>();
+      for (const fact of chainFacts) {
+        if (!fact.previousFactId) continue;
+
+        const successors =
+          successorsByPreviousId.get(fact.previousFactId) ?? [];
+        successors.push(fact);
+        successorsByPreviousId.set(fact.previousFactId, successors);
+      }
+
       const latestById = new Map<string, Fact>();
 
       for (const fact of facts.slice(0, latestResolutionLimit)) {
-        const factId = fact.id as string;
-        if (!factId) {
-          continue;
+        let latest = fact;
+        const visited = new Set<string>();
+        while (true) {
+          const latestId = latest.id as string;
+          if (!latestId || visited.has(latestId)) break;
+          visited.add(latestId);
+
+          const successors = successorsByPreviousId.get(latestId);
+          if (!successors?.length) break;
+
+          latest = successors.reduce((best, successor) =>
+            successor.confidence > best.confidence ? successor : best,
+          );
         }
 
-        const latest = await this.getLatestInChain(factId);
         latestById.set(latest.id as string, latest);
         if (latestById.size >= pageEnd) {
           break;
@@ -336,17 +355,39 @@ export class FactCollection extends SmrtCollection<Fact> {
       return [...latestById.values()].slice(safeOffset, pageEnd);
     };
 
-    const baseList =
-      tenantId === undefined || tenantId === null
-        ? await this.list({
-            where: includeSuperseded ? {} : { status: 'active' },
-            orderBy: 'updated_at DESC',
-          })
-        : await this.findWithGlobals(tenantId);
+    const hasExplicitTenant = tenantId !== undefined && tenantId !== null;
+    // Chain traversal must see every scoped row. Use an unbounded sibling
+    // collection because browseCatalog's correctness cannot depend on a
+    // caller-facing default list limit: a successor can sort beyond a page.
+    const collectionConstructor = this.constructor as typeof FactCollection;
+    const unboundedFacts = await collectionConstructor.create({
+      ...this.options,
+      defaultListLimit: undefined,
+      maxListLimit: undefined,
+    });
+    const chainFacts = latestOnly
+      ? hasExplicitTenant
+        ? await this.findWithGlobals(tenantId)
+        : await unboundedFacts.list({ orderBy: 'updated_at DESC' })
+      : undefined;
 
+    // Keep the no-tenant active predicate in SQL before any list bound. Apart
+    // from preserving the active-status index, this prevents newer pending or
+    // rejected rows from consuming a collection defaultListLimit before the
+    // display candidates are selected.
     const tenantScoped = includeSuperseded
-      ? baseList
-      : baseList.filter((fact) => fact.status !== 'superseded');
+      ? (chainFacts ??
+        (hasExplicitTenant
+          ? await this.findWithGlobals(tenantId)
+          : await unboundedFacts.list({ orderBy: 'updated_at DESC' })))
+      : hasExplicitTenant
+        ? (chainFacts ?? (await this.findWithGlobals(tenantId))).filter(
+            (fact) => fact.status !== 'superseded',
+          )
+        : await unboundedFacts.list({
+            where: { status: 'active' },
+            orderBy: 'updated_at DESC',
+          });
     const tenantScopedIds = new Set(
       tenantScoped
         .map((fact) => fact.id)
@@ -358,7 +399,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
       }
 
-      return resolveLatestPage(tenantScoped);
+      return resolveLatestPage(tenantScoped, chainFacts ?? tenantScoped);
     }
 
     let matches: Fact[] = [];
@@ -386,7 +427,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
-    return resolveLatestPage(matches);
+    return resolveLatestPage(matches, chainFacts ?? tenantScoped);
   }
 
   /**
