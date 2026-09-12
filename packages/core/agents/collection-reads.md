@@ -75,3 +75,11 @@ plus `finish(instances)`. Call `finish` exactly once on the final hydrated page
 fallback catches. It invokes normal `afterList` using the original `beforeList`
 context and model identity. It does not fetch replacement rows after filtering.
 ID-only consumers have no hydrated page and do not call this completion step.
+
+`semanticSearchIdsWithAvailability()` is the protected fallback-aware boundary:
+only absent embedding configuration or a failed `provider.embed()` returns
+`available: false`. Invalid options, authorization, ranking, query, and caller
+override failures propagate regardless of their error class. Public
+`semanticSearchIds()` keeps its array/throw contract by throwing the returned
+provider error. Consumers must branch on availability, never classify thrown
+`EmbeddingUnavailableError` values from an entire search as provider failures.

@@ -587,7 +587,10 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       }
 
       it('runs rejecting afterList even when semantic candidate IDs are empty', async () => {
-        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([]);
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue([]);
         const rejection = new EmbeddingUnavailableError(
           'empty afterList denied',
         );
@@ -819,7 +822,10 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
             where: { ...options.where, id: allowed.id },
           }),
         });
-        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue([
           { id: denied.id as string, similarity: 1 },
           { id: allowed.id as string, similarity: 0.9 },
         ]);
@@ -832,23 +838,73 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         }
       });
 
-      it('does not reinterpret a later semantic interceptor rejection as provider unavailability', async () => {
+      it.each([
+        false,
+        true,
+      ])('does not reinterpret a later semantic interceptor rejection as provider unavailability (typed: %s)', async (typed) => {
         await facts.create({ textRefined: 'K forbidden', status: 'active' });
         vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
           [1, 0],
         ]);
+        const rejection = typed
+          ? new EmbeddingUnavailableError('semantic access denied')
+          : new Error('semantic access denied');
         let calls = 0;
         GlobalInterceptors.register({
           name: 'catalog-authorization',
           beforeList: (_name, options) => {
-            if (++calls === 2) throw new Error('semantic access denied');
+            if (++calls === 2) throw rejection;
             return options;
           },
         });
-        await expect(facts.browseCatalog('K')).rejects.toThrow(
-          'semantic access denied',
-        );
+        await expect(facts.browseCatalog('K')).rejects.toBe(rejection);
         expect(calls).toBe(2);
+      });
+
+      it.each([
+        'ranking',
+        'query override',
+        'hydration',
+        'afterQuery',
+      ] as const)('preserves typed %s failure identity after provider success', async (stage) => {
+        const fact = await facts.create({
+          textRefined: 'matching policy text',
+          status: 'active',
+        });
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(EmbeddingProvider.prototype, 'getModelName').mockReturnValue(
+          'provider-origin-test',
+        );
+        await EmbeddingStorage.upsert(facts.systemDb, {
+          objectClass: 'Fact',
+          objectId: fact.id!,
+          fieldName: 'textRefined',
+          contentHash: 'origin',
+          embedding: [1, 0],
+          model: 'provider-origin-test',
+          dimensions: 2,
+        });
+        const rejection = new EmbeddingUnavailableError(`${stage} denied`);
+        if (stage === 'ranking')
+          vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockRejectedValue(
+            rejection,
+          );
+        else if (stage === 'query override')
+          vi.spyOn(facts, 'query').mockRejectedValue(rejection);
+        else if (stage === 'hydration')
+          vi.spyOn(Fact.prototype, 'initialize').mockRejectedValue(rejection);
+        else
+          GlobalInterceptors.register({
+            name: 'catalog-authorization',
+            afterQuery: () => {
+              throw rejection;
+            },
+          });
+        await expect(
+          facts.browseCatalog('matching', { latestOnly: false }),
+        ).rejects.toBe(rejection);
       });
 
       it('migrates historical search storage and safely resumes bounded backfill', async () => {
@@ -1314,7 +1370,10 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
               ).map((f) => f.id),
             ).toEqual([root.id]);
           }
-          vi.spyOn(special, 'semanticSearchIds').mockResolvedValue(
+          vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+            [1, 0],
+          ]);
+          vi.spyOn(special, 'findSimilarIdsToEmbedding').mockResolvedValue(
             [other, root].map((fact) => ({ id: fact.id!, similarity: 0.9 })),
           );
           expect(
@@ -1533,7 +1592,10 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
             }),
           );
         }
-        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue(
           ranked.map((fact) => ({ id: fact.id!, similarity: 0.9 })),
         );
         const page = await facts.browseCatalog('ranked', {
@@ -1561,7 +1623,10 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           textRefined: 'foreign',
           status: 'active',
         });
-        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue(
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([
+          [1, 0],
+        ]);
+        vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue(
           [a, foreign, b].map((fact) => ({ id: fact.id!, similarity: 0.9 })),
         );
         enableTenancy();

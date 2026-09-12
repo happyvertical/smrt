@@ -6,7 +6,6 @@
  */
 
 import {
-  EmbeddingUnavailableError,
   isPostgresDatabase,
   SmrtCollection,
   type SmrtCreateInput,
@@ -549,36 +548,32 @@ export class FactCollection extends SmrtCollection<Fact> {
       return await readScope.finish(page);
     }
 
-    let matches: Array<{ id: string; similarity: number }> | undefined;
-    try {
-      const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
-      matches = explicitTenant
-        ? await withTenantGlobalRead(tenantId, () =>
-            this.semanticSearchIds(query, {
-              ...searchOptions,
-              where: [
-                [
-                  {
-                    tenantId,
-                    ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
-                  },
-                ],
-                [
-                  {
-                    tenantId: null,
-                    ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
-                  },
-                ],
-              ],
-            }),
-          )
-        : await this.semanticSearchIds(query, {
+    const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
+    const result = explicitTenant
+      ? await withTenantGlobalRead(tenantId, () =>
+          this.semanticSearchIdsWithAvailability(query, {
             ...searchOptions,
-            where: includeSuperseded ? undefined : { status: 'active' },
-          });
-    } catch (error) {
-      if (!(error instanceof EmbeddingUnavailableError)) throw error;
-    }
+            where: [
+              [
+                {
+                  tenantId,
+                  ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                },
+              ],
+              [
+                {
+                  tenantId: null,
+                  ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                },
+              ],
+            ],
+          }),
+        )
+      : await this.semanticSearchIdsWithAvailability(query, {
+          ...searchOptions,
+          where: includeSuperseded ? undefined : { status: 'active' },
+        });
+    const matches = result.available ? result.matches : undefined;
 
     const page = await this.listCatalogPage(
       tenantId,

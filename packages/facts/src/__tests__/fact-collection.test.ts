@@ -218,7 +218,8 @@ describe('getEntityBriefing', () => {
       status: 'active',
     });
 
-    vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([[1, 0]]);
+    vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue([
       { id: tenantFact.id!, similarity: 0.9 },
       { id: otherTenantFact.id!, similarity: 0.8 },
     ]);
@@ -242,7 +243,8 @@ describe('getEntityBriefing', () => {
       ),
     );
 
-    vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue(
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockResolvedValue([[1, 0]]);
+    vi.spyOn(facts, 'findSimilarIdsToEmbedding').mockResolvedValue(
       browseFacts.map((fact) => ({ id: fact.id!, similarity: 0.9 })),
     );
     const querySpy = vi.spyOn((facts as any).db, 'query');
@@ -266,8 +268,8 @@ describe('getEntityBriefing', () => {
         String(sql).includes('semantic_candidates'),
       ),
     ).toHaveLength(1);
-    expect(facts.semanticSearchIds).toHaveBeenCalledWith(
-      'catalog',
+    expect(facts.findSimilarIdsToEmbedding).toHaveBeenCalledWith(
+      [1, 0],
       expect.objectContaining({ limit: 15 }),
     );
   });

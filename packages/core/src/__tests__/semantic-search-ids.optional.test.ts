@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SmrtCollection } from '../collection';
+import { EmbeddingUnavailableError, SmrtCollection } from '../collection';
 import { EmbeddingProvider } from '../embeddings/provider';
 import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
@@ -20,6 +20,12 @@ import {
 class SemanticIdProbe extends SmrtObject {}
 class SemanticIdProbes extends SmrtCollection<SemanticIdProbe> {
   static readonly _itemClass = SemanticIdProbe;
+  availability(
+    query: string,
+    options: { field?: string; limit?: number } = {},
+  ) {
+    return this.semanticSearchIdsWithAvailability(query, options);
+  }
 }
 const qualifiedName = '@test:SemanticIdProbe';
 const idFor = (index: number) =>
@@ -129,6 +135,75 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
       appQuery.mockClear();
       systemQuery.mockClear();
     }
+    it('preserves public array results and exposes successful provider availability', async () => {
+      await seed(6);
+      const publicResult = await collection.semanticSearchIds('query', {
+        limit: 2,
+      });
+      expect(publicResult).toHaveLength(2);
+      expect(await collection.availability('query', { limit: 2 })).toEqual({
+        available: true,
+        matches: publicResult,
+      });
+    });
+    it.each([
+      'config',
+      'provider',
+    ] as const)('returns unavailable only at the %s boundary and preserves public throws', async (stage) => {
+      const cause = new Error('provider unavailable');
+      if (stage === 'config')
+        vi.mocked(ObjectRegistry.resolveEmbeddingConfig).mockReturnValue(
+          undefined,
+        );
+      else
+        vi.mocked(EmbeddingProvider.prototype.embed).mockRejectedValue(cause);
+      const result = await collection.availability('query');
+      expect(result.available).toBe(false);
+      if (result.available) throw new Error('expected unavailable');
+      expect(result.error).toBeInstanceOf(EmbeddingUnavailableError);
+      if (stage === 'provider') expect(result.error.cause).toBe(cause);
+      await expect(
+        collection.semanticSearchIds('query'),
+      ).rejects.toBeInstanceOf(EmbeddingUnavailableError);
+    });
+    it.each([
+      'authorization',
+      'ranking',
+      'database',
+    ] as const)('propagates typed %s errors through availability and public API unchanged', async (stage) => {
+      await seed(6);
+      const rejection = new EmbeddingUnavailableError(`${stage} denied`);
+      if (stage === 'authorization')
+        GlobalInterceptors.register({
+          name: 'semantic-id-scope',
+          beforeList: () => {
+            throw rejection;
+          },
+        });
+      else if (stage === 'ranking')
+        vi.spyOn(collection, 'findSimilarIdsToEmbedding').mockRejectedValue(
+          rejection,
+        );
+      else
+        appQuery.mockImplementation(
+          async (sql: string, ...values: unknown[]) => {
+            if (sql.includes('AS eligibility')) throw rejection;
+            return originalAppQuery(sql, ...values);
+          },
+        );
+      await expect(collection.availability('query')).rejects.toBe(rejection);
+      await expect(collection.semanticSearchIds('query')).rejects.toBe(
+        rejection,
+      );
+    });
+    it('rejects invalid fields and ranking bounds without returning unavailable', async () => {
+      await expect(
+        collection.availability('query', { field: 'absent' }),
+      ).rejects.toThrow('not configured');
+      await expect(
+        collection.availability('query', { limit: -1 }),
+      ).rejects.toThrow('nonnegative');
+    });
     it('ranks all eligible batches without fetching application rows or hydrating', async () => {
       await seed(135);
       GlobalInterceptors.register({

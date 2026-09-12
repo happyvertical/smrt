@@ -231,3 +231,8 @@ including empty pages, after raw-query hooks and similarity annotations. The sam
 list context and original caller identity reach before/after hooks. Filtering or
 redaction may shorten a page; browsing does not refill it. Policy rejection
 propagates and never triggers the embedding-unavailable text fallback.
+
+Text fallback is selected by core's provider-origin availability result: only
+missing embedding configuration or a failed query embedding enables it. Errors
+from authorization, ranking, SQL, hydration, or result hooks propagate unchanged,
+even when a caller throws `EmbeddingUnavailableError` from those operations.

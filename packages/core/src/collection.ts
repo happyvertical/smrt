@@ -5092,11 +5092,36 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       where?: SmrtListWhereClause<ModelType>;
     } = {},
   ): Promise<Array<{ id: string; similarity: number }>> {
+    const result = await this.semanticSearchIdsWithAvailability(query, options);
+    if (!result.available) throw result.error;
+    return result.matches;
+  }
+
+  /**
+   * Provider-origin availability for bounded subclass reads. Only missing
+   * configuration or provider.embed failure returns unavailable; all option,
+   * authorization, ranking and database failures propagate unchanged.
+   */
+  protected async semanticSearchIdsWithAvailability(
+    query: string,
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<
+    | { available: true; matches: Array<{ id: string; similarity: number }> }
+    | { available: false; error: EmbeddingUnavailableError }
+  > {
     const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
     if (!config) {
-      throw new EmbeddingUnavailableError(
-        `No embedding configuration found for ${this._itemClass.name}.`,
-      );
+      return {
+        available: false,
+        error: new EmbeddingUnavailableError(
+          `No embedding configuration found for ${this._itemClass.name}.`,
+        ),
+      };
     }
     const field = options.field || config.fields[0];
     if (!getSearchableEmbeddingFields(config).includes(field)) {
@@ -5118,11 +5143,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     try {
       [embedding] = await provider.embed(query);
     } catch (cause) {
-      throw new EmbeddingUnavailableError('Query embedding is unavailable', {
-        cause,
-      });
+      return {
+        available: false,
+        error: new EmbeddingUnavailableError('Query embedding is unavailable', {
+          cause,
+        }),
+      };
     }
-    return this.findSimilarIdsToEmbedding(embedding, { ...options, field });
+    return {
+      available: true,
+      matches: await this.findSimilarIdsToEmbedding(embedding, {
+        ...options,
+        field,
+      }),
+    };
   }
 
   /**
