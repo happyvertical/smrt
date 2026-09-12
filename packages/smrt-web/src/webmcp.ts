@@ -54,6 +54,12 @@ import {
   type WebMcpToolNameOwner,
 } from './webmcp-tool-names.js';
 
+/** Host-supplied per-invocation options, distinct from registration lifetime. */
+export interface WebMcpToolExecutionOptions {
+  /** Caller cancellation. Older hosts may omit execution options entirely. */
+  signal?: AbortSignal;
+}
+
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
   name: string;
@@ -66,7 +72,10 @@ interface WebMcpToolRegistration {
     openWorldHint?: boolean;
     untrustedContentHint?: boolean;
   };
-  execute: (args: Record<string, unknown>) => Promise<string> | string;
+  execute: (
+    args: Record<string, unknown>,
+    options?: WebMcpToolExecutionOptions,
+  ) => Promise<string> | string;
 }
 
 /** The slice of `document.modelContext` this module depends on. */
@@ -147,7 +156,10 @@ export interface WebMcpBespokeToolSpec {
     openWorldHint?: boolean;
     untrustedContentHint?: boolean;
   };
-  execute: (args: Record<string, unknown>) => string | Promise<string>;
+  execute: (
+    args: Record<string, unknown>,
+    options?: WebMcpToolExecutionOptions,
+  ) => string | Promise<string>;
 }
 
 export interface RegisterWebMcpBespokeToolOptions {
@@ -930,9 +942,9 @@ function guardedExecute(
   tool: Pick<ProspectiveTool, 'name' | 'effect'>,
   allowedEffects: ReadonlySet<WebMcpToolEffect>,
   isDisposed: () => boolean,
-  execute: (args: Record<string, unknown>) => Promise<string> | string,
+  execute: WebMcpToolRegistration['execute'],
 ): WebMcpToolRegistration['execute'] {
-  return (args) => {
+  return (args, options) => {
     if (isDisposed()) {
       throw new Error(`WebMCP tool ${tool.name} is no longer registered`);
     }
@@ -941,7 +953,9 @@ function guardedExecute(
         `WebMCP policy no longer allows ${tool.effect} tool ${tool.name}`,
       );
     }
-    return execute(args ?? {});
+    return options === undefined
+      ? execute(args ?? {})
+      : execute(args ?? {}, options);
   };
 }
 

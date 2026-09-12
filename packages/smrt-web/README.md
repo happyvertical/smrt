@@ -191,6 +191,19 @@ collections. Their duplicate tool names or collection/action identities reject
 the registration atomically. Prefer the canonical set for complete generated
 coverage, or compose only disjoint legacy and canonical subsets.
 
+### Bespoke execution cancellation
+
+A bespoke tool's `execute(args, options)` receives the host's optional
+`WebMcpToolExecutionOptions` unchanged, including `options.signal`. Pass that
+signal to your asynchronous operations and check it before publishing results.
+It represents cancellation of that invocation, independently of the registration
+signal that unregisters the tool. Existing one-argument callbacks and hosts that
+omit options remain supported. Cancellation is cooperative and does not roll
+back an operation that has already taken effect.
+
+The same callback type is used by `smrt-svelte`'s `useWebMcpTool`. This forwarding
+contract does not add cancellation to generated REST or collection operations.
+
 ### Tool names are locked per document
 
 Generated model tools, the six fixed `smrt_ui_*` tools a UI layer registers
