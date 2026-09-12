@@ -9,8 +9,11 @@ import {
   it,
   vi,
 } from 'vitest';
-import { getDDLStrategy } from '../../schema/ddl/index.js';
 import { SchemaGenerator } from '../../schema/generator.js';
+import {
+  collectManifestTables,
+  renderCollectedManifestTable,
+} from '../../schema/manifest-schema.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import {
   collectNullEqualIndexTargets,
@@ -73,21 +76,25 @@ suite('NULL-equal framework identities on real PostgreSQL (#2834)', () => {
     );
   }
   async function create(definition: SchemaDefinition, legacy = false) {
-    const ddl = getDDLStrategy('postgres');
-    await db.query(ddl.generateCreateTable(definition));
-    for (const sql of ddl.generateIndexes(
-      legacy
-        ? {
-            ...definition,
-            indexes: definition.indexes?.map((index) => ({
-              ...index,
-              nullsNotDistinct: undefined,
-            })),
-          }
-        : definition,
-    ))
-      await db.query(sql);
+    const input = legacy
+      ? {
+          ...definition,
+          indexes: definition.indexes.map((index) => ({
+            ...index,
+            nullsNotDistinct: undefined,
+          })),
+        }
+      : definition;
+    const raw = JSON.parse(JSON.stringify(input));
+    const table = collectManifestTables([
+      { schema: raw, source: '@test:NullIdentity2834' },
+    ]).get(definition.tableName);
+    if (!table) throw new Error('raw manifest table missing');
+    const ddl = renderCollectedManifestTable(table, 'postgres');
+    await db.query(ddl.createTable);
+    for (const sql of ddl.indexes) await db.query(sql);
   }
+
   const data = (tenant: string | null, name = 'shared') => ({
     id: randomUUID(),
     slug: name,

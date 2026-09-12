@@ -61,6 +61,7 @@ export interface ManifestIndexLike {
   name: string;
   columns?: string[];
   unique?: boolean;
+  nullsNotDistinct?: boolean;
   where?: string;
   jsonPath?: IndexDefinition['jsonPath'];
 }
@@ -119,6 +120,8 @@ export function manifestIndexesToDefinitions(
       columns: Array.isArray(index.columns) ? [...index.columns] : [],
     };
     if (index.unique !== undefined) definition.unique = index.unique;
+    if (index.nullsNotDistinct !== undefined)
+      definition.nullsNotDistinct = index.nullsNotDistinct;
     if (index.where) definition.where = index.where;
     if (index.jsonPath?.column && index.jsonPath.path) {
       definition.jsonPath = { ...index.jsonPath };
