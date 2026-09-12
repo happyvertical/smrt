@@ -47,6 +47,14 @@ export interface MembershipOptions extends SmrtObjectOptions {
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
+  // Serves the tenant-scoped membership lookup without combining the two
+  // foreign-key indexes at query time (#2821).
+  indexes: [
+    {
+      name: 'memberships_tenant_id_user_id_idx',
+      columns: ['tenantId', 'userId'],
+    },
+  ],
 })
 export class Membership extends SmrtObject implements MembershipContract {
   /**
