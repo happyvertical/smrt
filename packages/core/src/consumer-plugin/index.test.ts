@@ -9,7 +9,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { OxcScanner } from '@happyvertical/smrt-scanner';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import {
   type ArtifactFilesystem,
@@ -415,6 +416,154 @@ describe('smrtConsumer registration generation', () => {
 
     expect(readFileSync(knowledgePath, 'utf-8')).toBe(
       '{"previous":"artifact"}',
+    );
+  });
+
+  it('uses the current producer scan after an intent changes at the same path', async () => {
+    const sourcePath = join(tmpDir, 'src', 'orders.intents.ts');
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      sourcePath,
+      `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const orders = defineIntent({
+  id: 'orders.previous',
+  description: 'Previous declaration',
+  target: { registry: 'dataSurface', controlId: 'orders', kind: 'table' },
+});`,
+    );
+    const objectPath = join(tmpDir, 'src', 'order.ts');
+    writeFileSync(
+      objectPath,
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+
+@smrt()
+export class PreviousOrder extends SmrtObject {
+  status = '';
+}`,
+    );
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const producer = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+    const resolvedConfig = {
+      root: tmpDir,
+      build: {},
+      plugins: [producer, consumer],
+    };
+    await producer.configResolved?.call(producer, resolvedConfig as any);
+    await consumer.configResolved?.call(consumer, resolvedConfig as any);
+    // The first buildStart reuses configResolved's scan. The next one is the
+    // watch-style refresh that can run in parallel with the consumer.
+    await producer.buildStart?.call(producer);
+
+    writeFileSync(
+      sourcePath,
+      `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const orders = defineIntent({
+  id: 'orders.current',
+  description: 'Current declaration',
+  target: { registry: 'dataSurface', controlId: 'orders', kind: 'table' },
+});`,
+    );
+    writeFileSync(
+      objectPath,
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';
+
+@smrt()
+export class CurrentOrder extends SmrtObject {
+  status = '';
+}`,
+    );
+    let releaseScan: (() => void) | undefined;
+    const scanGate = new Promise<void>((resolve) => {
+      releaseScan = resolve;
+    });
+    const originalScan = OxcScanner.prototype.scanAndResolve;
+    const delayedScan = vi
+      .spyOn(OxcScanner.prototype, 'scanAndResolve')
+      .mockImplementation(async function (...args) {
+        await scanGate;
+        return originalScan.apply(this, args);
+      });
+    try {
+      const producerRefresh = producer.buildStart?.call(producer);
+      // Give the producer hook its synchronous turn to register its in-flight
+      // scan, then start the consumer while that scan remains blocked.
+      await Promise.resolve();
+      let consumerComplete = false;
+      const consumerRefresh = consumer.buildStart?.call(consumer).then(() => {
+        consumerComplete = true;
+      });
+      await Promise.resolve();
+      expect(consumerComplete).toBe(false);
+      releaseScan?.();
+      await Promise.all([producerRefresh, consumerRefresh]);
+    } finally {
+      delayedScan.mockRestore();
+      releaseScan?.();
+    }
+
+    const knowledge = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(knowledge.agentSurface.intents).toEqual([
+      expect.objectContaining({
+        id: 'orders.current',
+        description: 'Current declaration',
+        sourceFile: 'src/orders.intents.ts',
+      }),
+    ]);
+    expect(
+      knowledge.sourceHashes['agentSurface:src/orders.intents.ts'],
+    ).toBeDefined();
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(manifest.objects['consumer-app:CurrentOrder']).toBeDefined();
+    expect(manifest.objects['consumer-app:PreviousOrder']).toBeUndefined();
+  });
+
+  it('does not rehash a prior artifact agent surface without a producer', async () => {
+    const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
+    mkdirSync(join(tmpDir, '.smrt'), { recursive: true });
+    writeFileSync(
+      knowledgePath,
+      JSON.stringify({
+        agentSurface: {
+          intents: [
+            {
+              id: 'orders.stale',
+              description: 'Stale declaration',
+              sourceFile: 'src/orders.intents.ts',
+            },
+          ],
+          playbooks: [],
+          diagnostics: [],
+        },
+      }),
+    );
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await consumer.buildStart?.call(consumer);
+
+    const knowledge = JSON.parse(readFileSync(knowledgePath, 'utf-8'));
+    expect(knowledge.agentSurface).toBeUndefined();
+    expect(knowledge.sourceHashes).not.toHaveProperty(
+      'agentSurface:src/orders.intents.ts',
     );
   });
 

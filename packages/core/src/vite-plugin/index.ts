@@ -198,6 +198,14 @@ export interface SmrtPluginApi {
   resolveKnowledgeConfig(
     manifest: SmartObjectManifest,
   ): Promise<DomainKnowledgeConfig>;
+  /**
+   * Return declarations produced by this plugin's current build. This waits
+   * until that build has published its local manifest, so companion plugins
+   * never merge an older manifest with declarations from a newer scan.
+   */
+  resolveKnowledgeAgentSurface(): Promise<
+    DomainKnowledgeAgentSurface | undefined
+  >;
 }
 
 const VIRTUAL_MODULES = {
@@ -498,6 +506,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
    * manifest and stays runtime-focused; this belongs to the knowledge artifact.
    */
   let agentSurface: DomainKnowledgeAgentSurface | undefined;
+  let activeManifestScan: Promise<SmartObjectManifest> | undefined;
+  let activeBuildStart: Promise<void> | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
   let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
@@ -719,6 +729,38 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     );
   }
 
+  async function runBuildStart(): Promise<void> {
+    if (hasFreshConfigResolvedManifest) {
+      hasFreshConfigResolvedManifest = false;
+      // configureServer may be attached between configResolved and buildStart.
+      // Emit declarations from the reused manifest even though the scanner
+      // itself does not need to run again.
+      if (generateTypes && server && manifest) {
+        await generateTypeDeclarationFile(
+          manifest,
+          projectRoot,
+          typeDeclarationsPath,
+        );
+      }
+      return;
+    }
+
+    // Rescan files on build start in all modes.
+    manifest = await scanAndGenerateManifest(projectRoot);
+
+    // Write local manifest for CLI discovery (Issue #963).
+    if (manifest && !generationSnapshot) {
+      await writeLocalManifest(manifest, projectRoot);
+    }
+    if (manifest) {
+      validateLibraryMinifySetup(manifest, 'buildStart');
+      validateConsumerPluginSetup(manifest, 'buildStart');
+      if (validateCliApiCoherence) {
+        validateCliIncludeAgainstApi(manifest);
+      }
+    }
+  }
+
   return {
     name: 'smrt-auto-service',
     // SvelteKit inventories routes in a `config.order = 'pre'` hook. Put SMRT
@@ -761,6 +803,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       },
       resolveKnowledgeConfig: (currentManifest: SmartObjectManifest) =>
         resolveKnowledgeConfig(projectRoot, currentManifest),
+      async resolveKnowledgeAgentSurface() {
+        await (activeBuildStart ?? activeManifestScan);
+        return agentSurface;
+      },
     } satisfies SmrtPluginApi,
 
     async configResolved(resolvedConfig) {
@@ -822,33 +868,13 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     },
 
     async buildStart() {
-      if (hasFreshConfigResolvedManifest) {
-        hasFreshConfigResolvedManifest = false;
-        // configureServer may be attached between configResolved and
-        // buildStart. Emit declarations from the reused manifest even though
-        // the scanner itself does not need to run again.
-        if (generateTypes && server && manifest) {
-          await generateTypeDeclarationFile(
-            manifest,
-            projectRoot,
-            typeDeclarationsPath,
-          );
-        }
-        return;
-      }
-
-      // Rescan files on build start in all modes
-      manifest = await scanAndGenerateManifest(projectRoot);
-
-      // Write local manifest for CLI discovery (Issue #963)
-      if (manifest && !generationSnapshot) {
-        await writeLocalManifest(manifest, projectRoot);
-      }
-      if (manifest) {
-        validateLibraryMinifySetup(manifest, 'buildStart');
-        validateConsumerPluginSetup(manifest, 'buildStart');
-        if (validateCliApiCoherence) {
-          validateCliIncludeAgainstApi(manifest);
+      const build = runBuildStart();
+      activeBuildStart = build;
+      try {
+        await build;
+      } finally {
+        if (activeBuildStart === build) {
+          activeBuildStart = undefined;
         }
       }
     },
@@ -1206,7 +1232,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     },
   };
 
-  async function scanAndGenerateManifest(
+  function scanAndGenerateManifest(
+    rootDir: string,
+  ): Promise<SmartObjectManifest> {
+    const scan = scanAndGenerateManifestImpl(rootDir);
+    const tracked = scan.finally(() => {
+      if (activeManifestScan === tracked) {
+        activeManifestScan = undefined;
+      }
+    });
+    activeManifestScan = tracked;
+    return tracked;
+  }
+
+  async function scanAndGenerateManifestImpl(
     rootDir: string,
   ): Promise<SmartObjectManifest> {
     if (generationSnapshot) {

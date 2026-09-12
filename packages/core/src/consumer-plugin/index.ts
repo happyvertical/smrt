@@ -205,12 +205,19 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
         // Aggregate type manifests from discovered packages
         typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot);
+        // Wait before reading .smrt/manifest.json: a producer's parallel
+        // buildStart writes its current local manifest after scanning. Reading
+        // first could merge an older local manifest with a newer surface.
+        const agentSurface = producerApi
+          ? await producerApi.resolveKnowledgeAgentSurface()
+          : undefined;
 
         // Save aggregated manifest for CLI discovery
         await saveAggregatedManifest(
           typeManifest,
           projectRoot,
           producerApi?.resolveKnowledgeConfig,
+          agentSurface,
         );
 
         // Generate registration file for CLI class loading
@@ -504,6 +511,7 @@ async function saveAggregatedManifest(
   manifest: ConsumerManifest,
   projectRoot: string,
   resolveKnowledgeConfig?: SmrtPluginApi['resolveKnowledgeConfig'],
+  agentSurface?: DomainKnowledgeAgentSurface,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const manifestPath = path.join(smrtDir, 'manifest.json');
@@ -544,19 +552,12 @@ async function saveAggregatedManifest(
     // plugin merges external package entries into the same manifest. Refresh
     // the artifact from the merged manifest so its source hash always names
     // the manifest that CLI discovery and server runtimes actually consume.
-    // Preserve the producer's scanner-derived agent surface when present:
-    // the consumer plugin deliberately does not load the scanner.
+    // The consumer deliberately does not load the scanner. Only carry a
+    // surface from the current producer scan: a prior artifact can describe
+    // declarations that have since changed while retaining the same path.
+    // Re-hashing that current path under a stale declaration would make an
+    // incorrect agent contract look fresh.
     const knowledgePath = path.join(smrtDir, 'smrt-knowledge.json');
-    let agentSurface: DomainKnowledgeAgentSurface | undefined;
-    try {
-      if (fs.existsSync(knowledgePath)) {
-        agentSurface = JSON.parse(fs.readFileSync(knowledgePath, 'utf-8'))
-          .agentSurface as DomainKnowledgeAgentSurface | undefined;
-      }
-    } catch {
-      // A malformed prior artifact must not prevent the authoritative manifest
-      // from being written; buildDomainKnowledgeManifest will replace it.
-    }
     const packageJsonPath = path.join(projectRoot, 'package.json');
     const packageJson = fs.existsSync(packageJsonPath)
       ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
