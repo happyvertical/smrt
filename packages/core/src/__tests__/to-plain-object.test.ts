@@ -153,6 +153,37 @@ describe('SmrtObject.toPlainObject', () => {
     expect(object.toPlainObject()).toMatchObject({ values: legacy });
   });
 
+  it('coerces a proxy array length once before reading indices', () => {
+    const makePayload = () => {
+      let coercions = 0;
+      const length = {
+        valueOf: () => {
+          coercions++;
+          return 1.9;
+        },
+      };
+      return {
+        values: new Proxy(['first', 'second'], {
+          get(target, key, receiver) {
+            return key === 'length'
+              ? length
+              : Reflect.get(target, key, receiver);
+          },
+        }),
+        coercions: () => coercions,
+      };
+    };
+    const direct = makePayload();
+    const legacy = makePayload();
+    const object = new PlainObjectSerializationProbe();
+    object.transformJSON = () => ({ values: direct.values });
+    expect(object.toPlainObject()).toEqual(
+      JSON.parse(JSON.stringify({ values: legacy.values })),
+    );
+    expect(direct.coercions()).toBe(1);
+    expect(legacy.coercions()).toBe(1);
+  });
+
   it('preserves cross-realm boxed primitives and bigint hooks', () => {
     const [boxedBoolean, boxedNumber, boxedString] = runInNewContext(
       '[new Boolean(true), new Number(3), new String("abc")]',
@@ -221,10 +252,106 @@ describe('SmrtObject.toPlainObject', () => {
     );
   });
 
-  it('reports representative per-call benchmark measurements without timing assertions', () => {
+  it('decodes native raw JSON primitive literals once', () => {
     const object = new PlainObjectSerializationProbe();
-    const callsPerSample = 2_000;
-    const samples = 7;
+    const literals = ['123', 'true', 'null', '"text"', '-0', '1e400'];
+    const nativeJSON = JSON as typeof JSON & { rawJSON(text: string): unknown };
+    object.transformJSON = () => ({
+      literals: literals.map((literal) => nativeJSON.rawJSON(literal)),
+    });
+    expect(object.toPlainObject()).toEqual(JSON.parse(JSON.stringify(object)));
+  });
+
+  it('invokes hooks without reading their call property', () => {
+    const object = new PlainObjectSerializationProbe();
+    const nested = {
+      marker: 'nested',
+      toJSON(key: string) {
+        return { marker: this.marker, key };
+      },
+    };
+    Object.defineProperty(nested.toJSON, 'call', {
+      get() {
+        throw new Error('call property must not be read');
+      },
+    });
+    object.transformJSON = () => ({ nested });
+    expect(object.toPlainObject()).toEqual(JSON.parse(JSON.stringify(object)));
+    expect(object.toPlainObject()).toEqual({
+      nested: { marker: 'nested', key: 'nested' },
+    });
+  });
+
+  it('does not invoke a replacement value toJSON hook again', () => {
+    const object = new PlainObjectSerializationProbe();
+    let replacementHookCalls = 0;
+    const replacement = {
+      retained: true,
+      toJSON() {
+        replacementHookCalls++;
+        return 'wrong';
+      },
+    };
+    object.transformJSON = () => ({
+      replacement: { toJSON: () => replacement },
+      dateReplacement: { toJSON: () => new Date(0) },
+    });
+    expect(object.toPlainObject()).toEqual(JSON.parse(JSON.stringify(object)));
+    expect(object.toPlainObject()).toEqual({
+      replacement: { retained: true },
+      dateReplacement: {},
+    });
+    expect(replacementHookCalls).toBe(0);
+  });
+
+  it('copies shared siblings independently and rejects cycles on the active path', () => {
+    const object = new PlainObjectSerializationProbe();
+    const shared = { values: [1, 2] };
+    object.transformJSON = () => ({ left: shared, right: shared });
+    const plain = object.toPlainObject();
+    expect(plain).toEqual(JSON.parse(JSON.stringify(object)));
+    expect(plain.left).not.toBe(plain.right);
+    (plain.left as typeof shared).values.push(3);
+    expect((plain.right as typeof shared).values).toEqual([1, 2]);
+    expect(shared.values).toEqual([1, 2]);
+
+    const cyclic: unknown[] = [];
+    cyclic.push({ back: cyclic });
+    object.transformJSON = () => ({ cyclic });
+    expect(() => object.toPlainObject()).toThrow(TypeError);
+    expect(() => JSON.stringify(object)).toThrow(TypeError);
+  });
+
+  it('rejects boxed numbers whose numeric coercion returns bigint', () => {
+    const object = new PlainObjectSerializationProbe();
+    const boxed = Object.assign(new Number(1), { valueOf: () => 2n });
+    object.transformJSON = () => ({ boxed });
+    expect(() => JSON.stringify(object)).toThrow(TypeError);
+    expect(() => object.toPlainObject()).toThrow(TypeError);
+  });
+
+  it.each([
+    'row',
+    'nested',
+  ] as const)('reports %s per-call benchmark measurements without timing assertions', (shape) => {
+    const object =
+      shape === 'nested'
+        ? new PlainObjectSerializationProbe()
+        : new SmrtObject();
+    if (shape === 'row') {
+      object.transformJSON = (data) => ({
+        ...data,
+        transformed: true,
+        title: 'Representative list row',
+        quantity: 12,
+        rate: 0.25,
+        active: true,
+        tags: ['published', 'featured'],
+        metadata: { locale: 'en', priority: 3 },
+      });
+    }
+    const callsPerSample = 5_000;
+    const samples = 11;
     const measure = (operation: () => unknown): number => {
       const start = performance.now();
       for (let index = 0; index < callsPerSample; index++) {
@@ -258,8 +385,9 @@ describe('SmrtObject.toPlainObject', () => {
       ];
 
     console.info(
-      `toPlainObject benchmark (${samples} interleaved x ${callsPerSample} representative rows): direct median=${median(directSamples).toFixed(2)}ms legacy median=${median(legacySamples).toFixed(2)}ms`,
+      `toPlainObject ${shape} benchmark (${samples} interleaved x ${callsPerSample} representative rows): direct median=${median(directSamples).toFixed(2)}ms legacy median=${median(legacySamples).toFixed(2)}ms`,
     );
+    expect(object.toPlainObject()).toEqual(JSON.parse(JSON.stringify(object)));
     expect(object.toPlainObject().transformed).toBe(true);
   });
 });

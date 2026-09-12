@@ -82,6 +82,10 @@ function isDuckDbHugeInt(value: unknown): boolean {
 }
 
 const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
+// Available on supported Node versions; the project's ES2023 lib predates it.
+const nativeJSON = JSON as typeof JSON & {
+  isRawJSON(value: unknown): value is { rawJSON: string };
+};
 
 type PlainJSONValue =
   | null
@@ -110,14 +114,14 @@ function getBoxedPrimitiveKind(value: object): BoxedPrimitiveKind | undefined {
 function toPlainJSONValue(
   value: unknown,
   key: string,
-  ancestors: Set<object>,
+  ancestors: object[],
   applyToJSON = true,
 ): PlainJSONValue | typeof PLAIN_JSON_OMITTED {
   if (value === null) {
     return null;
   }
 
-  const valueType = typeof value;
+  let valueType = typeof value;
   if (
     applyToJSON &&
     (valueType === 'object' ||
@@ -126,7 +130,9 @@ function toPlainJSONValue(
   ) {
     const toJSON = (value as { toJSON?: unknown }).toJSON;
     if (typeof toJSON === 'function') {
-      return toPlainJSONValue(toJSON.call(value, key), key, ancestors, false);
+      value = Reflect.apply(toJSON, value, [key]);
+      if (value === null) return null;
+      valueType = typeof value;
     }
   }
 
@@ -149,9 +155,16 @@ function toPlainJSONValue(
   }
 
   const objectValue = value as Record<string, unknown>;
-  switch (getBoxedPrimitiveKind(objectValue)) {
+  // Arrays cannot carry boxed primitive slots; avoid brand checks on this hot path.
+  const isArray = Array.isArray(objectValue);
+  // rawJSON contains an already-encoded primitive. Decode that literal once;
+  // ordinary payloads never encode or decode an intermediate JSON string.
+  if (!isArray && nativeJSON.isRawJSON(objectValue)) {
+    return JSON.parse(objectValue.rawJSON) as PlainJSONValue;
+  }
+  switch (isArray ? undefined : getBoxedPrimitiveKind(objectValue)) {
     case 'number': {
-      const numberValue = Number(objectValue);
+      const numberValue = +(objectValue as unknown as number);
       return Number.isFinite(numberValue)
         ? numberValue === 0
           ? 0
@@ -166,15 +179,21 @@ function toPlainJSONValue(
       throw new TypeError('Do not know how to serialize a BigInt');
   }
 
-  if (ancestors.has(objectValue)) {
+  // JSON tracks only the active path: shared siblings are copied independently.
+  // A short stack avoids Set allocation and hashing for typical row payloads.
+  if (ancestors.includes(objectValue)) {
     throw new TypeError('Converting circular structure to JSON');
   }
-  ancestors.add(objectValue);
+  ancestors.push(objectValue);
 
   try {
-    if (Array.isArray(objectValue)) {
+    if (isArray) {
       const result: PlainJSONValue[] = [];
-      const length = objectValue.length;
+      // ToLength is observable for array proxies; coerce once before iteration.
+      const length = Math.min(
+        Math.max(Math.trunc(+objectValue.length) || 0, 0),
+        Number.MAX_SAFE_INTEGER,
+      );
       for (let index = 0; index < length; index++) {
         const item = toPlainJSONValue(
           objectValue[index],
@@ -204,7 +223,7 @@ function toPlainJSONValue(
     }
     return result;
   } finally {
-    ancestors.delete(objectValue);
+    ancestors.pop();
   }
 }
 
@@ -1692,7 +1711,7 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   toPlainObject(): Record<string, unknown> {
-    return toPlainJSONValue(this.toJSON(), '', new Set(), false) as Record<
+    return toPlainJSONValue(this.toJSON(), '', [], false) as Record<
       string,
       unknown
     >;
