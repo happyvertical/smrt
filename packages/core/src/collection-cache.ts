@@ -12,8 +12,11 @@
  * - SMRT owns every mutation path (`save()`/`delete()` back
  *   `collection.create()`, `getOrUpsert()`, junction attach/detach), so all
  *   writes invalidate the affected table's entries in-process automatically.
- * - Entries are scoped per database identity (`db.url`) and per table, so
- *   multi-DB processes and STI siblings (which share a table) stay coherent.
+ * - Entries and flights are partitioned by the concrete DatabaseInterface
+ *   object, final SQL and parameters. Distinct transaction/connection handles
+ *   never share rows or failures, even when their database URL is identical.
+ * - Invalidation remains URL/table scoped, so a write clears every handle's
+ *   entries and STI siblings (which share a table) stay coherent.
  * - Caches are per-process. With multiple replicas, a local invalidation
  *   leaves peers stale until TTL unless cross-process invalidation is opted
  *   into (`crossProcess: true`), which broadcasts over the database
@@ -109,6 +112,66 @@ export const PROCESS_ID = crypto.randomUUID();
 const store = new Map<string, Map<string, Map<string, CacheEntry>>>();
 
 /**
+ * Reads currently populating a cache entry, scoped the same way as cached
+ * rows. A shared promise prevents concurrent identical cache misses from
+ * exhausting the connection pool with duplicate SELECTs.
+ */
+const inFlightReads = new Map<
+  string,
+  Map<string, Map<string, Map<number, Promise<Record<string, unknown>[]>>>>
+>();
+
+/**
+ * Share an in-progress cache miss with callers for the same database, table,
+ * and final query key. Rejected reads are removed too, so a later caller can
+ * retry rather than inheriting a permanently failed promise.
+ */
+export function getOrCreateInFlightRead(
+  dbKey: string,
+  tableName: string,
+  queryKey: string,
+  generation: number,
+  read: () => Promise<Record<string, unknown>[]>,
+): Promise<Record<string, unknown>[]> {
+  let tables = inFlightReads.get(dbKey);
+  if (!tables) {
+    tables = new Map();
+    inFlightReads.set(dbKey, tables);
+  }
+  let entries = tables.get(tableName);
+  if (!entries) {
+    entries = new Map();
+    tables.set(tableName, entries);
+  }
+
+  let generations = entries.get(queryKey);
+  if (!generations) {
+    generations = new Map();
+    entries.set(queryKey, generations);
+  }
+  const existing = generations.get(generation);
+  if (existing) return existing;
+
+  let inFlight: Promise<Record<string, unknown>[]>;
+  inFlight = read().finally(() => {
+    if (generations.get(generation) === inFlight) {
+      generations.delete(generation);
+      if (generations.size === 0 && entries.get(queryKey) === generations) {
+        entries.delete(queryKey);
+        if (entries.size === 0 && tables.get(tableName) === entries) {
+          tables.delete(tableName);
+          if (tables.size === 0 && inFlightReads.get(dbKey) === tables) {
+            inFlightReads.delete(dbKey);
+          }
+        }
+      }
+    }
+  });
+  generations.set(generation, inFlight);
+  return inFlight;
+}
+
+/**
  * Monotonic invalidation generation per `dbKey\0tableName`, bumped on every
  * invalidation. A read captures the generation *before* its DB round-trip and
  * passes it to `setCachedRows`; if an invalidating write landed during the
@@ -132,10 +195,10 @@ export function getCacheGeneration(dbKey: string, tableName: string): number {
 }
 
 /**
- * Fallback identities for database instances that expose no URL
- * (each such instance gets its own scope, never shared).
+ * Concrete executor identities. URL equality does not imply transaction or
+ * snapshot equality; each public database-interface object has its own scope.
  */
-const fallbackDbKeys = new WeakMap<object, string>();
+const dbInstanceKeys = new WeakMap<object, string>();
 
 /**
  * Resolve a stable cache scope for a database instance.
@@ -153,10 +216,14 @@ export function resolveDbCacheKey(db: DatabaseInterface): string {
   const url = db.url || dbWithConfig.config?.url;
   if (url && url !== ':memory:') return url;
 
-  let key = fallbackDbKeys.get(db);
+  return resolveDbInstanceKey(db);
+}
+
+function resolveDbInstanceKey(db: DatabaseInterface): string {
+  let key = dbInstanceKeys.get(db);
   if (!key) {
     key = `smrt-db:${crypto.randomUUID()}`;
-    fallbackDbKeys.set(db, key);
+    dbInstanceKeys.set(db, key);
   }
   return key;
 }
@@ -165,9 +232,17 @@ export function resolveDbCacheKey(db: DatabaseInterface): string {
  * Build the cache key for a query. The final SQL and bound parameters fully
  * normalize the query shape — they already include STI discriminator
  * filters, interceptor-injected tenant filters, ORDER BY, LIMIT and OFFSET.
+ * Collection reads also supply their concrete executor so neither pending
+ * reads nor completed rows cross connection/transaction boundaries. The
+ * surrounding URL/table scope remains shared for invalidation generations.
  */
-export function buildQueryCacheKey(sql: string, params: unknown[]): string {
-  return `${sql}\0${JSON.stringify(params)}`;
+export function buildQueryCacheKey(
+  sql: string,
+  params: unknown[],
+  db?: DatabaseInterface,
+): string {
+  const executor = db ? `${resolveDbInstanceKey(db)}\0` : '';
+  return `${executor}${sql}\0${JSON.stringify(params)}`;
 }
 
 /**
@@ -265,6 +340,7 @@ export function invalidateCollectionCache(
  */
 export function resetCollectionCache(): void {
   store.clear();
+  inFlightReads.clear();
   generations.clear();
   crossProcessInterest.clear();
   stopCacheInvalidationListeners();

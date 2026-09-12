@@ -211,6 +211,110 @@ describe('collection read cache (issue #1498)', () => {
   });
 
   describe('per-call list({ cache })', () => {
+    it('single-flights concurrent cache misses and retries after a failed read', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      const originalQuery = db.query.bind(db);
+      let releaseFirstRead: (() => void) | undefined;
+      const firstRead = new Promise<void>((resolve) => {
+        releaseFirstRead = resolve;
+      });
+      let shouldFail = true;
+      const querySpy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          if (
+            sql.startsWith('SELECT') &&
+            sql.includes('cache_test_products') &&
+            shouldFail
+          ) {
+            await firstRead;
+            throw new Error('transient read failure');
+          }
+          return await originalQuery(sql, ...params);
+        });
+
+      const concurrentReads = Array.from({ length: 20 }, () =>
+        products.list({ cache: { ttl: 60_000 } }),
+      );
+      await vi.waitFor(() => {
+        expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(1);
+      });
+      releaseFirstRead?.();
+      await expect(Promise.all(concurrentReads)).rejects.toThrow(
+        'transient read failure',
+      );
+
+      shouldFail = false;
+      await expect(
+        products.list({ cache: { ttl: 60_000 } }),
+      ).resolves.toHaveLength(1);
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
+    });
+
+    it('gives concurrent cache-miss callers independent result rows', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      const [first, second] = await Promise.all([
+        products.list({ select: ['name'], cache: { ttl: 60_000 } }),
+        products.list({ select: ['name'], cache: { ttl: 60_000 } }),
+      ]);
+      first[0].name = 'Mutated locally';
+      expect(second[0].name).toBe('Widget');
+    });
+
+    it('does not single-flight distinct query keys', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Cheap', price: 1 });
+      await products.create({ name: 'Expensive', price: 100 });
+
+      const querySpy = vi.spyOn(db, 'query');
+      await Promise.all([
+        products.list({
+          where: { 'price <': 50 },
+          cache: { ttl: 60_000 },
+        }),
+        products.list({
+          where: { 'price >': 50 },
+          cache: { ttl: 60_000 },
+        }),
+      ]);
+
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
+    });
+
+    it('does not join a pre-invalidation read after a write', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Before', price: 1 });
+      const originalQuery = db.query.bind(db);
+      let releaseOldRead: (() => void) | undefined;
+      const oldRead = new Promise<void>((resolve) => {
+        releaseOldRead = resolve;
+      });
+      let selectCount = 0;
+      const querySpy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          if (sql.startsWith('SELECT') && sql.includes('cache_test_products')) {
+            selectCount++;
+            if (selectCount === 1) await oldRead;
+          }
+          return await originalQuery(sql, ...params);
+        });
+
+      const stale = products.list({ cache: { ttl: 60_000 } });
+      await vi.waitFor(() => expect(selectCount).toBe(1));
+      await products.create({ name: 'After', price: 2 });
+      const fresh = products.list({ cache: { ttl: 60_000 } });
+      await vi.waitFor(() => expect(selectCount).toBe(2));
+      await expect(fresh).resolves.toHaveLength(2);
+      releaseOldRead?.();
+      await stale;
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(2);
+    });
+
     it('serves repeated queries from cache without hitting the database', async () => {
       const products = await CacheTestProductCollection.create({ db });
       await products.create({ name: 'Widget', price: 9.99 });

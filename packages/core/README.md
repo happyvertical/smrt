@@ -267,6 +267,10 @@ Because s-m-r-t owns every mutation path (`save()`, `delete()`,
 automatically invalidates the affected table's cached entries in-process —
 including STI siblings sharing the table. Cached values are raw rows:
 hydration and read interceptors (tenancy, audit) still run on every call.
+Concurrent identical misses coalesce only on the same concrete database
+interface. Distinct connection or transaction interfaces never share pending
+reads or completed rows, even with the same URL; invalidation still clears
+all interfaces for that URL and table.
 
 Caches are per-process. For multi-replica deployments, add
 `crossProcess: true` to broadcast invalidations over the database adapter's
