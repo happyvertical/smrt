@@ -82,17 +82,22 @@ export class SmrtDataSurfaceActionTask extends SmrtObject {
     }
     // A runner context owns scope even when the queued job is global. Persisted
     // instance configuration must never replace that explicit null.
-    const runnerTenantId = executionContext?.job.tenantId;
-    if (
-      executionContext &&
-      runnerTenantId !== null &&
-      (typeof runnerTenantId !== 'string' || runnerTenantId.length === 0)
-    ) {
-      throw new Error('Invalid durable data-surface action job tenant');
+    let jobTenantId: string | null;
+    if (executionContext) {
+      const runnerTenantId = executionContext.job.tenantId;
+      if (runnerTenantId === null) {
+        jobTenantId = null;
+      } else if (
+        typeof runnerTenantId === 'string' &&
+        runnerTenantId.length > 0
+      ) {
+        jobTenantId = runnerTenantId;
+      } else {
+        throw new Error('Invalid durable data-surface action job tenant');
+      }
+    } else {
+      jobTenantId = this.tenantId ?? getTenantId() ?? null;
     }
-    const jobTenantId = executionContext
-      ? runnerTenantId
-      : (this.tenantId ?? getTenantId() ?? null);
     if (
       args?.version !== 1 ||
       envelope?.version !== 1 ||
