@@ -3,6 +3,7 @@ import { TaskRunner } from '../runner.js';
 
 type PollingInternals = {
   nextPollDelay(foundWork: boolean): number;
+  resetIdlePollDelay(): void;
 };
 
 function pollingInternals(runner: TaskRunner): PollingInternals {
@@ -43,5 +44,20 @@ describe('TaskRunner idle polling (#2820)', () => {
     expect(polling.nextPollDelay(false)).toBe(25);
     expect(polling.nextPollDelay(false)).toBe(50);
     expect(polling.nextPollDelay(false)).toBe(50);
+  });
+
+  it('starts a new polling cycle at the configured interval after an idle stop', () => {
+    const runner = new TaskRunner({
+      pollInterval: 100,
+      idlePollInterval: 1_000,
+    });
+    const polling = pollingInternals(runner);
+
+    polling.nextPollDelay(false);
+    polling.nextPollDelay(false);
+    polling.nextPollDelay(false);
+    polling.resetIdlePollDelay();
+
+    expect(polling.nextPollDelay(false)).toBe(100);
   });
 });

@@ -277,6 +277,7 @@ export class TaskRunner extends EventEmitter {
     }
 
     // Start polling loop
+    this.resetIdlePollDelay();
     this.startPolling();
 
     // Start heartbeat loop (per-job telemetry only; no longer gates recovery)
@@ -395,13 +396,17 @@ export class TaskRunner extends EventEmitter {
    */
   private nextPollDelay(foundWork: boolean): number {
     if (foundWork) {
-      this.idlePollDelayMs = this.config.pollInterval;
+      this.resetIdlePollDelay();
       return this.config.pollInterval;
     }
 
     const delay = this.idlePollDelayMs;
     this.idlePollDelayMs = Math.min(delay * 2, this.maxIdlePollIntervalMs);
     return delay;
+  }
+
+  private resetIdlePollDelay(): void {
+    this.idlePollDelayMs = this.config.pollInterval;
   }
 
   private async poll(): Promise<boolean> {
