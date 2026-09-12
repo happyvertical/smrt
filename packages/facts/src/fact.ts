@@ -15,6 +15,7 @@
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { encodeCatalogSearch } from './catalog-search';
 import type {
   EvolutionType,
   FactMetadata,
@@ -45,6 +46,10 @@ export class Fact extends SmrtObject {
 
   @field()
   textRaw: string = '';
+
+  /** Derived search storage. NULL requires the explicit catalog backfill. */
+  @field({ type: 'text', nullable: true, readonly: true, sensitive: true })
+  catalogSearch: string | null = null;
 
   @field({ required: true })
   type: string = 'assertion';
@@ -108,6 +113,13 @@ export class Fact extends SmrtObject {
         this.metadata = JSON.stringify(options.metadata);
       }
     }
+  }
+
+  protected override async validateBeforeSave(): Promise<void> {
+    this.catalogSearch = encodeCatalogSearch(
+      `${this.textRefined} ${this.textRaw}`,
+    );
+    await super.validateBeforeSave();
   }
 
   getMetadata(): FactMetadata {

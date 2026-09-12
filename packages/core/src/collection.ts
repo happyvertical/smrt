@@ -5033,6 +5033,167 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Search text without hydrating objects. All read predicates (including
+   * `where`, tenancy and STI) apply BEFORE exact cosine ranking. Unlike the
+   * legacy semanticSearch API, a nonmatching high score cannot consume limit.
+   */
+  public async semanticSearchIds(
+    query: string,
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<Array<{ id: string; similarity: number }>> {
+    const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
+    if (!config) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+    const field = options.field || config.fields[0];
+    if (!getSearchableEmbeddingFields(config).includes(field)) {
+      throw new Error(
+        `Field '${field}' is not configured for embeddings on ${this._itemClass.name}.`,
+      );
+    }
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider: config.provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      this.ai,
+    );
+    const [embedding] = await provider.embed(query);
+    return this.findSimilarIdsToEmbedding(embedding, { ...options, field });
+  }
+
+  /**
+   * Return scored IDs using bounded embedding batches and scalar SQL scope
+   * masks. Application rows are never fetched; separate system/app databases
+   * are supported. Equal scores sort by object ID for stable pagination.
+   */
+  public async findSimilarIdsToEmbedding(
+    embedding: number[],
+    options: {
+      field?: string;
+      limit?: number;
+      minSimilarity?: number;
+      where?: SmrtListWhereClause<ModelType>;
+    } = {},
+  ): Promise<Array<{ id: string; similarity: number }>> {
+    const { limit = 10, minSimilarity = 0 } = options;
+    if (!Number.isSafeInteger(limit) || limit < 0) {
+      throw new Error(
+        'Semantic ID search limit must be a nonnegative safe integer',
+      );
+    }
+    if (
+      !Number.isFinite(minSimilarity) ||
+      minSimilarity < -1 ||
+      minSimilarity > 1
+    ) {
+      throw new Error(
+        'Semantic ID search minSimilarity must be between -1 and 1',
+      );
+    }
+    await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const intercepted = await GlobalInterceptors.executeBeforeList(
+      itemClassName,
+      { where: options.where || {} },
+      createInterceptorContext(
+        itemClassName,
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
+    const scopedWhere = resolveMetaTypeInWhere(
+      this.applyStiReadScope(intercepted.where, undefined),
+    );
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(scopedWhere || {}),
+    );
+    const config = ObjectRegistry.resolveEmbeddingConfig(this._itemClass.name);
+    if (!config) {
+      throw new Error(
+        `No embedding configuration found for ${this._itemClass.name}.`,
+      );
+    }
+    const field = options.field || config.fields[0];
+    if (!getSearchableEmbeddingFields(config).includes(field)) {
+      throw new Error(
+        `Field '${field}' is not configured for embeddings on ${this._itemClass.name}.`,
+      );
+    }
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider: config.provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      this.ai,
+    );
+    if (limit === 0) return [];
+    const scored = await EmbeddingStorage.searchSimilarBatched(
+      this.systemDb,
+      this._itemClass.name,
+      embedding,
+      {
+        field,
+        model: provider.getModelName(),
+        limit,
+        minSimilarity,
+        eligible: async (ids) => {
+          // Each EXISTS is a PK lookup AND the complete read predicate. A
+          // single fixed-size bit string crosses the application DB boundary,
+          // never the potentially unbounded set of eligible application IDs.
+          const params: unknown[] = [];
+          const cases = ids.map((id) => {
+            const parameterOffset = params.length + 1;
+            params.push(id, ...whereValues);
+            const predicate = whereSql
+              .trim()
+              .replace(/^WHERE\s+/i, '')
+              .replace(
+                /\$(\d+)/g,
+                (_, index) => `$${Number(index) + parameterOffset}`,
+              );
+            return `CASE WHEN EXISTS (SELECT 1 FROM ${this.tableName}
+              WHERE id = $${parameterOffset}${predicate ? ` AND (${predicate})` : ''})
+              THEN '1' ELSE '0' END`;
+          });
+          const { rows } = await this.db.query(
+            `SELECT ${cases.join(' || ')} AS eligibility`,
+            ...params,
+          );
+          const mask = rows[0]?.eligibility;
+          if (
+            typeof mask !== 'string' ||
+            !/^[01]+$/.test(mask) ||
+            mask.length !== ids.length
+          ) {
+            throw new Error('Invalid semantic search eligibility result');
+          }
+          return [...mask].map((bit) => bit === '1');
+        },
+      },
+    );
+    return scored.map(({ objectId, similarity }) => ({
+      id: objectId,
+      similarity,
+    }));
+  }
+
+  /**
    * Find objects similar to a given object
    *
    * Uses stored embeddings to find objects most similar to the provided object.

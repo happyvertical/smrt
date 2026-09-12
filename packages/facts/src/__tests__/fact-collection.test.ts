@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { smrt } from '@happyvertical/smrt-core';
+import { EmbeddingProvider, smrt } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Fact } from '../fact';
 import { FactSubjectCollection } from '../fact-subjects';
@@ -218,9 +218,9 @@ describe('getEntityBriefing', () => {
       status: 'active',
     });
 
-    vi.spyOn(facts, 'semanticSearch').mockResolvedValue([
-      tenantFact,
-      otherTenantFact,
+    vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([
+      { id: tenantFact.id!, similarity: 0.9 },
+      { id: otherTenantFact.id!, similarity: 0.8 },
     ]);
 
     const results = await facts.browseCatalog('bridge', {
@@ -242,7 +242,9 @@ describe('getEntityBriefing', () => {
       ),
     );
 
-    vi.spyOn(facts, 'semanticSearch').mockResolvedValue(browseFacts as any);
+    vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue(
+      browseFacts.map((fact) => ({ id: fact.id!, similarity: 0.9 })),
+    );
     const querySpy = vi.spyOn((facts as any).db, 'query');
     querySpy.mockClear();
 
@@ -264,7 +266,7 @@ describe('getEntityBriefing', () => {
         String(sql).includes('semantic_candidates'),
       ),
     ).toHaveLength(1);
-    expect(facts.semanticSearch).toHaveBeenCalledWith(
+    expect(facts.semanticSearchIds).toHaveBeenCalledWith(
       'catalog',
       expect.objectContaining({ limit: 15 }),
     );
@@ -427,7 +429,10 @@ describe('getEntityBriefing', () => {
     ).toHaveLength(1);
   });
 
-  it('resolves text fallback chains from one scoped graph', async () => {
+  it.each([
+    true,
+    false,
+  ])('bounds fallback Fact rows (latestOnly: %s)', async (latestOnly) => {
     await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -437,7 +442,7 @@ describe('getEntityBriefing', () => {
         }),
       ),
     );
-    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
     const querySpy = vi.spyOn((facts as any).db, 'query');
@@ -446,13 +451,23 @@ describe('getEntityBriefing', () => {
     const results = await facts.browseCatalog('fallback', {
       limit: 5,
       offset: 10,
-      latestOnly: true,
+      latestOnly,
     });
 
     expect(results).toHaveLength(5);
+    let fetchedFacts = 0;
+    for (let index = 0; index < querySpy.mock.calls.length; index++) {
+      const sql = String(querySpy.mock.calls[index][0]);
+      if (!sql.includes('FROM facts') || sql.startsWith('DESCRIBE')) continue;
+      const result = await querySpy.mock.results[index].value;
+      fetchedFacts += result.rows.filter(
+        (row: Record<string, unknown>) => 'id' in row,
+      ).length;
+    }
+    expect(fetchedFacts).toBe(5);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
   });
 
   it('treats text fallback wildcard characters as literal text', async () => {
@@ -461,7 +476,7 @@ describe('getEntityBriefing', () => {
       type: 'assertion',
       status: 'active',
     });
-    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+    vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
 
@@ -483,7 +498,7 @@ describe('getEntityBriefing', () => {
       type: 'assertion',
       status: 'active',
     });
-    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+    vi.spyOn(facts, 'semanticSearchIds').mockRejectedValue(
       new Error('Embeddings unavailable'),
     );
 

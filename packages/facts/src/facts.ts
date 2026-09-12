@@ -23,7 +23,9 @@ import {
   isTenancyEnabled,
   queryGlobal,
   queryWithGlobals,
+  withSystemContext,
 } from '@happyvertical/smrt-tenancy';
+import { encodeCatalogSearch } from './catalog-search';
 import { Fact } from './fact';
 import { FactSourceCollection } from './fact-sources';
 import { FactSubjectCollection } from './fact-subjects';
@@ -215,10 +217,6 @@ function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
     : null;
 }
 
-function literalContainsPattern(value: string): string {
-  return `%${value.replace(/[\\%_]/g, '\\$&')}%`;
-}
-
 export class FactCollection extends SmrtCollection<Fact> {
   static readonly _itemClass = Fact;
 
@@ -269,10 +267,33 @@ export class FactCollection extends SmrtCollection<Fact> {
     const statusParams = includeSuperseded
       ? []
       : [tenantId === undefined || tenantId === null ? 'active' : 'superseded'];
-    const textSql = textQuery
-      ? " AND LOWER(text_refined || ' ' || text_raw) LIKE ? ESCAPE '\\'"
-      : '';
-    const textParams = textQuery ? [literalContainsPattern(textQuery)] : [];
+    if (textQuery !== undefined) {
+      const { rows } = await this.db
+        .query(
+          `SELECT COUNT(*) AS pending FROM ${this.tableName}
+          WHERE ${scopeSql} AND catalog_search IS NULL`,
+          ...scopeParams,
+        )
+        .catch((cause: unknown) => {
+          throw new Error(
+            'Fact catalog search storage is unavailable: run db:migrate and backfillCatalogSearch() before text searches.',
+            { cause },
+          );
+        });
+      if (Number(rows[0]?.pending) > 0) {
+        throw new Error(
+          'Fact catalog search is not ready: run db:migrate and backfillCatalogSearch() before text searches.',
+        );
+      }
+    }
+    const textSql =
+      textQuery !== undefined
+        ? isPostgresDatabase(this.db)
+          ? ' AND strpos(catalog_search, ?) > 0'
+          : ' AND instr(catalog_search, ?) > 0'
+        : '';
+    const textParams =
+      textQuery !== undefined ? [encodeCatalogSearch(textQuery)] : [];
     const rankedCandidates = rankedCandidateIds?.filter(Boolean);
 
     if (rankedCandidates && rankedCandidates.length === 0) {
@@ -512,11 +533,34 @@ export class FactCollection extends SmrtCollection<Fact> {
     }
 
     try {
-      const matches = await this.semanticSearch(query, {
-        limit: safeOffset + safeLimit,
-        minSimilarity,
-        where: includeSuperseded ? undefined : { status: 'active' },
-      });
+      const explicitTenant = tenantId !== undefined && tenantId !== null;
+      if (explicitTenant)
+        assertTenantReadAllowed(tenantId, 'Fact.browseCatalog');
+      const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
+      const matches = explicitTenant
+        ? await withSystemContext(() =>
+            this.semanticSearchIds(query, {
+              ...searchOptions,
+              where: [
+                [
+                  {
+                    tenantId,
+                    ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                  },
+                ],
+                [
+                  {
+                    tenantId: null,
+                    ...(includeSuperseded ? {} : { 'status !=': 'superseded' }),
+                  },
+                ],
+              ],
+            }),
+          )
+        : await this.semanticSearchIds(query, {
+            ...searchOptions,
+            where: includeSuperseded ? undefined : { status: 'active' },
+          });
       const rankedCandidateIds = matches
         .map((fact) => fact.id)
         .filter((factId): factId is string => typeof factId === 'string');
@@ -536,7 +580,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       }
 
       const similarityById = new Map(
-        matches.map((fact) => [fact.id as string, fact._similarity]),
+        matches.map((fact) => [fact.id, fact.similarity]),
       );
       return page.map((fact) => {
         const similarity = similarityById.get(fact.id as string);
@@ -546,58 +590,64 @@ export class FactCollection extends SmrtCollection<Fact> {
         return fact;
       });
     } catch {
-      // SQL LOWER() cannot reproduce JavaScript's Unicode case folding across
-      // supported dialects (for example, Kelvin sign lowercases to "k" only in
-      // JavaScript). Preserve the legacy fallback until normalized search text
-      // has a portable storage contract.
-      // Resolve only within this scoped graph. Per-row traversal would lose an
-      // explicit tenant/global scope and inherit the ambient context instead.
-      const collectionConstructor = this.constructor as typeof FactCollection;
-      const unboundedFacts = await collectionConstructor.create({
-        ...this.options,
-        defaultListLimit: undefined,
-        maxListLimit: undefined,
-      });
-      const chainFacts =
-        tenantId === undefined || tenantId === null
-          ? await unboundedFacts.list({ orderBy: 'updated_at DESC' })
-          : await this.findWithGlobals(tenantId);
-      const candidates = includeSuperseded
-        ? chainFacts
-        : chainFacts.filter((fact) =>
-            tenantId === undefined || tenantId === null
-              ? fact.status === 'active'
-              : fact.status !== 'superseded',
-          );
-      const matches = candidates.filter((fact) =>
-        `${fact.textRefined} ${fact.textRaw}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+      return await this.listCatalogPage(
+        tenantId,
+        includeSuperseded,
+        latestOnly,
+        safeLimit,
+        safeOffset,
+        latestResolutionLimit,
+        query,
       );
-      if (!latestOnly) return matches.slice(safeOffset, pageEnd);
-      const bestSuccessorByPreviousId = new Map<string, Fact>();
-      for (const fact of chainFacts) {
-        if (!fact.previousFactId) continue;
-        const best = bestSuccessorByPreviousId.get(fact.previousFactId);
-        if (!best || fact.confidence > best.confidence) {
-          bestSuccessorByPreviousId.set(fact.previousFactId, fact);
-        }
-      }
-      const latest = new Map<string, Fact>();
-      for (const fact of matches.slice(0, latestResolutionLimit)) {
-        let resolved = fact;
-        const visited = new Set<string>();
-        while (resolved.id && !visited.has(resolved.id)) {
-          visited.add(resolved.id);
-          const successor = bestSuccessorByPreviousId.get(resolved.id);
-          if (!successor) break;
-          resolved = successor;
-        }
-        latest.set(resolved.id as string, resolved);
-        if (latest.size >= pageEnd) break;
-      }
-      return [...latest.values()].slice(safeOffset, pageEnd);
     }
+  }
+
+  /**
+   * Explicit data migration after db:migrate adds catalog_search. Run under
+   * withSystemContext with old writers stopped. Repeating a batch is safe;
+   * concurrent source changes are protected by compare-and-set predicates.
+   * A subtype collection backfills only its STI discriminator.
+   */
+  async backfillCatalogSearch(batchSize = 100): Promise<{ remaining: number }> {
+    if (!isSystemContext()) {
+      throw new Error('backfillCatalogSearch requires withSystemContext');
+    }
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
+      throw new Error('batchSize must be an integer between 1 and 1000');
+    }
+    const metaType = this.getStiChildMetaType();
+    const scope = metaType ? ' AND _meta_type = ?' : '';
+    const params = metaType ? [metaType] : [];
+    const { rows } = await this.db.query(
+      `SELECT CAST(id AS TEXT) AS id, text_refined, text_raw FROM ${this.tableName}
+        WHERE catalog_search IS NULL${scope} ORDER BY id LIMIT ?`,
+      ...params,
+      batchSize,
+    );
+    for (const row of rows) {
+      await this.query(
+        `UPDATE ${this.tableName} SET catalog_search = ?
+          WHERE id = ? AND catalog_search IS NULL${scope}
+            AND (text_refined = ? OR (text_refined IS NULL AND CAST(? AS TEXT) IS NULL))
+            AND (text_raw = ? OR (text_raw IS NULL AND CAST(? AS TEXT) IS NULL))`,
+        [
+          encodeCatalogSearch(`${row.text_refined} ${row.text_raw}`),
+          row.id,
+          ...params,
+          row.text_refined,
+          row.text_refined,
+          row.text_raw,
+          row.text_raw,
+        ],
+        { allowRawOnTenantScoped: true },
+      );
+    }
+    const { rows: counts } = await this.db.query(
+      `SELECT COUNT(*) AS remaining FROM ${this.tableName}
+        WHERE catalog_search IS NULL${scope}`,
+      ...params,
+    );
+    return { remaining: Number(counts[0]?.remaining ?? 0) };
   }
 
   /**

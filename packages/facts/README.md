@@ -141,16 +141,58 @@ explicit tenant, tenant and global candidates exclude only `superseded`.
 to constrain implicit reads, and requesting another tenant is rejected. STI child
 collections constrain both candidates and successors to their discriminator.
 
-When semantic search is unavailable, text fallback retains JavaScript Unicode
-case matching. It loads the full permitted tenant/global and STI graph once,
-then resolves chains in memory without per-row queries. Collection list defaults
-do not truncate that graph. This remains an intentional exception to bounded
-SQL hydration: portable normalized search storage would be needed before
-replacing its matching behavior with SQL.
+When semantic search is unavailable, text fallback matches the exact JavaScript
+expression `` `${textRefined} ${textRaw}`.toLowerCase().includes(query.toLowerCase()) ``.
+It uses persisted `catalogSearch` storage and the same bounded SQL page traversal.
+The storage encodes lowercased UTF-16 units as aligned ASCII tokens, preserving
+Unicode, whitespace, literal wildcard characters, and code-unit boundaries without
+SQL collation or case-folding differences. A scalar readiness check precedes text
+search; it throws with backfill instructions if any permitted row is unbackfilled.
+The database may scan matching rows and evolution edges internally, but only the
+requested Fact page crosses the database boundary. Arbitrary substring matching
+cannot use a normal B-tree index; no misleading search-column index is added.
+
+### Existing deployment migration
+
+This is an explicit schema and data migration; ordinary reads never create schema.
+Stop old application writers, deploy the new manifest/code, and run `smrt db:migrate`
+(and `smrt db:status --parity`). This adds nullable `catalog_search`; historical
+rows remain NULL. Before enabling catalog text reads, run the following with your
+application's database configuration and repeat until `remaining` is zero:
+
+```typescript
+import { FactCollection } from '@happyvertical/smrt-facts';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
+
+const facts = await FactCollection.create({ db });
+await withSystemContext(async () => {
+  while ((await facts.backfillCatalogSearch(100)).remaining > 0) {
+    // Each call is independently resumable; record progress in your job runner.
+  }
+});
+```
+
+Backfill requires explicit system context, processes at most 100 rows per call by
+default (maximum 1000), and updates only NULL values whose source texts still match
+the read snapshot. It changes no source text, timestamps, embeddings, or revisions.
+A crash or concurrent write is safe to retry; sustained old writers must be stopped
+so the operation can finish. A subtype collection backfills only its discriminator;
+use the base collection for the full deployment. Back up before schema changes;
+roll forward by rerunning migration/backfill rather than dropping historical data.
+
+`Fact.save()`, collection create/get-or-insert/get-or-upsert, and generated model
+updates maintain search storage from the source fields. `catalogSearch` is derived;
+callers must not author it, and generated transport surfaces exclude it using
+readonly/sensitive field metadata. Direct SQL writers must set `catalog_search = NULL`
+whenever either source text changes, then run backfill before text reads resume.
+Do not keep old application writers active after backfill: they cannot maintain
+this new invariant. Future changes to JavaScript lowercasing/encoding require an
+explicit new backfill; the format is not locale dependent.
 
 PostgreSQL and SQLite run canonical pagination integration tests. DuckDB query
 coverage uses an explicitly identified SQL-only fixture: canonical Fact schema
 creation currently rejects its evolution self-reference, tracked in
 [#2830](https://github.com/happyvertical/smrt/issues/2830). DuckDB hydration issues
 one `DESCRIBE` plus one data query per page; PostgreSQL and SQLite use one data
-query after semantic candidate retrieval, if any.
+query after semantic candidate retrieval, if any. Text fallback also performs one
+scalar readiness query.

@@ -231,6 +231,70 @@ export class EmbeddingStorage {
   }
 
   /**
+   * Exact cosine top-K using bounded embedding pages and a caller-owned scope.
+   * JSON vectors are always persisted, including with native vector storage.
+   * Eligibility is checked before scoring; neither all vectors nor all eligible
+   * object IDs are materialized. The callback must fail closed on scope errors.
+   */
+  static async searchSimilarBatched(
+    db: DatabaseInterface,
+    objectClass: string,
+    embedding: number[],
+    options: {
+      field: string;
+      model: string;
+      limit: number;
+      minSimilarity: number;
+      eligible: (objectIds: string[]) => Promise<boolean[]>;
+    },
+  ): Promise<Array<{ objectId: string; similarity: number }>> {
+    const batchSize = 64;
+    let cursor: string | undefined;
+    let best: Array<{ objectId: string; similarity: number }> = [];
+    for (;;) {
+      const params: unknown[] = [objectClass, options.field, options.model];
+      const cursorPredicate = cursor === undefined ? '' : ' AND id > ?';
+      if (cursor !== undefined) params.push(cursor);
+      const { rows } = await db.query(
+        `SELECT CAST(id AS VARCHAR) AS id, CAST(object_id AS VARCHAR) AS object_id, embedding FROM _smrt_embeddings
+         WHERE object_class = ? AND field_name = ? AND model = ?${cursorPredicate}
+         ORDER BY _smrt_embeddings.id ASC LIMIT ${batchSize}`,
+        ...params,
+      );
+      if (rows.length === 0) break;
+      const allowed = await options.eligible(
+        rows.map((row: Record<string, unknown>) => String(row.object_id)),
+      );
+      if (
+        allowed.length !== rows.length ||
+        allowed.some((value) => typeof value !== 'boolean')
+      ) {
+        throw new Error('Invalid embedding candidate eligibility mask');
+      }
+      for (let index = 0; index < rows.length; index++) {
+        if (!allowed[index]) continue;
+        const row = rows[index];
+        const similarity = CosineSimilarity.calculate(
+          embedding,
+          JSON.parse(row.embedding as string) as number[],
+        );
+        if (similarity >= options.minSimilarity) {
+          best.push({ objectId: String(row.object_id), similarity });
+        }
+      }
+      best.sort(
+        (a, b) =>
+          b.similarity - a.similarity ||
+          (a.objectId < b.objectId ? -1 : a.objectId > b.objectId ? 1 : 0),
+      );
+      best = best.slice(0, options.limit);
+      cursor = String(rows[rows.length - 1].id);
+      if (rows.length < batchSize) break;
+    }
+    return best;
+  }
+
+  /**
    * Ensure the native vector column and index exist on _smrt_embeddings.
    * Called once during initialization when storage: 'native' is configured.
    *

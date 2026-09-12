@@ -11,10 +11,24 @@ filtering; object/collection recall does not update them.
 
 Semantic search uses `_smrt_embeddings` and cosine ranking over fields declared
 by `@smrt({ embeddings })`, with native pgvector/HNSW or an in-memory fallback.
-Results hydrate through `list({ 'id in': … })`, so normal tenant isolation still
-applies. Keep injected search behind the `SmrtCollection.semanticSearch`
-boundary.
+Legacy `semanticSearch` results hydrate through `list({ 'id in': … })`, so normal
+tenant isolation still applies. Keep injected search behind the public
+`SmrtCollection.semanticSearch` / `semanticSearchIds` boundaries.
 
 `LearningMemory.capture()` reinforces successes and decays failures while
 updating outcome counters. Its tenant-isolated `recall()` applies confidence,
 expiry, time-decay, and hierarchical-scope filters and refreshes `last_used_at`.
+
+`semanticSearchIds(query, options)` and `findSimilarIdsToEmbedding(vector, options)`
+return `{ id, similarity }` without object hydration. They apply caller `where`,
+normal `beforeList` tenancy predicates, and child STI scope **before** exact
+cosine top-K (legacy `semanticSearch` applies caller `where` after ranking).
+Equal scores sort by object ID. Search scans JSON embedding vectors in keyset
+batches of 64, including when native vector storage is enabled (JSON is always
+persisted); each batch checks application eligibility using a fixed-size scalar
+SQL mask of primary-key `EXISTS` probes. This supports separate system/app
+databases without fetching all tenant IDs or application rows. Memory is
+O(limit + 64); the exact fallback still scans all matching stored embeddings.
+The embedding primary key supports the cursor and application primary keys
+support eligibility probes; no new application index is needed. Pagination
+callers can request offset + limit scored IDs, then hydrate only their page.
