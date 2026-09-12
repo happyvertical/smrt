@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { backgroundEligible } from '../background-policy.js';
 import type { JobExecutionContext } from '../logger-extension.js';
 import { McpTaskStore } from '../mcp-task.js';
-import { TaskRunner } from '../runner.js';
+import { isRunnerExecutionContext, TaskRunner } from '../runner.js';
 
 @smrt()
 class McpTaskProbe extends SmrtObject {
@@ -87,6 +87,14 @@ async function waitFor<T>(
 }
 
 describe('MCP Tasks durable jobs adapter', () => {
+  it('rejects a Proxy that claims every symbol is a runner context brand', () => {
+    const forged = new Proxy(
+      {},
+      { get: (_target, key) => (typeof key === 'symbol' ? true : undefined) },
+    );
+    expect(isRunnerExecutionContext(forged)).toBe(false);
+  });
+
   it('persists one correlated job, runs it, and returns its CallToolResult', async () => {
     const { db, probe } = await createProbe();
     const store = await McpTaskStore.create(db, { ownerId: 'principal-a' });

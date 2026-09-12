@@ -1,0 +1,278 @@
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import { createTaskRunner } from '@happyvertical/smrt-jobs';
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-types';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type {
+  DataSurfaceBackgroundActionEnvelope,
+  DataSurfaceBackgroundActionJob,
+} from './data-surface-actions.js';
+import {
+  createJobsDataSurfaceBackgroundQueue,
+  registerDataSurfaceBackgroundActionHandler,
+  SmrtDataSurfaceActionTask,
+} from './jobs-data-surface-action-queue.js';
+
+describe('jobs-backed data-surface action queue', () => {
+  let db: DatabaseInterface | undefined;
+
+  afterEach(async () => {
+    await db?.close?.();
+    db = undefined;
+    ObjectRegistry.clearCollectionCache?.();
+  });
+
+  it('persists a versioned principal-bound envelope and executes it after handler restart', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const firstHandler = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute: firstHandler,
+    });
+    const envelope = actionEnvelope();
+    const queued = await queue.enqueue(actionJob(envelope));
+    const stored = await db.query(
+      'SELECT tenant_id, args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    expect(stored.rows[0]?.tenant_id).toBe('tenant-a');
+    expect(args).toEqual({ version: 1, envelope });
+    expect(JSON.stringify(args)).not.toContain('permissions');
+    expect(firstHandler).not.toHaveBeenCalled();
+
+    queue.unregister();
+    const restartedHandler = vi.fn(async () => actionResult());
+    const unregister = registerDataSurfaceBackgroundActionHandler(
+      'orders-actions-v1',
+      restartedHandler,
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
+      runner.once('job:completed', (_job, result) =>
+        resolve(result as { result?: unknown }),
+      );
+      runner.once('job:failed', (_job, error) => reject(error));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(completion).resolves.toEqual({ result: actionResult() });
+      expect(restartedHandler).toHaveBeenCalledWith(envelope);
+    } finally {
+      await runner.stop();
+      unregister();
+    }
+  });
+
+  it('rejects a persisted tenant mismatch before dispatching the handler', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const unregister = registerDataSurfaceBackgroundActionHandler(
+      'orders-actions-v1',
+      execute,
+    );
+    try {
+      const task = new SmrtDataSurfaceActionTask({ db });
+      task.tenantId = 'tenant-b';
+      await expect(
+        task.run({ version: 1, envelope: actionEnvelope() }),
+      ).rejects.toThrow('Invalid durable data-surface action envelope');
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      unregister();
+    }
+  });
+
+  it('keeps a runner-owned global tenant from persisted configuration', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const envelope = actionEnvelope(null);
+    const queued = await queue.enqueue(actionJob(envelope));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      {
+        args: JSON.stringify(args),
+      },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
+      runner.once('job:completed', (_job, result) =>
+        resolve(result as { result?: unknown }),
+      );
+      runner.once('job:failed', (_job, error) => reject(error));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(completion).resolves.toEqual({ result: actionResult() });
+      expect(execute).toHaveBeenCalledWith(envelope);
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
+
+  it('fails closed when the real runner has no persisted tenant', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const queued = await queue.enqueue(actionJob(actionEnvelope()));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      { tenant_id: null, args: JSON.stringify(args) },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_job, error) => resolve(error as Error));
+      runner.once('job:completed', () => reject(new Error('job completed')));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid durable data-surface action envelope',
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
+
+  it('rejects an empty persisted runner tenant without using agent configuration', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const queued = await queue.enqueue(actionJob(actionEnvelope()));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      { tenant_id: '', args: JSON.stringify(args) },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_job, error) => resolve(error as Error));
+      runner.once('job:completed', () => reject(new Error('job completed')));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid durable data-surface action job tenant',
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
+});
+
+function actionEnvelope(
+  tenantId: string | null = 'tenant-a',
+): DataSurfaceBackgroundActionEnvelope {
+  return {
+    binding: { version: 1, keyId: 'test', signature: 'test-binding' },
+    version: 1,
+    handlerId: 'orders-actions-v1',
+    principal: {
+      runAsUserId: 'user-a',
+      tenantId,
+      actsAsProfileId: null,
+      onBehalfOfUserId: 'requester-a',
+    },
+    request: {
+      version: 1,
+      requestId: 'request-a',
+      identity: {
+        kind: 'table',
+        surfaceId: 'orders',
+        subject: { type: 'tenant', id: 'tenant-a' },
+      },
+      actionId: 'archive',
+      phase: 'apply',
+      selection: { scope: 'explicit-ids', rowIds: ['order-a'] },
+      expectedRevision: 7,
+      idempotencyKey: 'apply-a',
+    },
+  };
+}
+
+function actionJob(
+  envelope: DataSurfaceBackgroundActionEnvelope,
+): DataSurfaceBackgroundActionJob {
+  return {
+    idempotencyKey: 'apply-a',
+    identity: envelope.request.identity,
+    actionId: envelope.request.actionId,
+    rowIds: ['order-a'],
+    envelope,
+    run: async () => actionResult(),
+  };
+}
+
+function actionResult(): DataSurfaceActionResult {
+  return {
+    version: 1,
+    requestId: 'request-a',
+    identity: actionEnvelope().request.identity,
+    actionId: 'archive',
+    phase: 'apply',
+    ok: true,
+  };
+}

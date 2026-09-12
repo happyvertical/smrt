@@ -95,6 +95,11 @@ export { SmrtReport, SmrtReportCollection } from './report.js';
 export type {
   EnqueueReportRefreshOptions,
   EnsureReportSchedulesOptions,
+  ReportExecutionPrincipalReference,
+  ReportRefreshExecutionAuditEvent,
+  ReportRefreshExecutionAuthority,
+  ReportRefreshExecutionAuthorityContext,
+  ReportRefreshExecutionAuthorityHost,
   ReportRefreshInterceptorOptions,
   ReportRefreshJobArgs,
   ReportScheduleInfo,
@@ -105,7 +110,10 @@ export {
   enqueueReportRefresh,
   ensureReportRefreshSchedules,
   ReportScheduleRunner,
+  registerReportRefreshExecutionAuthorityHost,
   registerReportRefreshInterceptor,
+  registerReportRefreshJobIntegritySigner,
+  SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
 } from './scheduler.js';
 export {

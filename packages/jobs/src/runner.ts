@@ -2,6 +2,7 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import './__smrt-register__.js';
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { Worker } from 'node:worker_threads';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
@@ -57,6 +58,30 @@ import {
   tuneSqliteForConcurrency,
   unregisterLiveWorker,
 } from './worker-liveness.js';
+
+// Job rows are durable but untrusted transport. This marker is deliberately
+// module-private: a JSON task invocation cannot synthesize the runner-owned
+// execution context that security-sensitive task targets receive.
+const runnerExecutionContextIdentities = new WeakSet<object>();
+const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
+
+/** True only for an execution context constructed by this TaskRunner module. */
+export function isRunnerExecutionContext(
+  value: unknown,
+): value is JobExecutionContext {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    runnerExecutionContextIdentities.has(value)
+  );
+}
+
+/** The runner-owned context for the currently executing task, if any. */
+export function getActiveJobExecutionContext():
+  | JobExecutionContext
+  | undefined {
+  return runnerExecutionContexts.getStore();
+}
 
 /**
  * TaskRunner configuration
@@ -695,24 +720,24 @@ export class TaskRunner extends EventEmitter {
         onError: 'throw',
       });
 
+      // Persistence identity and the database connection belong to the
+      // runner. Persisted constructor config may configure the target, but it
+      // must never redirect hydration or execution to a different store.
+      const safeAgentConfig = { ...agentConfig };
+      delete safeAgentConfig.db;
+      delete safeAgentConfig.id;
+      delete safeAgentConfig._skipLoad;
+
       // Create or load the object instance
       let instance: SmrtObject;
 
       if (job.objectId) {
-        // Agent configuration belongs to the registered class, but it must not
-        // override the runner-controlled persistence target or disable the
-        // canonical hydration.
-        const objectAgentConfig = { ...agentConfig };
-        delete objectAgentConfig.db;
-        delete objectAgentConfig.id;
-        delete objectAgentConfig._skipLoad;
-
         // initialize() performs the canonical hydration when the persisted ID
         // is supplied to the constructor.
         instance = new ObjectClass({
           db: this.db,
           id: job.objectId,
-          ...objectAgentConfig,
+          ...safeAgentConfig,
         });
         await instance.initialize();
 
@@ -723,7 +748,7 @@ export class TaskRunner extends EventEmitter {
         }
       } else {
         // Create new instance for static-like methods
-        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        instance = new ObjectClass({ db: this.db, ...safeAgentConfig });
         await instance.initialize();
       }
 
@@ -774,11 +799,15 @@ export class TaskRunner extends EventEmitter {
       }
 
       const taskMarker = getMcpTaskMarker(job);
-      const result = taskMarker
-        ? await (
-            method as (...args: unknown[]) => Promise<unknown> | unknown
-          ).call(instance, ...taskMarker.invocationArgs, executionContext)
-        : await method.call(instance, methodArgs, executionContext);
+      const result = await runnerExecutionContexts.run(
+        executionContext,
+        async () =>
+          taskMarker
+            ? await (
+                method as (...args: unknown[]) => Promise<unknown> | unknown
+              ).call(instance, ...taskMarker.invocationArgs, executionContext)
+            : await method.call(instance, methodArgs, executionContext),
+      );
 
       // Generated custom actions use an explicit `{ ok: false, ... }` return
       // convention. A task must surface that as a failed terminal state, not
@@ -901,7 +930,7 @@ export class TaskRunner extends EventEmitter {
       method: job.method,
     };
 
-    return {
+    const context: JobExecutionContext = {
       job: jobContext,
       logger: contextLogger,
       event: async (input: JobEventInput) => {
@@ -951,6 +980,8 @@ export class TaskRunner extends EventEmitter {
           }
         : {}),
     };
+    runnerExecutionContextIdentities.add(context);
+    return context;
   }
 
   private async appendJobEvent(

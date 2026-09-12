@@ -10,7 +10,12 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   backgroundEligible,
+  type DurableJobPayloadIntegrity,
+  type DurableJobPayloadSigner,
+  getActiveJobExecutionContext,
   getNextCronDate,
+  isRunnerExecutionContext,
+  type JobExecutionContext,
   type SmrtJob,
   SmrtJobCollection,
   validateCronExpression,
@@ -48,6 +53,48 @@ export interface ReportRefreshJobArgs {
   adapterType?: SqlAdapterType;
   changedRows?: Record<string, unknown>[];
   _scheduleId?: string;
+  executionAuthority?: ReportRefreshExecutionAuthority;
+  integrity?: DurableJobPayloadIntegrity;
+}
+
+export interface ReportExecutionPrincipalReference {
+  version: 1;
+  actorUserId: string;
+  tenantId: string | null;
+  onBehalfOfUserId?: string | null;
+  actsAsProfileId?: string | null;
+  agentClass?: string | null;
+}
+
+export interface ReportRefreshExecutionAuthority {
+  version: 1;
+  hostId: string;
+  principal: ReportExecutionPrincipalReference;
+}
+
+export interface ReportRefreshExecutionAuthorityContext {
+  phase: 'execute';
+  reportClass: string;
+  mode: ReportRefreshMode;
+  trigger: ReportRefreshTrigger;
+  tenantId: string | null;
+}
+
+export interface ReportRefreshExecutionAuditEvent
+  extends ReportRefreshExecutionAuthorityContext {
+  outcome: 'allowed' | 'denied';
+  principal: ReportExecutionPrincipalReference;
+  reason?: string;
+}
+
+export interface ReportRefreshExecutionAuthorityHost {
+  authorize(
+    principal: Readonly<ReportExecutionPrincipalReference>,
+    context: Readonly<ReportRefreshExecutionAuthorityContext>,
+  ): Promise<void> | void;
+  audit(
+    event: Readonly<ReportRefreshExecutionAuditEvent>,
+  ): Promise<void> | void;
 }
 
 export interface EnqueueReportRefreshOptions extends ReportRefreshJobArgs {
@@ -59,6 +106,8 @@ export interface EnqueueReportRefreshOptions extends ReportRefreshJobArgs {
   timeout?: number;
   maxAttempts?: number;
   tenantJobCap?: number;
+  /** Server-only signer; register the same key in every worker process. */
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 export interface EnsureReportSchedulesOptions {
@@ -74,6 +123,7 @@ export interface ReportScheduleRunnerConfig {
   id?: string;
   pollInterval?: number;
   batchSize?: number;
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 export interface ReportScheduleInfo {
@@ -103,6 +153,7 @@ export interface ReportRefreshInterceptorOptions {
   timeout?: number;
   tenantJobCap?: number;
   name?: string;
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 const INTERNAL_SURFACE = {
@@ -114,6 +165,109 @@ const INTERNAL_SURFACE = {
   },
   mcp: false,
 };
+
+const executionAuthorityHosts = new Map<
+  string,
+  ReportRefreshExecutionAuthorityHost
+>();
+const jobIntegritySigners = new Map<string, DurableJobPayloadSigner>();
+
+export function registerReportRefreshJobIntegritySigner(
+  signer: DurableJobPayloadSigner,
+): () => void {
+  const existing = jobIntegritySigners.get(signer.keyId);
+  if (existing && existing !== signer) {
+    throw new Error(
+      `Report refresh job integrity signer already registered: ${signer.keyId}`,
+    );
+  }
+  jobIntegritySigners.set(signer.keyId, signer);
+  return () => {
+    if (jobIntegritySigners.get(signer.keyId) === signer) {
+      jobIntegritySigners.delete(signer.keyId);
+    }
+  };
+}
+
+/**
+ * Maintenance callers historically configured only their runner/interceptor;
+ * they do not have a request host from which to obtain a signer. When one
+ * worker-shared signer is registered, use it as the application default. More
+ * than one key is ambiguous and remains fail-closed until the caller selects
+ * one explicitly.
+ */
+function resolveReportRefreshIntegritySigner(
+  configured: DurableJobPayloadSigner | undefined,
+): DurableJobPayloadSigner | undefined {
+  if (configured) return configured;
+  if (jobIntegritySigners.size !== 1) return undefined;
+  return jobIntegritySigners.values().next().value;
+}
+
+function unsignedReportRefreshJobArgs(
+  args: ReportRefreshJobArgs,
+): Omit<ReportRefreshJobArgs, 'integrity'> {
+  const {
+    integrity: _integrity,
+    _scheduleId: _internalScheduleId,
+    ...unsigned
+  } = args;
+  return unsigned;
+}
+
+function assertReportRefreshJobIntegrity(args: ReportRefreshJobArgs): void {
+  const integrity = args.integrity;
+  const signer = integrity
+    ? jobIntegritySigners.get(integrity.keyId)
+    : undefined;
+  if (
+    !integrity ||
+    !signer?.verify(unsignedReportRefreshJobArgs(args), integrity)
+  ) {
+    throw new Error('Invalid durable report refresh job integrity binding');
+  }
+}
+
+function assertReportRefreshJobTarget(
+  args: ReportRefreshJobArgs,
+  context: JobExecutionContext | undefined,
+): void {
+  if (!context) return;
+  if (!isRunnerExecutionContext(context)) {
+    throw new Error('Invalid durable report refresh job context');
+  }
+  const expectedType = canonicalClassName(
+    (args.trigger ?? 'job') === 'manual'
+      ? SmrtPrincipalReportRefreshTask
+      : SmrtReportRefreshTask,
+  );
+  if (context.job.objectType !== expectedType || context.job.method !== 'run') {
+    throw new Error('Invalid durable report refresh job target');
+  }
+}
+
+export function registerReportRefreshExecutionAuthorityHost(
+  hostId: string,
+  host: ReportRefreshExecutionAuthorityHost,
+): () => void {
+  if (!hostId || hostId.length > 256) {
+    throw new Error(
+      'Report refresh authority hostId must contain 1-256 characters',
+    );
+  }
+  const existing = executionAuthorityHosts.get(hostId);
+  if (existing && existing !== host) {
+    throw new Error(
+      `Report refresh authority host already registered: ${hostId}`,
+    );
+  }
+  executionAuthorityHosts.set(hostId, host);
+  return () => {
+    if (executionAuthorityHosts.get(hostId) === host) {
+      executionAuthorityHosts.delete(hostId);
+    }
+  };
+}
 
 function stableUuid(values: unknown[]): string {
   const hash = createHash('sha256')
@@ -201,6 +355,67 @@ function changedRowSnapshot(instance: SmrtObject): Record<string, unknown> {
     : {};
 }
 
+async function authorizeReportRefreshExecution(
+  args: ReportRefreshJobArgs,
+  reportClass: string,
+  jobTenantId: string | null,
+): Promise<void> {
+  if ((args.tenantId ?? null) !== jobTenantId) {
+    throw new Error('Invalid report refresh execution tenant');
+  }
+  const authority = args.executionAuthority;
+  if ((args.trigger ?? 'job') === 'manual' && !authority) {
+    throw new Error('Manual report refresh execution authority is missing');
+  }
+  // Scheduled and on-change maintenance jobs predate user-bound actions and
+  // intentionally run under the worker's system authority.
+  if (!authority) return;
+  const principal = authority.principal;
+  const tenantId = args.tenantId ?? null;
+  if (
+    authority.version !== 1 ||
+    principal?.version !== 1 ||
+    !authority.hostId ||
+    !principal.actorUserId ||
+    principal.tenantId !== tenantId ||
+    principal.tenantId !== jobTenantId
+  ) {
+    throw new Error('Invalid report refresh execution authority');
+  }
+  const host = executionAuthorityHosts.get(authority.hostId);
+  if (!host) {
+    throw new Error(
+      `No report refresh authority host registered for ${authority.hostId}`,
+    );
+  }
+  const context: ReportRefreshExecutionAuthorityContext = {
+    phase: 'execute',
+    reportClass,
+    mode: args.mode ?? 'incremental',
+    trigger: args.trigger ?? 'job',
+    tenantId,
+  };
+  try {
+    await host.authorize(
+      Object.freeze({ ...principal }),
+      Object.freeze(context),
+    );
+  } catch {
+    await host.audit({
+      ...context,
+      outcome: 'denied',
+      principal: Object.freeze({ ...principal }),
+      reason: 'current_authority_denied',
+    });
+    throw new Error('Report refresh execution authority denied');
+  }
+  await host.audit({
+    ...context,
+    outcome: 'allowed',
+    principal: Object.freeze({ ...principal }),
+  });
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: '_smrt_report_refresh_tasks',
@@ -223,18 +438,45 @@ export class SmrtReportRefreshTask extends SmrtObject {
   args: ReportRefreshJobArgs = {};
 
   @backgroundEligible()
-  async run(args: ReportRefreshJobArgs = {}): Promise<unknown> {
-    const reportClass = args.reportClass || this.reportClass;
+  async run(
+    args: ReportRefreshJobArgs = {},
+    context?: JobExecutionContext,
+  ): Promise<unknown> {
+    assertReportRefreshJobIntegrity(args);
+    const executionContext = getActiveJobExecutionContext() ?? context;
+    assertReportRefreshJobTarget(args, executionContext);
+    const reportClass = args.reportClass;
     if (!reportClass) {
       throw new Error('Report refresh job requires reportClass');
     }
+    const mode = args.mode ?? 'incremental';
+    const trigger = args.trigger ?? 'job';
 
     const reportCtor = resolveReportClass(reportClass);
+    // A runner context, including its explicit global `null` tenant, owns the
+    // scope. Only direct callers without runner context may use instance scope.
+    let jobTenantId: string | null;
+    if (executionContext) {
+      const runnerTenantId = executionContext.job.tenantId;
+      if (runnerTenantId === null) {
+        jobTenantId = null;
+      } else if (
+        typeof runnerTenantId === 'string' &&
+        runnerTenantId.length > 0
+      ) {
+        jobTenantId = runnerTenantId;
+      } else {
+        throw new Error('Invalid report refresh execution tenant');
+      }
+    } else {
+      jobTenantId = tenantIdFromInstance(this);
+    }
+    await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
     return refreshReport(reportCtor, {
       db: this.db,
-      mode: args.mode ?? this.mode,
-      trigger: args.trigger ?? this.trigger,
-      tenantId: args.tenantId,
+      mode,
+      trigger,
+      tenantId: jobTenantId,
       tenantIds: args.tenantIds,
       adapterType: args.adapterType,
       scheduleId: args.scheduleId ?? args._scheduleId,
@@ -243,14 +485,80 @@ export class SmrtReportRefreshTask extends SmrtObject {
   }
 }
 
+/** Worker target whose authority requirement cannot be downgraded by job args. */
+@TenantScoped({ mode: 'optional' })
+@smrt({
+  tableName: '_smrt_principal_report_refresh_tasks',
+  ...INTERNAL_SURFACE,
+})
+export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
+  override async run(
+    args: ReportRefreshJobArgs = {},
+    context?: JobExecutionContext,
+  ): Promise<unknown> {
+    return super.run({ ...args, trigger: 'manual' }, context);
+  }
+}
+
 export async function enqueueReportRefresh(
   options: EnqueueReportRefreshOptions,
 ): Promise<SmrtJob> {
+  const integritySigner = resolveReportRefreshIntegritySigner(
+    options.integritySigner,
+  );
+  if (!integritySigner) {
+    throw new Error(
+      'Report refresh queue requires a durable job integrity signer',
+    );
+  }
+  if (options.trigger === 'manual' && !options.executionAuthority) {
+    throw new Error('Manual report refresh requires execution-time authority');
+  }
+  if (
+    options.executionAuthority &&
+    (options.executionAuthority.version !== 1 ||
+      options.executionAuthority.principal?.version !== 1 ||
+      !options.executionAuthority.hostId ||
+      !options.executionAuthority.principal.actorUserId ||
+      options.executionAuthority.principal.tenantId !==
+        (options.tenantId ?? null))
+  ) {
+    throw new Error('Invalid report refresh execution authority');
+  }
+  if (
+    options.executionAuthority &&
+    (options.trigger !== 'manual' || (options.tenantIds?.length ?? 0) > 0)
+  ) {
+    throw new Error(
+      'Principal-bound report refresh requires one manual tenant scope',
+    );
+  }
   await ObjectRegistry.ensureManifestLoaded('SmrtJob');
   const collection = await SmrtJobCollection.create({ db: options.db });
-  const taskType = canonicalClassName(SmrtReportRefreshTask);
+  const taskType = canonicalClassName(
+    options.trigger === 'manual'
+      ? SmrtPrincipalReportRefreshTask
+      : SmrtReportRefreshTask,
+  );
   const scheduleId = options.scheduleId ?? options._scheduleId;
 
+  const unsignedArgs: Omit<ReportRefreshJobArgs, 'integrity'> = {
+    reportClass: options.reportClass,
+    mode: options.mode ?? 'incremental',
+    trigger: options.trigger ?? 'job',
+    tenantId: options.tenantId,
+    tenantIds: options.tenantIds,
+    adapterType: options.adapterType,
+    changedRows: options.changedRows,
+    scheduleId,
+    executionAuthority: options.executionAuthority,
+  };
+  const integrity = integritySigner.sign(unsignedArgs);
+  if (!integritySigner.verify(unsignedArgs, integrity)) {
+    throw new Error(
+      'Report refresh job integrity signer rejected its queued payload',
+    );
+  }
   return collection.enqueueJob(
     {
       tenantId: options.tenantId ?? null,
@@ -258,17 +566,7 @@ export async function enqueueReportRefresh(
       objectType: taskType,
       objectId: null,
       method: 'run',
-      args: {
-        reportClass: options.reportClass,
-        mode: options.mode,
-        trigger: options.trigger ?? 'job',
-        tenantId: options.tenantId,
-        tenantIds: options.tenantIds,
-        adapterType: options.adapterType,
-        changedRows: options.changedRows,
-        scheduleId,
-        _scheduleId: scheduleId,
-      },
+      args: { ...unsignedArgs, _scheduleId: scheduleId, integrity },
       priority: options.priority ?? 70,
       timeout: options.timeout ?? 3600000,
       maxAttempts: options.maxAttempts ?? 3,
@@ -371,7 +669,10 @@ export async function ensureReportRefreshSchedules(
 
 export class ReportScheduleRunner extends EventEmitter {
   readonly id: string;
-  private readonly config: Required<ReportScheduleRunnerConfig>;
+  private readonly config: Required<
+    Omit<ReportScheduleRunnerConfig, 'integritySigner'>
+  > &
+    Pick<ReportScheduleRunnerConfig, 'integritySigner'>;
   private db: DatabaseInterface | null = null;
   private running = false;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -382,6 +683,7 @@ export class ReportScheduleRunner extends EventEmitter {
       id: config.id || `reports_${stableUuid([Date.now()]).slice(0, 8)}`,
       pollInterval: config.pollInterval ?? 60000,
       batchSize: config.batchSize ?? 50,
+      integritySigner: config.integritySigner,
     };
     this.id = this.config.id;
   }
@@ -524,6 +826,7 @@ export class ReportScheduleRunner extends EventEmitter {
         queue: String(row.queue || 'reports'),
         priority: Number(row.priority ?? 70),
         timeout: Number(row.timeout ?? 3600000),
+        integritySigner: this.config.integritySigner,
       });
       await this.db.query(
         `UPDATE ${REPORT_SCHEDULES_TABLE}
@@ -615,6 +918,7 @@ async function triggerReportsForInstance(
       timeout: options.timeout,
       tenantJobCap: options.tenantJobCap,
       changedRows,
+      integritySigner: options.integritySigner,
     });
   }
 }

@@ -12,7 +12,7 @@ import type { DataSurfaceServerActionContext } from '@happyvertical/smrt-agents/
 import type {
   DataSurfaceActionResult,
   DataSurfaceIdentity,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import {
   CONTENT_LIST_LIFECYCLE_ACTION_IDS,
   type ContentListActionAdapter,

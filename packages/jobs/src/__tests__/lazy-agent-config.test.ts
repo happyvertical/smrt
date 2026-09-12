@@ -194,6 +194,48 @@ describe('TaskRunner — lazy agent_config resolution (issue #1161)', () => {
     expect(LazyConfigProbe.lastConstructorOptions?.plain).toBe('value');
   });
 
+  it('keeps runner-owned persistence options out of static task config', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const jobs = await SmrtJobCollection.create({ db });
+
+    await jobs.create({
+      objectType: 'LazyConfigProbe',
+      method: 'ping',
+      args: {
+        _agentConfig: {
+          db: 'attacker-database',
+          id: 'attacker-id',
+          _skipLoad: true,
+          plain: 'preserved',
+        },
+      },
+    });
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+
+    const completed = new Promise<void>((resolve, reject) => {
+      runner.once('job:completed', () => resolve());
+      runner.once('job:failed', (_job, error) => reject(error));
+    });
+
+    await runner.start();
+    try {
+      await completed;
+    } finally {
+      await runner.stop();
+    }
+
+    expect(LazyConfigProbe.lastConstructorOptions).toMatchObject({
+      db,
+      plain: 'preserved',
+    });
+    expect(LazyConfigProbe.lastConstructorOptions).not.toHaveProperty('id');
+    expect(LazyConfigProbe.lastConstructorOptions).not.toHaveProperty(
+      '_skipLoad',
+    );
+  });
+
   it('fails the job fast when a sentinel references an unknown resolver', async () => {
     // Issue #1161 + Copilot review: TaskRunner uses `onError: 'throw'` so a
     // missing resolver (e.g. forgotten `registerConfigResolver` at boot)
