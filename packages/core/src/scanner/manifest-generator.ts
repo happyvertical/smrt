@@ -728,8 +728,24 @@ export class ManifestGenerator {
     // Create aggregated manifest that includes external package objects
     // This ensures STI schema generation finds ALL descendants
     const aggregatedManifest = this.createAggregatedManifest(manifest);
+    const schemaClasses = new Map(
+      Object.values(aggregatedManifest.objects).map((obj) => [
+        obj.className,
+        obj,
+      ]),
+    );
+
+    // An external class with the same simple name cannot replace a local item.
+    for (const obj of Object.values(manifest.objects))
+      schemaClasses.set(obj.className, obj);
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      // Collections access their item model's table; an independent schema can
+      // contradict that model's tenant/conflict identity during aggregation.
+      if (this.extendsCollection(obj, schemaClasses)) {
+        delete obj.schema;
+        continue;
+      }
       if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) {
         continue;
       }
@@ -798,6 +814,29 @@ export class ManifestGenerator {
     }
 
     this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+
+    // Preserve collection metadata, but take persistence identity from the item
+    // model only after every model schema (including FK repair) is complete.
+    for (const obj of Object.values(manifest.objects)) {
+      if (!this.extendsCollection(obj, schemaClasses)) continue;
+      let current: SmartObjectDefinition | undefined = obj;
+      const visited = new Set<SmartObjectDefinition>();
+      while (current && !visited.has(current)) {
+        visited.add(current);
+        const item = this.findItemClass(
+          current,
+          aggregatedManifest,
+          schemaClasses,
+        );
+        if (item?.schema && !this.extendsCollection(item, schemaClasses)) {
+          obj.schema = structuredClone(item.schema);
+          break;
+        }
+        current = current.extends
+          ? schemaClasses.get(current.extends)
+          : undefined;
+      }
+    }
   }
 
   normalizeReportObjects(manifest: SmartObjectManifest): void {

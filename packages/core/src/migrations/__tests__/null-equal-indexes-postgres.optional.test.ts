@@ -185,6 +185,50 @@ suite('NULL-equal framework identities on real PostgreSQL (#2834)', () => {
     ).toBe(1);
   });
 
+  it('uses PostgreSQL physical name truncation for long multibyte framework index names', async () => {
+    if (version < 150000) return;
+    const definition = schema('long_name');
+    const index = definition.indexes.find((entry) => entry.nullsNotDistinct);
+    if (!index) throw new Error('Framework identity missing');
+    index.name = `${prefix}_${'é'.repeat(40)}_identity`;
+    await create(definition, true);
+    const targets = collectNullEqualIndexTargets({ model: definition });
+    const physical = (
+      await db.query('SELECT $1::name::text AS name', [index.name])
+    ).rows[0].name;
+    expect(physical).not.toBe(index.name);
+    expect(
+      (await preflightNullEqualIndexes(db, targets)).indexes[0].state,
+    ).toBe('pending');
+    await migrateNullEqualIndexes(db, targets);
+    expect(
+      (await preflightNullEqualIndexes(db, targets)).indexes[0].state,
+    ).toBe('current');
+  });
+
+  it('keeps renamed equivalents untouched and gives an effective ownership-verified repair route', async () => {
+    if (version < 150000) return;
+    const definition = schema('renamed');
+    await create(definition, true);
+    const targets = collectNullEqualIndexTargets({ model: definition });
+    const target = targets[0];
+    const renamed = `${prefix}_operator_renamed`;
+    await db.query(`ALTER INDEX "${target.index}" RENAME TO "${renamed}"`);
+    const report = await preflightNullEqualIndexes(db, targets);
+    expect(report.indexes[0].state).toBe('blocked');
+    expect(report.indexes[0].reason).toContain('Ordinary db:migrate may treat');
+    expect(report.indexes[0].reason).toContain('ALTER INDEX');
+    await expect(migrateNullEqualIndexes(db, targets)).rejects.toThrow(
+      'Never rename an arbitrary business index',
+    );
+    // The operator has verified this exact index's ownership in this fixture.
+    await db.query(`ALTER INDEX "${renamed}" RENAME TO "${target.index}"`);
+    await migrateNullEqualIndexes(db, targets);
+    expect(
+      (await preflightNullEqualIndexes(db, targets)).indexes[0].state,
+    ).toBe('current');
+  });
+
   it('reports duplicates without changing rows or the original index', async () => {
     if (version < 150000) return;
     const definition = schema('duplicates');

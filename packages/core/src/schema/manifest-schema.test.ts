@@ -106,6 +106,85 @@ describe('manifestSchemaToDefinition', () => {
     ).toHaveLength(1);
   });
 
+  it.each([
+    false,
+    true,
+  ])('reconciles same-name ownership markers independently of contributor order (%s)', (reverse) => {
+    const plain = {
+      tableName: 'shared_identity',
+      columns: { tenant_id: { type: 'UUID' }, slug: { type: 'TEXT' } },
+      indexes: [
+        {
+          name: 'shared_identity_key',
+          columns: ['tenant_id', 'slug'],
+          unique: true,
+        },
+      ],
+    };
+    const marked = {
+      ...plain,
+      indexes: [{ ...plain.indexes[0], nullsNotDistinct: true }],
+    };
+    const inputs = reverse ? [marked, plain] : [plain, marked];
+    const collected = collectManifestTables(
+      inputs.map((schema, index) => ({ schema, source: `package:${index}` })),
+    ).get(plain.tableName);
+    expect(collected?.definition.indexes[0].nullsNotDistinct).toBe(true);
+    expect(plain.indexes[0]).not.toHaveProperty('nullsNotDistinct');
+  });
+
+  it.each([
+    'columns',
+    'unique',
+    'where',
+    'jsonPath',
+    'nullsNotDistinct',
+  ])('rejects incompatible same-name manifest index %s', (property) => {
+    const base = {
+      tableName: 'shared_identity',
+      columns: { tenant_id: { type: 'UUID' }, slug: { type: 'TEXT' } },
+      indexes: [
+        {
+          name: 'shared_identity_key',
+          columns: ['tenant_id', 'slug'],
+          unique: true,
+          nullsNotDistinct: true,
+        },
+      ],
+    };
+    const values = {
+      columns: ['slug'],
+      unique: false,
+      where: 'tenant_id IS NOT NULL',
+      jsonPath: { column: 'slug', path: '$.key' },
+      nullsNotDistinct: false,
+    };
+    const conflicting = {
+      ...base,
+      indexes: [
+        {
+          ...base.indexes[0],
+          [property]: values[property as keyof typeof values],
+        },
+      ],
+    };
+    for (const schemas of [
+      [base, conflicting],
+      [conflicting, base],
+    ]) {
+      expect(() =>
+        collectManifestTables(
+          schemas.map((schema, index) => ({
+            schema,
+            source: `package:${index}`,
+          })),
+        ),
+      ).toThrow(
+        'Conflicting manifest index definitions for shared_identity.shared_identity_key',
+      );
+    }
+  });
+
   it('maps manifest columns (default → defaultValue) and keeps where/jsonPath on indexes', () => {
     const definition = manifestSchemaToDefinition(structuredEvent);
 
@@ -455,7 +534,7 @@ describe('mergeSchemaDefinitionInto', () => {
       tableName: 't',
       columns: { id: { type: 'UUID' }, b: { type: 'INTEGER' } },
       indexes: [
-        { name: 't_a_idx', columns: ['a'], unique: true },
+        { name: 't_a_idx', columns: ['a'] },
         { name: 't_b_idx', columns: ['b'] },
       ],
       triggers: [],

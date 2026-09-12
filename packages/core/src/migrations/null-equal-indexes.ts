@@ -158,7 +158,7 @@ export async function preflightNullEqualIndexes(
     const row = result.rows[0];
     if (!row) {
       report.reason =
-        'Expected framework index is missing. Run ordinary db:migrate and repeat preflight.';
+        'Expected framework index is missing. Ordinary db:migrate may treat a differently named equivalent index as already satisfied. Inspect pg_indexes and verify framework ownership, exact ordered keys, uniqueness and dependencies. In a separate maintenance transaction, rename a verified owned equivalent with ALTER INDEX ... RENAME TO the expected name, or create the expected framework index from the generated schema; then repeat preflight. Never rename an arbitrary business index.';
     } else if (
       !row.indisunique ||
       !row.indisvalid ||

@@ -33,7 +33,15 @@ without that flag. No conditional blocking index build runs in concurrent mode.
 3. Resolve blocked findings explicitly. Duplicate NULL-equal groups are counted
    without printing their values; the report supplies a quoted detector SELECT.
    Decide correct identities with the data owner. This command never deletes or
-   merges rows. Missing/drifted indexes require ordinary schema repair first.
+   merges rows. Missing/drifted indexes require explicit schema repair first. PostgreSQL's
+   physical truncation of a generated name is recognized using its server
+   `name` type, including multibyte names. A differently renamed equivalent is
+   never adopted automatically: ordinary `db:migrate` may already consider it
+   satisfied and emit no repair. Inspect `pg_indexes`, verify framework ownership,
+   exact ordered keys, uniqueness and dependencies, then in a separate maintenance
+   transaction rename that verified owned index with `ALTER INDEX ... RENAME TO`
+   the expected name, or create the expected index from generated schema. Never
+   rename an unrelated business index. Repeat preflight after the repair.
 4. Schedule a maintenance window and run `smrt db:migrate-null-equal-indexes`.
    It acquires ACCESS EXCLUSIVE table locks in deterministic order, repeats
    catalog and duplicate checks under those locks, and replaces pending indexes
@@ -62,3 +70,19 @@ change record. No runtime object operation creates or upgrades application DDL.
 
 Implementation: `schema/conflict-target.ts`, `schema/ddl/null-equal-index.ts`,
 `migrations/null-equal-indexes.ts`, and CLI `db-migrate-null-equal-indexes.ts`.
+
+Checked-in `src/manifest/manifest.json` files are supported source-only fallbacks,
+including packages imported before their first build. Regenerate them through
+`ManifestBuilder.generate({ outputDir: 'src/manifest', outputName: 'manifest.json',
+loadViteConfig: false, include: ['src/**/*.ts'], exclude: ['**/*.test.ts',
+'**/*.spec.ts', '**/__tests__/**'], discoverExternalPackages: true,
+injectPackageInfo: true })` from each package directory when schema generation
+changes. This is the canonical source and build writer, not a marker-only JSON
+patch. Same-name collected indexes must have compatible ordered columns,
+uniqueness, predicates and expressions; otherwise collection fails with a
+regeneration diagnostic. A compatible optional ownership marker survives either
+contributor order; explicitly contradictory markers also fail closed.
+
+Collection access classes retain schema metadata copied from their resolved item
+model after model generation completes. They never generate an independent
+conflict identity; indirect collection subclasses inherit the same item schema.
