@@ -3,7 +3,7 @@ import type {
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceSelectionReference,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -77,6 +77,9 @@ function harness(options: {
   rowIds?: () => Array<string | number>;
   execution?: 'foreground' | 'background';
   enqueue?: (job: DataSurfaceBackgroundActionJob) => Promise<{ jobId: string }>;
+  backgroundQueue?: boolean;
+  backgroundHandlerId?: string | null;
+  deferredEnvelopeSigningKey?: string | Uint8Array | null;
   state?: DataSurfaceActionStateStore;
   runAsPrincipal?: typeof executeAsPrincipal;
   confirmation?: DataSurfaceServerActionDefinition['confirmation'];
@@ -155,7 +158,13 @@ function harness(options: {
   };
   const adapter = createDataSurfaceActionAdapter({
     state: options.state ?? new InMemoryDataSurfaceActionStateStore(),
-    deferredEnvelopeSigningKey: 'test-only-deferred-envelope-key-32',
+    ...(options.deferredEnvelopeSigningKey === null
+      ? {}
+      : {
+          deferredEnvelopeSigningKey:
+            options.deferredEnvelopeSigningKey ??
+            'test-only-deferred-envelope-key-32',
+        }),
     now: options.now,
     createToken: () => 'opaque-preview-token',
     runAsPrincipal: options.runAsPrincipal ?? runAsPrincipal,
@@ -187,9 +196,14 @@ function harness(options: {
             : ['one', 'two']),
       };
     },
-    ...(options.enqueue
+    ...(options.enqueue && options.backgroundQueue !== false
       ? {
-          backgroundHandlerId: 'orders-actions-v1',
+          ...(options.backgroundHandlerId === null
+            ? {}
+            : {
+                backgroundHandlerId:
+                  options.backgroundHandlerId ?? 'orders-actions-v1',
+              }),
           backgroundQueue: { enqueue: options.enqueue },
         }
       : {}),
@@ -855,7 +869,9 @@ describe('data-surface action adapter', () => {
       },
     });
     expect(applyRow).not.toHaveBeenCalled();
-    expect(setup.calls).toHaveLength(2);
+    // Read-only background readiness resolution precedes token consumption;
+    // execution still resolves once when the queued delivery runs.
+    expect(setup.calls).toHaveLength(3);
 
     if (!queued) throw new Error('background job was not queued');
     expect(queued.envelope.request.confirmationToken).toBeUndefined();
@@ -873,7 +889,7 @@ describe('data-surface action adapter', () => {
     expect(concurrent).toEqual(completed);
     expect(redelivery).toEqual(completed);
     expect(applyRow).toHaveBeenCalledTimes(2);
-    expect(setup.calls).toHaveLength(3);
+    expect(setup.calls).toHaveLength(4);
   });
 
   it('resolves permissions live when deferred work starts', async () => {
@@ -1006,22 +1022,53 @@ describe('data-surface action adapter', () => {
     );
   });
 
-  it('rejects background execution when no deferred principal resolver exists', async () => {
-    const enqueue = vi.fn();
-    const setup = harness({
+  it.each([
+    ['queue', { backgroundQueue: false }],
+    ['handler ID', { backgroundHandlerId: null }],
+    ['signing key', { deferredEnvelopeSigningKey: null }],
+    ['deferred principal resolver', { resolveDeferredPrincipal: null }],
+  ] as const)('keeps the preview token and idempotency key retryable until the %s is ready', async (_missing, missingConfiguration) => {
+    const state = new InMemoryDataSurfaceActionStateStore();
+    const enqueue = vi.fn(async () => ({ jobId: 'job-ready-retry' }));
+    let authorizations = 0;
+    const authorize = () => {
+      authorizations += 1;
+      return true;
+    };
+    const unavailable = harness({
       execution: 'background',
       enqueue,
-      resolveDeferredPrincipal: null,
+      state,
+      authorize,
+      ...missingConfiguration,
     });
-    const token = await previewToken(setup);
+    const token = await previewToken(unavailable);
+    const authorizationsAtPreview = authorizations;
+    const originalPreview = request('apply', {
+      confirmationToken: token,
+      idempotencyKey: `background-readiness-${_missing}`,
+    });
 
     await expect(
-      setup.adapter.apply(
-        request('apply', { confirmationToken: token }),
-        setup.context,
-      ),
+      unavailable.adapter.apply(originalPreview, unavailable.context),
     ).resolves.toMatchObject({ ok: false, reason: 'background_unavailable' });
+    expect(authorizations).toBe(authorizationsAtPreview);
     expect(enqueue).not.toHaveBeenCalled();
+
+    const ready = harness({
+      execution: 'background',
+      enqueue,
+      state,
+      authorize,
+    });
+    await expect(
+      ready.adapter.apply(originalPreview, ready.context),
+    ).resolves.toMatchObject({
+      ok: true,
+      details: { background: true, jobId: 'job-ready-retry' },
+    });
+    expect(authorizations).toBe(authorizationsAtPreview + 1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 
   it('binds deferred execution to the immutable enqueue principal', async () => {

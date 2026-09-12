@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   DataSurfaceActionStateStore,

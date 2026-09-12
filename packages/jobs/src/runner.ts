@@ -62,7 +62,7 @@ import {
 // Job rows are durable but untrusted transport. This marker is deliberately
 // module-private: a JSON task invocation cannot synthesize the runner-owned
 // execution context that security-sensitive task targets receive.
-const RUNNER_EXECUTION_CONTEXT = Symbol('smrt.runnerExecutionContext');
+const runnerExecutionContextIdentities = new WeakSet<object>();
 const runnerExecutionContexts = new AsyncLocalStorage<JobExecutionContext>();
 
 /** True only for an execution context constructed by this TaskRunner module. */
@@ -72,7 +72,7 @@ export function isRunnerExecutionContext(
   return (
     typeof value === 'object' &&
     value !== null &&
-    (value as Record<PropertyKey, unknown>)[RUNNER_EXECUTION_CONTEXT] === true
+    runnerExecutionContextIdentities.has(value)
   );
 }
 
@@ -980,7 +980,7 @@ export class TaskRunner extends EventEmitter {
           }
         : {}),
     };
-    Object.defineProperty(context, RUNNER_EXECUTION_CONTEXT, { value: true });
+    runnerExecutionContextIdentities.add(context);
     return context;
   }
 

@@ -1,6 +1,6 @@
 import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import { createTaskRunner } from '@happyvertical/smrt-jobs';
-import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {

@@ -13,15 +13,16 @@ import {
 } from '@happyvertical/smrt-jobs';
 import type {
   DataSurfaceActionDescriptor,
-  DataSurfaceActionRequest,
   DataSurfaceActionResult,
+  DataSurfaceActionRowOutcome,
+  DataSurfaceActionWireRequest,
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceJsonObject,
   DataSurfaceJsonValue,
   DataSurfaceRowId,
   DataSurfaceSelectionReference,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import {
   type ExecuteAsPrincipalOptions,
   executeAsPrincipal,
@@ -39,14 +40,6 @@ export interface DataSurfaceActionEligibility {
 export type DataSurfaceActionPayloadValidation =
   | { valid: true }
   | { valid: false; reason?: string };
-
-export interface DataSurfaceActionRowOutcome {
-  rowId: DataSurfaceRowId;
-  status: 'accepted' | 'skipped' | 'failed';
-  reason?: string;
-  /** Serializable per-row result returned by the action implementation. */
-  metadata?: DataSurfaceJsonObject;
-}
 
 export interface ResolvedDataSurfaceSelection {
   /** Fresh server-side revision of the selected surface/query. */
@@ -113,12 +106,7 @@ export interface ResolvedDataSurfaceActions {
 }
 
 export interface DataSurfaceServerActionRequest
-  extends DataSurfaceActionRequest {
-  /** Required on apply and bound into the preview token. */
-  expectedRevision: number;
-  /** Required on apply. Identical retries replay the first terminal result. */
-  idempotencyKey?: string;
-}
+  extends DataSurfaceActionWireRequest {}
 
 export interface DataSurfaceActionContext {
   principal: ExecuteAsPrincipalOptions;
@@ -1102,6 +1090,7 @@ export function createDataSurfaceActionAdapter(
         if (invocation.action.execution === 'background' && allowBackground) {
           if (
             !options.backgroundQueue ||
+            !validIdentifier(options.backgroundHandlerId) ||
             !options.resolveDeferredPrincipal ||
             !validSigningKey(options.deferredEnvelopeSigningKey)
           ) {
@@ -1205,6 +1194,42 @@ export function createDataSurfaceActionAdapter(
         return result(request, false, 'confirmation_mismatch');
       }
     }
+    // Resolve and validate deferred execution before consuming a one-time
+    // confirmation or reserving idempotency. Execution re-authorizes below;
+    // this preflight only prevents broken worker configuration from burning a
+    // retryable preview.
+    const backgroundPreflight = await runAsPrincipal(
+      {
+        ...boundContext.principal,
+        action: 'data_surface.action.apply',
+        auditMetadata: boundContext.principal.auditMetadata,
+      },
+      async (run) => {
+        const surface = await options.resolveSurface(run, request.identity);
+        if (
+          identityKey(surface.descriptor.identity) !==
+          identityKey(request.identity)
+        )
+          return undefined;
+        const action = surface.actions[request.actionId];
+        const declared = surface.descriptor.actions.find(
+          ({ id }) => id === request.actionId,
+        );
+        if (!action || !declared || action.descriptor.id !== declared.id)
+          return undefined;
+        if (
+          action.execution === 'background' &&
+          (!options.backgroundQueue ||
+            !validIdentifier(options.backgroundHandlerId) ||
+            !options.resolveDeferredPrincipal ||
+            !validSigningKey(options.deferredEnvelopeSigningKey))
+        ) {
+          return result(request, false, 'background_unavailable');
+        }
+        return undefined;
+      },
+    );
+    if (backgroundPreflight) return backgroundPreflight;
     // Ownership is an internal compare-and-set nonce. Keep it independent of
     // the injectable preview-token factory, which tests or callers may make
     // deterministic without weakening concurrent winner selection.

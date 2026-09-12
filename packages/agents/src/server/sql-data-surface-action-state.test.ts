@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
-import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

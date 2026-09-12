@@ -20,7 +20,7 @@ import {
 import type {
   DataSurfaceActionResult,
   DataSurfaceJsonObject,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   DataSurfaceBackgroundActionEnvelope,
