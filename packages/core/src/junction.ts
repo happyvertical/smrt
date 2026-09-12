@@ -229,8 +229,7 @@ export abstract class SmrtJunction<
       ) &&
       new Set(rightIds).size === rightIds.length &&
       this.attach === SmrtJunction.prototype.attach &&
-      this.create === SmrtCollection.prototype.create &&
-      this.createUnsaved === SmrtCollection.prototype.createUnsaved &&
+      SmrtCollection.hasBaseCreateLifecycle(this) &&
       rightIds.length + existing.length <= 100 &&
       !Object.keys(opts).some(
         (key) =>

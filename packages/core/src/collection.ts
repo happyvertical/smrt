@@ -3526,6 +3526,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return instance;
   }
 
+  /** @internal Test creation overrides inside the owning protected boundary. */
+  public static hasBaseCreateLifecycle<T extends SmrtObject>(
+    collection: SmrtCollection<T>,
+  ): boolean {
+    return (
+      collection.create === SmrtCollection.prototype.create &&
+      collection.createUnsaved === SmrtCollection.prototype.createUnsaved
+    );
+  }
+
   /** Initialize using the same owning path as create(), without persistence. */
   protected async createUnsaved(options: SmrtCreateInput<ModelType>) {
     let itemClassName = this.getResolvedItemClassName();
