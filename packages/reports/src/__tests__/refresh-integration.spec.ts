@@ -14,14 +14,17 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { refreshReport } from '../refresh.js';
 import { SmrtReport } from '../report.js';
 import {
+  enqueueReportRefresh,
   ensureReportRefreshSchedules,
   ReportScheduleRunner,
+  registerReportRefreshExecutionAuthorityHost,
   registerReportRefreshInterceptor,
   registerReportRefreshJobIntegritySigner,
+  SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
 } from '../scheduler.js';
 
@@ -49,6 +52,9 @@ beforeEach(() => {
   registerIntegrationClasses();
   ObjectRegistry.register(SmrtReportRefreshTask, {
     tableName: '_smrt_report_refresh_tasks',
+  });
+  ObjectRegistry.register(SmrtPrincipalReportRefreshTask, {
+    tableName: '_smrt_principal_report_refresh_tasks',
   });
   unregisterJobSigner = registerReportRefreshJobIntegritySigner(JOB_SIGNER);
 });
@@ -645,6 +651,137 @@ async function paidRows(db: DatabaseInterface) {
 }
 
 describe('report refresh integration', () => {
+  it('reauthorizes principal refreshes delivered by TaskRunner', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'manual-task-invoice',
+      tenantId: 'tenant-a',
+      customerId: 'customer-manual',
+      amount: 42,
+      updatedAt: '2026-03-02T00:00:00.000Z',
+    });
+    const authorize = vi.fn();
+    const audit = vi.fn();
+    const unregisterAuthority = registerReportRefreshExecutionAuthorityHost(
+      'integration-authority',
+      { authorize, audit },
+    );
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    try {
+      await enqueueReportRefresh({
+        db,
+        reportClass: 'IntegrationRevenueReport',
+        mode: 'incremental',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        adapterType: 'sqlite',
+        maxAttempts: 1,
+        integritySigner: JOB_SIGNER,
+        executionAuthority: {
+          version: 1,
+          hostId: 'integration-authority',
+          principal: {
+            version: 1,
+            actorUserId: 'user-a',
+            tenantId: 'tenant-a',
+          },
+        },
+      });
+      await taskRunner.initialize(db);
+      const completion = new Promise<{ result?: unknown }>(
+        (resolve, reject) => {
+          taskRunner.once('job:completed', (_job, result) =>
+            resolve(result as { result?: unknown }),
+          );
+          taskRunner.once('job:failed', (_job, error) => reject(error));
+          taskRunner.once('runner:error', reject);
+        },
+      );
+      await taskRunner.start();
+      await expect(completion).resolves.toMatchObject({
+        result: { tenantId: 'tenant-a', rowCount: 1 },
+      });
+      expect(authorize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorUserId: 'user-a',
+          tenantId: 'tenant-a',
+        }),
+        expect.objectContaining({ phase: 'execute', tenantId: 'tenant-a' }),
+      );
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'allowed', tenantId: 'tenant-a' }),
+      );
+    } finally {
+      await taskRunner.stop();
+      unregisterAuthority();
+      await db.close?.();
+    }
+  });
+
+  it('fails a revoked principal refresh delivered by TaskRunner before report reads', async () => {
+    const db = await setupDb();
+    const authorize = vi.fn(() => {
+      throw new Error('membership revoked');
+    });
+    const audit = vi.fn();
+    const unregisterAuthority = registerReportRefreshExecutionAuthorityHost(
+      'integration-denied-authority',
+      { authorize, audit },
+    );
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    try {
+      await enqueueReportRefresh({
+        db,
+        reportClass: 'IntegrationRevenueReport',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        maxAttempts: 1,
+        integritySigner: JOB_SIGNER,
+        executionAuthority: {
+          version: 1,
+          hostId: 'integration-denied-authority',
+          principal: {
+            version: 1,
+            actorUserId: 'user-a',
+            tenantId: 'tenant-a',
+          },
+        },
+      });
+      await taskRunner.initialize(db);
+      const failure = new Promise<Error>((resolve, reject) => {
+        taskRunner.once('job:failed', (_job, error) => resolve(error as Error));
+        taskRunner.once('runner:error', reject);
+      });
+      await taskRunner.start();
+      expect((await failure).message).toContain(
+        'Report refresh execution authority denied',
+      );
+      expect(authorize).toHaveBeenCalledOnce();
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'denied',
+          reason: 'current_authority_denied',
+          tenantId: 'tenant-a',
+        }),
+      );
+      await expect(reportRows(db)).resolves.toEqual([]);
+    } finally {
+      await taskRunner.stop();
+      unregisterAuthority();
+      await db.close?.();
+    }
+  });
+
   it('recomputes affected groups incrementally, including avg and empty-group deletes', async () => {
     const db = await setupDb();
     await insertInvoice(db, {
