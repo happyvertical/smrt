@@ -362,6 +362,8 @@ function harness(
     authorize: options.authorize,
     scope: options.scope,
     backgroundQueue: options.backgroundQueue,
+    backgroundHandlerId: 'content-list-actions-v1',
+    deferredEnvelopeSigningKey: 'test-only-content-action-signing-key',
     handlers: options.handlers,
     maxSelectionSize: options.maxSelectionSize,
     runAsPrincipal,
