@@ -647,10 +647,10 @@ export class CurrentOrder extends SmrtObject {
       chmodSync: fs.chmodSync,
       renameSync: fs.renameSync,
       writeFileSync: (pathname, ...args) => {
+        fs.writeFileSync(pathname, ...args);
         if (String(pathname).includes('manifest.json.smrt-')) {
           throw new Error('manifest staging failed');
         }
-        return fs.writeFileSync(pathname, ...args);
       },
     };
 
@@ -667,6 +667,9 @@ export class CurrentOrder extends SmrtObject {
       '{"previous":"knowledge"}',
     );
     expect(readFileSync(manifestPath, 'utf-8')).toBe('{"previous":"manifest"}');
+    expect(
+      readdirSync(smrtDir).filter((entry) => entry.endsWith('.tmp')),
+    ).toEqual([]);
   });
 
   it('removes a first-generation replacement when a later publication fails', () => {

@@ -57,9 +57,11 @@ export function publishArtifactFiles(
           ? `${file.path}.smrt-${unique}-${index}.bak`
           : undefined,
       };
+      // Register before the write: a failed write can still leave a partial
+      // temporary file, which the finally cleanup must see.
+      staged.push(stagedFile);
       filesystem.writeFileSync(stagedFile.stagedPath, file.content, 'utf-8');
       if (mode !== undefined) filesystem.chmodSync(stagedFile.stagedPath, mode);
-      staged.push(stagedFile);
     }
     for (const file of staged) {
       if (!file.backupPath) continue;
