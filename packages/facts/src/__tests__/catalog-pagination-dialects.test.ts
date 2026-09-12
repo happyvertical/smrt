@@ -236,6 +236,124 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         });
       }
 
+      for (const subtype of [false, true]) {
+        for (const mode of [
+          'omit-update',
+          'omit-refined-update',
+          'undefined-update',
+          'omit-insert',
+          'null-update',
+        ] as const) {
+          it(`preserves persisted sources when ${subtype ? 'STI' : 'base'} serialization uses ${mode}`, async () => {
+            const Model = subtype ? CatalogSpecialFact : Fact;
+            const collection = subtype
+              ? await CatalogSpecialFacts.create({ db })
+              : facts;
+            const fact = new Model({
+              db,
+              textRefined: 'original refined',
+              textRaw: 'original raw',
+              status: 'active',
+            });
+            await fact.initialize();
+            if (mode !== 'omit-insert') await fact.save();
+            const serializable = fact as unknown as {
+              transformJSON(
+                data: Record<string, unknown>,
+              ): Record<string, unknown>;
+            };
+            const transform = serializable.transformJSON.bind(fact);
+            vi.spyOn(serializable, 'transformJSON').mockImplementation(
+              (data) => {
+                const result = transform(data);
+                if (mode === 'omit-refined-update') delete result.textRefined;
+                else if (mode === 'null-update') result.textRaw = null;
+                else if (mode === 'undefined-update')
+                  result.textRaw = undefined;
+                else delete result.textRaw;
+                return result;
+              },
+            );
+            fact.textRefined = 'new refined';
+            fact.textRaw =
+              mode === 'omit-refined-update' ? 'new raw' : 'stale instance raw';
+            await fact.save();
+            const { rows } = await db.query(
+              'SELECT text_refined, text_raw, catalog_search FROM facts WHERE id = ?',
+              fact.id,
+            );
+            const refined =
+              mode === 'omit-refined-update'
+                ? 'original refined'
+                : 'new refined';
+            const raw =
+              mode === 'omit-refined-update'
+                ? 'new raw'
+                : mode === 'omit-insert'
+                  ? ''
+                  : mode === 'null-update' ||
+                      (mode === 'undefined-update' && dialect === 'duckdb')
+                    ? null
+                    : 'original raw';
+            expect(rows[0]).toMatchObject({
+              text_refined: refined,
+              text_raw: raw,
+            });
+            const expected = encodeCatalogSearch(`${refined} ${raw}`);
+            expect(rows[0].catalog_search).toBe(
+              mode === 'null-update' ? expected : null,
+            );
+            expect(fact.catalogSearch).toBe(rows[0].catalog_search);
+            expect(fact.toPublicJSON()).not.toHaveProperty('catalogSearch');
+            vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+              new Error('offline'),
+            );
+            if (mode !== 'null-update') {
+              await expect(
+                collection.browseCatalog('new refined'),
+              ).rejects.toThrow('backfillCatalogSearch');
+              expect(
+                await withSystemContext(() =>
+                  collection.backfillCatalogSearch(1),
+                ),
+              ).toEqual({ remaining: 0 });
+            }
+            const repaired = await db.query(
+              'SELECT catalog_search FROM facts WHERE id = ?',
+              fact.id,
+            );
+            expect(repaired.rows[0].catalog_search).toBe(expected);
+            const hydrated = await collection.get({ id: fact.id });
+            expect(hydrated?.textRefined).toBe(refined);
+            expect(hydrated?.textRaw).toBe(raw);
+            expect(
+              (
+                await collection.browseCatalog(
+                  mode === 'omit-refined-update'
+                    ? 'original refined'
+                    : raw === null
+                      ? 'null'
+                      : mode === 'omit-insert'
+                        ? 'new refined'
+                        : 'original raw',
+                  { latestOnly: false },
+                )
+              ).map((row) => row.id),
+            ).toEqual([fact.id]);
+            expect(
+              await collection.browseCatalog('undefined', {
+                latestOnly: false,
+              }),
+            ).toEqual([]);
+            expect(
+              await collection.browseCatalog('stale instance', {
+                latestOnly: false,
+              }),
+            ).toEqual([]);
+          });
+        }
+      }
+
       for (const queryText of ['', 'K']) {
         it(`preserves narrowing beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {
           const special = await CatalogSpecialFacts.create({ db });

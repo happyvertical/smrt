@@ -118,9 +118,12 @@ export class Fact extends SmrtObject {
   protected override normalizePersistenceData(
     data: Readonly<Record<string, unknown>>,
   ): Record<string, unknown> {
-    this.catalogSearch = encodeCatalogSearch(
-      `${data.text_refined} ${data.text_raw}`,
-    );
+    // Omitted/undefined sources may retain stored values or use database
+    // defaults. Invalidate instead of guessing from pre-serialization state.
+    this.catalogSearch =
+      data.text_refined === undefined || data.text_raw === undefined
+        ? null
+        : encodeCatalogSearch(`${data.text_refined} ${data.text_raw}`);
     return {
       ...super.normalizePersistenceData(data),
       catalog_search: this.catalogSearch,
