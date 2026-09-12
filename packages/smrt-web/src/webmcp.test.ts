@@ -50,7 +50,10 @@ interface CapturedTool {
     openWorldHint?: boolean;
     untrustedContentHint?: boolean;
   };
-  execute: (args: Record<string, unknown>) => Promise<string> | string;
+  execute: (
+    args: Record<string, unknown>,
+    options?: { signal?: AbortSignal },
+  ) => Promise<string> | string;
 }
 
 function installModelContext(): {
@@ -1593,6 +1596,68 @@ describe('registerWebMcpTools', () => {
 // classification and `effects` exposure policy as generated tools, without
 // `namespace` or `maxTools` — RegisterWebMcpBespokeToolOptions has neither.
 describe('registerWebMcpBespokeTool', () => {
+  it('forwards host execution options without replacing the caller signal', async () => {
+    const { tools } = installModelContext();
+    const execute = vi.fn(() => 'ok');
+    const dispose = registerWebMcpBespokeTool({
+      name: 'context_forwarding',
+      description: 'Context forwarding',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+      execute,
+    });
+    const controller = new AbortController();
+    const options = { signal: controller.signal, futureHostField: 'preserved' };
+    expect(await tools[0].execute({ value: 1 }, options)).toBe('ok');
+    expect(execute).toHaveBeenCalledWith({ value: 1 }, options);
+    expect(await tools[0].execute({})).toBe('ok');
+    expect(execute).toHaveBeenLastCalledWith({});
+    expect(await tools[0].execute({}, {})).toBe('ok');
+    expect(execute).toHaveBeenLastCalledWith({}, {});
+    dispose();
+    expect(() => tools[0].execute({}, options)).toThrow('no longer registered');
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it('delivers per-invocation cancellation without disposing sibling executions', async () => {
+    const { tools, unregistered } = installModelContext();
+    const execute = (
+      _args: Record<string, unknown>,
+      options?: { signal?: AbortSignal },
+    ) =>
+      new Promise<string>((resolve) => {
+        if (!options?.signal) return resolve('missing signal');
+        if (options.signal.aborted)
+          return resolve(String(options.signal.reason));
+        options.signal.addEventListener(
+          'abort',
+          () => resolve(String(options.signal?.reason)),
+          { once: true },
+        );
+      });
+    const dispose = registerWebMcpBespokeTool({
+      name: 'context_cancel',
+      description: 'Context cancellation',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+      execute,
+    });
+    const first = new AbortController();
+    const second = new AbortController();
+    const firstResult = tools[0].execute({}, { signal: first.signal });
+    const secondResult = tools[0].execute({}, { signal: second.signal });
+    first.abort('first cancelled');
+    await expect(firstResult).resolves.toBe('first cancelled');
+    expect(second.signal.aborted).toBe(false);
+    expect(unregistered).toEqual([]);
+    second.abort('second cancelled');
+    await expect(secondResult).resolves.toBe('second cancelled');
+    await expect(tools[0].execute({}, { signal: first.signal })).resolves.toBe(
+      'first cancelled',
+    );
+    dispose();
+  });
+
   afterEach(() => {
     clearModelContext();
   });

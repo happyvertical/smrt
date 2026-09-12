@@ -1676,6 +1676,7 @@ export {
   type WebMcpRegistrationDefinition,
   type WebMcpRegistrationDisposer,
   type WebMcpToolEffect,
+  type WebMcpToolExecutionOptions,
   WebMcpToolNameCollisionError,
   type WebMcpToolNameOwner,
   type WebMcpToolNameReservation,

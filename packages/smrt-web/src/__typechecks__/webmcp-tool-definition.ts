@@ -19,3 +19,24 @@ const legacyWebMcpToolDefinition: WebMcpToolDefinition = {
 };
 
 void legacyWebMcpToolDefinition;
+
+// New callbacks can consume host cancellation; old one-argument callbacks remain valid.
+import type {
+  WebMcpBespokeToolSpec,
+  WebMcpToolExecutionOptions,
+} from '../index';
+import type { WebMcpToolExecutionOptions as SubpathExecutionOptions } from '../webmcp';
+
+const callbackOptions: WebMcpToolExecutionOptions = {};
+const subpathOptions: SubpathExecutionOptions = callbackOptions;
+const contextualCallback: WebMcpBespokeToolSpec['execute'] = (
+  _args,
+  options,
+) => {
+  options?.signal?.throwIfAborted();
+  return 'ok';
+};
+const legacyCallback: WebMcpBespokeToolSpec['execute'] = (_args) => 'ok';
+void subpathOptions;
+void contextualCallback;
+void legacyCallback;
