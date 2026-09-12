@@ -156,6 +156,59 @@ export class SqlDataSurfaceActionStateStore
     return updated.rows.length === 1;
   }
 
+  async consumeTokenAndReserveIdempotency(
+    token: string,
+    idempotencyKey: string,
+    scope: string,
+    reservation: DataSurfaceIdempotencyReservation,
+  ): Promise<DataSurfaceIdempotencyRecord | undefined> {
+    const transaction = this.db.transaction;
+    if (!transaction) {
+      throw new Error(
+        'Durable data-surface action state requires database transactions',
+      );
+    }
+    return (await transaction.call(this.db, async (tx) => {
+      const timestamp = new Date(this.now()).toISOString();
+      const consumed = await tx.query(
+        `UPDATE ${TOKEN_TABLE}
+            SET consumed_by = ?, updated_at = ?
+          WHERE token_hash = ?
+            AND (consumed_by IS NULL OR consumed_by = ?)
+          RETURNING token_hash`,
+        idempotencyKey,
+        timestamp,
+        secretHash(token),
+        idempotencyKey,
+      );
+      if (consumed.rows.length !== 1) return undefined;
+      await tx.query(
+        `INSERT INTO ${IDEMPOTENCY_TABLE}
+          (id, slug, context, created_at, updated_at, key_hash, status,
+           request_fingerprint, owner_hash, reserved_at, result, recovery)
+         VALUES (?, ?, '', ?, ?, ?, 'reserved', ?, ?, ?, NULL, NULL)
+         ON CONFLICT(key_hash) DO NOTHING`,
+        randomUUID(),
+        `action-idempotency-${randomUUID()}`,
+        timestamp,
+        timestamp,
+        secretHash(scope),
+        reservation.requestFingerprint,
+        secretHash(reservation.ownerToken),
+        String(reservation.reservedAt),
+      );
+      const current = await this.getIdempotencyWithOwner(
+        scope,
+        reservation.ownerToken,
+        tx,
+      );
+      if (!current) {
+        throw new DataSurfaceActionStateCorruptionError(IDEMPOTENCY_TABLE);
+      }
+      return current;
+    })) as DataSurfaceIdempotencyRecord | undefined;
+  }
+
   async getIdempotency(
     key: string,
   ): Promise<DataSurfaceIdempotencyRecord | undefined> {
@@ -273,8 +326,9 @@ export class SqlDataSurfaceActionStateStore
   private async getIdempotencyWithOwner(
     key: string,
     ownerToken: string,
+    db: DatabaseInterface = this.db,
   ): Promise<DataSurfaceIdempotencyRecord | undefined> {
-    const found = await this.db.query(
+    const found = await db.query(
       `SELECT status, request_fingerprint, owner_hash, reserved_at, result, recovery
          FROM ${IDEMPOTENCY_TABLE} WHERE key_hash = ? LIMIT 1`,
       secretHash(key),

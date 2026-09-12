@@ -554,6 +554,9 @@ export interface ContentListActionAdapterOptions {
   ) => boolean | Promise<boolean>;
   handlers?: ContentListWorkflowHandlers;
   backgroundQueue?: DataSurfaceBackgroundQueue;
+  backgroundHandlerId?: string;
+  /** In-process secret used to authenticate the durable background envelope. */
+  deferredEnvelopeSigningKey?: string | Uint8Array;
   descriptor?: DataSurfaceDescriptor;
   maxSelectionSize?: number;
   representativeLimit?: number;
@@ -1333,6 +1336,8 @@ export function createContentListActionAdapter(
     putToken: (...args) => options.state.putToken(...args),
     getToken: (...args) => options.state.getToken(...args),
     markTokenConsumed: (...args) => options.state.markTokenConsumed(...args),
+    consumeTokenAndReserveIdempotency: (...args) =>
+      options.state.consumeTokenAndReserveIdempotency(...args),
     getIdempotency: (...args) => options.state.getIdempotency(...args),
     reserveIdempotency: (...args) => options.state.reserveIdempotency(...args),
     completeIdempotency: (key, ownerToken, result) => {
@@ -1350,6 +1355,8 @@ export function createContentListActionAdapter(
   const generic = createDataSurfaceActionAdapter({
     state,
     backgroundQueue: options.backgroundQueue,
+    backgroundHandlerId: options.backgroundHandlerId,
+    deferredEnvelopeSigningKey: options.deferredEnvelopeSigningKey,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
     resolveDeferredPrincipal: options.resolveDeferredPrincipal,

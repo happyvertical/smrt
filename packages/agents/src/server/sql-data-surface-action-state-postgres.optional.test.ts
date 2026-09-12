@@ -63,20 +63,42 @@ postgresDescribe('SQL data-surface action state on PostgreSQL', () => {
       resolvedRowsFingerprint: 'rows-a',
       requestFingerprint: 'request-a',
     });
-    const consumed = await Promise.all([
-      first.markTokenConsumed('postgres-secret-token', 'apply-a'),
-      second.markTokenConsumed('postgres-secret-token', 'apply-b'),
-    ]);
-    expect(consumed.filter(Boolean)).toHaveLength(1);
-
     const reservedAt = Date.now();
+    const consumedAndReserved = await Promise.all([
+      first.consumeTokenAndReserveIdempotency(
+        'postgres-secret-token',
+        'apply-a',
+        'postgres-scope-a',
+        {
+          requestFingerprint: 'request-a',
+          ownerToken: 'owner-a',
+          reservedAt,
+        },
+      ),
+      second.consumeTokenAndReserveIdempotency(
+        'postgres-secret-token',
+        'apply-b',
+        'postgres-scope-b',
+        {
+          requestFingerprint: 'request-a',
+          ownerToken: 'owner-b',
+          reservedAt: reservedAt + 1,
+        },
+      ),
+    ]);
+    expect(consumedAndReserved.filter(Boolean)).toHaveLength(1);
+    const winningApply = consumedAndReserved[0] ? 'apply-a' : 'apply-b';
+    await expect(
+      first.getToken('postgres-secret-token'),
+    ).resolves.toMatchObject({ consumedBy: winningApply });
+
     const reservations = await Promise.all([
-      first.reserveIdempotency('postgres-scope', {
+      first.reserveIdempotency('postgres-shared-scope', {
         requestFingerprint: 'request-a',
         ownerToken: 'owner-a',
         reservedAt,
       }),
-      second.reserveIdempotency('postgres-scope', {
+      second.reserveIdempotency('postgres-shared-scope', {
         requestFingerprint: 'request-a',
         ownerToken: 'owner-b',
         reservedAt: reservedAt + 1,

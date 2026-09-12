@@ -173,7 +173,8 @@ with `confirmation: 'none'` may apply directly with an idempotency key; every
 other apply must include its current preview token. Callers must supply a durable
 shared `DataSurfaceActionStateStore` with atomic token and idempotency operations.
 `createSqlDataSurfaceActionStateStore()` uses the application's migrated SMRT
-database; preview tokens and reservation owner nonces are stored as hashes. An
+database; token consumption and apply reservation commit together, while
+preview tokens and reservation owner nonces are stored as hashes. An
 orphaned reservation is never expired or retried automatically because its
 external effects may be unknown. A host may only reconcile it to a terminal
 result through `reconcileIdempotency()` after the configured live-authority
@@ -185,7 +186,9 @@ harnesses only.
 `@happyvertical/smrt-jobs`. The envelope contains the request and a non-secret
 principal reference, never permission snapshots or confirmation-token secrets.
 Register the same stable handler ID in every worker process and configure the
-adapter with that `backgroundHandlerId`; worker delivery calls
+adapter with that `backgroundHandlerId` and a server-only
+`deferredEnvelopeSigningKey` of at least 32 bytes. The key authenticates every
+persisted envelope field and is never added to the job payload. Worker delivery calls
 `adapter.executeDeferred()`, which resolves current principal authority again
 before mutation. The original `job.run()` callback remains available for
 in-process queue adapters.

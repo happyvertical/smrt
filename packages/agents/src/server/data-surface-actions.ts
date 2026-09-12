@@ -6,7 +6,12 @@
  * afresh, and delegates durable work only after authorization and eligibility
  * checks have passed.
  */
-import { createHash, randomBytes } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import type {
   DataSurfaceActionDescriptor,
   DataSurfaceActionRequest,
@@ -135,6 +140,8 @@ export interface DataSurfaceBackgroundActionEnvelope {
   request: DataSurfaceServerActionRequest;
   principal: DataSurfaceDeferredPrincipalReference;
   previewToken?: DataSurfacePreviewTokenRecord;
+  /** Server-authenticated binding over every other persisted envelope field. */
+  binding: string;
 }
 
 export interface DataSurfaceBackgroundActionJob {
@@ -216,6 +223,16 @@ export interface DataSurfaceActionStateStore {
     token: string,
     idempotencyKey: string,
   ): Promise<boolean> | boolean;
+  /** Atomically consume a preview token and create/read its apply reservation. */
+  consumeTokenAndReserveIdempotency(
+    token: string,
+    idempotencyKey: string,
+    scope: string,
+    reservation: DataSurfaceIdempotencyReservation,
+  ):
+    | Promise<DataSurfaceIdempotencyRecord | undefined>
+    | DataSurfaceIdempotencyRecord
+    | undefined;
   getIdempotency(
     key: string,
   ):
@@ -262,6 +279,27 @@ export class InMemoryDataSurfaceActionStateStore
     if (record.consumedBy && record.consumedBy !== idempotencyKey) return false;
     record.consumedBy = idempotencyKey;
     return true;
+  }
+
+  consumeTokenAndReserveIdempotency(
+    token: string,
+    idempotencyKey: string,
+    scope: string,
+    reservation: DataSurfaceIdempotencyReservation,
+  ): DataSurfaceIdempotencyRecord | undefined {
+    const tokenRecord = this.tokens.get(token);
+    if (
+      !tokenRecord ||
+      (tokenRecord.consumedBy && tokenRecord.consumedBy !== idempotencyKey)
+    ) {
+      return undefined;
+    }
+    const existing = this.idempotency.get(scope);
+    if (!existing) {
+      this.idempotency.set(scope, { status: 'reserved', ...reservation });
+    }
+    tokenRecord.consumedBy = idempotencyKey;
+    return this.idempotency.get(scope);
   }
 
   getIdempotency(key: string): DataSurfaceIdempotencyRecord | undefined {
@@ -318,6 +356,8 @@ export interface DataSurfaceActionAdapterOptions {
   backgroundQueue?: DataSurfaceBackgroundQueue;
   /** Stable worker registration key required by durable background queues. */
   backgroundHandlerId?: string;
+  /** Secret used only in-process to authenticate durable background envelopes. */
+  deferredEnvelopeSigningKey?: string | Uint8Array;
   /** Required durable, shared backend in production; memory storage is opt-in. */
   state: DataSurfaceActionStateStore;
   tokenTtlMs?: number;
@@ -442,6 +482,34 @@ function stable(value: unknown): string {
 
 function fingerprint(value: unknown): string {
   return createHash('sha256').update(stable(value)).digest('hex');
+}
+
+function envelopeBinding(
+  envelope: Omit<DataSurfaceBackgroundActionEnvelope, 'binding'>,
+  key: string | Uint8Array,
+): string {
+  return createHmac('sha256', key).update(stable(envelope)).digest('base64url');
+}
+
+function validSigningKey(key: string | Uint8Array | undefined): boolean {
+  return (
+    key !== undefined &&
+    (typeof key === 'string' ? Buffer.byteLength(key) : key.byteLength) >= 32
+  );
+}
+
+function bindingMatches(
+  envelope: DataSurfaceBackgroundActionEnvelope,
+  key: string | Uint8Array,
+): boolean {
+  const { binding, ...unsigned } = envelope;
+  const expected = envelopeBinding(unsigned, key);
+  const actualBytes = Buffer.from(binding);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    actualBytes.length === expectedBytes.length &&
+    timingSafeEqual(actualBytes, expectedBytes)
+  );
 }
 
 function identityKey(identity: DataSurfaceIdentity): string {
@@ -1033,22 +1101,33 @@ export function createDataSurfaceActionAdapter(
           return result(request, false, 'stale_revision');
         }
         if (invocation.action.execution === 'background' && allowBackground) {
-          if (!options.backgroundQueue || !options.resolveDeferredPrincipal) {
+          if (
+            !options.backgroundQueue ||
+            !options.resolveDeferredPrincipal ||
+            !validSigningKey(options.deferredEnvelopeSigningKey)
+          ) {
             return result(request, false, 'background_unavailable');
           }
           const { confirmationToken: _confirmationToken, ...deferredRequest } =
             request;
+          const unsignedEnvelope = {
+            version: 1,
+            handlerId: options.backgroundHandlerId ?? '',
+            request: deferredRequest,
+            principal: deferredPrincipalReference,
+            ...(token ? { previewToken: token } : {}),
+          } as const;
           const queued = await options.backgroundQueue.enqueue({
             idempotencyKey,
             identity: request.identity,
             actionId: request.actionId,
             rowIds: invocation.selection.rowIds,
             envelope: {
-              version: 1,
-              handlerId: options.backgroundHandlerId ?? '',
-              request: deferredRequest,
-              principal: deferredPrincipalReference,
-              ...(token ? { previewToken: token } : {}),
+              ...unsignedEnvelope,
+              binding: envelopeBinding(
+                unsignedEnvelope,
+                options.deferredEnvelopeSigningKey as string | Uint8Array,
+              ),
             },
             run: () =>
               executeBackgroundOnce(request, token, deferredPrincipalReference),
@@ -1126,24 +1205,35 @@ export function createDataSurfaceActionAdapter(
       ) {
         return result(request, false, 'confirmation_mismatch');
       }
-      if (!(await state.markTokenConsumed(confirmationToken, idempotencyKey))) {
-        return result(request, false, 'confirmation_replayed');
-      }
     }
     // Ownership is an internal compare-and-set nonce. Keep it independent of
     // the injectable preview-token factory, which tests or callers may make
     // deterministic without weakening concurrent winner selection.
     const ownerToken = randomBytes(16).toString('base64url');
+    const reservation = {
+      requestFingerprint: requestFingerprintValue,
+      ownerToken,
+      reservedAt: now(),
+    };
+    let firstWinner: DataSurfaceIdempotencyRecord | undefined;
+    if (confirmationToken) {
+      firstWinner = await state.consumeTokenAndReserveIdempotency(
+        confirmationToken,
+        idempotencyKey,
+        idempotencyScope,
+        reservation,
+      );
+      if (!firstWinner) return result(request, false, 'confirmation_replayed');
+    }
     const maxPolls = Math.max(
       1,
       Math.ceil(idempotencyWaitTimeoutMs / idempotencyPollIntervalMs),
     );
     for (let poll = 0; poll <= maxPolls; poll += 1) {
-      const winner = await state.reserveIdempotency(idempotencyScope, {
-        requestFingerprint: requestFingerprintValue,
-        ownerToken,
-        reservedAt: now(),
-      });
+      const winner =
+        poll === 0 && firstWinner
+          ? firstWinner
+          : await state.reserveIdempotency(idempotencyScope, reservation);
       if (winner.requestFingerprint !== requestFingerprintValue)
         return result(request, false, 'idempotency_conflict');
       if (winner.status === 'completed')
@@ -1191,6 +1281,15 @@ export function createDataSurfaceActionAdapter(
   async function executeDeferred(
     envelope: DataSurfaceBackgroundActionEnvelope,
   ): Promise<DataSurfaceActionResult> {
+    if (
+      !validSigningKey(options.deferredEnvelopeSigningKey) ||
+      !bindingMatches(
+        envelope,
+        options.deferredEnvelopeSigningKey as string | Uint8Array,
+      )
+    ) {
+      throw new Error('Invalid durable data-surface action envelope binding');
+    }
     const principal = envelope.principal;
     if (
       envelope.version !== 1 ||

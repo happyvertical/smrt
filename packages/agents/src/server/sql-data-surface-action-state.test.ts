@@ -52,6 +52,35 @@ describe('SqlDataSurfaceActionStateStore', () => {
     expect(persisted.rows[0]?.token_hash).not.toBe('secret-preview-token');
   });
 
+  it('rolls token consumption back when its reservation cannot commit', async () => {
+    const store = new SqlDataSurfaceActionStateStore({ db });
+    await store.putToken('transactional-token', tokenRecord());
+    await db.query(
+      `CREATE TRIGGER reject_action_reservation
+       BEFORE INSERT ON _smrt_data_surface_action_idempotency
+       BEGIN SELECT RAISE(ABORT, 'forced reservation failure'); END`,
+    );
+
+    await expect(
+      store.consumeTokenAndReserveIdempotency(
+        'transactional-token',
+        'apply-transactional',
+        'scope-transactional',
+        {
+          requestFingerprint: 'request-transactional',
+          ownerToken: 'owner-transactional',
+          reservedAt: 100,
+        },
+      ),
+    ).rejects.toThrow('forced reservation failure');
+    await expect(
+      store.getToken('transactional-token'),
+    ).resolves.not.toHaveProperty('consumedBy');
+    await expect(
+      store.getIdempotency('scope-transactional'),
+    ).resolves.toBeUndefined();
+  });
+
   it('selects one reservation owner and conditionally completes for restart replay', async () => {
     const first = new SqlDataSurfaceActionStateStore({ db });
     const second = new SqlDataSurfaceActionStateStore({ db });

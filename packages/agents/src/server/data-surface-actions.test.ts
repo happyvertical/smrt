@@ -155,6 +155,7 @@ function harness(options: {
   };
   const adapter = createDataSurfaceActionAdapter({
     state: options.state ?? new InMemoryDataSurfaceActionStateStore(),
+    deferredEnvelopeSigningKey: 'test-only-deferred-envelope-key-32',
     now: options.now,
     createToken: () => 'opaque-preview-token',
     runAsPrincipal: options.runAsPrincipal ?? runAsPrincipal,
@@ -1074,6 +1075,47 @@ describe('data-surface action adapter', () => {
         agentClass: 'orders-agent',
       },
     ]);
+  });
+
+  it('rejects a changed durable envelope before resolving authority or mutating', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const applyRow = vi.fn();
+    const resolveDeferredPrincipal = vi.fn(async (reference) => ({
+      db: 'test.db',
+      principal: {
+        runAsUserId: reference.runAsUserId,
+        tenantId: reference.tenantId,
+        actsAsProfileId: reference.actsAsProfileId,
+        allowedTools: ['orders.archive'],
+      },
+      onBehalfOfUserId: reference.onBehalfOfUserId,
+    }));
+    const setup = harness({
+      execution: 'background',
+      apply: applyRow,
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-authenticated-envelope' };
+      },
+      resolveDeferredPrincipal,
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+    if (!queued) throw new Error('background job was not queued');
+    const altered = structuredClone(queued.envelope);
+    altered.request.selection = {
+      scope: 'explicit-ids',
+      rowIds: ['attacker-selected-row'],
+    };
+
+    await expect(setup.adapter.executeDeferred(altered)).rejects.toThrow(
+      'Invalid durable data-surface action envelope binding',
+    );
+    expect(resolveDeferredPrincipal).not.toHaveBeenCalled();
+    expect(applyRow).not.toHaveBeenCalled();
   });
 
   it('executes deferred work from an immutable confirmed request snapshot', async () => {

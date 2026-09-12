@@ -653,6 +653,24 @@ describe('report lifecycle', () => {
     }
   });
 
+  it('fails closed when a persisted manual refresh loses its authority binding', async () => {
+    const db = await setupDb();
+    try {
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      await expect(
+        task.run({
+          reportClass: await lifecycleClassName(),
+          mode: 'rebuild',
+          trigger: 'manual',
+          tenantId: 'tenant-a',
+        }),
+      ).rejects.toThrow('Manual report refresh execution authority is missing');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('keeps scheduled maintenance refreshes compatible without a user binding', async () => {
     const db = await setupDb();
     try {

@@ -276,6 +276,9 @@ async function authorizeReportRefreshExecution(
   jobTenantId: string | null,
 ): Promise<void> {
   const authority = args.executionAuthority;
+  if ((args.trigger ?? 'job') === 'manual' && !authority) {
+    throw new Error('Manual report refresh execution authority is missing');
+  }
   // Scheduled and on-change maintenance jobs predate user-bound actions and
   // intentionally run under the worker's system authority.
   if (!authority) return;
