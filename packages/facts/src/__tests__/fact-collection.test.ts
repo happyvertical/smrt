@@ -427,7 +427,7 @@ describe('getEntityBriefing', () => {
     ).toHaveLength(1);
   });
 
-  it('preserves legacy latest-chain resolution in the text fallback', async () => {
+  it('resolves text fallback chains from one scoped graph', async () => {
     await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         facts.create({
@@ -452,7 +452,7 @@ describe('getEntityBriefing', () => {
     expect(results).toHaveLength(5);
     expect(
       querySpy.mock.calls.filter(([sql]) => String(sql).includes('FROM facts')),
-    ).toHaveLength(31);
+    ).toHaveLength(1);
   });
 
   it('treats text fallback wildcard characters as literal text', async () => {

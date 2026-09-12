@@ -154,6 +154,12 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         );
         const page = await facts.browseCatalog('', { limit: 1 });
         expect(page.map((f) => f.id)).toEqual([newer.id]);
+        vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+          new Error('Embeddings unavailable'),
+        );
+        expect(
+          (await facts.browseCatalog('root', { limit: 1 })).map((f) => f.id),
+        ).toEqual([newer.id]);
       });
 
       it('terminates recursive cycles and returns each repeated candidate once', async () => {
@@ -174,6 +180,14 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         const page = await facts.browseCatalog('', { limit: 5 });
         expect(page).toHaveLength(2);
         expect(new Set(page.map((f) => f.id))).toEqual(
+          new Set([root.id, leaf.id]),
+        );
+        vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+          new Error('Embeddings unavailable'),
+        );
+        const fallback = await facts.browseCatalog('cycle', { limit: 5 });
+        expect(fallback).toHaveLength(2);
+        expect(new Set(fallback.map((f) => f.id))).toEqual(
           new Set([root.id, leaf.id]),
         );
       });
@@ -220,6 +234,110 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
             ).map((f) => f.id),
           ).toEqual([root.id]);
         });
+      });
+
+      it.each([
+        false,
+        true,
+      ])('keeps Unicode fallback traversal on its tenant/global STI graph (active ambient: %s)', async (activeAmbient) => {
+        const tenantA = randomUUID();
+        const tenantB = randomUUID();
+        const special = await CatalogSpecialFacts.create({ db });
+        const root = await special.create({
+          tenantId: tenantA,
+          textRefined: '300K root',
+          status: 'active',
+          confidence: 0.1,
+        });
+        const global = await special.create({
+          textRefined: 'Café global',
+          status: 'active',
+          confidence: 0.8,
+        });
+        const allowed = await special.create({
+          tenantId: tenantA,
+          textRefined: 'allowed leaf',
+          status: 'pending',
+          previousFactId: root.id,
+          confidence: 0.5,
+        });
+        const foreign = await special.create({
+          tenantId: tenantB,
+          textRefined: 'foreign leaf',
+          status: 'active',
+          previousFactId: root.id,
+          confidence: 0.99,
+        });
+        await facts.create({
+          tenantId: tenantA,
+          textRefined: 'wrong subtype',
+          status: 'active',
+          previousFactId: root.id,
+          confidence: 1,
+        });
+        vi.spyOn(special, 'semanticSearch').mockRejectedValue(
+          new Error('Embeddings unavailable'),
+        );
+        enableTenancy();
+        const query = vi.spyOn(db, 'query');
+        if (activeAmbient) {
+          await withTenant({ tenantId: tenantA }, async () => {
+            expect(
+              (await special.browseCatalog('É', { tenantId: tenantA })).map(
+                (f) => f.id,
+              ),
+            ).toEqual([global.id]);
+          });
+        } else {
+          const results = await special.browseCatalog('k', {
+            tenantId: tenantA,
+          });
+          expect(results.map((f) => f.id)).toEqual([allowed.id]);
+          expect(results.map((f) => f.id)).not.toContain(foreign.id);
+        }
+        const dataReads = query.mock.calls.filter(
+          ([sql]) =>
+            String(sql).includes('FROM facts') &&
+            !String(sql).startsWith('DESCRIBE'),
+        );
+        expect(dataReads).toHaveLength(1);
+        await withTenant({ tenantId: tenantA }, async () => {
+          await expect(
+            special.browseCatalog('k', { tenantId: tenantB }),
+          ).rejects.toThrow();
+        });
+      });
+
+      it('keeps the full implicit fallback graph despite collection list defaults', async () => {
+        const special = await CatalogSpecialFacts.create({
+          db,
+          defaultListLimit: 1,
+        });
+        const root = await special.create({
+          textRefined: '300K root',
+          status: 'active',
+        });
+        const leaf = await special.create({
+          textRefined: 'old successor',
+          status: 'pending',
+          previousFactId: root.id,
+        });
+        await db.query(
+          'UPDATE facts SET updated_at = ? WHERE id = ?',
+          '2026-01-01T00:00:00.000Z',
+          leaf.id,
+        );
+        await db.query(
+          'UPDATE facts SET updated_at = ? WHERE id = ?',
+          '2026-02-01T00:00:00.000Z',
+          root.id,
+        );
+        vi.spyOn(special, 'semanticSearch').mockRejectedValue(
+          new Error('Embeddings unavailable'),
+        );
+        expect((await special.browseCatalog('k')).map((f) => f.id)).toEqual([
+          leaf.id,
+        ]);
       });
 
       it('orders double-digit semantic ranks numerically', async () => {

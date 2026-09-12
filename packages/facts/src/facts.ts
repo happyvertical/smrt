@@ -550,9 +550,17 @@ export class FactCollection extends SmrtCollection<Fact> {
       // supported dialects (for example, Kelvin sign lowercases to "k" only in
       // JavaScript). Preserve the legacy fallback until normalized search text
       // has a portable storage contract.
+      // Resolve only within this scoped graph. Per-row traversal would lose an
+      // explicit tenant/global scope and inherit the ambient context instead.
+      const collectionConstructor = this.constructor as typeof FactCollection;
+      const unboundedFacts = await collectionConstructor.create({
+        ...this.options,
+        defaultListLimit: undefined,
+        maxListLimit: undefined,
+      });
       const chainFacts =
         tenantId === undefined || tenantId === null
-          ? await this.list({ orderBy: 'updated_at DESC' })
+          ? await unboundedFacts.list({ orderBy: 'updated_at DESC' })
           : await this.findWithGlobals(tenantId);
       const candidates = includeSuperseded
         ? chainFacts
@@ -567,9 +575,24 @@ export class FactCollection extends SmrtCollection<Fact> {
           .includes(query.toLowerCase()),
       );
       if (!latestOnly) return matches.slice(safeOffset, pageEnd);
+      const bestSuccessorByPreviousId = new Map<string, Fact>();
+      for (const fact of chainFacts) {
+        if (!fact.previousFactId) continue;
+        const best = bestSuccessorByPreviousId.get(fact.previousFactId);
+        if (!best || fact.confidence > best.confidence) {
+          bestSuccessorByPreviousId.set(fact.previousFactId, fact);
+        }
+      }
       const latest = new Map<string, Fact>();
       for (const fact of matches.slice(0, latestResolutionLimit)) {
-        const resolved = await this.getLatestInChain(fact.id as string);
+        let resolved = fact;
+        const visited = new Set<string>();
+        while (resolved.id && !visited.has(resolved.id)) {
+          visited.add(resolved.id);
+          const successor = bestSuccessorByPreviousId.get(resolved.id);
+          if (!successor) break;
+          resolved = successor;
+        }
         latest.set(resolved.id as string, resolved);
         if (latest.size >= pageEnd) break;
       }

@@ -141,12 +141,12 @@ explicit tenant, tenant and global candidates exclude only `superseded`.
 to constrain implicit reads, and requesting another tenant is rejected. STI child
 collections constrain both candidates and successors to their discriminator.
 
-When semantic search is unavailable, all text fallback queries retain the
-legacy JavaScript Unicode case matching and chain traversal. That fallback is
-an intentional exception to bounded SQL pagination; it can hydrate the legacy
-candidate set (including its collection `defaultListLimit`) and issue individual
-chain queries. Portable normalized search
-storage would be needed before replacing its matching behavior with SQL.
+When semantic search is unavailable, text fallback retains JavaScript Unicode
+case matching. It loads the full permitted tenant/global and STI graph once,
+then resolves chains in memory without per-row queries. Collection list defaults
+do not truncate that graph. This remains an intentional exception to bounded
+SQL hydration: portable normalized search storage would be needed before
+replacing its matching behavior with SQL.
 
 PostgreSQL and SQLite run canonical pagination integration tests. DuckDB query
 coverage uses an explicitly identified SQL-only fixture: canonical Fact schema
