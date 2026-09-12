@@ -51,13 +51,21 @@ async function uniqueIndexColumns(
   );
 }
 
+async function indexColumns(
+  db: DatabaseInterface,
+  indexName: string,
+): Promise<string[]> {
+  const columns = await rows(db, `PRAGMA index_info('${indexName}')`);
+  return columns.map((column) => String(column.name));
+}
+
 describe('read-path lookup indexes reach the production manifest schema path (#2364)', () => {
   let baseDb: DatabaseInterface;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
     ({ baseDb, cleanup } = await createIsolatedTestDbFromManifest({
-      includeObjects: ['User', 'UsersCliAuthRequest'],
+      includeObjects: ['Membership', 'User', 'UsersCliAuthRequest'],
     }));
   });
 
@@ -79,5 +87,13 @@ describe('read-path lookup indexes reach the production manifest schema path (#2
     // concurrent request issuance.
     expect(uniqueColumns).toContainEqual(['user_code']);
     expect(uniqueColumns).toContainEqual(['device_code_hash']);
+  });
+
+  it('emits the tenant/user composite index for membership lookups (#2821)', async () => {
+    const names = await indexNames(baseDb, 'memberships');
+    expect(names).toContain('memberships_tenant_id_user_id_idx');
+    expect(
+      await indexColumns(baseDb, 'memberships_tenant_id_user_id_idx'),
+    ).toEqual(['tenant_id', 'user_id']);
   });
 });
