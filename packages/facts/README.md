@@ -225,3 +225,9 @@ creation currently rejects its evolution self-reference, tracked in
 one `DESCRIBE` plus one data query per page; PostgreSQL and SQLite use one data
 query after semantic candidate retrieval, if any. Text fallback also performs one
 scalar readiness query.
+
+Catalog reads preserve hydrated `afterList` policies on every final bounded page,
+including empty pages, after raw-query hooks and similarity annotations. The same
+list context and original caller identity reach before/after hooks. Filtering or
+redaction may shorten a page; browsing does not refill it. Policy rejection
+propagates and never triggers the embedding-unavailable text fallback.

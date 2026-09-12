@@ -68,3 +68,10 @@ the first error.
 `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, and `like`. Arrays imply `IN`,
 and null values render `IS NULL`/`IS NOT NULL`. `contains` and dot-notation JSON
 paths are intentionally rejected until the SQL layer supports them.
+
+For subclass-owned bounded SQL, `resolveListReadPredicate()` provides SQL scope
+plus `finish(instances)`. Call `finish` exactly once on the final hydrated page
+(including empty pages), after raw-query hooks and annotations, outside provider
+fallback catches. It invokes normal `afterList` using the original `beforeList`
+context and model identity. It does not fetch replacement rows after filtering.
+ID-only consumers have no hydrated page and do not call this completion step.

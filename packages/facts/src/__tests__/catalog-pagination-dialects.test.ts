@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   EmbeddingProvider,
   EmbeddingStorage,
+  EmbeddingUnavailableError,
   GlobalInterceptors,
   getTestDatabase,
   ObjectRegistry,
@@ -447,6 +448,159 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
           });
         }
       }
+
+      for (const subtype of [false, true]) {
+        for (const explicit of [false, true]) {
+          for (const latestOnly of [false, true]) {
+            for (const path of ['empty', 'fallback', 'semantic'] as const) {
+              it(`runs afterList page policy for ${subtype ? 'STI' : 'base'}/${explicit ? 'explicit' : 'implicit'}/${latestOnly ? 'latest' : 'all'}/${path}`, async () => {
+                const collection = subtype
+                  ? await CatalogSpecialFacts.create({ db })
+                  : facts;
+                const Model = subtype ? CatalogSpecialFact : Fact;
+                const tenantA = randomUUID();
+                const rows = [];
+                for (const tenantId of [tenantA, null])
+                  rows.push(
+                    await collection.create({
+                      tenantId,
+                      textRefined: 'policy text',
+                      textRaw: 'secret',
+                      status: 'active',
+                    }),
+                  );
+                vi.spyOn(
+                  EmbeddingProvider.prototype,
+                  'embed',
+                ).mockImplementation(async () => {
+                  if (path === 'fallback') throw new Error('provider offline');
+                  return [[1, 0]];
+                });
+                vi.spyOn(
+                  EmbeddingProvider.prototype,
+                  'getModelName',
+                ).mockReturnValue('after-list-test');
+                if (path === 'semantic')
+                  for (const row of rows)
+                    await EmbeddingStorage.upsert(collection.systemDb, {
+                      objectClass: Model.name,
+                      objectId: row.id!,
+                      fieldName: 'textRefined',
+                      contentHash: 'policy',
+                      embedding: [1, 0],
+                      model: 'after-list-test',
+                      dimensions: 2,
+                    });
+                const contexts: object[] = [];
+                const events: string[] = [];
+                let effect = 'filter';
+                const rejection = new EmbeddingUnavailableError(
+                  'afterList denied',
+                );
+                const after = vi.fn();
+                GlobalInterceptors.register({
+                  name: 'catalog-authorization',
+                  beforeList: (_name, options, context) => {
+                    contexts.push(context);
+                    context.metadata = { policyToken: 'original' };
+                    return options;
+                  },
+                  afterQuery: () => {
+                    events.push('query');
+                  },
+                  afterList: (name, instances, context) => {
+                    after();
+                    events.push('list');
+                    expect(name).toBe(Model.name);
+                    expect(context).toBe(contexts[0]);
+                    expect(context).toMatchObject({
+                      className: Model.name,
+                      qualifiedClassName:
+                        ObjectRegistry.getClassByConstructor(Model)
+                          ?.qualifiedName,
+                      collectionName: collection.constructor.name,
+                      operation: 'list',
+                      metadata: { policyToken: 'original' },
+                    });
+                    expect(instances.length).toBeLessThanOrEqual(1);
+                    if (isSystemContext()) return instances;
+                    expect(getCurrentTenant()?.userId).toBe('list-reader');
+                    expect(getCurrentTenant()?.tenantId).toBe(tenantA);
+                    if (effect === 'reject') throw rejection;
+                    if (effect === 'filter') return [];
+                    for (const instance of instances) {
+                      (instance as unknown as Fact).textRaw = '[redacted]';
+                      delete (instance as unknown as { _similarity?: number })
+                        ._similarity;
+                    }
+                    return instances;
+                  },
+                });
+                enableTenancy();
+                const query = path === 'empty' ? '' : 'policy';
+                const options = {
+                  ...(explicit ? { tenantId: tenantA } : {}),
+                  latestOnly,
+                  limit: 1,
+                };
+                const reset = () => {
+                  contexts.length = 0;
+                  events.length = 0;
+                  after.mockClear();
+                };
+                await withTenant(
+                  { tenantId: tenantA, userId: 'list-reader' },
+                  async () => {
+                    expect(
+                      await collection.browseCatalog(query, options),
+                    ).toEqual([]);
+                    expect(after).toHaveBeenCalledTimes(1);
+                    expect(events).toEqual(['query', 'list']);
+                    reset();
+                    effect = 'redact';
+                    const page = await collection.browseCatalog(query, options);
+                    expect(page).toHaveLength(1);
+                    expect(page[0].textRaw).toBe('[redacted]');
+                    expect(page[0]).not.toHaveProperty('_similarity');
+                    expect(after).toHaveBeenCalledTimes(1);
+                    expect(events).toEqual(['query', 'list']);
+                    reset();
+                    effect = 'reject';
+                    await expect(
+                      collection.browseCatalog(query, options),
+                    ).rejects.toBe(rejection);
+                    expect(after).toHaveBeenCalledTimes(1);
+                    expect(events).toEqual(['query', 'list']);
+                  },
+                );
+                reset();
+                expect(
+                  await withSystemContext(() =>
+                    collection.browseCatalog(query, options),
+                  ),
+                ).toHaveLength(1);
+                expect(after).toHaveBeenCalledTimes(1);
+              });
+            }
+          }
+        }
+      }
+
+      it('runs rejecting afterList even when semantic candidate IDs are empty', async () => {
+        vi.spyOn(facts, 'semanticSearchIds').mockResolvedValue([]);
+        const rejection = new EmbeddingUnavailableError(
+          'empty afterList denied',
+        );
+        const after = vi.fn(() => {
+          throw rejection;
+        });
+        GlobalInterceptors.register({
+          name: 'catalog-authorization',
+          afterList: after,
+        });
+        await expect(facts.browseCatalog('none')).rejects.toBe(rejection);
+        expect(after).toHaveBeenCalledTimes(1);
+      });
 
       for (const queryText of ['', 'K']) {
         it(`preserves narrowing beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {

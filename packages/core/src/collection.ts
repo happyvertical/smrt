@@ -5035,22 +5035,32 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     });
   }
 
-  /** Compile normal list authorization for a subclass's bounded SQL read. */
+  /**
+   * Prepare normal list authorization for a subclass's bounded hydrated SQL read.
+   * Call finish exactly once on the final page, after query hooks/annotations,
+   * outside provider fallback catches. It preserves the beforeList context and
+   * applies the normal afterList pipeline without fetching replacement rows.
+   */
   protected async resolveListReadPredicate(
     where: SmrtListWhereClause<ModelType> = {},
-  ): Promise<{ sql: string; values: unknown[] }> {
+  ): Promise<{
+    sql: string;
+    values: unknown[];
+    finish(instances: ModelType[]): Promise<ModelType[]>;
+  }> {
     await this.ensureStorageReady();
     const className = this.getResolvedItemClassName();
+    const context = createInterceptorContext(
+      className,
+      'list',
+      this.constructor.name,
+      undefined,
+      this.getResolvedItemQualifiedName(),
+    );
     const options = await GlobalInterceptors.executeBeforeList(
       className,
       { where },
-      createInterceptorContext(
-        className,
-        'list',
-        this.constructor.name,
-        undefined,
-        this.getResolvedItemQualifiedName(),
-      ),
+      context,
     );
     const scoped = resolveMetaTypeInWhere(
       this.applyStiReadScope(options.where, undefined),
@@ -5063,6 +5073,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           .replace(/^WHERE\s+/i, '')
           .replace(/\$\d+/g, '?') || '1 = 1',
       values: predicate.values,
+      finish: (instances) =>
+        GlobalInterceptors.executeAfterList(className, instances, context),
     };
   }
 

@@ -537,7 +537,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       : await this.resolveListReadPredicate();
 
     if (!query.trim()) {
-      return await this.listCatalogPage(
+      const page = await this.listCatalogPage(
         tenantId,
         includeSuperseded,
         latestOnly,
@@ -546,11 +546,13 @@ export class FactCollection extends SmrtCollection<Fact> {
         latestResolutionLimit,
         readScope,
       );
+      return await readScope.finish(page);
     }
 
+    let matches: Array<{ id: string; similarity: number }> | undefined;
     try {
       const searchOptions = { limit: safeOffset + safeLimit, minSimilarity };
-      const matches = explicitTenant
+      matches = explicitTenant
         ? await withTenantGlobalRead(tenantId, () =>
             this.semanticSearchIds(query, {
               ...searchOptions,
@@ -574,48 +576,35 @@ export class FactCollection extends SmrtCollection<Fact> {
             ...searchOptions,
             where: includeSuperseded ? undefined : { status: 'active' },
           });
-      const rankedCandidateIds = matches
-        .map((fact) => fact.id)
-        .filter((factId): factId is string => typeof factId === 'string');
-      const page = await this.listCatalogPage(
-        tenantId,
-        includeSuperseded,
-        latestOnly,
-        safeLimit,
-        safeOffset,
-        latestResolutionLimit,
-        readScope,
-        undefined,
-        rankedCandidateIds,
-      );
+    } catch (error) {
+      if (!(error instanceof EmbeddingUnavailableError)) throw error;
+    }
 
-      if (latestOnly) {
-        return page;
-      }
-
+    const page = await this.listCatalogPage(
+      tenantId,
+      includeSuperseded,
+      latestOnly,
+      safeLimit,
+      safeOffset,
+      latestResolutionLimit,
+      readScope,
+      matches === undefined ? query : undefined,
+      matches?.map((match) => match.id).filter((id) => typeof id === 'string'),
+    );
+    if (matches && !latestOnly) {
       const similarityById = new Map(
-        matches.map((fact) => [fact.id, fact.similarity]),
+        matches.map((match) => [match.id, match.similarity]),
       );
-      return page.map((fact) => {
+      for (const fact of page) {
         const similarity = similarityById.get(fact.id as string);
         if (similarity !== undefined) {
           (fact as Fact & { _similarity: number })._similarity = similarity;
         }
-        return fact;
-      });
-    } catch (error) {
-      if (!(error instanceof EmbeddingUnavailableError)) throw error;
-      return await this.listCatalogPage(
-        tenantId,
-        includeSuperseded,
-        latestOnly,
-        safeLimit,
-        safeOffset,
-        latestResolutionLimit,
-        readScope,
-        query,
-      );
+      }
     }
+    // Hooks see final annotations and the original actor/context. Filtering may
+    // shorten a page; never refill it or catch policy rejection as provider loss.
+    return await readScope.finish(page);
   }
 
   /**
