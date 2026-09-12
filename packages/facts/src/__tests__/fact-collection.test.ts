@@ -8,9 +8,18 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { smrt } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Fact } from '../fact';
 import { FactSubjectCollection } from '../fact-subjects';
 import { FactCollection } from '../facts';
+
+@smrt({ tableStrategy: 'sti' })
+class CatalogFactSubtype extends Fact {}
+
+class CatalogFactSubtypeCollection extends FactCollection {
+  static readonly _itemClass = CatalogFactSubtype;
+}
 
 describe('getEntityBriefing', () => {
   let tempDir: string;
@@ -430,5 +439,44 @@ describe('getEntityBriefing', () => {
     expect(listSpy).toHaveBeenCalledWith(
       expect.objectContaining({ where: { status: 'active' } }),
     );
+  });
+
+  it('keeps implicit and explicit tenant catalog reads in an STI child scope', async () => {
+    const subtypeFacts = await CatalogFactSubtypeCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const baseFact = await facts.create({
+      textRefined: 'Base fact outside subtype scope',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+    });
+    const childFact = await subtypeFacts.create({
+      textRefined: 'Subtype fact inside scope',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+    });
+    const baseSuccessor = await facts.create({
+      textRefined: 'Base successor outside subtype chain',
+      type: 'assertion',
+      status: 'active',
+      tenantId: 'tenant-a',
+      previousFactId: childFact.id as string,
+      confidence: 1,
+    });
+
+    const implicit = await subtypeFacts.browseCatalog('', {
+      latestOnly: true,
+    });
+    const explicit = await subtypeFacts.browseCatalog('', {
+      tenantId: 'tenant-a',
+      latestOnly: true,
+    });
+
+    expect(implicit.map((fact) => fact.id)).toEqual([childFact.id]);
+    expect(explicit.map((fact) => fact.id)).toEqual([childFact.id]);
+    expect(implicit.map((fact) => fact.id)).not.toContain(baseFact.id);
+    expect(explicit.map((fact) => fact.id)).not.toContain(baseSuccessor.id);
   });
 });

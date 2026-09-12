@@ -359,7 +359,8 @@ export class FactCollection extends SmrtCollection<Fact> {
     // Chain traversal must see every scoped row. Use an unbounded sibling
     // collection because browseCatalog's correctness cannot depend on a
     // caller-facing default list limit: a successor can sort beyond a page.
-    const unboundedFacts = await FactCollection.create({
+    const collectionConstructor = this.constructor as typeof FactCollection;
+    const unboundedFacts = await collectionConstructor.create({
       ...this.options,
       defaultListLimit: undefined,
       maxListLimit: undefined,
