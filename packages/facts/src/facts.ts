@@ -355,20 +355,38 @@ export class FactCollection extends SmrtCollection<Fact> {
       return [...latestById.values()].slice(safeOffset, pageEnd);
     };
 
-    const chainFacts =
-      tenantId === undefined || tenantId === null
-        ? await this.list({
-            orderBy: 'updated_at DESC',
-          })
-        : await this.findWithGlobals(tenantId);
+    const hasExplicitTenant = tenantId !== undefined && tenantId !== null;
+    // Chain traversal must see every scoped row. Use an unbounded sibling
+    // collection because browseCatalog's correctness cannot depend on a
+    // caller-facing default list limit: a successor can sort beyond a page.
+    const unboundedFacts = await FactCollection.create({
+      ...this.options,
+      defaultListLimit: undefined,
+      maxListLimit: undefined,
+    });
+    const chainFacts = latestOnly
+      ? hasExplicitTenant
+        ? await this.findWithGlobals(tenantId)
+        : await unboundedFacts.list({ orderBy: 'updated_at DESC' })
+      : undefined;
 
+    // Keep the no-tenant active predicate in SQL before any list bound. Apart
+    // from preserving the active-status index, this prevents newer pending or
+    // rejected rows from consuming a collection defaultListLimit before the
+    // display candidates are selected.
     const tenantScoped = includeSuperseded
-      ? chainFacts
-      : chainFacts.filter((fact) =>
-          tenantId === undefined || tenantId === null
-            ? fact.status === 'active'
-            : fact.status !== 'superseded',
-        );
+      ? (chainFacts ??
+        (hasExplicitTenant
+          ? await this.findWithGlobals(tenantId)
+          : await unboundedFacts.list({ orderBy: 'updated_at DESC' })))
+      : hasExplicitTenant
+        ? (chainFacts ?? (await this.findWithGlobals(tenantId))).filter(
+            (fact) => fact.status !== 'superseded',
+          )
+        : await unboundedFacts.list({
+            where: { status: 'active' },
+            orderBy: 'updated_at DESC',
+          });
     const tenantScopedIds = new Set(
       tenantScoped
         .map((fact) => fact.id)
@@ -380,7 +398,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
       }
 
-      return resolveLatestPage(tenantScoped, chainFacts);
+      return resolveLatestPage(tenantScoped, chainFacts ?? tenantScoped);
     }
 
     let matches: Fact[] = [];
@@ -408,7 +426,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
-    return resolveLatestPage(matches, chainFacts);
+    return resolveLatestPage(matches, chainFacts ?? tenantScoped);
   }
 
   /**
