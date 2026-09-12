@@ -80,6 +80,93 @@ function isDuckDbHugeInt(value: unknown): boolean {
   );
 }
 
+const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
+
+type PlainJSONValue =
+  | null
+  | boolean
+  | number
+  | string
+  | PlainJSONValue[]
+  | { [key: string]: PlainJSONValue };
+
+/**
+ * Materialize the values JSON.stringify() would emit without first encoding
+ * them into a string. This keeps toPlainObject() suitable for SvelteKit while
+ * avoiding an encode/decode round trip for every model in a collection.
+ */
+function toPlainJSONValue(
+  value: unknown,
+  key: string,
+  ancestors: Set<object>,
+  applyToJSON = true,
+): PlainJSONValue | typeof PLAIN_JSON_OMITTED {
+  if (value === null) {
+    return null;
+  }
+
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return value;
+    case 'number':
+      return Number.isFinite(value) ? value : null;
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return PLAIN_JSON_OMITTED;
+    case 'bigint':
+      throw new TypeError('Do not know how to serialize a BigInt');
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  if (applyToJSON && typeof objectValue.toJSON === 'function') {
+    return toPlainJSONValue(objectValue.toJSON(key), key, ancestors, false);
+  }
+
+  if (objectValue instanceof Number) {
+    const numberValue = objectValue.valueOf();
+    return Number.isFinite(numberValue) ? numberValue : null;
+  }
+  if (Object.getPrototypeOf(objectValue) === BigInt.prototype) {
+    throw new TypeError('Do not know how to serialize a BigInt');
+  }
+  if (objectValue instanceof String || objectValue instanceof Boolean) {
+    return objectValue.valueOf();
+  }
+
+  if (ancestors.has(objectValue)) {
+    throw new TypeError('Converting circular structure to JSON');
+  }
+  ancestors.add(objectValue);
+
+  try {
+    if (Array.isArray(objectValue)) {
+      const result: PlainJSONValue[] = [];
+      for (let index = 0; index < objectValue.length; index++) {
+        const item = toPlainJSONValue(
+          objectValue[index],
+          String(index),
+          ancestors,
+        );
+        result.push(item === PLAIN_JSON_OMITTED ? null : item);
+      }
+      return result;
+    }
+
+    const result: { [key: string]: PlainJSONValue } = {};
+    for (const property of Object.keys(objectValue)) {
+      const item = toPlainJSONValue(objectValue[property], property, ancestors);
+      if (item !== PLAIN_JSON_OMITTED) {
+        result[property] = item;
+      }
+    }
+    return result;
+  } finally {
+    ancestors.delete(objectValue);
+  }
+}
+
 /**
  * Default maximum number of characters of serialized object data injected into
  * the AI prompts built by `is()`, `do()`, and `describe()`.
@@ -1564,7 +1651,10 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   toPlainObject(): Record<string, unknown> {
-    return JSON.parse(JSON.stringify(this));
+    return toPlainJSONValue(this.toJSON(), '', new Set(), false) as Record<
+      string,
+      unknown
+    >;
   }
 
   /**
