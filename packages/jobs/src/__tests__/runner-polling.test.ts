@@ -46,6 +46,46 @@ describe('TaskRunner idle polling (#2820)', () => {
     expect(after).toBe(6);
   });
 
+  it('resets the actual loop after a claim, capacity pressure, or poll rejection', async () => {
+    vi.useFakeTimers();
+    const runner = new TaskRunner({
+      pollInterval: 100,
+      idlePollInterval: 1_000,
+    });
+    const internal = runner as unknown as {
+      collection: { claimReady: ReturnType<typeof vi.fn> };
+      db: object;
+      running: boolean;
+      activeJobs: Map<string, unknown>;
+      recoverStaleJobs(): Promise<void>;
+      processJob(): Promise<void>;
+      startPolling(): void;
+      pollTimer: ReturnType<typeof setTimeout> | null;
+    };
+    const claimReady = vi.fn().mockResolvedValue([]);
+    internal.collection = { claimReady };
+    internal.db = {};
+    internal.recoverStaleJobs = async () => {};
+    internal.processJob = async () => {};
+    internal.running = true;
+    internal.startPolling();
+    await vi.advanceTimersByTimeAsync(300);
+    claimReady.mockResolvedValueOnce([{ id: 'claimed' }]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(claimReady).toHaveBeenCalled();
+    internal.activeJobs.set('full', {});
+    const beforeCapacity = claimReady.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(claimReady.mock.calls.length).toBeGreaterThanOrEqual(beforeCapacity);
+    internal.activeJobs.clear();
+    claimReady.mockRejectedValueOnce(new Error('temporary'));
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(claimReady.mock.calls.length).toBeGreaterThan(beforeCapacity);
+    internal.running = false;
+    if (internal.pollTimer) clearTimeout(internal.pollTimer);
+  });
+
   it('backs empty queue checks off to one tenth of the configured polling rate', () => {
     const runner = new TaskRunner({ pollInterval: 1_000 });
     const polling = pollingInternals(runner);
