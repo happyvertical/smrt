@@ -104,6 +104,8 @@ import { TaskRunner } from '@happyvertical/smrt-jobs';
 const runner = new TaskRunner({
   concurrency: 5,
   pollInterval: 1000,
+  // Empty checks back off exponentially to this cap (10× by default).
+  idlePollInterval: 10000,
   queues: ['default', 'analysis'],
 });
 await runner.initialize(db);
