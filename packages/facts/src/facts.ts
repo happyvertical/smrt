@@ -532,6 +532,34 @@ export class FactCollection extends SmrtCollection<Fact> {
         return fact;
       });
     } catch {
+      // SQLite's LOWER() is ASCII-only, unlike JavaScript's Unicode-aware
+      // toLowerCase(). Preserve the legacy fallback for non-ASCII queries.
+      if (/[^\p{ASCII}]/u.test(query)) {
+        const chainFacts =
+          tenantId === undefined || tenantId === null
+            ? await this.list({ orderBy: 'updated_at DESC' })
+            : await this.findWithGlobals(tenantId);
+        const candidates = includeSuperseded
+          ? chainFacts
+          : chainFacts.filter((fact) =>
+              tenantId === undefined || tenantId === null
+                ? fact.status === 'active'
+                : fact.status !== 'superseded',
+            );
+        const matches = candidates.filter((fact) =>
+          `${fact.textRefined} ${fact.textRaw}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+        );
+        if (!latestOnly) return matches.slice(safeOffset, pageEnd);
+        const latest = new Map<string, Fact>();
+        for (const fact of matches.slice(0, latestResolutionLimit)) {
+          const resolved = await this.getLatestInChain(fact.id as string);
+          latest.set(resolved.id as string, resolved);
+          if (latest.size >= pageEnd) break;
+        }
+        return [...latest.values()].slice(safeOffset, pageEnd);
+      }
       return await this.listCatalogPage(
         tenantId,
         includeSuperseded,
