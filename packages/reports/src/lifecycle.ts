@@ -1,4 +1,5 @@
 import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
+import type { DurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
 import { getTenantId, withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   type DatabaseInterface,
@@ -106,6 +107,10 @@ export interface ReportRefreshActionHost {
   executionAuthority?(
     context: ReportRefreshActionContext,
   ): ReportRefreshExecutionAuthority | Promise<ReportRefreshExecutionAuthority>;
+  /** Server-only signer shared with report worker processes. */
+  jobIntegritySigner?(
+    context: ReportRefreshActionContext,
+  ): DurableJobPayloadSigner | Promise<DurableJobPayloadSigner>;
 }
 
 export interface PreviewReportRefreshOptions extends ReportLifecycleOptions {
@@ -131,6 +136,7 @@ export interface ApplyReportRefreshOptions extends PreviewReportRefreshOptions {
    * Required for manual/user-triggered refreshes.
    */
   executionAuthority?: ReportRefreshExecutionAuthority;
+  jobIntegritySigner?: DurableJobPayloadSigner;
   queue?: string;
   priority?: number;
   timeout?: number;
@@ -462,6 +468,14 @@ export async function applyReportRefresh(
   if (!executionAuthority) {
     throw new Error('Manual report refresh requires execution-time authority');
   }
+  const integritySigner =
+    options.jobIntegritySigner ??
+    (await options.host.jobIntegritySigner?.(action));
+  if (!integritySigner) {
+    throw new Error(
+      'Report refresh queue requires a durable job integrity signer',
+    );
+  }
   const tenantId = lifecycleTenantId(reportCtor);
   const enqueue = () =>
     enqueueReportRefresh({
@@ -476,6 +490,7 @@ export async function applyReportRefresh(
       timeout: options.timeout,
       maxAttempts: options.maxAttempts,
       tenantJobCap: options.tenantJobCap,
+      integritySigner,
     });
   const job =
     tenantId === null && getTenantId()

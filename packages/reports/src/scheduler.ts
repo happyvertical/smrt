@@ -10,6 +10,8 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   backgroundEligible,
+  type DurableJobPayloadIntegrity,
+  type DurableJobPayloadSigner,
   getNextCronDate,
   type SmrtJob,
   SmrtJobCollection,
@@ -49,6 +51,7 @@ export interface ReportRefreshJobArgs {
   changedRows?: Record<string, unknown>[];
   _scheduleId?: string;
   executionAuthority?: ReportRefreshExecutionAuthority;
+  integrity?: DurableJobPayloadIntegrity;
 }
 
 export interface ReportExecutionPrincipalReference {
@@ -100,6 +103,8 @@ export interface EnqueueReportRefreshOptions extends ReportRefreshJobArgs {
   timeout?: number;
   maxAttempts?: number;
   tenantJobCap?: number;
+  /** Server-only signer; register the same key in every worker process. */
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 export interface EnsureReportSchedulesOptions {
@@ -115,6 +120,7 @@ export interface ReportScheduleRunnerConfig {
   id?: string;
   pollInterval?: number;
   batchSize?: number;
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 export interface ReportScheduleInfo {
@@ -144,6 +150,7 @@ export interface ReportRefreshInterceptorOptions {
   timeout?: number;
   tenantJobCap?: number;
   name?: string;
+  integritySigner?: DurableJobPayloadSigner;
 }
 
 const INTERNAL_SURFACE = {
@@ -160,6 +167,44 @@ const executionAuthorityHosts = new Map<
   string,
   ReportRefreshExecutionAuthorityHost
 >();
+const jobIntegritySigners = new Map<string, DurableJobPayloadSigner>();
+
+export function registerReportRefreshJobIntegritySigner(
+  signer: DurableJobPayloadSigner,
+): () => void {
+  const existing = jobIntegritySigners.get(signer.keyId);
+  if (existing && existing !== signer) {
+    throw new Error(
+      `Report refresh job integrity signer already registered: ${signer.keyId}`,
+    );
+  }
+  jobIntegritySigners.set(signer.keyId, signer);
+  return () => {
+    if (jobIntegritySigners.get(signer.keyId) === signer) {
+      jobIntegritySigners.delete(signer.keyId);
+    }
+  };
+}
+
+function unsignedReportRefreshJobArgs(
+  args: ReportRefreshJobArgs,
+): Omit<ReportRefreshJobArgs, 'integrity'> {
+  const { integrity: _integrity, ...unsigned } = args;
+  return unsigned;
+}
+
+function assertReportRefreshJobIntegrity(args: ReportRefreshJobArgs): void {
+  const integrity = args.integrity;
+  const signer = integrity
+    ? jobIntegritySigners.get(integrity.keyId)
+    : undefined;
+  if (
+    !integrity ||
+    !signer?.verify(unsignedReportRefreshJobArgs(args), integrity)
+  ) {
+    throw new Error('Invalid durable report refresh job integrity binding');
+  }
+}
 
 export function registerReportRefreshExecutionAuthorityHost(
   hostId: string,
@@ -351,6 +396,7 @@ export class SmrtReportRefreshTask extends SmrtObject {
 
   @backgroundEligible()
   async run(args: ReportRefreshJobArgs = {}): Promise<unknown> {
+    assertReportRefreshJobIntegrity(args);
     const reportClass = args.reportClass || this.reportClass;
     if (!reportClass) {
       throw new Error('Report refresh job requires reportClass');
@@ -386,6 +432,11 @@ export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
 export async function enqueueReportRefresh(
   options: EnqueueReportRefreshOptions,
 ): Promise<SmrtJob> {
+  if (!options.integritySigner) {
+    throw new Error(
+      'Report refresh queue requires a durable job integrity signer',
+    );
+  }
   if (options.trigger === 'manual' && !options.executionAuthority) {
     throw new Error('Manual report refresh requires execution-time authority');
   }
@@ -417,6 +468,26 @@ export async function enqueueReportRefresh(
   );
   const scheduleId = options.scheduleId ?? options._scheduleId;
 
+  const unsignedArgs: Omit<ReportRefreshJobArgs, 'integrity'> = {
+    reportClass: options.reportClass,
+    mode: options.mode,
+    trigger: options.trigger ?? 'job',
+    tenantId: options.tenantId,
+    tenantIds: options.tenantIds,
+    adapterType: options.adapterType,
+    changedRows: options.changedRows,
+    scheduleId,
+    _scheduleId: scheduleId,
+    executionAuthority: options.executionAuthority,
+  };
+  const integrity = options.integritySigner.sign(unsignedArgs);
+  if (
+    !jobIntegritySigners.get(integrity.keyId)?.verify(unsignedArgs, integrity)
+  ) {
+    throw new Error(
+      'Report refresh job integrity signer must be registered before enqueue',
+    );
+  }
   return collection.enqueueJob(
     {
       tenantId: options.tenantId ?? null,
@@ -424,18 +495,7 @@ export async function enqueueReportRefresh(
       objectType: taskType,
       objectId: null,
       method: 'run',
-      args: {
-        reportClass: options.reportClass,
-        mode: options.mode,
-        trigger: options.trigger ?? 'job',
-        tenantId: options.tenantId,
-        tenantIds: options.tenantIds,
-        adapterType: options.adapterType,
-        changedRows: options.changedRows,
-        scheduleId,
-        _scheduleId: scheduleId,
-        executionAuthority: options.executionAuthority,
-      },
+      args: { ...unsignedArgs, integrity },
       priority: options.priority ?? 70,
       timeout: options.timeout ?? 3600000,
       maxAttempts: options.maxAttempts ?? 3,
@@ -538,7 +598,10 @@ export async function ensureReportRefreshSchedules(
 
 export class ReportScheduleRunner extends EventEmitter {
   readonly id: string;
-  private readonly config: Required<ReportScheduleRunnerConfig>;
+  private readonly config: Required<
+    Omit<ReportScheduleRunnerConfig, 'integritySigner'>
+  > &
+    Pick<ReportScheduleRunnerConfig, 'integritySigner'>;
   private db: DatabaseInterface | null = null;
   private running = false;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -549,6 +612,7 @@ export class ReportScheduleRunner extends EventEmitter {
       id: config.id || `reports_${stableUuid([Date.now()]).slice(0, 8)}`,
       pollInterval: config.pollInterval ?? 60000,
       batchSize: config.batchSize ?? 50,
+      integritySigner: config.integritySigner,
     };
     this.id = this.config.id;
   }
@@ -691,6 +755,7 @@ export class ReportScheduleRunner extends EventEmitter {
         queue: String(row.queue || 'reports'),
         priority: Number(row.priority ?? 70),
         timeout: Number(row.timeout ?? 3600000),
+        integritySigner: this.config.integritySigner,
       });
       await this.db.query(
         `UPDATE ${REPORT_SCHEDULES_TABLE}
@@ -782,6 +847,7 @@ async function triggerReportsForInstance(
       timeout: options.timeout,
       tenantJobCap: options.tenantJobCap,
       changedRows,
+      integritySigner: options.integritySigner,
     });
   }
 }

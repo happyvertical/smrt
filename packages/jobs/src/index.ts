@@ -59,6 +59,11 @@ export {
   markBackgroundEligible,
   TenantJobCapExceededError,
 } from './background-policy.js';
+export {
+  createHmacDurableJobPayloadSigner,
+  type DurableJobPayloadIntegrity,
+  type DurableJobPayloadSigner,
+} from './durable-payload-integrity.js';
 // Error-message redaction for durable job error persistence.
 export {
   redactErrorForPersistence,

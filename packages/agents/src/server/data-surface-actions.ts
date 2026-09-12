@@ -6,12 +6,11 @@
  * afresh, and delegates durable work only after authorization and eligibility
  * checks have passed.
  */
+import { createHash, randomBytes } from 'node:crypto';
 import {
-  createHash,
-  createHmac,
-  randomBytes,
-  timingSafeEqual,
-} from 'node:crypto';
+  createHmacDurableJobPayloadSigner,
+  type DurableJobPayloadIntegrity,
+} from '@happyvertical/smrt-jobs';
 import type {
   DataSurfaceActionDescriptor,
   DataSurfaceActionRequest,
@@ -141,7 +140,7 @@ export interface DataSurfaceBackgroundActionEnvelope {
   principal: DataSurfaceDeferredPrincipalReference;
   previewToken?: DataSurfacePreviewTokenRecord;
   /** Server-authenticated binding over every other persisted envelope field. */
-  binding: string;
+  binding: DurableJobPayloadIntegrity;
 }
 
 export interface DataSurfaceBackgroundActionJob {
@@ -487,8 +486,11 @@ function fingerprint(value: unknown): string {
 function envelopeBinding(
   envelope: Omit<DataSurfaceBackgroundActionEnvelope, 'binding'>,
   key: string | Uint8Array,
-): string {
-  return createHmac('sha256', key).update(stable(envelope)).digest('base64url');
+): DurableJobPayloadIntegrity {
+  return createHmacDurableJobPayloadSigner({
+    keyId: 'data-surface-envelope-v1',
+    key,
+  }).sign(envelope);
 }
 
 function validSigningKey(key: string | Uint8Array | undefined): boolean {
@@ -503,13 +505,10 @@ function bindingMatches(
   key: string | Uint8Array,
 ): boolean {
   const { binding, ...unsigned } = envelope;
-  const expected = envelopeBinding(unsigned, key);
-  const actualBytes = Buffer.from(binding);
-  const expectedBytes = Buffer.from(expected);
-  return (
-    actualBytes.length === expectedBytes.length &&
-    timingSafeEqual(actualBytes, expectedBytes)
-  );
+  return createHmacDurableJobPayloadSigner({
+    keyId: 'data-surface-envelope-v1',
+    key,
+  }).verify(unsigned, binding);
 }
 
 function identityKey(identity: DataSurfaceIdentity): string {

@@ -79,7 +79,7 @@ describe('jobs-backed data-surface action queue', () => {
 
 function actionEnvelope(): DataSurfaceBackgroundActionEnvelope {
   return {
-    binding: 'test-binding',
+    binding: { version: 1, keyId: 'test', signature: 'test-binding' },
     version: 1,
     handlerId: 'orders-actions-v1',
     principal: {

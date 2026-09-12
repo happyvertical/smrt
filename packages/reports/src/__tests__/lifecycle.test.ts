@@ -3,6 +3,7 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
+import { createHmacDurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
 import {
   disableTenancy,
   enableTenancy,
@@ -24,6 +25,7 @@ import {
 import {
   enqueueReportRefresh,
   registerReportRefreshExecutionAuthorityHost,
+  registerReportRefreshJobIntegritySigner,
   SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
 } from '../scheduler.js';
@@ -33,6 +35,11 @@ class LifecycleReport extends SmrtObject {}
 class GlobalLifecycleReport extends SmrtObject {}
 
 const NOW = new Date('2026-08-23T16:30:00.000Z');
+const JOB_SIGNER = createHmacDurableJobPayloadSigner({
+  keyId: 'test-reports-v1',
+  key: 'test-only-report-job-integrity-key',
+});
+let unregisterJobSigner: (() => void) | undefined;
 
 function executionAuthority(tenantId: string | null) {
   return {
@@ -253,9 +260,11 @@ describe('report lifecycle', () => {
     registerFixture();
     registerJobsManifest();
     enableTenancy();
+    unregisterJobSigner = registerReportRefreshJobIntegritySigner(JOB_SIGNER);
   });
 
   afterEach(() => {
+    unregisterJobSigner?.();
     disableTenancy();
     ObjectRegistry.clear();
   });
@@ -517,6 +526,7 @@ describe('report lifecycle', () => {
       authorize,
       audit,
       executionAuthority: () => executionAuthority('tenant-a'),
+      jobIntegritySigner: () => JOB_SIGNER,
     };
     try {
       const descriptor = await buildReportAdapterDescriptor(LifecycleReport, {
@@ -582,6 +592,7 @@ describe('report lifecycle', () => {
       authorize: vi.fn(),
       audit: vi.fn(),
       executionAuthority: () => executionAuthority(null),
+      jobIntegritySigner: () => JOB_SIGNER,
     };
     try {
       await withTenant({ tenantId: 'tenant-a' }, () =>
@@ -613,13 +624,17 @@ describe('report lifecycle', () => {
     try {
       const task = new SmrtPrincipalReportRefreshTask({ db });
       task.tenantId = 'tenant-a';
-      const args = {
+      const unsignedArgs = {
         reportClass: await lifecycleClassName(),
         mode: 'rebuild',
         trigger: 'manual',
         tenantId: 'tenant-a',
         executionAuthority: executionAuthority('tenant-a'),
       } as const;
+      const args = {
+        ...unsignedArgs,
+        integrity: JOB_SIGNER.sign(unsignedArgs),
+      };
       await expect(task.run(args)).rejects.toThrow(
         'Report refresh execution authority denied',
       );
@@ -650,6 +665,7 @@ describe('report lifecycle', () => {
           reportClass: await lifecycleClassName(),
           tenantId: 'tenant-b',
           executionAuthority: executionAuthority('tenant-a'),
+          integritySigner: JOB_SIGNER,
         }),
       ).rejects.toThrow('Invalid report refresh execution authority');
     } finally {
@@ -662,14 +678,28 @@ describe('report lifecycle', () => {
     try {
       const task = new SmrtPrincipalReportRefreshTask({ db });
       task.tenantId = 'tenant-a';
-      await expect(
-        task.run({
-          reportClass: await lifecycleClassName(),
-          mode: 'rebuild',
-          trigger: 'schedule',
-          tenantId: 'tenant-a',
-        }),
-      ).rejects.toThrow('Manual report refresh execution authority is missing');
+      const unsignedArgs = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild' as const,
+        trigger: 'manual' as const,
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      };
+      const altered = {
+        ...unsignedArgs,
+        trigger: 'schedule' as const,
+        executionAuthority: undefined,
+        integrity: JOB_SIGNER.sign(unsignedArgs),
+      };
+      for (const task of [
+        new SmrtPrincipalReportRefreshTask({ db }),
+        new SmrtReportRefreshTask({ db }),
+      ]) {
+        task.tenantId = 'tenant-a';
+        await expect(task.run(altered)).rejects.toThrow(
+          'Invalid durable report refresh job integrity binding',
+        );
+      }
     } finally {
       if (typeof db.close === 'function') await db.close();
     }
@@ -686,10 +716,82 @@ describe('report lifecycle', () => {
           tenantId: 'tenant-a',
           tenantIds: ['tenant-a', 'tenant-b'],
           executionAuthority: executionAuthority('tenant-a'),
+          integritySigner: JOB_SIGNER,
         }),
       ).rejects.toThrow(
         'Principal-bound report refresh requires one manual tenant scope',
       );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects tenant fanout added after a principal refresh was signed', async () => {
+    const db = await setupDb();
+    try {
+      const task = new SmrtPrincipalReportRefreshTask({ db });
+      task.tenantId = 'tenant-a';
+      const unsignedArgs = {
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild' as const,
+        trigger: 'manual' as const,
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+      };
+      await expect(
+        task.run({
+          ...unsignedArgs,
+          tenantIds: ['tenant-a', 'tenant-b'],
+          integrity: JOB_SIGNER.sign(unsignedArgs),
+        }),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rejects a persisted principal job routed to the maintenance target', async () => {
+    const db = await setupDb();
+    try {
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: await lifecycleClassName(),
+        mode: 'rebuild',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        executionAuthority: executionAuthority('tenant-a'),
+        integritySigner: JOB_SIGNER,
+      });
+      const stored = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const altered = JSON.parse(String(stored.rows[0]?.args)) as Record<
+        string,
+        unknown
+      >;
+      altered.trigger = 'schedule';
+      delete altered.executionAuthority;
+      const maintenanceType =
+        ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask)
+          ?.qualifiedName ?? SmrtReportRefreshTask.name;
+      await db.query(
+        'UPDATE _smrt_jobs SET object_type = ?, args = ? WHERE id = ?',
+        maintenanceType,
+        JSON.stringify(altered),
+        job.id,
+      );
+
+      const routed = await db.query(
+        'SELECT tenant_id, object_type, args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      expect(String(routed.rows[0]?.object_type)).toBe(maintenanceType);
+      const task = new SmrtReportRefreshTask({ db });
+      task.tenantId = String(routed.rows[0]?.tenant_id);
+      await expect(
+        task.run(JSON.parse(String(routed.rows[0]?.args))),
+      ).rejects.toThrow('Invalid durable report refresh job integrity binding');
     } finally {
       if (typeof db.close === 'function') await db.close();
     }
@@ -703,6 +805,7 @@ describe('report lifecycle', () => {
         reportClass: await lifecycleClassName(),
         trigger: 'schedule',
         tenantId: 'tenant-a',
+        integritySigner: JOB_SIGNER,
       });
       expect(job).toMatchObject({
         tenantId: 'tenant-a',

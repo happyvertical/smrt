@@ -228,9 +228,13 @@ report-refresh job is queued. Manual refresh hosts must also return a versioned,
 non-secret `executionAuthority` binding. Each worker process registers the named
 host with `registerReportRefreshExecutionAuthorityHost()`; the task checks the
 persisted tenant binding, resolves current membership and permission, and records
-an allowed or denied execution audit immediately before refresh. Scheduled and
-on-change maintenance jobs remain system-authority jobs and do not carry an
-initiating user. Only a registered `SmrtReportCollection` can
+an allowed or denied execution audit immediately before refresh. Every enqueue
+path also receives a `DurableJobPayloadSigner`, and every worker registers it
+with `registerReportRefreshJobIntegritySigner()`. This authenticates the task
+target, trigger, tenant scope, authority reference, and payload across storage;
+the signing key is never persisted. Scheduled and on-change maintenance jobs
+remain system-authority jobs and do not carry an initiating user, but their job
+payloads use the same integrity boundary. Only a registered `SmrtReportCollection` can
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
 

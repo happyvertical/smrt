@@ -112,6 +112,7 @@ export {
   ReportScheduleRunner,
   registerReportRefreshExecutionAuthorityHost,
   registerReportRefreshInterceptor,
+  registerReportRefreshJobIntegritySigner,
   SmrtPrincipalReportRefreshTask,
   SmrtReportRefreshTask,
 } from './scheduler.js';
