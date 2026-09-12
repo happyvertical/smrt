@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -9,6 +11,10 @@ import {
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { smrtPlugin } from '../vite-plugin/index.js';
+import {
+  type ArtifactFilesystem,
+  publishArtifactFiles,
+} from './artifact-publication.js';
 import { smrtConsumer } from './index';
 
 function manifestHash(manifest: unknown): string {
@@ -410,6 +416,214 @@ describe('smrtConsumer registration generation', () => {
     expect(readFileSync(knowledgePath, 'utf-8')).toBe(
       '{"previous":"artifact"}',
     );
+  });
+
+  it('uses file and package knowledge configuration without a producer plugin', async () => {
+    writeFileSync(
+      join(tmpDir, 'smrt.config.json'),
+      JSON.stringify({
+        knowledge: { enabled: true, includeDocs: false, includePrompts: false },
+        packages: { 'consumer-app': { knowledge: { enabled: false } } },
+      }),
+    );
+    const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
+    mkdirSync(join(tmpDir, '.smrt'), { recursive: true });
+    writeFileSync(knowledgePath, '{"previous":"artifact"}');
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await consumer.buildStart?.call({} as any);
+
+    expect(readFileSync(knowledgePath, 'utf-8')).toBe(
+      '{"previous":"artifact"}',
+    );
+  });
+
+  it('restores the previous artifact pair when manifest publication fails', async () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    const manifestPath = join(smrtDir, 'manifest.json');
+    const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+    const previousManifest = JSON.stringify({
+      version: '1.0.0',
+      timestamp: 1,
+      packageName: 'consumer-app',
+      objects: {},
+    });
+    const previousKnowledge = '{"previous":"knowledge"}';
+    writeFileSync(manifestPath, previousManifest);
+    writeFileSync(knowledgePath, previousKnowledge);
+    let renameCount = 0;
+    const filesystem: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      writeFileSync,
+      chmodSync: fs.chmodSync,
+      renameSync: (...args) => {
+        renameCount++;
+        if (renameCount === 4) throw new Error('manifest publication failed');
+        return fs.renameSync(...args);
+      },
+    };
+    expect(() =>
+      publishArtifactFiles(
+        [
+          { path: knowledgePath, content: '{"next":"knowledge"}' },
+          { path: manifestPath, content: '{"next":"manifest"}' },
+        ],
+        filesystem,
+      ),
+    ).toThrow('manifest publication failed');
+
+    expect(readFileSync(manifestPath, 'utf-8')).toBe(previousManifest);
+    expect(readFileSync(knowledgePath, 'utf-8')).toBe(previousKnowledge);
+  });
+
+  it('keeps prior artifacts when staging a later replacement fails', () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+    const manifestPath = join(smrtDir, 'manifest.json');
+    writeFileSync(knowledgePath, '{"previous":"knowledge"}');
+    writeFileSync(manifestPath, '{"previous":"manifest"}');
+    const filesystem: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      chmodSync: fs.chmodSync,
+      renameSync: fs.renameSync,
+      writeFileSync: (pathname, ...args) => {
+        if (String(pathname).includes('manifest.json.smrt-')) {
+          throw new Error('manifest staging failed');
+        }
+        return fs.writeFileSync(pathname, ...args);
+      },
+    };
+
+    expect(() =>
+      publishArtifactFiles(
+        [
+          { path: knowledgePath, content: '{"next":"knowledge"}' },
+          { path: manifestPath, content: '{"next":"manifest"}' },
+        ],
+        filesystem,
+      ),
+    ).toThrow('manifest staging failed');
+    expect(readFileSync(knowledgePath, 'utf-8')).toBe(
+      '{"previous":"knowledge"}',
+    );
+    expect(readFileSync(manifestPath, 'utf-8')).toBe('{"previous":"manifest"}');
+  });
+
+  it('removes a first-generation replacement when a later publication fails', () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+    const manifestPath = join(smrtDir, 'manifest.json');
+    let renameCount = 0;
+    const filesystem: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      writeFileSync,
+      chmodSync: fs.chmodSync,
+      renameSync: (...args) => {
+        renameCount++;
+        if (renameCount === 2) throw new Error('manifest publication failed');
+        return fs.renameSync(...args);
+      },
+    };
+
+    expect(() =>
+      publishArtifactFiles(
+        [
+          { path: knowledgePath, content: '{"next":"knowledge"}' },
+          { path: manifestPath, content: '{"next":"manifest"}' },
+        ],
+        filesystem,
+      ),
+    ).toThrow('manifest publication failed');
+    expect(existsSync(knowledgePath)).toBe(false);
+    expect(existsSync(manifestPath)).toBe(false);
+  });
+
+  it('retains a backup when rollback itself fails', () => {
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    const knowledgePath = join(smrtDir, 'smrt-knowledge.json');
+    const manifestPath = join(smrtDir, 'manifest.json');
+    writeFileSync(knowledgePath, '{"previous":"knowledge"}');
+    writeFileSync(manifestPath, '{"previous":"manifest"}');
+    let renameCount = 0;
+    const filesystem: ArtifactFilesystem = {
+      existsSync,
+      statSync: fs.statSync,
+      unlinkSync: fs.unlinkSync,
+      writeFileSync,
+      chmodSync: fs.chmodSync,
+      renameSync: (...args) => {
+        renameCount++;
+        if (renameCount === 4 || renameCount === 5) {
+          throw new Error('publication or rollback failed');
+        }
+        return fs.renameSync(...args);
+      },
+    };
+
+    expect(() =>
+      publishArtifactFiles(
+        [
+          { path: knowledgePath, content: '{"next":"knowledge"}' },
+          { path: manifestPath, content: '{"next":"manifest"}' },
+        ],
+        filesystem,
+      ),
+    ).toThrow('rollback retained recovery backups');
+    const manifestBackup = readdirSync(smrtDir).find((entry) =>
+      entry.startsWith('manifest.json.smrt-'),
+    );
+    expect(manifestBackup).toBeDefined();
+    if (!manifestBackup) throw new Error('Expected retained manifest backup');
+    expect(readFileSync(join(smrtDir, manifestBackup), 'utf-8')).toBe(
+      '{"previous":"manifest"}',
+    );
+    expect(readFileSync(knowledgePath, 'utf-8')).toBe(
+      '{"previous":"knowledge"}',
+    );
+  });
+
+  it('excludes standalone consumer docs and prompts from file configuration', async () => {
+    writeFileSync(
+      join(tmpDir, 'smrt.config.json'),
+      JSON.stringify({
+        knowledge: { includeDocs: false, includePrompts: false },
+      }),
+    );
+    writeFileSync(join(tmpDir, 'AGENTS.md'), '# Consumer instructions');
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'src', 'prompt.ts'),
+      "definePrompt('prompt', {})",
+    );
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await consumer.buildStart?.call({} as any);
+
+    const knowledge = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(knowledge.agentDoc).toBeUndefined();
+    expect(knowledge.prompts).toEqual([]);
   });
 
   it('fails aggregation without publishing a new manifest when knowledge cannot be written', async () => {

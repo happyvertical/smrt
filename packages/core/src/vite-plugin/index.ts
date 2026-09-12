@@ -17,6 +17,10 @@ import {
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
+import {
+  mergeKnowledgeConfig,
+  resolveFileKnowledgeConfig,
+} from '../knowledge-config.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
   DETERMINISTIC_GENERATED_AT,
@@ -597,61 +601,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   ): Promise<DomainKnowledgeConfig> {
     if (knowledge === false) return { enabled: false };
     const packageName = m.packageName ?? readPackageName(rootDir);
-    const defaults: DomainKnowledgeConfig = {
-      enabled: true,
-      api: {
-        enabled: false,
-        basePath: '/__smrt/knowledge',
-        requireAdmin: true,
-        includeDocs: false,
-        includePrompts: false,
-      },
-      includeDocs: true,
-      includePrompts: true,
-    };
-
-    let fileKnowledge: DomainKnowledgeConfig = {};
-    let packageKnowledge: DomainKnowledgeConfig = {};
-    try {
-      const previousCwd = process.cwd();
-      process.chdir(rootDir);
-      try {
-        const { loadConfig } = await import('@happyvertical/smrt-config');
-        const config = await loadConfig({ cache: false });
-        fileKnowledge = (config.knowledge ?? {}) as DomainKnowledgeConfig;
-        packageKnowledge = (
-          packageName ? (config.packages?.[packageName]?.knowledge ?? {}) : {}
-        ) as DomainKnowledgeConfig;
-      } finally {
-        process.chdir(previousCwd);
-      }
-    } catch {
-      fileKnowledge = {};
-      packageKnowledge = {};
-    }
-
     return mergeKnowledgeConfig(
-      defaults,
-      fileKnowledge,
-      packageKnowledge,
+      await resolveFileKnowledgeConfig(rootDir, packageName),
       knowledge || {},
     );
-  }
-
-  function mergeKnowledgeConfig(
-    ...configs: Array<DomainKnowledgeConfig | undefined | null | false>
-  ): DomainKnowledgeConfig {
-    const merged: DomainKnowledgeConfig = {};
-    for (const next of configs) {
-      if (!next) continue;
-      const hasApi = Boolean(merged.api || next.api);
-      const api = hasApi
-        ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
-        : undefined;
-      Object.assign(merged, next);
-      if (api) merged.api = api;
-    }
-    return merged;
   }
 
   function preserveKnowledgeGeneratedAt(

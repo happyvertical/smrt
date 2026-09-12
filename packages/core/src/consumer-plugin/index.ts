@@ -5,21 +5,20 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  DomainKnowledgeAgentSurface,
-  DomainKnowledgeConfig,
-} from '@happyvertical/smrt-types';
+import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
 import type { Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
+import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
@@ -564,9 +563,14 @@ async function saveAggregatedManifest(
       : undefined;
     const knowledgeConfig = resolveKnowledgeConfig
       ? await resolveKnowledgeConfig(merged as unknown as SmartObjectManifest)
-      : defaultKnowledgeConfig();
+      : await resolveFileKnowledgeConfig(
+          projectRoot,
+          merged.packageName ?? packageJson?.name,
+        );
     if (knowledgeConfig.enabled === false) {
-      fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+      publishArtifactFiles([
+        { path: manifestPath, content: JSON.stringify(merged, null, 2) },
+      ]);
       return;
     }
     const knowledge = buildDomainKnowledgeManifest({
@@ -577,15 +581,15 @@ async function saveAggregatedManifest(
       config: knowledgeConfig,
       agentSurface,
     });
-    // Build the knowledge artifact before publishing either output. Any
-    // construction/write failure is a generation failure, never a warning that
-    // leaves callers believing the artifact pair is current.
-    fs.writeFileSync(
-      knowledgePath,
-      JSON.stringify(knowledge, null, 2),
-      'utf-8',
-    );
-    fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+    // Stage both artifacts before replacing either. Renames are individually
+    // atomic; if a synchronous later rename fails, restore every earlier
+    // replacement. A process crash between renames cannot be made pair-atomic
+    // with ordinary filesystem operations, so the next generation remains the
+    // freshness repair path for that distinct failure mode.
+    publishArtifactFiles([
+      { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
+      { path: manifestPath, content: JSON.stringify(merged, null, 2) },
+    ]);
 
     console.log(
       `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(merged.objects).length} objects)`,
@@ -595,21 +599,6 @@ async function saveAggregatedManifest(
       cause: error,
     });
   }
-}
-
-function defaultKnowledgeConfig(): DomainKnowledgeConfig {
-  return {
-    enabled: true,
-    api: {
-      enabled: false,
-      basePath: '/__smrt/knowledge',
-      requireAdmin: true,
-      includeDocs: false,
-      includePrompts: false,
-    },
-    includeDocs: true,
-    includePrompts: true,
-  };
 }
 
 /**
