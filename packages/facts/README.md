@@ -195,13 +195,15 @@ updates maintain search storage from the source fields. `catalogSearch` is deriv
 callers must not author it, and generated transport surfaces exclude it using
 readonly/sensitive field metadata. Derivation uses the final persistence row after
 mutable `beforeSave` hooks and the complete subclass `transformJSON` chain,
-keeping persisted text and search storage consistent. If a custom transform omits
-or returns `undefined` for either source column, the write retains its ordinary
-adapter semantics (an existing value, a default, or NULL); search storage is
+keeping persisted text and search storage consistent. If a custom transform omits a source column, returns a value other than a string
+or explicit NULL, or returns a string with an unpaired UTF-16 surrogate, the write
+retains its ordinary adapter semantics (retention, defaults, or coercion); search storage is
 invalidated to NULL rather than guessed from instance values. Catalog text reads
 then fail with the readiness error until privileged bounded backfill reads the
 actual persisted columns. Run that backfill after such custom writes before
-resuming catalog text reads. Explicit NULL source values remain known values.
+resuming catalog text reads. Only well-formed strings and explicit NULL source
+values are known before persistence. Query encoding remains exact UTF-16
+code-unit matching, including queries containing an unpaired surrogate.
 Plain/public serialization
 retains the saved marker instead of recomputing from pre-transform instance text.
 Direct SQL writers must set `catalog_search = NULL` whenever either source text

@@ -24,6 +24,15 @@ import type {
   FactType,
 } from './types';
 
+// Unicode mode treats valid surrogate pairs as complete code points; this range
+// therefore matches only unpaired surrogates that UTF-8 drivers may replace.
+function isKnownPersistedText(value: unknown): value is string | null {
+  return (
+    value === null ||
+    (typeof value === 'string' && !/[\uD800-\uDFFF]/u.test(value))
+  );
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
@@ -118,10 +127,11 @@ export class Fact extends SmrtObject {
   protected override normalizePersistenceData(
     data: Readonly<Record<string, unknown>>,
   ): Record<string, unknown> {
-    // Omitted/undefined sources may retain stored values or use database
-    // defaults. Invalidate instead of guessing from pre-serialization state.
+    // Unknown source values may be omitted, defaulted or coerced by adapters.
+    // Invalidate instead of guessing from pre-serialization values.
     this.catalogSearch =
-      data.text_refined === undefined || data.text_raw === undefined
+      !isKnownPersistedText(data.text_refined) ||
+      !isKnownPersistedText(data.text_raw)
         ? null
         : encodeCatalogSearch(`${data.text_refined} ${data.text_raw}`);
     return {

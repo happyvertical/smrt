@@ -354,6 +354,100 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         }
       }
 
+      for (const subtype of [false, true]) {
+        for (const kind of [
+          'boolean',
+          'high-surrogate',
+          'low-surrogate',
+          'paired-surrogates',
+        ] as const) {
+          it(`uses stored text after ${subtype ? 'STI' : 'base'} serialization returns ${kind}`, async () => {
+            const collection = subtype
+              ? await CatalogSpecialFacts.create({ db })
+              : facts;
+            const fact = await collection.create({
+              textRefined: 'coercion probe',
+              textRaw: 'original',
+              status: 'active',
+            });
+            const source =
+              kind === 'boolean'
+                ? true
+                : kind === 'high-surrogate'
+                  ? String.fromCharCode(0xd800)
+                  : kind === 'low-surrogate'
+                    ? String.fromCharCode(0xdc00)
+                    : '😀';
+            const serializable = fact as unknown as {
+              transformJSON(
+                data: Record<string, unknown>,
+              ): Record<string, unknown>;
+            };
+            const transform = serializable.transformJSON.bind(fact);
+            vi.spyOn(serializable, 'transformJSON').mockImplementation(
+              (data) => ({ ...transform(data), textRaw: source }),
+            );
+            await fact.save();
+            const { rows } = await db.query(
+              'SELECT text_raw, catalog_search FROM facts WHERE id = ?',
+              fact.id,
+            );
+            const raw =
+              kind === 'boolean'
+                ? dialect === 'sqlite'
+                  ? '1.0'
+                  : 'true'
+                : kind === 'paired-surrogates'
+                  ? '😀'
+                  : '�';
+            expect(rows[0].text_raw).toBe(raw);
+            const known = kind === 'paired-surrogates';
+            const expected = encodeCatalogSearch(`coercion probe ${raw}`);
+            expect(rows[0].catalog_search).toBe(known ? expected : null);
+            expect(fact.catalogSearch).toBe(rows[0].catalog_search);
+            expect(fact.toPublicJSON()).not.toHaveProperty('catalogSearch');
+            vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+              new Error('offline'),
+            );
+            if (!known) {
+              await expect(collection.browseCatalog(raw)).rejects.toThrow(
+                'backfillCatalogSearch',
+              );
+              expect(
+                await withSystemContext(() =>
+                  collection.backfillCatalogSearch(1),
+                ),
+              ).toEqual({ remaining: 0 });
+            }
+            const hydrated = await collection.get({ id: fact.id });
+            expect(hydrated?.textRaw).toBe(raw);
+            expect(hydrated?.catalogSearch).toBe(expected);
+            expect(
+              (await collection.browseCatalog(raw, { latestOnly: false })).map(
+                (row) => row.id,
+              ),
+            ).toEqual([fact.id]);
+            if (String(source) !== raw)
+              expect(
+                await collection.browseCatalog(String(source), {
+                  latestOnly: false,
+                }),
+              ).toEqual([]);
+            if (known) {
+              // Query matching remains UTF-16 code-unit matching: a lone high
+              // surrogate can match inside a valid stored pair.
+              expect(
+                (
+                  await collection.browseCatalog(String.fromCharCode(0xd83d), {
+                    latestOnly: false,
+                  })
+                ).map((row) => row.id),
+              ).toEqual([fact.id]);
+            }
+          });
+        }
+      }
+
       for (const queryText of ['', 'K']) {
         it(`preserves narrowing beforeList authorization for ${queryText ? 'fallback' : 'empty'} catalog reads`, async () => {
           const special = await CatalogSpecialFacts.create({ db });
