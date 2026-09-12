@@ -109,6 +109,55 @@ export const PROCESS_ID = crypto.randomUUID();
 const store = new Map<string, Map<string, Map<string, CacheEntry>>>();
 
 /**
+ * Reads currently populating a cache entry, scoped the same way as cached
+ * rows. A shared promise prevents concurrent identical cache misses from
+ * exhausting the connection pool with duplicate SELECTs.
+ */
+const inFlightReads = new Map<
+  string,
+  Map<string, Map<string, Promise<Record<string, unknown>[]>>>
+>();
+
+/**
+ * Share an in-progress cache miss with callers for the same database, table,
+ * and final query key. Rejected reads are removed too, so a later caller can
+ * retry rather than inheriting a permanently failed promise.
+ */
+export function getOrCreateInFlightRead(
+  dbKey: string,
+  tableName: string,
+  queryKey: string,
+  read: () => Promise<Record<string, unknown>[]>,
+): Promise<Record<string, unknown>[]> {
+  let tables = inFlightReads.get(dbKey);
+  if (!tables) {
+    tables = new Map();
+    inFlightReads.set(dbKey, tables);
+  }
+  let entries = tables.get(tableName);
+  if (!entries) {
+    entries = new Map();
+    tables.set(tableName, entries);
+  }
+
+  const existing = entries.get(queryKey);
+  if (existing) return existing;
+
+  let inFlight: Promise<Record<string, unknown>[]>;
+  inFlight = read().finally(() => {
+    if (entries.get(queryKey) === inFlight) {
+      entries.delete(queryKey);
+      if (entries.size === 0) {
+        tables.delete(tableName);
+        if (tables.size === 0) inFlightReads.delete(dbKey);
+      }
+    }
+  });
+  entries.set(queryKey, inFlight);
+  return inFlight;
+}
+
+/**
  * Monotonic invalidation generation per `dbKey\0tableName`, bumped on every
  * invalidation. A read captures the generation *before* its DB round-trip and
  * passes it to `setCachedRows`; if an invalidating write landed during the
@@ -265,6 +314,7 @@ export function invalidateCollectionCache(
  */
 export function resetCollectionCache(): void {
   store.clear();
+  inFlightReads.clear();
   generations.clear();
   crossProcessInterest.clear();
   stopCacheInvalidationListeners();

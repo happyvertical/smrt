@@ -8,6 +8,7 @@ import {
   ensureCacheInvalidationListener,
   getCachedRows,
   getCacheGeneration,
+  getOrCreateInFlightRead,
   invalidateCollectionCache,
   registerCrossProcessCacheInterest,
   resolveDbCacheKey,
@@ -2733,25 +2734,32 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return cached;
     }
 
-    // Capture the table's invalidation generation BEFORE the round-trip; if a
-    // concurrent write invalidates while this SELECT is in flight, setCachedRows
-    // sees the bumped generation and drops the now-stale result instead of
-    // caching it for the full TTL.
-    const generation = getCacheGeneration(dbKey, this.tableName);
-    const rows = await this.queryDuckDbCanonicalSelectRows(
-      sql,
-      params,
-      describeUuidOutputs,
-    );
-    setCachedRows(
+    return await getOrCreateInFlightRead(
       dbKey,
       this.tableName,
       queryKey,
-      rows,
-      cacheConfig.ttl,
-      generation,
+      async () => {
+        // Capture the table's invalidation generation BEFORE the round-trip;
+        // if a concurrent write invalidates while this SELECT is in flight,
+        // setCachedRows sees the bumped generation and drops the now-stale
+        // result instead of caching it for the full TTL.
+        const generation = getCacheGeneration(dbKey, this.tableName);
+        const rows = await this.queryDuckDbCanonicalSelectRows(
+          sql,
+          params,
+          describeUuidOutputs,
+        );
+        setCachedRows(
+          dbKey,
+          this.tableName,
+          queryKey,
+          rows,
+          cacheConfig.ttl,
+          generation,
+        );
+        return rows;
+      },
     );
-    return rows;
   }
 
   /**
