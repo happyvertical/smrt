@@ -68,8 +68,17 @@ export interface TaskRunnerConfig {
   concurrency?: number;
   /** Queues to process (default: ['default']) */
   queues?: string[];
-  /** Polling interval in milliseconds */
+  /** Base polling interval in milliseconds, capped at the effective lease TTL. */
   pollInterval?: number;
+  /**
+   * Longest delay between empty queue checks in milliseconds.
+   *
+   * Empty checks back off exponentially from {@link pollInterval} to this
+   * value. Leave unset to cap idle checks at twenty times `pollInterval`.
+   * Every delay is bounded by the effective worker lease TTL (plus query and
+   * event-loop time), including a base interval larger than that TTL.
+   */
+  idlePollInterval?: number;
   /** Heartbeat interval in milliseconds */
   heartbeatInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
@@ -115,6 +124,7 @@ export interface TaskRunnerEvents {
  * falling back to main-loop renewal (guards against a hung connect in-thread).
  */
 const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
+const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
 
 /**
  * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
@@ -142,6 +152,7 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   concurrency: 5,
   queues: ['default'],
   pollInterval: 1000,
+  idlePollInterval: 0,
   heartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   shutdownTimeout: 30000,
   staleJobThresholdMs: 90000,
@@ -171,6 +182,7 @@ export class TaskRunner extends EventEmitter {
    */
   private readonly workerKey: string;
   private readonly config: Required<TaskRunnerConfig>;
+  private readonly maxIdlePollIntervalMs: number;
   private readonly effectiveLeaseTtlMs: number;
   private collection: SmrtJobCollection | null = null;
   private eventCollection: SmrtJobEventCollection | null = null;
@@ -180,6 +192,7 @@ export class TaskRunner extends EventEmitter {
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
   private pollTimer: NodeJS.Timeout | null = null;
+  private idlePollDelayMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private leaseTimer: NodeJS.Timeout | null = null;
   /** Periodic system-table retention sweep, when not opted out (#2375). */
@@ -198,6 +211,25 @@ export class TaskRunner extends EventEmitter {
     };
     this.id = this.config.id;
     this.workerKey = createWorkerKey(this.id);
+    for (const [name, value] of [
+      ['pollInterval', this.config.pollInterval],
+      ['idlePollInterval', config.idlePollInterval ?? this.config.pollInterval],
+    ] as const) {
+      if (!Number.isFinite(value) || value < 1 || value > 2_147_483_647) {
+        throw new RangeError(
+          `${name} must be between 1 and 2147483647 milliseconds`,
+        );
+      }
+    }
+    this.maxIdlePollIntervalMs = Math.min(
+      2_147_483_647,
+      Math.max(
+        this.config.pollInterval,
+        config.idlePollInterval ??
+          this.config.pollInterval * DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER,
+      ),
+    );
+    this.idlePollDelayMs = this.config.pollInterval;
     this.effectiveLeaseTtlMs = getEffectiveLeaseTtlMs(
       this.config.leaseTtlMs,
       this.config.leaseTickMs,
@@ -260,6 +292,7 @@ export class TaskRunner extends EventEmitter {
     }
 
     // Start polling loop
+    this.resetIdlePollDelay();
     this.startPolling();
 
     // Start heartbeat loop (per-job telemetry only; no longer gates recovery)
@@ -356,15 +389,16 @@ export class TaskRunner extends EventEmitter {
     const poll = async () => {
       if (!this.running) return;
 
+      let foundWork = true;
       try {
-        await this.poll();
+        foundWork = await this.poll();
       } catch (error) {
         this.emit('runner:error', error as Error);
       }
 
       // Schedule next poll
       if (this.running) {
-        this.pollTimer = setTimeout(poll, this.config.pollInterval);
+        this.pollTimer = setTimeout(poll, this.nextPollDelay(foundWork));
       }
     };
 
@@ -375,14 +409,38 @@ export class TaskRunner extends EventEmitter {
   /**
    * Poll for and process jobs
    */
-  private async poll(): Promise<void> {
-    if (!this.collection || !this.db) return;
+  private nextPollDelay(foundWork: boolean): number {
+    if (foundWork) {
+      this.resetIdlePollDelay();
+      return this.boundPollDelay(this.config.pollInterval);
+    }
+
+    const delay = this.idlePollDelayMs;
+    this.idlePollDelayMs = Math.min(delay * 2, this.maxIdlePollIntervalMs);
+    return this.boundPollDelay(delay);
+  }
+
+  private boundPollDelay(delay: number): number {
+    // A throttled sweep may have been skipped on this poll. Bound the next
+    // wait by the remaining recovery budget, not a fresh TTL from this poll.
+    const elapsed = this.workersTableVerified
+      ? Date.now() - this.lastRecoverySweepAt
+      : 0;
+    return Math.min(delay, Math.max(1, this.effectiveLeaseTtlMs - elapsed));
+  }
+
+  private resetIdlePollDelay(): void {
+    this.idlePollDelayMs = this.config.pollInterval;
+  }
+
+  private async poll(): Promise<boolean> {
+    if (!this.collection || !this.db) return true;
 
     await this.recoverStaleJobs();
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
-    if (available <= 0) return;
+    if (available <= 0) return true;
 
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
@@ -409,6 +467,8 @@ export class TaskRunner extends EventEmitter {
         this.emit('runner:error', error as Error);
       });
     }
+
+    return jobs.length > 0;
   }
 
   /**

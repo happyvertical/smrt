@@ -104,6 +104,8 @@ import { TaskRunner } from '@happyvertical/smrt-jobs';
 const runner = new TaskRunner({
   concurrency: 5,
   pollInterval: 1000,
+  // Empty checks back off exponentially to this cap (20× by default).
+  idlePollInterval: 20000,
   queues: ['default', 'analysis'],
 });
 await runner.initialize(db);
@@ -116,6 +118,12 @@ runner.on('job:failed', (job, error) => { /* ... */ });
 // Graceful shutdown
 process.on('SIGTERM', () => runner.stop());
 ```
+
+Polling delays are capped at the effective worker lease TTL, including a larger
+`pollInterval`, to bound orphan-recovery sweep spacing. Both polling intervals
+must be finite positive milliseconds within the Node timer range. The default
+20× idle cap reduces combined claim and recovery traffic; latency-sensitive
+workers can set a smaller cap.
 
 ### Back MCP task operations with durable jobs
 
