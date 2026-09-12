@@ -211,6 +211,21 @@ function assertReportRefreshJobIntegrity(args: ReportRefreshJobArgs): void {
   }
 }
 
+function assertReportRefreshJobTarget(
+  args: ReportRefreshJobArgs,
+  context: JobExecutionContext | undefined,
+): void {
+  if (!context) return;
+  const expectedType = canonicalClassName(
+    (args.trigger ?? 'job') === 'manual'
+      ? SmrtPrincipalReportRefreshTask
+      : SmrtReportRefreshTask,
+  );
+  if (context.job.objectType !== expectedType || context.job.method !== 'run') {
+    throw new Error('Invalid durable report refresh job target');
+  }
+}
+
 export function registerReportRefreshExecutionAuthorityHost(
   hostId: string,
   host: ReportRefreshExecutionAuthorityHost,
@@ -408,18 +423,21 @@ export class SmrtReportRefreshTask extends SmrtObject {
     context?: JobExecutionContext,
   ): Promise<unknown> {
     assertReportRefreshJobIntegrity(args);
-    const reportClass = args.reportClass || this.reportClass;
+    assertReportRefreshJobTarget(args, context);
+    const reportClass = args.reportClass;
     if (!reportClass) {
       throw new Error('Report refresh job requires reportClass');
     }
+    const mode = args.mode ?? 'incremental';
+    const trigger = args.trigger ?? 'job';
 
     const reportCtor = resolveReportClass(reportClass);
     const jobTenantId = context?.job.tenantId ?? tenantIdFromInstance(this);
     await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
     return refreshReport(reportCtor, {
       db: this.db,
-      mode: args.mode ?? this.mode,
-      trigger: args.trigger ?? this.trigger,
+      mode,
+      trigger,
       tenantId: args.tenantId,
       tenantIds: args.tenantIds,
       adapterType: args.adapterType,
@@ -485,7 +503,7 @@ export async function enqueueReportRefresh(
 
   const unsignedArgs: Omit<ReportRefreshJobArgs, 'integrity'> = {
     reportClass: options.reportClass,
-    mode: options.mode,
+    mode: options.mode ?? 'incremental',
     trigger: options.trigger ?? 'job',
     tenantId: options.tenantId,
     tenantIds: options.tenantIds,

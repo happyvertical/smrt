@@ -695,24 +695,24 @@ export class TaskRunner extends EventEmitter {
         onError: 'throw',
       });
 
+      // Persistence identity and the database connection belong to the
+      // runner. Persisted constructor config may configure the target, but it
+      // must never redirect hydration or execution to a different store.
+      const safeAgentConfig = { ...agentConfig };
+      delete safeAgentConfig.db;
+      delete safeAgentConfig.id;
+      delete safeAgentConfig._skipLoad;
+
       // Create or load the object instance
       let instance: SmrtObject;
 
       if (job.objectId) {
-        // Agent configuration belongs to the registered class, but it must not
-        // override the runner-controlled persistence target or disable the
-        // canonical hydration.
-        const objectAgentConfig = { ...agentConfig };
-        delete objectAgentConfig.db;
-        delete objectAgentConfig.id;
-        delete objectAgentConfig._skipLoad;
-
         // initialize() performs the canonical hydration when the persisted ID
         // is supplied to the constructor.
         instance = new ObjectClass({
           db: this.db,
           id: job.objectId,
-          ...objectAgentConfig,
+          ...safeAgentConfig,
         });
         await instance.initialize();
 
@@ -723,7 +723,7 @@ export class TaskRunner extends EventEmitter {
         }
       } else {
         // Create new instance for static-like methods
-        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        instance = new ObjectClass({ db: this.db, ...safeAgentConfig });
         await instance.initialize();
       }
 

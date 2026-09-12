@@ -654,6 +654,19 @@ describe('report refresh integration', () => {
   it('reauthorizes principal refreshes delivered by TaskRunner', async () => {
     const db = await setupDb();
     await insertInvoice(db, {
+      id: 'manual-task-baseline',
+      tenantId: 'tenant-a',
+      customerId: 'customer-baseline',
+      amount: 10,
+      updatedAt: '2026-03-01T00:00:00.000Z',
+    });
+    await refreshReport(IntegrationRevenueReport, {
+      db,
+      mode: 'incremental',
+      tenantId: 'tenant-a',
+      adapterType: 'sqlite',
+    });
+    await insertInvoice(db, {
       id: 'manual-task-invoice',
       tenantId: 'tenant-a',
       customerId: 'customer-manual',
@@ -673,7 +686,107 @@ describe('report refresh integration', () => {
       retention: false,
     });
     try {
-      await enqueueReportRefresh({
+      const job = await enqueueReportRefresh({
+        db,
+        reportClass: 'IntegrationRevenueReport',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+        adapterType: 'sqlite',
+        maxAttempts: 1,
+        integritySigner: JOB_SIGNER,
+        executionAuthority: {
+          version: 1,
+          hostId: 'integration-authority',
+          principal: {
+            version: 1,
+            actorUserId: 'user-a',
+            tenantId: 'tenant-a',
+          },
+        },
+      });
+      const persisted = await db.query(
+        'SELECT args FROM _smrt_jobs WHERE id = ?',
+        job.id,
+      );
+      const injectedArgs = JSON.parse(String(persisted.rows[0]?.args));
+      expect(injectedArgs).toMatchObject({
+        reportClass: 'IntegrationRevenueReport',
+        mode: 'incremental',
+        trigger: 'manual',
+        tenantId: 'tenant-a',
+      });
+      injectedArgs._agentConfig = {
+        db: 'attacker-database',
+        id: 'attacker-id',
+        _skipLoad: true,
+        args: {
+          reportClass: 'AttackerReport',
+          mode: 'rebuild',
+          trigger: 'schedule',
+          tenantId: 'tenant-b',
+        },
+        mode: 'rebuild',
+        reportClass: 'AttackerReport',
+        tenantId: 'tenant-b',
+        trigger: 'schedule',
+      };
+      await db.update(
+        '_smrt_jobs',
+        { id: job.id },
+        { args: JSON.stringify(injectedArgs) },
+      );
+      await taskRunner.initialize(db);
+      const completion = new Promise<{ result?: unknown }>(
+        (resolve, reject) => {
+          taskRunner.once('job:completed', (_job, result) =>
+            resolve(result as { result?: unknown }),
+          );
+          taskRunner.once('job:failed', (_job, error) => reject(error));
+          taskRunner.once('runner:error', reject);
+        },
+      );
+      await taskRunner.start();
+      await expect(completion).resolves.toMatchObject({
+        result: { tenantId: 'tenant-a', mode: 'incremental' },
+      });
+      expect(authorize).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorUserId: 'user-a',
+          tenantId: 'tenant-a',
+        }),
+        expect.objectContaining({
+          phase: 'execute',
+          tenantId: 'tenant-a',
+          mode: 'incremental',
+          trigger: 'manual',
+        }),
+      );
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'allowed', tenantId: 'tenant-a' }),
+      );
+    } finally {
+      await taskRunner.stop();
+      unregisterAuthority();
+      await db.close?.();
+    }
+  });
+
+  it('rejects a principal refresh rerouted to the maintenance worker target', async () => {
+    const db = await setupDb();
+    const authorize = vi.fn();
+    const audit = vi.fn();
+    const unregisterAuthority = registerReportRefreshExecutionAuthorityHost(
+      'integration-authority',
+      { authorize, audit },
+    );
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    try {
+      const job = await enqueueReportRefresh({
         db,
         reportClass: 'IntegrationRevenueReport',
         mode: 'incremental',
@@ -692,30 +805,28 @@ describe('report refresh integration', () => {
           },
         },
       });
+      const maintenanceType =
+        ObjectRegistry.getClassByConstructor(SmrtReportRefreshTask)
+          ?.qualifiedName ?? SmrtReportRefreshTask.name;
+      await db.query(
+        'UPDATE _smrt_jobs SET object_type = ? WHERE id = ?',
+        maintenanceType,
+        job.id,
+      );
       await taskRunner.initialize(db);
-      const completion = new Promise<{ result?: unknown }>(
-        (resolve, reject) => {
-          taskRunner.once('job:completed', (_job, result) =>
-            resolve(result as { result?: unknown }),
-          );
-          taskRunner.once('job:failed', (_job, error) => reject(error));
-          taskRunner.once('runner:error', reject);
-        },
-      );
-      await taskRunner.start();
-      await expect(completion).resolves.toMatchObject({
-        result: { tenantId: 'tenant-a', rowCount: 1 },
+      const failure = new Promise<Error>((resolve, reject) => {
+        taskRunner.once('job:failed', (_job, error) => resolve(error as Error));
+        taskRunner.once('job:completed', () =>
+          reject(new Error('rerouted report job should fail')),
+        );
+        taskRunner.once('runner:error', reject);
       });
-      expect(authorize).toHaveBeenCalledWith(
-        expect.objectContaining({
-          actorUserId: 'user-a',
-          tenantId: 'tenant-a',
-        }),
-        expect.objectContaining({ phase: 'execute', tenantId: 'tenant-a' }),
-      );
-      expect(audit).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'allowed', tenantId: 'tenant-a' }),
-      );
+      await taskRunner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid durable report refresh job target',
+      });
+      expect(authorize).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
     } finally {
       await taskRunner.stop();
       unregisterAuthority();
