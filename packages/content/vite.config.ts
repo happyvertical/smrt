@@ -67,6 +67,12 @@ export default defineConfig(async ({ mode }) => {
 
   return {
     root: packageRoot,
+    oxc: {
+      decorator: {
+        legacy: true,
+        emitDecoratorMetadata: true,
+      },
+    },
     resolve: {
       alias: viteWorkspaceAliases,
     },
