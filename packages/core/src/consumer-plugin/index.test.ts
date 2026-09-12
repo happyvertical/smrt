@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { smrtPlugin } from '../vite-plugin/index.js';
 import { smrtConsumer } from './index';
 
 function manifestHash(manifest: unknown): string {
@@ -319,37 +320,96 @@ describe('smrtConsumer registration generation', () => {
     );
   });
 
-  it('preserves producer knowledge configuration after merging consumer objects', async () => {
+  it('uses inline producer knowledge options when refreshing consumer knowledge', async () => {
     writeFileSync(
       join(tmpDir, 'smrt.config.json'),
       JSON.stringify({
         knowledge: {
-          includeDocs: false,
-          includePrompts: false,
-          tags: ['producer-tag'],
-          summary: 'producer summary',
-          risks: ['producer risk'],
+          includeDocs: true,
+          includePrompts: true,
+          tags: ['file-tag'],
+          summary: 'file summary',
+          risks: ['file risk'],
+        },
+        packages: {
+          'consumer-app': { knowledge: { tags: ['package-tag'] } },
         },
       }),
     );
-    const plugin = smrtConsumer({
+    writeFileSync(join(tmpDir, 'AGENTS.md'), '# Consumer instructions');
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'src', 'prompt.ts'),
+      "definePrompt('consumer-prompt', {});",
+    );
+    const consumer = smrtConsumer({
       packages: ['@test/pkg'],
       generateTypes: false,
       projectRoot: tmpDir,
       disableScanning: true,
     });
+    const producer = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      knowledge: {
+        includeDocs: false,
+        includePrompts: false,
+        tags: ['inline-tag'],
+        summary: 'inline summary',
+        risks: ['inline risk'],
+      },
+    });
+    const resolvedConfig = {
+      root: tmpDir,
+      build: {},
+      plugins: [producer, consumer],
+    };
+    await producer.configResolved?.call(producer, resolvedConfig as any);
+    await consumer.configResolved?.call(consumer, resolvedConfig as any);
 
-    await plugin.buildStart?.call({} as any);
+    await consumer.buildStart?.call({} as any);
 
     const knowledge = JSON.parse(
       readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
     );
     expect(knowledge).toMatchObject({
-      tags: ['producer-tag'],
-      summary: 'producer summary',
-      risks: ['producer risk'],
+      tags: ['inline-tag'],
+      summary: 'inline summary',
+      risks: ['inline risk'],
       prompts: [],
     });
+    expect(knowledge.agentDoc).toBeUndefined();
+  });
+
+  it('does not regenerate knowledge when inline producer options disable it', async () => {
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const producer = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      knowledge: { enabled: false },
+    });
+    const resolvedConfig = {
+      root: tmpDir,
+      build: {},
+      plugins: [producer, consumer],
+    };
+    await producer.configResolved?.call(producer, resolvedConfig as any);
+    const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
+    writeFileSync(knowledgePath, '{"previous":"artifact"}');
+    await consumer.configResolved?.call(consumer, resolvedConfig as any);
+
+    await consumer.buildStart?.call({} as any);
+
+    expect(readFileSync(knowledgePath, 'utf-8')).toBe(
+      '{"previous":"artifact"}',
+    );
   });
 
   it('fails aggregation without publishing a new manifest when knowledge cannot be written', async () => {

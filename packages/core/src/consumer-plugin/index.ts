@@ -19,6 +19,7 @@ import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
+import type { SmrtPluginApi } from '../vite-plugin/index.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
@@ -140,6 +141,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
+  let producerApi: SmrtPluginApi | undefined;
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -166,6 +168,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           },
         },
       };
+    },
+
+    configResolved(resolvedConfig) {
+      producerApi = (resolvedConfig.plugins ?? []).find(
+        (plugin) => plugin?.name === 'smrt-auto-service',
+      )?.api as SmrtPluginApi | undefined;
     },
 
     async buildStart() {
@@ -200,7 +208,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot);
 
         // Save aggregated manifest for CLI discovery
-        await saveAggregatedManifest(typeManifest, projectRoot);
+        await saveAggregatedManifest(
+          typeManifest,
+          projectRoot,
+          producerApi?.resolveKnowledgeConfig,
+        );
 
         // Generate registration file for CLI class loading
         await generateRegistrationFile(typeManifest, projectRoot);
@@ -492,6 +504,7 @@ function determineImportPath(packageJson: ConsumerPackageJson): string {
 async function saveAggregatedManifest(
   manifest: ConsumerManifest,
   projectRoot: string,
+  resolveKnowledgeConfig?: SmrtPluginApi['resolveKnowledgeConfig'],
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const manifestPath = path.join(smrtDir, 'manifest.json');
@@ -549,10 +562,9 @@ async function saveAggregatedManifest(
     const packageJson = fs.existsSync(packageJsonPath)
       ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
       : undefined;
-    const knowledgeConfig = await resolveConsumerKnowledgeConfig(
-      projectRoot,
-      merged as unknown as SmartObjectManifest,
-    );
+    const knowledgeConfig = resolveKnowledgeConfig
+      ? await resolveKnowledgeConfig(merged as unknown as SmartObjectManifest)
+      : defaultKnowledgeConfig();
     if (knowledgeConfig.enabled === false) {
       fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
       return;
@@ -585,11 +597,8 @@ async function saveAggregatedManifest(
   }
 }
 
-async function resolveConsumerKnowledgeConfig(
-  projectRoot: string,
-  manifest: SmartObjectManifest,
-): Promise<DomainKnowledgeConfig> {
-  const defaults: DomainKnowledgeConfig = {
+function defaultKnowledgeConfig(): DomainKnowledgeConfig {
+  return {
     enabled: true,
     api: {
       enabled: false,
@@ -601,44 +610,6 @@ async function resolveConsumerKnowledgeConfig(
     includeDocs: true,
     includePrompts: true,
   };
-  const packageName = manifest.packageName;
-  try {
-    const previousCwd = process.cwd();
-    process.chdir(projectRoot);
-    try {
-      const { loadConfig } = await import('@happyvertical/smrt-config');
-      const config = await loadConfig({ cache: false });
-      return mergeConsumerKnowledgeConfig(
-        defaults,
-        config.knowledge as DomainKnowledgeConfig | undefined,
-        packageName
-          ? (config.packages?.[packageName]?.knowledge as
-              | DomainKnowledgeConfig
-              | undefined)
-          : undefined,
-      );
-    } finally {
-      process.chdir(previousCwd);
-    }
-  } catch {
-    return defaults;
-  }
-}
-
-function mergeConsumerKnowledgeConfig(
-  ...configs: Array<DomainKnowledgeConfig | undefined>
-): DomainKnowledgeConfig {
-  const merged: DomainKnowledgeConfig = {};
-  for (const next of configs) {
-    if (!next) continue;
-    const api =
-      merged.api || next.api
-        ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
-        : undefined;
-    Object.assign(merged, next);
-    if (api) merged.api = api;
-  }
-  return merged;
 }
 
 /**

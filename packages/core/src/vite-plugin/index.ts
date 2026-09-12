@@ -175,6 +175,27 @@ export interface SmrtPluginOptions {
   validateCliApiCoherence?: boolean;
 }
 
+/**
+ * Producer configuration exposed to companion Vite plugins.
+ *
+ * The consumer uses this rather than reconstructing knowledge precedence from
+ * the filesystem, so inline `smrtPlugin({ knowledge })` options remain in
+ * force while it refreshes the aggregate artifact.
+ */
+export interface SmrtPluginApi {
+  options: {
+    projectRoot?: string;
+    generationSnapshot?: SmrtGenerationSnapshotOptions;
+    baseClasses: string[];
+    followImports: boolean;
+    include: string[];
+    exclude: string[];
+  };
+  resolveKnowledgeConfig(
+    manifest: SmartObjectManifest,
+  ): Promise<DomainKnowledgeConfig>;
+}
+
 const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-routes': 'smrt:routes',
   '@happyvertical/smrt-virt-client': 'smrt:client',
@@ -785,7 +806,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         include,
         exclude,
       },
-    },
+      resolveKnowledgeConfig: (currentManifest: SmartObjectManifest) =>
+        resolveKnowledgeConfig(projectRoot, currentManifest),
+    } satisfies SmrtPluginApi,
 
     async configResolved(resolvedConfig) {
       hasFreshConfigResolvedManifest = false;
