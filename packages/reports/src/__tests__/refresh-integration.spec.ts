@@ -4,6 +4,7 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
+import { createHmacDurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
 import {
   disableTenancy,
   enableTenancy,
@@ -17,6 +18,7 @@ import {
   ensureReportRefreshSchedules,
   ReportScheduleRunner,
   registerReportRefreshInterceptor,
+  registerReportRefreshJobIntegritySigner,
   SmrtReportRefreshTask,
 } from '../scheduler.js';
 
@@ -31,15 +33,22 @@ const REPORT_TABLE = 'integration_revenue_reports';
 const MONTHLY_REPORT_TABLE = 'integration_monthly_revenue_reports';
 const DEFAULT_WATERMARK_REPORT_TABLE = 'integration_default_watermark_reports';
 const PAID_REPORT_TABLE = 'integration_paid_revenue_reports';
+const JOB_SIGNER = createHmacDurableJobPayloadSigner({
+  keyId: 'integration-reports-v1',
+  key: 'test-only-integration-report-key',
+});
+let unregisterJobSigner: (() => void) | undefined;
 
 beforeEach(() => {
   ObjectRegistry.clear();
   GlobalInterceptors.clear();
   registerJobsManifest();
   registerIntegrationClasses();
+  unregisterJobSigner = registerReportRefreshJobIntegritySigner(JOB_SIGNER);
 });
 
 afterEach(() => {
+  unregisterJobSigner?.();
   disableTenancy();
   GlobalInterceptors.clear();
   ObjectRegistry.clear();
@@ -971,7 +980,10 @@ describe('report refresh integration', () => {
       { next_run: '2026-01-01T00:00:00.000Z' },
     );
 
-    const runner = new ReportScheduleRunner({ pollInterval: 1000 });
+    const runner = new ReportScheduleRunner({
+      pollInterval: 1000,
+      integritySigner: JOB_SIGNER,
+    });
     await runner.initialize(db);
     await runner.poll();
 
@@ -987,6 +999,7 @@ describe('report refresh integration', () => {
     const unregister = registerReportRefreshInterceptor({
       db,
       reports: [IntegrationRevenueReport],
+      integritySigner: JOB_SIGNER,
     });
     const invoice = new IntegrationInvoice({
       db,
@@ -1024,12 +1037,16 @@ describe('report refresh integration', () => {
 
     const task = new SmrtReportRefreshTask({ db });
     await task.initialize();
-    const result = await task.run({
+    const unsignedArgs = {
       reportClass: 'IntegrationRevenueReport',
       mode: 'incremental',
       trigger: 'job',
       tenantId: 'tenant-a',
       adapterType: 'sqlite',
+    } as const;
+    const result = await task.run({
+      ...unsignedArgs,
+      integrity: JOB_SIGNER.sign(unsignedArgs),
     });
 
     expect(result).toMatchObject({
