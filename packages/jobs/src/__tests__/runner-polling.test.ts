@@ -3,7 +3,6 @@ import { TaskRunner } from '../runner.js';
 
 type PollingInternals = {
   nextPollDelay(foundWork: boolean): number;
-  resetIdlePollDelay(): void;
 };
 
 function pollingInternals(runner: TaskRunner): PollingInternals {
@@ -46,44 +45,97 @@ describe('TaskRunner idle polling (#2820)', () => {
     expect(after).toBe(6);
   });
 
-  it('resets the actual loop after a claim, capacity pressure, or poll rejection', async () => {
+  function lifecycleRunner() {
     vi.useFakeTimers();
+    vi.setSystemTime(0);
     const runner = new TaskRunner({
+      concurrency: 1,
       pollInterval: 100,
       idlePollInterval: 1_000,
+      retention: false,
     });
     const internal = runner as unknown as {
-      collection: { claimReady: ReturnType<typeof vi.fn> };
+      collection: object;
+      workerCollection: object;
       db: object;
-      running: boolean;
       activeJobs: Map<string, unknown>;
       recoverStaleJobs(): Promise<void>;
-      processJob(): Promise<void>;
-      startPolling(): void;
-      pollTimer: ReturnType<typeof setTimeout> | null;
+      processJob(job: { id: string }): Promise<void>;
     };
-    const claimReady = vi.fn().mockResolvedValue([]);
+    const times: number[] = [];
+    const claimReady = vi.fn().mockImplementation(async () => {
+      times.push(Date.now());
+      return [];
+    });
     internal.collection = { claimReady };
-    internal.db = {};
-    internal.recoverStaleJobs = async () => {};
-    internal.processJob = async () => {};
-    internal.running = true;
-    internal.startPolling();
+    internal.workerCollection = {
+      assertReady: vi.fn().mockResolvedValue(undefined),
+      registerWorker: vi.fn().mockResolvedValue(undefined),
+      expireWorker: vi.fn().mockResolvedValue(undefined),
+    };
+    internal.db = { config: { type: 'duckdb' } };
+    internal.recoverStaleJobs = vi.fn().mockResolvedValue(undefined);
+    const processJob = vi.fn().mockResolvedValue(undefined);
+    internal.processJob = processJob;
+    return { runner, internal, claimReady, processJob, times };
+  }
+
+  it('resets the loop after claimed work at a backed-off poll', async () => {
+    const { runner, claimReady, processJob, times } = lifecycleRunner();
+    await runner.start();
     await vi.advanceTimersByTimeAsync(300);
-    claimReady.mockResolvedValueOnce([{ id: 'claimed' }]);
+    expect(times).toEqual([0, 100, 300]);
+    const job = { id: 'claimed' };
+    claimReady.mockImplementationOnce(async () => {
+      times.push(Date.now());
+      return [job];
+    });
     await vi.advanceTimersByTimeAsync(400);
-    expect(claimReady).toHaveBeenCalled();
-    internal.activeJobs.set('full', {});
-    const beforeCapacity = claimReady.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(100);
-    expect(claimReady.mock.calls.length).toBeGreaterThanOrEqual(beforeCapacity);
+    expect(processJob).toHaveBeenCalledExactlyOnceWith(job);
+    expect(times).toEqual([0, 100, 300, 700]);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(times).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(times).toEqual([0, 100, 300, 700, 800]);
+    await runner.stop();
+  });
+
+  it('skips claiming at full capacity and resumes at the base interval', async () => {
+    const { runner, internal, times } = lifecycleRunner();
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(times).toEqual([0, 100, 300]);
+    internal.activeJobs.set('full', {}); // concurrency is explicitly one
+    await vi.advanceTimersByTimeAsync(400);
+    expect(internal.recoverStaleJobs).toHaveBeenCalledTimes(4);
+    expect(times).toEqual([0, 100, 300]); // 700ms poll did not claim
     internal.activeJobs.clear();
-    claimReady.mockRejectedValueOnce(new Error('temporary'));
-    await vi.advanceTimersByTimeAsync(100);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(claimReady.mock.calls.length).toBeGreaterThan(beforeCapacity);
-    internal.running = false;
-    if (internal.pollTimer) clearTimeout(internal.pollTimer);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(times).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(times).toEqual([0, 100, 300, 800]);
+    await runner.stop();
+  });
+
+  it('emits a rejected claim and retries at the base interval', async () => {
+    const { runner, claimReady, times } = lifecycleRunner();
+    const error = new Error('temporary');
+    const onError = vi.fn();
+    runner.on('runner:error', onError);
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(300);
+    claimReady.mockImplementationOnce(async () => {
+      times.push(Date.now());
+      throw error;
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(onError).toHaveBeenCalledExactlyOnceWith(error);
+    expect(times).toEqual([0, 100, 300, 700]);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(times).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(times).toEqual([0, 100, 300, 700, 800]);
+    await runner.stop();
   });
 
   it('backs empty queue checks off to one tenth of the configured polling rate', () => {
@@ -99,7 +151,7 @@ describe('TaskRunner idle polling (#2820)', () => {
     ]).toEqual([1_000, 2_000, 4_000, 8_000, 10_000]);
   });
 
-  it('returns to the configured interval after work, capacity pressure, or a poll error', () => {
+  it('resets the delay progression when the poll reports activity', () => {
     const runner = new TaskRunner({
       pollInterval: 100,
       idlePollInterval: 1_000,
@@ -121,18 +173,23 @@ describe('TaskRunner idle polling (#2820)', () => {
     expect(polling.nextPollDelay(false)).toBe(50);
   });
 
-  it('starts a new polling cycle at the configured interval after an idle stop', () => {
-    const runner = new TaskRunner({
-      pollInterval: 100,
-      idlePollInterval: 1_000,
-    });
-    const polling = pollingInternals(runner);
-
-    polling.nextPollDelay(false);
-    polling.nextPollDelay(false);
-    polling.nextPollDelay(false);
-    polling.resetIdlePollDelay();
-
-    expect(polling.nextPollDelay(false)).toBe(100);
+  it('resets backed-off polling through public stop and start', async () => {
+    const { runner, times } = lifecycleRunner();
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(times).toEqual([0, 100, 300, 700]);
+    await runner.stop();
+    expect(runner.isRunning()).toBe(false);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(times).toHaveLength(4);
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runner.isRunning()).toBe(true);
+    expect(times).toEqual([0, 100, 300, 700, 2_700]);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(times).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(times).toEqual([0, 100, 300, 700, 2_700, 2_800]);
+    await runner.stop();
   });
 });
