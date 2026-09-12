@@ -33,15 +33,15 @@ import {
   MAX_DATA_QUERY_PAGE_LIMIT,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
-import type { DataQueryRequest } from '@happyvertical/smrt-types';
 import type {
+  DataQueryRequest,
   DataSurfaceActionResult,
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceJsonObject,
   DataSurfaceJsonValue,
   DataSurfaceRowId,
-} from '@happyvertical/smrt-ui/data';
+} from '@happyvertical/smrt-types';
 import type { ContentBodyFormat } from '../body-format.js';
 import type { Content } from '../content.js';
 import {

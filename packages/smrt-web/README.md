@@ -15,6 +15,12 @@ fetch one canonical bounded page. Visible runs update state; `background`,
 stale rows available while refreshing, cancels superseded visible runs, and can
 attach a query-scoped live subscription.
 
+Data-surface actions use `executeSmrtWebDataSurfaceAction(transport, request)`.
+Its request carries the server-issued revision and, for apply, an idempotency
+key; the browser normalizer rejects malformed, oversized, or mismatched
+preview/apply results before they reach UI state. The authenticated server still
+derives authority and validates confirmation tokens.
+
 ## Installation
 
 ```bash
@@ -126,6 +132,7 @@ core.
 | --- | --- |
 | Collections | `createSmrtCollection`, `createSmrtWebClient`, `newLocalId` |
 | Remote queries | `createSmrtWebQuery`, `SmrtWebQueryTransport` |
+| Data-surface actions | `executeSmrtWebDataSurfaceAction`, `SmrtWebDataSurfaceActionTransport` |
 | HTTP | `createDefinitionFetchers`, `unwrapListResult`, `unwrapItemResult` |
 | Offline | `offlineOutbox`, `getOutboxHandle` |
 | Persistence | `persistCollection`, `wipeDurableStore` |
