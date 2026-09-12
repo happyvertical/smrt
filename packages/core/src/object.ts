@@ -2568,6 +2568,11 @@ export class SmrtObject extends SmrtClass {
     // fixes every optional/unset declared-FK field uniformly.
     await this.coerceEmptyUuidValuesToNull(className, data);
 
+    // Finalize derived columns after the complete polymorphic serialization
+    // chain. Ordinary saves and eligible batches consume this prepared row.
+    const normalizedColumns = this.normalizePersistenceData(data);
+    if (normalizedColumns) Object.assign(data, normalizedColumns);
+
     // Get conflict columns from registry (supports custom columns for junction tables)
     const conflictColumns = ObjectRegistry.getConflictColumns(className);
     const writePlan = await this.planPersistenceWrite(
@@ -3082,6 +3087,21 @@ export class SmrtObject extends SmrtClass {
     }
     const name = candidate?.name;
     return name === 'TenantIsolationError' || name === 'TenantContextError';
+  }
+
+  /**
+   * Return derived schema-column values for the final persistence row.
+   * Runs synchronously after beforeSave, the complete toJSON/transformJSON
+   * chain, snake-case mapping and UUID coercion; returned columns are merged
+   * before every save branch. This does not change public serialization.
+   * Only derive columns from this read-only snapshot: do not modify source,
+   * identity, tenant or revision columns, and do not perform I/O. Overrides
+   * should preserve any columns returned by super.
+   */
+  protected normalizePersistenceData(
+    _data: Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> | undefined {
+    return undefined;
   }
 
   /**

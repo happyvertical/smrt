@@ -115,16 +115,16 @@ export class Fact extends SmrtObject {
     }
   }
 
-  protected override transformJSON(
-    data: Record<string, unknown>,
+  protected override normalizePersistenceData(
+    data: Readonly<Record<string, unknown>>,
   ): Record<string, unknown> {
-    const serialized = super.transformJSON(data);
-    // save() serializes after mutable beforeSave hooks. Use these final source
-    // values (including serialization defaults), not the pre-hook instance.
     this.catalogSearch = encodeCatalogSearch(
-      `${serialized.textRefined} ${serialized.textRaw}`,
+      `${data.text_refined} ${data.text_raw}`,
     );
-    return { ...serialized, catalogSearch: this.catalogSearch };
+    return {
+      ...super.normalizePersistenceData(data),
+      catalog_search: this.catalogSearch,
+    };
   }
 
   getMetadata(): FactMetadata {

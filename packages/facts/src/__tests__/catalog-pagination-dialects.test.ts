@@ -37,6 +37,23 @@ class CatalogSpecialFacts extends FactCollection {
   static readonly _itemClass = CatalogSpecialFact;
 }
 
+@smrt({ embeddings: { fields: ['textRefined'], autoGenerate: false } })
+class CatalogTransformFact extends Fact {
+  protected override transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
+      ...super.transformJSON(data),
+      textRefined: 'new subclass refined',
+      textRaw: 'new subclass raw',
+    };
+  }
+}
+
+class CatalogTransformFacts extends FactCollection {
+  static readonly _itemClass = CatalogTransformFact;
+}
+
 for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
   describe.skipIf(dialect === 'postgres' && !isPostgresAvailable())(
     `catalog pagination on ${dialect}${dialect === 'duckdb' ? ' (SQL-only fixture; canonical self-FK blocked)' : ''}`,
@@ -75,6 +92,66 @@ for (const dialect of ['sqlite', 'duckdb', 'postgres'] as const) {
         disableTenancy();
         vi.restoreAllMocks();
         await cleanup?.();
+      });
+
+      it('derives search after the complete subclass serialization chain', async () => {
+        const transformed = await CatalogTransformFacts.create({ db });
+        GlobalInterceptors.register({
+          name: 'catalog-save-mutation',
+          beforeSave: (instance) => {
+            if (instance instanceof Fact) {
+              instance.textRefined = 'interceptor refined';
+              instance.textRaw = 'interceptor raw';
+            }
+          },
+        });
+        const created = await transformed.create({
+          textRefined: 'old refined',
+          textRaw: 'old raw',
+          status: 'active',
+        });
+        const expected = encodeCatalogSearch(
+          'new subclass refined new subclass raw',
+        );
+        const assertParity = async () => {
+          const { rows } = await db.query(
+            'SELECT text_refined, text_raw, catalog_search FROM facts WHERE id = ?',
+            created.id,
+          );
+          expect(rows[0]).toMatchObject({
+            text_refined: 'new subclass refined',
+            text_raw: 'new subclass raw',
+            catalog_search: expected,
+          });
+          expect(created.catalogSearch).toBe(expected);
+          expect(created.toJSON()).toMatchObject({
+            textRefined: rows[0].text_refined,
+            textRaw: rows[0].text_raw,
+            catalogSearch: expected,
+          });
+          expect(created.toPublicJSON()).not.toHaveProperty('catalogSearch');
+          expect(created.catalogSearch).toBe(expected);
+        };
+        await assertParity();
+        created.textRefined = 'update old';
+        await created.save();
+        await assertParity();
+        vi.spyOn(EmbeddingProvider.prototype, 'embed').mockRejectedValue(
+          new Error('offline'),
+        );
+        expect(
+          (
+            await transformed.browseCatalog('new subclass', {
+              latestOnly: false,
+            })
+          ).map((row) => row.id),
+        ).toEqual([created.id]);
+        expect(
+          await transformed.browseCatalog('interceptor', { latestOnly: false }),
+        ).toEqual([]);
+        expect(
+          await transformed.browseCatalog('old', { latestOnly: false }),
+        ).toEqual([]);
       });
 
       for (const subtype of [false, true]) {

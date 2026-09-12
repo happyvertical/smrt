@@ -193,8 +193,10 @@ roll forward by rerunning migration/backfill rather than dropping historical dat
 `Fact.save()`, collection create/get-or-insert/get-or-upsert, and generated model
 updates maintain search storage from the source fields. `catalogSearch` is derived;
 callers must not author it, and generated transport surfaces exclude it using
-readonly/sensitive field metadata. Derivation uses final serialized text after
-mutable `beforeSave` hooks, keeping persisted text and search storage consistent.
+readonly/sensitive field metadata. Derivation uses the final persistence row after
+mutable `beforeSave` hooks and the complete subclass `transformJSON` chain,
+keeping persisted text and search storage consistent. Plain/public serialization
+retains the saved marker instead of recomputing from pre-transform instance text.
 Direct SQL writers must set `catalog_search = NULL` whenever either source text
 changes, then run backfill before text reads resume.
 If a custom writer or a pre-release implementation produced a known stale
