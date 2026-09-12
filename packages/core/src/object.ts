@@ -90,6 +90,43 @@ type PlainJSONValue =
   | PlainJSONValue[]
   | { [key: string]: PlainJSONValue };
 
+type BoxedPrimitiveKind = 'bigint' | 'boolean' | 'number' | 'string';
+
+function getBoxedPrimitiveKind(value: object): BoxedPrimitiveKind | undefined {
+  switch (Object.prototype.toString.call(value)) {
+    case '[object Number]':
+      try {
+        Number.prototype.valueOf.call(value);
+        return 'number';
+      } catch {
+        return undefined;
+      }
+    case '[object String]':
+      try {
+        String.prototype.valueOf.call(value);
+        return 'string';
+      } catch {
+        return undefined;
+      }
+    case '[object Boolean]':
+      try {
+        Boolean.prototype.valueOf.call(value);
+        return 'boolean';
+      } catch {
+        return undefined;
+      }
+    case '[object BigInt]':
+      try {
+        BigInt.prototype.valueOf.call(value);
+        return 'bigint';
+      } catch {
+        return undefined;
+      }
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Materialize the values JSON.stringify() would emit without first encoding
  * them into a string. This keeps toPlainObject() suitable for SvelteKit while
@@ -105,12 +142,29 @@ function toPlainJSONValue(
     return null;
   }
 
-  switch (typeof value) {
+  const valueType = typeof value;
+  if (
+    applyToJSON &&
+    (valueType === 'object' ||
+      valueType === 'function' ||
+      valueType === 'bigint')
+  ) {
+    const toJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === 'function') {
+      return toPlainJSONValue(toJSON.call(value, key), key, ancestors, false);
+    }
+  }
+
+  switch (valueType) {
     case 'string':
     case 'boolean':
-      return value;
+      return value as string | boolean;
     case 'number':
-      return Number.isFinite(value) ? value : null;
+      return Number.isFinite(value as number)
+        ? (value as number) === 0
+          ? 0
+          : (value as number)
+        : null;
     case 'undefined':
     case 'function':
     case 'symbol':
@@ -120,19 +174,21 @@ function toPlainJSONValue(
   }
 
   const objectValue = value as Record<string, unknown>;
-  if (applyToJSON && typeof objectValue.toJSON === 'function') {
-    return toPlainJSONValue(objectValue.toJSON(key), key, ancestors, false);
-  }
-
-  if (objectValue instanceof Number) {
-    const numberValue = objectValue.valueOf();
-    return Number.isFinite(numberValue) ? numberValue : null;
-  }
-  if (Object.getPrototypeOf(objectValue) === BigInt.prototype) {
-    throw new TypeError('Do not know how to serialize a BigInt');
-  }
-  if (objectValue instanceof String || objectValue instanceof Boolean) {
-    return objectValue.valueOf();
+  switch (getBoxedPrimitiveKind(objectValue)) {
+    case 'number': {
+      const numberValue = Number(objectValue);
+      return Number.isFinite(numberValue)
+        ? numberValue === 0
+          ? 0
+          : numberValue
+        : null;
+    }
+    case 'string':
+      return String.prototype.valueOf.call(objectValue);
+    case 'boolean':
+      return Boolean.prototype.valueOf.call(objectValue);
+    case 'bigint':
+      throw new TypeError('Do not know how to serialize a BigInt');
   }
 
   if (ancestors.has(objectValue)) {
@@ -143,7 +199,8 @@ function toPlainJSONValue(
   try {
     if (Array.isArray(objectValue)) {
       const result: PlainJSONValue[] = [];
-      for (let index = 0; index < objectValue.length; index++) {
+      const length = objectValue.length;
+      for (let index = 0; index < length; index++) {
         const item = toPlainJSONValue(
           objectValue[index],
           String(index),

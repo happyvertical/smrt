@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object';
 
@@ -80,6 +81,114 @@ describe('SmrtObject.toPlainObject', () => {
     expect(Object.getOwnPropertyDescriptor(nested, '__proto__')?.value).toEqual(
       { retained: true },
     );
+  });
+
+  it('matches legacy conversion for callable hooks and boxed primitive values', () => {
+    const makePayload = () => {
+      let hookReads = 0;
+      const callable = () => undefined;
+      Object.defineProperty(callable, 'toJSON', {
+        configurable: true,
+        get() {
+          hookReads++;
+          return () => 'saved';
+        },
+      });
+      const arrayCallable = Object.assign(() => undefined, {
+        toJSON: () => 'saved',
+      });
+      const boxedBoolean = Object.assign(new Boolean(true), {
+        valueOf: () => false,
+      });
+      const boxedNumber = Object.assign(new Number(3), {
+        valueOf: () => '7',
+      });
+      const boxedString = Object.assign(new String('abc'), {
+        valueOf: () => 'other',
+      });
+
+      return {
+        data: {
+          callable,
+          list: [arrayCallable],
+          negativeZero: -0,
+          boxedBoolean,
+          boxedNumber,
+          boxedString,
+        },
+        hookReads: () => hookReads,
+      };
+    };
+    const directPayload = makePayload();
+    const legacyPayload = makePayload();
+    const object = new PlainObjectSerializationProbe();
+    object.transformJSON = (data) => ({ ...data, ...directPayload.data });
+    const legacy = JSON.parse(JSON.stringify(legacyPayload.data));
+    const plain = object.toPlainObject();
+
+    expect(plain).toMatchObject(legacy);
+    expect(directPayload.hookReads()).toBe(1);
+    expect(Object.is(plain.negativeZero, 0)).toBe(true);
+  });
+
+  it('snapshots array length before getters can mutate it', () => {
+    const object = new PlainObjectSerializationProbe();
+    const makeValues = () => {
+      const values = ['a', 'b'];
+      Object.defineProperty(values, 0, {
+        configurable: true,
+        enumerable: true,
+        get() {
+          values.length = 1;
+          return 'a';
+        },
+      });
+      return values;
+    };
+    object.transformJSON = (data) => {
+      return { ...data, values: makeValues() };
+    };
+
+    const legacy = JSON.parse(JSON.stringify(makeValues()));
+    expect(object.toPlainObject()).toMatchObject({ values: legacy });
+  });
+
+  it('preserves cross-realm boxed primitives and bigint hooks', () => {
+    const [boxedBoolean, boxedNumber, boxedString] = runInNewContext(
+      '[new Boolean(true), new Number(3), new String("abc")]',
+    );
+    const originalToJSON = Object.getOwnPropertyDescriptor(
+      BigInt.prototype,
+      'toJSON',
+    );
+    Object.defineProperty(BigInt.prototype, 'toJSON', {
+      configurable: true,
+      value() {
+        return `${this.toString()}n`;
+      },
+    });
+
+    try {
+      const object = new PlainObjectSerializationProbe();
+      object.transformJSON = (data) => ({
+        ...data,
+        bigint: 1n,
+        boxedBoolean,
+        boxedNumber,
+        boxedString,
+      });
+      const legacy = JSON.parse(
+        JSON.stringify({ bigint: 1n, boxedBoolean, boxedNumber, boxedString }),
+      );
+
+      expect(object.toPlainObject()).toMatchObject(legacy);
+    } finally {
+      if (originalToJSON) {
+        Object.defineProperty(BigInt.prototype, 'toJSON', originalToJSON);
+      } else {
+        Reflect.deleteProperty(BigInt.prototype, 'toJSON');
+      }
+    }
   });
 
   it('reports representative per-call benchmark measurements without timing assertions', () => {
