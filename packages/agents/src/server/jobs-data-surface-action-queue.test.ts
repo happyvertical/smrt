@@ -135,6 +135,92 @@ describe('jobs-backed data-surface action queue', () => {
       queue.unregister();
     }
   });
+
+  it('fails closed when the real runner has no persisted tenant', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const queued = await queue.enqueue(actionJob(actionEnvelope()));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      { tenant_id: null, args: JSON.stringify(args) },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_job, error) => resolve(error as Error));
+      runner.once('job:completed', () => reject(new Error('job completed')));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid durable data-surface action envelope',
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
+
+  it('rejects an empty persisted runner tenant without using agent configuration', async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const execute = vi.fn(async () => actionResult());
+    const queue = createJobsDataSurfaceBackgroundQueue({
+      db,
+      handlerId: 'orders-actions-v1',
+      execute,
+    });
+    const queued = await queue.enqueue(actionJob(actionEnvelope()));
+    const stored = await db.query(
+      'SELECT args FROM _smrt_jobs WHERE id = ?',
+      queued.jobId,
+    );
+    const args = JSON.parse(String(stored.rows[0]?.args));
+    args._agentConfig = { tenantId: 'tenant-a' };
+    await db.update(
+      '_smrt_jobs',
+      { id: queued.jobId },
+      { tenant_id: '', args: JSON.stringify(args) },
+    );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_job, error) => resolve(error as Error));
+      runner.once('job:completed', () => reject(new Error('job completed')));
+      runner.once('runner:error', reject);
+    });
+    try {
+      await runner.start();
+      await expect(failure).resolves.toMatchObject({
+        message: 'Invalid durable data-surface action job tenant',
+      });
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await runner.stop();
+      queue.unregister();
+    }
+  });
 });
 
 function actionEnvelope(
