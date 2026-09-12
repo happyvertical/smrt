@@ -14,6 +14,7 @@ import { getChangesSince, registerChangeFeedWriter } from '../change-feed';
 import { field, foreignKey } from '../decorators/index';
 import { SmrtJunction } from '../junction';
 import { SmrtObject } from '../object';
+import { SmrtPolymorphicAssociation } from '../polymorphic-association';
 import { ObjectRegistry, smrt } from '../registry';
 import { getDDLStrategy } from '../schema/ddl/index';
 
@@ -50,6 +51,8 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
       let db: Awaited<ReturnType<typeof getDatabase>>;
       let links: JunctionBatchDialectLinks;
       beforeAll(async () => {
+        // Consumer manifests can register this abstract base without a table.
+        ObjectRegistry.register(SmrtPolymorphicAssociation, {});
         db = await getDatabase({
           type,
           url:
