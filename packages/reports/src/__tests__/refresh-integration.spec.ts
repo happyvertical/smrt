@@ -4,7 +4,10 @@ import {
   ObjectRegistry,
   SmrtObject,
 } from '@happyvertical/smrt-core';
-import { createHmacDurableJobPayloadSigner } from '@happyvertical/smrt-jobs';
+import {
+  createHmacDurableJobPayloadSigner,
+  createTaskRunner,
+} from '@happyvertical/smrt-jobs';
 import {
   disableTenancy,
   enableTenancy,
@@ -44,6 +47,9 @@ beforeEach(() => {
   GlobalInterceptors.clear();
   registerJobsManifest();
   registerIntegrationClasses();
+  ObjectRegistry.register(SmrtReportRefreshTask, {
+    tableName: '_smrt_report_refresh_tasks',
+  });
   unregisterJobSigner = registerReportRefreshJobIntegritySigner(JOB_SIGNER);
 });
 
@@ -455,6 +461,29 @@ async function createRuntimeTables(db: DatabaseInterface): Promise<void> {
   // index the framework schema emits or `save()`'s ON CONFLICT cannot bind.
   await db.query(
     'CREATE UNIQUE INDEX smrt_jobs_slug_context_idx ON _smrt_jobs (tenant_id, slug, context)',
+  );
+  await db.query(`
+    CREATE TABLE _smrt_job_events (
+      id TEXT PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, tenant_id TEXT,
+      job_id TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'log',
+      level TEXT NOT NULL DEFAULT 'info', stage TEXT, progress INTEGER,
+      message TEXT NOT NULL DEFAULT '', data TEXT
+    )
+  `);
+  await db.query(
+    'CREATE UNIQUE INDEX smrt_job_events_slug_context_idx ON _smrt_job_events (tenant_id, slug, context)',
+  );
+  await db.query(`
+    CREATE TABLE _smrt_workers (
+      id TEXT PRIMARY KEY, slug TEXT NOT NULL, context TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      worker_id TEXT NOT NULL, pid INTEGER, hostname TEXT, started_at TEXT,
+      heartbeat_at TEXT, lease_expires_at TEXT, status TEXT NOT NULL DEFAULT 'running'
+    )
+  `);
+  await db.query(
+    'CREATE UNIQUE INDEX smrt_workers_worker_id_idx ON _smrt_workers (worker_id)',
   );
   await db.query(`
     CREATE TABLE _smrt_report_runs (
@@ -988,13 +1017,39 @@ describe('report refresh integration', () => {
     await runner.poll();
 
     let jobs = await db.query(
-      "SELECT queue, object_type, method, tenant_id FROM _smrt_jobs WHERE queue = 'reports'",
+      "SELECT queue, object_type, method, tenant_id, args FROM _smrt_jobs WHERE queue = 'reports'",
     );
     expect(jobs.rows).toHaveLength(1);
     expect(jobs.rows[0]).toMatchObject({
       method: 'run',
       tenant_id: 'tenant-a',
     });
+    const scheduledArgs = JSON.parse(String(jobs.rows[0]?.args));
+    expect(scheduledArgs.scheduleId).toBeTruthy();
+    expect(scheduledArgs._scheduleId).toBe(scheduledArgs.scheduleId);
+
+    const taskRunner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['reports'],
+      retention: false,
+    });
+    await taskRunner.initialize(db);
+    const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
+      taskRunner.once('job:completed', (_job, result) =>
+        resolve(result as { result?: unknown }),
+      );
+      taskRunner.once('job:failed', (_job, error) => reject(error));
+      taskRunner.once('runner:error', reject);
+    });
+    await taskRunner.start();
+    try {
+      await expect(completion).resolves.toMatchObject({
+        result: { tenantId: 'tenant-a' },
+      });
+    } finally {
+      await taskRunner.stop();
+    }
 
     const unregister = registerReportRefreshInterceptor({
       db,
@@ -1036,6 +1091,7 @@ describe('report refresh integration', () => {
     });
 
     const task = new SmrtReportRefreshTask({ db });
+    task.tenantId = 'tenant-a';
     await task.initialize();
     const unsignedArgs = {
       reportClass: 'IntegrationRevenueReport',

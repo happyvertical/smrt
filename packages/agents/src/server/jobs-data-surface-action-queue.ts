@@ -6,10 +6,15 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   backgroundEligible,
+  type JobExecutionContext,
   type SmrtJob,
   SmrtJobCollection,
 } from '@happyvertical/smrt-jobs';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type {
   DataSurfaceActionResult,
   DataSurfaceJsonObject,
@@ -66,14 +71,17 @@ export class SmrtDataSurfaceActionTask extends SmrtObject {
   @backgroundEligible()
   async run(
     args: DataSurfaceActionJobArgs = this.args,
+    context?: JobExecutionContext,
   ): Promise<DataSurfaceActionResult> {
     const envelope = args?.envelope;
+    const jobTenantId =
+      context?.job.tenantId ?? this.tenantId ?? getTenantId() ?? null;
     if (
       args?.version !== 1 ||
       envelope?.version !== 1 ||
       typeof envelope.handlerId !== 'string' ||
       envelope.handlerId.length === 0 ||
-      envelope.principal?.tenantId !== (this.tenantId ?? null)
+      envelope.principal?.tenantId !== jobTenantId
     ) {
       throw new Error('Invalid durable data-surface action envelope');
     }

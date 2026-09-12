@@ -1,4 +1,5 @@
 import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
+import { createTaskRunner } from '@happyvertical/smrt-jobs';
 import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -47,12 +48,25 @@ describe('jobs-backed data-surface action queue', () => {
       'orders-actions-v1',
       restartedHandler,
     );
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      queues: ['data-surface-actions'],
+    });
+    await runner.initialize(db);
+    const completion = new Promise<{ result?: unknown }>((resolve, reject) => {
+      runner.once('job:completed', (_job, result) =>
+        resolve(result as { result?: unknown }),
+      );
+      runner.once('job:failed', (_job, error) => reject(error));
+      runner.once('runner:error', reject);
+    });
     try {
-      const task = new SmrtDataSurfaceActionTask({ db });
-      task.tenantId = 'tenant-a';
-      await expect(task.run(args)).resolves.toEqual(actionResult());
+      await runner.start();
+      await expect(completion).resolves.toEqual({ result: actionResult() });
       expect(restartedHandler).toHaveBeenCalledWith(envelope);
     } finally {
+      await runner.stop();
       unregister();
     }
   });

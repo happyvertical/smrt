@@ -13,6 +13,7 @@ import {
   type DurableJobPayloadIntegrity,
   type DurableJobPayloadSigner,
   getNextCronDate,
+  type JobExecutionContext,
   type SmrtJob,
   SmrtJobCollection,
   validateCronExpression,
@@ -189,7 +190,11 @@ export function registerReportRefreshJobIntegritySigner(
 function unsignedReportRefreshJobArgs(
   args: ReportRefreshJobArgs,
 ): Omit<ReportRefreshJobArgs, 'integrity'> {
-  const { integrity: _integrity, ...unsigned } = args;
+  const {
+    integrity: _integrity,
+    _scheduleId: _internalScheduleId,
+    ...unsigned
+  } = args;
   return unsigned;
 }
 
@@ -320,6 +325,9 @@ async function authorizeReportRefreshExecution(
   reportClass: string,
   jobTenantId: string | null,
 ): Promise<void> {
+  if ((args.tenantId ?? null) !== jobTenantId) {
+    throw new Error('Invalid report refresh execution tenant');
+  }
   const authority = args.executionAuthority;
   if ((args.trigger ?? 'job') === 'manual' && !authority) {
     throw new Error('Manual report refresh execution authority is missing');
@@ -395,7 +403,10 @@ export class SmrtReportRefreshTask extends SmrtObject {
   args: ReportRefreshJobArgs = {};
 
   @backgroundEligible()
-  async run(args: ReportRefreshJobArgs = {}): Promise<unknown> {
+  async run(
+    args: ReportRefreshJobArgs = {},
+    context?: JobExecutionContext,
+  ): Promise<unknown> {
     assertReportRefreshJobIntegrity(args);
     const reportClass = args.reportClass || this.reportClass;
     if (!reportClass) {
@@ -403,7 +414,8 @@ export class SmrtReportRefreshTask extends SmrtObject {
     }
 
     const reportCtor = resolveReportClass(reportClass);
-    await authorizeReportRefreshExecution(args, reportClass, this.tenantId);
+    const jobTenantId = context?.job.tenantId ?? tenantIdFromInstance(this);
+    await authorizeReportRefreshExecution(args, reportClass, jobTenantId);
     return refreshReport(reportCtor, {
       db: this.db,
       mode: args.mode ?? this.mode,
@@ -424,8 +436,11 @@ export class SmrtReportRefreshTask extends SmrtObject {
   ...INTERNAL_SURFACE,
 })
 export class SmrtPrincipalReportRefreshTask extends SmrtReportRefreshTask {
-  override async run(args: ReportRefreshJobArgs = {}): Promise<unknown> {
-    return super.run({ ...args, trigger: 'manual' });
+  override async run(
+    args: ReportRefreshJobArgs = {},
+    context?: JobExecutionContext,
+  ): Promise<unknown> {
+    return super.run({ ...args, trigger: 'manual' }, context);
   }
 }
 
@@ -477,7 +492,6 @@ export async function enqueueReportRefresh(
     adapterType: options.adapterType,
     changedRows: options.changedRows,
     scheduleId,
-    _scheduleId: scheduleId,
     executionAuthority: options.executionAuthority,
   };
   const integrity = options.integritySigner.sign(unsignedArgs);
@@ -495,7 +509,7 @@ export async function enqueueReportRefresh(
       objectType: taskType,
       objectId: null,
       method: 'run',
-      args: { ...unsignedArgs, integrity },
+      args: { ...unsignedArgs, _scheduleId: scheduleId, integrity },
       priority: options.priority ?? 70,
       timeout: options.timeout ?? 3600000,
       maxAttempts: options.maxAttempts ?? 3,
