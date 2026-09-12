@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -8,6 +9,28 @@ import {
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { smrtConsumer } from './index';
+
+function manifestHash(manifest: unknown): string {
+  const { timestamp: _timestamp, ...withoutTimestamp } = manifest as Record<
+    string,
+    unknown
+  >;
+  return createHash('sha256')
+    .update(JSON.stringify(sortJson(withoutTimestamp), null, 2))
+    .digest('hex');
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
+}
 
 describe('smrtConsumer registration generation', () => {
   let tmpDir: string;
@@ -286,5 +309,13 @@ describe('smrtConsumer registration generation', () => {
     expect(merged.objects.ExternalThing).toBeDefined();
     // The local project's packageName remains the manifest cache key.
     expect(merged.packageName).toBe('consumer-app');
+
+    const knowledge = JSON.parse(
+      readFileSync(join(smrtDir, 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(knowledge.sourceHashes.manifest).toBe(manifestHash(merged));
+    expect(knowledge.objects).toContainEqual(
+      expect.objectContaining({ name: 'ExternalThing' }),
+    );
   });
 });

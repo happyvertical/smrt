@@ -5,11 +5,13 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
 import type { Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
+import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
@@ -525,6 +527,40 @@ async function saveAggregatedManifest(
 
     // Write manifest
     fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+
+    // smrtPlugin writes the local knowledge artifact before this consumer
+    // plugin merges external package entries into the same manifest. Refresh
+    // the artifact from the merged manifest so its source hash always names
+    // the manifest that CLI discovery and server runtimes actually consume.
+    // Preserve the producer's scanner-derived agent surface when present:
+    // the consumer plugin deliberately does not load the scanner.
+    const knowledgePath = path.join(smrtDir, 'smrt-knowledge.json');
+    let agentSurface: DomainKnowledgeAgentSurface | undefined;
+    try {
+      if (fs.existsSync(knowledgePath)) {
+        agentSurface = JSON.parse(fs.readFileSync(knowledgePath, 'utf-8'))
+          .agentSurface as DomainKnowledgeAgentSurface | undefined;
+      }
+    } catch {
+      // A malformed prior artifact must not prevent the authoritative manifest
+      // from being written; buildDomainKnowledgeManifest will replace it.
+    }
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+    const packageJson = fs.existsSync(packageJsonPath)
+      ? JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+      : undefined;
+    const knowledge = buildDomainKnowledgeManifest({
+      manifest: merged as unknown as SmartObjectManifest,
+      rootDir: projectRoot,
+      packageJson,
+      manifestPath,
+      agentSurface,
+    });
+    fs.writeFileSync(
+      knowledgePath,
+      JSON.stringify(knowledge, null, 2),
+      'utf-8',
+    );
 
     console.log(
       `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(merged.objects).length} objects)`,
