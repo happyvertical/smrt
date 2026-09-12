@@ -36,6 +36,11 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-secrets', '../secrets/src/index.ts'],
   ['@happyvertical/smrt-tags', '../tags/src/index.ts'],
   ['@happyvertical/smrt-tenancy', '../tenancy/src/index.ts'],
+  // The content dev server composes the public users SvelteKit session
+  // handler. Keep both imports on sibling source so `npm run dev` works from
+  // a clean workspace before users has produced its published dist exports.
+  ['@happyvertical/smrt-users', '../users/src/index.ts'],
+  ['@happyvertical/smrt-users/sveltekit', '../users/src/sveltekit.ts'],
   [
     '@happyvertical/smrt-ui/i18n',
     '../smrt-ui/src/i18n/index.ts',
