@@ -48,6 +48,11 @@ import {
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import {
+  contributeSvelteKitRoutes,
+  expectedSvelteKitRouteOwners,
+  markSvelteKitRouteParticipant,
+} from './sveltekit-route-coordinator.js';
+import {
   buildWebMcpToolDefinitions,
   compareText,
   generateWebModule,
@@ -513,12 +518,14 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let hasFreshConfigResolvedManifest = false;
   let configHookManifest: SmartObjectManifest | null = null;
   let generatedRoutesDuringConfig = false;
+  let routeLifecycleConfig: object | undefined;
+  let routeExpectedOwners: Array<'producer' | 'consumer'> = ['producer'];
 
   async function generateConfiguredSvelteKitRoutes(
     rootDir: string,
     currentManifest: SmartObjectManifest,
   ): Promise<void> {
-    await generateSvelteKitRoutes(rootDir, currentManifest, {
+    const routeOptions = {
       enabled: svelteKit.enabled,
       routesDir: svelteKit.routesDir || 'src/routes/api',
       objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -529,7 +536,22 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       eventsRoute: svelteKit.eventsRoute,
       resourcesRoute: svelteKit.resourcesRoute,
       knowledge: await resolveKnowledgeConfig(rootDir, currentManifest),
-    });
+    };
+    if (routeLifecycleConfig) {
+      await contributeSvelteKitRoutes(
+        routeLifecycleConfig,
+        routeExpectedOwners,
+        rootDir,
+        {
+          owner: 'producer',
+          routeManifest: currentManifest,
+          semanticManifest: currentManifest,
+          options: routeOptions,
+        },
+      );
+      return;
+    }
+    await generateSvelteKitRoutes(rootDir, currentManifest, routeOptions);
   }
 
   /**
@@ -759,7 +781,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
-  return {
+  const plugin: Plugin = {
     name: 'smrt-auto-service',
     // SvelteKit inventories routes in a `config.order = 'pre'` hook. Put SMRT
     // in Vite's earlier plugin tier so this plugin's own pre hook runs first
@@ -772,12 +794,14 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     // concurrently (#2313).
     config: {
       order: 'pre',
-      async handler(userConfig) {
+      async handler(userConfig, env) {
         if (!svelteKit.enabled) return;
 
         projectRoot =
           configuredProjectRoot ??
           resolve(process.cwd(), userConfig.root ?? '.');
+        routeLifecycleConfig = env ?? userConfig;
+        routeExpectedOwners = expectedSvelteKitRouteOwners(userConfig);
         configHookManifest = await scanAndGenerateManifest(projectRoot);
         await generateConfiguredSvelteKitRoutes(
           projectRoot,
@@ -975,21 +999,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(projectRoot, manifest, {
-                  enabled: svelteKit.enabled,
-                  routesDir: svelteKit.routesDir || 'src/routes/api',
-                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                  configPath: svelteKit.configPath || 'src/lib/server',
-                  configFileName: svelteKit.configFileName || 'smrt.ts',
-                  kebabRoutes: svelteKit.kebabRoutes ?? false,
-                  changesRoute: svelteKit.changesRoute,
-                  eventsRoute: svelteKit.eventsRoute,
-                  resourcesRoute: svelteKit.resourcesRoute,
-                  knowledge: await resolveKnowledgeConfig(
-                    projectRoot,
-                    manifest,
-                  ),
-                });
+                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
               }
 
               // Invalidate virtual modules
@@ -1022,21 +1032,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(projectRoot, manifest, {
-                  enabled: svelteKit.enabled,
-                  routesDir: svelteKit.routesDir || 'src/routes/api',
-                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                  configPath: svelteKit.configPath || 'src/lib/server',
-                  configFileName: svelteKit.configFileName || 'smrt.ts',
-                  kebabRoutes: svelteKit.kebabRoutes ?? false,
-                  changesRoute: svelteKit.changesRoute,
-                  eventsRoute: svelteKit.eventsRoute,
-                  resourcesRoute: svelteKit.resourcesRoute,
-                  knowledge: await resolveKnowledgeConfig(
-                    projectRoot,
-                    manifest,
-                  ),
-                });
+                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
               }
             }
           } catch (error) {
@@ -1061,21 +1057,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(projectRoot, manifest, {
-                  enabled: svelteKit.enabled,
-                  routesDir: svelteKit.routesDir || 'src/routes/api',
-                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                  configPath: svelteKit.configPath || 'src/lib/server',
-                  configFileName: svelteKit.configFileName || 'smrt.ts',
-                  kebabRoutes: svelteKit.kebabRoutes ?? false,
-                  changesRoute: svelteKit.changesRoute,
-                  eventsRoute: svelteKit.eventsRoute,
-                  resourcesRoute: svelteKit.resourcesRoute,
-                  knowledge: await resolveKnowledgeConfig(
-                    projectRoot,
-                    manifest,
-                  ),
-                });
+                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
               }
             }
           } catch (error) {
@@ -1229,6 +1211,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
   };
+  markSvelteKitRouteParticipant(plugin, 'producer', svelteKit.enabled);
+  return plugin;
 
   function scanAndGenerateManifest(
     rootDir: string,

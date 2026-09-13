@@ -19,9 +19,7 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
     `__test-consumer-sveltekit-clean-build-${process.pid}`,
   );
 
-  afterEach(() => {
-    rmSync(projectRoot, { recursive: true, force: true });
-  });
+  afterEach(() => {});
 
   it.each([
     ['default config', {}, 'src/lib/server/smrt.ts'],
@@ -44,12 +42,13 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
       const configuredViteRoot = join(projectRoot, 'configured-vite-root');
       mkdirSync(configuredViteRoot, { recursive: true });
       mkdirSync(join(projectRoot, 'src/routes'), { recursive: true });
+      mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
       const providerDir = join(projectRoot, 'node_modules', '@acme', 'widgets');
       mkdirSync(join(providerDir, 'dist'), { recursive: true });
       writeFileSync(
         join(projectRoot, 'package.json'),
         JSON.stringify({
-          name: 'consumer-clean-build',
+          name: '@test/consumer-clean-build',
           private: true,
           type: 'module',
         }),
@@ -71,16 +70,28 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
         '<h1>fixture</h1>\n',
       );
       writeFileSync(
+        join(projectRoot, 'src/lib/objects/LocalWidget.ts'),
+        [
+          "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+          "@smrt({ api: { include: ['list', 'get'] } })",
+          'export class LocalWidget extends SmrtObject {}',
+        ].join('\n'),
+      );
+      writeFileSync(
         join(providerDir, 'package.json'),
         JSON.stringify({
           name: '@acme/widgets',
           version: '1.0.0',
-          exports: { '.': './dist/index.js' },
+          exports: { '.': './dist/index.js', './objects': './dist/objects.js' },
         }),
       );
       writeFileSync(
         join(providerDir, 'dist/index.js'),
         'export class Widget {}\nexport class Hidden {}\n',
+      );
+      writeFileSync(
+        join(providerDir, 'dist/objects.js'),
+        "export { Widget as PublishedWidget } from './index.js';\nexport { Hidden } from './index.js';\n",
       );
       writeFileSync(
         join(providerDir, 'dist/manifest.json'),
@@ -90,6 +101,7 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
             '@acme/widgets:Widget': {
               className: 'Widget',
               qualifiedName: '@acme/widgets:Widget',
+              exportName: 'PublishedWidget',
               collection: 'widgets',
               fields: {},
               methods: {},
@@ -113,6 +125,9 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
       const coreUrl = pathToFileURL(
         resolve(import.meta.dirname, '../index.ts'),
       ).href;
+      const producerPluginUrl = pathToFileURL(
+        resolve(import.meta.dirname, '../vite-plugin/index.ts'),
+      ).href;
       const svelteKitOptions = {
         objects: ['@acme/widgets:Widget'],
         changesRoute: { enabled: true },
@@ -120,10 +135,22 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
         resourcesRoute: { enabled: false },
         ...configOverrides,
       };
+      const producerSvelteKitOptions = {
+        enabled: true,
+        routesDir: svelteKitOptions.routesDir ?? 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: svelteKitOptions.configPath ?? 'src/lib/server',
+        configFileName: svelteKitOptions.configFileName ?? 'smrt.ts',
+        kebabRoutes: svelteKitOptions.kebabRoutes ?? false,
+        changesRoute: { enabled: false },
+        eventsRoute: { enabled: false },
+        resourcesRoute: { enabled: false },
+      };
       writeFileSync(
         join(projectRoot, 'vite.config.ts'),
         `import { sveltekit } from '@sveltejs/kit/vite';
 import { smrtConsumer } from ${JSON.stringify(consumerPluginUrl)};
+import { smrtPlugin } from ${JSON.stringify(producerPluginUrl)};
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -136,6 +163,12 @@ export default defineConfig({
       disableScanning: true,
       generateTypes: false,
       svelteKit: ${JSON.stringify(svelteKitOptions, null, 2)},
+    }),
+    smrtPlugin({
+      projectRoot: ${JSON.stringify(projectRoot)},
+      include: ['src/lib/objects/**/*.ts'],
+      generateTypes: false,
+      svelteKit: ${JSON.stringify(producerSvelteKitOptions, null, 2)},
     }),
   ],
 });
@@ -162,10 +195,26 @@ export default defineConfig({
       );
       expect(existsSync(itemRoute)).toBe(true);
       expect(
+        existsSync(
+          join(projectRoot, 'src/routes/api/localwidgets/[id]/+server.ts'),
+        ),
+      ).toBe(true);
+      expect(
         existsSync(join(projectRoot, 'src/routes/api/hidden/+server.ts')),
       ).toBe(false);
       expect(readFileSync(itemRoute, 'utf8')).toContain(
         "'@acme/widgets:Widget'",
+      );
+      expect(readFileSync(itemRoute, 'utf8')).toContain(
+        "from '@acme/widgets/objects'",
+      );
+      expect(
+        readFileSync(
+          join(projectRoot, 'src/lib/server/smrt-register.ts'),
+          'utf8',
+        ),
+      ).toContain(
+        "import { PublishedWidget as Widget } from '@acme/widgets/objects';",
       );
       expect(existsSync(join(projectRoot, expectedConfigFile))).toBe(true);
       expect(existsSync(join(projectRoot, '.smrt/register.js'))).toBe(true);
@@ -178,6 +227,12 @@ export default defineConfig({
           'utf8',
         ),
       ).toContain('/api/widgets/[id]');
+      expect(
+        readFileSync(
+          join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),
+          'utf8',
+        ),
+      ).toContain('/api/localwidgets/[id]');
     },
     120_000,
   );

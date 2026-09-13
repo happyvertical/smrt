@@ -21,10 +21,12 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import type { SvelteKitOptions } from '../vite-plugin/sveltekit-generator.js';
 import {
-  generateSvelteKitRoutes,
-  type SvelteKitOptions,
-} from '../vite-plugin/sveltekit-generator.js';
+  contributeSvelteKitRoutes,
+  expectedSvelteKitRouteOwners,
+  markSvelteKitRouteParticipant,
+} from '../vite-plugin/sveltekit-route-coordinator.js';
 import {
   generateWebModule,
   isCollectionManifestClass,
@@ -183,6 +185,12 @@ function consumerRouteOptions(
   return value;
 }
 
+function consumerUtilityOption<T extends { enabled?: boolean }>(
+  value: T | undefined,
+): T | { enabled: false } {
+  return value?.enabled === true ? value : { enabled: false };
+}
+
 function consumerObjectRef(
   manifestKey: string,
   objectDef: ConsumerObjectDefinition,
@@ -308,7 +316,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     );
   }
 
-  return {
+  const plugin: Plugin = {
     name: 'smrt-consumer',
 
     // SvelteKit inventories routes in its config hook. Run before it so a
@@ -318,7 +326,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     config: {
       order: 'pre',
-      async handler() {
+      async handler(userConfig, env) {
         if (consumerSvelteKit) {
           const routePackages =
             packages.length === 0 && !disableScanning
@@ -331,29 +339,33 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             routeManifest,
             consumerSvelteKit,
           );
-          await generateSvelteKitRoutes(
+          const routeOptions = {
+            enabled: true,
+            routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
+            objectsDir: 'src/lib/objects',
+            configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
+            configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
+            kebabRoutes: effectiveKebabRoutes,
+            // These span a model set rather than one selected object, so new
+            // consumer hosting starts fail-closed. Callers can opt in with the
+            // generator's established option shapes.
+            changesRoute: consumerUtilityOption(consumerSvelteKit.changesRoute),
+            eventsRoute: consumerUtilityOption(consumerSvelteKit.eventsRoute),
+            resourcesRoute: consumerUtilityOption(
+              consumerSvelteKit.resourcesRoute,
+            ),
+            rejectRouteCollisions: true,
+          };
+          await contributeSvelteKitRoutes(
+            env ?? userConfig,
+            expectedSvelteKitRouteOwners(userConfig),
             projectRoot,
-            hostedManifest,
             {
-              enabled: true,
-              routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
-              objectsDir: 'src/lib/objects',
-              configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
-              configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
-              kebabRoutes: effectiveKebabRoutes,
-              // These span a model set rather than one selected object, so new
-              // consumer hosting starts fail-closed. Callers can opt in with the
-              // generator's established option shapes.
-              changesRoute: consumerSvelteKit.changesRoute ?? {
-                enabled: false,
-              },
-              eventsRoute: consumerSvelteKit.eventsRoute ?? { enabled: false },
-              resourcesRoute: consumerSvelteKit.resourcesRoute ?? {
-                enabled: false,
-              },
-              rejectRouteCollisions: true,
+              owner: 'consumer',
+              routeManifest: hostedManifest,
+              semanticManifest: routeManifest as unknown as SmartObjectManifest,
+              options: routeOptions,
             },
-            routeManifest as unknown as SmartObjectManifest,
           );
         }
         return {
@@ -507,6 +519,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
     },
   };
+  markSvelteKitRouteParticipant(plugin, 'consumer', Boolean(consumerSvelteKit));
+  return plugin;
 }
 
 /**

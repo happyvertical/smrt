@@ -52,7 +52,7 @@ import {
 import { generateEventsRoute } from './events-route.js';
 import {
   generateResourcesRoute,
-  willGenerateResourcesRoute,
+  reservesResourcesRoute,
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
@@ -196,7 +196,7 @@ function getRegistrationPackageName(
   isLocal: boolean,
 ): string | undefined {
   if (isLocal) {
-    return manifest.packageName ?? objectDef.packageName;
+    return objectDef.packageName ?? manifest.packageName;
   }
 
   return objectDef.packageName;
@@ -282,20 +282,24 @@ function resolveObjectTypeReference(
     return { typeName: "import('@happyvertical/smrt-core').SmrtObject" };
   }
 
-  const importPath =
-    isLocalObject(projectRoot, objectDef) || !objectDef.packageName
-      ? getRouteTypeImportPath(
-          projectRoot,
-          objectDef,
-          options,
-          simpleClassName,
-          routeDir,
-        )
-      : objectDef.packageName;
+  const external =
+    !isLocalObject(projectRoot, objectDef) && objectDef.packageName;
+  const importPath = external
+    ? objectDef.importPath || objectDef.packageName
+    : getRouteTypeImportPath(
+        projectRoot,
+        objectDef,
+        options,
+        simpleClassName,
+        routeDir,
+      );
+  const exportName = external
+    ? objectDef.exportName || simpleClassName
+    : simpleClassName;
 
   return {
     typeName: simpleClassName,
-    importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
+    importStatement: `import type { ${exportName}${exportName === simpleClassName ? '' : ` as ${simpleClassName}`} } from '${importPath}';`,
   };
 }
 
@@ -1517,7 +1521,7 @@ function assertNoCrossObjectRouteCollisions(
   if (hasAnchor && options.eventsRoute?.enabled !== false) {
     claim(join(options.routesDir, '_events'), '_events', 'events');
   }
-  if (willGenerateResourcesRoute(projectRoot, options)) {
+  if (reservesResourcesRoute(projectRoot, options)) {
     claim(join(options.routesDir, '_resources'), '_resources', 'resources');
   }
   if (options.knowledge?.api?.enabled) {
@@ -1532,11 +1536,24 @@ function assertNoCrossObjectRouteCollisions(
  * STI ancestry, cache safety, and custom-action wireability when the route
  * manifest is a deliberately selected output subset.
  */
+export interface SvelteKitUtilityManifests {
+  sync: SmartObjectManifest;
+  changes: SmartObjectManifest;
+  events: SmartObjectManifest;
+  eventsSemantic: SmartObjectManifest;
+}
+
 export async function generateSvelteKitRoutes(
   projectRoot: string,
   routeManifest: SmartObjectManifest,
   options: SvelteKitOptions,
   semanticManifest: SmartObjectManifest = routeManifest,
+  utilityManifests: SvelteKitUtilityManifests = {
+    sync: routeManifest,
+    changes: routeManifest,
+    events: routeManifest,
+    eventsSemantic: semanticManifest,
+  },
 ): Promise<void> {
   if (!options.enabled) return;
 
@@ -1605,13 +1622,13 @@ export async function generateSvelteKitRoutes(
   }
 
   // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
-  if (generateSyncApplyRoute(projectRoot, routeManifest, options)) {
+  if (generateSyncApplyRoute(projectRoot, utilityManifests.sync, options)) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, 'sync', 'apply', '+server.ts'),
     );
   }
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
-  if (generateChangesRoute(projectRoot, routeManifest, options)) {
+  if (generateChangesRoute(projectRoot, utilityManifests.changes, options)) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, '_changes', '+server.ts'),
     );
@@ -1625,9 +1642,9 @@ export async function generateSvelteKitRoutes(
   if (
     generateEventsRoute(
       projectRoot,
-      routeManifest,
+      utilityManifests.events,
       options,
-      computeWebManifestHash(semanticManifest),
+      computeWebManifestHash(utilityManifests.eventsSemantic),
     )
   ) {
     generatedRoutePaths.push(
@@ -1784,8 +1801,12 @@ async function generateRegistrationFile(
       // Local object (source in project, not node_modules) - use $lib path
       localObjects.push([className, objectDef]);
     } else if (objectDef.packageName) {
-      // External package - group by package name
-      const packageEntry = packageObjects.get(objectDef.packageName) || {
+      // External packages may publish canonical object exports from a subpath
+      // under an aliased export name. Registry identity stays keyed by the
+      // manifest's qualified class name; only the emitted module binding uses
+      // that canonical import contract.
+      const externalImportPath = objectDef.importPath || objectDef.packageName;
+      const packageEntry = packageObjects.get(externalImportPath) || {
         objects: [],
         hasCollectionImport: false,
       };
@@ -1794,14 +1815,14 @@ async function generateRegistrationFile(
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.objects.push({
-          simpleName: extractSimpleClassName(className),
+          simpleName: objectDef.exportName || extractSimpleClassName(className),
           bindingName:
             registrationBindings.get(className) ||
             extractSimpleClassName(className),
         });
       }
 
-      packageObjects.set(objectDef.packageName, packageEntry);
+      packageObjects.set(externalImportPath, packageEntry);
     } else {
       // No package name and not local - treat as local fallback
       localObjects.push([className, objectDef]);

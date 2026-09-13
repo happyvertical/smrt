@@ -129,6 +129,24 @@ export function willGenerateResourcesRoute(
   return true;
 }
 
+/** Whether `_resources` is occupied by its generated utility or a preserved
+ * handwritten SvelteKit server module. This is used only by route collision
+ * preflight: the emitter remains file-aware and never overwrites handwriting. */
+export function reservesResourcesRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  if (willGenerateResourcesRoute(projectRoot, options)) return true;
+  const routeDir = join(projectRoot, options.routesDir, '_resources');
+  return ['+server.ts', '+server.js'].some((name) => {
+    const file = join(routeDir, name);
+    return (
+      existsSync(file) &&
+      !readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
+    );
+  });
+}
+
 /**
  * Generate the `_resources/+server.ts` route. Returns true when a route was
  * written. Disabled with `sveltekit: { resourcesRoute: { enabled: false } }`;

@@ -1181,6 +1181,27 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     ).toBe(false);
   });
 
+  it('requires enabled: true before consumer utility routes are hosted', async () => {
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        changesRoute: {},
+        eventsRoute: {},
+        resourcesRoute: {},
+      },
+    });
+
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/_changes/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/_events/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/_resources/+server.ts')),
+    ).toBe(false);
+  });
+
   it('loads unselected provider identity through the generated SSR registration', async () => {
     const plugin = await configureRoutes({
       svelteKit: { objects: ['@acme/widgets:Widget'] },

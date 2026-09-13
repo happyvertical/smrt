@@ -3553,3 +3553,95 @@ describe('SvelteKit Route Generator', () => {
     });
   });
 });
+
+describe('consumer external import and reserved resource routes (#2852)', () => {
+  const projectRoot = '/test/project-review';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(readdirSync).mockReturnValue([] as never);
+  });
+
+  it('uses canonical external importPath and exportName for route types and registration', async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    const manifest: SmartObjectManifest = {
+      packageName: '@test/app',
+      objects: {
+        '@acme/widgets:Widget': {
+          className: 'Widget',
+          qualifiedName: '@acme/widgets:Widget',
+          packageName: '@acme/widgets',
+          importPath: '@acme/widgets/objects',
+          exportName: 'PublishedWidget',
+          collection: 'widgets',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: { include: ['get'] } },
+        },
+      },
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+      configPath: 'src/lib/server',
+    });
+
+    const allWrites = vi.mocked(writeFileSync).mock.calls;
+    const itemRoute = allWrites.find((call) =>
+      call[0].toString().endsWith('widgets/[id]/+server.ts'),
+    );
+    const registration = allWrites.find((call) =>
+      call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+    );
+    expect(String(itemRoute?.[1])).toContain(
+      "import type { PublishedWidget as Widget } from '@acme/widgets/objects';",
+    );
+    expect(String(registration?.[1])).toContain(
+      "import { PublishedWidget as Widget } from '@acme/widgets/objects';",
+    );
+  });
+
+  it('rejects a selected _resources collection before cleanup when a handwritten server module is reserved', async () => {
+    const manualRoute = join(
+      projectRoot,
+      'src/routes/api/_resources/+server.ts',
+    );
+    vi.mocked(existsSync).mockImplementation(
+      (path) => path.toString() === manualRoute,
+    );
+    vi.mocked(readFileSync).mockImplementation((path) =>
+      path.toString() === manualRoute
+        ? 'export const GET = () => new Response();'
+        : '',
+    );
+    mockSmrtUsersResolve.mockImplementation(() => '/fake/sveltekit.js');
+    const manifest: SmartObjectManifest = {
+      objects: {
+        Reserved: {
+          className: 'Reserved',
+          collection: '_resources',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: { include: ['list'] } },
+        },
+      },
+    };
+
+    await expect(
+      generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        rejectRouteCollisions: true,
+        resourcesRoute: { enabled: false },
+      }),
+    ).rejects.toThrow('Conflicting SvelteKit route');
+    expect(unlinkSync).not.toHaveBeenCalled();
+    expect(writeFileSync).not.toHaveBeenCalledWith(
+      manualRoute,
+      expect.anything(),
+      'utf-8',
+    );
+  });
+});
