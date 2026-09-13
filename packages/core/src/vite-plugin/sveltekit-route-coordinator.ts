@@ -1,4 +1,4 @@
-import { resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import type { Plugin } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
@@ -20,6 +20,7 @@ interface RouteContribution {
   routeManifest: SmartObjectManifest;
   semanticManifest: SmartObjectManifest;
   options: SvelteKitOptions;
+  reservedRoutePaths?: ReadonlySet<string>;
   beforeCleanup?: () => void | Promise<void>;
   afterGenerate?: () => void | Promise<void>;
 }
@@ -33,7 +34,12 @@ interface RouteCoordinator {
 export interface ActiveSvelteKitRouteParticipant {
   owner: SvelteKitRouteOwner;
   routesDir: string;
+  resolveKnowledge?: ProducerKnowledgeResolver;
 }
+
+type ProducerKnowledgeResolver = (projectRoot: string) => Promise<{
+  api?: { enabled?: boolean; basePath?: string };
+}>;
 
 /** Marks an enabled plugin instance so only real same-target participants block
  * the initial shared route transaction. The marker is intentionally private to
@@ -43,9 +49,10 @@ export function markSvelteKitRouteParticipant(
   owner: SvelteKitRouteOwner,
   enabled: boolean,
   routesDir: string,
+  resolveKnowledge?: ProducerKnowledgeResolver,
 ): void {
   Object.defineProperty(plugin, ROUTE_PARTICIPANT, {
-    value: { owner, enabled, routesDir },
+    value: { owner, enabled, routesDir, resolveKnowledge },
     enumerable: false,
   });
 }
@@ -87,6 +94,7 @@ export function activeSvelteKitRouteParticipants(
               owner: SvelteKitRouteOwner;
               enabled: boolean;
               routesDir: string;
+              resolveKnowledge?: ProducerKnowledgeResolver;
             };
           }
         | undefined
@@ -95,6 +103,7 @@ export function activeSvelteKitRouteParticipants(
     participants.push({
       owner: participant.owner,
       routesDir: resolve(projectRoot, participant.routesDir),
+      resolveKnowledge: participant.resolveKnowledge,
     });
   }
   return participants;
@@ -187,6 +196,34 @@ export function producerKnowledgeRoutePaths(
   return paths;
 }
 
+/** Resolve active producer knowledge claims before consumer route mutation. */
+export async function activeProducerKnowledgeRoutePaths(
+  userConfig: unknown,
+  projectRoot: string,
+): Promise<Set<string>> {
+  const paths = new Set<string>();
+  for (const participant of activeSvelteKitRouteParticipants(
+    userConfig,
+    projectRoot,
+  )) {
+    if (participant.owner !== 'producer' || !participant.resolveKnowledge)
+      continue;
+    const knowledge = await participant.resolveKnowledge(projectRoot);
+    if (!knowledge.api?.enabled) continue;
+    paths.add(
+      resolve(
+        knowledgeRoutePath(projectRoot, {
+          enabled: true,
+          routesDir: relative(projectRoot, participant.routesDir),
+          objectsDir: '',
+          knowledge,
+        }),
+      ),
+    );
+  }
+  return paths;
+}
+
 async function generateWhenReady(
   sessions: Map<string, RouteCoordinator>,
   coordinator: RouteCoordinator,
@@ -221,7 +258,16 @@ async function generateWhenReady(
     ),
     utilityManifests(
       contributions,
-      foreignProducerKnowledgeRoutePaths(sessions, projectRoot, coordinator),
+      new Set([
+        ...foreignProducerKnowledgeRoutePaths(
+          sessions,
+          projectRoot,
+          coordinator,
+        ),
+        ...contributions.flatMap((contribution) => [
+          ...(contribution.reservedRoutePaths ?? []),
+        ]),
+      ]),
     ),
     mergeManifests(
       registrationContributions.map(({ routeManifest }) => routeManifest),
@@ -314,6 +360,9 @@ function assertNoForeignKnowledgeRouteCollisions(
             resolve(knowledgeRoutePath(projectRoot, knowledge.options)),
           ),
       );
+      for (const path of contribution.reservedRoutePaths ?? []) {
+        foreignPaths.add(path);
+      }
       if (foreignPaths.size === 0) continue;
       assertNoCrossObjectRouteCollisions(
         projectRoot,

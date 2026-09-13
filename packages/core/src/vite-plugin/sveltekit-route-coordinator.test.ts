@@ -81,12 +81,14 @@ async function contribute(
   routeManifest: SmartObjectManifest,
   options = routeOptions(),
   semanticManifest = routeManifest,
+  reservedRoutePaths?: ReadonlySet<string>,
 ): Promise<void> {
   await contributeSvelteKitRoutes(lifecycle, expectedOwners, root, {
     owner,
     routeManifest,
     semanticManifest,
     options,
+    reservedRoutePaths,
   });
 }
 
@@ -716,17 +718,21 @@ describe('contributeSvelteKitRoutes', () => {
   it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],
-  ] as const)('rejects a selected route that would overwrite foreign producer knowledge when %s', async (_name, order) => {
+  ] as const)('rejects a selected route that would overwrite reserved producer knowledge before consumer output when %s', async (_name, order) => {
     const root = temporaryProject();
     const lifecycle = {};
+    const knowledgePath = join(
+      root,
+      'src/routes/external/knowledge/+server.ts',
+    );
     const knowledgeConsumer = manifest(
       '@acme/widgets:Knowledge',
       'Knowledge',
       'knowledge',
       '@acme/widgets',
     );
-    let consumerBytes: string | undefined;
-    let rejection: Promise<void> | undefined;
+    let producerBytes: string | undefined;
+
     for (const owner of order) {
       const generation = contribute(
         lifecycle,
@@ -750,26 +756,22 @@ describe('contributeSvelteKitRoutes', () => {
               }
             : { routesDir: 'src/routes/external' },
         ),
+        undefined,
+        owner === 'consumer' ? new Set([knowledgePath]) : undefined,
       );
-      if (owner === 'consumer' && order[0] === 'consumer') {
+      if (owner === 'producer') {
         await generation;
-        consumerBytes = readFileSync(
-          join(root, 'src/routes/external/knowledge/+server.ts'),
-          'utf8',
-        );
-      } else {
-        rejection = generation;
+        producerBytes = readFileSync(knowledgePath, 'utf8');
+        continue;
       }
-    }
 
-    await expect(rejection).rejects.toThrow('Conflicting SvelteKit route');
-    if (consumerBytes) {
-      expect(
-        readFileSync(
-          join(root, 'src/routes/external/knowledge/+server.ts'),
-          'utf8',
-        ),
-      ).toBe(consumerBytes);
+      await expect(generation).rejects.toThrow('Conflicting SvelteKit route');
+      if (producerBytes) {
+        expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+      } else {
+        expect(existsSync(knowledgePath)).toBe(false);
+      }
+      break;
     }
   });
 });

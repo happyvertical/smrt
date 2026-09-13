@@ -778,20 +778,39 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     );
   }
 
-  async function configureRoutes(
-    options: Record<string, unknown>,
-  ): Promise<void> {
-    const plugin: any = smrtConsumer({
+  function createConsumerRoutePlugin(options: Record<string, unknown>): any {
+    return smrtConsumer({
       packages: ['@acme/widgets', '@acme/other-widgets'],
       generateTypes: false,
       projectRoot,
       disableScanning: true,
       ...options,
     });
+  }
+
+  async function runConfigHook(
+    plugin: any,
+    userConfig: unknown,
+    env = {},
+  ): Promise<void> {
     const configHook = plugin.config;
     const handler =
       typeof configHook === 'function' ? configHook : configHook.handler;
-    await handler({ root: projectRoot, plugins: [plugin] });
+    await handler(userConfig, env);
+  }
+
+  async function configureRoutes(
+    options: Record<string, unknown>,
+    additionalPlugins: any[] = [],
+    consumerFirst = false,
+  ): Promise<any> {
+    const plugin = createConsumerRoutePlugin(options);
+    await runConfigHook(plugin, {
+      root: projectRoot,
+      plugins: consumerFirst
+        ? [plugin, ...additionalPlugins]
+        : [...additionalPlugins, plugin],
+    });
     return plugin;
   }
 
@@ -2049,6 +2068,64 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(
       existsSync(join(projectRoot, 'src/routes/api/local-widgets/+server.ts')),
     ).toBe(true);
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('reserves an active producer knowledge path before consumer output when %s', async (_name, order) => {
+    const manifestPath = join(
+      projectRoot,
+      'node_modules/@acme/widgets/dist/manifest.json',
+    );
+    const providerManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    providerManifest.objects['@acme/widgets:Knowledge'] = {
+      className: 'Knowledge',
+      qualifiedName: '@acme/widgets:Knowledge',
+      collection: 'knowledge',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['list', 'get'] } },
+    };
+    writeFileSync(manifestPath, JSON.stringify(providerManifest));
+    const producer = smrtPlugin({
+      projectRoot,
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: 'src/routes/api' },
+      knowledge: { api: { enabled: true, basePath: '/external/knowledge' } },
+    });
+    const consumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Knowledge'],
+        routesDir: 'src/routes/external',
+      },
+    });
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : consumer,
+    );
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    const knowledgePath = join(
+      projectRoot,
+      'src/routes/external/knowledge/+server.ts',
+    );
+    let producerBytes: string | undefined;
+
+    for (const plugin of plugins) {
+      if (plugin === consumer) {
+        await expect(
+          runConfigHook(plugin, userConfig, lifecycle),
+        ).rejects.toThrow('Conflicting SvelteKit route');
+        if (producerBytes) {
+          expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+        } else {
+          expect(existsSync(knowledgePath)).toBe(false);
+        }
+        break;
+      }
+      await runConfigHook(plugin, userConfig, lifecycle);
+      producerBytes = readFileSync(knowledgePath, 'utf8');
+    }
   });
 
   it.each([

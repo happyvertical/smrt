@@ -27,6 +27,7 @@ import {
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
 import {
+  activeProducerKnowledgeRoutePaths,
   activeSvelteKitRouteParticipants,
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
@@ -524,6 +525,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             projectRoot,
             consumerSvelteKit.routesDir ?? 'src/routes/api',
           );
+          const reservedRoutePaths = await activeProducerKnowledgeRoutePaths(
+            userConfig,
+            projectRoot,
+          );
           const routeOptions = {
             enabled: true,
             routesDir,
@@ -556,6 +561,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
               routeManifest: hostedManifest,
               semanticManifest: routeManifest as unknown as SmartObjectManifest,
               options: routeOptions,
+              reservedRoutePaths,
               beforeCleanup: () => {
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;

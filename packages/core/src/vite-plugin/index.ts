@@ -1220,6 +1220,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     'producer',
     svelteKit.enabled,
     svelteKit.routesDir || 'src/routes/api',
+    async (rootDir) =>
+      resolveKnowledgeConfig(rootDir, { objects: {} } as SmartObjectManifest),
   );
   return plugin;
 
