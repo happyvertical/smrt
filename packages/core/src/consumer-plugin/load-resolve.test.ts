@@ -769,7 +769,8 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
             ? 'export class StaticActionWidget { static publish() { return { published: true }; } }'
             : `export class ${object.className} {}`,
         )
-        .join('\n'),
+        .join('\n') +
+        '\nexport async function serializeBaseEvent(event) { return { title: event.title, secretBriefing: event.secretBriefing }; }\n',
     );
   }
 
@@ -878,6 +879,66 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
             routes: { publish: { method: 'GET' } },
           },
         },
+      },
+      '@acme/widgets:BaseEvent': {
+        className: 'BaseEvent',
+        qualifiedName: '@acme/widgets:BaseEvent',
+        collection: 'events',
+        fields: { title: { type: 'text' } },
+        methods: {},
+        decoratorConfig: {
+          api: {
+            include: ['list', 'get'],
+            serializers: {
+              item: {
+                exportName: 'serializeBaseEvent',
+                importPath: '@acme/widgets',
+              },
+            },
+          },
+          tableStrategy: 'sti',
+        },
+      },
+      '@acme/widgets:SecretEvent': {
+        className: 'SecretEvent',
+        qualifiedName: '@acme/widgets:SecretEvent',
+        collection: 'secret-events',
+        fields: {
+          secretBriefing: {
+            type: 'text',
+            readPermission: 'events.read.secret',
+          },
+        },
+        methods: {},
+        decoratorConfig: { api: false },
+        extends: 'BaseEvent',
+        extendsQualified: '@acme/widgets:BaseEvent',
+      },
+      '@acme/widgets:BaseDefaultEvent': {
+        className: 'BaseDefaultEvent',
+        qualifiedName: '@acme/widgets:BaseDefaultEvent',
+        collection: 'default-events',
+        fields: { title: { type: 'text' } },
+        methods: {},
+        decoratorConfig: {
+          api: { include: ['list'] },
+          tableStrategy: 'sti',
+        },
+      },
+      '@acme/widgets:SecretDefaultEvent': {
+        className: 'SecretDefaultEvent',
+        qualifiedName: '@acme/widgets:SecretDefaultEvent',
+        collection: 'secret-default-events',
+        fields: {
+          secretBriefing: {
+            type: 'text',
+            readPermission: 'events.read.secret',
+          },
+        },
+        methods: {},
+        decoratorConfig: { api: false },
+        extends: 'BaseDefaultEvent',
+        extendsQualified: '@acme/widgets:BaseDefaultEvent',
       },
       '@acme/widgets:WireWidget': {
         className: 'WireWidget',
@@ -1184,6 +1245,120 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     } finally {
       await server.close();
       ObjectRegistry.clear();
+    }
+  });
+
+  it('redacts an unselected STI descendant field from a selected base custom serializer', async () => {
+    const configDir = join(projectRoot, 'src/server/runtime');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'registry.ts'),
+      `export async function getCollection() {
+  return {
+    list: async () => [{ title: 'public event', secretBriefing: 'forbidden' }],
+    get: async () => ({ title: 'public event', secretBriefing: 'forbidden' }),
+    count: async () => 1,
+  };
+}
+`,
+    );
+    const plugin = await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:BaseEvent', '@acme/widgets:BaseDefaultEvent'],
+        configPath: 'src/server/runtime',
+        configFileName: 'registry.ts',
+      },
+    });
+    const server = await createServer({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [plugin],
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    try {
+      const route: any = await server.ssrLoadModule(
+        '/src/routes/api/events/+server.ts',
+      );
+      const response = await route.GET({
+        locals: { smrtAuth: true },
+        url: new URL('http://localhost/api/events'),
+        request: new Request('http://localhost/api/events'),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        items: [{ title: 'public event' }],
+        count: 1,
+        limit: 50,
+        offset: 0,
+      });
+      const authorizedResponse = await route.GET({
+        locals: { smrtAuth: true, permissions: ['events.read.secret'] },
+        url: new URL('http://localhost/api/events'),
+        request: new Request('http://localhost/api/events'),
+      });
+      await expect(authorizedResponse.json()).resolves.toEqual({
+        items: [{ title: 'public event', secretBriefing: 'forbidden' }],
+        count: 1,
+        limit: 50,
+        offset: 0,
+      });
+      const itemRoute: any = await server.ssrLoadModule(
+        '/src/routes/api/events/[id]/+server.ts',
+      );
+      const itemResponse = await itemRoute.GET({
+        locals: { smrtAuth: true },
+        params: { id: 'event-1' },
+        request: new Request('http://localhost/api/events/event-1'),
+      });
+      await expect(itemResponse.json()).resolves.toEqual({
+        title: 'public event',
+      });
+      const authorizedItemResponse = await itemRoute.GET({
+        locals: { smrtAuth: true, permissions: ['events.read.secret'] },
+        params: { id: 'event-1' },
+        request: new Request('http://localhost/api/events/event-1'),
+      });
+      await expect(authorizedItemResponse.json()).resolves.toEqual({
+        title: 'public event',
+        secretBriefing: 'forbidden',
+      });
+      const routeSource = readFileSync(
+        join(projectRoot, 'src/routes/api/events/+server.ts'),
+        'utf8',
+      );
+      expect(routeSource).toContain('["secretBriefing","events.read.secret"]');
+      expect(routeSource).toContain(
+        "const READ_CACHE_CONTROL = 'private, no-cache';",
+      );
+      expect(routeSource).not.toContain('conditionalVersionedRead');
+      const defaultRouteSource = readFileSync(
+        join(projectRoot, 'src/routes/api/default-events/+server.ts'),
+        'utf8',
+      );
+      expect(defaultRouteSource).toContain(
+        '["secretBriefing","events.read.secret"]',
+      );
+      expect(defaultRouteSource).toContain(
+        "const READ_CACHE_CONTROL = 'private, no-cache';",
+      );
+      expect(defaultRouteSource).toContain('conditionalJson(');
+      expect(defaultRouteSource).not.toContain('conditionalVersionedRead');
+      expect(
+        existsSync(
+          join(projectRoot, 'src/routes/api/secret-events/+server.ts'),
+        ),
+      ).toBe(false);
+      expect(
+        existsSync(
+          join(projectRoot, 'src/routes/api/secret-default-events/+server.ts'),
+        ),
+      ).toBe(false);
+      expect(
+        existsSync(join(projectRoot, 'src/routes/api/sync/apply/+server.ts')),
+      ).toBe(false);
+    } finally {
+      await server.close();
     }
   });
 
