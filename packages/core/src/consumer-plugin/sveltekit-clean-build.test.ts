@@ -24,6 +24,11 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
   });
 
   it('inventories only an explicitly selected provider-qualified route on the first build', async () => {
+    // SvelteKit deliberately overrides Vite's configured root with the launch
+    // cwd. Use a distinct requested Vite root to prove early SMRT generation
+    // follows that final SvelteKit root when projectRoot is omitted.
+    const configuredViteRoot = join(projectRoot, 'configured-vite-root');
+    mkdirSync(configuredViteRoot, { recursive: true });
     mkdirSync(join(projectRoot, 'src/routes'), { recursive: true });
     const providerDir = join(projectRoot, 'node_modules', '@acme', 'widgets');
     mkdirSync(join(providerDir, 'dist'), { recursive: true });
@@ -101,11 +106,11 @@ import { smrtConsumer } from ${JSON.stringify(consumerPluginUrl)};
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  root: ${JSON.stringify(configuredViteRoot)},
   resolve: { alias: { '@happyvertical/smrt-core': ${JSON.stringify(coreUrl)} } },
   plugins: [
     sveltekit(),
     smrtConsumer({
-      projectRoot: ${JSON.stringify(projectRoot)},
       packages: ['@acme/widgets'],
       disableScanning: true,
       generateTypes: false,
@@ -125,11 +130,15 @@ export default defineConfig({
       import.meta.dirname,
       '../../../../node_modules/vite/bin/vite.js',
     );
-    await execFileAsync(process.execPath, [viteCli, 'build'], {
-      cwd: projectRoot,
-      maxBuffer: 32 * 1024 * 1024,
-      timeout: 110_000,
-    });
+    await execFileAsync(
+      process.execPath,
+      [viteCli, 'build', '--config', join(projectRoot, 'vite.config.ts')],
+      {
+        cwd: projectRoot,
+        maxBuffer: 32 * 1024 * 1024,
+        timeout: 110_000,
+      },
+    );
 
     const itemRoute = join(
       projectRoot,
@@ -140,6 +149,10 @@ export default defineConfig({
       existsSync(join(projectRoot, 'src/routes/api/hidden/+server.ts')),
     ).toBe(false);
     expect(readFileSync(itemRoute, 'utf8')).toContain("'@acme/widgets:Widget'");
+    expect(existsSync(join(projectRoot, '.smrt/register.js'))).toBe(true);
+    expect(existsSync(join(configuredViteRoot, '.smrt/register.js'))).toBe(
+      false,
+    );
     expect(
       readFileSync(
         join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),

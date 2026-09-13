@@ -121,7 +121,7 @@ export interface SmrtConsumerOptions {
   generateTypes?: boolean;
   /** Output directory for generated types */
   typesDir?: string;
-  /** Project root path */
+  /** Project root path (defaults to the current working directory) */
   projectRoot?: string;
   /**
    * Reuse an immutable, verified aggregated manifest instead of discovering
@@ -299,23 +299,20 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     config: {
       order: 'pre',
-      async handler(userConfig) {
+      async handler() {
         if (consumerSvelteKit) {
-          const routeProjectRoot =
-            options.projectRoot ??
-            path.resolve(process.cwd(), userConfig.root ?? '.');
           const routePackages =
             packages.length === 0 && !disableScanning
-              ? await discoverSmrtPackages(routeProjectRoot)
+              ? await discoverSmrtPackages(projectRoot)
               : packages;
           const routeManifest = generationSnapshot
             ? loadGenerationSnapshot()
-            : await aggregateTypeManifests(routePackages, routeProjectRoot);
+            : await aggregateTypeManifests(routePackages, projectRoot);
           const hostedManifest = selectConsumerRouteManifest(
             routeManifest,
             consumerSvelteKit,
           );
-          await generateSvelteKitRoutes(routeProjectRoot, hostedManifest, {
+          await generateSvelteKitRoutes(projectRoot, hostedManifest, {
             enabled: true,
             routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
             objectsDir: 'src/lib/objects',
