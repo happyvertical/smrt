@@ -188,6 +188,23 @@ function compareText(left: string, right: string): number {
 }
 
 /**
+ * True when a package.json `exports` condition resolves to a non-JS asset
+ * (e.g. the `./manifest`/`./manifest.json` convention pointing at
+ * `dist/manifest.json`), so subpath matching (smrt#2845's
+ * `matchExportsSubpath`) never attributes a scanned object to it — no
+ * `@smrt()` class's source file can be loaded from a JSON target.
+ */
+function targetsJsonAsset(condition: unknown): boolean {
+  if (typeof condition === 'string') return condition.endsWith('.json');
+  if (condition && typeof condition === 'object') {
+    const record = condition as Record<string, unknown>;
+    const target = record.import ?? record.default ?? record.require;
+    return typeof target === 'string' && target.endsWith('.json');
+  }
+  return false;
+}
+
+/**
  * Infer visibility from file path and explicit config
  *
  * Priority:
@@ -392,6 +409,44 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
+
+    // Seventh pass: stamp the subpath consumers should import each object
+    // from. `generateManifest()`'s own per-object loop already does this,
+    // but the Vite plugin and `ManifestBuilder` (the other two manifest
+    // producers this pass sequence exists to keep from drifting, #2360)
+    // build their manifest via `ManifestAdapter.toManifest()` and call
+    // `applyGenerationPasses()` directly — never through `generateManifest()`
+    // — so their objects reached this pass with no `importPath` at all. That
+    // is smrt#2845: `DataSurfaceActionIdempotencyState` in
+    // `@happyvertical/smrt-agents` lives under `src/server/` (served only by
+    // the `./server` export), but the published manifest carried no
+    // `importPath`, so consumer registration
+    // (`consumer-plugin/index.ts`'s own `determineImportPath`) fell back to
+    // the bare package specifier the object was never exported from.
+    this.resolveImportPaths(
+      manifest,
+      options?.packageName,
+      options?.packageJson,
+    );
+  }
+
+  /**
+   * Stamp `importPath` (via {@link determineImportPath}) on every object
+   * that does not already have one. Safe to call unconditionally: objects
+   * that went through `generateManifest()`'s own inline assignment already
+   * carry an `importPath` and are left untouched.
+   */
+  resolveImportPaths(
+    manifest: SmartObjectManifest,
+    packageName?: string,
+    packageJson?: PackageJsonLike,
+  ): void {
+    if (!packageName || !packageJson) return;
+
+    for (const obj of Object.values(manifest.objects)) {
+      if (obj.importPath) continue;
+      obj.importPath = this.determineImportPath(packageJson, obj.filePath);
+    }
   }
 
   /**
@@ -2186,48 +2241,133 @@ export class ManifestGenerator {
    * 3. package.json main - Main field
    * 4. Fallback to package name
    */
+  /**
+   * Determine the specifier consumers should import an object from.
+   *
+   * `filePath` was accepted (and ignored — the parameter was named
+   * `_filePath`) since before this fix, so every object always resolved to
+   * the bare package name regardless of where it actually lived. That is
+   * wrong for an object scanned from a file only a non-root `exports`
+   * subpath serves (e.g. `./server`): the manifest advertised the object as
+   * importable from the package root, but the root bundle never exports it,
+   * so a consumer dynamically importing by manifest metadata (or generating
+   * `.smrt/register.js`, `consumer-plugin/index.ts`'s own
+   * `determineImportPath`) silently failed to find it. That is smrt#2845 —
+   * `DataSurfaceActionIdempotencyState` in `@happyvertical/smrt-agents` lives
+   * under `src/server/` (served only by the `./server` export), but the
+   * manifest pointed consumers at the bare `@happyvertical/smrt-agents`
+   * specifier.
+   *
+   * Strategy: match `filePath` against the package's `exports` subpaths —
+   * `src/<segment>/...` or `src/<segment>.ts` maps to the `./<segment>`
+   * export key — and prefer the longest matching segment. Falls back to the
+   * legacy behavior (bare package name, with the `./objects` special case)
+   * when the file does not match any subpath, which covers objects reachable
+   * from the root `.` entry point.
+   */
   private determineImportPath(
     packageJson: PackageJsonLike,
-    _filePath?: string,
+    filePath?: string,
   ): string {
     // Only invoked once a package name is known (guarded at the call site),
     // so `name` is always present here.
     const packageName = packageJson.name as string;
 
-    // Strategy 1: Check for specific exports
-    if (packageJson.exports) {
-      // Check for objects export
+    if (packageJson.exports && typeof packageJson.exports === 'object') {
+      const subpathSegment = this.matchExportsSubpath(
+        packageJson.exports,
+        filePath,
+      );
+      if (subpathSegment) {
+        return `${packageName}/${subpathSegment}`;
+      }
+
+      // Legacy special case, kept for packages whose `./objects` export
+      // predates file-path-based matching and whose objects' `filePath`
+      // does not follow the `src/objects/...` convention above.
       if (packageJson.exports['./objects']) {
         return `${packageName}/objects`;
       }
-
-      // Check for main export
-      const mainExport = packageJson.exports['.'];
-      if (mainExport) {
-        // Handle conditional exports
-        if (mainExport && typeof mainExport === 'object') {
-          const conditional = mainExport as {
-            import?: unknown;
-            default?: unknown;
-          };
-          if (conditional.import) {
-            return packageName;
-          }
-          if (conditional.default) {
-            return packageName;
-          }
-        }
-        return packageName;
-      }
     }
 
-    // Strategy 2: Check main field
-    if (packageJson.main) {
-      return packageName;
-    }
-
-    // Strategy 3: Fallback to package name
+    // Strategy 2/3: main field or bare fallback — both resolve to the
+    // package root, which is where an unmatched object is assumed to live.
     return packageName;
+  }
+
+  /**
+   * Match a scanned object's `filePath` against a package's `exports` map,
+   * returning the longest matching non-root subpath segment (e.g. `"server"`
+   * for `./server`), or `undefined` when the file does not correspond to any
+   * declared subpath (the object is assumed reachable from the root `.`
+   * entry point instead).
+   */
+  private matchExportsSubpath(
+    exportsMap: Record<string, unknown>,
+    filePath?: string,
+  ): string | undefined {
+    if (!filePath) return undefined;
+
+    const normalized = filePath.replace(/\\/g, '/');
+    const srcMarker = 'src/';
+    const srcIndex = normalized.lastIndexOf(srcMarker);
+    if (srcIndex === -1) return undefined;
+    const relativeToSrc = normalized.slice(srcIndex + srcMarker.length);
+
+    // Path components with any source-file extension stripped from the last
+    // one, so `lib/models/Category.ts` and `server.js` both compare as plain
+    // component lists (`['lib','models','Category']`, `['server']`).
+    const pathParts = relativeToSrc.split('/');
+    const lastIndex = pathParts.length - 1;
+    pathParts[lastIndex] = pathParts[lastIndex].replace(
+      /\.(ts|tsx|js|jsx|mjs|cjs)$/,
+      '',
+    );
+
+    const segments = Object.keys(exportsMap)
+      .filter(
+        (key) =>
+          key !== '.' &&
+          key !== './package.json' &&
+          !key.includes('*') &&
+          // Exclude subpaths that resolve to a non-JS asset (e.g. the
+          // `./manifest`/`./manifest.json` convention pointing at
+          // `dist/manifest.json`). No @smrt object's source file can ever
+          // legitimately resolve there, so this only guards against a
+          // coincidental `src/manifest/...` path being misattributed to it.
+          !targetsJsonAsset(exportsMap[key]),
+      )
+      .map((key) => key.replace(/^\.\//, ''))
+      .filter((segment) => segment.length > 0)
+      // Longest first so a nested segment (rare) wins over a shorter prefix.
+      .sort((a, b) => b.length - a.length);
+
+    return segments.find((segment) => {
+      const segmentParts = segment.split('/');
+      // Match the segment's components as a contiguous run anywhere in the
+      // file's path — not just a root-level prefix. Handles both a direct
+      // subpath directory (`server/x.ts` for `./server`) and a re-export
+      // barrel whose real source lives deeper than its export key implies
+      // (`@happyvertical/smrt-products`: `./models` -> `src/models.ts` ->
+      // `export * from './lib/models/index'`, with the actual `@smrt()`
+      // classes scanned from `src/lib/models/*.ts` — `relativeToSrc` is
+      // `lib/models/Category.ts`, which contains `models` as a component,
+      // just not at index 0).
+      for (
+        let start = 0;
+        start <= pathParts.length - segmentParts.length;
+        start++
+      ) {
+        if (
+          segmentParts.every(
+            (part, offset) => pathParts[start + offset] === part,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
 
   /**

@@ -159,6 +159,320 @@ describe('ManifestGenerator', () => {
     });
   });
 
+  describe('determineImportPath (smrt#2845)', () => {
+    const packageName = '@happyvertical/smrt-agents';
+
+    it('stamps importPath for an object only reachable via a non-root exports subpath', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/server/sql-data-surface-action-state.ts',
+            objects: [
+              {
+                name: 'dataSurfaceActionIdempotencyState',
+                className: 'DataSurfaceActionIdempotencyState',
+                collection: 'data_surface_action_idempotency_states',
+                filePath: 'src/server/sql-data-surface-action-state.ts',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'DataSurfaceActionIdempotencyState',
+                collectionExportName:
+                  'DataSurfaceActionIdempotencyStateCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/index.js' },
+              './server': { import: './dist/server.js' },
+              './ui': { import: './dist/ui.js' },
+            },
+          },
+        },
+      );
+
+      const obj =
+        manifest.objects[`${packageName}:DataSurfaceActionIdempotencyState`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(`${packageName}/server`);
+    });
+
+    it('falls back to the bare package name for an object reachable from the root entry point', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/data-surface.ts',
+            objects: [
+              {
+                name: 'dataSurfaceWidget',
+                className: 'DataSurfaceWidget',
+                collection: 'data_surface_widgets',
+                filePath: 'src/data-surface.ts',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'DataSurfaceWidget',
+                collectionExportName: 'DataSurfaceWidgetCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/index.js' },
+              './server': { import: './dist/server.js' },
+            },
+          },
+        },
+      );
+
+      const obj = manifest.objects[`${packageName}:DataSurfaceWidget`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(packageName);
+    });
+
+    it('preserves the legacy "./objects" fallback when the file matches no subpath', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/unrelated/thing.ts',
+            objects: [
+              {
+                name: 'thing',
+                className: 'Thing',
+                collection: 'things',
+                filePath: 'src/unrelated/thing.ts',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'Thing',
+                collectionExportName: 'ThingCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/index.js' },
+              './objects': { import: './dist/objects.js' },
+            },
+          },
+        },
+      );
+
+      const obj = manifest.objects[`${packageName}:Thing`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(`${packageName}/objects`);
+    });
+
+    it('stamps importPath via applyGenerationPasses for a manifest built like the Vite plugin/ManifestBuilder producers', () => {
+      // Unlike the tests above (which drive generateManifest()'s own inline
+      // importPath assignment), the Vite plugin and ManifestBuilder build
+      // their manifest via ManifestAdapter.toManifest() and call
+      // applyGenerationPasses() directly — never through generateManifest()
+      // — so their objects reach this pass with no importPath at all. That
+      // gap is exactly how smrt#2845 shipped: deleting the
+      // resolveImportPaths() call from applyGenerationPasses() would leave
+      // every other test in this file green while this one fails.
+      const generator = new ManifestGenerator();
+      const qualifiedName = `${packageName}:DataSurfaceActionIdempotencyState`;
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        objects: {
+          [qualifiedName]: {
+            name: 'dataSurfaceActionIdempotencyState',
+            className: 'DataSurfaceActionIdempotencyState',
+            collection: 'data_surface_action_idempotency_states',
+            filePath: 'src/server/sql-data-surface-action-state.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+            exportName: 'DataSurfaceActionIdempotencyState',
+            collectionExportName: 'DataSurfaceActionIdempotencyStateCollection',
+          },
+        },
+      };
+
+      generator.applyGenerationPasses(manifest, {
+        packageName,
+        packageJson: {
+          name: packageName,
+          exports: {
+            '.': { import: './dist/index.js' },
+            './server': { import: './dist/server.js' },
+          },
+        },
+      });
+
+      expect(manifest.objects[qualifiedName].importPath).toBe(
+        `${packageName}/server`,
+      );
+    });
+
+    it('never matches an exports subpath that resolves to a non-JS asset (e.g. "./manifest")', () => {
+      // A coincidental src/manifest/... source path must not be attributed to
+      // the `./manifest` exports convention that points at
+      // `dist/manifest.json` — no @smrt() class can load from a JSON target.
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/manifest/oddly-placed-object.ts',
+            objects: [
+              {
+                name: 'oddlyPlacedObject',
+                className: 'OddlyPlacedObject',
+                collection: 'oddly_placed_objects',
+                filePath: 'src/manifest/oddly-placed-object.ts',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'OddlyPlacedObject',
+                collectionExportName: 'OddlyPlacedObjectCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/index.js' },
+              './manifest': './dist/manifest.json',
+              './manifest.json': './dist/manifest.json',
+            },
+          },
+        },
+      );
+
+      const obj = manifest.objects[`${packageName}:OddlyPlacedObject`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(packageName);
+    });
+
+    it('matches a subpath segment nested deeper than the export key implies (re-export barrel)', () => {
+      // Mirrors @happyvertical/smrt-products: `./models` resolves to
+      // `src/models.ts`, which is a thin barrel
+      // (`export * from './lib/models/index'`) — the actual `@smrt()`
+      // classes are scanned from `src/lib/models/*.ts`, one directory
+      // deeper than the export key's name alone would suggest. A
+      // root-prefix-only match (`relativeToSrc.startsWith('models/')`)
+      // misses this and falls back to the bare package specifier, which
+      // pulls in the whole root entry (Vite virtual modules, Svelte
+      // components) instead of the intended `./models` subpath.
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/lib/models/Category.ts',
+            objects: [
+              {
+                name: 'category',
+                className: 'Category',
+                collection: 'categories',
+                filePath: 'src/lib/models/Category.ts',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'Category',
+                collectionExportName: 'CategoryCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/lib/index.js' },
+              './models': { import: './dist/models.js' },
+            },
+          },
+        },
+      );
+
+      const obj = manifest.objects[`${packageName}:Category`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(`${packageName}/models`);
+    });
+
+    it('matches a bare-file subpath scanned from a .js source (not just .ts)', () => {
+      // The Vite plugin's default scan also includes src/**/*.js
+      // (vite-plugin/index.ts). An @smrt() class in src/server.js with a
+      // "./server" export must resolve the same way a .ts file would.
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest(
+        [
+          {
+            filePath: 'src/server.js',
+            objects: [
+              {
+                name: 'jsServerThing',
+                className: 'JsServerThing',
+                collection: 'js_server_things',
+                filePath: 'src/server.js',
+                fields: {},
+                methods: {},
+                decoratorConfig: {},
+                exportName: 'JsServerThing',
+                collectionExportName: 'JsServerThingCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ],
+        {
+          packageName,
+          packageJson: {
+            name: packageName,
+            exports: {
+              '.': { import: './dist/index.js' },
+              './server': { import: './dist/server.js' },
+            },
+          },
+        },
+      );
+
+      const obj = manifest.objects[`${packageName}:JsServerThing`];
+      expect(obj).toBeDefined();
+      expect(obj.importPath).toBe(`${packageName}/server`);
+    });
+  });
+
   describe('generateAgentManifests', () => {
     it('should include signalSubscriptions in agent manifest when declared', () => {
       const generator = new ManifestGenerator();
