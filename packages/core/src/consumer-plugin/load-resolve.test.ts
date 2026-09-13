@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { build } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   serializeSmrtGenerationSnapshot,
@@ -63,6 +64,9 @@ describe('smrtConsumer resolveId', () => {
     // Namespaced id (#1795): distinct from smrtPlugin's `\0smrt:routes` so the
     // two virtual modules never share a rollup id.
     expect(resolved).toBe('\0smrt-consumer:routes');
+    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+      '\0smrt-consumer:web',
+    );
   });
 
   it('resolves to a DISTINCT virtual id from smrtPlugin so neither shadows the other (#1795)', () => {
@@ -101,6 +105,7 @@ describe('smrtConsumer resolveId', () => {
     mkdirSync(join(projectRoot, typesDir), { recursive: true });
     const declPath = join(projectRoot, typesDir, 'smrt-client.d.ts');
     writeFileSync(declPath, '// types');
+    writeFileSync(join(projectRoot, typesDir, 'smrt-web.d.ts'), '// web types');
 
     const plugin = smrtConsumer({
       packages: [],
@@ -112,6 +117,9 @@ describe('smrtConsumer resolveId', () => {
 
     const resolved = resolveId.call({}, '@smrt/client', undefined);
     expect(resolved).toBe(declPath);
+    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+      '\0smrt-consumer:web',
+    );
   });
 
   it('returns null for unknown ids', () => {
@@ -158,6 +166,18 @@ describe('smrtConsumer load fallback modules', () => {
     const code = await load.call({}, '\0smrt-consumer:manifest');
     expect(code).toContain('export const manifest =');
     expect(code).toContain('export default manifest');
+  });
+
+  it('returns an empty web-definition module when no dependency manifest is available', async () => {
+    const load = getHook(makePlugin(), 'load');
+    const code = (await load.call({}, '\0smrt-consumer:web')) as string;
+    const mod = await import(
+      `data:text/javascript,${encodeURIComponent(code)}`
+    );
+
+    expect(mod.collectionDefinitions).toEqual({});
+    expect(mod.webMcpToolDefinitions).toEqual([]);
+    expect(typeof mod.manifestHash).toBe('string');
   });
 
   it('returns null for an unknown virtual id', async () => {
@@ -368,6 +388,76 @@ describe('smrtConsumer load with a populated manifest', () => {
       expect(typeof accessor[verb]).toBe('function');
     }
   });
+
+  it('bundles executable web definitions after default type generation', async () => {
+    mkdirSync(join(projectRoot, 'node_modules', '@acme', 'widgets', 'dist'), {
+      recursive: true,
+    });
+    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(join(projectRoot, 'node_modules', '@acme', 'widgets'), {
+      name: '@acme/widgets',
+      version: '2.0.0',
+      exports: { '.': './dist/index.js' },
+    });
+    writeFileSync(
+      join(
+        projectRoot,
+        'node_modules',
+        '@acme',
+        'widgets',
+        'dist',
+        'manifest.json',
+      ),
+      JSON.stringify({
+        packageName: '@acme/widgets',
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            fields: { title: { type: 'text', required: true } },
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(projectRoot, 'index.js'),
+      [
+        "import { collectionDefinitions, getCollectionDefinition } from '@smrt/web';",
+        'console.log(collectionDefinitions.widgets.fields.title.required);',
+        "console.log(getCollectionDefinition('widgets').objectRef);",
+      ].join('\n'),
+    );
+
+    const result = await build({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@acme/widgets'],
+          projectRoot,
+          disableScanning: true,
+        }),
+      ],
+      build: {
+        outDir: 'dist',
+        rollupOptions: { input: 'index.js' },
+      },
+    });
+
+    expect(
+      existsSync(join(projectRoot, 'src/types/smrt-generated/smrt-web.d.ts')),
+    ).toBe(true);
+    const outputs = Array.isArray(result) ? result : [result];
+    const bundle = outputs
+      .flatMap((output) => output.output)
+      .filter((output) => output.type === 'chunk')
+      .map((output) => output.code)
+      .join('\n');
+    expect(bundle).toContain('@acme/widgets:Widget');
+    expect(bundle).toMatch(/title:\{type:[^,]+,required:!0\}/);
+  });
 });
 
 describe('smrtConsumer buildStart package discovery', () => {
@@ -405,7 +495,9 @@ describe('smrtConsumer buildStart package discovery', () => {
             importPath: '@acme/widgets',
             exportName: 'Widget',
             collection: 'widgets',
-            fields: {},
+            fields: {
+              title: { type: 'text', required: true },
+            },
             methods: {},
             decoratorConfig: {},
           },
@@ -448,6 +540,10 @@ describe('smrtConsumer buildStart package discovery', () => {
       consumer,
       '\0smrt-consumer:manifest',
     );
+    const consumerWeb = await getHook(consumer, 'load').call(
+      consumer,
+      '\0smrt-consumer:web',
+    );
 
     expect(existsSync(join(projectRoot, '.smrt', 'manifest.json'))).toBe(false);
     expect(
@@ -457,6 +553,15 @@ describe('smrtConsumer buildStart package discovery', () => {
     expect(producerManifest).not.toContain('@acme/widgets:Widget');
     expect(consumerManifest).toContain('@acme/widgets:Widget');
     expect(consumerManifest).not.toContain('LocalThing');
+    const web = await import(
+      `data:text/javascript,${encodeURIComponent(consumerWeb as string)}`
+    );
+    expect(web.collectionDefinitions.widgets).toMatchObject({
+      objectRef: '@acme/widgets:Widget',
+      className: 'Widget',
+      fields: { title: { type: 'text', required: true } },
+    });
+    expect(web.collectionDefinitions.local_things).toBeUndefined();
     expect(readFileSync(artifactPath, 'utf8')).toBe(contents);
   });
 
@@ -590,5 +695,10 @@ describe('smrtConsumer buildStart package discovery', () => {
     });
 
     await expect(plugin.buildStart?.call({} as any)).resolves.toBeUndefined();
+    const web = await getHook(plugin, 'load').call({}, '\0smrt-consumer:web');
+    const module = await import(
+      `data:text/javascript,${encodeURIComponent(web as string)}`
+    );
+    expect(module.collectionDefinitions).toEqual({});
   });
 });

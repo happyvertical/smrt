@@ -18,6 +18,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { generateWebModule } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
@@ -121,6 +122,7 @@ const VIRTUAL_MODULES = {
   '@smrt/mcp': 'smrt-consumer:mcp',
   '@smrt/types': 'smrt-consumer:types',
   '@smrt/manifest': 'smrt-consumer:manifest',
+  '@smrt/web': 'smrt-consumer:web',
 };
 
 /**
@@ -241,6 +243,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     resolveId(id, _importer) {
       // Resolve virtual modules to generated type declarations
       if (id in VIRTUAL_MODULES) {
+        // `smrt-web.d.ts` is an ambient TypeScript declaration, not executable
+        // JavaScript. Vite must always load the consumer runtime module after
+        // default type generation writes that declaration.
+        if (id === '@smrt/web') {
+          return `\0${VIRTUAL_MODULES[id]}`;
+        }
+
         const typeFileName = getTypeFileName(id);
         const typePath = path.join(projectRoot, typesDir, typeFileName);
 
@@ -284,6 +293,14 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
         case 'smrt-consumer:manifest':
           return generateFallbackManifestModule(typeManifest);
+
+        case 'smrt-consumer:web':
+          return generateWebModule(
+            typeManifest as unknown as SmartObjectManifest,
+            {
+              kebabRoutes,
+            },
+          );
 
         default:
           return null;
@@ -861,6 +878,7 @@ function getTypeFileName(virtualModule: string): string {
     '@smrt/mcp': 'smrt-mcp.d.ts',
     '@smrt/types': 'smrt-types.d.ts',
     '@smrt/manifest': 'smrt-manifest.d.ts',
+    '@smrt/web': 'smrt-web.d.ts',
   };
   return moduleMap[virtualModule] || 'smrt-unknown.d.ts';
 }

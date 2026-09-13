@@ -191,6 +191,22 @@ generates routes, types, registration, and virtual modules, but it disables
 source/package scans, watch rescans, and manifest writes. Omit
 `generationSnapshot` for normal local development.
 
+#### Consumer web collection definitions
+
+`smrtConsumer()` also resolves `@smrt/web` for browser collection consumers:
+
+```typescript
+import { collectionDefinitions, getCollectionDefinition } from '@smrt/web';
+```
+
+The module projects the consumer's aggregated dependency manifest through the
+same web-definition generator as `smrtPlugin()`. Each definition retains its
+provider-qualified `objectRef` (for example, `@acme/widgets:Widget`) and its
+manifest-derived fields, actions, relationships, WebMCP descriptors, and
+`manifestHash`. Consumer snapshots select the dependency view, so local project
+objects are not included. During declaration generation the matching
+`smrt-web.d.ts` module is written alongside the other consumer virtual modules.
+
 ### Generated SvelteKit routes
 
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its

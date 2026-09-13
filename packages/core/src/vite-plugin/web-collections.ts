@@ -1346,3 +1346,52 @@ export function computeWebManifestHash(manifest: SmartObjectManifest): string {
     .digest('base64url')
     .slice(0, 16);
 }
+
+/**
+ * Generate the data-only `@smrt/web` module used by both producer and consumer
+ * Vite plugins. Keeping the emission beside its selection, row definition, and
+ * hash helpers makes every browser collection surface use one projection.
+ */
+export function generateWebModule(
+  manifest: SmartObjectManifest,
+  options: { kebabRoutes?: boolean } = {},
+): string {
+  const definitions: Record<string, unknown> = {};
+  for (const entry of selectWebCollectionEntries(manifest)) {
+    definitions[entry.collection] = {
+      ...buildWebCollectionDefinition(entry, manifest),
+      toolDescriptors: buildWebToolDescriptors(entry, options),
+    };
+  }
+
+  const manifestHash = computeWebManifestHash(manifest);
+  const webMcpToolDefinitions = buildWebMcpToolDefinitions(manifest, options);
+
+  return `
+// Auto-generated web collection definitions from SMRT objects (#1761)
+// This file is generated automatically - do not edit
+
+export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+// Canonical browser-tool definitions. This export is independent of list
+// materialization, so get-only and custom-action-only API routes are included.
+export const webMcpToolDefinitions = ${JSON.stringify(webMcpToolDefinitions, null, 2)};
+
+// Build-time inject of the web-collection shape digest (#1764) — see
+// computeWebManifestHash. A change here means old persisted client rows may
+// mis-hydrate, so persistence namespaces and read ETags key on it.
+export const manifestHash = ${JSON.stringify(manifestHash)};
+
+export function getCollectionDefinition(name) {
+  const definition = collectionDefinitions[name];
+  if (!definition) {
+    throw new Error(
+      \`[smrt] Unknown web collection definition: \${name}. Known: \${Object.keys(collectionDefinitions).join(', ')}\`,
+    );
+  }
+  return definition;
+}
+
+export { collectionDefinitions as default };
+`;
+}
