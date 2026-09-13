@@ -207,6 +207,13 @@ manifest-derived fields, actions, relationships, WebMCP descriptors, and
 objects are not included. During declaration generation the matching
 `smrt-web.d.ts` module is written alongside the other consumer virtual modules.
 
+For SvelteKit projects, default consumer declaration generation runs during the
+Vite configuration lifecycle as well as the normal build lifecycle. With
+SvelteKit 2.69.3 or later, `svelte-kit sync && svelte-check` loads that Vite
+configuration, so a clean checkout receives the physical `@smrt/manifest`,
+`@smrt/client`, and `@smrt/web` declarations before type checking. Set
+`generateTypes: false` only when another generation step owns those files.
+
 ### Generated SvelteKit routes
 
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its

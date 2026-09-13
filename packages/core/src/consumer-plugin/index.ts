@@ -541,6 +541,25 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     );
   }
 
+  async function generateConfigTypes(
+    manifest?: ConsumerManifest,
+  ): Promise<void> {
+    if (!generateTypes || typesGenerated) return;
+
+    typeManifest =
+      manifest ??
+      (generationSnapshot
+        ? loadGenerationSnapshot()
+        : await aggregateTypeManifests(
+            packages.length === 0 && !disableScanning
+              ? await discoverSmrtPackages(projectRoot)
+              : packages,
+            projectRoot,
+          ));
+    await generateProjectTypes(typeManifest, typesDir, projectRoot);
+    typesGenerated = true;
+  }
+
   const plugin: Plugin = {
     name: 'smrt-consumer',
 
@@ -617,7 +636,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
               semanticManifest: routeManifest as unknown as SmartObjectManifest,
               options: routeOptions,
               reservedRoutePaths,
-              beforeCleanup: () => {
+              beforeCleanup: async () => {
+                // Route selection and collision checks have succeeded, but no
+                // generated output has changed. SvelteKit type checking still
+                // runs after this config hook and needs these declarations.
+                await generateConfigTypes(routeManifest);
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;
                 // Preflight has succeeded but no generated output has changed.
@@ -647,15 +670,21 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
               },
             },
           );
-        } else if (previousConsumerRouteRoots.length > 0) {
-          await reconcileConsumerSvelteKitRouteRoots(
-            routeLifecycle,
-            userConfig,
-            projectRoot,
-            previousConsumerRouteRoots,
-            () => removeConsumerSvelteKitRouteRoots(projectRoot),
-            env,
-          );
+        } else {
+          // Legacy/non-hosting SvelteKit consumers have no route preflight,
+          // but still need physical virtual-module declarations before their
+          // SvelteKit typecheck reaches Vite's later buildStart lifecycle.
+          await generateConfigTypes();
+          if (previousConsumerRouteRoots.length > 0) {
+            await reconcileConsumerSvelteKitRouteRoots(
+              routeLifecycle,
+              userConfig,
+              projectRoot,
+              previousConsumerRouteRoots,
+              () => removeConsumerSvelteKitRouteRoots(projectRoot),
+              env,
+            );
+          }
         }
         return {
           build: {

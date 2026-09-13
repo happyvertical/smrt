@@ -2161,6 +2161,25 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(readFileSync(artifactPath, 'utf8')).toBe(previousArtifact);
   });
 
+  it('does not generate declarations when hosted route selection is invalid', async () => {
+    const plugin = smrtConsumer({
+      packages: ['@acme/widgets', '@acme/other-widgets'],
+      projectRoot,
+      disableScanning: true,
+      svelteKit: { objects: ['@acme/widgets:Missing'] },
+    });
+
+    await expect(
+      runConfigHook(plugin, { root: projectRoot, plugins: [plugin] }),
+    ).rejects.toThrow(/unknown dependency object/);
+
+    expect(
+      existsSync(
+        join(projectRoot, 'src/types/smrt-generated/smrt-manifest.d.ts'),
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],
