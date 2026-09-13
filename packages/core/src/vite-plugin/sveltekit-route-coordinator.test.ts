@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
+  assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
@@ -93,7 +94,7 @@ async function contribute(
 }
 
 describe('SvelteKit route participant targets', () => {
-  it('waits only for participants with the same routesDir', () => {
+  it('waits only for participants with the same routesDir', async () => {
     const producer = { name: 'smrt-auto-service' } as Plugin;
     const consumer = { name: 'smrt-consumer' } as Plugin;
     markSvelteKitRouteParticipant(producer, 'producer', true, 'src/routes/api');
@@ -103,14 +104,16 @@ describe('SvelteKit route participant targets', () => {
       true,
       'src/routes/external',
     );
-    const config = { plugins: [producer, consumer] };
+    const config = {
+      plugins: [false, Promise.resolve([producer, [null, consumer]])],
+    };
 
-    expect(
+    await expect(
       expectedSvelteKitRouteOwners(config, '/project', 'src/routes/api'),
-    ).toEqual(['producer']);
-    expect(
+    ).resolves.toEqual(['producer']);
+    await expect(
       expectedSvelteKitRouteOwners(config, '/project', 'src/routes/external'),
-    ).toEqual(['consumer']);
+    ).resolves.toEqual(['consumer']);
     const aliasedProducer = { name: 'smrt-auto-service' } as Plugin;
     const aliasedConsumer = { name: 'smrt-consumer' } as Plugin;
     markSvelteKitRouteParticipant(
@@ -125,13 +128,79 @@ describe('SvelteKit route participant targets', () => {
       true,
       './src/routes/api',
     );
-    expect(
+    await expect(
       expectedSvelteKitRouteOwners(
         { plugins: [aliasedProducer, aliasedConsumer] },
         '/project',
         'src/routes/api',
       ),
-    ).toEqual(['producer', 'consumer']);
+    ).resolves.toEqual(['producer', 'consumer']);
+  });
+
+  it('matches Vite apply filtering and each marker’s artifact root', async () => {
+    const producer = { name: 'smrt-auto-service', apply: 'build' } as Plugin;
+    const consumer = { name: 'smrt-consumer', apply: 'serve' } as Plugin;
+    const callback = {
+      name: 'smrt-callback',
+      apply: (config: { mode?: string }, env: { command: string }) =>
+        config.mode === 'development' && env.command === 'serve',
+    } as Plugin;
+    markSvelteKitRouteParticipant(
+      producer,
+      'producer',
+      true,
+      'src/routes/api',
+      undefined,
+      () => '/producer-root',
+    );
+    markSvelteKitRouteParticipant(
+      consumer,
+      'consumer',
+      true,
+      'src/routes/api',
+      undefined,
+      () => '/consumer-root',
+    );
+    markSvelteKitRouteParticipant(
+      callback,
+      'producer',
+      true,
+      'src/routes/callback',
+      undefined,
+      () => '/callback-root',
+    );
+    const config = {
+      plugins: [false, Promise.resolve([producer, [null, consumer, callback]])],
+    };
+
+    await expect(
+      expectedSvelteKitRouteOwners(config, '/consumer-root', 'src/routes/api', {
+        command: 'serve',
+        mode: 'development',
+      } as any),
+    ).resolves.toEqual(['consumer']);
+    await expect(
+      expectedSvelteKitRouteOwners(config, '/producer-root', 'src/routes/api', {
+        command: 'build',
+        mode: 'production',
+      } as any),
+    ).resolves.toEqual(['producer']);
+    await expect(
+      expectedSvelteKitRouteOwners(
+        config,
+        '/callback-root',
+        'src/routes/callback',
+        { command: 'serve', mode: 'development' } as any,
+      ),
+    ).resolves.toEqual(['producer']);
+    await expect(
+      expectedSvelteKitRouteOwners(
+        config,
+        '/callback-root',
+        'src/routes/callback',
+        { command: 'build', mode: 'production' } as any,
+      ),
+    ).resolves.toEqual([]);
   });
 
   it.each([
@@ -169,16 +238,16 @@ describe('SvelteKit route participant targets', () => {
     const plugins = order.map((owner) =>
       owner === 'producer' ? producer : consumer,
     );
-    const config = { plugins };
+    const config = { plugins: [false, Promise.resolve([plugins])] };
 
-    expect(() =>
+    await expect(
       expectedSvelteKitRouteOwners(config, root, ownerRouteDir(order[0])),
-    ).toThrow('Incompatible nested SvelteKit routesDir ownership');
+    ).rejects.toThrow('Incompatible nested SvelteKit routesDir ownership');
     // A watcher repeats the same preflight rather than deleting the child
     // surface through a parent-root sweep.
-    expect(() =>
+    await expect(
       expectedSvelteKitRouteOwners(config, root, ownerRouteDir(order[1])),
-    ).toThrow('Incompatible nested SvelteKit routesDir ownership');
+    ).rejects.toThrow('Incompatible nested SvelteKit routesDir ownership');
     expect(readFileSync(previousPath, 'utf8')).toBe(previousBytes);
   });
 });
@@ -188,6 +257,28 @@ function ownerRouteDir(owner: SvelteKitRouteOwner): string {
 }
 
 describe('contributeSvelteKitRoutes', () => {
+  it('fails closed at config resolution when an active shared participant never contributed', async () => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    await contribute(
+      lifecycle,
+      ['producer', 'consumer'],
+      root,
+      'producer',
+      manifest(
+        '@acme/local:LocalWidget',
+        'LocalWidget',
+        'localwidgets',
+        '@acme/local',
+      ),
+    );
+
+    expect(() =>
+      assertSvelteKitRouteCoordinationComplete(lifecycle, root),
+    ).toThrow('Incomplete SvelteKit route coordination');
+    expect(existsSync(routeFile(root, 'localwidgets'))).toBe(false);
+  });
+
   it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],

@@ -1,5 +1,5 @@
 import { relative, resolve, sep } from 'node:path';
-import type { Plugin } from 'vite';
+import type { ConfigEnv, Plugin } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
   assertNoCrossObjectRouteCollisions,
@@ -33,6 +33,7 @@ interface RouteCoordinator {
 
 export interface ActiveSvelteKitRouteParticipant {
   owner: SvelteKitRouteOwner;
+  projectRoot: string;
   routesDir: string;
   resolveKnowledge?: ProducerKnowledgeResolver;
 }
@@ -40,6 +41,7 @@ export interface ActiveSvelteKitRouteParticipant {
 type ProducerKnowledgeResolver = (projectRoot: string) => Promise<{
   api?: { enabled?: boolean; basePath?: string };
 }>;
+type ProjectRootResolver = (userConfig: unknown) => string;
 
 /** Marks an enabled plugin instance so only real same-target participants block
  * the initial shared route transaction. The marker is intentionally private to
@@ -50,43 +52,86 @@ export function markSvelteKitRouteParticipant(
   enabled: boolean,
   routesDir: string,
   resolveKnowledge?: ProducerKnowledgeResolver,
+  resolveProjectRoot?: ProjectRootResolver,
 ): void {
   Object.defineProperty(plugin, ROUTE_PARTICIPANT, {
-    value: { owner, enabled, routesDir, resolveKnowledge },
+    value: { owner, enabled, routesDir, resolveKnowledge, resolveProjectRoot },
     enumerable: false,
   });
 }
 
-export function expectedSvelteKitRouteOwners(
+export async function expectedSvelteKitRouteOwners(
   userConfig: unknown,
   projectRoot: string,
   routesDir: string,
-): SvelteKitRouteOwner[] {
-  const participants = activeSvelteKitRouteParticipants(
+  env?: ConfigEnv,
+): Promise<SvelteKitRouteOwner[]> {
+  const targetRoot = resolve(projectRoot);
+  const participants = await activeSvelteKitRouteParticipants(
     userConfig,
-    projectRoot,
+    targetRoot,
+    env,
   );
   assertCompatibleSvelteKitRouteTargets(participants);
+  const target = resolve(targetRoot, routesDir);
   const owners = new Set<SvelteKitRouteOwner>();
   for (const participant of participants) {
     if (
-      routeTarget(projectRoot, participant.routesDir) ===
-      routeTarget(projectRoot, routesDir)
+      participant.projectRoot === targetRoot &&
+      participant.routesDir === target
     )
       owners.add(participant.owner);
   }
   return [...owners];
 }
 
+/** Mirrors Vite's supported recursive PluginOption normalization for config hooks. */
+async function flattenPluginOptions(value: unknown): Promise<unknown[]> {
+  let values = Array.isArray(value) ? value : [];
+  do {
+    values = (await Promise.all(values)).flat(Infinity);
+  } while (
+    values.some(
+      (entry) =>
+        entry && typeof (entry as Promise<unknown>).then === 'function',
+    )
+  );
+  return values.filter(Boolean);
+}
+
+/** Applies the same supported `Plugin.apply` gate Vite uses before config hooks. */
+function appliesToConfig(
+  plugin: Plugin,
+  userConfig: unknown,
+  env: ConfigEnv | undefined,
+): boolean {
+  const apply = plugin.apply;
+  if (!apply) return true;
+  if (!env) return false;
+  if (typeof apply === 'function') {
+    return apply(
+      {
+        ...((userConfig as Record<string, unknown> | undefined) ?? {}),
+        mode: env.mode,
+      },
+      env,
+    );
+  }
+  return apply === env.command;
+}
+
 /** Active roots are either one shared target or separate directory owners. */
-export function activeSvelteKitRouteParticipants(
+export async function activeSvelteKitRouteParticipants(
   userConfig: unknown,
   projectRoot: string,
-): ActiveSvelteKitRouteParticipant[] {
-  const plugins = (userConfig as { plugins?: unknown[] } | undefined)?.plugins;
-  if (!Array.isArray(plugins)) return [];
+  env?: ConfigEnv,
+): Promise<ActiveSvelteKitRouteParticipant[]> {
+  const plugins = await flattenPluginOptions(
+    (userConfig as { plugins?: unknown } | undefined)?.plugins,
+  );
   const participants: ActiveSvelteKitRouteParticipant[] = [];
   for (const plugin of plugins) {
+    if (!appliesToConfig(plugin as Plugin, userConfig, env)) continue;
     const participant = (
       plugin as
         | {
@@ -95,14 +140,19 @@ export function activeSvelteKitRouteParticipants(
               enabled: boolean;
               routesDir: string;
               resolveKnowledge?: ProducerKnowledgeResolver;
+              resolveProjectRoot?: ProjectRootResolver;
             };
           }
         | undefined
     )?.[ROUTE_PARTICIPANT];
     if (!participant?.enabled) continue;
+    const participantRoot = resolve(
+      participant.resolveProjectRoot?.(userConfig) ?? projectRoot,
+    );
     participants.push({
       owner: participant.owner,
-      routesDir: resolve(projectRoot, participant.routesDir),
+      projectRoot: participantRoot,
+      routesDir: resolve(participantRoot, participant.routesDir),
       resolveKnowledge: participant.resolveKnowledge,
     });
   }
@@ -114,7 +164,11 @@ function assertCompatibleSvelteKitRouteTargets(
 ): void {
   for (const [index, first] of participants.entries()) {
     for (const second of participants.slice(index + 1)) {
-      if (first.routesDir === second.routesDir) continue;
+      if (
+        first.projectRoot !== second.projectRoot ||
+        first.routesDir === second.routesDir
+      )
+        continue;
       if (
         second.routesDir.startsWith(`${first.routesDir}${sep}`) ||
         first.routesDir.startsWith(`${second.routesDir}${sep}`)
@@ -182,6 +236,29 @@ export async function revokeSvelteKitRoutes(
   await generateWhenReady(sessions, coordinator, projectRoot);
 }
 
+/**
+ * Config hooks are the primary synchronization point because SvelteKit reads
+ * its route inventory immediately afterwards. This is a fail-closed backstop
+ * for Vite configurations where a marked, active peer never ran its hook.
+ */
+export function assertSvelteKitRouteCoordinationComplete(
+  lifecycle: object,
+  projectRoot: string,
+): void {
+  const targetPrefix = `${resolve(projectRoot)}\0`;
+  for (const [target, coordinator] of coordinators.get(lifecycle) ?? []) {
+    if (!target.startsWith(targetPrefix)) continue;
+    const missing = [...coordinator.expectedOwners].filter(
+      (owner) => !coordinator.contributions.has(owner),
+    );
+    if (missing.length === 0) continue;
+    const routesDir = target.slice(targetPrefix.length);
+    throw new Error(
+      `[smrt] Incomplete SvelteKit route coordination for ${JSON.stringify(routesDir)}; active ${missing.join(', ')} plugin contribution${missing.length === 1 ? '' : 's'} did not run before config resolution.`,
+    );
+  }
+}
+
 /** Current producer-owned knowledge handlers, which may sit outside its API root. */
 export function producerKnowledgeRoutePaths(
   lifecycle: object,
@@ -200,21 +277,29 @@ export function producerKnowledgeRoutePaths(
 export async function activeProducerKnowledgeRoutePaths(
   userConfig: unknown,
   projectRoot: string,
+  env?: ConfigEnv,
 ): Promise<Set<string>> {
   const paths = new Set<string>();
-  for (const participant of activeSvelteKitRouteParticipants(
+  for (const participant of await activeSvelteKitRouteParticipants(
     userConfig,
     projectRoot,
+    env,
   )) {
-    if (participant.owner !== 'producer' || !participant.resolveKnowledge)
+    if (
+      participant.projectRoot !== resolve(projectRoot) ||
+      participant.owner !== 'producer' ||
+      !participant.resolveKnowledge
+    )
       continue;
-    const knowledge = await participant.resolveKnowledge(projectRoot);
+    const knowledge = await participant.resolveKnowledge(
+      participant.projectRoot,
+    );
     if (!knowledge.api?.enabled) continue;
     paths.add(
       resolve(
-        knowledgeRoutePath(projectRoot, {
+        knowledgeRoutePath(participant.projectRoot, {
           enabled: true,
-          routesDir: relative(projectRoot, participant.routesDir),
+          routesDir: relative(participant.projectRoot, participant.routesDir),
           objectsDir: '',
           knowledge,
         }),

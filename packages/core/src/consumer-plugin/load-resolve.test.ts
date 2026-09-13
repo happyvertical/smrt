@@ -1977,6 +1977,115 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(readFileSync(artifactPath, 'utf8')).toBe(previousArtifact);
   });
 
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('keeps default consumer artifacts at launch cwd while revoking stale hosted routes when Vite root differs (%s)', async (_name, order) => {
+    const launchRoot = process.cwd();
+    const viteRoot = join(projectRoot, 'configured-vite-root');
+    mkdirSync(join(viteRoot, 'src/lib/objects'), { recursive: true });
+    writePackageJson(viteRoot, { name: 'configured-vite-root' });
+    writeFileSync(
+      join(viteRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+    process.chdir(projectRoot);
+    try {
+      const initialConsumer = smrtConsumer({
+        packages: ['@acme/widgets'],
+        disableScanning: true,
+        generateTypes: false,
+        svelteKit: { objects: ['@acme/widgets:Widget'] },
+      });
+      const initialConfig = { root: projectRoot, plugins: [initialConsumer] };
+      await runConfigHook(initialConsumer, initialConfig, {
+        command: 'build',
+        mode: 'test',
+      });
+      const staleRoute = join(projectRoot, 'src/routes/api/widgets/+server.ts');
+      expect(existsSync(staleRoute)).toBe(true);
+
+      const producer = smrtPlugin({
+        include: ['src/lib/objects/**/*.ts'],
+        generateTypes: false,
+        svelteKit: { enabled: true, routesDir: 'src/routes/api' },
+      });
+      const disabledConsumer = smrtConsumer({
+        packages: ['@acme/widgets'],
+        disableScanning: true,
+        generateTypes: false,
+        svelteKit: false,
+      });
+      const plugins = order.map((owner) =>
+        owner === 'producer' ? producer : disabledConsumer,
+      );
+      const config = { root: viteRoot, plugins };
+      const env = { command: 'build', mode: 'test' } as const;
+      for (const plugin of plugins) await runConfigHook(plugin, config, env);
+
+      expect(existsSync(staleRoute)).toBe(false);
+      expect(
+        existsSync(join(viteRoot, 'src/routes/api/localwidgets/+server.ts')),
+      ).toBe(true);
+      expect(
+        existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+      ).toBe(false);
+    } finally {
+      process.chdir(launchRoot);
+    }
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('re-emits a shared explicit-root producer surface while revoking stale consumer routes (%s)', async (_name, order) => {
+    await configureRoutes({
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const staleRoute = join(projectRoot, 'src/routes/api/widgets/+server.ts');
+    expect(existsSync(staleRoute)).toBe(true);
+    mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+    const producer = smrtPlugin({
+      projectRoot,
+      include: ['src/lib/objects/**/*.ts'],
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: 'src/routes/api' },
+    });
+    const disabledConsumer = smrtConsumer({
+      projectRoot,
+      packages: ['@acme/widgets'],
+      disableScanning: true,
+      generateTypes: false,
+      svelteKit: false,
+    });
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : disabledConsumer,
+    );
+    const config = { root: projectRoot, plugins };
+    const env = { command: 'build', mode: 'test' } as const;
+    for (const plugin of plugins) await runConfigHook(plugin, config, env);
+
+    expect(existsSync(staleRoute)).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/localwidgets/+server.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+    ).toBe(false);
+  });
+
   it('keeps a producer custom knowledge endpoint while revoking a former consumer root', async () => {
     const staleLifecycle = {};
     const remoteManifest = {

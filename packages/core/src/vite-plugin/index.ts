@@ -48,6 +48,7 @@ import {
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import {
+  assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
@@ -801,10 +802,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           configuredProjectRoot ??
           resolve(process.cwd(), userConfig.root ?? '.');
         routeLifecycleConfig = env ?? userConfig;
-        routeExpectedOwners = expectedSvelteKitRouteOwners(
+        routeExpectedOwners = await expectedSvelteKitRouteOwners(
           userConfig,
           projectRoot,
           svelteKit.routesDir || 'src/routes/api',
+          env,
         );
         configHookManifest = await scanAndGenerateManifest(projectRoot);
         await generateConfiguredSvelteKitRoutes(
@@ -845,6 +847,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       // Store project root for file scanning
       projectRoot = configuredProjectRoot ?? resolvedConfig.root;
+      if (svelteKit.enabled && routeLifecycleConfig) {
+        assertSvelteKitRouteCoordinationComplete(
+          routeLifecycleConfig,
+          projectRoot,
+        );
+      }
 
       // Detect plugin mode based on build configuration
       if (mode === 'auto') {
@@ -1222,6 +1230,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     svelteKit.routesDir || 'src/routes/api',
     async (rootDir) =>
       resolveKnowledgeConfig(rootDir, { objects: {} } as SmartObjectManifest),
+    (userConfig) =>
+      configuredProjectRoot ??
+      resolve(
+        process.cwd(),
+        (userConfig as { root?: string } | undefined)?.root ?? '.',
+      ),
   );
   return plugin;
 

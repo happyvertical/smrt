@@ -231,9 +231,9 @@ smrtConsumer({
 
 `projectRoot` selects one artifact root for consumer route generation,
 registration, manifests, and types; it defaults to the current working
-directory. SvelteKit uses that launch directory as its final Vite root, even if
-a Vite config declares `root`; pass `projectRoot` explicitly when consumer
-artifacts belong elsewhere.
+directory. It remains the consumer artifact root when a Vite config declares a
+different `root`; pass `projectRoot` explicitly when consumer artifacts should
+share that Vite root or belong elsewhere.
 
 Only the listed objects are passed to route generation, so another API model in
 the same provider remains absent until it is named. `api: false` and an empty
