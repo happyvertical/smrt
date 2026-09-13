@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.49.4
+
+### Patch Changes
+
+- ### Features
+
+  - share action contracts and durable execution (#2842) (data-surface)
+
+  ### Bug Fixes
+
+  - invalidate search for adapter-coerced text sources (#2841) (facts)
+  - retain null-equal indexes through raw manifests (#2839) (core)
+  - make shared-collection route emission and CRUD mirror deterministic (#2808) (core)
+  - support Vite 8 SSR and authenticated browser coverage (#2837) (content)
+
+  ### Other Changes
+
+  - test: verify query-layer performance acceptance (#2843) (facts)
+  - perf: reduce plain-object serialization cost (#2835) (core)
+  - perf: single-flight cached query misses (#2832) (core)
+  - perf: batch compatible junction lifecycle writes (#2831) (core)
+  - perf: batch catalog chain resolution (#2827) (facts)
+  - @happyvertical/smrt-config@0.49.4
+  - @happyvertical/smrt-types@0.49.4
+  - @happyvertical/smrt-scanner@0.49.4
+
 ## 0.49.3
 
 ### Patch Changes

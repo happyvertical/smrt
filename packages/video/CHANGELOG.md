@@ -1,5 +1,18 @@
 # @happyvertical/smrt-video
 
+## 0.49.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.49.4
+  - @happyvertical/smrt-assets@0.49.4
+  - @happyvertical/smrt-content@0.49.4
+  - @happyvertical/smrt-profiles@0.49.4
+  - @happyvertical/smrt-tenancy@0.49.4
+  - @happyvertical/smrt-voice@0.49.4
+  - @happyvertical/smrt-config@0.49.4
+
 ## 0.49.3
 
 ### Patch Changes
