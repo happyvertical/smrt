@@ -2071,6 +2071,105 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
   });
 
   it.each([
+    ['same route root', 'src/routes/api', 'src/routes/api'],
+    ['canonical route-root aliases', 'src/routes/api/', './src/routes/api'],
+  ] as const)('composes producer knowledge with shared consumer hosting for %s in both hook orders', async (_case, producerRoutesDir, consumerRoutesDir) => {
+    mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+
+    for (const order of [
+      ['producer', 'consumer'],
+      ['consumer', 'producer'],
+    ] as const) {
+      const producer = smrtPlugin({
+        projectRoot,
+        include: ['src/lib/objects/**/*.ts'],
+        generateTypes: false,
+        svelteKit: { enabled: true, routesDir: producerRoutesDir },
+        knowledge: { api: { enabled: true } },
+      });
+      const consumer = createConsumerRoutePlugin({
+        svelteKit: {
+          objects: ['@acme/widgets:Widget'],
+          routesDir: consumerRoutesDir,
+        },
+      });
+      const plugins = order.map((owner) =>
+        owner === 'producer' ? producer : consumer,
+      );
+      const userConfig = { root: projectRoot, plugins };
+      const lifecycle = {};
+      for (const plugin of plugins) {
+        await runConfigHook(plugin, userConfig, lifecycle);
+      }
+
+      expect(
+        existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
+      ).toBe(true);
+      expect(
+        existsSync(join(projectRoot, 'src/routes/__smrt/knowledge/+server.ts')),
+      ).toBe(true);
+      const registration = readFileSync(
+        join(projectRoot, 'src/lib/server/smrt-register.ts'),
+        'utf8',
+      );
+      expect(registration).toContain('LocalWidget');
+      expect(registration).toContain('Widget');
+      rmSync(join(projectRoot, 'src/routes'), { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('preserves disjoint producer knowledge beneath a consumer root when %s', async (_name, order) => {
+    const producer = smrtPlugin({
+      projectRoot,
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: 'src/routes/api' },
+      knowledge: { api: { enabled: true, basePath: '/external/knowledge' } },
+    });
+    const consumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: 'src/routes/external',
+      },
+    });
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : consumer,
+    );
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    const knowledgePath = join(
+      projectRoot,
+      'src/routes/external/knowledge/+server.ts',
+    );
+    let producerBytes: string | undefined;
+
+    for (const plugin of plugins) {
+      await runConfigHook(plugin, userConfig, lifecycle);
+      if (plugin === producer) {
+        producerBytes = readFileSync(knowledgePath, 'utf8');
+      }
+    }
+
+    expect(
+      existsSync(join(projectRoot, 'src/routes/external/widgets/+server.ts')),
+    ).toBe(true);
+    expect(existsSync(knowledgePath)).toBe(true);
+    if (producerBytes) {
+      expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+    }
+  });
+
+  it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],
   ] as const)('reserves an active producer knowledge path before consumer output when %s', async (_name, order) => {

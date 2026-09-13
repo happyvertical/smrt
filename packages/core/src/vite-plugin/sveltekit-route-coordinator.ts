@@ -258,16 +258,7 @@ async function generateWhenReady(
     ),
     utilityManifests(
       contributions,
-      new Set([
-        ...foreignProducerKnowledgeRoutePaths(
-          sessions,
-          projectRoot,
-          coordinator,
-        ),
-        ...contributions.flatMap((contribution) => [
-          ...(contribution.reservedRoutePaths ?? []),
-        ]),
-      ]),
+      protectedProducerKnowledgeRoutePaths(sessions, projectRoot, coordinator),
     ),
     mergeManifests(
       registrationContributions.map(({ routeManifest }) => routeManifest),
@@ -345,12 +336,41 @@ function foreignProducerKnowledgeRoutePaths(
   return paths;
 }
 
+function currentProducerKnowledgeRoutePaths(
+  coordinator: RouteCoordinator,
+  projectRoot: string,
+): Set<string> {
+  const producer = coordinator.contributions.get('producer');
+  if (!producer?.options.knowledge?.api?.enabled) return new Set();
+  return new Set([resolve(knowledgeRoutePath(projectRoot, producer.options))]);
+}
+
+function protectedProducerKnowledgeRoutePaths(
+  sessions: Map<string, RouteCoordinator>,
+  projectRoot: string,
+  current: RouteCoordinator,
+): Set<string> {
+  const ownPaths = currentProducerKnowledgeRoutePaths(current, projectRoot);
+  return new Set([
+    ...foreignProducerKnowledgeRoutePaths(sessions, projectRoot, current),
+    ...[...current.contributions.values()].flatMap((contribution) =>
+      [...(contribution.reservedRoutePaths ?? [])].filter(
+        (path) => !ownPaths.has(resolve(path)),
+      ),
+    ),
+  ]);
+}
+
 function assertNoForeignKnowledgeRouteCollisions(
   sessions: Map<string, RouteCoordinator>,
   projectRoot: string,
 ): void {
   const knowledgeContributions = producerKnowledgeContributions(sessions);
   for (const routeCoordinator of sessions.values()) {
+    const ownPaths = currentProducerKnowledgeRoutePaths(
+      routeCoordinator,
+      projectRoot,
+    );
     for (const contribution of routeCoordinator.contributions.values()) {
       if (!contribution.options.rejectRouteCollisions) continue;
       const foreignPaths = new Set(
@@ -361,7 +381,7 @@ function assertNoForeignKnowledgeRouteCollisions(
           ),
       );
       for (const path of contribution.reservedRoutePaths ?? []) {
-        foreignPaths.add(path);
+        if (!ownPaths.has(resolve(path))) foreignPaths.add(path);
       }
       if (foreignPaths.size === 0) continue;
       assertNoCrossObjectRouteCollisions(
