@@ -15,10 +15,12 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -760,6 +762,12 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       join(packageDir, 'dist', 'manifest.json'),
       JSON.stringify({ packageName, objects }),
     );
+    writeFileSync(
+      join(packageDir, 'dist', 'index.js'),
+      Object.values(objects)
+        .map((object) => `export class ${object.className} {}`)
+        .join('\n'),
+    );
   }
 
   async function configureRoutes(
@@ -776,6 +784,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     const handler =
       typeof configHook === 'function' ? configHook : configHook.handler;
     await handler({ root: projectRoot });
+    return plugin;
   }
 
   beforeEach(() => {
@@ -784,6 +793,12 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       version: '1.0.0',
       type: 'module',
     });
+    const coreLinkDir = join(projectRoot, 'node_modules', '@happyvertical');
+    mkdirSync(coreLinkDir, { recursive: true });
+    symlinkSync(
+      resolve(import.meta.dirname, '../..'),
+      join(coreLinkDir, 'smrt-core'),
+    );
     writeProvider('@acme/widgets', {
       '@acme/widgets:Widget': {
         className: 'Widget',
@@ -890,6 +905,20 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(
       existsSync(join(projectRoot, 'src/routes/api/empty/+server.ts')),
     ).toBe(false);
+  });
+
+  it('loads unselected provider identity through the generated SSR registration', async () => {
+    const plugin = await configureRoutes({
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    await plugin.buildStart.call(plugin);
+    const register = join(projectRoot, '.smrt/register.js');
+    await import(`${pathToFileURL(register).href}?issue2850=${Date.now()}`);
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    expect(ObjectRegistry.getClass('@acme/other-widgets:Widget')).toBeDefined();
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
+    ).toBe(true);
   });
 
   it('retains api false and empty include suppression for selected objects', async () => {
