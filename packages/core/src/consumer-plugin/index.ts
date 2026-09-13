@@ -137,7 +137,9 @@ export interface SmrtConsumerOptions {
   svelteKit?: boolean | SmrtConsumerSvelteKitOptions;
   /**
    * Apply kebab-case to generated custom-method URL segments. This must match
-   * the producer plugin's `svelteKit.kebabRoutes` setting.
+   * the producer plugin's `svelteKit.kebabRoutes` setting. When explicit
+   * consumer SvelteKit hosting is configured, its `kebabRoutes` value takes
+   * precedence, including an explicit `false`.
    */
   kebabRoutes?: boolean;
   /** Use static types only (for federation builds) */
@@ -272,6 +274,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     kebabRoutes = false,
   } = options;
   const consumerSvelteKit = consumerRouteOptions(options.svelteKit);
+  // Hosted routes, the generated client, and web tool definitions must expose
+  // the same custom-action URLs. Nested consumer SvelteKit hosting owns this
+  // policy when present, including an explicit false override.
+  const effectiveKebabRoutes = consumerSvelteKit?.kebabRoutes ?? kebabRoutes;
 
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
@@ -321,7 +327,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
               objectsDir: 'src/lib/objects',
               configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
               configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
-              kebabRoutes: consumerSvelteKit.kebabRoutes ?? kebabRoutes,
+              kebabRoutes: effectiveKebabRoutes,
               // These span a model set rather than one selected object, so new
               // consumer hosting starts fail-closed. Callers can opt in with the
               // generator's established option shapes.
@@ -462,7 +468,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           return generateFallbackRoutesModule();
 
         case 'smrt-consumer:client':
-          return generateFallbackClientModule(typeManifest, { kebabRoutes });
+          return generateFallbackClientModule(typeManifest, {
+            kebabRoutes: effectiveKebabRoutes,
+          });
 
         case 'smrt-consumer:mcp':
           return generateFallbackMcpModule();
@@ -477,7 +485,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           return generateWebModule(
             typeManifest as unknown as SmartObjectManifest,
             {
-              kebabRoutes,
+              kebabRoutes: effectiveKebabRoutes,
             },
           );
 

@@ -1007,6 +1007,22 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         methods: {},
         decoratorConfig: { api: { include: ['list'] } },
       },
+      '@acme/widgets:KebabRouteWidget': {
+        className: 'KebabRouteWidget',
+        qualifiedName: '@acme/widgets:KebabRouteWidget',
+        collection: 'kebab-route-widgets',
+        fields: {},
+        methods: {
+          publishNow: {
+            name: 'publishNow',
+            parameters: [],
+            returnType: 'void',
+            isPublic: true,
+            isStatic: false,
+          },
+        },
+        decoratorConfig: { api: { include: ['get', 'publishNow'] } },
+      },
     });
     writeProvider('@acme/other-widgets', {
       '@acme/other-widgets:Widget': {
@@ -1269,6 +1285,100 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(readFileSync(existingRoute, 'utf8')).toContain(
       '// preserve changes handler',
     );
+  });
+
+  it('uses the nested SvelteKit kebab policy for handler, client, and web URLs', async () => {
+    const plugin: any = smrtConsumer({
+      packages: ['@acme/widgets', '@acme/other-widgets'],
+      projectRoot,
+      disableScanning: true,
+      svelteKit: {
+        objects: ['@acme/widgets:KebabRouteWidget'],
+        kebabRoutes: true,
+      },
+    });
+    const configHook = plugin.config;
+    const config =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+    await config({ root: projectRoot });
+    await plugin.buildStart.call(plugin);
+
+    const actionRoute = join(
+      projectRoot,
+      'src/routes/api/kebab-route-widgets/[id]/publish-now/+server.ts',
+    );
+    expect(existsSync(actionRoute)).toBe(true);
+
+    const load = getHook(plugin, 'load');
+    const client = (await load.call({}, '\0smrt-consumer:client')) as string;
+    expect(client).toContain("'/kebab-route-widgets/' + id + '/publish-now'");
+    expect(client).not.toContain(
+      "'/kebab-route-widgets/' + id + '/publishNow'",
+    );
+
+    const web = (await load.call({}, '\0smrt-consumer:web')) as string;
+    const webModule = await import(
+      `data:text/javascript,${encodeURIComponent(web)}`
+    );
+    const tool = webModule.webMcpToolDefinitions.find(
+      (definition: { action: string }) => definition.action === 'publishNow',
+    );
+    expect(tool?.route.path).toEqual(['publish-now']);
+
+    const resolveId = getHook(plugin, 'resolveId');
+    expect(resolveId.call({}, '@smrt/client', undefined)).toBe(
+      '\0smrt-consumer:client',
+    );
+    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+      '\0smrt-consumer:web',
+    );
+    expect(
+      existsSync(
+        join(projectRoot, 'src/types/smrt-generated/smrt-client.d.ts'),
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectRoot, 'src/types/smrt-generated/smrt-web.d.ts')),
+    ).toBe(true);
+  });
+
+  it('lets explicit nested kebabRoutes false override the top-level setting', async () => {
+    const plugin: any = smrtConsumer({
+      packages: ['@acme/widgets', '@acme/other-widgets'],
+      generateTypes: false,
+      projectRoot,
+      disableScanning: true,
+      kebabRoutes: true,
+      svelteKit: {
+        objects: ['@acme/widgets:KebabRouteWidget'],
+        kebabRoutes: false,
+      },
+    });
+    const configHook = plugin.config;
+    const config =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+    await config({ root: projectRoot });
+    await plugin.buildStart.call(plugin);
+
+    expect(
+      existsSync(
+        join(
+          projectRoot,
+          'src/routes/api/kebab-route-widgets/[id]/publishNow/+server.ts',
+        ),
+      ),
+    ).toBe(true);
+    const load = getHook(plugin, 'load');
+    const client = (await load.call({}, '\0smrt-consumer:client')) as string;
+    expect(client).toContain("'/kebab-route-widgets/' + id + '/publishNow'");
+    const web = (await load.call({}, '\0smrt-consumer:web')) as string;
+    const webModule = await import(
+      `data:text/javascript,${encodeURIComponent(web)}`
+    );
+    const tool = webModule.webMcpToolDefinitions.find(
+      (definition: { action: string }) => definition.action === 'publishNow',
+    );
+    expect(tool?.route.path).toEqual(['publishNow']);
   });
 
   it('rejects selected identities that would overwrite one route file', async () => {
