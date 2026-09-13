@@ -8,10 +8,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
@@ -45,11 +46,22 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
-import { generateDevPlaneRoute } from './dev-plane-route.js';
+import {
+  generateDevPlaneRoute,
+  willGenerateDevPlaneRoute,
+} from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
-import { generateResourcesRoute } from './resources-route.js';
+import {
+  generateResourcesRoute,
+  reservesResourcesRoute,
+} from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { generateSyncApplyRoute } from './sync-apply-route.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
+import {
+  collectSyncApplyTargets,
+  generateSyncApplyRoute,
+} from './sync-apply-route.js';
 import {
   computeWebManifestHash,
   isCollectionManifestClass,
@@ -64,6 +76,8 @@ export interface SvelteKitOptions {
   objectsDir: string;
   configPath?: string; // default: 'src/lib/server'
   configFileName?: string; // default: 'smrt.ts'
+  /** Internal absolute consumer registration entrypoints for a coordinated host. */
+  consumerRegistrationPaths?: readonly string[];
   /**
    * Apply kebab-case to custom-method URL segments (e.g. `discoverFromUrl`
    * becomes `/discover-from-url`). Opt-in for one minor; default flips in the
@@ -112,6 +126,8 @@ export interface SvelteKitOptions {
    * pre-existing hand-written `_resources` route is always preserved.
    */
   resourcesRoute?: { enabled?: boolean };
+  /** Reject route paths owned by distinct selected identities before cleanup. */
+  rejectRouteCollisions?: boolean;
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -184,7 +200,7 @@ function getRegistrationPackageName(
   isLocal: boolean,
 ): string | undefined {
   if (isLocal) {
-    return manifest.packageName ?? objectDef.packageName;
+    return objectDef.packageName ?? manifest.packageName;
   }
 
   return objectDef.packageName;
@@ -270,20 +286,24 @@ function resolveObjectTypeReference(
     return { typeName: "import('@happyvertical/smrt-core').SmrtObject" };
   }
 
-  const importPath =
-    isLocalObject(projectRoot, objectDef) || !objectDef.packageName
-      ? getRouteTypeImportPath(
-          projectRoot,
-          objectDef,
-          options,
-          simpleClassName,
-          routeDir,
-        )
-      : objectDef.packageName;
+  const external =
+    !isLocalObject(projectRoot, objectDef) && objectDef.packageName;
+  const importPath = external
+    ? objectDef.importPath || objectDef.packageName
+    : getRouteTypeImportPath(
+        projectRoot,
+        objectDef,
+        options,
+        simpleClassName,
+        routeDir,
+      );
+  const exportName = external
+    ? objectDef.exportName || simpleClassName
+    : simpleClassName;
 
   return {
     typeName: simpleClassName,
-    importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
+    importStatement: `import type { ${exportName}${exportName === simpleClassName ? '' : ` as ${simpleClassName}`} } from '${importPath}';`,
   };
 }
 
@@ -1314,13 +1334,40 @@ function findItemClassRegistryKey(
   return manifestMatch?.[0] || itemObject.className;
 }
 
-function groupCustomActionRoutes(
+type CustomActionRouteGroupSpec = Pick<
+  GeneratedActionRouteSpec,
+  'actionName' | 'hostType' | 'lookupClassName' | 'routeConfig'
+>;
+
+function assertCompatibleCustomActionRouteSpecs(
+  routeSpecs: readonly CustomActionRouteGroupSpec[],
+): void {
+  const [firstSpec] = routeSpecs;
+  if (!firstSpec) return;
+
+  const { hostType, lookupClassName, routeConfig } = firstSpec;
+  const hasMixedHosts = routeSpecs.some(
+    (spec) =>
+      spec.hostType !== hostType ||
+      spec.lookupClassName !== lookupClassName ||
+      spec.routeConfig.scope !== routeConfig.scope,
+  );
+
+  if (hasMixedHosts) {
+    throw new Error(
+      `Cannot generate mixed custom route handlers for ${lookupClassName}. ` +
+        'All handlers sharing a route path must target the same host type and scope.',
+    );
+  }
+}
+
+function groupCustomActionRoutes<T extends CustomActionRouteGroupSpec>(
   actionSpecs: Array<{
     routeDir: string;
-    spec: GeneratedActionRouteSpec;
+    spec: T;
   }>,
-): Map<string, GeneratedActionRouteSpec[]> {
-  const groupedRoutes = new Map<string, GeneratedActionRouteSpec[]>();
+): Map<string, T[]> {
+  const groupedRoutes = new Map<string, T[]>();
 
   for (const { routeDir, spec } of actionSpecs) {
     const existing = groupedRoutes.get(routeDir) || [];
@@ -1339,43 +1386,249 @@ function groupCustomActionRoutes(
     groupedRoutes.set(routeDir, existing);
   }
 
+  for (const routeSpecs of groupedRoutes.values()) {
+    assertCompatibleCustomActionRouteSpecs(routeSpecs);
+  }
+
   return groupedRoutes;
 }
 
-/**
- * Generates SvelteKit API routes from manifest
- */
-export async function generateSvelteKitRoutes(
+/** Reject selected identities that would write the same endpoint file. */
+export function assertNoCrossObjectRouteCollisions(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  exposureManifest: SmartObjectManifest,
+  reservedRoutePaths: ReadonlySet<string> = new Set(),
+): void {
+  type RouteWriter =
+    | 'crud-collection'
+    | 'crud-item'
+    | 'custom-action'
+    | 'sync-apply'
+    | 'changes'
+    | 'dev-plane'
+    | 'events'
+    | 'resources'
+    | 'knowledge';
+  const claims = new Map<string, { owner: string; writer: RouteWriter }>();
+  const claimPath = (
+    routePath: string,
+    routeDir: string,
+    owner: string,
+    writer: RouteWriter,
+  ) => {
+    const canonicalRoutePath = canonicalSvelteKitPath(routePath);
+    const prior = claims.get(canonicalRoutePath);
+    if (prior && (prior.owner !== owner || prior.writer !== writer)) {
+      throw new Error(
+        `Conflicting SvelteKit route ${routeDir}: ${prior.owner} (${prior.writer}) and ${owner} (${writer}) would write the same handler`,
+      );
+    }
+    claims.set(canonicalRoutePath, { owner, writer });
+  };
+  const claim = (routeDir: string, owner: string, writer: RouteWriter) =>
+    claimPath(
+      join(projectRoot, routeDir, '+server.ts'),
+      routeDir,
+      owner,
+      writer,
+    );
+  for (const routePath of reservedRoutePaths) {
+    claimPath(
+      resolve(routePath),
+      relative(projectRoot, routePath),
+      'producer knowledge',
+      'knowledge',
+    );
+  }
+  for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
+    if (isFrameworkBaseClass(objectDef.className, objectDef.packageName))
+      continue;
+    const routeDir = join(options.routesDir, objectDef.collection);
+    if (isCollectionManifestClass(manifest, objectDef)) {
+      const actionSpecs = resolveApiCustomActions(
+        objectDef,
+        exposureManifest,
+        true,
+      ).exposed.map(([actionName, actionDef]) => {
+        const routeConfig = resolveApiActionRouteConfig(
+          actionName,
+          actionDef,
+          objectDef.decoratorConfig?.api,
+          { kebabRoutes: options.kebabRoutes },
+          'collection',
+        );
+        return {
+          routeDir: join(routeDir, ...routeConfig.pathSegments),
+          spec: {
+            actionName,
+            hostType: 'collection' as const,
+            lookupClassName: findItemClassRegistryKey(
+              className,
+              objectDef,
+              manifest,
+            ),
+            routeConfig,
+          },
+        };
+      });
+      for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
+        claim(actionRouteDir, className, 'custom-action');
+      }
+      continue;
+    }
+    const actions = resolveStandardCrudActions(objectDef.decoratorConfig?.api);
+    if (actions.some((action) => action === 'list' || action === 'create'))
+      claim(routeDir, className, 'crud-collection');
+    if (
+      actions.some(
+        (action) =>
+          action === 'get' || action === 'update' || action === 'delete',
+      )
+    )
+      claim(join(routeDir, '[id]'), className, 'crud-item');
+    const actionSpecs = resolveApiCustomActions(
+      objectDef,
+      exposureManifest,
+      false,
+    ).exposed.map(([actionName, actionDef]) => {
+      const routeConfig = resolveApiActionRouteConfig(
+        actionName,
+        actionDef,
+        objectDef.decoratorConfig?.api,
+        { kebabRoutes: options.kebabRoutes },
+      );
+      return {
+        routeDir: join(
+          routeConfig.scope === 'collection'
+            ? routeDir
+            : join(routeDir, '[id]'),
+          ...routeConfig.pathSegments,
+        ),
+        spec: {
+          actionName,
+          hostType: 'item' as const,
+          lookupClassName: className,
+          routeConfig,
+        },
+      };
+    });
+    for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
+      claim(actionRouteDir, className, 'custom-action');
+    }
+  }
+  // These generator-owned utility files share the same filesystem namespace.
+  // Claim only paths their current output predicates can emit.
+  if (collectSyncApplyTargets(manifest).length > 0) {
+    claim(join(options.routesDir, 'sync', 'apply'), 'sync/apply', 'sync-apply');
+  }
+  const hasAnchor = Object.values(manifest.objects).some(
+    (objectDef) => !isCollectionManifestClass(manifest, objectDef),
+  );
+  if (hasAnchor && options.changesRoute?.enabled !== false) {
+    claim(join(options.routesDir, '_changes'), '_changes', 'changes');
+  }
+  if (willGenerateDevPlaneRoute(projectRoot, options)) {
+    claim(join(options.routesDir, '_dev', '[...tool]'), '_dev', 'dev-plane');
+  }
+  if (hasAnchor && options.eventsRoute?.enabled !== false) {
+    claim(join(options.routesDir, '_events'), '_events', 'events');
+  }
+  if (reservesResourcesRoute(projectRoot, options)) {
+    claim(join(options.routesDir, '_resources'), '_resources', 'resources');
+  }
+  if (options.knowledge?.api?.enabled) {
+    const routeDir = knowledgeRouteDir(projectRoot, options);
+    claimPath(join(routeDir, '+server.ts'), routeDir, 'knowledge', 'knowledge');
+  }
+}
+
+/**
+ * Generates SvelteKit API routes from the selected route manifest.
+ * `semanticManifest` preserves the complete class inventory for authorization,
+ * STI ancestry, cache safety, and custom-action wireability when the route
+ * manifest is a deliberately selected output subset.
+ */
+export interface SvelteKitUtilityManifests {
+  sync: SmartObjectManifest;
+  changes: SmartObjectManifest;
+  events: SmartObjectManifest;
+  eventsSemantic: SmartObjectManifest;
+  /** Only the contribution that owns knowledge generation may reconcile it. */
+  clearKnowledgeRoute?: boolean;
+  /** Exact foreign producer outputs that this route root must neither clear nor overwrite. */
+  protectedRoutePaths?: ReadonlySet<string>;
+  /** Active foreign route roots that cleanup must not traverse through links. */
+  protectedRouteRoots?: ReadonlySet<string>;
+}
+
+/** Coordinator callbacks that run around validated generated-output mutation. */
+export interface SvelteKitGenerationHooks {
+  beforeCleanup?: () => void | Promise<void>;
+}
+
+export async function generateSvelteKitRoutes(
+  projectRoot: string,
+  routeManifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+  semanticManifest: SmartObjectManifest = routeManifest,
+  utilityManifests: SvelteKitUtilityManifests = {
+    sync: routeManifest,
+    changes: routeManifest,
+    events: routeManifest,
+    eventsSemantic: semanticManifest,
+    clearKnowledgeRoute: true,
+  },
+  registrationManifest: SmartObjectManifest = routeManifest,
+  hooks: SvelteKitGenerationHooks = {},
 ): Promise<void> {
   if (!options.enabled) return;
 
   console.log('[smrt] Generating SvelteKit routes...');
 
-  clearGeneratedRouteFiles(join(projectRoot, options.routesDir));
-  clearGeneratedKnowledgeRoute(projectRoot, options);
+  if (options.rejectRouteCollisions) {
+    assertNoCrossObjectRouteCollisions(
+      projectRoot,
+      routeManifest,
+      options,
+      semanticManifest,
+      utilityManifests.protectedRoutePaths,
+    );
+  }
+
+  await hooks.beforeCleanup?.();
+
+  clearGeneratedSvelteKitRouteFiles(
+    join(projectRoot, options.routesDir),
+    utilityManifests.protectedRoutePaths,
+    utilityManifests.protectedRouteRoots,
+  );
+  if (utilityManifests.clearKnowledgeRoute !== false) {
+    clearGeneratedKnowledgeRoute(projectRoot, options);
+  }
 
   // Generate centralized configuration file first (if it doesn't exist)
-  await generateSmrtConfigFile(projectRoot, manifest, options);
+  await generateSmrtConfigFile(projectRoot, registrationManifest, options);
 
   const generatedRoutePaths: string[] = [];
   let generatedCount = 0;
   let skippedCollections = 0;
-  for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
+  for (const [className, objectDef] of orderedManifestObjectEntries(
+    routeManifest,
+  )) {
     // The framework's own abstract base classes (SmrtObject,
     // SmrtCollection, ...) are scaffolding, not resources — never generate
     // a route directory for them, regardless of config (#2642).
     if (isFrameworkBaseClass(objectDef.className, objectDef.packageName)) {
       continue;
     }
-    if (isCollectionManifestClass(manifest, objectDef)) {
+    if (isCollectionManifestClass(semanticManifest, objectDef)) {
       const collectionRoutePaths = await generateCollectionRoutesForObject(
         projectRoot,
         className,
         objectDef,
-        manifest,
+        semanticManifest,
         options,
       );
       generatedRoutePaths.push(...collectionRoutePaths);
@@ -1394,7 +1647,7 @@ export async function generateSvelteKitRoutes(
         projectRoot,
         className,
         objectDef,
-        manifest,
+        semanticManifest,
         options,
       )),
     );
@@ -1406,13 +1659,13 @@ export async function generateSvelteKitRoutes(
   }
 
   // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
-  if (generateSyncApplyRoute(projectRoot, manifest, options)) {
+  if (generateSyncApplyRoute(projectRoot, utilityManifests.sync, options)) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, 'sync', 'apply', '+server.ts'),
     );
   }
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
-  if (generateChangesRoute(projectRoot, manifest, options)) {
+  if (generateChangesRoute(projectRoot, utilityManifests.changes, options)) {
     generatedRoutePaths.push(
       join(projectRoot, options.routesDir, '_changes', '+server.ts'),
     );
@@ -1426,9 +1679,9 @@ export async function generateSvelteKitRoutes(
   if (
     generateEventsRoute(
       projectRoot,
-      manifest,
+      utilityManifests.events,
       options,
-      computeWebManifestHash(manifest),
+      computeWebManifestHash(utilityManifests.eventsSemantic),
     )
   ) {
     generatedRoutePaths.push(
@@ -1446,7 +1699,11 @@ export async function generateSvelteKitRoutes(
 
   // Ignore only the concrete route files generated in this pass. This keeps
   // handwritten handlers below routesDir visible to Git.
-  updateGitignore(projectRoot, generatedRoutePaths);
+  updateGitignore(
+    projectRoot,
+    generatedRoutePaths,
+    join(projectRoot, svelteKitRouteRoot(options.routesDir)),
+  );
 
   const skippedMsg =
     skippedCollections > 0
@@ -1457,28 +1714,73 @@ export async function generateSvelteKitRoutes(
   );
 }
 
-function clearGeneratedRouteFiles(routesRoot: string): void {
+/** Remove only SMRT header-owned SvelteKit handlers below one route root. */
+export function clearGeneratedSvelteKitRouteFiles(
+  routesRoot: string,
+  excludedPaths: ReadonlySet<string> = new Set(),
+  protectedRouteRoots: ReadonlySet<string> = new Set(),
+  visitedRoots: Set<string> = new Set(),
+): void {
+  const canonicalRoot = canonicalSvelteKitPath(routesRoot);
+  if (
+    protectedRouteRoots.has(canonicalRoot) ||
+    visitedRoots.has(canonicalRoot)
+  ) {
+    return;
+  }
   if (!existsSync(routesRoot)) {
     return;
   }
+  visitedRoots.add(canonicalRoot);
 
   for (const entry of readdirSync(routesRoot, { withFileTypes: true })) {
     const entryPath = join(routesRoot, entry.name);
 
-    if (entry.isDirectory()) {
-      clearGeneratedRouteFiles(entryPath);
+    if (isSvelteKitRouteDirectory(entryPath, entry)) {
+      clearGeneratedSvelteKitRouteFiles(
+        entryPath,
+        excludedPaths,
+        protectedRouteRoots,
+        visitedRoots,
+      );
       continue;
     }
 
     if (!entry.isFile() || entry.name !== '+server.ts') {
       continue;
     }
+    if (excludedPaths.has(canonicalSvelteKitPath(entryPath))) continue;
 
     const fileContent = readFileSync(entryPath, 'utf-8');
     if (fileContent.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
       unlinkSync(entryPath);
     }
   }
+}
+
+function isSvelteKitRouteDirectory(
+  entryPath: string,
+  entry: { isDirectory(): boolean; isSymbolicLink?(): boolean },
+): boolean {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink?.()) return false;
+  try {
+    return statSync(entryPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Refresh the managed ignore block after an externally coordinated cleanup. */
+export function reconcileSvelteKitRouteGitignore(
+  projectRoot: string,
+  routesDir: string,
+): void {
+  updateGitignore(
+    projectRoot,
+    [],
+    join(projectRoot, svelteKitRouteRoot(routesDir)),
+  );
 }
 
 function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
@@ -1492,6 +1794,14 @@ function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
     .filter(Boolean);
 
   return join(projectRoot, routeRoot, ...segments);
+}
+
+/** Exact generated knowledge handler path for coordinator-owned cleanup. */
+export function knowledgeRoutePath(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): string {
+  return join(knowledgeRouteDir(projectRoot, options), '+server.ts');
 }
 
 function svelteKitRouteRoot(routesDir: string): string {
@@ -1512,8 +1822,7 @@ function clearGeneratedKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
 ): void {
-  const routeDir = knowledgeRouteDir(projectRoot, options);
-  const routePath = join(routeDir, '+server.ts');
+  const routePath = knowledgeRoutePath(projectRoot, options);
   if (!existsSync(routePath)) return;
 
   const content = readFileSync(routePath, 'utf-8');
@@ -1585,8 +1894,12 @@ async function generateRegistrationFile(
       // Local object (source in project, not node_modules) - use $lib path
       localObjects.push([className, objectDef]);
     } else if (objectDef.packageName) {
-      // External package - group by package name
-      const packageEntry = packageObjects.get(objectDef.packageName) || {
+      // External packages may publish canonical object exports from a subpath
+      // under an aliased export name. Registry identity stays keyed by the
+      // manifest's qualified class name; only the emitted module binding uses
+      // that canonical import contract.
+      const externalImportPath = objectDef.importPath || objectDef.packageName;
+      const packageEntry = packageObjects.get(externalImportPath) || {
         objects: [],
         hasCollectionImport: false,
       };
@@ -1595,14 +1908,14 @@ async function generateRegistrationFile(
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.objects.push({
-          simpleName: extractSimpleClassName(className),
+          simpleName: objectDef.exportName || extractSimpleClassName(className),
           bindingName:
             registrationBindings.get(className) ||
             extractSimpleClassName(className),
         });
       }
 
-      packageObjects.set(objectDef.packageName, packageEntry);
+      packageObjects.set(externalImportPath, packageEntry);
     } else {
       // No package name and not local - treat as local fallback
       localObjects.push([className, objectDef]);
@@ -1694,13 +2007,23 @@ async function generateRegistrationFile(
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
     (dependency) => dependency !== '@happyvertical/smrt-core',
   );
+  const consumerRegistrationPaths =
+    options.consumerRegistrationPaths ??
+    (externalRuntimeDependencies.length > 0
+      ? [join(projectRoot, '.smrt', 'register.js')]
+      : []);
   let consumerRegistrationImport = '';
-  if (externalRuntimeDependencies.length > 0) {
-    const consumerRegistrationPath = relative(
-      configDir,
-      join(projectRoot, '.smrt', 'register.js'),
-    ).replace(/\\/g, '/');
-    consumerRegistrationImport = `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
+  if (consumerRegistrationPaths.length > 0) {
+    consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
+      .sort()
+      .map((registerPath) => {
+        const consumerRegistrationPath = relative(
+          configDir,
+          registerPath,
+        ).replace(/\\/g, '/');
+        return `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
+      })
+      .join('\n');
   }
   /**
    * Strip machine specifics from an object definition before it is embedded in
@@ -2044,7 +2367,7 @@ async function generateRoutesForObject(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest,
+  semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<string[]> {
   const collectionName = objectDef.collection;
@@ -2067,7 +2390,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
-      manifest,
+      semanticManifest,
       includedActions,
       options,
       routeDir,
@@ -2087,7 +2410,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
-      manifest,
+      semanticManifest,
       includedActions,
       options,
       join(routeDir, '[id]'),
@@ -2104,7 +2427,7 @@ async function generateRoutesForObject(
   // and the knowledge artifact say one exists (#2686).
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
-    manifest,
+    semanticManifest,
     false,
   );
   warnUnhostedActions(className, rejected);
@@ -2153,7 +2476,7 @@ async function generateRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
-      manifest,
+      semanticManifest,
       options,
     );
     generatedRoutePaths.push(
@@ -2168,7 +2491,7 @@ async function generateCollectionRoutesForObject(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest,
+  semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<string[]> {
   const generatedRoutePaths: string[] = [];
@@ -2182,13 +2505,16 @@ async function generateCollectionRoutesForObject(
   const lookupClassName = findItemClassRegistryKey(
     className,
     objectDef,
-    manifest,
+    semanticManifest,
   );
-  const lookupObjectDef = findObjectDefByRegistryKey(manifest, lookupClassName);
+  const lookupObjectDef = findObjectDefByRegistryKey(
+    semanticManifest,
+    lookupClassName,
+  );
 
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
-    manifest,
+    semanticManifest,
     true,
   );
   warnUnhostedActions(className, rejected);
@@ -2239,7 +2565,7 @@ async function generateCollectionRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
-      manifest,
+      semanticManifest,
       options,
     );
     generatedRoutePaths.push(
@@ -2703,7 +3029,7 @@ function generateCollectionRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest,
+  semanticManifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -2725,14 +3051,22 @@ function generateCollectionRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const listUsesSerializer = !!serializers.listItemSerializerName;
-  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const readPermissionFields = collectReadPermissionFields(
+    objectDef,
+    semanticManifest,
+  );
   const listUsesPermissionScopedBody = readPermissionFields.length > 0;
   const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag so
   // a shape-only deploy (no table write) busts every read validator. Deterministic
   // for a given manifest — same value the generated virt-web module exports and
   // the client persistence namespace keys on.
-  const webManifestHash = computeWebManifestHash(manifest);
+  const webManifestHash = computeWebManifestHash(semanticManifest);
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2740,11 +3074,11 @@ function generateCollectionRouteTemplate(
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
-}import { getCollection } from '$lib/server/smrt';
+}import { getCollection } from '${configImport}';
 ${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -2888,7 +3222,7 @@ function generateItemRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest,
+  semanticManifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -2912,21 +3246,29 @@ function generateItemRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const getUsesSerializer = !!serializers.itemSerializerName;
-  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const readPermissionFields = collectReadPermissionFields(
+    objectDef,
+    semanticManifest,
+  );
   const getUsesPermissionScopedBody = readPermissionFields.length > 0;
   const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
   // same value as the list route and the generated virt-web module (see above).
-  const webManifestHash = computeWebManifestHash(manifest);
+  const webManifestHash = computeWebManifestHash(semanticManifest);
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
+${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '${configImport}';
 ${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3035,7 +3377,7 @@ function generateActionRouteTemplate(
   routeDir: string,
   routeSpecs: GeneratedActionRouteSpec[],
   objectDef: SmartObjectDefinition,
-  manifest: SmartObjectManifest,
+  semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): string {
   if (routeSpecs.length === 0) {
@@ -3044,6 +3386,7 @@ function generateActionRouteTemplate(
 
   const [firstSpec] = routeSpecs;
   const { lookupClassName, routeConfig, hostType } = firstSpec;
+  assertCompatibleCustomActionRouteSpecs(routeSpecs);
   const lookupModelType = resolveObjectTypeReference(
     projectRoot,
     lookupClassName,
@@ -3062,20 +3405,6 @@ function generateActionRouteTemplate(
     lookupModelType.importStatement,
     hostModelType.importStatement,
   ]);
-
-  const hasMixedHosts = routeSpecs.some(
-    (spec) =>
-      spec.hostType !== hostType ||
-      spec.lookupClassName !== lookupClassName ||
-      spec.routeConfig.scope !== routeConfig.scope,
-  );
-
-  if (hasMixedHosts) {
-    throw new Error(
-      `Cannot generate mixed custom route handlers for ${lookupClassName}. ` +
-        'All handlers sharing a route path must target the same host type and scope.',
-    );
-  }
 
   // Import only the decoders a handler in this file actually calls -- an
   // unconditional import would leave unused symbols in every generated action
@@ -3099,12 +3428,20 @@ function generateActionRouteTemplate(
     'normalizeTypedHttpError',
     ...[...decoderImports].sort(),
   ].join(', ');
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
     `import { ${coreImports} } from '@happyvertical/smrt-core';`,
     hostType === 'collection' || routeConfig.scope !== 'collection'
-      ? "import { getCollection } from '$lib/server/smrt';"
-      : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+      ? `import { getCollection } from '${configImport}';`
+      : [
+          `import '${configImport}';`,
+          "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        ].join('\n'),
     typeImports,
     "import type { RequestHandler } from './$types';",
   ]
@@ -3143,7 +3480,7 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef, manifest)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -3461,6 +3798,7 @@ function rolesFrom(value: unknown): string[] {
 function updateGitignore(
   projectRoot: string,
   generatedRoutePaths: readonly string[],
+  routeRoot: string,
 ): void {
   const gitignorePath = join(projectRoot, '.gitignore');
 
@@ -3472,8 +3810,8 @@ function updateGitignore(
 
   const generatedPaths = [
     ...new Set(
-      generatedRoutePaths.map((path) =>
-        gitignorePatternForPath(relative(projectRoot, path)),
+      [...generatedRoutePaths, ...findGeneratedRouteFiles(routeRoot)].map(
+        (path) => gitignorePatternForPath(relative(projectRoot, path)),
       ),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -3486,6 +3824,24 @@ function updateGitignore(
     writeFileSync(gitignorePath, updatedContent, 'utf-8');
     console.log('[smrt] Updated .gitignore with generated route paths');
   }
+}
+
+function findGeneratedRouteFiles(routeRoot: string): string[] {
+  if (!existsSync(routeRoot)) return [];
+  const files: string[] = [];
+  for (const entry of readdirSync(routeRoot, { withFileTypes: true })) {
+    const path = join(routeRoot, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...findGeneratedRouteFiles(path));
+    } else if (
+      entry.isFile() &&
+      entry.name === '+server.ts' &&
+      readFileSync(path, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
+    ) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 function gitignorePatternForPath(path: string): string {

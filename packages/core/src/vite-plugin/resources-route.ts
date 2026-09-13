@@ -80,11 +80,12 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
@@ -104,6 +105,46 @@ export function consumerHasSmrtUsers(projectRoot: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Whether this invocation will own the `_resources` output file. */
+export function willGenerateResourcesRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  if (
+    options.resourcesRoute?.enabled === false ||
+    !consumerHasSmrtUsers(projectRoot)
+  ) {
+    return false;
+  }
+  const routeDir = join(projectRoot, options.routesDir, '_resources');
+  for (const name of ['+server.ts', '+server.js']) {
+    const file = join(routeDir, name);
+    if (!existsSync(file)) continue;
+    if (!readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Whether `_resources` is occupied by its generated utility or a preserved
+ * handwritten SvelteKit server module. This is used only by route collision
+ * preflight: the emitter remains file-aware and never overwrites handwriting. */
+export function reservesResourcesRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  if (willGenerateResourcesRoute(projectRoot, options)) return true;
+  const routeDir = join(projectRoot, options.routesDir, '_resources');
+  return ['+server.ts', '+server.js'].some((name) => {
+    const file = join(routeDir, name);
+    return (
+      existsSync(file) &&
+      !readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
+    );
+  });
 }
 
 /**
@@ -155,12 +196,22 @@ export function generateResourcesRoute(
   if (!existsSync(routeDir)) {
     mkdirSync(routeDir, { recursive: true });
   }
-  writeFileSync(filePath, generateResourcesRouteTemplate(options), 'utf-8');
+  writeFileSync(
+    filePath,
+    generateResourcesRouteTemplate(
+      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+      options,
+    ),
+    'utf-8',
+  );
   console.log(`[smrt] Generated: ${filePath}`);
   return true;
 }
 
-function generateResourcesRouteTemplate(options: SvelteKitOptions): string {
+function generateResourcesRouteTemplate(
+  configImport: string,
+  options: SvelteKitOptions,
+): string {
   const kebabRoutesOption = options.kebabRoutes ? '\n  kebabRoutes: true,' : '';
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
@@ -175,12 +226,12 @@ function generateResourcesRouteTemplate(options: SvelteKitOptions): string {
 import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';
 // Side effect: registers @smrt() classes in ObjectRegistry before the
 // handler walks it (mirrors the generated CRUD/changes/events routes'
-// $lib/server/smrt import).
-import '$lib/server/smrt';
+// configured SMRT config import).
+import '${configImport}';
 
 export const GET = createResourceListHandler({
   ensureRegistry: async () => {
-    await import('$lib/server/smrt');
+    await import('${configImport}');
   },${kebabRoutesOption}
 });
 `;

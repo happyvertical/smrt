@@ -31,6 +31,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
@@ -103,6 +104,7 @@ export function generateChangesRoute(
   const content = generateChangesRouteTemplate(
     anchorClassName,
     manifestHasTenantScopedObject(manifest),
+    resolveSvelteKitConfigImport(projectRoot, routeDir, options),
   );
 
   if (!existsSync(routeDir)) {
@@ -117,6 +119,7 @@ export function generateChangesRoute(
 function generateChangesRouteTemplate(
   anchorClassName: string,
   tenantScoped: boolean,
+  configImport: string,
 ): string {
   const tenantHelper = tenantScoped
     ? `
@@ -151,7 +154,7 @@ function establishTenantContext(locals: unknown): void {
 
 import { error, json } from '@sveltejs/kit';
 import { getTenantScopedChangesSince } from '@happyvertical/smrt-core';
-import { getCollection } from '$lib/server/smrt';
+import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
 
 // Fail-closed authorization (#1540): the change feed spans every table, so

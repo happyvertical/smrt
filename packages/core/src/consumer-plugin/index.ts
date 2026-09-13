@@ -6,7 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
-import type { Plugin } from 'vite';
+import type { ConfigEnv, Plugin } from 'vite';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -14,11 +14,35 @@ import {
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { generateDeclarations } from '../prebuild/index.js';
-import type { SmartObjectManifest } from '../scanner/types.js';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
-import { generateWebModule } from '../vite-plugin/web-collections.js';
+import {
+  clearGeneratedSvelteKitRouteFiles,
+  reconcileSvelteKitRouteGitignore,
+  type SvelteKitOptions,
+} from '../vite-plugin/sveltekit-generator.js';
+import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
+import {
+  activeProducerKnowledgeRoutePaths,
+  activeSvelteKitRouteParticipants,
+  assertNoSvelteKitRouteRootSymlinkConflict,
+  assertSvelteKitRouteCoordinationComplete,
+  contributeSvelteKitRoutes,
+  expectedSvelteKitRouteOwners,
+  markSvelteKitRouteParticipant,
+  producerKnowledgeRoutePaths,
+  revokeSvelteKitRoutes,
+} from '../vite-plugin/sveltekit-route-coordinator.js';
+import {
+  generateWebModule,
+  isCollectionManifestClass,
+  resolveCollectionItemObject,
+} from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
@@ -65,6 +89,7 @@ interface ConsumerManifest {
   timestamp: number;
   packageName?: string;
   packageVersion?: string;
+  smrtDependencies?: string[];
   objects: Record<string, ConsumerObjectDefinition>;
 }
 
@@ -81,6 +106,27 @@ interface ConsumerPackageJson {
   [key: string]: unknown;
 }
 
+/**
+ * SvelteKit route-hosting options for dependency models. Unlike `packages`,
+ * `objects` is an HTTP exposure boundary: every entry must be an exact,
+ * provider-qualified manifest key (for example, `@acme/widgets:Widget`).
+ */
+export interface SmrtConsumerSvelteKitOptions
+  extends Partial<
+    Pick<
+      SvelteKitOptions,
+      | 'routesDir'
+      | 'configPath'
+      | 'configFileName'
+      | 'kebabRoutes'
+      | 'changesRoute'
+      | 'eventsRoute'
+      | 'resourcesRoute'
+    >
+  > {
+  objects: readonly string[];
+}
+
 export interface SmrtConsumerOptions {
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
   packages?: string[];
@@ -88,7 +134,7 @@ export interface SmrtConsumerOptions {
   generateTypes?: boolean;
   /** Output directory for generated types */
   typesDir?: string;
-  /** Project root path */
+  /** Project root path (defaults to the current working directory) */
   projectRoot?: string;
   /**
    * Reuse an immutable, verified aggregated manifest instead of discovering
@@ -96,11 +142,17 @@ export interface SmrtConsumerOptions {
    * types still consume the verified manifest.
    */
   generationSnapshot?: SmrtGenerationSnapshotOptions;
-  /** SvelteKit integration mode */
-  svelteKit?: boolean;
+  /**
+   * Consumer SvelteKit integration. `true` retains the historical compatibility
+   * mode and does not generate dependency routes. Route hosting requires an
+   * explicit, provider-qualified object allowlist.
+   */
+  svelteKit?: boolean | SmrtConsumerSvelteKitOptions;
   /**
    * Apply kebab-case to generated custom-method URL segments. This must match
-   * the producer plugin's `svelteKit.kebabRoutes` setting.
+   * the producer plugin's `svelteKit.kebabRoutes` setting. When explicit
+   * consumer SvelteKit hosting is configured, its `kebabRoutes` value takes
+   * precedence, including an explicit `false`.
    */
   kebabRoutes?: boolean;
   /** Use static types only (for federation builds) */
@@ -125,6 +177,334 @@ const VIRTUAL_MODULES = {
   '@smrt/web': 'smrt-consumer:web',
 };
 
+const CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION = 1;
+const CONSUMER_SVELTEKIT_ROUTES_ARTIFACT = 'consumer-sveltekit-routes.json';
+
+interface ConsumerSvelteKitRoutesArtifact {
+  version: number;
+  routesDir: string[];
+}
+
+function consumerSvelteKitRoutesArtifactPath(projectRoot: string): string {
+  return path.join(projectRoot, '.smrt', CONSUMER_SVELTEKIT_ROUTES_ARTIFACT);
+}
+
+/** Persist only project-relative consumer route roots, never an output file list. */
+function canonicalConsumerRouteRoot(
+  projectRoot: string,
+  routesDir: string,
+): string {
+  const root = path.resolve(projectRoot);
+  const relative = path.relative(root, path.resolve(root, routesDir));
+  if (
+    !relative ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error(
+      `[smrt:consumer] svelteKit.routesDir must be a project-relative subdirectory (received ${JSON.stringify(routesDir)})`,
+    );
+  }
+  return relative.split(path.sep).join('/');
+}
+
+function loadConsumerSvelteKitRouteRoots(projectRoot: string): string[] {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  if (!fs.existsSync(artifactPath)) return [];
+  let parsed: ConsumerSvelteKitRoutesArtifact;
+  try {
+    parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+  } catch {
+    throw new Error(
+      `[smrt:consumer] Cannot read ${CONSUMER_SVELTEKIT_ROUTES_ARTIFACT}; refusing to leave hosted routes unreconciled`,
+    );
+  }
+  if (
+    parsed?.version !== CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION ||
+    !Array.isArray(parsed.routesDir) ||
+    parsed.routesDir.some((routesDir) => typeof routesDir !== 'string')
+  ) {
+    throw new Error(
+      `[smrt:consumer] Invalid ${CONSUMER_SVELTEKIT_ROUTES_ARTIFACT}; refusing to leave hosted routes unreconciled`,
+    );
+  }
+  return [...new Set(parsed.routesDir)].map((routesDir) =>
+    canonicalConsumerRouteRoot(projectRoot, routesDir),
+  );
+}
+
+function publishConsumerSvelteKitRouteRoots(
+  projectRoot: string,
+  routesDir: string[],
+): void {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  publishArtifactFiles([
+    {
+      path: artifactPath,
+      content: JSON.stringify(
+        {
+          version: CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION,
+          routesDir: [...new Set(routesDir)].sort(),
+        } satisfies ConsumerSvelteKitRoutesArtifact,
+        null,
+        2,
+      ),
+    },
+  ]);
+}
+
+function removeConsumerSvelteKitRouteRoots(projectRoot: string): void {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  if (fs.existsSync(artifactPath)) fs.unlinkSync(artifactPath);
+}
+
+/**
+ * A hosting-to-hosting move can replace one configured root with another in a
+ * fresh lifecycle. Validate every durable former root before the new target
+ * journals or clears anything, otherwise a rejected move could alter the
+ * prior generated surface before reconciliation notices the conflict.
+ */
+async function assertConsumerSvelteKitFormerRouteRootsAreSafe(
+  userConfig: unknown,
+  projectRoot: string,
+  routesDir: readonly string[],
+  env?: ConfigEnv,
+): Promise<void> {
+  if (routesDir.length === 0) return;
+  const activeParticipants = await activeSvelteKitRouteParticipants(
+    userConfig,
+    projectRoot,
+    env,
+  );
+  const activeRoots = activeParticipants.map(
+    (participant) => participant.routesDir,
+  );
+  for (const priorRoutesDir of routesDir) {
+    assertNoSvelteKitRouteRootSymlinkConflict(
+      canonicalSvelteKitPath(path.resolve(projectRoot, priorRoutesDir)),
+      activeRoots,
+    );
+  }
+}
+
+async function reconcileConsumerSvelteKitRouteRoots(
+  lifecycle: object,
+  userConfig: unknown,
+  projectRoot: string,
+  routesDir: string[],
+  afterReconciled: () => void,
+  env?: ConfigEnv,
+): Promise<void> {
+  const remaining = new Set(routesDir);
+  const reconcileOne = (routesDir: string) => {
+    remaining.delete(routesDir);
+    if (remaining.size === 0) afterReconciled();
+  };
+
+  if (remaining.size === 0) {
+    afterReconciled();
+    return;
+  }
+
+  for (const routesDir of [...remaining]) {
+    const routeRoot = canonicalSvelteKitPath(
+      path.resolve(projectRoot, routesDir),
+    );
+    const activeParticipants = await activeSvelteKitRouteParticipants(
+      userConfig,
+      projectRoot,
+      env,
+    );
+    // The durable consumer inventory names roots, not individual handlers.
+    // Check before every reconciliation branch, including an active parent
+    // consumer that would otherwise compact a nested former root without a
+    // sweep. A child symlink into a foreign active root makes that ownership
+    // ambiguous, so retaining the inventory makes retry safe.
+    assertNoSvelteKitRouteRootSymlinkConflict(
+      routeRoot,
+      activeParticipants.map((participant) => participant.routesDir),
+    );
+    const containingConsumer = activeParticipants.find(
+      (participant) =>
+        participant.owner === 'consumer' &&
+        (routeRoot === participant.routesDir ||
+          routeRoot.startsWith(`${participant.routesDir}${path.sep}`)),
+    );
+    // A current parent consumer root has already swept and regenerated this
+    // former child root. Sweeping it again would remove the newly selected
+    // handler before SvelteKit inventories it.
+    if (containingConsumer) {
+      reconcileOne(routesDir);
+      continue;
+    }
+    const containingProducer = activeParticipants.find(
+      (participant) =>
+        participant.owner === 'producer' &&
+        (routeRoot === participant.routesDir ||
+          routeRoot.startsWith(`${participant.routesDir}${path.sep}`)),
+    );
+    if (containingProducer) {
+      await revokeSvelteKitRoutes(
+        lifecycle,
+        await expectedSvelteKitRouteOwners(
+          userConfig,
+          containingProducer.projectRoot,
+          containingProducer.routesDir,
+          env,
+        ),
+        containingProducer.projectRoot,
+        containingProducer.routesDir,
+        () => reconcileOne(routesDir),
+      );
+      continue;
+    }
+    const owners = await expectedSvelteKitRouteOwners(
+      userConfig,
+      projectRoot,
+      routesDir,
+      env,
+    );
+    if (owners.includes('producer')) {
+      await revokeSvelteKitRoutes(
+        lifecycle,
+        owners,
+        projectRoot,
+        routesDir,
+        () => reconcileOne(routesDir),
+      );
+      continue;
+    }
+    clearGeneratedSvelteKitRouteFiles(
+      routeRoot,
+      producerKnowledgeRoutePaths(lifecycle),
+      new Set(
+        activeParticipants
+          .map((participant) => participant.routesDir)
+          .filter((activeRoot) => activeRoot !== routeRoot),
+      ),
+    );
+    reconcileSvelteKitRouteGitignore(projectRoot, routesDir);
+    reconcileOne(routesDir);
+  }
+}
+
+function consumerRouteOptions(
+  value: SmrtConsumerOptions['svelteKit'],
+): SmrtConsumerSvelteKitOptions | undefined {
+  if (!value || value === true) return undefined;
+  if (!Array.isArray(value.objects) || value.objects.length === 0) {
+    throw new Error(
+      '[smrt:consumer] svelteKit.objects must list at least one provider-qualified object reference',
+    );
+  }
+  for (const objectRef of value.objects) {
+    if (typeof objectRef !== 'string' || !objectRef.includes(':')) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects entries must be provider-qualified (received ${JSON.stringify(objectRef)})`,
+      );
+    }
+  }
+  return value;
+}
+
+function consumerUtilityOption<T extends { enabled?: boolean }>(
+  value: T | undefined,
+): T | { enabled: false } {
+  return value?.enabled === true ? value : { enabled: false };
+}
+
+function consumerObjectRef(
+  manifestKey: string,
+  objectDef: ConsumerObjectDefinition,
+): string | undefined {
+  if (manifestKey.includes(':')) return manifestKey;
+  if (objectDef.qualifiedName?.includes(':')) return objectDef.qualifiedName;
+  if (objectDef.packageName && objectDef.className) {
+    return `${objectDef.packageName}:${objectDef.className}`;
+  }
+  return undefined;
+}
+
+/**
+ * Select exactly the dependency objects that a consumer explicitly hosts.
+ * Validation completes before the generator clears its managed files, so an
+ * invalid deployment cannot erase a previously generated route surface.
+ */
+function selectConsumerRouteManifest(
+  manifest: ConsumerManifest,
+  options: SmrtConsumerSvelteKitOptions,
+): SmartObjectManifest {
+  const entriesByRef = new Map<string, [string, ConsumerObjectDefinition]>();
+  for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
+    const objectRef = consumerObjectRef(manifestKey, objectDef);
+    if (objectRef) entriesByRef.set(objectRef, [manifestKey, objectDef]);
+  }
+
+  const selected = new Set<string>();
+  const objects: Record<string, ConsumerObjectDefinition> = {};
+  for (const objectRef of options.objects) {
+    const entry = entriesByRef.get(objectRef);
+    if (!entry) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects references unknown dependency object ${JSON.stringify(objectRef)}`,
+      );
+    }
+    if (selected.has(objectRef)) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects contains duplicate object ${JSON.stringify(objectRef)}`,
+      );
+    }
+    selected.add(objectRef);
+    const [, objectDef] = entry;
+    objects[objectRef] = { ...objectDef, qualifiedName: objectRef };
+  }
+
+  const sourceManifest = manifest as unknown as SmartObjectManifest;
+  // Use the generator's canonical ancestry resolver so a collection subclass
+  // inherits the selected item's identity through any number of ancestors.
+  for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
+    const candidate = objectDef as unknown as SmartObjectDefinition;
+    if (!isCollectionManifestClass(sourceManifest, candidate)) continue;
+    const item = resolveCollectionItemObject(sourceManifest, candidate);
+    const itemEntry = item
+      ? Object.entries(manifest.objects).find(
+          ([, value]) => (value as unknown) === item,
+        )
+      : undefined;
+    const itemRef = itemEntry
+      ? consumerObjectRef(itemEntry[0], itemEntry[1])
+      : undefined;
+    if (!itemRef || !selected.has(itemRef)) continue;
+    const collectionRef = consumerObjectRef(manifestKey, objectDef);
+    if (collectionRef) {
+      objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
+    }
+  }
+
+  return {
+    ...manifest,
+    // The generated route config imports this full registration entry point so
+    // SSR retains every consumer provider, while only `objects` reach routing.
+    // `smrtDependencies` is optional in verified snapshots, so derive this
+    // generator signal from the immutable full manifest rather than treating
+    // absent metadata as an empty provider inventory.
+    smrtDependencies: [
+      ...new Set(
+        Object.values(manifest.objects)
+          .map((objectDef) => objectDef.packageName)
+          .filter(
+            (packageName): packageName is string =>
+              typeof packageName === 'string' &&
+              packageName !== manifest.packageName,
+          ),
+      ),
+    ].sort(),
+    objects,
+  } as unknown as SmartObjectManifest;
+}
+
 /**
  * Consumer plugin for projects that use SMRT packages
  */
@@ -138,11 +518,17 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     disableScanning = false,
     kebabRoutes = false,
   } = options;
+  const consumerSvelteKit = consumerRouteOptions(options.svelteKit);
+  // Hosted routes, the generated client, and web tool definitions must expose
+  // the same custom-action URLs. Nested consumer SvelteKit hosting owns this
+  // policy when present, including an explicit false override.
+  const effectiveKebabRoutes = consumerSvelteKit?.kebabRoutes ?? kebabRoutes;
 
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
   let producerApi: SmrtPluginApi | undefined;
+  let routeLifecycleConfig: object | undefined;
 
   function loadGenerationSnapshot(): ConsumerManifest {
     if (!generationSnapshot) {
@@ -155,23 +541,139 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     );
   }
 
-  return {
+  const plugin: Plugin = {
     name: 'smrt-consumer',
 
-    config() {
-      return {
-        build: {
-          rollupOptions: {
-            // Runtime registration evaluates provider entry points so their
-            // exact constructors can be registered. Leave optional native
-            // provider binaries to Node instead of parsing them as JavaScript.
-            external: [/\.node$/],
+    // SvelteKit inventories routes in its config hook. Run before it so a
+    // clean consumer build sees the explicit dependency routes on its first
+    // invocation, even when sveltekit() appears first in vite.config.
+    enforce: 'pre',
+
+    config: {
+      order: 'pre',
+      async handler(userConfig, env) {
+        const routeLifecycle = env ?? userConfig;
+        routeLifecycleConfig = routeLifecycle;
+        const previousConsumerRouteRoots =
+          loadConsumerSvelteKitRouteRoots(projectRoot);
+        if (consumerSvelteKit) {
+          await assertConsumerSvelteKitFormerRouteRootsAreSafe(
+            userConfig,
+            projectRoot,
+            previousConsumerRouteRoots,
+            env,
+          );
+          const routePackages =
+            packages.length === 0 && !disableScanning
+              ? await discoverSmrtPackages(projectRoot)
+              : packages;
+          const routeManifest = generationSnapshot
+            ? loadGenerationSnapshot()
+            : await aggregateTypeManifests(routePackages, projectRoot);
+          const hostedManifest = selectConsumerRouteManifest(
+            routeManifest,
+            consumerSvelteKit,
+          );
+          const routesDir = canonicalConsumerRouteRoot(
+            projectRoot,
+            consumerSvelteKit.routesDir ?? 'src/routes/api',
+          );
+          const reservedRoutePaths = await activeProducerKnowledgeRoutePaths(
+            userConfig,
+            projectRoot,
+            env,
+          );
+          const routeOptions = {
+            enabled: true,
+            routesDir,
+            objectsDir: 'src/lib/objects',
+            configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
+            configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
+            kebabRoutes: effectiveKebabRoutes,
+            // These span a model set rather than one selected object, so new
+            // consumer hosting starts fail-closed. Callers can opt in with the
+            // generator's established option shapes.
+            changesRoute: consumerUtilityOption(consumerSvelteKit.changesRoute),
+            eventsRoute: consumerUtilityOption(consumerSvelteKit.eventsRoute),
+            resourcesRoute: consumerUtilityOption(
+              consumerSvelteKit.resourcesRoute,
+            ),
+            rejectRouteCollisions: true,
+          };
+          let ownershipJournaled = false;
+          let reconciliationScheduled = false;
+          await contributeSvelteKitRoutes(
+            routeLifecycle,
+            await expectedSvelteKitRouteOwners(
+              userConfig,
+              projectRoot,
+              routeOptions.routesDir,
+              env,
+            ),
+            projectRoot,
+            {
+              owner: 'consumer',
+              routeManifest: hostedManifest,
+              semanticManifest: routeManifest as unknown as SmartObjectManifest,
+              options: routeOptions,
+              reservedRoutePaths,
+              beforeCleanup: () => {
+                if (ownershipJournaled) return;
+                ownershipJournaled = true;
+                // Preflight has succeeded but no generated output has changed.
+                // Keep both roots until old-root reconciliation commits.
+                publishConsumerSvelteKitRouteRoots(projectRoot, [
+                  ...previousConsumerRouteRoots,
+                  routesDir,
+                ]);
+              },
+              afterGenerate: async () => {
+                if (reconciliationScheduled) return;
+                reconciliationScheduled = true;
+                const priorRoots = previousConsumerRouteRoots.filter(
+                  (previousRoot) => previousRoot !== routesDir,
+                );
+                await reconcileConsumerSvelteKitRouteRoots(
+                  routeLifecycle,
+                  userConfig,
+                  projectRoot,
+                  priorRoots,
+                  () =>
+                    publishConsumerSvelteKitRouteRoots(projectRoot, [
+                      routesDir,
+                    ]),
+                  env,
+                );
+              },
+            },
+          );
+        } else if (previousConsumerRouteRoots.length > 0) {
+          await reconcileConsumerSvelteKitRouteRoots(
+            routeLifecycle,
+            userConfig,
+            projectRoot,
+            previousConsumerRouteRoots,
+            () => removeConsumerSvelteKitRouteRoots(projectRoot),
+            env,
+          );
+        }
+        return {
+          build: {
+            rollupOptions: {
+              // Runtime registration evaluates provider entry points so their
+              // exact constructors can be registered. Leave optional native
+              // provider binaries to Node instead of parsing them as JavaScript.
+              external: [/\.node$/],
+            },
           },
-        },
-      };
+        };
+      },
     },
 
     configResolved(resolvedConfig) {
+      if (consumerSvelteKit && routeLifecycleConfig) {
+        assertSvelteKitRouteCoordinationComplete(routeLifecycleConfig);
+      }
       producerApi = (resolvedConfig.plugins ?? []).find(
         (plugin) => plugin?.name === 'smrt-auto-service',
       )?.api as SmrtPluginApi | undefined;
@@ -283,7 +785,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           return generateFallbackRoutesModule();
 
         case 'smrt-consumer:client':
-          return generateFallbackClientModule(typeManifest, { kebabRoutes });
+          return generateFallbackClientModule(typeManifest, {
+            kebabRoutes: effectiveKebabRoutes,
+          });
 
         case 'smrt-consumer:mcp':
           return generateFallbackMcpModule();
@@ -298,7 +802,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           return generateWebModule(
             typeManifest as unknown as SmartObjectManifest,
             {
-              kebabRoutes,
+              kebabRoutes: effectiveKebabRoutes,
             },
           );
 
@@ -307,6 +811,15 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
     },
   };
+  markSvelteKitRouteParticipant(
+    plugin,
+    'consumer',
+    Boolean(consumerSvelteKit),
+    consumerSvelteKit?.routesDir ?? 'src/routes/api',
+    undefined,
+    () => projectRoot,
+  );
+  return plugin;
 }
 
 /**
@@ -385,6 +898,7 @@ async function aggregateTypeManifests(
   const aggregatedManifest: ConsumerManifest = {
     version: '1.0.0',
     timestamp: MANIFEST_TIMESTAMP,
+    smrtDependencies: [...packages],
     objects: {},
   };
 

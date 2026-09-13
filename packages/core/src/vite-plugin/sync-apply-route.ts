@@ -25,6 +25,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import { isCollectionManifestClass } from './web-collections.js';
 
@@ -175,6 +176,7 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
  */
 export function generateSyncApplyRouteTemplate(
   targets: SyncTargetSpec[],
+  configImport: string,
 ): string {
   const anyTenantScoped = targets.some((target) => target.tenantScoped);
 
@@ -210,7 +212,7 @@ import {
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
 import { json } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
+import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
 ${tenantHelper}
 interface SyncTargetConfig {
@@ -316,7 +318,14 @@ export function generateSyncApplyRoute(
     mkdirSync(routeDir, { recursive: true });
   }
 
-  writeFileSync(routePath, generateSyncApplyRouteTemplate(targets), 'utf-8');
+  writeFileSync(
+    routePath,
+    generateSyncApplyRouteTemplate(
+      targets,
+      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+    ),
+    'utf-8',
+  );
   console.log(`[smrt] Generated: ${routePath}`);
   return true;
 }

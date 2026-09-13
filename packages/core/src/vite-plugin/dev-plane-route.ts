@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /** Whether `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer. */
@@ -30,6 +31,17 @@ export function consumerHasSmrtDevMcp(projectRoot: string): boolean {
   }
 }
 
+/** Whether this invocation will own the `_dev/[...tool]` output file. */
+export function willGenerateDevPlaneRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  return (
+    options.devPlaneRoute?.enabled === true &&
+    consumerHasSmrtDevMcp(projectRoot)
+  );
+}
+
 export function generateDevPlaneRoute(
   projectRoot: string,
   options: SvelteKitOptions,
@@ -37,18 +49,13 @@ export function generateDevPlaneRoute(
   if (options.devPlaneRoute?.enabled !== true) {
     return false;
   }
-  if (!consumerHasSmrtDevMcp(projectRoot)) {
+  if (!willGenerateDevPlaneRoute(projectRoot, options)) {
     console.log(
       '[smrt] Skipping _dev route - @happyvertical/smrt-dev-mcp/dev-plane is ' +
         'not resolvable; install @happyvertical/smrt-dev-mcp as a devDependency',
     );
     return false;
   }
-  const configPath = options.configPath || 'src/lib/server';
-  const configFileName = (options.configFileName || 'smrt.ts').replace(
-    /\.ts$/,
-    '',
-  );
   const routeDir = join(projectRoot, options.routesDir, '_dev', '[...tool]');
   if (!existsSync(routeDir)) {
     mkdirSync(routeDir, { recursive: true });
@@ -57,7 +64,7 @@ export function generateDevPlaneRoute(
   writeFileSync(
     filePath,
     generateDevPlaneRouteTemplate(
-      `$lib/${configPath.replace(/^src\/lib\//, '')}/${configFileName}`,
+      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
     ),
     'utf-8',
   );

@@ -20,7 +20,14 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
+  realpathSync: Object.assign(
+    vi.fn((path: string) => path),
+    {
+      native: vi.fn((path: string) => path),
+    },
+  ),
   readdirSync: vi.fn(),
+  statSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
 
@@ -523,6 +530,25 @@ describe('SvelteKit Route Generator', () => {
         join(projectRoot, 'src/lib/config', 'smrt-config.ts'),
         expect.any(String),
         'utf-8',
+      );
+
+      const generatedRouteImports = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter(
+          (call) =>
+            typeof call[0] === 'string' && call[0].endsWith('+server.ts'),
+        )
+        .map((call) => String(call[1]));
+      expect(generatedRouteImports.length).toBeGreaterThan(0);
+      expect(generatedRouteImports).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            "import { getCollection } from '$lib/config/smrt-config'",
+          ),
+        ]),
+      );
+      expect(generatedRouteImports.join('\n')).not.toContain(
+        "from '$lib/server/smrt'",
       );
     });
 
@@ -1075,6 +1101,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain(
         "import { ObjectRegistry } from '@happyvertical/smrt-core'",
       );
+      expect(content).toContain("import '$lib/server/smrt';");
       expect(content).toContain('export const GET: RequestHandler');
       expect(content).toContain(
         "const optionsMarker = searchParams.get('__smrt_options');",
@@ -3531,5 +3558,97 @@ describe('SvelteKit Route Generator', () => {
         .mock.calls.find((call) => call[0].toString() === resourcesServerPath);
       expect(resourcesWrite).toBeUndefined();
     });
+  });
+});
+
+describe('consumer external import and reserved resource routes (#2852)', () => {
+  const projectRoot = '/test/project-review';
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(readdirSync).mockReturnValue([] as never);
+  });
+
+  it('uses canonical external importPath and exportName for route types and registration', async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    const manifest: SmartObjectManifest = {
+      packageName: '@test/app',
+      objects: {
+        '@acme/widgets:Widget': {
+          className: 'Widget',
+          qualifiedName: '@acme/widgets:Widget',
+          packageName: '@acme/widgets',
+          importPath: '@acme/widgets/objects',
+          exportName: 'PublishedWidget',
+          collection: 'widgets',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: { include: ['get'] } },
+        },
+      },
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+      configPath: 'src/lib/server',
+    });
+
+    const allWrites = vi.mocked(writeFileSync).mock.calls;
+    const itemRoute = allWrites.find((call) =>
+      call[0].toString().endsWith('widgets/[id]/+server.ts'),
+    );
+    const registration = allWrites.find((call) =>
+      call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+    );
+    expect(String(itemRoute?.[1])).toContain(
+      "import type { PublishedWidget as Widget } from '@acme/widgets/objects';",
+    );
+    expect(String(registration?.[1])).toContain(
+      "import { PublishedWidget as Widget } from '@acme/widgets/objects';",
+    );
+  });
+
+  it('rejects a selected _resources collection before cleanup when a handwritten server module is reserved', async () => {
+    const manualRoute = join(
+      projectRoot,
+      'src/routes/api/_resources/+server.ts',
+    );
+    vi.mocked(existsSync).mockImplementation(
+      (path) => path.toString() === manualRoute,
+    );
+    vi.mocked(readFileSync).mockImplementation((path) =>
+      path.toString() === manualRoute
+        ? 'export const GET = () => new Response();'
+        : '',
+    );
+    mockSmrtUsersResolve.mockImplementation(() => '/fake/sveltekit.js');
+    const manifest: SmartObjectManifest = {
+      objects: {
+        Reserved: {
+          className: 'Reserved',
+          collection: '_resources',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: { include: ['list'] } },
+        },
+      },
+    };
+
+    await expect(
+      generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        rejectRouteCollisions: true,
+        resourcesRoute: { enabled: false },
+      }),
+    ).rejects.toThrow('Conflicting SvelteKit route');
+    expect(unlinkSync).not.toHaveBeenCalled();
+    expect(writeFileSync).not.toHaveBeenCalledWith(
+      manualRoute,
+      expect.anything(),
+      'utf-8',
+    );
   });
 });

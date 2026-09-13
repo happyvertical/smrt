@@ -213,6 +213,55 @@ Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
 default output directory is `src/routes/api`; set `svelteKit.routesDir` when
 your application uses a different route root.
 
+A consumer can host selected dependency models with the same generator. This is
+an explicit HTTP boundary that is separate from the broader `packages`
+registration inventory. Name exact provider-qualified object references; a
+simple class name, an unknown object, or an empty list fails the build before
+any generated route is replaced:
+
+```ts
+smrtConsumer({
+  packages: runtimeProviderPackages,
+  svelteKit: {
+    objects: ['@acme/widgets:Widget'],
+    routesDir: 'src/routes/api',
+  },
+});
+```
+
+`projectRoot` selects one artifact root for consumer route generation,
+registration, manifests, and types; it defaults to the current working
+directory. It remains the consumer artifact root when a Vite config declares a
+different `root`; pass `projectRoot` explicitly when consumer artifacts should
+share that Vite root or belong elsewhere.
+
+Only the listed objects are passed to route generation, so another API model in
+the same provider remains absent until it is named. `api: false` and an empty
+`api.include` still suppress handlers, and generated auth, writable-field, and
+tenant safeguards are unchanged. `svelteKit: true` remains a legacy consumer
+integration flag and does not host dependency CRUD routes. Consumer-hosted
+`_changes`, `_events`, and `_resources` routes are disabled unless their
+existing option is explicitly enabled; `sync/apply` is generated when a selected model exposes a mutating API
+action.
+
+When `smrtPlugin()` and `smrtConsumer()` generate routes in one SvelteKit
+application, they may use the same canonical `routesDir` and share one
+generated surface, or use disjoint directories. Nested directories are
+rejected before files are changed because a parent generated-root cleanup would
+otherwise own and remove the child surface.
+Canonical ownership resolves symlink aliases through the nearest existing
+directory, so paths that name the same generated directory share one surface.
+When separate artifact roots resolve to that same route directory, their
+resolved object and config outputs must also agree; incompatible settings fail
+before generated handlers or managed ownership records change.
+
+The consumer keeps a private managed-root inventory under `.smrt` after a
+successful explicit hosting plan is validated. Changing its `routesDir`,
+setting `svelteKit: false`, returning to legacy `svelteKit: true`, or omitting
+the option reconciles only consumer-managed generated handlers before SvelteKit
+inventories routes. Handwritten handlers and current producer-owned routes are
+preserved.
+
 The plugin records only the concrete `+server.ts` files it generated in a
 bounded `.gitignore` block. Handwritten handlers below `routesDir` remain
 visible to Git, including routes that live beside generated resource handlers.
