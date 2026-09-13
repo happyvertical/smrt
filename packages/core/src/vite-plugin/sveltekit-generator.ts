@@ -1322,9 +1322,34 @@ function findItemClassRegistryKey(
   return manifestMatch?.[0] || itemObject.className;
 }
 
-function groupCustomActionRoutes<
-  T extends Pick<GeneratedActionRouteSpec, 'actionName' | 'routeConfig'>,
->(
+type CustomActionRouteGroupSpec = Pick<
+  GeneratedActionRouteSpec,
+  'actionName' | 'hostType' | 'lookupClassName' | 'routeConfig'
+>;
+
+function assertCompatibleCustomActionRouteSpecs(
+  routeSpecs: readonly CustomActionRouteGroupSpec[],
+): void {
+  const [firstSpec] = routeSpecs;
+  if (!firstSpec) return;
+
+  const { hostType, lookupClassName, routeConfig } = firstSpec;
+  const hasMixedHosts = routeSpecs.some(
+    (spec) =>
+      spec.hostType !== hostType ||
+      spec.lookupClassName !== lookupClassName ||
+      spec.routeConfig.scope !== routeConfig.scope,
+  );
+
+  if (hasMixedHosts) {
+    throw new Error(
+      `Cannot generate mixed custom route handlers for ${lookupClassName}. ` +
+        'All handlers sharing a route path must target the same host type and scope.',
+    );
+  }
+}
+
+function groupCustomActionRoutes<T extends CustomActionRouteGroupSpec>(
   actionSpecs: Array<{
     routeDir: string;
     spec: T;
@@ -1347,6 +1372,10 @@ function groupCustomActionRoutes<
 
     existing.push(spec);
     groupedRoutes.set(routeDir, existing);
+  }
+
+  for (const routeSpecs of groupedRoutes.values()) {
+    assertCompatibleCustomActionRouteSpecs(routeSpecs);
   }
 
   return groupedRoutes;
@@ -1388,7 +1417,16 @@ function assertNoCrossObjectRouteCollisions(
         );
         return {
           routeDir: join(routeDir, ...routeConfig.pathSegments),
-          spec: { actionName, routeConfig },
+          spec: {
+            actionName,
+            hostType: 'collection' as const,
+            lookupClassName: findItemClassRegistryKey(
+              className,
+              objectDef,
+              manifest,
+            ),
+            routeConfig,
+          },
         };
       });
       for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
@@ -1424,7 +1462,12 @@ function assertNoCrossObjectRouteCollisions(
             : join(routeDir, '[id]'),
           ...routeConfig.pathSegments,
         ),
-        spec: { actionName, routeConfig },
+        spec: {
+          actionName,
+          hostType: 'item' as const,
+          lookupClassName: className,
+          routeConfig,
+        },
       };
     });
     for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
@@ -3168,6 +3211,7 @@ function generateActionRouteTemplate(
 
   const [firstSpec] = routeSpecs;
   const { lookupClassName, routeConfig, hostType } = firstSpec;
+  assertCompatibleCustomActionRouteSpecs(routeSpecs);
   const lookupModelType = resolveObjectTypeReference(
     projectRoot,
     lookupClassName,
@@ -3186,20 +3230,6 @@ function generateActionRouteTemplate(
     lookupModelType.importStatement,
     hostModelType.importStatement,
   ]);
-
-  const hasMixedHosts = routeSpecs.some(
-    (spec) =>
-      spec.hostType !== hostType ||
-      spec.lookupClassName !== lookupClassName ||
-      spec.routeConfig.scope !== routeConfig.scope,
-  );
-
-  if (hasMixedHosts) {
-    throw new Error(
-      `Cannot generate mixed custom route handlers for ${lookupClassName}. ` +
-        'All handlers sharing a route path must target the same host type and scope.',
-    );
-  }
 
   // Import only the decoders a handler in this file actually calls -- an
   // unconditional import would leave unused symbols in every generated action
