@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -1558,6 +1559,8 @@ export interface SvelteKitUtilityManifests {
   clearKnowledgeRoute?: boolean;
   /** Exact foreign producer outputs that this route root must neither clear nor overwrite. */
   protectedRoutePaths?: ReadonlySet<string>;
+  /** Active foreign route roots that cleanup must not traverse through links. */
+  protectedRouteRoots?: ReadonlySet<string>;
 }
 
 /** Coordinator callbacks that run around validated generated-output mutation. */
@@ -1599,6 +1602,7 @@ export async function generateSvelteKitRoutes(
   clearGeneratedSvelteKitRouteFiles(
     join(projectRoot, options.routesDir),
     utilityManifests.protectedRoutePaths,
+    utilityManifests.protectedRouteRoots,
   );
   if (utilityManifests.clearKnowledgeRoute !== false) {
     clearGeneratedKnowledgeRoute(projectRoot, options);
@@ -1715,20 +1719,29 @@ export function clearGeneratedSvelteKitRouteFiles(
   routesRoot: string,
   excludedPaths: ReadonlySet<string> = new Set(),
   protectedRouteRoots: ReadonlySet<string> = new Set(),
+  visitedRoots: Set<string> = new Set(),
 ): void {
-  if (protectedRouteRoots.has(canonicalSvelteKitPath(routesRoot))) return;
+  const canonicalRoot = canonicalSvelteKitPath(routesRoot);
+  if (
+    protectedRouteRoots.has(canonicalRoot) ||
+    visitedRoots.has(canonicalRoot)
+  ) {
+    return;
+  }
   if (!existsSync(routesRoot)) {
     return;
   }
+  visitedRoots.add(canonicalRoot);
 
   for (const entry of readdirSync(routesRoot, { withFileTypes: true })) {
     const entryPath = join(routesRoot, entry.name);
 
-    if (entry.isDirectory()) {
+    if (isSvelteKitRouteDirectory(entryPath, entry)) {
       clearGeneratedSvelteKitRouteFiles(
         entryPath,
         excludedPaths,
         protectedRouteRoots,
+        visitedRoots,
       );
       continue;
     }
@@ -1742,6 +1755,19 @@ export function clearGeneratedSvelteKitRouteFiles(
     if (fileContent.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
       unlinkSync(entryPath);
     }
+  }
+}
+
+function isSvelteKitRouteDirectory(
+  entryPath: string,
+  entry: { isDirectory(): boolean; isSymbolicLink?(): boolean },
+): boolean {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink?.()) return false;
+  try {
+    return statSync(entryPath).isDirectory();
+  } catch {
+    return false;
   }
 }
 

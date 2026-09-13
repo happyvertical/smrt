@@ -1500,6 +1500,189 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     }
   });
 
+  it('retains sparse snapshot runtime registration in a shared producer route target', async () => {
+    const widgets = JSON.parse(
+      readFileSync(
+        join(projectRoot, 'node_modules/@acme/widgets/dist/manifest.json'),
+        'utf8',
+      ),
+    );
+    const otherWidgets = JSON.parse(
+      readFileSync(
+        join(
+          projectRoot,
+          'node_modules/@acme/other-widgets/dist/manifest.json',
+        ),
+        'utf8',
+      ),
+    );
+    const provenance = 'git-tree:sparse-shared-route-registration';
+    const snapshotContents = serializeSmrtGenerationSnapshot(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'consumer-app',
+        objects: {
+          ...Object.fromEntries(
+            Object.entries(widgets.objects).map(([objectRef, objectDef]) => [
+              objectRef,
+              { ...objectDef, packageName: '@acme/widgets' },
+            ]),
+          ),
+          ...Object.fromEntries(
+            Object.entries(otherWidgets.objects).map(
+              ([objectRef, objectDef]) => [
+                objectRef,
+                { ...objectDef, packageName: '@acme/other-widgets' },
+              ],
+            ),
+          ),
+        },
+      },
+      provenance,
+      { sourceRoot: projectRoot },
+    );
+    const snapshotPath = join(projectRoot, 'shared-snapshot.json');
+    writeFileSync(snapshotPath, snapshotContents);
+    expect(
+      JSON.parse(snapshotContents).manifest.smrtDependencies,
+    ).toBeUndefined();
+
+    const producer = smrtPlugin({
+      projectRoot,
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: 'src/routes/api' },
+    });
+    const consumer: any = smrtConsumer({
+      projectRoot,
+      disableScanning: true,
+      generationSnapshot: {
+        path: snapshotPath,
+        sha256: sha256SmrtGenerationSnapshot(snapshotContents),
+        provenance,
+        sourceRoot: projectRoot,
+      },
+      generateTypes: false,
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const plugins = [consumer, producer];
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    for (const plugin of plugins) {
+      await runConfigHook(plugin, userConfig, lifecycle);
+    }
+    await consumer.buildStart.call(consumer);
+    await runConfigHook(producer, userConfig, lifecycle);
+
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    ObjectRegistry.clear();
+    const oxcRuntimeDir = join(projectRoot, 'node_modules/@oxc-project');
+    mkdirSync(oxcRuntimeDir, { recursive: true });
+    symlinkSync(
+      resolve(import.meta.dirname, '../../node_modules/@oxc-project/runtime'),
+      join(oxcRuntimeDir, 'runtime'),
+    );
+    const server = await createServer({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [producer, consumer],
+      oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    try {
+      await server.ssrLoadModule('/src/lib/server/smrt-register.ts');
+      expect(
+        ObjectRegistry.getClass('@acme/other-widgets:Widget'),
+      ).toBeDefined();
+    } finally {
+      await server.close();
+      ObjectRegistry.clear();
+    }
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('keeps every consumer registration entrypoint when a disjoint producer refreshes shared config after %s', async (_name, order) => {
+    const appRoot = join(projectRoot, 'app');
+    mkdirSync(join(appRoot, 'src/lib/objects'), { recursive: true });
+    mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
+    writePackageJson(appRoot, { name: '@acme/local-app', type: 'module' });
+    writeFileSync(
+      join(appRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+    const producer = smrtPlugin({
+      projectRoot: appRoot,
+      include: ['src/lib/objects/**/*.ts'],
+      generateTypes: false,
+      svelteKit: {
+        enabled: true,
+        routesDir: 'src/routes/local',
+        objectsDir: '../src/lib/objects',
+        configPath: '../src/lib/server',
+      },
+    });
+    const consumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: 'app/src/routes/remote',
+      },
+    });
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : consumer,
+    );
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    for (const plugin of plugins) {
+      await runConfigHook(plugin, userConfig, lifecycle);
+    }
+    await consumer.buildStart.call(consumer);
+
+    // A producer watch refresh owns only its local route target, but the
+    // shared config helper must retain every consumer runtime registration.
+    await runConfigHook(producer, userConfig, lifecycle);
+    const registerPath = join(projectRoot, 'src/lib/server/smrt-register.ts');
+    expect(readFileSync(registerPath, 'utf8')).toContain(
+      "import '../../../.smrt/register.js';",
+    );
+    expect(readFileSync(registerPath, 'utf8')).not.toContain(
+      "import '../../app/.smrt/register.js';",
+    );
+
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    ObjectRegistry.clear();
+    const oxcRuntimeDir = join(projectRoot, 'node_modules/@oxc-project');
+    mkdirSync(oxcRuntimeDir, { recursive: true });
+    symlinkSync(
+      resolve(import.meta.dirname, '../../node_modules/@oxc-project/runtime'),
+      join(oxcRuntimeDir, 'runtime'),
+    );
+    const server = await createServer({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [producer, consumer],
+      oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    try {
+      await server.ssrLoadModule('/src/lib/server/smrt-register.ts');
+      expect(
+        ObjectRegistry.getClass('@acme/local-app:LocalWidget'),
+      ).toBeDefined();
+      expect(ObjectRegistry.getClass('@acme/widgets:Widget')).toBeDefined();
+    } finally {
+      await server.close();
+      ObjectRegistry.clear();
+    }
+  });
+
   it.each([
     ['the consumer package as object owner', 'consumer-app'],
     ['no object package metadata', undefined],
@@ -2144,6 +2327,10 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     const { ObjectRegistry } = await import('@happyvertical/smrt-core');
     ObjectRegistry.clear();
     await consumer.buildStart.call(consumer);
+    await runConfigHook(producer, userConfig, lifecycle);
+    expect(readFileSync(registerPath, 'utf8')).toContain(
+      "import '../../../.smrt/register.js';",
+    );
     const oxcRuntimeDir = join(projectRoot, 'node_modules/@oxc-project');
     mkdirSync(oxcRuntimeDir, { recursive: true });
     symlinkSync(
@@ -2577,6 +2764,154 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
     ).toBe(false);
     expect(existsSync(artifactPath)).toBe(false);
+  });
+
+  it('revokes generated handlers through child route symlinks without following cycles or manual files', async () => {
+    const routesRoot = join(projectRoot, 'src/routes/api');
+    const hostedWidgets = join(projectRoot, 'hosted-widgets');
+    mkdirSync(routesRoot, { recursive: true });
+    mkdirSync(hostedWidgets, { recursive: true });
+    symlinkSync(hostedWidgets, join(routesRoot, 'widgets'), 'dir');
+    symlinkSync(routesRoot, join(hostedWidgets, 'cycle'), 'dir');
+    const manualRoute = join(hostedWidgets, 'manual/+server.ts');
+    mkdirSync(join(hostedWidgets, 'manual'), { recursive: true });
+    writeFileSync(manualRoute, '// handwritten\n');
+
+    await configureRoutes({
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const generatedRoute = join(hostedWidgets, '+server.ts');
+    expect(existsSync(generatedRoute)).toBe(true);
+
+    const disabledConsumer = createConsumerRoutePlugin({ svelteKit: false });
+    await runConfigHook(disabledConsumer, {
+      root: projectRoot,
+      plugins: [disabledConsumer],
+    });
+
+    expect(existsSync(generatedRoute)).toBe(false);
+    expect(readFileSync(manualRoute, 'utf8')).toBe('// handwritten\n');
+    expect(
+      existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+    ).toBe(false);
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('rejects a child route symlink into an active foreign target before writes when %s', async (_name, order) => {
+    mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+    const producerRoot = join(projectRoot, 'src/routes/producer');
+    const consumerRoot = join(projectRoot, 'src/routes/consumer');
+    mkdirSync(producerRoot, { recursive: true });
+    mkdirSync(consumerRoot, { recursive: true });
+    symlinkSync(producerRoot, join(consumerRoot, 'linked'), 'dir');
+    const producerHandler = join(producerRoot, 'localwidgets/+server.ts');
+    mkdirSync(join(producerRoot, 'localwidgets'), { recursive: true });
+    const producerBytes =
+      '// Auto-generated by @smrt/core vite plugin\n// preserve producer\n';
+    writeFileSync(producerHandler, producerBytes);
+    const producer = smrtPlugin({
+      projectRoot,
+      include: ['src/lib/objects/**/*.ts'],
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: 'src/routes/producer' },
+    });
+    const consumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: 'src/routes/consumer',
+      },
+    });
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : consumer,
+    );
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    await expect(
+      runConfigHook(plugins[0], userConfig, lifecycle),
+    ).rejects.toThrow('reaches active');
+
+    expect(readFileSync(producerHandler, 'utf8')).toBe(producerBytes);
+    expect(existsSync(join(consumerRoot, 'widgets/+server.ts'))).toBe(false);
+    expect(
+      existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+    ).toBe(false);
+  });
+
+  it('retains an ambiguous legacy route journal until a child-symlink conflict is repaired', async () => {
+    const legacyRoutesDir = 'src/routes/legacy';
+    const legacyRoot = join(projectRoot, legacyRoutesDir);
+    const producerRoutesDir = 'src/routes/producer';
+    const producerRoot = join(projectRoot, producerRoutesDir);
+    mkdirSync(join(projectRoot, 'src/lib/objects'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'src/lib/objects/LocalWidget.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class LocalWidget extends SmrtObject {}',
+      ].join('\n'),
+    );
+    mkdirSync(legacyRoot, { recursive: true });
+    mkdirSync(producerRoot, { recursive: true });
+    symlinkSync(producerRoot, join(legacyRoot, 'widgets'), 'dir');
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: legacyRoutesDir,
+      },
+    });
+    const legacyStaleRoute = join(legacyRoot, 'stale/+server.ts');
+    mkdirSync(join(legacyRoot, 'stale'), { recursive: true });
+    const staleBytes =
+      '// Auto-generated by @smrt/core vite plugin\n// preserve until retry\n';
+    writeFileSync(legacyStaleRoute, staleBytes);
+
+    const producer = smrtPlugin({
+      projectRoot,
+      include: ['src/lib/objects/**/*.ts'],
+      generateTypes: false,
+      svelteKit: { enabled: true, routesDir: producerRoutesDir },
+    });
+    const disabledConsumer = createConsumerRoutePlugin({ svelteKit: false });
+    const plugins = [producer, disabledConsumer];
+    const userConfig = { root: projectRoot, plugins };
+    const lifecycle = {};
+    await runConfigHook(producer, userConfig, lifecycle);
+    const producerHandler = join(producerRoot, 'localwidgets/+server.ts');
+    const producerBytes = readFileSync(producerHandler, 'utf8');
+
+    await expect(
+      runConfigHook(disabledConsumer, userConfig, lifecycle),
+    ).rejects.toThrow('reaches active');
+    expect(readFileSync(producerHandler, 'utf8')).toBe(producerBytes);
+    expect(readFileSync(legacyStaleRoute, 'utf8')).toBe(staleBytes);
+    const journalPath = join(
+      projectRoot,
+      '.smrt/consumer-sveltekit-routes.json',
+    );
+    expect(JSON.parse(readFileSync(journalPath, 'utf8'))).toMatchObject({
+      routesDir: [legacyRoutesDir],
+    });
+
+    unlinkSync(join(legacyRoot, 'widgets'));
+    const retryConsumer = createConsumerRoutePlugin({ svelteKit: false });
+    await runConfigHook(retryConsumer, {
+      root: projectRoot,
+      plugins: [producer, retryConsumer],
+    });
+    expect(existsSync(legacyStaleRoute)).toBe(false);
+    expect(readFileSync(producerHandler, 'utf8')).toBe(producerBytes);
+    expect(existsSync(journalPath)).toBe(false);
   });
 
   it.each([

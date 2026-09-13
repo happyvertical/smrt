@@ -1,4 +1,5 @@
-import { relative, resolve, sep } from 'node:path';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 import type { ConfigEnv, Plugin } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
@@ -176,6 +177,95 @@ function assertCompatibleSvelteKitRouteTargets(
       }
     }
   }
+  assertNoSymlinkedSvelteKitRouteTargetConflicts(participants);
+}
+
+/**
+ * Route generation and SvelteKit both traverse directory symlinks. A lexical
+ * disjointness check alone therefore cannot let one active route root recurse
+ * into another active root during cleanup.
+ */
+function assertNoSymlinkedSvelteKitRouteTargetConflicts(
+  participants: ActiveSvelteKitRouteParticipant[],
+): void {
+  for (const participant of participants) {
+    const foreignRoots = participants
+      .filter(({ routesDir }) => routesDir !== participant.routesDir)
+      .map(({ routesDir }) => routesDir);
+    if (foreignRoots.length === 0) continue;
+    assertRouteTreeDoesNotReachForeignRoot(
+      participant.routesDir,
+      foreignRoots,
+      new Set(),
+    );
+  }
+}
+
+/**
+ * A durable consumer ownership record can outlive the route configuration
+ * that created it. Reconciliation uses this same guard before it sweeps a
+ * former lexical root, so an old child symlink cannot cross into a current
+ * active route surface and make the journal's ownership ambiguous.
+ */
+export function assertNoSvelteKitRouteRootSymlinkConflict(
+  routeRoot: string,
+  foreignRouteRoots: Iterable<string>,
+): void {
+  const foreignRoots = [...foreignRouteRoots].filter(
+    (candidate) => candidate !== canonicalSvelteKitPath(routeRoot),
+  );
+  if (foreignRoots.length === 0) return;
+  assertRouteTreeDoesNotReachForeignRoot(routeRoot, foreignRoots, new Set());
+}
+
+function assertRouteTreeDoesNotReachForeignRoot(
+  routeRoot: string,
+  foreignRoots: readonly string[],
+  visitedRoots: Set<string>,
+): void {
+  const canonicalRoot = canonicalSvelteKitPath(routeRoot);
+  if (visitedRoots.has(canonicalRoot) || !existsSync(routeRoot)) return;
+  visitedRoots.add(canonicalRoot);
+
+  for (const entry of readdirSync(routeRoot, { withFileTypes: true })) {
+    const entryPath = join(routeRoot, entry.name);
+    if (entry.isDirectory()) {
+      assertRouteTreeDoesNotReachForeignRoot(
+        entryPath,
+        foreignRoots,
+        visitedRoots,
+      );
+      continue;
+    }
+    if (!entry.isSymbolicLink()) continue;
+    try {
+      if (!statSync(entryPath).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const canonicalEntry = canonicalSvelteKitPath(entryPath);
+    const foreignRoot = foreignRoots.find((candidate) =>
+      svelteKitPathsOverlap(canonicalEntry, candidate),
+    );
+    if (foreignRoot) {
+      throw new Error(
+        `[smrt] Incompatible SvelteKit routesDir ownership: ${JSON.stringify(routeRoot)} reaches active ${JSON.stringify(foreignRoot)} through directory symlink ${JSON.stringify(entryPath)}. Use one shared routesDir or disjoint physical directories.`,
+      );
+    }
+    assertRouteTreeDoesNotReachForeignRoot(
+      entryPath,
+      foreignRoots,
+      visitedRoots,
+    );
+  }
+}
+
+function svelteKitPathsOverlap(first: string, second: string): boolean {
+  return (
+    first === second ||
+    first.startsWith(`${second}${sep}`) ||
+    second.startsWith(`${first}${sep}`)
+  );
 }
 
 /**
@@ -325,7 +415,9 @@ async function generateWhenReady(
           configTarget(primary.projectRoot, primary.options),
       ),
   );
-  const registrationPaths = consumerRegistrationPaths(contributions);
+  const registrationPaths = consumerRegistrationPaths(
+    registrationContributions,
+  );
   const options = {
     ...mergeOptions(contributions),
     ...(registrationPaths.length > 0
@@ -349,6 +441,16 @@ async function generateWhenReady(
     utilityManifests(
       contributions,
       protectedProducerKnowledgeRoutePaths(sessions, coordinator),
+      new Set(
+        [...sessions.entries()]
+          .filter(
+            ([target, candidate]) =>
+              target !==
+                routeTarget(primary.projectRoot, primary.options.routesDir) &&
+              candidate.contributions.size > 0,
+          )
+          .map(([target]) => target),
+      ),
     ),
     mergeManifests(
       registrationContributions.map(({ routeManifest }) => routeManifest),
@@ -379,20 +481,21 @@ function effectiveConfigFileName(options: SvelteKitOptions): string {
 function consumerRegistrationPaths(
   contributions: RouteContribution[],
 ): string[] {
-  return contributions
-    .filter(
-      ({ owner, semanticManifest }) =>
-        owner === 'consumer' &&
-        semanticManifest.smrtDependencies?.some(
-          (dependency) => dependency !== '@happyvertical/smrt-core',
+  return [
+    ...new Set(
+      contributions
+        .filter(({ owner }) => owner === 'consumer')
+        .map(({ projectRoot }) =>
+          canonicalSvelteKitPath(resolve(projectRoot, '.smrt/register.js')),
         ),
-    )
-    .map(({ projectRoot }) => resolve(projectRoot, '.smrt/register.js'));
+    ),
+  ].sort();
 }
 
 function utilityManifests(
   contributions: RouteContribution[],
   protectedRoutePaths: ReadonlySet<string>,
+  protectedRouteRoots: ReadonlySet<string>,
 ): SvelteKitUtilityManifests {
   const selected = (key: 'changesRoute' | 'eventsRoute') =>
     contributions.find(({ options }) => options[key]?.enabled !== false) ??
@@ -414,6 +517,7 @@ function utilityManifests(
       ({ options }) => options.knowledge !== undefined,
     ),
     protectedRoutePaths,
+    protectedRouteRoots,
   };
 }
 

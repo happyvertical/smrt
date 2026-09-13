@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -253,4 +254,136 @@ export default defineConfig({
     },
     120_000,
   );
+
+  it('removes a disabled hosted child-symlink handler before SvelteKit inventories routes', async () => {
+    mkdirSync(join(projectRoot, 'src/lib/server'), { recursive: true });
+    mkdirSync(join(projectRoot, 'src/routes'), { recursive: true });
+    const providerDir = join(projectRoot, 'node_modules', '@acme', 'widgets');
+    mkdirSync(join(providerDir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      JSON.stringify({
+        name: '@test/consumer-symlink-revocation',
+        private: true,
+        type: 'module',
+      }),
+    );
+    writeFileSync(
+      join(projectRoot, 'svelte.config.js'),
+      'export default {};\n',
+    );
+    writeFileSync(
+      join(projectRoot, 'tsconfig.json'),
+      JSON.stringify({ extends: './.svelte-kit/tsconfig.json' }),
+    );
+    writeFileSync(
+      join(projectRoot, 'src/app.html'),
+      '<!doctype html><html><head>%sveltekit.head%</head><body><div style="display: contents">%sveltekit.body%</div></body></html>',
+    );
+    writeFileSync(
+      join(projectRoot, 'src/routes/+page.svelte'),
+      '<h1>fixture</h1>\n',
+    );
+    writeFileSync(
+      join(projectRoot, 'src/lib/server/smrt.ts'),
+      'export async function getCollection() { return {}; }\n',
+    );
+    writeFileSync(
+      join(providerDir, 'package.json'),
+      JSON.stringify({
+        name: '@acme/widgets',
+        version: '1.0.0',
+        exports: { '.': './dist/index.js' },
+      }),
+    );
+    writeFileSync(
+      join(providerDir, 'dist/index.js'),
+      'export class Widget {}\n',
+    );
+    writeFileSync(
+      join(providerDir, 'dist/manifest.json'),
+      JSON.stringify({
+        packageName: '@acme/widgets',
+        objects: {
+          '@acme/widgets:Widget': {
+            className: 'Widget',
+            qualifiedName: '@acme/widgets:Widget',
+            collection: 'widgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: { include: ['list', 'get'] } },
+          },
+        },
+      }),
+    );
+    const hostedWidgets = join(projectRoot, 'hosted-widgets');
+    mkdirSync(join(projectRoot, 'src/routes/api'), { recursive: true });
+    mkdirSync(hostedWidgets, { recursive: true });
+    symlinkSync(
+      hostedWidgets,
+      join(projectRoot, 'src/routes/api/widgets'),
+      'dir',
+    );
+
+    const consumerPluginUrl = pathToFileURL(
+      resolve(import.meta.dirname, 'index.ts'),
+    ).href;
+    const coreUrl = pathToFileURL(
+      resolve(import.meta.dirname, '../index.ts'),
+    ).href;
+    const viteCli = resolve(
+      import.meta.dirname,
+      '../../../../node_modules/vite/bin/vite.js',
+    );
+    const writeViteConfig = (svelteKit: string) =>
+      writeFileSync(
+        join(projectRoot, 'vite.config.ts'),
+        `import { sveltekit } from '@sveltejs/kit/vite';
+import { smrtConsumer } from ${JSON.stringify(consumerPluginUrl)};
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  resolve: { alias: { '@happyvertical/smrt-core': ${JSON.stringify(coreUrl)} } },
+  plugins: [
+    sveltekit(),
+    smrtConsumer({
+      projectRoot: ${JSON.stringify(projectRoot)},
+      packages: ['@acme/widgets'],
+      disableScanning: true,
+      generateTypes: false,
+      svelteKit: ${svelteKit},
+    }),
+  ],
+});
+`,
+      );
+
+    writeViteConfig("{ objects: ['@acme/widgets:Widget'] }");
+    await execFileAsync(process.execPath, [viteCli, 'build'], {
+      cwd: projectRoot,
+      maxBuffer: 32 * 1024 * 1024,
+      timeout: 110_000,
+    });
+    expect(existsSync(join(hostedWidgets, '+server.ts'))).toBe(true);
+    expect(
+      readFileSync(
+        join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),
+        'utf8',
+      ),
+    ).toContain('/api/widgets');
+
+    writeViteConfig('false');
+    await execFileAsync(process.execPath, [viteCli, 'build'], {
+      cwd: projectRoot,
+      maxBuffer: 32 * 1024 * 1024,
+      timeout: 110_000,
+    });
+    expect(existsSync(join(hostedWidgets, '+server.ts'))).toBe(false);
+    expect(
+      readFileSync(
+        join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),
+        'utf8',
+      ),
+    ).not.toContain('/api/widgets');
+  }, 120_000);
 });

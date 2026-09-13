@@ -27,6 +27,7 @@ vi.mock('node:fs', () => ({
     },
   ),
   readdirSync: vi.fn(),
+  statSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
 

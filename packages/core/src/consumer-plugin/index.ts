@@ -30,6 +30,7 @@ import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
 import {
   activeProducerKnowledgeRoutePaths,
   activeSvelteKitRouteParticipants,
+  assertNoSvelteKitRouteRootSymlinkConflict,
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
@@ -337,15 +338,21 @@ async function reconcileConsumerSvelteKitRouteRoots(
       );
       continue;
     }
+    // The durable consumer inventory names roots, not individual handlers.
+    // Refuse an old root that reaches an active foreign route through a child
+    // symlink; a sweep could not distinguish historical consumer output from
+    // the current owner, so retaining the inventory makes retry safe.
+    assertNoSvelteKitRouteRootSymlinkConflict(
+      routeRoot,
+      activeParticipants.map((participant) => participant.routesDir),
+    );
     clearGeneratedSvelteKitRouteFiles(
       routeRoot,
       producerKnowledgeRoutePaths(lifecycle),
       new Set(
         activeParticipants
           .map((participant) => participant.routesDir)
-          .filter((activeRoot) =>
-            activeRoot.startsWith(`${routeRoot}${path.sep}`),
-          ),
+          .filter((activeRoot) => activeRoot !== routeRoot),
       ),
     );
     reconcileSvelteKitRouteGitignore(projectRoot, routesDir);
