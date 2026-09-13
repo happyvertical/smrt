@@ -3159,27 +3159,92 @@ describe('SvelteKit Route Generator', () => {
       });
 
       it('motivating case: one non-wire-able method among several wire-able ones passes with the array, fails without it', () => {
-        const withArray = buildManifest({
-          api: { include: ['list', 'discover', 'audit'] },
-          cli: {
-            include: ['list', 'discover', 'audit', 'reconcileGame'],
-            // Only reconcileGame is in-process (e.g. a non-serializable
-            // callback option); list/discover/audit are ordinary wire-able
-            // commands that must stay coupled to the API surface.
-            skipApiCheck: ['reconcileGame'],
-          },
+        // Mirrors the real Ludis.reconcileGame shape: a genuine scanned
+        // public method (unlike a cli.include typo) that legitimately has
+        // no API route because it takes a non-serializable callback option.
+        function buildLudisLikeManifest(
+          cliConfig: unknown,
+        ): SmartObjectManifest {
+          return {
+            objects: {
+              Praeco: {
+                className: 'Praeco',
+                collection: 'praecos',
+                fields: {},
+                methods: {
+                  discover: {
+                    name: 'discover',
+                    parameters: [],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                  audit: {
+                    name: 'audit',
+                    parameters: [],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                  reconcileGame: {
+                    name: 'reconcileGame',
+                    parameters: [
+                      { name: 'options', type: '{ reliabilityOf?: Function }' },
+                    ],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                },
+                decoratorConfig: {
+                  api: { include: ['list', 'discover', 'audit'] },
+                  cli: cliConfig,
+                },
+              },
+            },
+          };
+        }
+
+        const withArray = buildLudisLikeManifest({
+          include: ['list', 'discover', 'audit', 'reconcileGame'],
+          // Only reconcileGame is in-process (e.g. a non-serializable
+          // callback option); list/discover/audit are ordinary wire-able
+          // commands that must stay coupled to the API surface.
+          skipApiCheck: ['reconcileGame'],
         });
         expect(findCliApiCoherenceViolations(withArray)).toEqual([]);
 
-        const withoutArray = buildManifest({
-          api: { include: ['list', 'discover', 'audit'] },
-          cli: {
-            include: ['list', 'discover', 'audit', 'reconcileGame'],
-          },
+        const withoutArray = buildLudisLikeManifest({
+          include: ['list', 'discover', 'audit', 'reconcileGame'],
         });
         expect(findCliApiCoherenceViolations(withoutArray)).toEqual([
           { className: 'Praeco', unreachable: ['reconcileGame'] },
         ]);
+      });
+
+      it('still errors when the SAME typo is duplicated in cli.include and skipApiCheck (PR #2860 review, GitHub Copilot)', () => {
+        // cli.include trusts its own entries verbatim (typos included --
+        // that's `unreachable`'s job to catch, not this check's) so it must
+        // not be used as the "known names" source for skipApiCheck
+        // validity: doing so would let an identical typo in BOTH fields
+        // silently "recognize" and exempt itself, producing neither
+        // `unreachable` nor `invalidSkipApiCheck` -- full invisibility for
+        // exactly the kind of mistake this array form exists to surface.
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list', 'reconclieGame'],
+            skipApiCheck: ['reconclieGame'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: [],
+            invalidSkipApiCheck: ['reconclieGame'],
+          },
+        ]);
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'reconclieGame'/,
+        );
       });
     });
 

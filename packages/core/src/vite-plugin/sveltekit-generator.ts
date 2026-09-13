@@ -2759,12 +2759,17 @@ export interface CliApiCoherenceViolation {
   className: string;
   unreachable: string[];
   /**
-   * Names in `cli.skipApiCheck`'s array form that aren't in this class's
-   * effective CLI command set -- a typo, or a stale entry left behind after
-   * a route was added. Always a build error (smrt#2857): an unrecognized
-   * name grants no exemption at all, which would silently reproduce the
-   * exact class-wide-waiver drift this check exists to prevent. Present
-   * only when non-empty.
+   * Names in `cli.skipApiCheck`'s array form that aren't a CRUD verb or a
+   * scanned public method on this class -- a typo, most likely. Checked
+   * against that real command inventory rather than the (possibly
+   * `cli.include`-typo'd) effective CLI command set on purpose: an explicit
+   * `cli.include` trusts its own entries verbatim (see `resolveCliActionSet`'s
+   * doc comment -- catching an include typo is `unreachable`'s job), so an
+   * identical typo duplicated into `skipApiCheck` must not "recognize"
+   * itself via that untrusted echo (PR #2860 review). Always a build error
+   * (smrt#2857): an unrecognized name grants no exemption at all, which
+   * would silently reproduce the exact class-wide-waiver drift this check
+   * exists to prevent. Present only when non-empty.
    */
   invalidSkipApiCheck?: string[];
 }
@@ -2838,10 +2843,10 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
  * effective set checked. So does a class with `cli: false` (no CLI surface
  * at all).
  *
- * A name in the array form that isn't in the class's effective CLI command
- * set is reported back via `invalidSkipApiCheck` on the violation entry --
- * see `validateCliIncludeAgainstApi`, which always throws for it regardless
- * of that gate's narrower `cli.include` filter.
+ * A name in the array form that isn't a CRUD verb or a scanned public
+ * method on the class is reported back via `invalidSkipApiCheck` on the
+ * violation entry -- see `validateCliIncludeAgainstApi`, which always
+ * throws for it regardless of that gate's narrower `cli.include` filter.
  *
  * Throws nothing else; returns the violation list so callers can choose to
  * throw or warn.
@@ -2867,42 +2872,31 @@ export function findCliApiCoherenceViolations(
     let invalidSkipApiCheck: string[] = [];
     let skipNames: Set<string> = new Set();
     if (Array.isArray(skipApiCheck) && skipApiCheck.length > 0) {
-      // Which names count as "recognized" for the *typo/stale-entry* check
-      // depends on how `effectiveCliCommands` was resolved (smrt#2857
-      // review, F1). With an explicit `cli.include`, that set is the
-      // literal include − exclude (see `resolveCliActionSet`'s own doc
-      // comment) -- an entry not in it is genuinely unrecognized, the same
-      // standard `cli.include` itself is held to.
+      // The *typo/stale-entry* check validates against the class's real
+      // command inventory -- CRUD verbs plus scanned PUBLIC methods --
+      // deliberately NOT against `effectiveCliCommands` for an explicit
+      // `cli.include` (PR #2860 review, GitHub Copilot). `resolveCliActionSet`
+      // trusts an explicit `cli.include` verbatim, typos included (see its
+      // own doc comment: catching that kind of typo is `unreachable`'s job,
+      // not this one's) -- so if `knownNames` were `effectiveCliCommands`
+      // there, a name mistyped identically in BOTH `cli.include` and
+      // `skipApiCheck` (e.g. `include: ['reconclieGame']`,
+      // `skipApiCheck: ['reconclieGame']`) would be "recognized" only
+      // because it's an unverified echo of itself, get silently exempted
+      // via `skipNames` below, and never surface as `unreachable` OR
+      // `invalidSkipApiCheck` -- defeating the very guarantee this array
+      // form exists to provide.
       //
-      // But the bare `cli: true`/`cli: {}` default deliberately resolves a
-      // NARROWER set for this lint's own purposes: `resolveCliActionSet`
-      // excludes CRUD verbs and framework-lifecycle methods there (see that
-      // function's doc comment), even though CRUD verbs and public
-      // lifecycle overrides are part of the class's real CLI surface
-      // (`docs/content/app-cli.md`, `cli-generator.ts`). Checking a
-      // `skipApiCheck` array entry against only the lint's narrowed set
-      // would flag a real command name (e.g. `list`) as an "unrecognized"
-      // typo, which is false and actively misleading. So for that shape,
-      // also recognize CRUD verbs and any scanned PUBLIC method on the
-      // class as known names -- broader than what this lint actually
-      // checks, but accurate about what the CLI generator exposes. A
-      // non-public method is excluded even here (recall finding,
-      // smrt#2857 review): it is not part of the real CLI surface either,
-      // so a skipApiCheck entry naming one is still a genuine mistake, not
-      // a name this lint's narrower resolution merely declines to check.
-      const hasExplicitInclude =
-        typeof cliConfig === 'object' &&
-        cliConfig !== null &&
-        Array.isArray(cliConfig.include);
-      const knownNames = hasExplicitInclude
-        ? effectiveCliCommands
-        : new Set([
-            ...effectiveCliCommands,
-            ...CRUD_OPERATIONS,
-            ...Object.entries(objectDef.methods || {})
-              .filter(([, method]) => method.isPublic)
-              .map(([name]) => name),
-          ]);
+      // A non-public method is excluded from `knownNames` too (recall
+      // finding, smrt#2857 review): it is not part of the real CLI surface,
+      // so naming one is still a genuine mistake, not a name this lint's
+      // narrower `effectiveCliCommands` resolution merely declines to check.
+      const knownNames = new Set([
+        ...CRUD_OPERATIONS,
+        ...Object.entries(objectDef.methods || {})
+          .filter(([, method]) => method.isPublic)
+          .map(([name]) => name),
+      ]);
 
       invalidSkipApiCheck = skipApiCheck
         .filter((name) => !knownNames.has(name))
