@@ -358,7 +358,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           };
           await contributeSvelteKitRoutes(
             env ?? userConfig,
-            expectedSvelteKitRouteOwners(userConfig),
+            expectedSvelteKitRouteOwners(userConfig, routeOptions.routesDir),
             projectRoot,
             {
               owner: 'consumer',
@@ -519,7 +519,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
     },
   };
-  markSvelteKitRouteParticipant(plugin, 'consumer', Boolean(consumerSvelteKit));
+  markSvelteKitRouteParticipant(
+    plugin,
+    'consumer',
+    Boolean(consumerSvelteKit),
+    consumerSvelteKit?.routesDir ?? 'src/routes/api',
+  );
   return plugin;
 }
 

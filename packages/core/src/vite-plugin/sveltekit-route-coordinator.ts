@@ -31,15 +31,17 @@ export function markSvelteKitRouteParticipant(
   plugin: Plugin,
   owner: SvelteKitRouteOwner,
   enabled: boolean,
+  routesDir: string,
 ): void {
   Object.defineProperty(plugin, ROUTE_PARTICIPANT, {
-    value: { owner, enabled },
+    value: { owner, enabled, routesDir },
     enumerable: false,
   });
 }
 
 export function expectedSvelteKitRouteOwners(
   userConfig: unknown,
+  routesDir: string,
 ): SvelteKitRouteOwner[] {
   const plugins = (userConfig as { plugins?: unknown[] } | undefined)?.plugins;
   if (!Array.isArray(plugins)) return [];
@@ -51,11 +53,14 @@ export function expectedSvelteKitRouteOwners(
             [ROUTE_PARTICIPANT]?: {
               owner: SvelteKitRouteOwner;
               enabled: boolean;
+              routesDir: string;
             };
           }
         | undefined
     )?.[ROUTE_PARTICIPANT];
-    if (participant?.enabled) owners.add(participant.owner);
+    if (participant?.enabled && participant.routesDir === routesDir) {
+      owners.add(participant.owner);
+    }
   }
   return [...owners];
 }
@@ -91,6 +96,9 @@ export async function contributeSvelteKitRoutes(
     return;
 
   const contributions = [...coordinator.contributions.values()];
+  const registrationContributions = [...sessions.values()].flatMap(
+    ({ contributions }) => [...contributions.values()],
+  );
   const options = mergeOptions(contributions);
   await generateSvelteKitRoutes(
     resolve(projectRoot),
@@ -100,6 +108,9 @@ export async function contributeSvelteKitRoutes(
       contributions.map(({ semanticManifest }) => semanticManifest),
     ),
     utilityManifests(contributions),
+    mergeManifests(
+      registrationContributions.map(({ routeManifest }) => routeManifest),
+    ),
   );
 }
 

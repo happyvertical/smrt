@@ -1554,6 +1554,7 @@ export async function generateSvelteKitRoutes(
     events: routeManifest,
     eventsSemantic: semanticManifest,
   },
+  registrationManifest: SmartObjectManifest = routeManifest,
 ): Promise<void> {
   if (!options.enabled) return;
 
@@ -1572,7 +1573,7 @@ export async function generateSvelteKitRoutes(
   clearGeneratedKnowledgeRoute(projectRoot, options);
 
   // Generate centralized configuration file first (if it doesn't exist)
-  await generateSmrtConfigFile(projectRoot, routeManifest, options);
+  await generateSmrtConfigFile(projectRoot, registrationManifest, options);
 
   const generatedRoutePaths: string[] = [];
   let generatedCount = 0;
@@ -1662,7 +1663,11 @@ export async function generateSvelteKitRoutes(
 
   // Ignore only the concrete route files generated in this pass. This keeps
   // handwritten handlers below routesDir visible to Git.
-  updateGitignore(projectRoot, generatedRoutePaths);
+  updateGitignore(
+    projectRoot,
+    generatedRoutePaths,
+    join(projectRoot, svelteKitRouteRoot(options.routesDir)),
+  );
 
   const skippedMsg =
     skippedCollections > 0
@@ -3695,6 +3700,7 @@ function rolesFrom(value: unknown): string[] {
 function updateGitignore(
   projectRoot: string,
   generatedRoutePaths: readonly string[],
+  routeRoot: string,
 ): void {
   const gitignorePath = join(projectRoot, '.gitignore');
 
@@ -3706,8 +3712,8 @@ function updateGitignore(
 
   const generatedPaths = [
     ...new Set(
-      generatedRoutePaths.map((path) =>
-        gitignorePatternForPath(relative(projectRoot, path)),
+      [...generatedRoutePaths, ...findGeneratedRouteFiles(routeRoot)].map(
+        (path) => gitignorePatternForPath(relative(projectRoot, path)),
       ),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -3720,6 +3726,24 @@ function updateGitignore(
     writeFileSync(gitignorePath, updatedContent, 'utf-8');
     console.log('[smrt] Updated .gitignore with generated route paths');
   }
+}
+
+function findGeneratedRouteFiles(routeRoot: string): string[] {
+  if (!existsSync(routeRoot)) return [];
+  const files: string[] = [];
+  for (const entry of readdirSync(routeRoot, { withFileTypes: true })) {
+    const path = join(routeRoot, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...findGeneratedRouteFiles(path));
+    } else if (
+      entry.isFile() &&
+      entry.name === '+server.ts' &&
+      readFileSync(path, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
+    ) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 function gitignorePatternForPath(path: string): string {

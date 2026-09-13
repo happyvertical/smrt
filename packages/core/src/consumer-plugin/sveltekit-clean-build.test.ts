@@ -19,7 +19,9 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
     `__test-consumer-sveltekit-clean-build-${process.pid}`,
   );
 
-  afterEach(() => {});
+  afterEach(() => {
+    rmSync(projectRoot, { recursive: true, force: true });
+  });
 
   it.each([
     ['default config', {}, 'src/lib/server/smrt.ts'],
@@ -32,6 +34,11 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
       'custom non-lib config path',
       { configPath: 'src/server/runtime', configFileName: 'registry.ts' },
       'src/server/runtime/registry.ts',
+    ],
+    [
+      'separate consumer route root',
+      { routesDir: 'src/routes/external' },
+      'src/lib/server/smrt.ts',
     ],
   ])(
     'inventories only an explicitly selected provider-qualified route on the first build (%s)',
@@ -135,9 +142,13 @@ describe('consumer SvelteKit route hosting clean build (#2850)', () => {
         resourcesRoute: { enabled: false },
         ...configOverrides,
       };
+      const consumerRoutesDir = svelteKitOptions.routesDir ?? 'src/routes/api';
       const producerSvelteKitOptions = {
         enabled: true,
-        routesDir: svelteKitOptions.routesDir ?? 'src/routes/api',
+        routesDir:
+          _configCase === 'separate consumer route root'
+            ? 'src/routes/api'
+            : consumerRoutesDir,
         objectsDir: 'src/lib/objects',
         configPath: svelteKitOptions.configPath ?? 'src/lib/server',
         configFileName: svelteKitOptions.configFileName ?? 'smrt.ts',
@@ -191,7 +202,8 @@ export default defineConfig({
 
       const itemRoute = join(
         projectRoot,
-        'src/routes/api/widgets/[id]/+server.ts',
+        consumerRoutesDir,
+        'widgets/[id]/+server.ts',
       );
       expect(existsSync(itemRoute)).toBe(true);
       expect(
@@ -200,7 +212,7 @@ export default defineConfig({
         ),
       ).toBe(true);
       expect(
-        existsSync(join(projectRoot, 'src/routes/api/hidden/+server.ts')),
+        existsSync(join(projectRoot, consumerRoutesDir, 'hidden/+server.ts')),
       ).toBe(false);
       expect(readFileSync(itemRoute, 'utf8')).toContain(
         "'@acme/widgets:Widget'",
@@ -210,7 +222,10 @@ export default defineConfig({
       );
       expect(
         readFileSync(
-          join(projectRoot, 'src/lib/server/smrt-register.ts'),
+          join(
+            projectRoot,
+            expectedConfigFile.replace(/[^/]+$/, 'smrt-register.ts'),
+          ),
           'utf8',
         ),
       ).toContain(
@@ -226,7 +241,9 @@ export default defineConfig({
           join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),
           'utf8',
         ),
-      ).toContain('/api/widgets/[id]');
+      ).toContain(
+        `${consumerRoutesDir.replace('src/routes', '')}/widgets/[id]`,
+      );
       expect(
         readFileSync(
           join(projectRoot, '.svelte-kit/output/server/manifest-full.js'),

@@ -1,11 +1,14 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Plugin } from 'vite';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
   contributeSvelteKitRoutes,
+  expectedSvelteKitRouteOwners,
+  markSvelteKitRouteParticipant,
   type SvelteKitRouteOwner,
 } from './sveltekit-route-coordinator.js';
 
@@ -85,6 +88,28 @@ async function contribute(
     options,
   });
 }
+
+describe('SvelteKit route participant targets', () => {
+  it('waits only for participants with the same routesDir', () => {
+    const producer = { name: 'smrt-auto-service' } as Plugin;
+    const consumer = { name: 'smrt-consumer' } as Plugin;
+    markSvelteKitRouteParticipant(producer, 'producer', true, 'src/routes/api');
+    markSvelteKitRouteParticipant(
+      consumer,
+      'consumer',
+      true,
+      'src/routes/external',
+    );
+    const config = { plugins: [producer, consumer] };
+
+    expect(expectedSvelteKitRouteOwners(config, 'src/routes/api')).toEqual([
+      'producer',
+    ]);
+    expect(expectedSvelteKitRouteOwners(config, 'src/routes/external')).toEqual(
+      ['consumer'],
+    );
+  });
+});
 
 describe('contributeSvelteKitRoutes', () => {
   it.each([
@@ -331,5 +356,47 @@ describe('contributeSvelteKitRoutes', () => {
     expect(readFileSync(previousPath, 'utf8')).toBe(previousBytes);
     expect(existsSync(routeFile(root, 'local-widgets'))).toBe(false);
     expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(false);
+  });
+
+  it('emits independent route roots while composing their shared registration helper', async () => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    await contribute(
+      lifecycle,
+      ['producer'],
+      root,
+      'producer',
+      manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local'),
+      routeOptions(),
+    );
+    await contribute(
+      lifecycle,
+      ['consumer'],
+      root,
+      'consumer',
+      manifest(
+        '@acme/widgets:RemoteWidget',
+        'RemoteWidget',
+        'remote-widgets',
+        '@acme/widgets',
+      ),
+      routeOptions({ routesDir: 'src/routes/external' }),
+    );
+
+    expect(existsSync(routeFile(root, 'local-widgets'))).toBe(true);
+    expect(
+      existsSync(join(root, 'src/routes/external/remote-widgets/+server.ts')),
+    ).toBe(true);
+    const registration = readFileSync(
+      join(root, 'src/lib/server/smrt-register.ts'),
+      'utf8',
+    );
+    expect(registration).toContain('LocalWidget');
+    expect(registration).toContain('RemoteWidget');
+    const gitignore = readFileSync(join(root, '.gitignore'), 'utf8');
+    expect(gitignore).toContain('src/routes/api/local-widgets/+server.ts');
+    expect(gitignore).toContain(
+      'src/routes/external/remote-widgets/+server.ts',
+    );
   });
 });

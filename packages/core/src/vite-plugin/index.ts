@@ -801,7 +801,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           configuredProjectRoot ??
           resolve(process.cwd(), userConfig.root ?? '.');
         routeLifecycleConfig = env ?? userConfig;
-        routeExpectedOwners = expectedSvelteKitRouteOwners(userConfig);
+        routeExpectedOwners = expectedSvelteKitRouteOwners(
+          userConfig,
+          svelteKit.routesDir || 'src/routes/api',
+        );
         configHookManifest = await scanAndGenerateManifest(projectRoot);
         await generateConfiguredSvelteKitRoutes(
           projectRoot,
@@ -1211,7 +1214,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
   };
-  markSvelteKitRouteParticipant(plugin, 'producer', svelteKit.enabled);
+  markSvelteKitRouteParticipant(
+    plugin,
+    'producer',
+    svelteKit.enabled,
+    svelteKit.routesDir || 'src/routes/api',
+  );
   return plugin;
 
   function scanAndGenerateManifest(
