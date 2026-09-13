@@ -243,6 +243,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     resolveId(id, _importer) {
       // Resolve virtual modules to generated type declarations
       if (id in VIRTUAL_MODULES) {
+        // `smrt-web.d.ts` is an ambient TypeScript declaration, not executable
+        // JavaScript. Vite must always load the consumer runtime module after
+        // default type generation writes that declaration.
+        if (id === '@smrt/web') {
+          return `\0${VIRTUAL_MODULES[id]}`;
+        }
+
         const typeFileName = getTypeFileName(id);
         const typePath = path.join(projectRoot, typesDir, typeFileName);
 

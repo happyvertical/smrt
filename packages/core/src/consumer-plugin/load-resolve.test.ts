@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { build } from 'vite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   serializeSmrtGenerationSnapshot,
@@ -103,9 +104,8 @@ describe('smrtConsumer resolveId', () => {
     const typesDir = 'src/types/smrt-generated';
     mkdirSync(join(projectRoot, typesDir), { recursive: true });
     const declPath = join(projectRoot, typesDir, 'smrt-client.d.ts');
-    const webDeclPath = join(projectRoot, typesDir, 'smrt-web.d.ts');
     writeFileSync(declPath, '// types');
-    writeFileSync(webDeclPath, '// web types');
+    writeFileSync(join(projectRoot, typesDir, 'smrt-web.d.ts'), '// web types');
 
     const plugin = smrtConsumer({
       packages: [],
@@ -117,7 +117,9 @@ describe('smrtConsumer resolveId', () => {
 
     const resolved = resolveId.call({}, '@smrt/client', undefined);
     expect(resolved).toBe(declPath);
-    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(webDeclPath);
+    expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
+      '\0smrt-consumer:web',
+    );
   });
 
   it('returns null for unknown ids', () => {
@@ -385,6 +387,76 @@ describe('smrtConsumer load with a populated manifest', () => {
     ]) {
       expect(typeof accessor[verb]).toBe('function');
     }
+  });
+
+  it('bundles executable web definitions after default type generation', async () => {
+    mkdirSync(join(projectRoot, 'node_modules', '@acme', 'widgets', 'dist'), {
+      recursive: true,
+    });
+    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(join(projectRoot, 'node_modules', '@acme', 'widgets'), {
+      name: '@acme/widgets',
+      version: '2.0.0',
+      exports: { '.': './dist/index.js' },
+    });
+    writeFileSync(
+      join(
+        projectRoot,
+        'node_modules',
+        '@acme',
+        'widgets',
+        'dist',
+        'manifest.json',
+      ),
+      JSON.stringify({
+        packageName: '@acme/widgets',
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            fields: { title: { type: 'text', required: true } },
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeFileSync(
+      join(projectRoot, 'index.js'),
+      [
+        "import { collectionDefinitions, getCollectionDefinition } from '@smrt/web';",
+        'console.log(collectionDefinitions.widgets.fields.title.required);',
+        "console.log(getCollectionDefinition('widgets').objectRef);",
+      ].join('\n'),
+    );
+
+    const result = await build({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [
+        smrtConsumer({
+          packages: ['@acme/widgets'],
+          projectRoot,
+          disableScanning: true,
+        }),
+      ],
+      build: {
+        outDir: 'dist',
+        rollupOptions: { input: 'index.js' },
+      },
+    });
+
+    expect(
+      existsSync(join(projectRoot, 'src/types/smrt-generated/smrt-web.d.ts')),
+    ).toBe(true);
+    const outputs = Array.isArray(result) ? result : [result];
+    const bundle = outputs
+      .flatMap((output) => output.output)
+      .filter((output) => output.type === 'chunk')
+      .map((output) => output.code)
+      .join('\n');
+    expect(bundle).toContain('@acme/widgets:Widget');
+    expect(bundle).toMatch(/title:\{type:[^,]+,required:!0\}/);
   });
 });
 
