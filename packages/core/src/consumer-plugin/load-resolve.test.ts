@@ -3057,6 +3057,64 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(existsSync(journalPath)).toBe(false);
   });
 
+  it('rejects a hosted route move through a former child symlink before changing output', async () => {
+    const formerRoutesDir = 'src/routes/hosted-a';
+    const formerRoot = join(projectRoot, formerRoutesDir);
+    const replacementRoutesDir = 'src/routes/hosted-b';
+    const replacementRoot = join(projectRoot, replacementRoutesDir);
+    mkdirSync(formerRoot, { recursive: true });
+    mkdirSync(replacementRoot, { recursive: true });
+    const formerLink = join(formerRoot, 'widgets');
+    symlinkSync(replacementRoot, formerLink, 'dir');
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: formerRoutesDir,
+      },
+    });
+    const replacementHandler = join(replacementRoot, '+server.ts');
+    const previousHandlerBytes = readFileSync(replacementHandler, 'utf8');
+    const journalPath = join(
+      projectRoot,
+      '.smrt/consumer-sveltekit-routes.json',
+    );
+    const previousJournal = readFileSync(journalPath, 'utf8');
+    const gitignorePath = join(projectRoot, '.gitignore');
+    const previousGitignore = readFileSync(gitignorePath, 'utf8');
+
+    const replacementConsumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: replacementRoutesDir,
+      },
+    });
+    await expect(
+      runConfigHook(replacementConsumer, {
+        root: projectRoot,
+        plugins: [replacementConsumer],
+      }),
+    ).rejects.toThrow('reaches active');
+    expect(readFileSync(replacementHandler, 'utf8')).toBe(previousHandlerBytes);
+    expect(readFileSync(journalPath, 'utf8')).toBe(previousJournal);
+    expect(readFileSync(gitignorePath, 'utf8')).toBe(previousGitignore);
+
+    unlinkSync(formerLink);
+    const repairedConsumer = createConsumerRoutePlugin({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: replacementRoutesDir,
+      },
+    });
+    await runConfigHook(repairedConsumer, {
+      root: projectRoot,
+      plugins: [repairedConsumer],
+    });
+    expect(existsSync(join(replacementRoot, 'widgets/+server.ts'))).toBe(true);
+    expect(JSON.parse(readFileSync(journalPath, 'utf8'))).toMatchObject({
+      routesDir: [replacementRoutesDir],
+    });
+  });
+
   it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],

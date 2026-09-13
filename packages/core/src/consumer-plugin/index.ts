@@ -260,6 +260,35 @@ function removeConsumerSvelteKitRouteRoots(projectRoot: string): void {
   if (fs.existsSync(artifactPath)) fs.unlinkSync(artifactPath);
 }
 
+/**
+ * A hosting-to-hosting move can replace one configured root with another in a
+ * fresh lifecycle. Validate every durable former root before the new target
+ * journals or clears anything, otherwise a rejected move could alter the
+ * prior generated surface before reconciliation notices the conflict.
+ */
+async function assertConsumerSvelteKitFormerRouteRootsAreSafe(
+  userConfig: unknown,
+  projectRoot: string,
+  routesDir: readonly string[],
+  env?: ConfigEnv,
+): Promise<void> {
+  if (routesDir.length === 0) return;
+  const activeParticipants = await activeSvelteKitRouteParticipants(
+    userConfig,
+    projectRoot,
+    env,
+  );
+  const activeRoots = activeParticipants.map(
+    (participant) => participant.routesDir,
+  );
+  for (const priorRoutesDir of routesDir) {
+    assertNoSvelteKitRouteRootSymlinkConflict(
+      canonicalSvelteKitPath(path.resolve(projectRoot, priorRoutesDir)),
+      activeRoots,
+    );
+  }
+}
+
 async function reconcileConsumerSvelteKitRouteRoots(
   lifecycle: object,
   userConfig: unknown,
@@ -528,6 +557,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         const previousConsumerRouteRoots =
           loadConsumerSvelteKitRouteRoots(projectRoot);
         if (consumerSvelteKit) {
+          await assertConsumerSvelteKitFormerRouteRootsAreSafe(
+            userConfig,
+            projectRoot,
+            previousConsumerRouteRoots,
+            env,
+          );
           const routePackages =
             packages.length === 0 && !disableScanning
               ? await discoverSmrtPackages(projectRoot)
