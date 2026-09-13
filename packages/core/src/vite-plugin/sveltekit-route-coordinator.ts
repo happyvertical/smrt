@@ -2,6 +2,7 @@ import { resolve, sep } from 'node:path';
 import type { Plugin } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import {
+  assertNoCrossObjectRouteCollisions,
   generateSvelteKitRoutes,
   knowledgeRoutePath,
   type SvelteKitGenerationHooks,
@@ -199,6 +200,7 @@ async function generateWhenReady(
     return;
 
   const contributions = [...coordinator.contributions.values()];
+  assertNoForeignKnowledgeRouteCollisions(sessions, projectRoot);
   const registrationContributions = [...sessions.values()].flatMap(
     ({ contributions }) => [...contributions.values()],
   );
@@ -217,7 +219,10 @@ async function generateWhenReady(
     mergeManifests(
       contributions.map(({ semanticManifest }) => semanticManifest),
     ),
-    utilityManifests(contributions),
+    utilityManifests(
+      contributions,
+      foreignProducerKnowledgeRoutePaths(sessions, projectRoot, coordinator),
+    ),
     mergeManifests(
       registrationContributions.map(({ routeManifest }) => routeManifest),
     ),
@@ -244,6 +249,7 @@ function effectiveConfigFileName(options: SvelteKitOptions): string {
 
 function utilityManifests(
   contributions: RouteContribution[],
+  protectedRoutePaths: ReadonlySet<string>,
 ): SvelteKitUtilityManifests {
   const selected = (key: 'changesRoute' | 'eventsRoute') =>
     contributions.find(({ options }) => options[key]?.enabled !== false) ??
@@ -264,7 +270,60 @@ function utilityManifests(
     clearKnowledgeRoute: contributions.some(
       ({ options }) => options.knowledge !== undefined,
     ),
+    protectedRoutePaths,
   };
+}
+
+function producerKnowledgeContributions(
+  sessions: Map<string, RouteCoordinator>,
+): RouteContribution[] {
+  return [...sessions.values()].flatMap(({ contributions }) =>
+    [...contributions.values()].filter(
+      (contribution) =>
+        contribution.owner === 'producer' &&
+        contribution.options.knowledge?.api?.enabled === true,
+    ),
+  );
+}
+
+function foreignProducerKnowledgeRoutePaths(
+  sessions: Map<string, RouteCoordinator>,
+  projectRoot: string,
+  current: RouteCoordinator,
+): Set<string> {
+  const paths = new Set<string>();
+  for (const contribution of producerKnowledgeContributions(sessions)) {
+    if (current.contributions.get('producer') === contribution) continue;
+    paths.add(resolve(knowledgeRoutePath(projectRoot, contribution.options)));
+  }
+  return paths;
+}
+
+function assertNoForeignKnowledgeRouteCollisions(
+  sessions: Map<string, RouteCoordinator>,
+  projectRoot: string,
+): void {
+  const knowledgeContributions = producerKnowledgeContributions(sessions);
+  for (const routeCoordinator of sessions.values()) {
+    for (const contribution of routeCoordinator.contributions.values()) {
+      if (!contribution.options.rejectRouteCollisions) continue;
+      const foreignPaths = new Set(
+        knowledgeContributions
+          .filter((knowledge) => knowledge !== contribution)
+          .map((knowledge) =>
+            resolve(knowledgeRoutePath(projectRoot, knowledge.options)),
+          ),
+      );
+      if (foreignPaths.size === 0) continue;
+      assertNoCrossObjectRouteCollisions(
+        projectRoot,
+        contribution.routeManifest,
+        contribution.options,
+        contribution.semanticManifest,
+        foreignPaths,
+      );
+    }
+  }
 }
 
 function mergeOptions(

@@ -67,7 +67,7 @@ async function configureConsumer(svelteKit: unknown): Promise<void> {
   const configHook = plugin.config;
   const handler =
     typeof configHook === 'function' ? configHook : configHook.handler;
-  await handler({ root: projectRoot });
+  await handler({ root: projectRoot, plugins: [plugin] });
 }
 
 describe('consumer SvelteKit route ownership recovery', () => {

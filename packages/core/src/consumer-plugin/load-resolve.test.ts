@@ -791,7 +791,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     const configHook = plugin.config;
     const handler =
       typeof configHook === 'function' ? configHook : configHook.handler;
-    await handler({ root: projectRoot });
+    await handler({ root: projectRoot, plugins: [plugin] });
     return plugin;
   }
 
@@ -1886,6 +1886,54 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         ),
       ),
     ).toMatchObject({ routesDir: ['src/routes/hosted-b'] });
+  });
+
+  it.each([
+    [
+      'a former child root to its current parent',
+      'src/routes/api/widgets',
+      'src/routes/api',
+      'src/routes/api/widgets/+server.ts',
+      'src/routes/api/widgets/widgets/+server.ts',
+    ],
+    [
+      'a former parent root to its current child',
+      'src/routes/api',
+      'src/routes/api/hosted',
+      'src/routes/api/hosted/widgets/+server.ts',
+      'src/routes/api/widgets/+server.ts',
+    ],
+  ] as const)('preserves the current selected surface when moving from %s', async (_name, previousRoot, currentRoot, currentHandler, staleHandler) => {
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: previousRoot,
+      },
+    });
+    const manualRoute = join(projectRoot, previousRoot, 'manual/+server.ts');
+    mkdirSync(join(projectRoot, previousRoot, 'manual'), {
+      recursive: true,
+    });
+    writeFileSync(manualRoute, '// handwritten handler\n');
+
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: currentRoot,
+      },
+    });
+
+    expect(existsSync(join(projectRoot, currentHandler))).toBe(true);
+    expect(existsSync(join(projectRoot, staleHandler))).toBe(false);
+    expect(readFileSync(manualRoute, 'utf8')).toBe('// handwritten handler\n');
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(projectRoot, '.smrt/consumer-sveltekit-routes.json'),
+          'utf8',
+        ),
+      ),
+    ).toMatchObject({ routesDir: [currentRoot] });
   });
 
   it('preserves prior hosted routes and their ownership record when new selection is invalid', async () => {

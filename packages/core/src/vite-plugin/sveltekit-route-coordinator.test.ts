@@ -667,4 +667,109 @@ describe('contributeSvelteKitRoutes', () => {
       existsSync(join(root, 'src/routes/external/remote-widgets/+server.ts')),
     ).toBe(true);
   });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('retains foreign producer knowledge below an active consumer root when %s', async (_name, order) => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    for (const owner of order) {
+      await contribute(
+        lifecycle,
+        [owner],
+        root,
+        owner,
+        owner === 'producer'
+          ? manifest(
+              'LocalWidget',
+              'LocalWidget',
+              'local-widgets',
+              '@app/local',
+            )
+          : manifest(
+              '@acme/widgets:RemoteWidget',
+              'RemoteWidget',
+              'remote-widgets',
+              '@acme/widgets',
+            ),
+        routeOptions(
+          owner === 'producer'
+            ? {
+                knowledge: {
+                  api: { enabled: true, basePath: '/external/knowledge' },
+                },
+              }
+            : { routesDir: 'src/routes/external' },
+        ),
+      );
+    }
+
+    expect(
+      existsSync(join(root, 'src/routes/external/knowledge/+server.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, 'src/routes/external/remote-widgets/+server.ts')),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('rejects a selected route that would overwrite foreign producer knowledge when %s', async (_name, order) => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    const knowledgeConsumer = manifest(
+      '@acme/widgets:Knowledge',
+      'Knowledge',
+      'knowledge',
+      '@acme/widgets',
+    );
+    let consumerBytes: string | undefined;
+    let rejection: Promise<void> | undefined;
+    for (const owner of order) {
+      const generation = contribute(
+        lifecycle,
+        [owner],
+        root,
+        owner,
+        owner === 'producer'
+          ? manifest(
+              'LocalWidget',
+              'LocalWidget',
+              'local-widgets',
+              '@app/local',
+            )
+          : knowledgeConsumer,
+        routeOptions(
+          owner === 'producer'
+            ? {
+                knowledge: {
+                  api: { enabled: true, basePath: '/external/knowledge' },
+                },
+              }
+            : { routesDir: 'src/routes/external' },
+        ),
+      );
+      if (owner === 'consumer' && order[0] === 'consumer') {
+        await generation;
+        consumerBytes = readFileSync(
+          join(root, 'src/routes/external/knowledge/+server.ts'),
+          'utf8',
+        );
+      } else {
+        rejection = generation;
+      }
+    }
+
+    await expect(rejection).rejects.toThrow('Conflicting SvelteKit route');
+    if (consumerBytes) {
+      expect(
+        readFileSync(
+          join(root, 'src/routes/external/knowledge/+server.ts'),
+          'utf8',
+        ),
+      ).toBe(consumerBytes);
+    }
+  });
 });

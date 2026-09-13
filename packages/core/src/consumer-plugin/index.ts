@@ -280,6 +280,19 @@ async function reconcileConsumerSvelteKitRouteRoots(
       userConfig,
       projectRoot,
     );
+    const containingConsumer = activeParticipants.find(
+      (participant) =>
+        participant.owner === 'consumer' &&
+        (routeRoot === participant.routesDir ||
+          routeRoot.startsWith(`${participant.routesDir}${path.sep}`)),
+    );
+    // A current parent consumer root has already swept and regenerated this
+    // former child root. Sweeping it again would remove the newly selected
+    // handler before SvelteKit inventories it.
+    if (containingConsumer) {
+      reconcileOne(routesDir);
+      continue;
+    }
     const containingProducer = activeParticipants.find(
       (participant) =>
         participant.owner === 'producer' &&

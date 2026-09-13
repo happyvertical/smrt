@@ -1390,11 +1390,12 @@ function groupCustomActionRoutes<T extends CustomActionRouteGroupSpec>(
 }
 
 /** Reject selected identities that would write the same endpoint file. */
-function assertNoCrossObjectRouteCollisions(
+export function assertNoCrossObjectRouteCollisions(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
   exposureManifest: SmartObjectManifest,
+  reservedRoutePaths: ReadonlySet<string> = new Set(),
 ): void {
   type RouteWriter =
     | 'crud-collection'
@@ -1428,6 +1429,14 @@ function assertNoCrossObjectRouteCollisions(
       owner,
       writer,
     );
+  for (const routePath of reservedRoutePaths) {
+    claimPath(
+      resolve(routePath),
+      relative(projectRoot, routePath),
+      'producer knowledge',
+      'knowledge',
+    );
+  }
   for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
     if (isFrameworkBaseClass(objectDef.className, objectDef.packageName))
       continue;
@@ -1543,6 +1552,8 @@ export interface SvelteKitUtilityManifests {
   eventsSemantic: SmartObjectManifest;
   /** Only the contribution that owns knowledge generation may reconcile it. */
   clearKnowledgeRoute?: boolean;
+  /** Exact foreign producer outputs that this route root must neither clear nor overwrite. */
+  protectedRoutePaths?: ReadonlySet<string>;
 }
 
 /** Coordinator callbacks that run around validated generated-output mutation. */
@@ -1575,12 +1586,16 @@ export async function generateSvelteKitRoutes(
       routeManifest,
       options,
       semanticManifest,
+      utilityManifests.protectedRoutePaths,
     );
   }
 
   await hooks.beforeCleanup?.();
 
-  clearGeneratedSvelteKitRouteFiles(join(projectRoot, options.routesDir));
+  clearGeneratedSvelteKitRouteFiles(
+    join(projectRoot, options.routesDir),
+    utilityManifests.protectedRoutePaths,
+  );
   if (utilityManifests.clearKnowledgeRoute !== false) {
     clearGeneratedKnowledgeRoute(projectRoot, options);
   }
