@@ -30,6 +30,17 @@ export function consumerHasSmrtDevMcp(projectRoot: string): boolean {
   }
 }
 
+/** Whether this invocation will own the `_dev/[...tool]` output file. */
+export function willGenerateDevPlaneRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  return (
+    options.devPlaneRoute?.enabled === true &&
+    consumerHasSmrtDevMcp(projectRoot)
+  );
+}
+
 export function generateDevPlaneRoute(
   projectRoot: string,
   options: SvelteKitOptions,
@@ -37,7 +48,7 @@ export function generateDevPlaneRoute(
   if (options.devPlaneRoute?.enabled !== true) {
     return false;
   }
-  if (!consumerHasSmrtDevMcp(projectRoot)) {
+  if (!willGenerateDevPlaneRoute(projectRoot, options)) {
     console.log(
       '[smrt] Skipping _dev route - @happyvertical/smrt-dev-mcp/dev-plane is ' +
         'not resolvable; install @happyvertical/smrt-dev-mcp as a devDependency',

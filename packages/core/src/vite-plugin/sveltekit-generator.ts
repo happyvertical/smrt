@@ -45,7 +45,10 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
-import { generateDevPlaneRoute } from './dev-plane-route.js';
+import {
+  generateDevPlaneRoute,
+  willGenerateDevPlaneRoute,
+} from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
 import {
   generateResourcesRoute,
@@ -1388,16 +1391,38 @@ function assertNoCrossObjectRouteCollisions(
   options: SvelteKitOptions,
   exposureManifest: SmartObjectManifest,
 ): void {
-  const owners = new Map<string, string>();
-  const claim = (routeDir: string, owner: string) => {
-    const prior = owners.get(routeDir);
-    if (prior && prior !== owner) {
+  type RouteWriter =
+    | 'crud-collection'
+    | 'crud-item'
+    | 'custom-action'
+    | 'sync-apply'
+    | 'changes'
+    | 'dev-plane'
+    | 'events'
+    | 'resources'
+    | 'knowledge';
+  const claims = new Map<string, { owner: string; writer: RouteWriter }>();
+  const claimPath = (
+    routePath: string,
+    routeDir: string,
+    owner: string,
+    writer: RouteWriter,
+  ) => {
+    const prior = claims.get(routePath);
+    if (prior && (prior.owner !== owner || prior.writer !== writer)) {
       throw new Error(
-        `Conflicting SvelteKit route ${routeDir}: ${prior} and ${owner} would write the same handler`,
+        `Conflicting SvelteKit route ${routeDir}: ${prior.owner} (${prior.writer}) and ${owner} (${writer}) would write the same handler`,
       );
     }
-    owners.set(routeDir, owner);
+    claims.set(routePath, { owner, writer });
   };
+  const claim = (routeDir: string, owner: string, writer: RouteWriter) =>
+    claimPath(
+      join(projectRoot, routeDir, '+server.ts'),
+      routeDir,
+      owner,
+      writer,
+    );
   for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
     if (isFrameworkBaseClass(objectDef.className, objectDef.packageName))
       continue;
@@ -1430,20 +1455,20 @@ function assertNoCrossObjectRouteCollisions(
         };
       });
       for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
-        claim(actionRouteDir, className);
+        claim(actionRouteDir, className, 'custom-action');
       }
       continue;
     }
     const actions = resolveStandardCrudActions(objectDef.decoratorConfig?.api);
     if (actions.some((action) => action === 'list' || action === 'create'))
-      claim(routeDir, className);
+      claim(routeDir, className, 'crud-collection');
     if (
       actions.some(
         (action) =>
           action === 'get' || action === 'update' || action === 'delete',
       )
     )
-      claim(join(routeDir, '[id]'), className);
+      claim(join(routeDir, '[id]'), className, 'crud-item');
     const actionSpecs = resolveApiCustomActions(
       objectDef,
       exposureManifest,
@@ -1471,25 +1496,32 @@ function assertNoCrossObjectRouteCollisions(
       };
     });
     for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
-      claim(actionRouteDir, className);
+      claim(actionRouteDir, className, 'custom-action');
     }
   }
   // These generator-owned utility files share the same filesystem namespace.
   // Claim only paths their current output predicates can emit.
   if (collectSyncApplyTargets(manifest).length > 0) {
-    claim(join(options.routesDir, 'sync', 'apply'), 'sync/apply');
+    claim(join(options.routesDir, 'sync', 'apply'), 'sync/apply', 'sync-apply');
   }
   const hasAnchor = Object.values(manifest.objects).some(
     (objectDef) => !isCollectionManifestClass(manifest, objectDef),
   );
   if (hasAnchor && options.changesRoute?.enabled !== false) {
-    claim(join(options.routesDir, '_changes'), '_changes');
+    claim(join(options.routesDir, '_changes'), '_changes', 'changes');
+  }
+  if (willGenerateDevPlaneRoute(projectRoot, options)) {
+    claim(join(options.routesDir, '_dev', '[...tool]'), '_dev', 'dev-plane');
   }
   if (hasAnchor && options.eventsRoute?.enabled !== false) {
-    claim(join(options.routesDir, '_events'), '_events');
+    claim(join(options.routesDir, '_events'), '_events', 'events');
   }
   if (willGenerateResourcesRoute(projectRoot, options)) {
-    claim(join(options.routesDir, '_resources'), '_resources');
+    claim(join(options.routesDir, '_resources'), '_resources', 'resources');
+  }
+  if (options.knowledge?.api?.enabled) {
+    const routeDir = knowledgeRouteDir(projectRoot, options);
+    claimPath(join(routeDir, '+server.ts'), routeDir, 'knowledge', 'knowledge');
   }
 }
 
