@@ -848,10 +848,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Store project root for file scanning
       projectRoot = configuredProjectRoot ?? resolvedConfig.root;
       if (svelteKit.enabled && routeLifecycleConfig) {
-        assertSvelteKitRouteCoordinationComplete(
-          routeLifecycleConfig,
-          projectRoot,
-        );
+        assertSvelteKitRouteCoordinationComplete(routeLifecycleConfig);
       }
 
       // Detect plugin mode based on build configuration

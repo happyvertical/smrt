@@ -251,6 +251,9 @@ rejected before files are changed because a parent generated-root cleanup would
 otherwise own and remove the child surface.
 Canonical ownership resolves symlink aliases through the nearest existing
 directory, so paths that name the same generated directory share one surface.
+When separate artifact roots resolve to that same route directory, their
+resolved object and config outputs must also agree; incompatible settings fail
+before generated handlers or managed ownership records change.
 
 The consumer keeps a private managed-root inventory under `.smrt` after a
 successful explicit hosting plan is validated. Changing its `routesDir`,

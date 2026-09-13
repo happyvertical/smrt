@@ -339,7 +339,7 @@ async function reconcileConsumerSvelteKitRouteRoots(
     }
     clearGeneratedSvelteKitRouteFiles(
       routeRoot,
-      producerKnowledgeRoutePaths(lifecycle, projectRoot),
+      producerKnowledgeRoutePaths(lifecycle),
       new Set(
         activeParticipants
           .map((participant) => participant.routesDir)
@@ -629,10 +629,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     configResolved(resolvedConfig) {
       if (consumerSvelteKit && routeLifecycleConfig) {
-        assertSvelteKitRouteCoordinationComplete(
-          routeLifecycleConfig,
-          projectRoot,
-        );
+        assertSvelteKitRouteCoordinationComplete(routeLifecycleConfig);
       }
       producerApi = (resolvedConfig.plugins ?? []).find(
         (plugin) => plugin?.name === 'smrt-auto-service',

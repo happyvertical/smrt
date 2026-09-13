@@ -203,6 +203,61 @@ describe('SvelteKit route participant targets', () => {
     ).resolves.toEqual([]);
   });
 
+  it('coordinates physical route targets across different artifact roots', async () => {
+    const producer = { name: 'smrt-auto-service' } as Plugin;
+    const consumer = { name: 'smrt-consumer' } as Plugin;
+    markSvelteKitRouteParticipant(
+      producer,
+      'producer',
+      true,
+      'src/routes/api',
+      undefined,
+      () => '/repo/app',
+    );
+    markSvelteKitRouteParticipant(
+      consumer,
+      'consumer',
+      true,
+      'app/src/routes/api',
+      undefined,
+      () => '/repo',
+    );
+    const config = { plugins: [producer, consumer] };
+
+    await expect(
+      expectedSvelteKitRouteOwners(config, '/repo/app', 'src/routes/api'),
+    ).resolves.toEqual(['producer', 'consumer']);
+    await expect(
+      expectedSvelteKitRouteOwners(config, '/repo', 'app/src/routes/api'),
+    ).resolves.toEqual(['producer', 'consumer']);
+  });
+
+  it('rejects physical nested route targets across different artifact roots', async () => {
+    const producer = { name: 'smrt-auto-service' } as Plugin;
+    const consumer = { name: 'smrt-consumer' } as Plugin;
+    markSvelteKitRouteParticipant(
+      producer,
+      'producer',
+      true,
+      'src/routes/api',
+      undefined,
+      () => '/repo/app',
+    );
+    markSvelteKitRouteParticipant(
+      consumer,
+      'consumer',
+      true,
+      'app/src/routes/api/external',
+      undefined,
+      () => '/repo',
+    );
+    const config = { plugins: [producer, consumer] };
+
+    await expect(
+      expectedSvelteKitRouteOwners(config, '/repo/app', 'src/routes/api'),
+    ).rejects.toThrow('Incompatible nested SvelteKit routesDir ownership');
+  });
+
   it.each([
     ['producer first', ['producer', 'consumer']],
     ['consumer first', ['consumer', 'producer']],
@@ -273,9 +328,9 @@ describe('contributeSvelteKitRoutes', () => {
       ),
     );
 
-    expect(() =>
-      assertSvelteKitRouteCoordinationComplete(lifecycle, root),
-    ).toThrow('Incomplete SvelteKit route coordination');
+    expect(() => assertSvelteKitRouteCoordinationComplete(lifecycle)).toThrow(
+      'Incomplete SvelteKit route coordination',
+    );
     expect(existsSync(routeFile(root, 'localwidgets'))).toBe(false);
   });
 

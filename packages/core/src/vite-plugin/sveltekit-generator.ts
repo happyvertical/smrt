@@ -75,6 +75,8 @@ export interface SvelteKitOptions {
   objectsDir: string;
   configPath?: string; // default: 'src/lib/server'
   configFileName?: string; // default: 'smrt.ts'
+  /** Internal absolute consumer registration entrypoints for a coordinated host. */
+  consumerRegistrationPaths?: readonly string[];
   /**
    * Apply kebab-case to custom-method URL segments (e.g. `discoverFromUrl`
    * becomes `/discover-from-url`). Opt-in for one minor; default flips in the
@@ -1979,13 +1981,23 @@ async function generateRegistrationFile(
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
     (dependency) => dependency !== '@happyvertical/smrt-core',
   );
+  const consumerRegistrationPaths =
+    options.consumerRegistrationPaths ??
+    (externalRuntimeDependencies.length > 0
+      ? [join(projectRoot, '.smrt', 'register.js')]
+      : []);
   let consumerRegistrationImport = '';
-  if (externalRuntimeDependencies.length > 0) {
-    const consumerRegistrationPath = relative(
-      configDir,
-      join(projectRoot, '.smrt', 'register.js'),
-    ).replace(/\\/g, '/');
-    consumerRegistrationImport = `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
+  if (consumerRegistrationPaths.length > 0) {
+    consumerRegistrationImport = [...new Set(consumerRegistrationPaths)]
+      .sort()
+      .map((registerPath) => {
+        const consumerRegistrationPath = relative(
+          configDir,
+          registerPath,
+        ).replace(/\\/g, '/');
+        return `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
+      })
+      .join('\n');
   }
   /**
    * Strip machine specifics from an object definition before it is embedded in

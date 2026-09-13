@@ -18,6 +18,8 @@ const coordinators = new WeakMap<object, Map<string, RouteCoordinator>>();
 
 interface RouteContribution {
   owner: SvelteKitRouteOwner;
+  /** Keep the caller's lexical artifact root for its resolved output context. */
+  projectRoot: string;
   routeManifest: SmartObjectManifest;
   semanticManifest: SmartObjectManifest;
   options: SvelteKitOptions;
@@ -25,6 +27,7 @@ interface RouteContribution {
   beforeCleanup?: () => void | Promise<void>;
   afterGenerate?: () => void | Promise<void>;
 }
+type RouteContributionInput = Omit<RouteContribution, 'projectRoot'>;
 
 interface RouteCoordinator {
   contributions: Map<SvelteKitRouteOwner, RouteContribution>;
@@ -67,21 +70,16 @@ export async function expectedSvelteKitRouteOwners(
   routesDir: string,
   env?: ConfigEnv,
 ): Promise<SvelteKitRouteOwner[]> {
-  const targetRoot = canonicalSvelteKitPath(projectRoot);
   const participants = await activeSvelteKitRouteParticipants(
     userConfig,
-    targetRoot,
+    projectRoot,
     env,
   );
   assertCompatibleSvelteKitRouteTargets(participants);
-  const target = canonicalSvelteKitPath(resolve(targetRoot, routesDir));
+  const target = canonicalSvelteKitPath(resolve(projectRoot, routesDir));
   const owners = new Set<SvelteKitRouteOwner>();
   for (const participant of participants) {
-    if (
-      participant.projectRoot === targetRoot &&
-      participant.routesDir === target
-    )
-      owners.add(participant.owner);
+    if (participant.routesDir === target) owners.add(participant.owner);
   }
   return [...owners];
 }
@@ -167,11 +165,7 @@ function assertCompatibleSvelteKitRouteTargets(
 ): void {
   for (const [index, first] of participants.entries()) {
     for (const second of participants.slice(index + 1)) {
-      if (
-        first.projectRoot !== second.projectRoot ||
-        first.routesDir === second.routesDir
-      )
-        continue;
+      if (first.routesDir === second.routesDir) continue;
       if (
         second.routesDir.startsWith(`${first.routesDir}${sep}`) ||
         first.routesDir.startsWith(`${second.routesDir}${sep}`)
@@ -193,7 +187,7 @@ export async function contributeSvelteKitRoutes(
   lifecycle: object,
   expectedOwners: Iterable<SvelteKitRouteOwner>,
   projectRoot: string,
-  contribution: RouteContribution,
+  contribution: RouteContributionInput,
 ): Promise<void> {
   const target = routeTarget(projectRoot, contribution.options.routesDir);
   const sessions = coordinators.get(lifecycle) ?? new Map();
@@ -206,7 +200,10 @@ export async function contributeSvelteKitRoutes(
       afterRevocation: [],
     } satisfies RouteCoordinator);
   sessions.set(target, coordinator);
-  coordinator.contributions.set(contribution.owner, contribution);
+  coordinator.contributions.set(contribution.owner, {
+    ...contribution,
+    projectRoot,
+  });
 
   await generateWhenReady(sessions, coordinator, projectRoot);
 }
@@ -246,33 +243,28 @@ export async function revokeSvelteKitRoutes(
  */
 export function assertSvelteKitRouteCoordinationComplete(
   lifecycle: object,
-  projectRoot: string,
 ): void {
-  const targetPrefix = `${canonicalSvelteKitPath(projectRoot)}\0`;
   for (const [target, coordinator] of coordinators.get(lifecycle) ?? []) {
-    if (!target.startsWith(targetPrefix)) continue;
     const missing = [...coordinator.expectedOwners].filter(
       (owner) => !coordinator.contributions.has(owner),
     );
     if (missing.length === 0) continue;
-    const routesDir = target.slice(targetPrefix.length);
     throw new Error(
-      `[smrt] Incomplete SvelteKit route coordination for ${JSON.stringify(routesDir)}; active ${missing.join(', ')} plugin contribution${missing.length === 1 ? '' : 's'} did not run before config resolution.`,
+      `[smrt] Incomplete SvelteKit route coordination for ${JSON.stringify(target)}; active ${missing.join(', ')} plugin contribution${missing.length === 1 ? '' : 's'} did not run before config resolution.`,
     );
   }
 }
 
 /** Current producer-owned knowledge handlers, which may sit outside its API root. */
-export function producerKnowledgeRoutePaths(
-  lifecycle: object,
-  projectRoot: string,
-): Set<string> {
+export function producerKnowledgeRoutePaths(lifecycle: object): Set<string> {
   const paths = new Set<string>();
   for (const coordinator of coordinators.get(lifecycle)?.values() ?? []) {
     const producer = coordinator.contributions.get('producer');
     if (!producer?.options.knowledge?.api?.enabled) continue;
     paths.add(
-      canonicalSvelteKitPath(knowledgeRoutePath(projectRoot, producer.options)),
+      canonicalSvelteKitPath(
+        knowledgeRoutePath(producer.projectRoot, producer.options),
+      ),
     );
   }
   return paths;
@@ -290,11 +282,7 @@ export async function activeProducerKnowledgeRoutePaths(
     projectRoot,
     env,
   )) {
-    if (
-      participant.projectRoot !== canonicalSvelteKitPath(projectRoot) ||
-      participant.owner !== 'producer' ||
-      !participant.resolveKnowledge
-    )
+    if (participant.owner !== 'producer' || !participant.resolveKnowledge)
       continue;
     const knowledge = await participant.resolveKnowledge(
       participant.projectRoot,
@@ -317,7 +305,7 @@ export async function activeProducerKnowledgeRoutePaths(
 async function generateWhenReady(
   sessions: Map<string, RouteCoordinator>,
   coordinator: RouteCoordinator,
-  projectRoot: string,
+  _projectRoot: string,
 ): Promise<void> {
   if (
     [...coordinator.expectedOwners].some(
@@ -327,11 +315,23 @@ async function generateWhenReady(
     return;
 
   const contributions = [...coordinator.contributions.values()];
-  assertNoForeignKnowledgeRouteCollisions(sessions, projectRoot);
+  const primary = primaryContribution(contributions);
+  assertNoForeignKnowledgeRouteCollisions(sessions);
   const registrationContributions = [...sessions.values()].flatMap(
-    ({ contributions }) => [...contributions.values()],
+    ({ contributions }) =>
+      [...contributions.values()].filter(
+        (contribution) =>
+          configTarget(contribution.projectRoot, contribution.options) ===
+          configTarget(primary.projectRoot, primary.options),
+      ),
   );
-  const options = mergeOptions(projectRoot, contributions);
+  const registrationPaths = consumerRegistrationPaths(contributions);
+  const options = {
+    ...mergeOptions(contributions),
+    ...(registrationPaths.length > 0
+      ? { consumerRegistrationPaths: registrationPaths }
+      : {}),
+  };
   const hooks: SvelteKitGenerationHooks = {
     beforeCleanup: async () => {
       for (const contribution of contributions) {
@@ -340,7 +340,7 @@ async function generateWhenReady(
     },
   };
   await generateSvelteKitRoutes(
-    canonicalSvelteKitPath(projectRoot),
+    primary.projectRoot,
     mergeManifests(contributions.map(({ routeManifest }) => routeManifest)),
     options,
     mergeManifests(
@@ -348,7 +348,7 @@ async function generateWhenReady(
     ),
     utilityManifests(
       contributions,
-      protectedProducerKnowledgeRoutePaths(sessions, projectRoot, coordinator),
+      protectedProducerKnowledgeRoutePaths(sessions, coordinator),
     ),
     mergeManifests(
       registrationContributions.map(({ routeManifest }) => routeManifest),
@@ -363,8 +363,7 @@ async function generateWhenReady(
 }
 
 function routeTarget(projectRoot: string, routesDir: string): string {
-  const root = canonicalSvelteKitPath(projectRoot);
-  return `${root}\0${canonicalSvelteKitPath(resolve(root, routesDir))}`;
+  return canonicalSvelteKitPath(resolve(projectRoot, routesDir));
 }
 
 function configTarget(projectRoot: string, options: SvelteKitOptions): string {
@@ -375,6 +374,20 @@ function configTarget(projectRoot: string, options: SvelteKitOptions): string {
 
 function effectiveConfigFileName(options: SvelteKitOptions): string {
   return options.configFileName || 'smrt.ts';
+}
+
+function consumerRegistrationPaths(
+  contributions: RouteContribution[],
+): string[] {
+  return contributions
+    .filter(
+      ({ owner, semanticManifest }) =>
+        owner === 'consumer' &&
+        semanticManifest.smrtDependencies?.some(
+          (dependency) => dependency !== '@happyvertical/smrt-core',
+        ),
+    )
+    .map(({ projectRoot }) => resolve(projectRoot, '.smrt/register.js'));
 }
 
 function utilityManifests(
@@ -418,7 +431,6 @@ function producerKnowledgeContributions(
 
 function foreignProducerKnowledgeRoutePaths(
   sessions: Map<string, RouteCoordinator>,
-  projectRoot: string,
   current: RouteCoordinator,
 ): Set<string> {
   const paths = new Set<string>();
@@ -426,7 +438,7 @@ function foreignProducerKnowledgeRoutePaths(
     if (current.contributions.get('producer') === contribution) continue;
     paths.add(
       canonicalSvelteKitPath(
-        knowledgeRoutePath(projectRoot, contribution.options),
+        knowledgeRoutePath(contribution.projectRoot, contribution.options),
       ),
     );
   }
@@ -435,23 +447,23 @@ function foreignProducerKnowledgeRoutePaths(
 
 function currentProducerKnowledgeRoutePaths(
   coordinator: RouteCoordinator,
-  projectRoot: string,
 ): Set<string> {
   const producer = coordinator.contributions.get('producer');
   if (!producer?.options.knowledge?.api?.enabled) return new Set();
   return new Set([
-    canonicalSvelteKitPath(knowledgeRoutePath(projectRoot, producer.options)),
+    canonicalSvelteKitPath(
+      knowledgeRoutePath(producer.projectRoot, producer.options),
+    ),
   ]);
 }
 
 function protectedProducerKnowledgeRoutePaths(
   sessions: Map<string, RouteCoordinator>,
-  projectRoot: string,
   current: RouteCoordinator,
 ): Set<string> {
-  const ownPaths = currentProducerKnowledgeRoutePaths(current, projectRoot);
+  const ownPaths = currentProducerKnowledgeRoutePaths(current);
   return new Set([
-    ...foreignProducerKnowledgeRoutePaths(sessions, projectRoot, current),
+    ...foreignProducerKnowledgeRoutePaths(sessions, current),
     ...[...current.contributions.values()].flatMap((contribution) =>
       [...(contribution.reservedRoutePaths ?? [])].filter(
         (path) => !ownPaths.has(canonicalSvelteKitPath(path)),
@@ -462,14 +474,10 @@ function protectedProducerKnowledgeRoutePaths(
 
 function assertNoForeignKnowledgeRouteCollisions(
   sessions: Map<string, RouteCoordinator>,
-  projectRoot: string,
 ): void {
   const knowledgeContributions = producerKnowledgeContributions(sessions);
   for (const routeCoordinator of sessions.values()) {
-    const ownPaths = currentProducerKnowledgeRoutePaths(
-      routeCoordinator,
-      projectRoot,
-    );
+    const ownPaths = currentProducerKnowledgeRoutePaths(routeCoordinator);
     for (const contribution of routeCoordinator.contributions.values()) {
       if (!contribution.options.rejectRouteCollisions) continue;
       const foreignPaths = new Set(
@@ -477,7 +485,7 @@ function assertNoForeignKnowledgeRouteCollisions(
           .filter((knowledge) => knowledge !== contribution)
           .map((knowledge) =>
             canonicalSvelteKitPath(
-              knowledgeRoutePath(projectRoot, knowledge.options),
+              knowledgeRoutePath(knowledge.projectRoot, knowledge.options),
             ),
           ),
       );
@@ -486,7 +494,7 @@ function assertNoForeignKnowledgeRouteCollisions(
       }
       if (foreignPaths.size === 0) continue;
       assertNoCrossObjectRouteCollisions(
-        projectRoot,
+        contribution.projectRoot,
         contribution.routeManifest,
         contribution.options,
         contribution.semanticManifest,
@@ -496,26 +504,30 @@ function assertNoForeignKnowledgeRouteCollisions(
   }
 }
 
-function mergeOptions(
-  projectRoot: string,
+function primaryContribution(
   contributions: RouteContribution[],
-): SvelteKitOptions {
-  const producer = contributions.find(({ owner }) => owner === 'producer');
-  const primary = producer ?? contributions[0];
+): RouteContribution {
+  const primary =
+    contributions.find(({ owner }) => owner === 'producer') ?? contributions[0];
   if (!primary) throw new Error('[smrt] Missing SvelteKit route contribution');
+  return primary;
+}
+
+function mergeOptions(contributions: RouteContribution[]): SvelteKitOptions {
+  const primary = primaryContribution(contributions);
   const merged: SvelteKitOptions = { ...primary.options };
   for (const contribution of contributions) {
     const incompatible =
-      routeTarget(projectRoot, contribution.options.routesDir) !==
-        routeTarget(projectRoot, primary.options.routesDir) ||
+      routeTarget(contribution.projectRoot, contribution.options.routesDir) !==
+        routeTarget(primary.projectRoot, primary.options.routesDir) ||
       canonicalSvelteKitPath(
-        resolve(projectRoot, contribution.options.objectsDir),
+        resolve(contribution.projectRoot, contribution.options.objectsDir),
       ) !==
         canonicalSvelteKitPath(
-          resolve(projectRoot, primary.options.objectsDir),
+          resolve(primary.projectRoot, primary.options.objectsDir),
         ) ||
-      configTarget(projectRoot, contribution.options) !==
-        configTarget(projectRoot, primary.options) ||
+      configTarget(contribution.projectRoot, contribution.options) !==
+        configTarget(primary.projectRoot, primary.options) ||
       effectiveConfigFileName(contribution.options) !==
         effectiveConfigFileName(primary.options) ||
       contribution.options.kebabRoutes !== primary.options.kebabRoutes;
