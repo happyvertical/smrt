@@ -2867,8 +2867,39 @@ export function findCliApiCoherenceViolations(
     let invalidSkipApiCheck: string[] = [];
     let skipNames: Set<string> = new Set();
     if (Array.isArray(skipApiCheck) && skipApiCheck.length > 0) {
+      // Which names count as "recognized" for the *typo/stale-entry* check
+      // depends on how `effectiveCliCommands` was resolved (smrt#2857
+      // review, F1). With an explicit `cli.include`, that set is the
+      // literal include − exclude (see `resolveCliActionSet`'s own doc
+      // comment) -- an entry not in it is genuinely unrecognized, the same
+      // standard `cli.include` itself is held to.
+      //
+      // But the bare `cli: true`/`cli: {}` default deliberately resolves a
+      // NARROWER set for this lint's own purposes: `resolveCliActionSet`
+      // excludes CRUD verbs and framework-lifecycle methods there (see that
+      // function's doc comment), even though CRUD verbs and public
+      // lifecycle overrides are part of the class's real CLI surface
+      // (`docs/content/app-cli.md`, `cli-generator.ts`). Checking a
+      // `skipApiCheck` array entry against only the lint's narrowed set
+      // would flag a real command name (e.g. `list`) as an "unrecognized"
+      // typo, which is false and actively misleading. So for that shape,
+      // also recognize CRUD verbs and any scanned method on the class
+      // (public or not) as known names -- broader than what this lint
+      // actually checks, but accurate about what the CLI generator exposes.
+      const hasExplicitInclude =
+        typeof cliConfig === 'object' &&
+        cliConfig !== null &&
+        Array.isArray(cliConfig.include);
+      const knownNames = hasExplicitInclude
+        ? effectiveCliCommands
+        : new Set([
+            ...effectiveCliCommands,
+            ...CRUD_OPERATIONS,
+            ...Object.keys(objectDef.methods || {}),
+          ]);
+
       invalidSkipApiCheck = skipApiCheck
-        .filter((name) => !effectiveCliCommands.has(name))
+        .filter((name) => !knownNames.has(name))
         .sort();
       skipNames = new Set(
         skipApiCheck.filter((name) => effectiveCliCommands.has(name)),

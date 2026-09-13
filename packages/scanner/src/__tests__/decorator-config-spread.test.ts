@@ -121,6 +121,29 @@ describe('@smrt() config spread resolution (#2100)', () => {
     });
   });
 
+  it('preserves the cli.skipApiCheck array form (smrt#2857)', () => {
+    // The extraction layer must not coerce the narrowed array form back to
+    // a boolean -- the scanner-facing type is `boolean | string[]`
+    // (registry/types.ts, packages/scanner/src/types.ts).
+    const { config, errors } = configOf(`
+      @smrt({
+        cli: {
+          include: ['list', 'discover', 'reconcileGame'],
+          skipApiCheck: ['reconcileGame'],
+        },
+      })
+      class Ludis extends SmrtObject {}
+    `);
+
+    expect(errors).toHaveLength(0);
+    expect(config).toMatchObject({
+      cli: {
+        include: ['list', 'discover', 'reconcileGame'],
+        skipApiCheck: ['reconcileGame'],
+      },
+    });
+  });
+
   describe('precedence follows source order, matching runtime semantics', () => {
     it('lets a spread override an earlier explicit key', () => {
       const { config } = configOf(`

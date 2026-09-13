@@ -3248,6 +3248,40 @@ describe('SvelteKit Route Generator', () => {
       ]);
     });
 
+    it('does not flag a real CRUD verb in skipApiCheck as an unrecognized name on a bare cli:true class (smrt#2857 review, F1)', () => {
+      // `resolveCliActionSet`'s bare `cli: true`/`cli: {}` branch
+      // deliberately excludes CRUD verbs from the set it checks (see that
+      // function's own doc comment) -- but CRUD verbs are still part of
+      // the class's real CLI surface. A `skipApiCheck` array entry naming
+      // one (e.g. an operator waiving `list` specifically) must not be
+      // reported as an unrecognized/typo name just because this lint's
+      // own narrower resolution doesn't check it.
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: { skipApiCheck: ['list'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        { className: 'Praeco', unreachable: ['audit', 'discover'] },
+      ]);
+      expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+    });
+
+    it('still flags a genuine typo in skipApiCheck on a bare cli:true class', () => {
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: { skipApiCheck: ['thisIsNotAnything'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        {
+          className: 'Praeco',
+          unreachable: ['audit', 'discover'],
+          invalidSkipApiCheck: ['thisIsNotAnything'],
+        },
+      ]);
+    });
+
     it('does not flag a framework lifecycle method override as unreachable (#2638)', () => {
       // A cli: true class whose only "custom" method is a lifecycle override
       // (e.g. User.save()) has an empty effective custom-action set for it --

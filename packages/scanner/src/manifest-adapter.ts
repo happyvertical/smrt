@@ -140,7 +140,7 @@ interface SmartObjectConfig {
     | {
         include?: string[];
         exclude?: string[];
-        skipApiCheck?: boolean;
+        skipApiCheck?: boolean | string[];
         http?: boolean;
       };
   mcp?: {
