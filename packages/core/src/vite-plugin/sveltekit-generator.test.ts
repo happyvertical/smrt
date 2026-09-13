@@ -3246,6 +3246,49 @@ describe('SvelteKit Route Generator', () => {
           /cli\.skipApiCheck names 'reconclieGame'/,
         );
       });
+
+      it('flags a stale skipApiCheck entry once the named command is dropped from cli.include (PR #2860 review, second pass)', () => {
+        // `audit` is a real scanned public method, so it passes the
+        // typo check on its own -- but it is no longer part of THIS
+        // class's effective CLI command set (only 'list' is included
+        // below). A waiver naming it is dormant and stale, not merely
+        // inert: if `audit` is later re-added to cli.include without an
+        // API route, the untouched waiver would silently reactivate.
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: [],
+            invalidSkipApiCheck: ['audit'],
+          },
+        ]);
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'audit'/,
+        );
+      });
+
+      it('does not treat a CRUD verb as stale on a bare cli:true class even though CRUD is excluded from its effective set', () => {
+        // Regression guard: the stale-entry check must not punish the
+        // bare cli:true/{} branch's own deliberate exclusion of CRUD
+        // verbs from `effectiveCliCommands` (resolveCliActionSet's doc
+        // comment) by treating every CRUD-verb waiver as "stale".
+        const manifest = buildManifest({
+          api: { include: ['list', 'get'] },
+          cli: { skipApiCheck: ['list'] },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          { className: 'Praeco', unreachable: ['audit', 'discover'] },
+        ]);
+        expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+      });
     });
 
     it('passes when cli.include is empty', () => {
