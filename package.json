@@ -12,7 +12,7 @@
     "format": "npx --yes @biomejs/biome@2.5.2 check --write .",
     "format-check": "pnpm run lint",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install --force || echo 'Skipping lefthook install (not in a git repository)'",
-    "test": "turbo test",
+    "test": "turbo test && pnpm run test:ci-scripts",
     "test:ci-scripts": "node --test scripts/*.test.mjs",
     "test:watch": "turbo test:watch",
     "test:coverage": "npx vitest run --coverage",

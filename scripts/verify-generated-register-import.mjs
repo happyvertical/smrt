@@ -187,14 +187,33 @@ try {
 
   const registerSource = readFileSync(registerPath, 'utf8');
   const generatedImports = new Set();
-  const importPattern = /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g;
-  for (const match of registerSource.matchAll(importPattern)) {
-    if (match[2] !== packageName) continue;
+  // Matches either a named import (`import { X } from '...'`) or the
+  // namespace form the real generator emits
+  // (`import * as __smrt_provider_N from '...'`, consumer-plugin/index.ts).
+  const namedImportPattern =
+    /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g;
+  const namespaceImportPattern =
+    /import\s*\*\s*as\s+\S+\s*from\s*['"]([^'"]+)['"]/g;
+  // smrt#2845: an object's importPath is now stamped to the specific
+  // `exports` subpath it actually lives under (e.g.
+  // `@happyvertical/smrt-sales/agreements`) rather than always the bare
+  // package specifier — even for a package like `smrt-sales` whose root
+  // entry happens to also re-export everything. Accept any import from the
+  // package or one of its subpaths, not only the bare specifier.
+  const isPackageSpecifier = (specifier) =>
+    specifier === packageName || specifier.startsWith(`${packageName}/`);
+
+  for (const match of registerSource.matchAll(namedImportPattern)) {
+    if (!isPackageSpecifier(match[2])) continue;
     for (const importedName of match[1].split(',')) {
       generatedImports.add(
         importedName.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0],
       );
     }
+  }
+  for (const match of registerSource.matchAll(namespaceImportPattern)) {
+    if (!isPackageSpecifier(match[1])) continue;
+    generatedImports.add(match[1]);
   }
 
   if (generatedImports.size === 0) {

@@ -9,6 +9,10 @@ const manifestVerifierPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   'verify-manifest-completeness.mjs',
 );
+const manifestExportsVerifierPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  'verify-manifest-exports.mjs',
+);
 
 function fail(message) {
   console.error(`❌ ${message}`);
@@ -29,6 +33,26 @@ function manifestCheckPasses() {
 
   if (result.error) {
     fail(`Failed to run manifest verifier: ${result.error.message}`);
+  }
+
+  return result.status === 0;
+}
+
+/**
+ * Run the manifest-exports guard for the current package (issue #2845).
+ * Returns true when every object the manifest advertises actually resolves
+ * to a real export of the built package (or the check does not apply);
+ * false when the manifest promises an object the bundle does not provide.
+ */
+function manifestExportsCheckPasses() {
+  const result = spawnSync(
+    process.execPath,
+    [manifestExportsVerifierPath, process.cwd()],
+    { stdio: 'inherit', env: process.env },
+  );
+
+  if (result.error) {
+    fail(`Failed to run manifest exports verifier: ${result.error.message}`);
   }
 
   return result.status === 0;
@@ -93,7 +117,8 @@ if (runningInCi && hasDistArtifacts) {
   // republished. Failing here falls through to a clean rebuild below.
   const reusable =
     verifyScripts.every((scriptName) => tryScript(scriptName)) &&
-    manifestCheckPasses();
+    manifestCheckPasses() &&
+    manifestExportsCheckPasses();
   if (reusable) {
     process.exit(0);
   }
@@ -118,5 +143,14 @@ for (const scriptName of verifyScripts) {
 if (!manifestCheckPasses()) {
   fail(
     `Published manifest for ${packageName} is incomplete after build. See the [verify-manifest] output above.`,
+  );
+}
+
+// Companion gate: a complete manifest can still promise an object the bundle
+// does not export (issue #2845) — e.g. an object scanned from a file that
+// only a non-root `exports` subpath serves, with no importPath stamped.
+if (!manifestExportsCheckPasses()) {
+  fail(
+    `Published manifest for ${packageName} advertises object(s) the built package does not export. See the [verify-manifest-exports] output above.`,
   );
 }
