@@ -3289,6 +3289,49 @@ describe('SvelteKit Route Generator', () => {
         ]);
         expect(violations[0].invalidSkipApiCheck).toBeUndefined();
       });
+
+      it('does not treat a public lifecycle method override as stale on a bare cli:true class (recall finding, third pass)', () => {
+        // Same carve-out as the CRUD case, for the same reason:
+        // `resolveCliActionSet`'s bare-config branch also excludes
+        // framework-lifecycle overrides (e.g. `save`) from
+        // `effectiveCliCommands` (resolveCustomActionNames skips them via
+        // isFrameworkLifecycleMethod) -- that's this lint's own narrower
+        // check declining to look at lifecycle methods there, not a sign
+        // that naming one in skipApiCheck is stale.
+        const manifest: SmartObjectManifest = {
+          objects: {
+            LifecycleOnly: {
+              className: 'LifecycleOnly',
+              collection: 'lifecycleonlies',
+              fields: {},
+              methods: {
+                save: {
+                  name: 'save',
+                  parameters: [],
+                  returnType: 'Promise<any>',
+                  isPublic: true,
+                  isStatic: false,
+                },
+                discover: {
+                  name: 'discover',
+                  parameters: [],
+                  returnType: 'Promise<any>',
+                  isPublic: true,
+                },
+              },
+              decoratorConfig: {
+                api: { include: ['list', 'get'] },
+                cli: { skipApiCheck: ['save'] },
+              },
+            },
+          },
+        };
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          { className: 'LifecycleOnly', unreachable: ['discover'] },
+        ]);
+        expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+      });
     });
 
     it('passes when cli.include is empty', () => {

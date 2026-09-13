@@ -21,6 +21,7 @@ import {
   createManifestClassNamePredicate,
   declaredTypeAcceptsDate,
   isCrudOperation,
+  isFrameworkLifecycleMethod,
   queryStringDecoderFor,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
@@ -2907,12 +2908,14 @@ export function findCliApiCoherenceViolations(
       // too, so that case is still an error -- restoring the exact
       // detection the first Copilot-driven fix (5a8f09929) accidentally
       // dropped by switching validity off `effectiveCliCommands` entirely.
-      // The one carve-out: the bare `cli: true`/`cli: {}` resolution
-      // deliberately excludes CRUD verbs from `effectiveCliCommands` (see
-      // `resolveCliActionSet`'s own doc comment) -- that omission is this
-      // lint's own narrower check declining to look at CRUD there, not a
-      // sign that a CRUD name is stale, so a CRUD verb is never "stale" on
-      // that branch.
+      // The carve-out: the bare `cli: true`/`cli: {}` resolution
+      // deliberately excludes CRUD verbs AND framework-lifecycle method
+      // overrides from `effectiveCliCommands` (see `resolveCliActionSet`'s
+      // own doc comment, and `resolveCustomActionNames`'s
+      // `isFrameworkLifecycleMethod` skip) -- that omission is this lint's
+      // own narrower check declining to look at them there (recall
+      // finding, third pass), not a sign that such a name is stale, so
+      // neither is ever "stale" on that branch.
       const hasExplicitInclude =
         typeof cliConfig === 'object' &&
         cliConfig !== null &&
@@ -2920,7 +2923,8 @@ export function findCliApiCoherenceViolations(
       const isInEffectiveSurface = (name: string) =>
         effectiveCliCommands.has(name) ||
         (!hasExplicitInclude &&
-          (CRUD_OPERATIONS as readonly string[]).includes(name));
+          ((CRUD_OPERATIONS as readonly string[]).includes(name) ||
+            isFrameworkLifecycleMethod(name)));
 
       invalidSkipApiCheck = skipApiCheck
         .filter((name) => !knownNames.has(name) || !isInEffectiveSurface(name))
