@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.49.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - generate consumer types during SvelteKit config (#2856) (core)
+
+  ### Other Changes
+
+  - chore: reserve interrupted v0.49.7 (#2859) (release)
+  - @happyvertical/smrt-config@0.49.8
+  - @happyvertical/smrt-types@0.49.8
+  - @happyvertical/smrt-scanner@0.49.8
+
 ## 0.49.7
 
 ### Patch Changes
