@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.49.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve consumer runtime virtual aliases (#2848) (core)
+  - expose consumer web collection definitions (#2846) (core)
+  - @happyvertical/smrt-config@0.49.5
+  - @happyvertical/smrt-types@0.49.5
+  - @happyvertical/smrt-scanner@0.49.5
+
 ## 0.49.4
 
 ### Patch Changes
