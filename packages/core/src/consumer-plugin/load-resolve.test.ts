@@ -100,10 +100,10 @@ describe('smrtConsumer resolveId', () => {
     expect(consumerId).not.toBe(producerId);
   });
 
-  it('resolves a virtual module to the physical .d.ts file when it exists', () => {
+  it('resolves only the type-only module to its physical .d.ts file', () => {
     const typesDir = 'src/types/smrt-generated';
     mkdirSync(join(projectRoot, typesDir), { recursive: true });
-    const declPath = join(projectRoot, typesDir, 'smrt-client.d.ts');
+    const declPath = join(projectRoot, typesDir, 'smrt-types.d.ts');
     writeFileSync(declPath, '// types');
     writeFileSync(join(projectRoot, typesDir, 'smrt-web.d.ts'), '// web types');
 
@@ -115,8 +115,11 @@ describe('smrtConsumer resolveId', () => {
     });
     const resolveId = getHook(plugin, 'resolveId');
 
-    const resolved = resolveId.call({}, '@smrt/client', undefined);
+    const resolved = resolveId.call({}, '@smrt/types', undefined);
     expect(resolved).toBe(declPath);
+    expect(resolveId.call({}, '@smrt/client', undefined)).toBe(
+      '\0smrt-consumer:client',
+    );
     expect(resolveId.call({}, '@smrt/web', undefined)).toBe(
       '\0smrt-consumer:web',
     );
@@ -389,7 +392,7 @@ describe('smrtConsumer load with a populated manifest', () => {
     }
   });
 
-  it('bundles executable web definitions after default type generation', async () => {
+  it('bundles executable manifest and web definitions after default type generation', async () => {
     mkdirSync(join(projectRoot, 'node_modules', '@acme', 'widgets', 'dist'), {
       recursive: true,
     });
@@ -424,9 +427,15 @@ describe('smrtConsumer load with a populated manifest', () => {
     writeFileSync(
       join(projectRoot, 'index.js'),
       [
+        "import { manifest } from '@smrt/manifest';",
+        "import setupRoutes from '@smrt/routes';",
+        "import { createClient } from '@smrt/client';",
+        "import { createMCPServer } from '@smrt/mcp';",
         "import { collectionDefinitions, getCollectionDefinition } from '@smrt/web';",
-        'console.log(collectionDefinitions.widgets.fields.title.required);',
-        "console.log(getCollectionDefinition('widgets').objectRef);",
+        'export const consumerManifest = manifest;',
+        'export const runtimeExports = { setupRoutes, createClient, createMCPServer };',
+        'export const widgetDefinition = collectionDefinitions.widgets;',
+        "export const widgetObjectRef = getCollectionDefinition('widgets').objectRef;",
       ].join('\n'),
     );
 
@@ -442,12 +451,21 @@ describe('smrtConsumer load with a populated manifest', () => {
       ],
       build: {
         outDir: 'dist',
-        rollupOptions: { input: 'index.js' },
+        lib: {
+          entry: 'index.js',
+          formats: ['es'],
+          fileName: 'consumer',
+        },
       },
     });
 
     expect(
       existsSync(join(projectRoot, 'src/types/smrt-generated/smrt-web.d.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(
+        join(projectRoot, 'src/types/smrt-generated/smrt-manifest.d.ts'),
+      ),
     ).toBe(true);
     const outputs = Array.isArray(result) ? result : [result];
     const bundle = outputs
@@ -456,7 +474,26 @@ describe('smrtConsumer load with a populated manifest', () => {
       .map((output) => output.code)
       .join('\n');
     expect(bundle).toContain('@acme/widgets:Widget');
-    expect(bundle).toMatch(/title:\{type:[^,]+,required:!0\}/);
+    expect(bundle).toContain('required: !0');
+    const mod = await import(
+      `data:text/javascript,${encodeURIComponent(bundle)}`
+    );
+    expect(mod.consumerManifest.objects.Widget).toMatchObject({
+      packageName: '@acme/widgets',
+      packageVersion: '2.0.0',
+      className: 'Widget',
+      collection: 'widgets',
+      fields: { title: { type: 'text', required: true } },
+    });
+    expect(mod.widgetDefinition).toMatchObject({
+      objectRef: '@acme/widgets:Widget',
+      className: 'Widget',
+      fields: { title: { type: 'text', required: true } },
+    });
+    expect(mod.widgetObjectRef).toBe('@acme/widgets:Widget');
+    expect(typeof mod.runtimeExports.setupRoutes).toBe('function');
+    expect(typeof mod.runtimeExports.createClient).toBe('function');
+    expect(typeof mod.runtimeExports.createMCPServer).toBe('function');
   });
 });
 
