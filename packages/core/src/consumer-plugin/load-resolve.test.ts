@@ -1115,6 +1115,148 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     }
   });
 
+  it('loads unselected snapshot providers through the generated SSR registration without smrtDependencies metadata', async () => {
+    const widgets = JSON.parse(
+      readFileSync(
+        join(projectRoot, 'node_modules/@acme/widgets/dist/manifest.json'),
+        'utf8',
+      ),
+    );
+    const otherWidgets = JSON.parse(
+      readFileSync(
+        join(
+          projectRoot,
+          'node_modules/@acme/other-widgets/dist/manifest.json',
+        ),
+        'utf8',
+      ),
+    );
+    const provenance = 'git-tree:snapshot-without-dependency-metadata';
+    const snapshotContents = serializeSmrtGenerationSnapshot(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'consumer-app',
+        objects: {
+          ...Object.fromEntries(
+            Object.entries(widgets.objects).map(([objectRef, objectDef]) => [
+              objectRef,
+              { ...objectDef, packageName: '@acme/widgets' },
+            ]),
+          ),
+          ...Object.fromEntries(
+            Object.entries(otherWidgets.objects).map(
+              ([objectRef, objectDef]) => [
+                objectRef,
+                { ...objectDef, packageName: '@acme/other-widgets' },
+              ],
+            ),
+          ),
+        },
+      },
+      provenance,
+      { sourceRoot: projectRoot },
+    );
+    const snapshotPath = join(projectRoot, 'generation-snapshot.json');
+    writeFileSync(snapshotPath, snapshotContents);
+    expect(
+      JSON.parse(snapshotContents).manifest.smrtDependencies,
+    ).toBeUndefined();
+
+    const plugin: any = smrtConsumer({
+      projectRoot,
+      disableScanning: true,
+      generationSnapshot: {
+        path: snapshotPath,
+        sha256: sha256SmrtGenerationSnapshot(snapshotContents),
+        provenance,
+        sourceRoot: projectRoot,
+      },
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const configHook = plugin.config;
+    const config =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+    await config({ root: projectRoot });
+    await plugin.buildStart.call(plugin);
+
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    ObjectRegistry.clear();
+    const server = await createServer({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [plugin],
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    try {
+      await server.ssrLoadModule('/src/lib/server/smrt-register.ts');
+      expect(
+        ObjectRegistry.getClass('@acme/other-widgets:Widget'),
+      ).toBeDefined();
+      expect(
+        existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
+      ).toBe(true);
+      expect(
+        existsSync(
+          join(projectRoot, 'src/routes/api/other-widgets/+server.ts'),
+        ),
+      ).toBe(false);
+    } finally {
+      await server.close();
+      ObjectRegistry.clear();
+    }
+  });
+
+  it.each([
+    ['the consumer package as object owner', 'consumer-app'],
+    ['no object package metadata', undefined],
+  ])('rejects hosted snapshot selection when the dependencies view filters %s', async (_caseName, packageName) => {
+    const provenance = `git-tree:filtered-snapshot-${packageName ?? 'absent'}`;
+    const snapshotContents = serializeSmrtGenerationSnapshot(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'consumer-app',
+        objects: {
+          '@acme/widgets:Widget': {
+            className: 'Widget',
+            qualifiedName: '@acme/widgets:Widget',
+            ...(packageName === undefined ? {} : { packageName }),
+            collection: 'widgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      },
+      provenance,
+      { sourceRoot: projectRoot },
+    );
+    const snapshotPath = join(projectRoot, 'filtered-snapshot.json');
+    writeFileSync(snapshotPath, snapshotContents);
+    const plugin: any = smrtConsumer({
+      projectRoot,
+      disableScanning: true,
+      generationSnapshot: {
+        path: snapshotPath,
+        sha256: sha256SmrtGenerationSnapshot(snapshotContents),
+        provenance,
+        sourceRoot: projectRoot,
+      },
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const configHook = plugin.config;
+    const config =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+
+    await expect(config({ root: projectRoot })).rejects.toThrow(
+      /references unknown dependency object/,
+    );
+    expect(readFileSync(snapshotPath, 'utf8')).toBe(snapshotContents);
+    expect(existsSync(join(projectRoot, 'src/routes/api/widgets'))).toBe(false);
+  });
+
   it('retains api false and empty include suppression for selected objects', async () => {
     await configureRoutes({
       svelteKit: {

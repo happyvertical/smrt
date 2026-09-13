@@ -254,8 +254,21 @@ function selectConsumerRouteManifest(
   return {
     ...manifest,
     // The generated route config imports this full registration entry point so
-    // SSR retains every consumer package, while only `objects` reach routing.
-    smrtDependencies: manifest.smrtDependencies ?? [],
+    // SSR retains every consumer provider, while only `objects` reach routing.
+    // `smrtDependencies` is optional in verified snapshots, so derive this
+    // generator signal from the immutable full manifest rather than treating
+    // absent metadata as an empty provider inventory.
+    smrtDependencies: [
+      ...new Set(
+        Object.values(manifest.objects)
+          .map((objectDef) => objectDef.packageName)
+          .filter(
+            (packageName): packageName is string =>
+              typeof packageName === 'string' &&
+              packageName !== manifest.packageName,
+          ),
+      ),
+    ].sort(),
     objects,
   } as unknown as SmartObjectManifest;
 }
