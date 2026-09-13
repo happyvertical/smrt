@@ -1322,13 +1322,15 @@ function findItemClassRegistryKey(
   return manifestMatch?.[0] || itemObject.className;
 }
 
-function groupCustomActionRoutes(
+function groupCustomActionRoutes<
+  T extends Pick<GeneratedActionRouteSpec, 'actionName' | 'routeConfig'>,
+>(
   actionSpecs: Array<{
     routeDir: string;
-    spec: GeneratedActionRouteSpec;
+    spec: T;
   }>,
-): Map<string, GeneratedActionRouteSpec[]> {
-  const groupedRoutes = new Map<string, GeneratedActionRouteSpec[]>();
+): Map<string, T[]> {
+  const groupedRoutes = new Map<string, T[]>();
 
   for (const { routeDir, spec } of actionSpecs) {
     const existing = groupedRoutes.get(routeDir) || [];
@@ -1355,6 +1357,7 @@ function assertNoCrossObjectRouteCollisions(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  exposureManifest: SmartObjectManifest,
 ): void {
   const owners = new Map<string, string>();
   const claim = (routeDir: string, owner: string) => {
@@ -1371,19 +1374,25 @@ function assertNoCrossObjectRouteCollisions(
       continue;
     const routeDir = join(options.routesDir, objectDef.collection);
     if (isCollectionManifestClass(manifest, objectDef)) {
-      for (const [actionName, actionDef] of resolveApiCustomActions(
+      const actionSpecs = resolveApiCustomActions(
         objectDef,
-        manifest,
+        exposureManifest,
         true,
-      ).exposed) {
-        const route = resolveApiActionRouteConfig(
+      ).exposed.map(([actionName, actionDef]) => {
+        const routeConfig = resolveApiActionRouteConfig(
           actionName,
           actionDef,
           objectDef.decoratorConfig?.api,
           { kebabRoutes: options.kebabRoutes },
           'collection',
         );
-        claim(join(routeDir, ...route.pathSegments), className);
+        return {
+          routeDir: join(routeDir, ...routeConfig.pathSegments),
+          spec: { actionName, routeConfig },
+        };
+      });
+      for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
+        claim(actionRouteDir, className);
       }
       continue;
     }
@@ -1397,24 +1406,29 @@ function assertNoCrossObjectRouteCollisions(
       )
     )
       claim(join(routeDir, '[id]'), className);
-    for (const [actionName, actionDef] of resolveApiCustomActions(
+    const actionSpecs = resolveApiCustomActions(
       objectDef,
-      manifest,
+      exposureManifest,
       false,
-    ).exposed) {
-      const route = resolveApiActionRouteConfig(
+    ).exposed.map(([actionName, actionDef]) => {
+      const routeConfig = resolveApiActionRouteConfig(
         actionName,
         actionDef,
         objectDef.decoratorConfig?.api,
         { kebabRoutes: options.kebabRoutes },
       );
-      claim(
-        join(
-          route.scope === 'collection' ? routeDir : join(routeDir, '[id]'),
-          ...route.pathSegments,
+      return {
+        routeDir: join(
+          routeConfig.scope === 'collection'
+            ? routeDir
+            : join(routeDir, '[id]'),
+          ...routeConfig.pathSegments,
         ),
-        className,
-      );
+        spec: { actionName, routeConfig },
+      };
+    });
+    for (const [actionRouteDir] of groupCustomActionRoutes(actionSpecs)) {
+      claim(actionRouteDir, className);
     }
   }
   // These generator-owned utility files share the same filesystem namespace.
@@ -1437,19 +1451,27 @@ function assertNoCrossObjectRouteCollisions(
 }
 
 /**
- * Generates SvelteKit API routes from manifest
+ * Generates SvelteKit API routes from manifest. `exposureManifest` preserves
+ * the full class inventory for custom-action wireability when `manifest` is a
+ * deliberately selected output subset.
  */
 export async function generateSvelteKitRoutes(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  exposureManifest: SmartObjectManifest = manifest,
 ): Promise<void> {
   if (!options.enabled) return;
 
   console.log('[smrt] Generating SvelteKit routes...');
 
   if (options.rejectRouteCollisions) {
-    assertNoCrossObjectRouteCollisions(projectRoot, manifest, options);
+    assertNoCrossObjectRouteCollisions(
+      projectRoot,
+      manifest,
+      options,
+      exposureManifest,
+    );
   }
 
   clearGeneratedRouteFiles(join(projectRoot, options.routesDir));
@@ -1474,6 +1496,7 @@ export async function generateSvelteKitRoutes(
         className,
         objectDef,
         manifest,
+        exposureManifest,
         options,
       );
       generatedRoutePaths.push(...collectionRoutePaths);
@@ -1493,6 +1516,7 @@ export async function generateSvelteKitRoutes(
         className,
         objectDef,
         manifest,
+        exposureManifest,
         options,
       )),
     );
@@ -2143,6 +2167,7 @@ async function generateRoutesForObject(
   className: string,
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest,
+  exposureManifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<string[]> {
   const collectionName = objectDef.collection;
@@ -2202,7 +2227,7 @@ async function generateRoutesForObject(
   // and the knowledge artifact say one exists (#2686).
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
-    manifest,
+    exposureManifest,
     false,
   );
   warnUnhostedActions(className, rejected);
@@ -2267,6 +2292,7 @@ async function generateCollectionRoutesForObject(
   className: string,
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest,
+  exposureManifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<string[]> {
   const generatedRoutePaths: string[] = [];
@@ -2286,7 +2312,7 @@ async function generateCollectionRoutesForObject(
 
   const { exposed: customActions, rejected } = resolveApiCustomActions(
     objectDef,
-    manifest,
+    exposureManifest,
     true,
   );
   warnUnhostedActions(className, rejected);

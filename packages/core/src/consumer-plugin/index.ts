@@ -312,23 +312,30 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             routeManifest,
             consumerSvelteKit,
           );
-          await generateSvelteKitRoutes(projectRoot, hostedManifest, {
-            enabled: true,
-            routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
-            objectsDir: 'src/lib/objects',
-            configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
-            configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
-            kebabRoutes: consumerSvelteKit.kebabRoutes ?? kebabRoutes,
-            // These span a model set rather than one selected object, so new
-            // consumer hosting starts fail-closed. Callers can opt in with the
-            // generator's established option shapes.
-            changesRoute: consumerSvelteKit.changesRoute ?? { enabled: false },
-            eventsRoute: consumerSvelteKit.eventsRoute ?? { enabled: false },
-            resourcesRoute: consumerSvelteKit.resourcesRoute ?? {
-              enabled: false,
+          await generateSvelteKitRoutes(
+            projectRoot,
+            hostedManifest,
+            {
+              enabled: true,
+              routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
+              objectsDir: 'src/lib/objects',
+              configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
+              configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
+              kebabRoutes: consumerSvelteKit.kebabRoutes ?? kebabRoutes,
+              // These span a model set rather than one selected object, so new
+              // consumer hosting starts fail-closed. Callers can opt in with the
+              // generator's established option shapes.
+              changesRoute: consumerSvelteKit.changesRoute ?? {
+                enabled: false,
+              },
+              eventsRoute: consumerSvelteKit.eventsRoute ?? { enabled: false },
+              resourcesRoute: consumerSvelteKit.resourcesRoute ?? {
+                enabled: false,
+              },
+              rejectRouteCollisions: true,
             },
-            rejectRouteCollisions: true,
-          });
+            routeManifest as unknown as SmartObjectManifest,
+          );
         }
         return {
           build: {
