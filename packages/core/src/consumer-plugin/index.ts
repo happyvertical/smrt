@@ -358,7 +358,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           };
           await contributeSvelteKitRoutes(
             env ?? userConfig,
-            expectedSvelteKitRouteOwners(userConfig, routeOptions.routesDir),
+            expectedSvelteKitRouteOwners(
+              userConfig,
+              projectRoot,
+              routeOptions.routesDir,
+            ),
             projectRoot,
             {
               owner: 'consumer',

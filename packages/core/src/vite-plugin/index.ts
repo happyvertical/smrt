@@ -803,6 +803,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         routeLifecycleConfig = env ?? userConfig;
         routeExpectedOwners = expectedSvelteKitRouteOwners(
           userConfig,
+          projectRoot,
           svelteKit.routesDir || 'src/routes/api',
         );
         configHookManifest = await scanAndGenerateManifest(projectRoot);

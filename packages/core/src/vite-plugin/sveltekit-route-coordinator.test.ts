@@ -102,12 +102,33 @@ describe('SvelteKit route participant targets', () => {
     );
     const config = { plugins: [producer, consumer] };
 
-    expect(expectedSvelteKitRouteOwners(config, 'src/routes/api')).toEqual([
+    expect(
+      expectedSvelteKitRouteOwners(config, '/project', 'src/routes/api'),
+    ).toEqual(['producer']);
+    expect(
+      expectedSvelteKitRouteOwners(config, '/project', 'src/routes/external'),
+    ).toEqual(['consumer']);
+    const aliasedProducer = { name: 'smrt-auto-service' } as Plugin;
+    const aliasedConsumer = { name: 'smrt-consumer' } as Plugin;
+    markSvelteKitRouteParticipant(
+      aliasedProducer,
       'producer',
-    ]);
-    expect(expectedSvelteKitRouteOwners(config, 'src/routes/external')).toEqual(
-      ['consumer'],
+      true,
+      'src/routes/api/',
     );
+    markSvelteKitRouteParticipant(
+      aliasedConsumer,
+      'consumer',
+      true,
+      './src/routes/api',
+    );
+    expect(
+      expectedSvelteKitRouteOwners(
+        { plugins: [aliasedProducer, aliasedConsumer] },
+        '/project',
+        'src/routes/api',
+      ),
+    ).toEqual(['producer', 'consumer']);
   });
 });
 
@@ -140,6 +161,72 @@ describe('contributeSvelteKitRoutes', () => {
         owner === 'producer' ? producerManifest : consumerManifest,
       );
     }
+
+    expect(existsSync(routeFile(root, 'local-widgets'))).toBe(true);
+    expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(true);
+  });
+
+  it('rejects differing config file names for one physical route target before cleanup', async () => {
+    const root = temporaryProject();
+    const existing = join(root, 'src/routes/api/existing/+server.ts');
+    await contribute(
+      {},
+      ['producer'],
+      root,
+      'producer',
+      manifest('Existing', 'Existing', 'existing', '@app/local'),
+    );
+    const previous = readFileSync(existing, 'utf8');
+    const lifecycle = {};
+    await contribute(
+      lifecycle,
+      ['producer', 'consumer'],
+      root,
+      'producer',
+      manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local'),
+    );
+    await expect(
+      contribute(
+        lifecycle,
+        ['producer', 'consumer'],
+        root,
+        'consumer',
+        manifest(
+          '@acme/widgets:RemoteWidget',
+          'RemoteWidget',
+          'remote-widgets',
+          '@acme/widgets',
+        ),
+        routeOptions({ configFileName: 'external.ts' }),
+      ),
+    ).rejects.toThrow('Incompatible SvelteKit route settings');
+    expect(readFileSync(existing, 'utf8')).toBe(previous);
+  });
+
+  it('coordinates equivalent route directory spellings as one physical target', async () => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    await contribute(
+      lifecycle,
+      ['producer', 'consumer'],
+      root,
+      'producer',
+      manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local'),
+      routeOptions({ routesDir: 'src/routes/api/' }),
+    );
+    await contribute(
+      lifecycle,
+      ['producer', 'consumer'],
+      root,
+      'consumer',
+      manifest(
+        '@acme/widgets:RemoteWidget',
+        'RemoteWidget',
+        'remote-widgets',
+        '@acme/widgets',
+      ),
+      routeOptions({ routesDir: './src/routes/api' }),
+    );
 
     expect(existsSync(routeFile(root, 'local-widgets'))).toBe(true);
     expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(true);

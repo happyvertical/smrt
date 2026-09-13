@@ -41,6 +41,7 @@ export function markSvelteKitRouteParticipant(
 
 export function expectedSvelteKitRouteOwners(
   userConfig: unknown,
+  projectRoot: string,
   routesDir: string,
 ): SvelteKitRouteOwner[] {
   const plugins = (userConfig as { plugins?: unknown[] } | undefined)?.plugins;
@@ -58,7 +59,11 @@ export function expectedSvelteKitRouteOwners(
           }
         | undefined
     )?.[ROUTE_PARTICIPANT];
-    if (participant?.enabled && participant.routesDir === routesDir) {
+    if (
+      participant?.enabled &&
+      routeTarget(projectRoot, participant.routesDir) ===
+        routeTarget(projectRoot, routesDir)
+    ) {
       owners.add(participant.owner);
     }
   }
@@ -76,7 +81,7 @@ export async function contributeSvelteKitRoutes(
   projectRoot: string,
   contribution: RouteContribution,
 ): Promise<void> {
-  const target = `${resolve(projectRoot)}\0${contribution.options.routesDir}`;
+  const target = routeTarget(projectRoot, contribution.options.routesDir);
   const sessions = coordinators.get(lifecycle) ?? new Map();
   coordinators.set(lifecycle, sessions);
   const coordinator =
@@ -99,7 +104,7 @@ export async function contributeSvelteKitRoutes(
   const registrationContributions = [...sessions.values()].flatMap(
     ({ contributions }) => [...contributions.values()],
   );
-  const options = mergeOptions(contributions);
+  const options = mergeOptions(projectRoot, contributions);
   await generateSvelteKitRoutes(
     resolve(projectRoot),
     mergeManifests(contributions.map(({ routeManifest }) => routeManifest)),
@@ -112,6 +117,18 @@ export async function contributeSvelteKitRoutes(
       registrationContributions.map(({ routeManifest }) => routeManifest),
     ),
   );
+}
+
+function routeTarget(projectRoot: string, routesDir: string): string {
+  return `${resolve(projectRoot)}\0${resolve(projectRoot, routesDir)}`;
+}
+
+function configTarget(projectRoot: string, options: SvelteKitOptions): string {
+  return resolve(projectRoot, options.configPath || 'src/lib/server');
+}
+
+function effectiveConfigFileName(options: SvelteKitOptions): string {
+  return options.configFileName || 'smrt.ts';
 }
 
 function utilityManifests(
@@ -133,24 +150,29 @@ function utilityManifests(
   };
 }
 
-function mergeOptions(contributions: RouteContribution[]): SvelteKitOptions {
+function mergeOptions(
+  projectRoot: string,
+  contributions: RouteContribution[],
+): SvelteKitOptions {
   const producer = contributions.find(({ owner }) => owner === 'producer');
   const primary = producer ?? contributions[0];
   if (!primary) throw new Error('[smrt] Missing SvelteKit route contribution');
   const merged: SvelteKitOptions = { ...primary.options };
   for (const contribution of contributions) {
-    for (const key of [
-      'routesDir',
-      'objectsDir',
-      'configPath',
-      'configFileName',
-      'kebabRoutes',
-    ] as const) {
-      if (contribution.options[key] !== primary.options[key]) {
-        throw new Error(
-          `[smrt] Incompatible SvelteKit route settings for shared routesDir ${JSON.stringify(primary.options.routesDir)}: ${key} must match`,
-        );
-      }
+    const incompatible =
+      routeTarget(projectRoot, contribution.options.routesDir) !==
+        routeTarget(projectRoot, primary.options.routesDir) ||
+      resolve(projectRoot, contribution.options.objectsDir) !==
+        resolve(projectRoot, primary.options.objectsDir) ||
+      configTarget(projectRoot, contribution.options) !==
+        configTarget(projectRoot, primary.options) ||
+      effectiveConfigFileName(contribution.options) !==
+        effectiveConfigFileName(primary.options) ||
+      contribution.options.kebabRoutes !== primary.options.kebabRoutes;
+    if (incompatible) {
+      throw new Error(
+        `[smrt] Incompatible SvelteKit route settings for shared routesDir ${JSON.stringify(primary.options.routesDir)}`,
+      );
     }
   }
   for (const key of [
