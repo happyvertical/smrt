@@ -764,7 +764,11 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     writeFileSync(
       join(packageDir, 'dist', 'index.js'),
       Object.values(objects)
-        .map((object) => `export class ${object.className} {}`)
+        .map((object) =>
+          object.className === 'StaticActionWidget'
+            ? 'export class StaticActionWidget { static publish() { return { published: true }; } }'
+            : `export class ${object.className} {}`,
+        )
         .join('\n'),
     );
   }
@@ -797,6 +801,12 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     symlinkSync(
       resolve(import.meta.dirname, '../..'),
       join(coreLinkDir, 'smrt-core'),
+    );
+    const svelteKitLinkDir = join(projectRoot, 'node_modules', '@sveltejs');
+    mkdirSync(svelteKitLinkDir, { recursive: true });
+    symlinkSync(
+      resolve(import.meta.dirname, '../../node_modules/@sveltejs/kit'),
+      join(svelteKitLinkDir, 'kit'),
     );
     writeProvider('@acme/widgets', {
       '@acme/widgets:Widget': {
@@ -847,6 +857,27 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
         fields: {},
         methods: {},
         decoratorConfig: { api: true },
+      },
+      '@acme/widgets:StaticActionWidget': {
+        className: 'StaticActionWidget',
+        qualifiedName: '@acme/widgets:StaticActionWidget',
+        collection: 'static-action-widgets',
+        fields: {},
+        methods: {
+          publish: {
+            name: 'publish',
+            parameters: [],
+            returnType: 'unknown',
+            isPublic: true,
+            isStatic: true,
+          },
+        },
+        decoratorConfig: {
+          api: {
+            include: ['publish'],
+            routes: { publish: { method: 'GET' } },
+          },
+        },
       },
       '@acme/widgets:WireWidget': {
         className: 'WireWidget',
@@ -1112,6 +1143,47 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       ).toBe(true);
     } finally {
       await server.close();
+    }
+  });
+
+  it('initializes a selected static collection action through its generated route and custom config location', async () => {
+    const plugin = await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:StaticActionWidget'],
+        configPath: 'src/server/runtime',
+        configFileName: 'registry.ts',
+      },
+    });
+    await plugin.buildStart.call(plugin);
+
+    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+    ObjectRegistry.clear();
+    const server = await createServer({
+      root: projectRoot,
+      logLevel: 'silent',
+      plugins: [plugin],
+      appType: 'custom',
+      server: { middlewareMode: true },
+    });
+    try {
+      const route: any = await server.ssrLoadModule(
+        '/src/routes/api/static-action-widgets/publish/+server.ts',
+      );
+      const response = await route.GET({
+        locals: { smrtAuth: true },
+        url: new URL('http://localhost/api/static-action-widgets/publish'),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        action: 'publish',
+        result: { published: true },
+      });
+      expect(
+        ObjectRegistry.getClass('@acme/widgets:StaticActionWidget'),
+      ).toBeDefined();
+    } finally {
+      await server.close();
+      ObjectRegistry.clear();
     }
   });
 
