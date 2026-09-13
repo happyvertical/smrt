@@ -26,6 +26,7 @@ import {
   reconcileSvelteKitRouteGitignore,
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
+import { canonicalSvelteKitPath } from '../vite-plugin/sveltekit-path.js';
 import {
   activeProducerKnowledgeRoutePaths,
   activeSvelteKitRouteParticipants,
@@ -278,7 +279,9 @@ async function reconcileConsumerSvelteKitRouteRoots(
   }
 
   for (const routesDir of [...remaining]) {
-    const routeRoot = path.resolve(projectRoot, routesDir);
+    const routeRoot = canonicalSvelteKitPath(
+      path.resolve(projectRoot, routesDir),
+    );
     const activeParticipants = await activeSvelteKitRouteParticipants(
       userConfig,
       projectRoot,

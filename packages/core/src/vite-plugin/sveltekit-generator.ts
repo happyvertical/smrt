@@ -56,6 +56,7 @@ import {
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
 import {
   collectSyncApplyTargets,
   generateSyncApplyRoute,
@@ -1414,13 +1415,14 @@ export function assertNoCrossObjectRouteCollisions(
     owner: string,
     writer: RouteWriter,
   ) => {
-    const prior = claims.get(routePath);
+    const canonicalRoutePath = canonicalSvelteKitPath(routePath);
+    const prior = claims.get(canonicalRoutePath);
     if (prior && (prior.owner !== owner || prior.writer !== writer)) {
       throw new Error(
         `Conflicting SvelteKit route ${routeDir}: ${prior.owner} (${prior.writer}) and ${owner} (${writer}) would write the same handler`,
       );
     }
-    claims.set(routePath, { owner, writer });
+    claims.set(canonicalRoutePath, { owner, writer });
   };
   const claim = (routeDir: string, owner: string, writer: RouteWriter) =>
     claimPath(
@@ -1712,7 +1714,7 @@ export function clearGeneratedSvelteKitRouteFiles(
   excludedPaths: ReadonlySet<string> = new Set(),
   protectedRouteRoots: ReadonlySet<string> = new Set(),
 ): void {
-  if (protectedRouteRoots.has(resolve(routesRoot))) return;
+  if (protectedRouteRoots.has(canonicalSvelteKitPath(routesRoot))) return;
   if (!existsSync(routesRoot)) {
     return;
   }
@@ -1732,7 +1734,7 @@ export function clearGeneratedSvelteKitRouteFiles(
     if (!entry.isFile() || entry.name !== '+server.ts') {
       continue;
     }
-    if (excludedPaths.has(resolve(entryPath))) continue;
+    if (excludedPaths.has(canonicalSvelteKitPath(entryPath))) continue;
 
     const fileContent = readFileSync(entryPath, 'utf-8');
     if (fileContent.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {

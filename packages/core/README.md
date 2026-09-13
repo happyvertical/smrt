@@ -249,6 +249,8 @@ application, they may use the same canonical `routesDir` and share one
 generated surface, or use disjoint directories. Nested directories are
 rejected before files are changed because a parent generated-root cleanup would
 otherwise own and remove the child surface.
+Canonical ownership resolves symlink aliases through the nearest existing
+directory, so paths that name the same generated directory share one surface.
 
 The consumer keeps a private managed-root inventory under `.smrt` after a
 successful explicit hosting plan is validated. Changing its `routesDir`,

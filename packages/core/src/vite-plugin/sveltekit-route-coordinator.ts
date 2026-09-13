@@ -9,6 +9,7 @@ import {
   type SvelteKitOptions,
   type SvelteKitUtilityManifests,
 } from './sveltekit-generator.js';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
 
 export type SvelteKitRouteOwner = 'producer' | 'consumer';
 
@@ -66,14 +67,14 @@ export async function expectedSvelteKitRouteOwners(
   routesDir: string,
   env?: ConfigEnv,
 ): Promise<SvelteKitRouteOwner[]> {
-  const targetRoot = resolve(projectRoot);
+  const targetRoot = canonicalSvelteKitPath(projectRoot);
   const participants = await activeSvelteKitRouteParticipants(
     userConfig,
     targetRoot,
     env,
   );
   assertCompatibleSvelteKitRouteTargets(participants);
-  const target = resolve(targetRoot, routesDir);
+  const target = canonicalSvelteKitPath(resolve(targetRoot, routesDir));
   const owners = new Set<SvelteKitRouteOwner>();
   for (const participant of participants) {
     if (
@@ -146,13 +147,15 @@ export async function activeSvelteKitRouteParticipants(
         | undefined
     )?.[ROUTE_PARTICIPANT];
     if (!participant?.enabled) continue;
-    const participantRoot = resolve(
+    const participantRoot = canonicalSvelteKitPath(
       participant.resolveProjectRoot?.(userConfig) ?? projectRoot,
     );
     participants.push({
       owner: participant.owner,
       projectRoot: participantRoot,
-      routesDir: resolve(participantRoot, participant.routesDir),
+      routesDir: canonicalSvelteKitPath(
+        resolve(participantRoot, participant.routesDir),
+      ),
       resolveKnowledge: participant.resolveKnowledge,
     });
   }
@@ -245,7 +248,7 @@ export function assertSvelteKitRouteCoordinationComplete(
   lifecycle: object,
   projectRoot: string,
 ): void {
-  const targetPrefix = `${resolve(projectRoot)}\0`;
+  const targetPrefix = `${canonicalSvelteKitPath(projectRoot)}\0`;
   for (const [target, coordinator] of coordinators.get(lifecycle) ?? []) {
     if (!target.startsWith(targetPrefix)) continue;
     const missing = [...coordinator.expectedOwners].filter(
@@ -268,7 +271,9 @@ export function producerKnowledgeRoutePaths(
   for (const coordinator of coordinators.get(lifecycle)?.values() ?? []) {
     const producer = coordinator.contributions.get('producer');
     if (!producer?.options.knowledge?.api?.enabled) continue;
-    paths.add(resolve(knowledgeRoutePath(projectRoot, producer.options)));
+    paths.add(
+      canonicalSvelteKitPath(knowledgeRoutePath(projectRoot, producer.options)),
+    );
   }
   return paths;
 }
@@ -286,7 +291,7 @@ export async function activeProducerKnowledgeRoutePaths(
     env,
   )) {
     if (
-      participant.projectRoot !== resolve(projectRoot) ||
+      participant.projectRoot !== canonicalSvelteKitPath(projectRoot) ||
       participant.owner !== 'producer' ||
       !participant.resolveKnowledge
     )
@@ -296,7 +301,7 @@ export async function activeProducerKnowledgeRoutePaths(
     );
     if (!knowledge.api?.enabled) continue;
     paths.add(
-      resolve(
+      canonicalSvelteKitPath(
         knowledgeRoutePath(participant.projectRoot, {
           enabled: true,
           routesDir: relative(participant.projectRoot, participant.routesDir),
@@ -335,7 +340,7 @@ async function generateWhenReady(
     },
   };
   await generateSvelteKitRoutes(
-    resolve(projectRoot),
+    canonicalSvelteKitPath(projectRoot),
     mergeManifests(contributions.map(({ routeManifest }) => routeManifest)),
     options,
     mergeManifests(
@@ -358,11 +363,14 @@ async function generateWhenReady(
 }
 
 function routeTarget(projectRoot: string, routesDir: string): string {
-  return `${resolve(projectRoot)}\0${resolve(projectRoot, routesDir)}`;
+  const root = canonicalSvelteKitPath(projectRoot);
+  return `${root}\0${canonicalSvelteKitPath(resolve(root, routesDir))}`;
 }
 
 function configTarget(projectRoot: string, options: SvelteKitOptions): string {
-  return resolve(projectRoot, options.configPath || 'src/lib/server');
+  return canonicalSvelteKitPath(
+    resolve(projectRoot, options.configPath || 'src/lib/server'),
+  );
 }
 
 function effectiveConfigFileName(options: SvelteKitOptions): string {
@@ -416,7 +424,11 @@ function foreignProducerKnowledgeRoutePaths(
   const paths = new Set<string>();
   for (const contribution of producerKnowledgeContributions(sessions)) {
     if (current.contributions.get('producer') === contribution) continue;
-    paths.add(resolve(knowledgeRoutePath(projectRoot, contribution.options)));
+    paths.add(
+      canonicalSvelteKitPath(
+        knowledgeRoutePath(projectRoot, contribution.options),
+      ),
+    );
   }
   return paths;
 }
@@ -427,7 +439,9 @@ function currentProducerKnowledgeRoutePaths(
 ): Set<string> {
   const producer = coordinator.contributions.get('producer');
   if (!producer?.options.knowledge?.api?.enabled) return new Set();
-  return new Set([resolve(knowledgeRoutePath(projectRoot, producer.options))]);
+  return new Set([
+    canonicalSvelteKitPath(knowledgeRoutePath(projectRoot, producer.options)),
+  ]);
 }
 
 function protectedProducerKnowledgeRoutePaths(
@@ -440,7 +454,7 @@ function protectedProducerKnowledgeRoutePaths(
     ...foreignProducerKnowledgeRoutePaths(sessions, projectRoot, current),
     ...[...current.contributions.values()].flatMap((contribution) =>
       [...(contribution.reservedRoutePaths ?? [])].filter(
-        (path) => !ownPaths.has(resolve(path)),
+        (path) => !ownPaths.has(canonicalSvelteKitPath(path)),
       ),
     ),
   ]);
@@ -462,11 +476,13 @@ function assertNoForeignKnowledgeRouteCollisions(
         knowledgeContributions
           .filter((knowledge) => knowledge !== contribution)
           .map((knowledge) =>
-            resolve(knowledgeRoutePath(projectRoot, knowledge.options)),
+            canonicalSvelteKitPath(
+              knowledgeRoutePath(projectRoot, knowledge.options),
+            ),
           ),
       );
       for (const path of contribution.reservedRoutePaths ?? []) {
-        if (!ownPaths.has(resolve(path))) foreignPaths.add(path);
+        if (!ownPaths.has(canonicalSvelteKitPath(path))) foreignPaths.add(path);
       }
       if (foreignPaths.size === 0) continue;
       assertNoCrossObjectRouteCollisions(
@@ -492,8 +508,12 @@ function mergeOptions(
     const incompatible =
       routeTarget(projectRoot, contribution.options.routesDir) !==
         routeTarget(projectRoot, primary.options.routesDir) ||
-      resolve(projectRoot, contribution.options.objectsDir) !==
-        resolve(projectRoot, primary.options.objectsDir) ||
+      canonicalSvelteKitPath(
+        resolve(projectRoot, contribution.options.objectsDir),
+      ) !==
+        canonicalSvelteKitPath(
+          resolve(projectRoot, primary.options.objectsDir),
+        ) ||
       configTarget(projectRoot, contribution.options) !==
         configTarget(projectRoot, primary.options) ||
       effectiveConfigFileName(contribution.options) !==
