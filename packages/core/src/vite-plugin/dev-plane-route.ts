@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /** Whether `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer. */
@@ -55,11 +56,6 @@ export function generateDevPlaneRoute(
     );
     return false;
   }
-  const configPath = options.configPath || 'src/lib/server';
-  const configFileName = (options.configFileName || 'smrt.ts').replace(
-    /\.ts$/,
-    '',
-  );
   const routeDir = join(projectRoot, options.routesDir, '_dev', '[...tool]');
   if (!existsSync(routeDir)) {
     mkdirSync(routeDir, { recursive: true });
@@ -68,7 +64,7 @@ export function generateDevPlaneRoute(
   writeFileSync(
     filePath,
     generateDevPlaneRouteTemplate(
-      `$lib/${configPath.replace(/^src\/lib\//, '')}/${configFileName}`,
+      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
     ),
     'utf-8',
   );

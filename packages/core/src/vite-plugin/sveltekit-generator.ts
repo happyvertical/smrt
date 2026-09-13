@@ -55,6 +55,7 @@ import {
   willGenerateResourcesRoute,
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import {
   collectSyncApplyTargets,
   generateSyncApplyRoute,
@@ -2932,6 +2933,11 @@ function generateCollectionRouteTemplate(
   // for a given manifest — same value the generated virt-web module exports and
   // the client persistence namespace keys on.
   const webManifestHash = computeWebManifestHash(manifest);
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2939,7 +2945,7 @@ function generateCollectionRouteTemplate(
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
-}import { getCollection } from '$lib/server/smrt';
+}import { getCollection } from '${configImport}';
 ${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
@@ -3117,12 +3123,17 @@ function generateItemRouteTemplate(
   // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
   // same value as the list route and the generated virt-web module (see above).
   const webManifestHash = computeWebManifestHash(manifest);
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
+${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '${configImport}';
 ${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
@@ -3285,11 +3296,16 @@ function generateActionRouteTemplate(
     'normalizeTypedHttpError',
     ...[...decoderImports].sort(),
   ].join(', ');
+  const configImport = resolveSvelteKitConfigImport(
+    projectRoot,
+    routeDir,
+    options,
+  );
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
     `import { ${coreImports} } from '@happyvertical/smrt-core';`,
     hostType === 'collection' || routeConfig.scope !== 'collection'
-      ? "import { getCollection } from '$lib/server/smrt';"
+      ? `import { getCollection } from '${configImport}';`
       : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
     typeImports,
     "import type { RequestHandler } from './$types';",

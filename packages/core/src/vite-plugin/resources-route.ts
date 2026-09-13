@@ -85,6 +85,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
@@ -177,12 +178,22 @@ export function generateResourcesRoute(
   if (!existsSync(routeDir)) {
     mkdirSync(routeDir, { recursive: true });
   }
-  writeFileSync(filePath, generateResourcesRouteTemplate(options), 'utf-8');
+  writeFileSync(
+    filePath,
+    generateResourcesRouteTemplate(
+      resolveSvelteKitConfigImport(projectRoot, routeDir, options),
+      options,
+    ),
+    'utf-8',
+  );
   console.log(`[smrt] Generated: ${filePath}`);
   return true;
 }
 
-function generateResourcesRouteTemplate(options: SvelteKitOptions): string {
+function generateResourcesRouteTemplate(
+  configImport: string,
+  options: SvelteKitOptions,
+): string {
   const kebabRoutesOption = options.kebabRoutes ? '\n  kebabRoutes: true,' : '';
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
@@ -197,12 +208,12 @@ function generateResourcesRouteTemplate(options: SvelteKitOptions): string {
 import { createResourceListHandler } from '@happyvertical/smrt-users/sveltekit';
 // Side effect: registers @smrt() classes in ObjectRegistry before the
 // handler walks it (mirrors the generated CRUD/changes/events routes'
-// $lib/server/smrt import).
-import '$lib/server/smrt';
+// configured SMRT config import).
+import '${configImport}';
 
 export const GET = createResourceListHandler({
   ensureRegistry: async () => {
-    await import('$lib/server/smrt');
+    await import('${configImport}');
   },${kebabRoutesOption}
 });
 `;

@@ -524,6 +524,25 @@ describe('SvelteKit Route Generator', () => {
         expect.any(String),
         'utf-8',
       );
+
+      const generatedRouteImports = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter(
+          (call) =>
+            typeof call[0] === 'string' && call[0].endsWith('+server.ts'),
+        )
+        .map((call) => String(call[1]));
+      expect(generatedRouteImports.length).toBeGreaterThan(0);
+      expect(generatedRouteImports).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining(
+            "import { getCollection } from '$lib/config/smrt-config'",
+          ),
+        ]),
+      );
+      expect(generatedRouteImports.join('\n')).not.toContain(
+        "from '$lib/server/smrt'",
+      );
     });
 
     it('should generate smrt-register with explicit package registrations', async () => {

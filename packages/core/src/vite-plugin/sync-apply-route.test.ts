@@ -136,7 +136,7 @@ describe('collectSyncApplyTargets', () => {
     );
     expect(targets[0].registryKey).toBe('@happyvertical/smrt-products:Product');
 
-    const content = generateSyncApplyRouteTemplate(targets);
+    const content = generateSyncApplyRouteTemplate(targets, '$lib/server/smrt');
     expect(content).toContain(
       'registryKey: "@happyvertical/smrt-products:Product"',
     );
@@ -159,7 +159,7 @@ describe('generateSyncApplyRouteTemplate', () => {
       },
     }),
   );
-  const content = generateSyncApplyRouteTemplate(targets);
+  const content = generateSyncApplyRouteTemplate(targets, '$lib/server/smrt');
 
   it('marks the file as generated and exports a POST handler', () => {
     expect(
@@ -198,6 +198,7 @@ describe('generateSyncApplyRouteTemplate', () => {
 
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
+      '$lib/server/smrt',
     );
     expect(withoutTenants).not.toContain('establishTenantContext');
     expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
