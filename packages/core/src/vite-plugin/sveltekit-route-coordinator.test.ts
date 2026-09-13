@@ -9,6 +9,7 @@ import {
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
+  revokeSvelteKitRoutes,
   type SvelteKitRouteOwner,
 } from './sveltekit-route-coordinator.js';
 
@@ -130,7 +131,59 @@ describe('SvelteKit route participant targets', () => {
       ),
     ).toEqual(['producer', 'consumer']);
   });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('rejects nested active route roots before cleanup when %s', async (_name, order) => {
+    const root = temporaryProject();
+    await contribute(
+      {},
+      ['consumer'],
+      root,
+      'consumer',
+      manifest(
+        '@acme/widgets:RemoteWidget',
+        'RemoteWidget',
+        'external/widgets',
+        '@acme/widgets',
+      ),
+      routeOptions({ routesDir: 'src/routes/api/external' }),
+    );
+    const previousPath = join(
+      root,
+      'src/routes/api/external/external/widgets/+server.ts',
+    );
+    const previousBytes = readFileSync(previousPath, 'utf8');
+    const producer = { name: 'smrt-auto-service' } as Plugin;
+    const consumer = { name: 'smrt-consumer' } as Plugin;
+    markSvelteKitRouteParticipant(producer, 'producer', true, 'src/routes/api');
+    markSvelteKitRouteParticipant(
+      consumer,
+      'consumer',
+      true,
+      'src/routes/api/external',
+    );
+    const plugins = order.map((owner) =>
+      owner === 'producer' ? producer : consumer,
+    );
+    const config = { plugins };
+
+    expect(() =>
+      expectedSvelteKitRouteOwners(config, root, ownerRouteDir(order[0])),
+    ).toThrow('Incompatible nested SvelteKit routesDir ownership');
+    // A watcher repeats the same preflight rather than deleting the child
+    // surface through a parent-root sweep.
+    expect(() =>
+      expectedSvelteKitRouteOwners(config, root, ownerRouteDir(order[1])),
+    ).toThrow('Incompatible nested SvelteKit routesDir ownership');
+    expect(readFileSync(previousPath, 'utf8')).toBe(previousBytes);
+  });
 });
+
+function ownerRouteDir(owner: SvelteKitRouteOwner): string {
+  return owner === 'producer' ? 'src/routes/api' : 'src/routes/api/external';
+}
 
 describe('contributeSvelteKitRoutes', () => {
   it.each([
@@ -232,6 +285,48 @@ describe('contributeSvelteKitRoutes', () => {
     expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(true);
   });
 
+  it('preserves the consumer collision preflight when producer defaults omit it', async () => {
+    const root = temporaryProject();
+    const establishedLifecycle = {};
+    await contribute(
+      establishedLifecycle,
+      ['producer'],
+      root,
+      'producer',
+      manifest('Previous', 'Previous', 'previous', '@app/local'),
+    );
+    const previousPath = routeFile(root, 'previous');
+    const previousBytes = readFileSync(previousPath, 'utf8');
+
+    const lifecycle = {};
+    await contribute(
+      lifecycle,
+      ['producer', 'consumer'],
+      root,
+      'producer',
+      manifest('LocalWidget', 'LocalWidget', 'widgets', '@app/local'),
+      routeOptions({ rejectRouteCollisions: undefined }),
+    );
+    await expect(
+      contribute(
+        lifecycle,
+        ['producer', 'consumer'],
+        root,
+        'consumer',
+        manifest(
+          '@acme/widgets:RemoteWidget',
+          'RemoteWidget',
+          'widgets',
+          '@acme/widgets',
+        ),
+        routeOptions({ rejectRouteCollisions: true }),
+      ),
+    ).rejects.toThrow('Conflicting SvelteKit route');
+
+    expect(readFileSync(previousPath, 'utf8')).toBe(previousBytes);
+    expect(existsSync(routeFile(root, 'widgets'))).toBe(false);
+  });
+
   it('replaces one owner contribution without deleting the other owner routes', async () => {
     const root = temporaryProject();
     const lifecycle = {};
@@ -267,6 +362,47 @@ describe('contributeSvelteKitRoutes', () => {
     expect(existsSync(routeFile(root, 'old-locals'))).toBe(false);
     expect(existsSync(routeFile(root, 'new-locals'))).toBe(true);
     expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(true);
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('reconciles a revoked shared consumer root without deleting producer routes when %s', async (_name, order) => {
+    const root = temporaryProject();
+    await contribute(
+      {},
+      ['consumer'],
+      root,
+      'consumer',
+      manifest(
+        '@acme/widgets:RemoteWidget',
+        'RemoteWidget',
+        'remote-widgets',
+        '@acme/widgets',
+      ),
+    );
+    const lifecycle = {};
+    for (const owner of order) {
+      if (owner === 'producer') {
+        await contribute(
+          lifecycle,
+          ['producer'],
+          root,
+          'producer',
+          manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local'),
+        );
+      } else {
+        await revokeSvelteKitRoutes(
+          lifecycle,
+          ['producer'],
+          root,
+          'src/routes/api',
+        );
+      }
+    }
+
+    expect(existsSync(routeFile(root, 'local-widgets'))).toBe(true);
+    expect(existsSync(routeFile(root, 'remote-widgets'))).toBe(false);
   });
 
   it('does not retain a removed consumer contribution in a fresh lifecycle', async () => {
@@ -485,5 +621,50 @@ describe('contributeSvelteKitRoutes', () => {
     expect(gitignore).toContain(
       'src/routes/external/remote-widgets/+server.ts',
     );
+  });
+
+  it.each([
+    ['producer first', ['producer', 'consumer']],
+    ['consumer first', ['consumer', 'producer']],
+  ] as const)('retains the producer knowledge endpoint across independent route roots when %s', async (_name, order) => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    const producerOptions = routeOptions({
+      knowledge: { api: { enabled: true } },
+    });
+    const consumerOptions = routeOptions({
+      routesDir: 'src/routes/external',
+    });
+
+    for (const owner of order) {
+      await contribute(
+        lifecycle,
+        [owner],
+        root,
+        owner,
+        owner === 'producer'
+          ? manifest(
+              'LocalWidget',
+              'LocalWidget',
+              'local-widgets',
+              '@app/local',
+            )
+          : manifest(
+              '@acme/widgets:RemoteWidget',
+              'RemoteWidget',
+              'remote-widgets',
+              '@acme/widgets',
+            ),
+        owner === 'producer' ? producerOptions : consumerOptions,
+      );
+    }
+
+    expect(
+      existsSync(join(root, 'src/routes/__smrt/knowledge/+server.ts')),
+    ).toBe(true);
+    expect(existsSync(routeFile(root, 'local-widgets'))).toBe(true);
+    expect(
+      existsSync(join(root, 'src/routes/external/remote-widgets/+server.ts')),
+    ).toBe(true);
   });
 });

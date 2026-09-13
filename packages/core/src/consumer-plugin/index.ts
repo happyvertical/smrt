@@ -21,11 +21,18 @@ import type {
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
-import type { SvelteKitOptions } from '../vite-plugin/sveltekit-generator.js';
 import {
+  clearGeneratedSvelteKitRouteFiles,
+  reconcileSvelteKitRouteGitignore,
+  type SvelteKitOptions,
+} from '../vite-plugin/sveltekit-generator.js';
+import {
+  activeSvelteKitRouteParticipants,
   contributeSvelteKitRoutes,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
+  producerKnowledgeRoutePaths,
+  revokeSvelteKitRoutes,
 } from '../vite-plugin/sveltekit-route-coordinator.js';
 import {
   generateWebModule,
@@ -165,6 +172,164 @@ const VIRTUAL_MODULES = {
   '@smrt/manifest': 'smrt-consumer:manifest',
   '@smrt/web': 'smrt-consumer:web',
 };
+
+const CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION = 1;
+const CONSUMER_SVELTEKIT_ROUTES_ARTIFACT = 'consumer-sveltekit-routes.json';
+
+interface ConsumerSvelteKitRoutesArtifact {
+  version: number;
+  routesDir: string[];
+}
+
+function consumerSvelteKitRoutesArtifactPath(projectRoot: string): string {
+  return path.join(projectRoot, '.smrt', CONSUMER_SVELTEKIT_ROUTES_ARTIFACT);
+}
+
+/** Persist only project-relative consumer route roots, never an output file list. */
+function canonicalConsumerRouteRoot(
+  projectRoot: string,
+  routesDir: string,
+): string {
+  const root = path.resolve(projectRoot);
+  const relative = path.relative(root, path.resolve(root, routesDir));
+  if (
+    !relative ||
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+  ) {
+    throw new Error(
+      `[smrt:consumer] svelteKit.routesDir must be a project-relative subdirectory (received ${JSON.stringify(routesDir)})`,
+    );
+  }
+  return relative.split(path.sep).join('/');
+}
+
+function loadConsumerSvelteKitRouteRoots(projectRoot: string): string[] {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  if (!fs.existsSync(artifactPath)) return [];
+  let parsed: ConsumerSvelteKitRoutesArtifact;
+  try {
+    parsed = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+  } catch {
+    throw new Error(
+      `[smrt:consumer] Cannot read ${CONSUMER_SVELTEKIT_ROUTES_ARTIFACT}; refusing to leave hosted routes unreconciled`,
+    );
+  }
+  if (
+    parsed?.version !== CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION ||
+    !Array.isArray(parsed.routesDir) ||
+    parsed.routesDir.some((routesDir) => typeof routesDir !== 'string')
+  ) {
+    throw new Error(
+      `[smrt:consumer] Invalid ${CONSUMER_SVELTEKIT_ROUTES_ARTIFACT}; refusing to leave hosted routes unreconciled`,
+    );
+  }
+  return [...new Set(parsed.routesDir)].map((routesDir) =>
+    canonicalConsumerRouteRoot(projectRoot, routesDir),
+  );
+}
+
+function publishConsumerSvelteKitRouteRoots(
+  projectRoot: string,
+  routesDir: string[],
+): void {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  publishArtifactFiles([
+    {
+      path: artifactPath,
+      content: JSON.stringify(
+        {
+          version: CONSUMER_SVELTEKIT_ROUTES_ARTIFACT_VERSION,
+          routesDir: [...new Set(routesDir)].sort(),
+        } satisfies ConsumerSvelteKitRoutesArtifact,
+        null,
+        2,
+      ),
+    },
+  ]);
+}
+
+function removeConsumerSvelteKitRouteRoots(projectRoot: string): void {
+  const artifactPath = consumerSvelteKitRoutesArtifactPath(projectRoot);
+  if (fs.existsSync(artifactPath)) fs.unlinkSync(artifactPath);
+}
+
+async function reconcileConsumerSvelteKitRouteRoots(
+  lifecycle: object,
+  userConfig: unknown,
+  projectRoot: string,
+  routesDir: string[],
+  afterReconciled: () => void,
+): Promise<void> {
+  const remaining = new Set(routesDir);
+  const reconcileOne = (routesDir: string) => {
+    remaining.delete(routesDir);
+    if (remaining.size === 0) afterReconciled();
+  };
+
+  if (remaining.size === 0) {
+    afterReconciled();
+    return;
+  }
+
+  for (const routesDir of [...remaining]) {
+    const routeRoot = path.resolve(projectRoot, routesDir);
+    const activeParticipants = activeSvelteKitRouteParticipants(
+      userConfig,
+      projectRoot,
+    );
+    const containingProducer = activeParticipants.find(
+      (participant) =>
+        participant.owner === 'producer' &&
+        (routeRoot === participant.routesDir ||
+          routeRoot.startsWith(`${participant.routesDir}${path.sep}`)),
+    );
+    if (containingProducer) {
+      await revokeSvelteKitRoutes(
+        lifecycle,
+        expectedSvelteKitRouteOwners(
+          userConfig,
+          projectRoot,
+          containingProducer.routesDir,
+        ),
+        projectRoot,
+        containingProducer.routesDir,
+        () => reconcileOne(routesDir),
+      );
+      continue;
+    }
+    const owners = expectedSvelteKitRouteOwners(
+      userConfig,
+      projectRoot,
+      routesDir,
+    );
+    if (owners.includes('producer')) {
+      await revokeSvelteKitRoutes(
+        lifecycle,
+        owners,
+        projectRoot,
+        routesDir,
+        () => reconcileOne(routesDir),
+      );
+      continue;
+    }
+    clearGeneratedSvelteKitRouteFiles(
+      routeRoot,
+      producerKnowledgeRoutePaths(lifecycle, projectRoot),
+      new Set(
+        activeParticipants
+          .map((participant) => participant.routesDir)
+          .filter((activeRoot) =>
+            activeRoot.startsWith(`${routeRoot}${path.sep}`),
+          ),
+      ),
+    );
+    reconcileSvelteKitRouteGitignore(projectRoot, routesDir);
+    reconcileOne(routesDir);
+  }
+}
 
 function consumerRouteOptions(
   value: SmrtConsumerOptions['svelteKit'],
@@ -327,6 +492,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     config: {
       order: 'pre',
       async handler(userConfig, env) {
+        const routeLifecycle = env ?? userConfig;
+        const previousConsumerRouteRoots =
+          loadConsumerSvelteKitRouteRoots(projectRoot);
         if (consumerSvelteKit) {
           const routePackages =
             packages.length === 0 && !disableScanning
@@ -339,9 +507,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             routeManifest,
             consumerSvelteKit,
           );
+          const routesDir = canonicalConsumerRouteRoot(
+            projectRoot,
+            consumerSvelteKit.routesDir ?? 'src/routes/api',
+          );
           const routeOptions = {
             enabled: true,
-            routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
+            routesDir,
             objectsDir: 'src/lib/objects',
             configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
             configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
@@ -356,8 +528,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             ),
             rejectRouteCollisions: true,
           };
+          let ownershipJournaled = false;
+          let reconciliationScheduled = false;
           await contributeSvelteKitRoutes(
-            env ?? userConfig,
+            routeLifecycle,
             expectedSvelteKitRouteOwners(
               userConfig,
               projectRoot,
@@ -369,7 +543,42 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
               routeManifest: hostedManifest,
               semanticManifest: routeManifest as unknown as SmartObjectManifest,
               options: routeOptions,
+              beforeCleanup: () => {
+                if (ownershipJournaled) return;
+                ownershipJournaled = true;
+                // Preflight has succeeded but no generated output has changed.
+                // Keep both roots until old-root reconciliation commits.
+                publishConsumerSvelteKitRouteRoots(projectRoot, [
+                  ...previousConsumerRouteRoots,
+                  routesDir,
+                ]);
+              },
+              afterGenerate: async () => {
+                if (reconciliationScheduled) return;
+                reconciliationScheduled = true;
+                const priorRoots = previousConsumerRouteRoots.filter(
+                  (previousRoot) => previousRoot !== routesDir,
+                );
+                await reconcileConsumerSvelteKitRouteRoots(
+                  routeLifecycle,
+                  userConfig,
+                  projectRoot,
+                  priorRoots,
+                  () =>
+                    publishConsumerSvelteKitRouteRoots(projectRoot, [
+                      routesDir,
+                    ]),
+                );
+              },
             },
+          );
+        } else if (previousConsumerRouteRoots.length > 0) {
+          await reconcileConsumerSvelteKitRouteRoots(
+            routeLifecycle,
+            userConfig,
+            projectRoot,
+            previousConsumerRouteRoots,
+            () => removeConsumerSvelteKitRouteRoots(projectRoot),
           );
         }
         return {

@@ -11,7 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
@@ -1541,6 +1541,13 @@ export interface SvelteKitUtilityManifests {
   changes: SmartObjectManifest;
   events: SmartObjectManifest;
   eventsSemantic: SmartObjectManifest;
+  /** Only the contribution that owns knowledge generation may reconcile it. */
+  clearKnowledgeRoute?: boolean;
+}
+
+/** Coordinator callbacks that run around validated generated-output mutation. */
+export interface SvelteKitGenerationHooks {
+  beforeCleanup?: () => void | Promise<void>;
 }
 
 export async function generateSvelteKitRoutes(
@@ -1553,8 +1560,10 @@ export async function generateSvelteKitRoutes(
     changes: routeManifest,
     events: routeManifest,
     eventsSemantic: semanticManifest,
+    clearKnowledgeRoute: true,
   },
   registrationManifest: SmartObjectManifest = routeManifest,
+  hooks: SvelteKitGenerationHooks = {},
 ): Promise<void> {
   if (!options.enabled) return;
 
@@ -1569,8 +1578,12 @@ export async function generateSvelteKitRoutes(
     );
   }
 
-  clearGeneratedRouteFiles(join(projectRoot, options.routesDir));
-  clearGeneratedKnowledgeRoute(projectRoot, options);
+  await hooks.beforeCleanup?.();
+
+  clearGeneratedSvelteKitRouteFiles(join(projectRoot, options.routesDir));
+  if (utilityManifests.clearKnowledgeRoute !== false) {
+    clearGeneratedKnowledgeRoute(projectRoot, options);
+  }
 
   // Generate centralized configuration file first (if it doesn't exist)
   await generateSmrtConfigFile(projectRoot, registrationManifest, options);
@@ -1678,7 +1691,13 @@ export async function generateSvelteKitRoutes(
   );
 }
 
-function clearGeneratedRouteFiles(routesRoot: string): void {
+/** Remove only SMRT header-owned SvelteKit handlers below one route root. */
+export function clearGeneratedSvelteKitRouteFiles(
+  routesRoot: string,
+  excludedPaths: ReadonlySet<string> = new Set(),
+  protectedRouteRoots: ReadonlySet<string> = new Set(),
+): void {
+  if (protectedRouteRoots.has(resolve(routesRoot))) return;
   if (!existsSync(routesRoot)) {
     return;
   }
@@ -1687,19 +1706,36 @@ function clearGeneratedRouteFiles(routesRoot: string): void {
     const entryPath = join(routesRoot, entry.name);
 
     if (entry.isDirectory()) {
-      clearGeneratedRouteFiles(entryPath);
+      clearGeneratedSvelteKitRouteFiles(
+        entryPath,
+        excludedPaths,
+        protectedRouteRoots,
+      );
       continue;
     }
 
     if (!entry.isFile() || entry.name !== '+server.ts') {
       continue;
     }
+    if (excludedPaths.has(resolve(entryPath))) continue;
 
     const fileContent = readFileSync(entryPath, 'utf-8');
     if (fileContent.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
       unlinkSync(entryPath);
     }
   }
+}
+
+/** Refresh the managed ignore block after an externally coordinated cleanup. */
+export function reconcileSvelteKitRouteGitignore(
+  projectRoot: string,
+  routesDir: string,
+): void {
+  updateGitignore(
+    projectRoot,
+    [],
+    join(projectRoot, svelteKitRouteRoot(routesDir)),
+  );
 }
 
 function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
@@ -1713,6 +1749,14 @@ function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
     .filter(Boolean);
 
   return join(projectRoot, routeRoot, ...segments);
+}
+
+/** Exact generated knowledge handler path for coordinator-owned cleanup. */
+export function knowledgeRoutePath(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): string {
+  return join(knowledgeRouteDir(projectRoot, options), '+server.ts');
 }
 
 function svelteKitRouteRoot(routesDir: string): string {
@@ -1733,8 +1777,7 @@ function clearGeneratedKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
 ): void {
-  const routeDir = knowledgeRouteDir(projectRoot, options);
-  const routePath = join(routeDir, '+server.ts');
+  const routePath = knowledgeRoutePath(projectRoot, options);
   if (!existsSync(routePath)) return;
 
   const content = readFileSync(routePath, 'utf-8');

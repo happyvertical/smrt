@@ -27,6 +27,10 @@ import {
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
+import {
+  contributeSvelteKitRoutes,
+  markSvelteKitRouteParticipant,
+} from '../vite-plugin/sveltekit-route-coordinator.js';
 import { smrtConsumer } from './index.js';
 
 let projectRoot: string;
@@ -1807,6 +1811,196 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(
       existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
     ).toBe(false);
+  });
+
+  it.each([
+    ['svelteKit:false', false],
+    ['legacy svelteKit:true', true],
+    ['omitted svelteKit', undefined],
+  ] as const)('revokes prior explicit consumer routes in a fresh config when %s', async (_name, nextSvelteKit) => {
+    await configureRoutes({
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const hostedRoute = join(projectRoot, 'src/routes/api/widgets/+server.ts');
+    const manualRoute = join(projectRoot, 'src/routes/api/manual/+server.ts');
+    mkdirSync(join(projectRoot, 'src/routes/api/manual'), {
+      recursive: true,
+    });
+    writeFileSync(manualRoute, '// handwritten handler\n');
+    expect(existsSync(hostedRoute)).toBe(true);
+    expect(
+      existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+    ).toBe(true);
+
+    await configureRoutes(
+      nextSvelteKit === undefined ? {} : { svelteKit: nextSvelteKit },
+    );
+
+    expect(existsSync(hostedRoute)).toBe(false);
+    expect(readFileSync(manualRoute, 'utf8')).toBe('// handwritten handler\n');
+    expect(readFileSync(join(projectRoot, '.gitignore'), 'utf8')).not.toContain(
+      'src/routes/api/widgets/+server.ts',
+    );
+    expect(
+      existsSync(join(projectRoot, '.smrt/consumer-sveltekit-routes.json')),
+    ).toBe(false);
+  });
+
+  it('moves explicit consumer hosting between custom roots without deleting handwriting', async () => {
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: 'src/routes/hosted-a',
+      },
+    });
+    const oldHostedRoute = join(
+      projectRoot,
+      'src/routes/hosted-a/widgets/+server.ts',
+    );
+    const manualRoute = join(
+      projectRoot,
+      'src/routes/hosted-a/manual/+server.ts',
+    );
+    mkdirSync(join(projectRoot, 'src/routes/hosted-a/manual'), {
+      recursive: true,
+    });
+    writeFileSync(manualRoute, '// handwritten handler\n');
+
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        routesDir: 'src/routes/hosted-b',
+      },
+    });
+
+    expect(existsSync(oldHostedRoute)).toBe(false);
+    expect(readFileSync(manualRoute, 'utf8')).toBe('// handwritten handler\n');
+    expect(
+      existsSync(join(projectRoot, 'src/routes/hosted-b/widgets/+server.ts')),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(projectRoot, '.smrt/consumer-sveltekit-routes.json'),
+          'utf8',
+        ),
+      ),
+    ).toMatchObject({ routesDir: ['src/routes/hosted-b'] });
+  });
+
+  it('preserves prior hosted routes and their ownership record when new selection is invalid', async () => {
+    await configureRoutes({
+      svelteKit: { objects: ['@acme/widgets:Widget'] },
+    });
+    const hostedRoute = join(projectRoot, 'src/routes/api/widgets/+server.ts');
+    const artifactPath = join(
+      projectRoot,
+      '.smrt/consumer-sveltekit-routes.json',
+    );
+    const previousRoute = readFileSync(hostedRoute, 'utf8');
+    const previousArtifact = readFileSync(artifactPath, 'utf8');
+
+    await expect(
+      configureRoutes({
+        svelteKit: { objects: ['@acme/widgets:Missing'] },
+      }),
+    ).rejects.toThrow(/unknown dependency object/);
+
+    expect(readFileSync(hostedRoute, 'utf8')).toBe(previousRoute);
+    expect(readFileSync(artifactPath, 'utf8')).toBe(previousArtifact);
+  });
+
+  it('keeps a producer custom knowledge endpoint while revoking a former consumer root', async () => {
+    const staleLifecycle = {};
+    const remoteManifest = {
+      version: '1',
+      timestamp: 0,
+      packageName: '@acme/widgets',
+      objects: {
+        '@acme/widgets:Widget': {
+          qualifiedName: '@acme/widgets:Widget',
+          className: 'Widget',
+          packageName: '@acme/widgets',
+          collection: 'widgets',
+          filePath: join(
+            projectRoot,
+            'node_modules/@acme/widgets/dist/index.js',
+          ),
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      },
+    } as any;
+    const externalOptions = {
+      enabled: true,
+      routesDir: 'src/routes/external',
+      objectsDir: 'src/lib/objects',
+      configPath: 'src/lib/server',
+      changesRoute: { enabled: false },
+      eventsRoute: { enabled: false },
+      resourcesRoute: { enabled: false },
+      rejectRouteCollisions: true,
+    };
+    await contributeSvelteKitRoutes(staleLifecycle, ['consumer'], projectRoot, {
+      owner: 'consumer',
+      routeManifest: remoteManifest,
+      semanticManifest: remoteManifest,
+      options: externalOptions,
+    });
+    mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, '.smrt/consumer-sveltekit-routes.json'),
+      JSON.stringify({ version: 1, routesDir: ['src/routes/external'] }),
+    );
+
+    const producer = { name: 'smrt-auto-service' } as any;
+    markSvelteKitRouteParticipant(producer, 'producer', true, 'src/routes/api');
+    const lifecycle = { plugins: [producer] };
+    const localManifest = {
+      ...remoteManifest,
+      packageName: '@app/local',
+      objects: {
+        LocalWidget: {
+          ...remoteManifest.objects['@acme/widgets:Widget'],
+          qualifiedName: '@app/local:LocalWidget',
+          className: 'LocalWidget',
+          packageName: '@app/local',
+          collection: 'local-widgets',
+        },
+      },
+    };
+    await contributeSvelteKitRoutes(lifecycle, ['producer'], projectRoot, {
+      owner: 'producer',
+      routeManifest: localManifest,
+      semanticManifest: localManifest,
+      options: {
+        ...externalOptions,
+        routesDir: 'src/routes/api',
+        knowledge: { api: { enabled: true, basePath: '/external/knowledge' } },
+      },
+    });
+
+    const disabledPlugin: any = smrtConsumer({
+      generateTypes: false,
+      projectRoot,
+      disableScanning: true,
+      svelteKit: false,
+    });
+    const configHook = disabledPlugin.config;
+    const handler =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+    await handler(lifecycle);
+
+    expect(
+      existsSync(join(projectRoot, 'src/routes/external/widgets/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/external/knowledge/+server.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/local-widgets/+server.ts')),
+    ).toBe(true);
   });
 
   it.each([

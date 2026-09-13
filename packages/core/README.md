@@ -244,6 +244,19 @@ integration flag and does not host dependency CRUD routes. Consumer-hosted
 existing option is explicitly enabled; `sync/apply` is generated when a selected model exposes a mutating API
 action.
 
+When `smrtPlugin()` and `smrtConsumer()` generate routes in one SvelteKit
+application, they may use the same canonical `routesDir` and share one
+generated surface, or use disjoint directories. Nested directories are
+rejected before files are changed because a parent generated-root cleanup would
+otherwise own and remove the child surface.
+
+The consumer keeps a private managed-root inventory under `.smrt` after a
+successful explicit hosting plan is validated. Changing its `routesDir`,
+setting `svelteKit: false`, returning to legacy `svelteKit: true`, or omitting
+the option reconciles only consumer-managed generated handlers before SvelteKit
+inventories routes. Handwritten handlers and current producer-owned routes are
+preserved.
+
 The plugin records only the concrete `+server.ts` files it generated in a
 bounded `.gitignore` block. Handwritten handlers below `routesDir` remain
 visible to Git, including routes that live beside generated resource handlers.
