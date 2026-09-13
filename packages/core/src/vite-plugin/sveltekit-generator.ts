@@ -2883,9 +2883,13 @@ export function findCliApiCoherenceViolations(
       // `skipApiCheck` array entry against only the lint's narrowed set
       // would flag a real command name (e.g. `list`) as an "unrecognized"
       // typo, which is false and actively misleading. So for that shape,
-      // also recognize CRUD verbs and any scanned method on the class
-      // (public or not) as known names -- broader than what this lint
-      // actually checks, but accurate about what the CLI generator exposes.
+      // also recognize CRUD verbs and any scanned PUBLIC method on the
+      // class as known names -- broader than what this lint actually
+      // checks, but accurate about what the CLI generator exposes. A
+      // non-public method is excluded even here (recall finding,
+      // smrt#2857 review): it is not part of the real CLI surface either,
+      // so a skipApiCheck entry naming one is still a genuine mistake, not
+      // a name this lint's narrower resolution merely declines to check.
       const hasExplicitInclude =
         typeof cliConfig === 'object' &&
         cliConfig !== null &&
@@ -2895,7 +2899,9 @@ export function findCliApiCoherenceViolations(
         : new Set([
             ...effectiveCliCommands,
             ...CRUD_OPERATIONS,
-            ...Object.keys(objectDef.methods || {}),
+            ...Object.entries(objectDef.methods || {})
+              .filter(([, method]) => method.isPublic)
+              .map(([name]) => name),
           ]);
 
       invalidSkipApiCheck = skipApiCheck

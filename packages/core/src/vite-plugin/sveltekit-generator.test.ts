@@ -3267,6 +3267,48 @@ describe('SvelteKit Route Generator', () => {
       expect(violations[0].invalidSkipApiCheck).toBeUndefined();
     });
 
+    it('still flags a non-public method name in skipApiCheck on a bare cli:true class (recall finding)', () => {
+      // A private/protected scanned method is not part of the real CLI
+      // surface either (the CLI generator only exposes public methods), so
+      // naming one in skipApiCheck is still a genuine mistake -- broadening
+      // the known-name set to fix F1 must not also swallow this case.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discover: {
+                name: 'discover',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              internalHelper: {
+                name: 'internalHelper',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: false,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['list', 'get'] },
+              cli: { skipApiCheck: ['internalHelper'] },
+            },
+          },
+        },
+      };
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        {
+          className: 'Praeco',
+          unreachable: ['discover'],
+          invalidSkipApiCheck: ['internalHelper'],
+        },
+      ]);
+    });
+
     it('still flags a genuine typo in skipApiCheck on a bare cli:true class', () => {
       const manifest = buildManifest({
         api: { include: ['list', 'get'] },
