@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.49.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - generate consumer types during SvelteKit config (#2856) (core)
+  - @happyvertical/smrt-config@0.49.7
+  - @happyvertical/smrt-types@0.49.7
+  - @happyvertical/smrt-scanner@0.49.7
+
 ## 0.49.6
 
 ### Patch Changes
