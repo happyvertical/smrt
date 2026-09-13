@@ -47,7 +47,10 @@ import type {
 import { generateChangesRoute } from './changes-route.js';
 import { generateDevPlaneRoute } from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
-import { generateResourcesRoute } from './resources-route.js';
+import {
+  generateResourcesRoute,
+  willGenerateResourcesRoute,
+} from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   collectSyncApplyTargets,
@@ -1349,6 +1352,7 @@ function groupCustomActionRoutes(
 
 /** Reject selected identities that would write the same endpoint file. */
 function assertNoCrossObjectRouteCollisions(
+  projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): void {
@@ -1427,6 +1431,9 @@ function assertNoCrossObjectRouteCollisions(
   if (hasAnchor && options.eventsRoute?.enabled !== false) {
     claim(join(options.routesDir, '_events'), '_events');
   }
+  if (willGenerateResourcesRoute(projectRoot, options)) {
+    claim(join(options.routesDir, '_resources'), '_resources');
+  }
 }
 
 /**
@@ -1442,7 +1449,7 @@ export async function generateSvelteKitRoutes(
   console.log('[smrt] Generating SvelteKit routes...');
 
   if (options.rejectRouteCollisions) {
-    assertNoCrossObjectRouteCollisions(manifest, options);
+    assertNoCrossObjectRouteCollisions(projectRoot, manifest, options);
   }
 
   clearGeneratedRouteFiles(join(projectRoot, options.routesDir));

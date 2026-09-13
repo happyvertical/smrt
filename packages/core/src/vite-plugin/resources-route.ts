@@ -80,7 +80,7 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -104,6 +104,28 @@ export function consumerHasSmrtUsers(projectRoot: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Whether this invocation will own the `_resources` output file. */
+export function willGenerateResourcesRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  if (
+    options.resourcesRoute?.enabled === false ||
+    !consumerHasSmrtUsers(projectRoot)
+  ) {
+    return false;
+  }
+  const routeDir = join(projectRoot, options.routesDir, '_resources');
+  for (const name of ['+server.ts', '+server.js']) {
+    const file = join(routeDir, name);
+    if (!existsSync(file)) continue;
+    if (!readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
