@@ -18,6 +18,10 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import {
+  generateSvelteKitRoutes,
+  type SvelteKitOptions,
+} from '../vite-plugin/sveltekit-generator.js';
 import { generateWebModule } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
 
@@ -81,6 +85,27 @@ interface ConsumerPackageJson {
   [key: string]: unknown;
 }
 
+/**
+ * SvelteKit route-hosting options for dependency models. Unlike `packages`,
+ * `objects` is an HTTP exposure boundary: every entry must be an exact,
+ * provider-qualified manifest key (for example, `@acme/widgets:Widget`).
+ */
+export interface SmrtConsumerSvelteKitOptions
+  extends Partial<
+    Pick<
+      SvelteKitOptions,
+      | 'routesDir'
+      | 'configPath'
+      | 'configFileName'
+      | 'kebabRoutes'
+      | 'changesRoute'
+      | 'eventsRoute'
+      | 'resourcesRoute'
+    >
+  > {
+  objects: readonly string[];
+}
+
 export interface SmrtConsumerOptions {
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
   packages?: string[];
@@ -96,8 +121,12 @@ export interface SmrtConsumerOptions {
    * types still consume the verified manifest.
    */
   generationSnapshot?: SmrtGenerationSnapshotOptions;
-  /** SvelteKit integration mode */
-  svelteKit?: boolean;
+  /**
+   * Consumer SvelteKit integration. `true` retains the historical compatibility
+   * mode and does not generate dependency routes. Route hosting requires an
+   * explicit, provider-qualified object allowlist.
+   */
+  svelteKit?: boolean | SmrtConsumerSvelteKitOptions;
   /**
    * Apply kebab-case to generated custom-method URL segments. This must match
    * the producer plugin's `svelteKit.kebabRoutes` setting.
@@ -125,6 +154,95 @@ const VIRTUAL_MODULES = {
   '@smrt/web': 'smrt-consumer:web',
 };
 
+function consumerRouteOptions(
+  value: SmrtConsumerOptions['svelteKit'],
+): SmrtConsumerSvelteKitOptions | undefined {
+  if (!value || value === true) return undefined;
+  if (!Array.isArray(value.objects) || value.objects.length === 0) {
+    throw new Error(
+      '[smrt:consumer] svelteKit.objects must list at least one provider-qualified object reference',
+    );
+  }
+  for (const objectRef of value.objects) {
+    if (typeof objectRef !== 'string' || !objectRef.includes(':')) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects entries must be provider-qualified (received ${JSON.stringify(objectRef)})`,
+      );
+    }
+  }
+  return value;
+}
+
+function consumerObjectRef(
+  manifestKey: string,
+  objectDef: ConsumerObjectDefinition,
+): string | undefined {
+  if (manifestKey.includes(':')) return manifestKey;
+  if (objectDef.qualifiedName?.includes(':')) return objectDef.qualifiedName;
+  if (objectDef.packageName && objectDef.className) {
+    return `${objectDef.packageName}:${objectDef.className}`;
+  }
+  return undefined;
+}
+
+/**
+ * Select exactly the dependency objects that a consumer explicitly hosts.
+ * Validation completes before the generator clears its managed files, so an
+ * invalid deployment cannot erase a previously generated route surface.
+ */
+function selectConsumerRouteManifest(
+  manifest: ConsumerManifest,
+  options: SmrtConsumerSvelteKitOptions,
+): SmartObjectManifest {
+  const entriesByRef = new Map<string, [string, ConsumerObjectDefinition]>();
+  for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
+    const objectRef = consumerObjectRef(manifestKey, objectDef);
+    if (objectRef) entriesByRef.set(objectRef, [manifestKey, objectDef]);
+  }
+
+  const selected = new Set<string>();
+  const objects: Record<string, ConsumerObjectDefinition> = {};
+  for (const objectRef of options.objects) {
+    const entry = entriesByRef.get(objectRef);
+    if (!entry) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects references unknown dependency object ${JSON.stringify(objectRef)}`,
+      );
+    }
+    if (selected.has(objectRef)) {
+      throw new Error(
+        `[smrt:consumer] svelteKit.objects contains duplicate object ${JSON.stringify(objectRef)}`,
+      );
+    }
+    selected.add(objectRef);
+    const [, objectDef] = entry;
+    objects[objectRef] = { ...objectDef, qualifiedName: objectRef };
+  }
+
+  // Collection classes share an item's route path. Retain one only when it
+  // explicitly belongs to a selected item, never because it merely shares a
+  // simple class name with an allowed provider object.
+  for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
+    if (!objectDef.extendsTypeArg) continue;
+    const collectionPackage = objectDef.packageName;
+    const itemRef = objectDef.extendsTypeArg;
+    const belongsToSelection =
+      selected.has(itemRef) ||
+      (!!collectionPackage && selected.has(`${collectionPackage}:${itemRef}`));
+    if (belongsToSelection) {
+      const collectionRef = consumerObjectRef(manifestKey, objectDef);
+      if (collectionRef) {
+        objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
+      }
+    }
+  }
+
+  return {
+    ...manifest,
+    objects,
+  } as unknown as SmartObjectManifest;
+}
+
 /**
  * Consumer plugin for projects that use SMRT packages
  */
@@ -138,6 +256,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     disableScanning = false,
     kebabRoutes = false,
   } = options;
+  const consumerSvelteKit = consumerRouteOptions(options.svelteKit);
 
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
@@ -158,17 +277,57 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   return {
     name: 'smrt-consumer',
 
-    config() {
-      return {
-        build: {
-          rollupOptions: {
-            // Runtime registration evaluates provider entry points so their
-            // exact constructors can be registered. Leave optional native
-            // provider binaries to Node instead of parsing them as JavaScript.
-            external: [/\.node$/],
+    // SvelteKit inventories routes in its config hook. Run before it so a
+    // clean consumer build sees the explicit dependency routes on its first
+    // invocation, even when sveltekit() appears first in vite.config.
+    enforce: 'pre',
+
+    config: {
+      order: 'pre',
+      async handler(userConfig) {
+        if (consumerSvelteKit) {
+          const routeProjectRoot =
+            options.projectRoot ??
+            path.resolve(process.cwd(), userConfig.root ?? '.');
+          const routePackages =
+            packages.length === 0 && !disableScanning
+              ? await discoverSmrtPackages(routeProjectRoot)
+              : packages;
+          const routeManifest = generationSnapshot
+            ? loadGenerationSnapshot()
+            : await aggregateTypeManifests(routePackages, routeProjectRoot);
+          const hostedManifest = selectConsumerRouteManifest(
+            routeManifest,
+            consumerSvelteKit,
+          );
+          await generateSvelteKitRoutes(routeProjectRoot, hostedManifest, {
+            enabled: true,
+            routesDir: consumerSvelteKit.routesDir ?? 'src/routes/api',
+            objectsDir: 'src/lib/objects',
+            configPath: consumerSvelteKit.configPath ?? 'src/lib/server',
+            configFileName: consumerSvelteKit.configFileName ?? 'smrt.ts',
+            kebabRoutes: consumerSvelteKit.kebabRoutes ?? kebabRoutes,
+            // These span a model set rather than one selected object, so new
+            // consumer hosting starts fail-closed. Callers can opt in with the
+            // generator's established option shapes.
+            changesRoute: consumerSvelteKit.changesRoute ?? { enabled: false },
+            eventsRoute: consumerSvelteKit.eventsRoute ?? { enabled: false },
+            resourcesRoute: consumerSvelteKit.resourcesRoute ?? {
+              enabled: false,
+            },
+          });
+        }
+        return {
+          build: {
+            rollupOptions: {
+              // Runtime registration evaluates provider entry points so their
+              // exact constructors can be registered. Leave optional native
+              // provider binaries to Node instead of parsing them as JavaScript.
+              external: [/\.node$/],
+            },
           },
-        },
-      };
+        };
+      },
     },
 
     configResolved(resolvedConfig) {

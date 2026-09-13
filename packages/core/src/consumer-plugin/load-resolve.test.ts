@@ -739,3 +739,193 @@ describe('smrtConsumer buildStart package discovery', () => {
     expect(module.collectionDefinitions).toEqual({});
   });
 });
+
+describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
+  function writeProvider(
+    packageName: string,
+    objects: Record<string, Record<string, unknown>>,
+  ): void {
+    const packageDir = join(
+      projectRoot,
+      'node_modules',
+      ...packageName.split('/'),
+    );
+    mkdirSync(join(packageDir, 'dist'), { recursive: true });
+    writePackageJson(packageDir, {
+      name: packageName,
+      version: '1.0.0',
+      exports: { '.': './dist/index.js' },
+    });
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.json'),
+      JSON.stringify({ packageName, objects }),
+    );
+  }
+
+  async function configureRoutes(
+    options: Record<string, unknown>,
+  ): Promise<void> {
+    const plugin: any = smrtConsumer({
+      packages: ['@acme/widgets', '@acme/other-widgets'],
+      generateTypes: false,
+      projectRoot,
+      disableScanning: true,
+      ...options,
+    });
+    const configHook = plugin.config;
+    const handler =
+      typeof configHook === 'function' ? configHook : configHook.handler;
+    await handler({ root: projectRoot });
+  }
+
+  beforeEach(() => {
+    writePackageJson(projectRoot, {
+      name: 'consumer-app',
+      version: '1.0.0',
+      type: 'module',
+    });
+    writeProvider('@acme/widgets', {
+      '@acme/widgets:Widget': {
+        className: 'Widget',
+        qualifiedName: '@acme/widgets:Widget',
+        collection: 'widgets',
+        fields: {
+          title: { type: 'text' },
+          protected: { type: 'text', readonly: true },
+        },
+        methods: {},
+        decoratorConfig: {
+          api: {
+            include: ['list', 'get', 'create', 'update'],
+            writable: ['title'],
+          },
+          tenantScoped: { mode: 'required' },
+        },
+      },
+      '@acme/widgets:AddedLater': {
+        className: 'AddedLater',
+        qualifiedName: '@acme/widgets:AddedLater',
+        collection: 'added-later',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: true },
+      },
+      '@acme/widgets:Hidden': {
+        className: 'Hidden',
+        qualifiedName: '@acme/widgets:Hidden',
+        collection: 'hidden',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: false },
+      },
+      '@acme/widgets:Empty': {
+        className: 'Empty',
+        qualifiedName: '@acme/widgets:Empty',
+        collection: 'empty',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: { include: [] } },
+      },
+    });
+    writeProvider('@acme/other-widgets', {
+      '@acme/other-widgets:Widget': {
+        className: 'Widget',
+        qualifiedName: '@acme/other-widgets:Widget',
+        collection: 'other-widgets',
+        fields: {},
+        methods: {},
+        decoratorConfig: { api: true },
+      },
+    });
+  });
+
+  it('emits only a selected qualified external object and retains generator guards', async () => {
+    await configureRoutes({
+      svelteKit: {
+        objects: ['@acme/widgets:Widget'],
+        changesRoute: { enabled: false },
+        eventsRoute: { enabled: false },
+        resourcesRoute: { enabled: false },
+      },
+    });
+
+    const collectionRoute = join(
+      projectRoot,
+      'src/routes/api/widgets/+server.ts',
+    );
+    const itemRoute = join(
+      projectRoot,
+      'src/routes/api/widgets/[id]/+server.ts',
+    );
+    expect(existsSync(collectionRoute)).toBe(true);
+    expect(existsSync(itemRoute)).toBe(true);
+    expect(readFileSync(itemRoute, 'utf8')).toContain("'@acme/widgets:Widget'");
+    expect(readFileSync(itemRoute, 'utf8')).toContain(
+      "import type { Widget } from '@acme/widgets';",
+    );
+    expect(readFileSync(collectionRoute, 'utf8')).toContain(
+      'requireRouteAuth(locals, false);',
+    );
+    expect(readFileSync(collectionRoute, 'utf8')).toContain(
+      'establishTenantContext(locals);',
+    );
+    expect(readFileSync(collectionRoute, 'utf8')).toContain(
+      'function applyWritablePolicy',
+    );
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/added-later/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/other-widgets/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/hidden/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/empty/+server.ts')),
+    ).toBe(false);
+  });
+
+  it('retains api false and empty include suppression for selected objects', async () => {
+    await configureRoutes({
+      svelteKit: {
+        objects: [
+          '@acme/widgets:Widget',
+          '@acme/widgets:Hidden',
+          '@acme/widgets:Empty',
+        ],
+        changesRoute: { enabled: false },
+        eventsRoute: { enabled: false },
+        resourcesRoute: { enabled: false },
+      },
+    });
+
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
+    ).toBe(true);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/hidden/+server.ts')),
+    ).toBe(false);
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/empty/+server.ts')),
+    ).toBe(false);
+  });
+
+  it('does not turn legacy svelteKit:true into external CRUD hosting', async () => {
+    await configureRoutes({ svelteKit: true });
+    expect(
+      existsSync(join(projectRoot, 'src/routes/api/widgets/+server.ts')),
+    ).toBe(false);
+  });
+
+  it.each([
+    { objects: [] },
+    { objects: ['Widget'] },
+    { objects: ['@acme/widgets:Missing'] },
+  ])('rejects an unsafe route object selection before emitting files', async (svelteKit) => {
+    await expect(configureRoutes({ svelteKit })).rejects.toThrow(
+      /svelteKit\.objects|qualified|unknown/i,
+    );
+    expect(existsSync(join(projectRoot, 'src/routes/api'))).toBe(false);
+  });
+});

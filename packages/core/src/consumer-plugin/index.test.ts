@@ -121,10 +121,16 @@ describe('smrtConsumer registration generation', () => {
 
   it('leaves optional native provider binaries to the Node runtime', async () => {
     const plugin = smrtConsumer({ projectRoot: tmpDir });
-    const config = await plugin.config?.call({} as any, {} as any, {
-      command: 'build',
-      mode: 'production',
-    });
+    const configHook = plugin.config;
+    const config = await (typeof configHook === 'function'
+      ? configHook.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        })
+      : configHook?.handler.call({} as any, {} as any, {
+          command: 'build',
+          mode: 'production',
+        }));
     const external = (config as any).build.rollupOptions.external as RegExp[];
     expect(external).toHaveLength(1);
     expect(external[0].test('/tmp/provider/native-addon.node')).toBe(true);

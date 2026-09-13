@@ -213,6 +213,31 @@ Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
 default output directory is `src/routes/api`; set `svelteKit.routesDir` when
 your application uses a different route root.
 
+A consumer can host selected dependency models with the same generator. This is
+an explicit HTTP boundary that is separate from the broader `packages`
+registration inventory. Name exact provider-qualified object references; a
+simple class name, an unknown object, or an empty list fails the build before
+any generated route is replaced:
+
+```ts
+smrtConsumer({
+  packages: runtimeProviderPackages,
+  svelteKit: {
+    objects: ['@acme/widgets:Widget'],
+    routesDir: 'src/routes/api',
+  },
+});
+```
+
+Only the listed objects are passed to route generation, so another API model in
+the same provider remains absent until it is named. `api: false` and an empty
+`api.include` still suppress handlers, and generated auth, writable-field, and
+tenant safeguards are unchanged. `svelteKit: true` remains a legacy consumer
+integration flag and does not host dependency CRUD routes. Consumer-hosted
+`_changes`, `_events`, and `_resources` routes are disabled unless their
+existing option is explicitly enabled; `sync/apply` is generated when a selected model exposes a mutating API
+action.
+
 The plugin records only the concrete `+server.ts` files it generated in a
 bounded `.gitignore` block. Handwritten handlers below `routesDir` remain
 visible to Git, including routes that live beside generated resource handlers.
