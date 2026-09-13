@@ -14,7 +14,10 @@ import {
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { generateDeclarations } from '../prebuild/index.js';
-import type { SmartObjectManifest } from '../scanner/types.js';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
@@ -22,7 +25,11 @@ import {
   generateSvelteKitRoutes,
   type SvelteKitOptions,
 } from '../vite-plugin/sveltekit-generator.js';
-import { generateWebModule } from '../vite-plugin/web-collections.js';
+import {
+  generateWebModule,
+  isCollectionManifestClass,
+  resolveCollectionItemObject,
+} from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
@@ -69,6 +76,7 @@ interface ConsumerManifest {
   timestamp: number;
   packageName?: string;
   packageVersion?: string;
+  smrtDependencies?: string[];
   objects: Record<string, ConsumerObjectDefinition>;
 }
 
@@ -219,26 +227,33 @@ function selectConsumerRouteManifest(
     objects[objectRef] = { ...objectDef, qualifiedName: objectRef };
   }
 
-  // Collection classes share an item's route path. Retain one only when it
-  // explicitly belongs to a selected item, never because it merely shares a
-  // simple class name with an allowed provider object.
+  const sourceManifest = manifest as unknown as SmartObjectManifest;
+  // Use the generator's canonical ancestry resolver so a collection subclass
+  // inherits the selected item's identity through any number of ancestors.
   for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
-    if (!objectDef.extendsTypeArg) continue;
-    const collectionPackage = objectDef.packageName;
-    const itemRef = objectDef.extendsTypeArg;
-    const belongsToSelection =
-      selected.has(itemRef) ||
-      (!!collectionPackage && selected.has(`${collectionPackage}:${itemRef}`));
-    if (belongsToSelection) {
-      const collectionRef = consumerObjectRef(manifestKey, objectDef);
-      if (collectionRef) {
-        objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
-      }
+    const candidate = objectDef as unknown as SmartObjectDefinition;
+    if (!isCollectionManifestClass(sourceManifest, candidate)) continue;
+    const item = resolveCollectionItemObject(sourceManifest, candidate);
+    const itemEntry = item
+      ? Object.entries(manifest.objects).find(
+          ([, value]) => (value as unknown) === item,
+        )
+      : undefined;
+    const itemRef = itemEntry
+      ? consumerObjectRef(itemEntry[0], itemEntry[1])
+      : undefined;
+    if (!itemRef || !selected.has(itemRef)) continue;
+    const collectionRef = consumerObjectRef(manifestKey, objectDef);
+    if (collectionRef) {
+      objects[collectionRef] = { ...objectDef, qualifiedName: collectionRef };
     }
   }
 
   return {
     ...manifest,
+    // The generated route config imports this full registration entry point so
+    // SSR retains every consumer package, while only `objects` reach routing.
+    smrtDependencies: manifest.smrtDependencies ?? [],
     objects,
   } as unknown as SmartObjectManifest;
 }
@@ -315,6 +330,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             resourcesRoute: consumerSvelteKit.resourcesRoute ?? {
               enabled: false,
             },
+            rejectRouteCollisions: true,
           });
         }
         return {
@@ -544,6 +560,7 @@ async function aggregateTypeManifests(
   const aggregatedManifest: ConsumerManifest = {
     version: '1.0.0',
     timestamp: MANIFEST_TIMESTAMP,
+    smrtDependencies: [...packages],
     objects: {},
   };
 

@@ -49,7 +49,10 @@ import { generateDevPlaneRoute } from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
 import { generateResourcesRoute } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import { generateSyncApplyRoute } from './sync-apply-route.js';
+import {
+  collectSyncApplyTargets,
+  generateSyncApplyRoute,
+} from './sync-apply-route.js';
 import {
   computeWebManifestHash,
   isCollectionManifestClass,
@@ -112,6 +115,8 @@ export interface SvelteKitOptions {
    * pre-existing hand-written `_resources` route is always preserved.
    */
   resourcesRoute?: { enabled?: boolean };
+  /** Reject route paths owned by distinct selected identities before cleanup. */
+  rejectRouteCollisions?: boolean;
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -1342,6 +1347,88 @@ function groupCustomActionRoutes(
   return groupedRoutes;
 }
 
+/** Reject selected identities that would write the same endpoint file. */
+function assertNoCrossObjectRouteCollisions(
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+): void {
+  const owners = new Map<string, string>();
+  const claim = (routeDir: string, owner: string) => {
+    const prior = owners.get(routeDir);
+    if (prior && prior !== owner) {
+      throw new Error(
+        `Conflicting SvelteKit route ${routeDir}: ${prior} and ${owner} would write the same handler`,
+      );
+    }
+    owners.set(routeDir, owner);
+  };
+  for (const [className, objectDef] of orderedManifestObjectEntries(manifest)) {
+    if (isFrameworkBaseClass(objectDef.className, objectDef.packageName))
+      continue;
+    const routeDir = join(options.routesDir, objectDef.collection);
+    if (isCollectionManifestClass(manifest, objectDef)) {
+      for (const [actionName, actionDef] of resolveApiCustomActions(
+        objectDef,
+        manifest,
+        true,
+      ).exposed) {
+        const route = resolveApiActionRouteConfig(
+          actionName,
+          actionDef,
+          objectDef.decoratorConfig?.api,
+          { kebabRoutes: options.kebabRoutes },
+          'collection',
+        );
+        claim(join(routeDir, ...route.pathSegments), className);
+      }
+      continue;
+    }
+    const actions = resolveStandardCrudActions(objectDef.decoratorConfig?.api);
+    if (actions.some((action) => action === 'list' || action === 'create'))
+      claim(routeDir, className);
+    if (
+      actions.some(
+        (action) =>
+          action === 'get' || action === 'update' || action === 'delete',
+      )
+    )
+      claim(join(routeDir, '[id]'), className);
+    for (const [actionName, actionDef] of resolveApiCustomActions(
+      objectDef,
+      manifest,
+      false,
+    ).exposed) {
+      const route = resolveApiActionRouteConfig(
+        actionName,
+        actionDef,
+        objectDef.decoratorConfig?.api,
+        { kebabRoutes: options.kebabRoutes },
+      );
+      claim(
+        join(
+          route.scope === 'collection' ? routeDir : join(routeDir, '[id]'),
+          ...route.pathSegments,
+        ),
+        className,
+      );
+    }
+  }
+  // These generator-owned utility files share the same filesystem namespace.
+  // Claim only paths their current output predicates can emit.
+  if (collectSyncApplyTargets(manifest).length > 0) {
+    claim(join(options.routesDir, 'sync', 'apply'), 'sync/apply');
+  }
+  const hasAnchor = Object.values(manifest.objects).some(
+    (objectDef) => !isCollectionManifestClass(manifest, objectDef),
+  );
+  if (hasAnchor && options.changesRoute?.enabled !== false) {
+    claim(join(options.routesDir, '_changes'), '_changes');
+  }
+  if (hasAnchor && options.eventsRoute?.enabled !== false) {
+    claim(join(options.routesDir, '_events'), '_events');
+  }
+}
+
 /**
  * Generates SvelteKit API routes from manifest
  */
@@ -1353,6 +1440,10 @@ export async function generateSvelteKitRoutes(
   if (!options.enabled) return;
 
   console.log('[smrt] Generating SvelteKit routes...');
+
+  if (options.rejectRouteCollisions) {
+    assertNoCrossObjectRouteCollisions(manifest, options);
+  }
 
   clearGeneratedRouteFiles(join(projectRoot, options.routesDir));
   clearGeneratedKnowledgeRoute(projectRoot, options);

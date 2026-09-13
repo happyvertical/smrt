@@ -831,7 +831,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       '@acme/other-widgets:Widget': {
         className: 'Widget',
         qualifiedName: '@acme/other-widgets:Widget',
-        collection: 'other-widgets',
+        collection: 'widgets',
         fields: {},
         methods: {},
         decoratorConfig: { api: true },
@@ -873,6 +873,12 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       'function applyWritablePolicy',
     );
     expect(
+      readFileSync(
+        join(projectRoot, 'src/lib/server/smrt-register.ts'),
+        'utf8',
+      ),
+    ).toContain('.smrt/register.js');
+    expect(
       existsSync(join(projectRoot, 'src/routes/api/added-later/+server.ts')),
     ).toBe(false);
     expect(
@@ -909,6 +915,17 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
     expect(
       existsSync(join(projectRoot, 'src/routes/api/empty/+server.ts')),
     ).toBe(false);
+  });
+
+  it('rejects selected identities that would overwrite one route file', async () => {
+    await expect(
+      configureRoutes({
+        svelteKit: {
+          objects: ['@acme/widgets:Widget', '@acme/other-widgets:Widget'],
+        },
+      }),
+    ).rejects.toThrow(/Conflicting SvelteKit route/);
+    expect(existsSync(join(projectRoot, 'src/routes/api'))).toBe(false);
   });
 
   it('does not turn legacy svelteKit:true into external CRUD hosting', async () => {
