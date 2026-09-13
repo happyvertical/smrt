@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
@@ -155,7 +155,7 @@ jobs:
 
       - name: Upload versioned workspace and build outputs
         if: steps.prepare.outputs.should_validate == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: publish-dry-run-workspace
           retention-days: 1
@@ -179,7 +179,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.CHECKOUT_REF }}
           # Preparation already produced the versioned workspace artifact, so
@@ -219,7 +219,7 @@ jobs:
           node scripts/validate-publish-packages.js
 
       - name: Upload verified package artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: publish-dry-run-pack-${{ matrix.shard-index }}
           retention-days: 1
@@ -244,7 +244,7 @@ jobs:
     steps:
       - name: Checkout repository
         if: needs.prepare-publish.outputs.should-validate == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.CHECKOUT_REF }}
 
