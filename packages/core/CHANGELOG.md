@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.49.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - host selected dependency SvelteKit routes (#2852) (core)
+  - stamp manifest importPath from exports subpath, not just root (#2851) (core)
+  - @happyvertical/smrt-config@0.49.6
+  - @happyvertical/smrt-types@0.49.6
+  - @happyvertical/smrt-scanner@0.49.6
+
 ## 0.49.5
 
 ### Patch Changes
