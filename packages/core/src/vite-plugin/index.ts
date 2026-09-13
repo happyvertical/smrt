@@ -16,6 +16,7 @@ import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
+import { CRUD_OPERATIONS } from '../generators/custom-action.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import {
   mergeKnowledgeConfig,
@@ -178,7 +179,9 @@ export interface SmrtPluginOptions {
   /**
    * Validate that every method in `cli.include` is exposed via the API
    * (so HTTP-based CLI consumers can actually reach them). Default: true.
-   * Per-class opt-out via `cli: { skipApiCheck: true }`.
+   * Per-class opt-out via `cli: { skipApiCheck: true }` (whole class) or
+   * `cli: { skipApiCheck: ['methodName'] }` (only the named methods,
+   * smrt#2857).
    */
   validateCliApiCoherence?: boolean;
 }
@@ -473,14 +476,32 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     if (!validateCliApiCoherence) return;
     const violations = findCliApiCoherenceViolations(m);
     if (violations.length === 0) return;
-    for (const { className, unreachable } of violations) {
+    for (const { className, unreachable, invalidSkipApiCheck } of violations) {
+      for (const name of invalidSkipApiCheck ?? []) {
+        console.warn(
+          `[smrt] ${className}: cli.skipApiCheck names '${name}', which isn't a ` +
+            `CRUD verb or a scanned public method on this class, or isn't part of ` +
+            `its current cli.include/cli.exclude surface (a typo, or a stale entry ` +
+            `left behind after the command was dropped from cli.include). Build ` +
+            `will fail until this is resolved.\n` +
+            `  Fix the typo, or remove '${name}' from cli.skipApiCheck -- an\n` +
+            `  unrecognized or stale name grants no exemption at all.`,
+        );
+      }
       const cliConfig = m.objects[className]?.decoratorConfig?.cli;
       const isEnforced =
         typeof cliConfig === 'object' &&
         cliConfig !== null &&
         Array.isArray(cliConfig.include) &&
         cliConfig.include.length > 0;
+      const methods = m.objects[className]?.methods ?? {};
+      const isRealCommandName = (name: string) =>
+        (CRUD_OPERATIONS as readonly string[]).includes(name) ||
+        methods[name]?.isPublic === true;
       for (const action of unreachable) {
+        const skipApiCheckSuggestion = isRealCommandName(action)
+          ? ` (or \`skipApiCheck: ['${action}']\` to acknowledge only this command)`
+          : '';
         console.warn(
           `[smrt] ${className}.${action} is exposed as a CLI command but is not ` +
             `exposed via the api.` +
@@ -496,7 +517,8 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             `  built from JSON; see withheldSurfaces in the knowledge artifact for the\n` +
             `  reason this one was withheld (#2686).\n` +
             `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
-            `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
+            `  \`cli: { skipApiCheck: true }\`${skipApiCheckSuggestion} on the\n` +
+            `  @smrt() decorator.`,
         );
       }
     }

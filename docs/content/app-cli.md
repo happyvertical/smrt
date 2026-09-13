@@ -269,6 +269,7 @@ class Product extends SmrtObject { /* ... */ }
 | `{ include: [...] }` | Expose exactly these commands (CRUD names and/or custom method names), intersected with what the API exposes |
 | `{ exclude: [...] }` | Drop specific commands from the otherwise-CRUD default or `include` list |
 | `{ skipApiCheck: true }` | Skip the build-time check that every `include` entry is also API-exposed — for commands meant to run only through the local `smrt <object>:<action>` CLI (`@happyvertical/smrt-cli`), never over HTTP |
+| `{ skipApiCheck: ['methodName', ...] }` | Same acknowledgment, narrowed to just the named commands (smrt#2857) — every other command in `include` stays checked, and still fails the build (given a non-empty `include`) if it drifts from the API surface. A name that isn't a recognized command on the class is itself a build error. |
 | `{ http: false }` | Keep the command available to the local `smrt <object>:<action>` CLI but exclude it from `GET /api/_resources`, so `smrt-app-cli` never advertises or invokes it over HTTP |
 
 The API intersection exists because `smrt-app-cli` invokes commands over
@@ -294,6 +295,13 @@ class SmrtJobEvent extends SmrtObject { /* ... */ }
 `skipApiCheck` acknowledges there is no API route to check `include` against
 (there is no API surface at all here), and `http: false` keeps it that way —
 `smrt-app-cli` never sees `smrtjobevent` as a resource.
+
+When only *some* of a class's CLI commands are HTTP-less, prefer
+`skipApiCheck: ['methodName']` over `skipApiCheck: true`: it acknowledges
+exactly the commands that need it, and the rest of `include` keeps failing
+the build if it drifts from the API surface. `skipApiCheck: true` waives the
+whole class — every sibling command loses that coherence check too, not just
+the one that needed the waiver.
 
 A command's parameters come straight from the method's JSON Schema. The CLI's
 flag parser (`buildFlagParser` /

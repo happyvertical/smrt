@@ -21,6 +21,7 @@ import {
   createManifestClassNamePredicate,
   declaredTypeAcceptsDate,
   isCrudOperation,
+  isFrameworkLifecycleMethod,
   queryStringDecoderFor,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
@@ -2758,6 +2759,20 @@ export function resolveApiActionSet(
 export interface CliApiCoherenceViolation {
   className: string;
   unreachable: string[];
+  /**
+   * Names in `cli.skipApiCheck`'s array form that aren't a CRUD verb or a
+   * scanned public method on this class -- a typo, most likely. Checked
+   * against that real command inventory rather than the (possibly
+   * `cli.include`-typo'd) effective CLI command set on purpose: an explicit
+   * `cli.include` trusts its own entries verbatim (see `resolveCliActionSet`'s
+   * doc comment -- catching an include typo is `unreachable`'s job), so an
+   * identical typo duplicated into `skipApiCheck` must not "recognize"
+   * itself via that untrusted echo (PR #2860 review). Always a build error
+   * (smrt#2857): an unrecognized name grants no exemption at all, which
+   * would silently reproduce the exact class-wide-waiver drift this check
+   * exists to prevent. Present only when non-empty.
+   */
+  invalidSkipApiCheck?: string[];
 }
 
 /**
@@ -2823,12 +2838,19 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
  * Inspect a manifest and return classes whose effective CLI command set —
  * `cli.include`/`cli.exclude` when spelled out, or (#2638) the same "every
  * public method minus exclude" default `cli: true`/`cli: {}` resolves to —
- * references a command not exposed via the API. Classes that opt out via
- * `cli: { skipApiCheck: true }` are skipped, and so is a class with
- * `cli: false` (no CLI surface at all).
+ * references a command not exposed via the API. `cli: { skipApiCheck: true }`
+ * skips the whole class; `cli: { skipApiCheck: [...] }` (smrt#2857) skips
+ * only the named commands, leaving every other command in the class's
+ * effective set checked. So does a class with `cli: false` (no CLI surface
+ * at all).
  *
- * Throws nothing; returns the violation list so callers can choose to throw
- * or warn.
+ * A name in the array form that isn't a CRUD verb or a scanned public
+ * method on the class is reported back via `invalidSkipApiCheck` on the
+ * violation entry -- see `validateCliIncludeAgainstApi`, which always
+ * throws for it regardless of that gate's narrower `cli.include` filter.
+ *
+ * Throws nothing else; returns the violation list so callers can choose to
+ * throw or warn.
  */
 export function findCliApiCoherenceViolations(
   manifest: SmartObjectManifest,
@@ -2838,24 +2860,98 @@ export function findCliApiCoherenceViolations(
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     const cliConfig = objectDef.decoratorConfig?.cli;
     if (cliConfig === false) continue;
-    if (
-      typeof cliConfig === 'object' &&
-      cliConfig !== null &&
-      cliConfig.skipApiCheck
-    ) {
+
+    const skipApiCheck: boolean | string[] | undefined =
+      typeof cliConfig === 'object' && cliConfig !== null
+        ? cliConfig.skipApiCheck
+        : undefined;
+
+    if (skipApiCheck === true) continue;
+
+    const effectiveCliCommands = resolveCliActionSet(objectDef);
+
+    let invalidSkipApiCheck: string[] = [];
+    let skipNames: Set<string> = new Set();
+    if (Array.isArray(skipApiCheck) && skipApiCheck.length > 0) {
+      // The *typo/stale-entry* check validates against the class's real
+      // command inventory -- CRUD verbs plus scanned PUBLIC methods --
+      // deliberately NOT against `effectiveCliCommands` for an explicit
+      // `cli.include` (PR #2860 review, GitHub Copilot). `resolveCliActionSet`
+      // trusts an explicit `cli.include` verbatim, typos included (see its
+      // own doc comment: catching that kind of typo is `unreachable`'s job,
+      // not this one's) -- so if `knownNames` were `effectiveCliCommands`
+      // there, a name mistyped identically in BOTH `cli.include` and
+      // `skipApiCheck` (e.g. `include: ['reconclieGame']`,
+      // `skipApiCheck: ['reconclieGame']`) would be "recognized" only
+      // because it's an unverified echo of itself, get silently exempted
+      // via `skipNames` below, and never surface as `unreachable` OR
+      // `invalidSkipApiCheck` -- defeating the very guarantee this array
+      // form exists to provide.
+      //
+      // A non-public method is excluded from `knownNames` too (recall
+      // finding, smrt#2857 review): it is not part of the real CLI surface,
+      // so naming one is still a genuine mistake, not a name this lint's
+      // narrower `effectiveCliCommands` resolution merely declines to check.
+      const knownNames = new Set([
+        ...CRUD_OPERATIONS,
+        ...Object.entries(objectDef.methods || {})
+          .filter(([, method]) => method.isPublic)
+          .map(([name]) => name),
+      ]);
+
+      // Being a real command isn't enough on its own (PR #2860 review,
+      // second pass): a name can be a genuine public method yet no longer
+      // part of THIS class's effective CLI command set -- e.g. `audit` was
+      // dropped from `cli.include` (or moved to `cli.exclude`) after the
+      // `skipApiCheck: ['audit']` waiver was written, and nobody removed
+      // the now-stale entry. Require membership in `effectiveCliCommands`
+      // too, so that case is still an error -- restoring the exact
+      // detection the first Copilot-driven fix (5a8f09929) accidentally
+      // dropped by switching validity off `effectiveCliCommands` entirely.
+      // The carve-out: the bare `cli: true`/`cli: {}` resolution
+      // deliberately excludes CRUD verbs AND framework-lifecycle method
+      // overrides from `effectiveCliCommands` (see `resolveCliActionSet`'s
+      // own doc comment, and `resolveCustomActionNames`'s
+      // `isFrameworkLifecycleMethod` skip) -- that omission is this lint's
+      // own narrower check declining to look at them there (recall
+      // finding, third pass), not a sign that such a name is stale, so
+      // neither is ever "stale" on that branch.
+      const hasExplicitInclude =
+        typeof cliConfig === 'object' &&
+        cliConfig !== null &&
+        Array.isArray(cliConfig.include);
+      const isInEffectiveSurface = (name: string) =>
+        effectiveCliCommands.has(name) ||
+        (!hasExplicitInclude &&
+          ((CRUD_OPERATIONS as readonly string[]).includes(name) ||
+            isFrameworkLifecycleMethod(name)));
+
+      invalidSkipApiCheck = skipApiCheck
+        .filter((name) => !knownNames.has(name) || !isInEffectiveSurface(name))
+        .sort();
+      skipNames = new Set(
+        skipApiCheck.filter((name) => effectiveCliCommands.has(name)),
+      );
+    }
+
+    if (effectiveCliCommands.size === 0) {
+      if (invalidSkipApiCheck.length > 0) {
+        violations.push({ className, unreachable: [], invalidSkipApiCheck });
+      }
       continue;
     }
 
-    const effectiveCliCommands = resolveCliActionSet(objectDef);
-    if (effectiveCliCommands.size === 0) continue;
-
     const apiActionSet = resolveApiActionSet(objectDef, manifest);
     const unreachable = [...effectiveCliCommands]
-      .filter((action) => !apiActionSet.has(action))
+      .filter((action) => !apiActionSet.has(action) && !skipNames.has(action))
       .sort();
 
-    if (unreachable.length > 0) {
-      violations.push({ className, unreachable });
+    if (unreachable.length > 0 || invalidSkipApiCheck.length > 0) {
+      violations.push({
+        className,
+        unreachable,
+        ...(invalidSkipApiCheck.length > 0 ? { invalidSkipApiCheck } : {}),
+      });
     }
   }
 
@@ -2895,36 +2991,80 @@ export function findCliApiCoherenceViolations(
 export function validateCliIncludeAgainstApi(
   manifest: SmartObjectManifest,
 ): void {
-  const violations = findCliApiCoherenceViolations(manifest).filter(
-    ({ className }) => {
-      const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
-      return (
-        typeof cliConfig === 'object' &&
-        cliConfig !== null &&
-        Array.isArray(cliConfig.include) &&
-        cliConfig.include.length > 0
-      );
-    },
-  );
-  if (violations.length === 0) return;
+  const allViolations = findCliApiCoherenceViolations(manifest);
 
-  const messages = violations.flatMap(({ className, unreachable }) =>
-    unreachable.map(
-      (action) =>
-        `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
-        `  Either:\n` +
-        `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
-        `    - Add '${action}' to api.include, or\n` +
-        `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
-        `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
-        `  A public method is routed by default only when every parameter can be\n` +
-        `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
-        `  without widening api.include. See withheldSurfaces in the knowledge\n` +
-        `  artifact for the reason this one was withheld (#2686).\n` +
-        `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
-        `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
-    ),
+  // An invalid `cli.skipApiCheck` array entry (smrt#2857) is a config bug in
+  // its own right -- a typo or stale name grants no exemption at all, which
+  // would silently reintroduce the class-wide-waiver drift this check
+  // exists to prevent. Always throw for it, independent of the narrower
+  // explicit-`cli.include` filter below (that filter exists only to avoid
+  // breaking pre-existing broad-surface classes; there is no such
+  // pre-existing usage of the array form to protect).
+  const invalidSkipApiCheckMessages = allViolations.flatMap(
+    ({ className, invalidSkipApiCheck }) =>
+      (invalidSkipApiCheck ?? []).map(
+        (name) =>
+          `[smrt] ${className}: cli.skipApiCheck names '${name}', which isn't a\n` +
+          `  CRUD verb or a scanned public method on this class, or isn't part of\n` +
+          `  its current cli.include/cli.exclude surface (a typo, or a stale\n` +
+          `  entry left behind after the command was dropped from cli.include).\n` +
+          `  Fix the typo, or remove '${name}' from cli.skipApiCheck -- an\n` +
+          `  unrecognized or stale name grants no exemption at all.`,
+      ),
   );
+
+  const violations = allViolations.filter(({ className, unreachable }) => {
+    if (unreachable.length === 0) return false;
+    const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
+    return (
+      typeof cliConfig === 'object' &&
+      cliConfig !== null &&
+      Array.isArray(cliConfig.include) &&
+      cliConfig.include.length > 0
+    );
+  });
+
+  if (violations.length === 0 && invalidSkipApiCheckMessages.length === 0) {
+    return;
+  }
+
+  const messages = [
+    ...invalidSkipApiCheckMessages,
+    ...violations.flatMap(({ className, unreachable }) => {
+      // Only suggest the narrow `skipApiCheck: ['<action>']` form when
+      // `<action>` would actually be accepted by it (PR #2860 review, F1):
+      // `unreachable` can also contain a `cli.include` entry that names no
+      // real CRUD verb or scanned public method at all (a typo, or a
+      // getter -- see `resolveCliActionSet`'s doc comment), and suggesting
+      // the array form for THAT case would just route the developer into
+      // `invalidSkipApiCheck`'s contradictory-sounding second failure.
+      const methods = manifest.objects[className]?.methods ?? {};
+      const isRealCommandName = (name: string) =>
+        (CRUD_OPERATIONS as readonly string[]).includes(name) ||
+        methods[name]?.isPublic === true;
+
+      return unreachable.map((action) => {
+        const skipApiCheckSuggestion = isRealCommandName(action)
+          ? ` (or \`skipApiCheck: ['${action}']\` to acknowledge only this command)`
+          : '';
+        return (
+          `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
+          `  Either:\n` +
+          `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
+          `    - Add '${action}' to api.include, or\n` +
+          `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
+          `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+          `  A public method is routed by default only when every parameter can be\n` +
+          `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
+          `  without widening api.include. See withheldSurfaces in the knowledge\n` +
+          `  artifact for the reason this one was withheld (#2686).\n` +
+          `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
+          `  \`cli: { skipApiCheck: true }\`${skipApiCheckSuggestion} on the\n` +
+          `  @smrt() decorator.`
+        );
+      });
+    }),
+  ];
 
   throw new Error(messages.join('\n\n'));
 }

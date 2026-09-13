@@ -521,8 +521,28 @@ export interface SmartObjectConfig {
          * exposed via the API. Set this for classes whose CLI is invoked
          * in-process (e.g. admin/security tools intentionally without HTTP
          * routes) rather than over HTTP.
+         *
+         * `true` acknowledges the whole class -- every command in its
+         * effective CLI set loses the coherence check, not just the one(s)
+         * that actually need it. Prefer the narrower `string[]` form: it
+         * names exactly the methods that legitimately have no API route
+         * (e.g. one that takes a non-serializable callback option), while
+         * every other command in the class keeps being checked (smrt#2857).
+         * A name in the array that isn't a recognized command on this class
+         * (a typo, or a stale entry left after a route was added) is
+         * itself a build error -- an unrecognized name would otherwise
+         * silently grant no exemption at all.
+         *
+         * The narrowed array form only restores build-*failing* enforcement
+         * for the rest of the class when this class also spells out a
+         * non-empty `cli.include` -- `validateCliIncludeAgainstApi`'s
+         * blast radius has always stopped there (a bare `cli: true`/`cli:
+         * {}` class gets a dev-server warning only, not a build failure;
+         * see that function's own doc comment). Give the class an explicit
+         * `cli.include` if you need the remaining commands to be build-
+         * enforced, not just narrow the waiver.
          */
-        skipApiCheck?: boolean;
+        skipApiCheck?: boolean | string[];
 
         /**
          * Whether this CLI surface should be advertised through HTTP discovery

@@ -80,7 +80,7 @@ export interface RawDecoratorConfig {
     | {
         include?: string[];
         exclude?: string[];
-        skipApiCheck?: boolean;
+        skipApiCheck?: boolean | string[];
         http?: boolean;
       };
 

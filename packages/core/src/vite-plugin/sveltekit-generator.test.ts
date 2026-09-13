@@ -3105,6 +3105,235 @@ describe('SvelteKit Route Generator', () => {
       expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
     });
 
+    // smrt#2857: skipApiCheck's array form narrows the acknowledgment to
+    // named methods instead of waiving the whole class.
+    describe('array-form cli.skipApiCheck (smrt#2857)', () => {
+      it('exempts only the named method, and still flags an unlisted one', () => {
+        const manifest = buildManifest({
+          api: { include: ['list', 'discover'] },
+          cli: {
+            include: ['list', 'discover', 'audit'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+
+        // Drop the exemption for the still-unreachable method and the same
+        // class now fails -- proving the array narrows rather than waiving.
+        const stillChecked = buildManifest({
+          api: { include: ['list', 'discover'] },
+          cli: {
+            include: ['list', 'discover', 'audit', 'totallyUnreachable'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(stillChecked)).toEqual([
+          { className: 'Praeco', unreachable: ['totallyUnreachable'] },
+        ]);
+      });
+
+      it('errors on an unrecognized name in the array instead of silently granting no exemption', () => {
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list', 'discover'],
+            skipApiCheck: ['thisMethodDoesNotExist'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: ['discover'],
+            invalidSkipApiCheck: ['thisMethodDoesNotExist'],
+          },
+        ]);
+
+        // The build-time gate always throws for this, independent of its
+        // narrower explicit-cli.include filter for ordinary unreachable
+        // entries -- an invalid skipApiCheck entry is a config bug on its
+        // own, not pre-existing broad-surface over-exposure.
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'thisMethodDoesNotExist'/,
+        );
+      });
+
+      it('motivating case: one non-wire-able method among several wire-able ones passes with the array, fails without it', () => {
+        // Mirrors the real Ludis.reconcileGame shape: a genuine scanned
+        // public method (unlike a cli.include typo) that legitimately has
+        // no API route because it takes a non-serializable callback option.
+        function buildLudisLikeManifest(
+          cliConfig: unknown,
+        ): SmartObjectManifest {
+          return {
+            objects: {
+              Praeco: {
+                className: 'Praeco',
+                collection: 'praecos',
+                fields: {},
+                methods: {
+                  discover: {
+                    name: 'discover',
+                    parameters: [],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                  audit: {
+                    name: 'audit',
+                    parameters: [],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                  reconcileGame: {
+                    name: 'reconcileGame',
+                    parameters: [
+                      { name: 'options', type: '{ reliabilityOf?: Function }' },
+                    ],
+                    returnType: 'Promise<any>',
+                    isPublic: true,
+                  },
+                },
+                decoratorConfig: {
+                  api: { include: ['list', 'discover', 'audit'] },
+                  cli: cliConfig,
+                },
+              },
+            },
+          };
+        }
+
+        const withArray = buildLudisLikeManifest({
+          include: ['list', 'discover', 'audit', 'reconcileGame'],
+          // Only reconcileGame is in-process (e.g. a non-serializable
+          // callback option); list/discover/audit are ordinary wire-able
+          // commands that must stay coupled to the API surface.
+          skipApiCheck: ['reconcileGame'],
+        });
+        expect(findCliApiCoherenceViolations(withArray)).toEqual([]);
+
+        const withoutArray = buildLudisLikeManifest({
+          include: ['list', 'discover', 'audit', 'reconcileGame'],
+        });
+        expect(findCliApiCoherenceViolations(withoutArray)).toEqual([
+          { className: 'Praeco', unreachable: ['reconcileGame'] },
+        ]);
+      });
+
+      it('still errors when the SAME typo is duplicated in cli.include and skipApiCheck (PR #2860 review, GitHub Copilot)', () => {
+        // cli.include trusts its own entries verbatim (typos included --
+        // that's `unreachable`'s job to catch, not this check's) so it must
+        // not be used as the "known names" source for skipApiCheck
+        // validity: doing so would let an identical typo in BOTH fields
+        // silently "recognize" and exempt itself, producing neither
+        // `unreachable` nor `invalidSkipApiCheck` -- full invisibility for
+        // exactly the kind of mistake this array form exists to surface.
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list', 'reconclieGame'],
+            skipApiCheck: ['reconclieGame'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: [],
+            invalidSkipApiCheck: ['reconclieGame'],
+          },
+        ]);
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'reconclieGame'/,
+        );
+      });
+
+      it('flags a stale skipApiCheck entry once the named command is dropped from cli.include (PR #2860 review, second pass)', () => {
+        // `audit` is a real scanned public method, so it passes the
+        // typo check on its own -- but it is no longer part of THIS
+        // class's effective CLI command set (only 'list' is included
+        // below). A waiver naming it is dormant and stale, not merely
+        // inert: if `audit` is later re-added to cli.include without an
+        // API route, the untouched waiver would silently reactivate.
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: [],
+            invalidSkipApiCheck: ['audit'],
+          },
+        ]);
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'audit'/,
+        );
+      });
+
+      it('does not treat a CRUD verb as stale on a bare cli:true class even though CRUD is excluded from its effective set', () => {
+        // Regression guard: the stale-entry check must not punish the
+        // bare cli:true/{} branch's own deliberate exclusion of CRUD
+        // verbs from `effectiveCliCommands` (resolveCliActionSet's doc
+        // comment) by treating every CRUD-verb waiver as "stale".
+        const manifest = buildManifest({
+          api: { include: ['list', 'get'] },
+          cli: { skipApiCheck: ['list'] },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          { className: 'Praeco', unreachable: ['audit', 'discover'] },
+        ]);
+        expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+      });
+
+      it('does not treat a public lifecycle method override as stale on a bare cli:true class (recall finding, third pass)', () => {
+        // Same carve-out as the CRUD case, for the same reason:
+        // `resolveCliActionSet`'s bare-config branch also excludes
+        // framework-lifecycle overrides (e.g. `save`) from
+        // `effectiveCliCommands` (resolveCustomActionNames skips them via
+        // isFrameworkLifecycleMethod) -- that's this lint's own narrower
+        // check declining to look at lifecycle methods there, not a sign
+        // that naming one in skipApiCheck is stale.
+        const manifest: SmartObjectManifest = {
+          objects: {
+            LifecycleOnly: {
+              className: 'LifecycleOnly',
+              collection: 'lifecycleonlies',
+              fields: {},
+              methods: {
+                save: {
+                  name: 'save',
+                  parameters: [],
+                  returnType: 'Promise<any>',
+                  isPublic: true,
+                  isStatic: false,
+                },
+                discover: {
+                  name: 'discover',
+                  parameters: [],
+                  returnType: 'Promise<any>',
+                  isPublic: true,
+                },
+              },
+              decoratorConfig: {
+                api: { include: ['list', 'get'] },
+                cli: { skipApiCheck: ['save'] },
+              },
+            },
+          },
+        };
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          { className: 'LifecycleOnly', unreachable: ['discover'] },
+        ]);
+        expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+      });
+    });
+
     it('passes when cli.include is empty', () => {
       const manifest = buildManifest({
         api: { include: [] },
@@ -3167,6 +3396,82 @@ describe('SvelteKit Route Generator', () => {
       });
       expect(findCliApiCoherenceViolations(manifest)).toEqual([
         { className: 'Praeco', unreachable: ['audit'] },
+      ]);
+    });
+
+    it('does not flag a real CRUD verb in skipApiCheck as an unrecognized name on a bare cli:true class (smrt#2857 review, F1)', () => {
+      // `resolveCliActionSet`'s bare `cli: true`/`cli: {}` branch
+      // deliberately excludes CRUD verbs from the set it checks (see that
+      // function's own doc comment) -- but CRUD verbs are still part of
+      // the class's real CLI surface. A `skipApiCheck` array entry naming
+      // one (e.g. an operator waiving `list` specifically) must not be
+      // reported as an unrecognized/typo name just because this lint's
+      // own narrower resolution doesn't check it.
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: { skipApiCheck: ['list'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        { className: 'Praeco', unreachable: ['audit', 'discover'] },
+      ]);
+      expect(violations[0].invalidSkipApiCheck).toBeUndefined();
+    });
+
+    it('still flags a non-public method name in skipApiCheck on a bare cli:true class (recall finding)', () => {
+      // A private/protected scanned method is not part of the real CLI
+      // surface either (the CLI generator only exposes public methods), so
+      // naming one in skipApiCheck is still a genuine mistake -- broadening
+      // the known-name set to fix F1 must not also swallow this case.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discover: {
+                name: 'discover',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              internalHelper: {
+                name: 'internalHelper',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: false,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['list', 'get'] },
+              cli: { skipApiCheck: ['internalHelper'] },
+            },
+          },
+        },
+      };
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        {
+          className: 'Praeco',
+          unreachable: ['discover'],
+          invalidSkipApiCheck: ['internalHelper'],
+        },
+      ]);
+    });
+
+    it('still flags a genuine typo in skipApiCheck on a bare cli:true class', () => {
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: { skipApiCheck: ['thisIsNotAnything'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        {
+          className: 'Praeco',
+          unreachable: ['audit', 'discover'],
+          invalidSkipApiCheck: ['thisIsNotAnything'],
+        },
       ]);
     });
 
