@@ -3105,6 +3105,84 @@ describe('SvelteKit Route Generator', () => {
       expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
     });
 
+    // smrt#2857: skipApiCheck's array form narrows the acknowledgment to
+    // named methods instead of waiving the whole class.
+    describe('array-form cli.skipApiCheck (smrt#2857)', () => {
+      it('exempts only the named method, and still flags an unlisted one', () => {
+        const manifest = buildManifest({
+          api: { include: ['list', 'discover'] },
+          cli: {
+            include: ['list', 'discover', 'audit'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+
+        // Drop the exemption for the still-unreachable method and the same
+        // class now fails -- proving the array narrows rather than waiving.
+        const stillChecked = buildManifest({
+          api: { include: ['list', 'discover'] },
+          cli: {
+            include: ['list', 'discover', 'audit', 'totallyUnreachable'],
+            skipApiCheck: ['audit'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(stillChecked)).toEqual([
+          { className: 'Praeco', unreachable: ['totallyUnreachable'] },
+        ]);
+      });
+
+      it('errors on an unrecognized name in the array instead of silently granting no exemption', () => {
+        const manifest = buildManifest({
+          api: { include: ['list'] },
+          cli: {
+            include: ['list', 'discover'],
+            skipApiCheck: ['thisMethodDoesNotExist'],
+          },
+        });
+        const violations = findCliApiCoherenceViolations(manifest);
+        expect(violations).toEqual([
+          {
+            className: 'Praeco',
+            unreachable: ['discover'],
+            invalidSkipApiCheck: ['thisMethodDoesNotExist'],
+          },
+        ]);
+
+        // The build-time gate always throws for this, independent of its
+        // narrower explicit-cli.include filter for ordinary unreachable
+        // entries -- an invalid skipApiCheck entry is a config bug on its
+        // own, not pre-existing broad-surface over-exposure.
+        expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+          /cli\.skipApiCheck names 'thisMethodDoesNotExist'/,
+        );
+      });
+
+      it('motivating case: one non-wire-able method among several wire-able ones passes with the array, fails without it', () => {
+        const withArray = buildManifest({
+          api: { include: ['list', 'discover', 'audit'] },
+          cli: {
+            include: ['list', 'discover', 'audit', 'reconcileGame'],
+            // Only reconcileGame is in-process (e.g. a non-serializable
+            // callback option); list/discover/audit are ordinary wire-able
+            // commands that must stay coupled to the API surface.
+            skipApiCheck: ['reconcileGame'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(withArray)).toEqual([]);
+
+        const withoutArray = buildManifest({
+          api: { include: ['list', 'discover', 'audit'] },
+          cli: {
+            include: ['list', 'discover', 'audit', 'reconcileGame'],
+          },
+        });
+        expect(findCliApiCoherenceViolations(withoutArray)).toEqual([
+          { className: 'Praeco', unreachable: ['reconcileGame'] },
+        ]);
+      });
+    });
+
     it('passes when cli.include is empty', () => {
       const manifest = buildManifest({
         api: { include: [] },

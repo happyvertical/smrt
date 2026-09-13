@@ -2758,6 +2758,15 @@ export function resolveApiActionSet(
 export interface CliApiCoherenceViolation {
   className: string;
   unreachable: string[];
+  /**
+   * Names in `cli.skipApiCheck`'s array form that aren't in this class's
+   * effective CLI command set -- a typo, or a stale entry left behind after
+   * a route was added. Always a build error (smrt#2857): an unrecognized
+   * name grants no exemption at all, which would silently reproduce the
+   * exact class-wide-waiver drift this check exists to prevent. Present
+   * only when non-empty.
+   */
+  invalidSkipApiCheck?: string[];
 }
 
 /**
@@ -2823,12 +2832,19 @@ function resolveCliActionSet(objectDef: SmartObjectDefinition): Set<string> {
  * Inspect a manifest and return classes whose effective CLI command set —
  * `cli.include`/`cli.exclude` when spelled out, or (#2638) the same "every
  * public method minus exclude" default `cli: true`/`cli: {}` resolves to —
- * references a command not exposed via the API. Classes that opt out via
- * `cli: { skipApiCheck: true }` are skipped, and so is a class with
- * `cli: false` (no CLI surface at all).
+ * references a command not exposed via the API. `cli: { skipApiCheck: true }`
+ * skips the whole class; `cli: { skipApiCheck: [...] }` (smrt#2857) skips
+ * only the named commands, leaving every other command in the class's
+ * effective set checked. So does a class with `cli: false` (no CLI surface
+ * at all).
  *
- * Throws nothing; returns the violation list so callers can choose to throw
- * or warn.
+ * A name in the array form that isn't in the class's effective CLI command
+ * set is reported back via `invalidSkipApiCheck` on the violation entry --
+ * see `validateCliIncludeAgainstApi`, which always throws for it regardless
+ * of that gate's narrower `cli.include` filter.
+ *
+ * Throws nothing else; returns the violation list so callers can choose to
+ * throw or warn.
  */
 export function findCliApiCoherenceViolations(
   manifest: SmartObjectManifest,
@@ -2838,24 +2854,45 @@ export function findCliApiCoherenceViolations(
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     const cliConfig = objectDef.decoratorConfig?.cli;
     if (cliConfig === false) continue;
-    if (
-      typeof cliConfig === 'object' &&
-      cliConfig !== null &&
-      cliConfig.skipApiCheck
-    ) {
+
+    const skipApiCheck: boolean | string[] | undefined =
+      typeof cliConfig === 'object' && cliConfig !== null
+        ? cliConfig.skipApiCheck
+        : undefined;
+
+    if (skipApiCheck === true) continue;
+
+    const effectiveCliCommands = resolveCliActionSet(objectDef);
+
+    let invalidSkipApiCheck: string[] = [];
+    let skipNames: Set<string> = new Set();
+    if (Array.isArray(skipApiCheck) && skipApiCheck.length > 0) {
+      invalidSkipApiCheck = skipApiCheck
+        .filter((name) => !effectiveCliCommands.has(name))
+        .sort();
+      skipNames = new Set(
+        skipApiCheck.filter((name) => effectiveCliCommands.has(name)),
+      );
+    }
+
+    if (effectiveCliCommands.size === 0) {
+      if (invalidSkipApiCheck.length > 0) {
+        violations.push({ className, unreachable: [], invalidSkipApiCheck });
+      }
       continue;
     }
 
-    const effectiveCliCommands = resolveCliActionSet(objectDef);
-    if (effectiveCliCommands.size === 0) continue;
-
     const apiActionSet = resolveApiActionSet(objectDef, manifest);
     const unreachable = [...effectiveCliCommands]
-      .filter((action) => !apiActionSet.has(action))
+      .filter((action) => !apiActionSet.has(action) && !skipNames.has(action))
       .sort();
 
-    if (unreachable.length > 0) {
-      violations.push({ className, unreachable });
+    if (unreachable.length > 0 || invalidSkipApiCheck.length > 0) {
+      violations.push({
+        className,
+        unreachable,
+        ...(invalidSkipApiCheck.length > 0 ? { invalidSkipApiCheck } : {}),
+      });
     }
   }
 
@@ -2895,36 +2932,62 @@ export function findCliApiCoherenceViolations(
 export function validateCliIncludeAgainstApi(
   manifest: SmartObjectManifest,
 ): void {
-  const violations = findCliApiCoherenceViolations(manifest).filter(
-    ({ className }) => {
-      const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
-      return (
-        typeof cliConfig === 'object' &&
-        cliConfig !== null &&
-        Array.isArray(cliConfig.include) &&
-        cliConfig.include.length > 0
-      );
-    },
-  );
-  if (violations.length === 0) return;
+  const allViolations = findCliApiCoherenceViolations(manifest);
 
-  const messages = violations.flatMap(({ className, unreachable }) =>
-    unreachable.map(
-      (action) =>
-        `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
-        `  Either:\n` +
-        `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
-        `    - Add '${action}' to api.include, or\n` +
-        `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
-        `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
-        `  A public method is routed by default only when every parameter can be\n` +
-        `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
-        `  without widening api.include. See withheldSurfaces in the knowledge\n` +
-        `  artifact for the reason this one was withheld (#2686).\n` +
-        `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
-        `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
-    ),
+  // An invalid `cli.skipApiCheck` array entry (smrt#2857) is a config bug in
+  // its own right -- a typo or stale name grants no exemption at all, which
+  // would silently reintroduce the class-wide-waiver drift this check
+  // exists to prevent. Always throw for it, independent of the narrower
+  // explicit-`cli.include` filter below (that filter exists only to avoid
+  // breaking pre-existing broad-surface classes; there is no such
+  // pre-existing usage of the array form to protect).
+  const invalidSkipApiCheckMessages = allViolations.flatMap(
+    ({ className, invalidSkipApiCheck }) =>
+      (invalidSkipApiCheck ?? []).map(
+        (name) =>
+          `[smrt] ${className}: cli.skipApiCheck names '${name}', which is not in ` +
+          `this class's effective CLI command set.\n` +
+          `  Fix the typo, or remove '${name}' from cli.skipApiCheck -- an\n` +
+          `  unrecognized name grants no exemption at all.`,
+      ),
   );
+
+  const violations = allViolations.filter(({ className, unreachable }) => {
+    if (unreachable.length === 0) return false;
+    const cliConfig = manifest.objects[className]?.decoratorConfig?.cli;
+    return (
+      typeof cliConfig === 'object' &&
+      cliConfig !== null &&
+      Array.isArray(cliConfig.include) &&
+      cliConfig.include.length > 0
+    );
+  });
+
+  if (violations.length === 0 && invalidSkipApiCheckMessages.length === 0) {
+    return;
+  }
+
+  const messages = [
+    ...invalidSkipApiCheckMessages,
+    ...violations.flatMap(({ className, unreachable }) =>
+      unreachable.map(
+        (action) =>
+          `[smrt] ${className}.${action} is exposed as a CLI command but is not exposed via the api.\n` +
+          `  Either:\n` +
+          `    - Decorate '${action}' with @method({ expose: true }) to route it, or\n` +
+          `    - Add '${action}' to api.include, or\n` +
+          `    - Remove '${action}' from cli.include / add it to cli.exclude.\n` +
+          `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+          `  A public method is routed by default only when every parameter can be\n` +
+          `  built from JSON; @method({ expose: true }) overrides that for one method\n` +
+          `  without widening api.include. See withheldSurfaces in the knowledge\n` +
+          `  artifact for the reason this one was withheld (#2686).\n` +
+          `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
+          `  \`cli: { skipApiCheck: true }\` (or \`skipApiCheck: ['${action}']\`\n` +
+          `  to acknowledge only this command) on the @smrt() decorator.`,
+      ),
+    ),
+  ];
 
   throw new Error(messages.join('\n\n'));
 }

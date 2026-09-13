@@ -521,8 +521,20 @@ export interface SmartObjectConfig {
          * exposed via the API. Set this for classes whose CLI is invoked
          * in-process (e.g. admin/security tools intentionally without HTTP
          * routes) rather than over HTTP.
+         *
+         * `true` acknowledges the whole class -- every command in its
+         * effective CLI set loses the coherence check, not just the one(s)
+         * that actually need it. Prefer the narrower `string[]` form: it
+         * names exactly the methods that legitimately have no API route
+         * (e.g. one that takes a non-serializable callback option), while
+         * every other command in the class stays checked and still fails
+         * the build if it drifts from the API surface (smrt#2857). A name
+         * in the array that isn't in the class's effective CLI command set
+         * (a typo, or a stale entry left after a route was added) is
+         * itself a build error -- an unrecognized name would otherwise
+         * silently grant no exemption at all.
          */
-        skipApiCheck?: boolean;
+        skipApiCheck?: boolean | string[];
 
         /**
          * Whether this CLI surface should be advertised through HTTP discovery
