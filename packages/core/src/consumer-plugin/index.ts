@@ -18,6 +18,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 import type { SmrtPluginApi } from '../vite-plugin/index.js';
+import { generateWebModule } from '../vite-plugin/web-collections.js';
 import { publishArtifactFiles } from './artifact-publication.js';
 
 export {
@@ -121,6 +122,7 @@ const VIRTUAL_MODULES = {
   '@smrt/mcp': 'smrt-consumer:mcp',
   '@smrt/types': 'smrt-consumer:types',
   '@smrt/manifest': 'smrt-consumer:manifest',
+  '@smrt/web': 'smrt-consumer:web',
 };
 
 /**
@@ -284,6 +286,14 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
         case 'smrt-consumer:manifest':
           return generateFallbackManifestModule(typeManifest);
+
+        case 'smrt-consumer:web':
+          return generateWebModule(
+            typeManifest as unknown as SmartObjectManifest,
+            {
+              kebabRoutes,
+            },
+          );
 
         default:
           return null;
@@ -861,6 +871,7 @@ function getTypeFileName(virtualModule: string): string {
     '@smrt/mcp': 'smrt-mcp.d.ts',
     '@smrt/types': 'smrt-types.d.ts',
     '@smrt/manifest': 'smrt-manifest.d.ts',
+    '@smrt/web': 'smrt-web.d.ts',
   };
   return moduleMap[virtualModule] || 'smrt-unknown.d.ts';
 }
