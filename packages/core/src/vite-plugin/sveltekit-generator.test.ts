@@ -1094,6 +1094,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain(
         "import { ObjectRegistry } from '@happyvertical/smrt-core'",
       );
+      expect(content).toContain("import '$lib/server/smrt';");
       expect(content).toContain('export const GET: RequestHandler');
       expect(content).toContain(
         "const optionsMarker = searchParams.get('__smrt_options');",

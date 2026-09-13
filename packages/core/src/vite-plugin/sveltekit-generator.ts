@@ -3306,7 +3306,10 @@ function generateActionRouteTemplate(
     `import { ${coreImports} } from '@happyvertical/smrt-core';`,
     hostType === 'collection' || routeConfig.scope !== 'collection'
       ? `import { getCollection } from '${configImport}';`
-      : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+      : [
+          `import '${configImport}';`,
+          "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+        ].join('\n'),
     typeImports,
     "import type { RequestHandler } from './$types';",
   ]
