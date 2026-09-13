@@ -288,6 +288,15 @@ async function reconcileConsumerSvelteKitRouteRoots(
       projectRoot,
       env,
     );
+    // The durable consumer inventory names roots, not individual handlers.
+    // Check before every reconciliation branch, including an active parent
+    // consumer that would otherwise compact a nested former root without a
+    // sweep. A child symlink into a foreign active root makes that ownership
+    // ambiguous, so retaining the inventory makes retry safe.
+    assertNoSvelteKitRouteRootSymlinkConflict(
+      routeRoot,
+      activeParticipants.map((participant) => participant.routesDir),
+    );
     const containingConsumer = activeParticipants.find(
       (participant) =>
         participant.owner === 'consumer' &&
@@ -338,14 +347,6 @@ async function reconcileConsumerSvelteKitRouteRoots(
       );
       continue;
     }
-    // The durable consumer inventory names roots, not individual handlers.
-    // Refuse an old root that reaches an active foreign route through a child
-    // symlink; a sweep could not distinguish historical consumer output from
-    // the current owner, so retaining the inventory makes retry safe.
-    assertNoSvelteKitRouteRootSymlinkConflict(
-      routeRoot,
-      activeParticipants.map((participant) => participant.routesDir),
-    );
     clearGeneratedSvelteKitRouteFiles(
       routeRoot,
       producerKnowledgeRoutePaths(lifecycle),
