@@ -1,5 +1,9 @@
 #!/usr/bin/env tsx
 import {
+  checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
+} from '../packages/core/src/knowledge-graph.js';
+import {
   checkKnowledgeFreshness,
   renderFreshnessResult,
 } from '../packages/smrt-dev-mcp/src/knowledge/index.js';
@@ -47,13 +51,47 @@ async function main(): Promise<void> {
     strict: hasFlag('--strict'),
   });
 
+  // The merged root graph (#2863) is checked alongside each package's own
+  // artifact: it is stale, in the same sense, whenever any per-package
+  // artifact it was built from has changed since generation. A staleness
+  // finding is a warning outside --strict, exactly like every other
+  // `stale-*` finding from checkKnowledgeFreshness; only a genuinely missing
+  // graph or source artifact stays an error unconditionally.
+  const rawGraphIssues = checkKnowledgeGraphFreshness(
+    process.cwd(),
+    '.smrt/smrt-knowledge-graph.json',
+    {
+      requireArtifact: discoverKnowledgeArtifactPaths(process.cwd()).length > 0,
+    },
+  );
+  const graphIssues = rawGraphIssues.map((issue) =>
+    issue.code === 'stale-knowledge-graph' && !hasFlag('--strict')
+      ? { ...issue, severity: 'warning' as const }
+      : issue,
+  );
+  const combinedIssues = [...result.issues, ...graphIssues];
+  const combinedErrorCount = combinedIssues.filter(
+    (i) => i.severity === 'error',
+  ).length;
+  const combinedWarningCount = combinedIssues.filter(
+    (i) => i.severity === 'warning',
+  ).length;
+  const combinedResult = {
+    ...result,
+    ok: combinedErrorCount === 0,
+    issueCount: combinedIssues.length,
+    errorCount: combinedErrorCount,
+    warningCount: combinedWarningCount,
+    issues: combinedIssues,
+  };
+
   if (format === 'json') {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(combinedResult, null, 2));
   } else {
-    console.log(renderFreshnessResult(result));
+    console.log(renderFreshnessResult(combinedResult));
   }
 
-  if (!result.ok) process.exit(1);
+  if (!combinedResult.ok) process.exit(1);
 }
 
 main().catch((error) => {
