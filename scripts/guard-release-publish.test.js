@@ -264,6 +264,44 @@ describe('guard-release-publish', () => {
     ]);
   });
 
+  it('guardReleasePublish still refuses a conflicted changesets-mode release, which has no per-package resume logic', () => {
+    const repoRoot = createRepoFixture();
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+          { status: 0 },
+        ],
+        ['git rev-parse HEAD', { status: 0, stdout: 'same-head\n' }],
+        [
+          'git rev-parse refs/remotes/origin/main',
+          { status: 0, stdout: 'same-head\n' },
+        ],
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 2, stdout: '', stderr: '' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 1, stderr: 'npm ERR! code E404\n' },
+        ],
+      ]),
+    );
+
+    expect(() =>
+      guardReleasePublish({
+        publishMode: 'changesets',
+        releaseVersion: '0.39.0',
+        repoRoot,
+        spawn,
+      }),
+    ).toThrow(/has no per-package resume logic/);
+  });
+
   it('guardReleasePublish treats a fully recorded release as a no-op success', () => {
     const repoRoot = createRepoFixture();
     const spawn = spawnFromResponses(

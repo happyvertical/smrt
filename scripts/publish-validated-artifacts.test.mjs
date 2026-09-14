@@ -1,4 +1,13 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { publishRelease } from './publish-validated-artifacts.mjs';
 
@@ -20,7 +29,7 @@ function release() {
   };
 }
 
-test('skips existing versions, publishes the missing tarball, and verifies all', () => {
+test('skips existing versions with matching content, publishes the missing tarball, and verifies all', () => {
   const published = new Set(['@happyvertical/smrt-a@0.40.0']);
   const calls = [];
   const runNpm = (args) => {
@@ -41,7 +50,11 @@ test('skips existing versions, publishes the missing tarball, and verifies all',
     return '';
   };
 
-  publishRelease(release(), { runNpm, log: () => {} });
+  publishRelease(release(), {
+    runNpm,
+    log: () => {},
+    verifyExistingContentMatches: () => true,
+  });
 
   assert.equal(
     calls.filter((args) => args[0] === 'publish').length,
@@ -51,6 +64,89 @@ test('skips existing versions, publishes the missing tarball, and verifies all',
     '@happyvertical/smrt-a@0.40.0',
     '@happyvertical/smrt-b@0.40.0',
   ]));
+});
+
+test('republishes instead of skipping when an existing version has different content', () => {
+  const calls = [];
+  const runNpm = (args) => {
+    calls.push(args);
+    if (args[0] === 'view') return '0.40.0';
+    return '';
+  };
+
+  publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      runNpm,
+      log: () => {},
+      // Simulates a version that already exists on the registry but was
+      // built from different content than this run's verified artifact —
+      // the resumable "skip already-published" path must not trust that
+      // as a match.
+      verifyExistingContentMatches: () => false,
+    },
+  );
+
+  assert.deepEqual(
+    calls.find((args) => args[0] === 'publish'),
+    [
+      'publish',
+      '/artifacts/a.tgz',
+      '--registry',
+      'https://registry.npmjs.org/',
+      '--access',
+      'public',
+    ],
+  );
+});
+
+test('default content verification throws on a registry/local shasum mismatch instead of silently skipping', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'publish-validated-artifacts-'));
+  const artifactPath = join(tmpDir, 'a.tgz');
+  writeFileSync(artifactPath, 'local tarball bytes');
+  const localShasum = createHash('sha1')
+    .update(readFileSync(artifactPath))
+    .digest('hex');
+
+  try {
+    assert.throws(
+      () =>
+        publishRelease(
+          {
+            releaseVersion: '0.40.0',
+            packages: [
+              {
+                name: '@happyvertical/smrt-a',
+                version: '0.40.0',
+                path: artifactPath,
+              },
+            ],
+          },
+          {
+            log: () => {},
+            runNpm: (args) => {
+              if (args[2] === 'dist.shasum') return 'not-the-same-shasum';
+              if (args[0] === 'view') return '0.40.0';
+              throw new Error('unexpected npm publish attempt');
+            },
+          },
+        ),
+      new RegExp(
+        `does not match this run's verified local artifact sha1 ${localShasum}`,
+      ),
+    );
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 test('reports but does not fail when registry verification still reports a package missing', () => {
@@ -165,11 +261,52 @@ test('forces registry views to revalidate cached package metadata', () => {
         if (args[0] === 'view') viewCalls.push(args);
         return '0.40.0';
       },
+      verifyExistingContentMatches: () => true,
     },
   );
 
   assert.ok(
     viewCalls.every((args) => args.includes('--prefer-online')),
     'npm view calls must bypass stale negative cache entries',
+  );
+});
+
+test('tolerates a transient registry error during post-publish verification instead of crashing the step', () => {
+  const logs = [];
+  let viewCount = 0;
+
+  const result = publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      log: (message) => logs.push(message),
+      runNpm: (args) => {
+        if (args[0] === 'publish') return '';
+        viewCount += 1;
+        // First view is the pre-publish existence check (not found, so we
+        // publish). Every view during the verification loop after that
+        // simulates a transient registry error (5xx/timeout), never a
+        // clean 404.
+        if (viewCount === 1) return null;
+        throw new Error('npm ERR! 503 Service Unavailable');
+      },
+      verificationAttempts: 2,
+      initialVerificationDelayMs: 1,
+      wait: () => {},
+    },
+  );
+
+  assert.deepEqual(result.unverified, ['@happyvertical/smrt-a']);
+  assert.ok(
+    logs.some((message) => /errored .*treating as not yet confirmed/.test(message)),
+    'expected the transient verification error to be logged, not thrown',
   );
 });

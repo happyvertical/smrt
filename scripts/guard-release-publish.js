@@ -333,6 +333,7 @@ export function assessReleaseState({
 
 export function guardReleasePublish({
   baseBranch = readEnv('RELEASE_BASE_BRANCH') ?? 'main',
+  publishMode = readEnv('PUBLISH_MODE') ?? 'artifacts',
   releaseVersion = readEnv('RELEASE_VERSION'),
   repoRoot = process.cwd(),
   skipGitCheck = readEnv('SKIP_RELEASE_GIT_GUARD') === 'true',
@@ -380,6 +381,24 @@ export function guardReleasePublish({
   }
 
   if (state.alreadyPublished.length > 0) {
+    // Only the artifacts-mode publisher (publish-validated-artifacts.mjs)
+    // skips already-published packages per package. The `changesets`
+    // emergency fallback (`pnpm run changeset:publish`) has no such
+    // resume logic and will attempt its ordinary publish flow, which fails
+    // outright on a version that already exists. Resuming a conflicted
+    // release is only safe in artifacts mode; keep the original hard
+    // refusal for every other mode so an in-flight emergency fallback run
+    // doesn't fail partway through instead of failing fast and clearly.
+    if (publishMode !== 'artifacts') {
+      fail(
+        `Refusing to publish because package versions already exist on npm:\n${state.alreadyPublished
+          .map((pkg) => `- ${pkg.name}@${pkg.version}`)
+          .join(
+            '\n',
+          )}\nAn earlier attempt may already have performed the irreversible npm publish. publish-mode=${publishMode} has no per-package resume logic (only publish-mode=artifacts does) — bump a new version instead of retrying this one in this mode.`,
+      );
+    }
+
     console.log(
       `↪ Resuming v${releaseVersion}: ${state.alreadyPublished.length} of ${publishablePackages.length} package(s) already exist on npm and will be skipped:\n${state.alreadyPublished
         .map((pkg) => `  - ${pkg.name}@${pkg.version}`)

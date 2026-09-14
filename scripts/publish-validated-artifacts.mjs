@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyPublishArtifacts } from './publish-artifacts-lib.mjs';
 
@@ -42,6 +43,42 @@ function existsOnRegistry(name, version, runNpm) {
   );
 }
 
+// A version already on the registry could, in principle, have been
+// published from *different* content than what this run built — e.g. two
+// independent runs computing the same next version from a stale base (the
+// exact "silently skip packages it thinks it already handled" failure
+// #2871 warned about). Compare the registry tarball's shasum against the
+// already-verified local artifact before trusting "already exists" as
+// "already exists with our content" and skipping it.
+function defaultVerifyExistingContentMatches(artifact, runNpm) {
+  const registryShasum = runNpm(
+    [
+      'view',
+      `${artifact.name}@${artifact.version}`,
+      'dist.shasum',
+      '--registry',
+      registry,
+      '--prefer-online',
+    ],
+    { allowNotFound: true },
+  );
+  if (registryShasum === null) {
+    // Existed a moment ago, gone now (race/propagation). Do not treat as a
+    // verified match; let the caller fall through to a normal publish
+    // attempt instead of silently skipping unverified content.
+    return false;
+  }
+  const localShasum = createHash('sha1')
+    .update(readFileSync(artifact.path))
+    .digest('hex');
+  if (registryShasum !== localShasum) {
+    throw new Error(
+      `Refusing to treat ${artifact.name}@${artifact.version} as already published: registry tarball sha1 ${registryShasum} does not match this run's verified local artifact sha1 ${localShasum}. That version already exists with different content — bump a new version instead of reusing this one.`,
+    );
+  }
+  return true;
+}
+
 function waitSynchronously(delayMs) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
 }
@@ -54,12 +91,16 @@ export function publishRelease(
     maxVerificationDelayMs = defaultMaxVerificationDelayMs,
     runNpm = npm,
     verificationAttempts = defaultVerificationAttempts,
+    verifyExistingContentMatches = defaultVerifyExistingContentMatches,
     wait = waitSynchronously,
   } = {},
 ) {
   for (const artifact of release.packages) {
-    if (existsOnRegistry(artifact.name, artifact.version, runNpm)) {
-      log(`↪ ${artifact.name}@${artifact.version} already exists`);
+    if (
+      existsOnRegistry(artifact.name, artifact.version, runNpm) &&
+      verifyExistingContentMatches(artifact, runNpm)
+    ) {
+      log(`↪ ${artifact.name}@${artifact.version} already exists (content verified)`);
       continue;
     }
     log(`📤 Publishing ${artifact.name}@${artifact.version}`);
@@ -73,12 +114,27 @@ export function publishRelease(
     ]);
   }
 
+  // Once `npm publish` has run (or been skipped as an already-verified
+  // match) for every package above, the release is already irreversible.
+  // A transient registry error here (5xx, timeout) is exactly as harmless
+  // to swallow as a clean "not found yet": either way we cannot currently
+  // confirm the read path, and only a thrown error — never a read-path
+  // hiccup — should be allowed to abort a step that still has to record
+  // the release below.
+  function stillUnconfirmed(artifact) {
+    try {
+      return !existsOnRegistry(artifact.name, artifact.version, runNpm);
+    } catch (error) {
+      log(
+        `⚠️ Registry verification check for ${artifact.name}@${artifact.version} errored (${error instanceof Error ? error.message : error}); treating as not yet confirmed.`,
+      );
+      return true;
+    }
+  }
+
   let missing = [];
   for (let attempt = 1; attempt <= verificationAttempts; attempt += 1) {
-    missing = release.packages.filter(
-      (artifact) =>
-        !existsOnRegistry(artifact.name, artifact.version, runNpm),
-    );
+    missing = release.packages.filter(stillUnconfirmed);
 
     if (missing.length === 0) break;
     if (attempt === verificationAttempts) continue;

@@ -383,6 +383,7 @@ jobs:
       - name: Guard release publish target
         id: guard
         env:
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
           RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/guard-release-publish.js
