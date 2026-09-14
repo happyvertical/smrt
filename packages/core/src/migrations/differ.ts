@@ -2362,6 +2362,27 @@ export class SchemaComparer {
    * tables fall back to the single-table batch path individually (each of
    * which falls back further to per-column) rather than discarding every
    * table's result.
+   *
+   * Known lock-footprint change (#2878 final review F2, deferred to
+   * #2887): one chunked statement takes `ACCESS SHARE` on every
+   * table in that chunk *simultaneously*, where the pre-#2878 per-table
+   * probe held at most one table's `ACCESS SHARE` at a time (each
+   * autocommitted statement releases its lock before the next one runs).
+   * That is a materially different PostgreSQL locking pattern: it is now
+   * possible, in principle, for this session to be one side of a deadlock
+   * with a concurrent multi-table DDL transaction (e.g. a `db:migrate` in
+   * flight) in a way the old per-table probe structurally could not be.
+   * PostgreSQL's deadlock detector resolves any such cycle by aborting one
+   * side with a loud `deadlock detected` error — never silently, and never
+   * with partial/corrupt state — so if this session is the victim, the
+   * `catch` above already degrades it to the safe per-table fallback; if
+   * the *other* side (the migration) is the victim, that transaction rolls
+   * back cleanly and is safe to re-run. No test in this repository exercises
+   * concurrent DDL against the probed tables, so this risk is unverified by
+   * suite rather than disproven. Bounding it further — chunking by table
+   * count as well as column count, and/or a short `lock_timeout` on these
+   * statements so this session always yields first — is deferred to #2887
+   * rather than fixed here.
    */
   private async crossTableProbeBatch(
     tables: { tableName: string; colNames: string[] }[],

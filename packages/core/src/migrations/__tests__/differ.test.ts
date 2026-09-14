@@ -2027,6 +2027,117 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       diff.changes.find((c) => c.type === 'rename_data_pending'),
     ).toBeUndefined();
   });
+
+  it('attributes a cross-table batched probe to the right table when two tables share column names (#2878 final review F1)', async () => {
+    // #2878 batches the rename-pending probe across every table in one
+    // `compare()` run instead of once per table, keyed by a positional
+    // `t<tableIndex>_c<colIndex>` alias rather than the column name — this
+    // proves that demux is correct even when two tables declare identically
+    // named columns, which a column-name-keyed mock (like
+    // `respondToBatchProbe` above) cannot distinguish. `widgets_pending`'s
+    // `new_id` is empty with a populated, type-compatible `old_id` orphan
+    // (rename-pending); `widgets_healthy` has the exact same column names
+    // and an orphan column too, but its `new_id` already holds data, so it
+    // must produce no advisory at all — a transposed alias map would either
+    // flag the healthy table, miss the pending one, or both.
+    const liveSchemaByTable: Record<string, unknown> = {
+      widgets_pending: {
+        columns: {
+          id: { type: 'text', notNull: true, primaryKey: true },
+          new_id: { type: 'text', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+        indexes: [],
+      },
+      widgets_healthy: {
+        columns: {
+          id: { type: 'text', notNull: true, primaryKey: true },
+          new_id: { type: 'text', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+        indexes: [],
+      },
+    };
+    // (table, column) -> has a non-empty value. Both tables declare the
+    // same column names, so a mock keyed on column name alone could not
+    // express "widgets_pending.new_id is empty but widgets_healthy.new_id
+    // is not" — the exact case this test exists to catch.
+    const presentByTable = new Map<string, Set<string>>([
+      ['widgets_pending', new Set(['id', 'old_id'])],
+      ['widgets_healthy', new Set(['id', 'new_id', 'old_id'])],
+    ]);
+
+    const mockDb = {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return {
+            rows: [
+              { table_name: 'widgets_pending' },
+              { table_name: 'widgets_healthy' },
+            ],
+          };
+        }
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          // One row of scalar subqueries, each shaped
+          // `(SELECT 1 FROM "<table>" WHERE "<col>" ... LIMIT 1) AS <alias>`
+          // — extract (table, column) pairs and their alias together, in
+          // the same left-to-right order, so presence is looked up per
+          // table rather than per column name.
+          const pairs = [
+            ...sql.matchAll(/FROM "([^"]+)" WHERE "([^"]+)"/g),
+          ].map((m) => [m[1], m[2]] as const);
+          const aliases = [...sql.matchAll(/\) AS (\w+)/g)].map((m) => m[1]);
+          const row: Record<string, number> = {};
+          pairs.forEach(([table, column], index) => {
+            if (presentByTable.get(table)?.has(column)) {
+              row[aliases[index]] = 1;
+            }
+          });
+          return { rows: [row] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async (tableName: string) => liveSchemaByTable[tableName],
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets_pending: {
+        tableName: 'widgets_pending',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_id: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+      widgets_healthy: {
+        tableName: 'widgets_healthy',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_id: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+    const diff = await comparer.compare(manifest);
+
+    const pendingChanges = diff.changes.filter(
+      (c) => c.type === 'rename_data_pending',
+    );
+    expect(pendingChanges).toHaveLength(1);
+    expect(pendingChanges[0].table).toBe('widgets_pending');
+    expect(pendingChanges[0].name).toBe('new_id');
+  });
 });
 
 describe('hasActionableChanges', () => {
