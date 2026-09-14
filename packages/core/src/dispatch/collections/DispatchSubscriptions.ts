@@ -350,7 +350,10 @@ export class DispatchSubscriptionCollection {
    * `DispatchCollection.tableExists()` for why a probe-and-catch check is
    * unsafe inside a PostgreSQL transaction (#2861).
    */
-  static async tableExists(db: DatabaseInterface): Promise<boolean> {
-    return tableExists(db, '_smrt_dispatch_subscriptions');
+  static async tableExists(
+    db: DatabaseInterface,
+    typeHint?: string,
+  ): Promise<boolean> {
+    return tableExists(db, '_smrt_dispatch_subscriptions', typeHint);
   }
 }

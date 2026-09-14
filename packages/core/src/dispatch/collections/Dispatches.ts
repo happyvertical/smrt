@@ -536,7 +536,10 @@ export class DispatchCollection {
    * uses `information_schema.tables` on PostgreSQL instead, which never
    * raises for a missing table.
    */
-  static async tableExists(db: DatabaseInterface): Promise<boolean> {
-    return tableExists(db, '_smrt_dispatch');
+  static async tableExists(
+    db: DatabaseInterface,
+    typeHint?: string,
+  ): Promise<boolean> {
+    return tableExists(db, '_smrt_dispatch', typeHint);
   }
 }
