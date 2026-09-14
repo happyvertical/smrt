@@ -32,6 +32,32 @@ import {
 import { quoteIdentifier } from './sql-identifiers.js';
 
 /**
+ * SQL predicate: a quoted column holds a non-null, non-empty value. Shared
+ * by every probe below (single-table batch, single-column fallback, and
+ * `migrations/differ.ts`'s cross-table batch, #2878) so the emptiness rule
+ * can never drift between them the way #2874's regression drifted between
+ * `differ.ts` and `live-parity.ts` before this module existed.
+ */
+export function nonEmptyValuePredicate(quotedColumn: string): string {
+  return `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
+}
+
+/**
+ * SQL predicate: a quoted column's value does *not* look UUID-shaped
+ * ({@link CANONICAL_UUID_PATTERN}), engine-aware (PostgreSQL regex vs.
+ * SQLite `GLOB`). Shared for the same reason as {@link nonEmptyValuePredicate}.
+ */
+export function uuidInvalidShapePredicate(
+  engine: DatabaseEngine,
+  quotedColumn: string,
+): string {
+  return engine === 'postgres'
+    ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
+    : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
+        `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
+}
+
+/**
  * Live-data probe, batched across every column named: does each hold any
  * non-null, non-empty value? One round trip regardless of column count,
  * one row of uncorrelated scalar subqueries,
@@ -77,8 +103,8 @@ async function columnsHaveNonEmptyValueBatchQuery(
   const selects = columns.map((column, index) => {
     const quotedColumn = quoteIdentifier(column);
     return (
-      `(SELECT 1 FROM ${quotedTable} WHERE ${quotedColumn} IS NOT NULL ` +
-      `AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1) AS c${index}`
+      `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedColumn)} ` +
+      `LIMIT 1) AS c${index}`
     );
   });
   const result = await db.query(`SELECT ${selects.join(', ')}`);
@@ -100,7 +126,7 @@ async function columnHasNonEmptyValueSingle(
   const quotedColumn = quoteIdentifier(column);
   const result = await db.query(
     `SELECT 1 AS present FROM ${quotedTable} ` +
-      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1`,
+      `WHERE ${nonEmptyValuePredicate(quotedColumn)} LIMIT 1`,
   );
   return (result?.rows?.length ?? 0) > 0;
 }
@@ -158,15 +184,9 @@ async function columnsAllValuesUuidShapedBatchQuery(
   // see {@link columnsHaveNonEmptyValueBatchQuery}.
   const selects = columns.map((column, index) => {
     const quotedColumn = quoteIdentifier(column);
-    const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
-    const invalidPredicate =
-      engine === 'postgres'
-        ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-        : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
-          `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
     return (
-      `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-      `AND ${invalidPredicate} LIMIT 1) AS c${index}`
+      `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedColumn)} ` +
+      `AND ${uuidInvalidShapePredicate(engine, quotedColumn)} LIMIT 1) AS c${index}`
     );
   });
   const result = await db.query(`SELECT ${selects.join(', ')}`);
@@ -187,15 +207,10 @@ async function allNonEmptyValuesUuidShapedSingle(
 ): Promise<boolean> {
   const quotedTable = quoteIdentifier(table);
   const quotedColumn = quoteIdentifier(column);
-  const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
-  const invalidPredicate =
-    engine === 'postgres'
-      ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-      : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
-        `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
   const result = await db.query(
     `SELECT 1 AS invalid FROM ${quotedTable} ` +
-      `WHERE ${nonEmptyPredicate} AND ${invalidPredicate} LIMIT 1`,
+      `WHERE ${nonEmptyValuePredicate(quotedColumn)} ` +
+      `AND ${uuidInvalidShapePredicate(engine, quotedColumn)} LIMIT 1`,
   );
   return (result?.rows?.length ?? 0) === 0;
 }

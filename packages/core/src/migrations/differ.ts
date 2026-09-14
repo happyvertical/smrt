@@ -9,13 +9,13 @@ import { createLogger } from '@happyvertical/logger';
 import {
   columnsAllValuesUuidShapedBatch,
   columnsHaveNonEmptyValueBatch,
+  nonEmptyValuePredicate,
+  uuidInvalidShapePredicate,
 } from '../schema/column-data-probes.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
-  CANONICAL_UUID_PATTERN,
-  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyAddStatements,
@@ -555,75 +555,91 @@ export class SchemaComparer {
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
 
-    // Get list of existing tables
-    const existingTables = await this.getExistingTables();
+    // #2878 review: `renameDataPendingCache` is populated below for the
+    // duration of this call only. The `finally` clears it again on the way
+    // out (success *or* a mid-run throw) so a `compareTable()` call made
+    // directly on this instance after `compare()` returns — its own public
+    // method, reachable by any holder of this `SchemaComparer` — can never
+    // read a stale entry computed from a previous manifest and a previous
+    // run's live data. Without this, a cache hit for a table absent from
+    // the *next* standalone call's manifest/dbSchema would silently return
+    // a stale advisory rather than falling back to
+    // `detectRenameDataPendingSingleTable()`, and the doc comment on
+    // `renameDataPendingCache` claiming "nothing survives past one
+    // `compare()` call" would be false.
+    try {
+      // Get list of existing tables
+      const existingTables = await this.getExistingTables();
 
-    // #2878: precompute every table's rename-pending advisory findings in
-    // one batched pass, across the whole manifest, before the per-table
-    // loop below reads them one table at a time via `detectRenameDataPending`.
-    // See `renameDataPendingCache` for why this is safe to compute ahead of
-    // (and share with) that loop.
-    await this.precomputeRenameDataPending(manifestSchemas, existingTables);
+      // #2878: precompute every table's rename-pending advisory findings in
+      // one batched pass, across the whole manifest, before the per-table
+      // loop below reads them one table at a time via `detectRenameDataPending`.
+      // See `renameDataPendingCache` for why this is safe to compute ahead of
+      // (and share with) that loop.
+      await this.precomputeRenameDataPending(manifestSchemas, existingTables);
 
-    // #2608: plan the pre-R11 `text` -> `uuid` convergence before anything
-    // else so its statements lead the migration stream. Every foreign key in
-    // this diff — including the deferred constraints the orchestrator emits
-    // for newly created tables — depends on the columns it rewrites.
-    this.uuidConvergence = await this.buildUuidConvergencePlan(
-      manifestSchemas,
-      existingTables,
-    );
-    for (const change of this.uuidConvergenceChanges(manifestSchemas)) {
-      diff.changes.push(change);
-      if (!isInfoOnlyChange(change)) diff.has_changes = true;
-    }
+      // #2608: plan the pre-R11 `text` -> `uuid` convergence before anything
+      // else so its statements lead the migration stream. Every foreign key in
+      // this diff — including the deferred constraints the orchestrator emits
+      // for newly created tables — depends on the columns it rewrites.
+      this.uuidConvergence = await this.buildUuidConvergencePlan(
+        manifestSchemas,
+        existingTables,
+      );
+      for (const change of this.uuidConvergenceChanges(manifestSchemas)) {
+        diff.changes.push(change);
+        if (!isInfoOnlyChange(change)) diff.has_changes = true;
+      }
 
-    // Check each manifest schema against database
-    for (const [tableName, schema] of Object.entries(manifestSchemas)) {
-      if (!existingTables.has(tableName)) {
-        // Table doesn't exist - add to added_tables
-        diff.added_tables.push(schema);
-        diff.has_changes = true;
-      } else {
-        // Table exists - compare columns and indexes
-        const tableChanges = await this.compareTable(
-          tableName,
-          schema,
-          manifestSchemas,
-        );
-        if (tableChanges.length > 0) {
-          diff.changes.push(...tableChanges);
-          // Info-level report-only notes (a harmless orphan column, a stale
-          // default the manifest no longer declares) are listed but do not
-          // make the schema "changed": executable, manual, and warning-level
-          // findings do (#2369).
-          if (tableChanges.some((change) => !isInfoOnlyChange(change))) {
-            diff.has_changes = true;
+      // Check each manifest schema against database
+      for (const [tableName, schema] of Object.entries(manifestSchemas)) {
+        if (!existingTables.has(tableName)) {
+          // Table doesn't exist - add to added_tables
+          diff.added_tables.push(schema);
+          diff.has_changes = true;
+        } else {
+          // Table exists - compare columns and indexes
+          const tableChanges = await this.compareTable(
+            tableName,
+            schema,
+            manifestSchemas,
+          );
+          if (tableChanges.length > 0) {
+            diff.changes.push(...tableChanges);
+            // Info-level report-only notes (a harmless orphan column, a stale
+            // default the manifest no longer declares) are listed but do not
+            // make the schema "changed": executable, manual, and warning-level
+            // findings do (#2369).
+            if (tableChanges.some((change) => !isInfoOnlyChange(change))) {
+              diff.has_changes = true;
+            }
           }
         }
       }
-    }
 
-    // Orphan tables are always reported (never silently retained); the
-    // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
-    const orphanTables: string[] = [];
-    for (const tableName of existingTables) {
-      // Skip system tables
-      if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
-        continue;
+      // Orphan tables are always reported (never silently retained); the
+      // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
+      const orphanTables: string[] = [];
+      for (const tableName of existingTables) {
+        // Skip system tables
+        if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
+          continue;
+        }
+        if (!manifestSchemas[tableName]) {
+          orphanTables.push(tableName);
+        }
       }
-      if (!manifestSchemas[tableName]) {
-        orphanTables.push(tableName);
+      orphanTables.sort();
+      diff.orphan_tables = orphanTables;
+      if (this.options.includeDroppedTables && orphanTables.length > 0) {
+        diff.dropped_tables.push(...orphanTables);
+        diff.has_changes = true;
       }
-    }
-    orphanTables.sort();
-    diff.orphan_tables = orphanTables;
-    if (this.options.includeDroppedTables && orphanTables.length > 0) {
-      diff.dropped_tables.push(...orphanTables);
-      diff.has_changes = true;
-    }
 
-    return diff;
+      return diff;
+    } finally {
+      this.renameDataPendingCache = null;
+    }
   }
 
   /**
@@ -2306,8 +2322,8 @@ export class SchemaComparer {
       tables,
       (t) => columnsHaveNonEmptyValueBatch(this.db, t.tableName, t.colNames),
       (quotedTable, quotedCol, alias) =>
-        `(SELECT 1 FROM ${quotedTable} WHERE ${quotedCol} IS NOT NULL ` +
-        `AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1) AS ${alias}`,
+        `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedCol)} ` +
+        `LIMIT 1) AS ${alias}`,
       (value) => value != null,
     );
   }
@@ -2329,18 +2345,9 @@ export class SchemaComparer {
           t.tableName,
           t.colNames,
         ),
-      (quotedTable, quotedCol, alias) => {
-        const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
-        const invalidPredicate =
-          this.engine === 'postgres'
-            ? `CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-            : `NOT (LENGTH(CAST(${quotedCol} AS TEXT)) = 36 ` +
-              `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
-        return (
-          `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-          `AND ${invalidPredicate} LIMIT 1) AS ${alias}`
-        );
-      },
+      (quotedTable, quotedCol, alias) =>
+        `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedCol)} ` +
+        `AND ${uuidInvalidShapePredicate(this.engine, quotedCol)} LIMIT 1) AS ${alias}`,
       (value) => value == null,
     );
   }
