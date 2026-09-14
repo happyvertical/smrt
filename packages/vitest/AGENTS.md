@@ -143,6 +143,36 @@ beforeEach(async () => {
 afterEach(async () => { await cleanup(); }); // rolls back transaction
 ```
 
+## Statement-Count Ceiling (#2875)
+
+`withStatementCount(db, fn)` / `expectStatementCeiling(result, ceiling)` in
+`src/statement-count.ts` generalize the hand-rolled `db.query` wrapping in
+`packages/core/src/__tests__/collection-read-plan-postgres.optional.test.ts`
+into a reusable instrument for round-trip ceiling assertions (motivated by
+#2874: an uncounted 3.7x per-object schema-introspection regression shipped
+in 0.47.2 and survived to 0.50.0).
+
+Instruments the raw-statement surface only —
+`query`/`many`/`single`/`pluck`/`execute` and their `oo`/`oO`/`ox`/`xx`
+aliases (each an independent property, not a dynamic passthrough to its
+long-form counterpart — every alias needs its own wrap). Every
+`@happyvertical/sql` adapter routes the higher-level `insert`/`get`/`list`/
+`update`/`upsert`/`delete`/`count`/`getOrInsert` convenience methods to the
+transport directly through a private closure, not through the object's own
+`query`/`many`/... properties, so those are out of scope for an
+externally-applied wrap; the schema-introspection/migration paths this helper
+targets issue their statements through `query()`.
+
+Also instruments `transaction()`/`beginTransaction()` recursively so a
+callback's `tx` handle is counted too — a transaction handle is built from an
+independent closure set over its own connection/executor, so wrapping only
+the outer `db` would under-count work done inside a transaction and pass a
+ceiling that should have failed (`#2862`'s bootstrap path is exactly this
+shape). Restores every method it touches on the *outer* handle in a
+`finally`; transaction handles are ephemeral and never reused, so they are
+not restored. Engine-agnostic (SQLite and PostgreSQL); its own tests run
+in-memory SQLite so a ceiling built on it can live in the default unit lane.
+
 ## Singleton Cache Gotcha
 
 Module-level singleton caches (common in SMRT collections) persist across tests, ignoring new mocks.
@@ -195,3 +225,4 @@ Pattern: render → assert role/name/state → drive with user-event → prove a
 - `src/svelte.ts` — component-test surface (Testing Library + a11y, one import)
 - `src/a11y.ts` — `expectNoA11yViolations` (axe-core)
 - `src/test-db.ts` — createIsolatedTestDb, createIsolatedTestDbFromManifest, createTestDb
+- `src/statement-count.ts` — withStatementCount, expectStatementCeiling, normalizeStatement
