@@ -224,7 +224,19 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
       const priorStatementTimeout = getQueryRows(
         await db.query('SHOW statement_timeout'),
       )[0]?.statement_timeout;
-      return transaction(async (tx): Promise<T> => {
+      // Called via `.call(db, ...)` with explicit type arguments — the
+      // established pattern for this same `TransactionCapable`-style shape
+      // elsewhere in this package (`cascade.ts`'s two `transaction.call<...>`
+      // sites) — rather than a bare `transaction(...)` call, which would
+      // drop the `this: DatabaseInterface` receiver the declared signature
+      // requires. No live `@happyvertical/sql` adapter's `transaction`
+      // currently reads `this`, but nothing guarantees that of every
+      // `DatabaseInterface` implementer.
+      return transaction.call<
+        DatabaseInterface,
+        [(tx: DatabaseInterface) => Promise<T>],
+        Promise<T>
+      >(db, async (tx) => {
         for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
           await tx.query(sql);
         }
