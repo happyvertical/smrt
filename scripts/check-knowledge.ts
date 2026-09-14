@@ -1,33 +1,12 @@
 #!/usr/bin/env tsx
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { checkKnowledgeGraphFreshness } from '../packages/core/src/knowledge-graph.js';
+import {
+  checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
+} from '../packages/core/src/knowledge-graph.js';
 import {
   checkKnowledgeFreshness,
   renderFreshnessResult,
 } from '../packages/smrt-dev-mcp/src/knowledge/index.js';
-
-/**
- * Whether any package currently has a built `smrt-knowledge.json`. The root
- * graph (#2863) is only required once at least one package has opted in —
- * a checkout that has not run `pnpm build` yet, or a repo with no package
- * exporting `./smrt-knowledge.json`, has nothing to merge.
- */
-function hasAnyPackageKnowledgeArtifact(rootDir: string): boolean {
-  const packagesDir = join(rootDir, 'packages');
-  if (!existsSync(packagesDir)) return false;
-  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const packageDir = join(packagesDir, entry.name);
-    if (
-      existsSync(join(packageDir, 'dist', 'smrt-knowledge.json')) ||
-      existsSync(join(packageDir, '.smrt', 'smrt-knowledge.json'))
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
 
 type OutputFormat = 'json' | 'markdown';
 
@@ -78,7 +57,9 @@ async function main(): Promise<void> {
   const graphIssues = checkKnowledgeGraphFreshness(
     process.cwd(),
     '.smrt/smrt-knowledge-graph.json',
-    { requireArtifact: hasAnyPackageKnowledgeArtifact(process.cwd()) },
+    {
+      requireArtifact: discoverKnowledgeArtifactPaths(process.cwd()).length > 0,
+    },
   );
   const combinedIssues = [...result.issues, ...graphIssues];
   const combinedErrorCount =

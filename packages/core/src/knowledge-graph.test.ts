@@ -224,6 +224,85 @@ describe('buildKnowledgeGraph', () => {
       stableStringify(strip(backward)),
     );
   });
+
+  it('resolves an STI extends target to the SAME package base, not an ambiguous global name (#2863 review)', () => {
+    // Two packages each declare their own `Account` base class. `messages`
+    // also declares an `EmailAccount` STI subclass extending its OWN
+    // `Account`. Resolving `extends: 'Account'` globally is ambiguous (two
+    // matches), so it must resolve within the declaring package instead of
+    // silently pointing nowhere.
+    const ledgers = manifest({
+      packageName: '@example/ledgers',
+      objects: [
+        {
+          name: 'Account',
+          qualifiedName: '@example/ledgers/Account',
+          collection: 'accounts',
+          tableName: 'accounts',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+      ],
+    });
+    const messages = manifest({
+      packageName: '@example/messages',
+      objects: [
+        {
+          name: 'Account',
+          qualifiedName: '@example/messages/Account',
+          collection: 'accounts',
+          tableName: 'accounts',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+        {
+          name: 'EmailAccount',
+          qualifiedName: '@example/messages/EmailAccount',
+          collection: 'accounts',
+          tableName: 'accounts',
+          tableStrategy: 'sti',
+          extends: 'Account',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+      ],
+    });
+
+    const graph = buildKnowledgeGraph([
+      {
+        artifactPath: 'packages/ledgers/dist/smrt-knowledge.json',
+        manifest: ledgers,
+      },
+      {
+        artifactPath: 'packages/messages/dist/smrt-knowledge.json',
+        manifest: messages,
+      },
+    ]);
+
+    const sti = graph.edges.find(
+      (e) => e.type === 'sti' && e.from.includes('EmailAccount'),
+    );
+    expect(sti).toEqual({
+      type: 'sti',
+      from: '@example/messages#@example/messages/EmailAccount',
+      to: '@example/messages#@example/messages/Account',
+    });
+  });
 });
 
 describe('checkKnowledgeGraphFreshness', () => {
@@ -300,5 +379,48 @@ describe('checkKnowledgeGraphFreshness', () => {
     );
     expect(stale).toHaveLength(1);
     expect(stale[0].code).toBe('stale-knowledge-graph');
+  });
+
+  it('flags a newly built package artifact the graph never merged (#2863 review)', () => {
+    mkdirSync(join(rootDir, 'packages', 'orders', 'dist'), {
+      recursive: true,
+    });
+    const original = manifest({ packageName: '@example/orders' });
+    writeFileSync(
+      join(rootDir, 'packages', 'orders', 'dist', 'smrt-knowledge.json'),
+      stableStringify(original),
+    );
+    const graph = buildKnowledgeGraph([
+      {
+        artifactPath: 'packages/orders/dist/smrt-knowledge.json',
+        manifest: original,
+      },
+    ]);
+    mkdirSync(join(rootDir, '.smrt'), { recursive: true });
+    writeFileSync(
+      join(rootDir, '.smrt', 'smrt-knowledge-graph.json'),
+      stableStringify(graph),
+    );
+
+    // Fresh before the new package exists.
+    expect(
+      checkKnowledgeGraphFreshness(rootDir, '.smrt/smrt-knowledge-graph.json'),
+    ).toEqual([]);
+
+    // A second package finishes its first build; every RECORDED hash is
+    // still exactly correct, but the graph is now incomplete.
+    mkdirSync(join(rootDir, 'packages', 'crm', 'dist'), { recursive: true });
+    writeFileSync(
+      join(rootDir, 'packages', 'crm', 'dist', 'smrt-knowledge.json'),
+      stableStringify(manifest({ packageName: '@example/crm' })),
+    );
+
+    const stale = checkKnowledgeGraphFreshness(
+      rootDir,
+      '.smrt/smrt-knowledge-graph.json',
+    );
+    expect(stale).toHaveLength(1);
+    expect(stale[0].code).toBe('stale-knowledge-graph');
+    expect(stale[0].message).toContain('packages/crm/dist/smrt-knowledge.json');
   });
 });

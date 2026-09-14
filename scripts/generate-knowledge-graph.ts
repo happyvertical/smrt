@@ -12,22 +12,16 @@
  * nodes — this script never invents or requires generation across packages
  * that have not opted in.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import {
   buildKnowledgeGraph,
+  discoverKnowledgeArtifactPaths,
   type KnowledgeGraphInput,
   stableStringify,
 } from '../packages/core/src/knowledge-graph.js';
 
 const rootDir = resolveRepoRoot();
-const packagesDir = join(rootDir, 'packages');
 const outputPath = join(rootDir, '.smrt', 'smrt-knowledge-graph.json');
 
 function resolveRepoRoot(): string {
@@ -36,26 +30,16 @@ function resolveRepoRoot(): string {
 }
 
 function discoverInputs(): KnowledgeGraphInput[] {
-  if (!existsSync(packagesDir)) return [];
   const inputs: KnowledgeGraphInput[] = [];
-  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const packageDir = join(packagesDir, entry.name);
-    const candidates = [
-      join(packageDir, 'dist', 'smrt-knowledge.json'),
-      join(packageDir, '.smrt', 'smrt-knowledge.json'),
-    ];
-    const found = candidates.find((path) => existsSync(path));
-    if (!found) continue;
+  for (const artifactPath of discoverKnowledgeArtifactPaths(rootDir)) {
     try {
-      const manifest = JSON.parse(readFileSync(found, 'utf8'));
-      inputs.push({
-        artifactPath: relative(rootDir, found).split('\\').join('/'),
-        manifest,
-      });
+      const manifest = JSON.parse(
+        readFileSync(join(rootDir, artifactPath), 'utf8'),
+      );
+      inputs.push({ artifactPath, manifest });
     } catch (error) {
       console.warn(
-        `⚠️  Skipping ${relative(rootDir, found)}: ${
+        `⚠️  Skipping ${artifactPath}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

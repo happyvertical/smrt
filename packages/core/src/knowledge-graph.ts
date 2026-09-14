@@ -18,11 +18,39 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import type {
   DomainKnowledgeManifest,
   DomainKnowledgeObject,
 } from '@happyvertical/smrt-types';
+
+/**
+ * Discovers every currently-buildable per-package artifact path under
+ * `<rootDir>/packages/*`, preferring the published `dist/smrt-knowledge.json`
+ * over the local dev `.smrt/smrt-knowledge.json` when both exist. Shared by
+ * the generator (which needs the manifest content) and the freshness check
+ * (which only needs to know whether the current SET of artifacts matches
+ * what the graph was built from — a newly built package, or a package that
+ * newly started exporting `./smrt-knowledge.json`, must mark the graph stale
+ * even though every artifact the graph already knows about is unchanged).
+ */
+export function discoverKnowledgeArtifactPaths(rootDir: string): string[] {
+  const packagesDir = join(rootDir, 'packages');
+  if (!existsSync(packagesDir)) return [];
+  const paths: string[] = [];
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const packageDir = join(packagesDir, entry.name);
+    const candidates = [
+      join(packageDir, 'dist', 'smrt-knowledge.json'),
+      join(packageDir, '.smrt', 'smrt-knowledge.json'),
+    ];
+    const found = candidates.find((path) => existsSync(path));
+    if (found) paths.push(relative(rootDir, found).split('\\').join('/'));
+  }
+  return paths.sort();
+}
 
 /** One package's `smrt-knowledge.json`, located relative to the graph root. */
 export interface KnowledgeGraphInput {
@@ -111,21 +139,41 @@ export function buildKnowledgeGraph(
   // scanned it, regardless of scan order.
   const idByQualifiedName = new Map<string, string>();
   const idBySimpleName = new Map<string, string[]>();
+  // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name
+  // (its own package's base class, never a cross-package reference — STI
+  // shares one table within a package), so a same-package simple-name match
+  // must win over an ambiguous or wrong-package GLOBAL simple-name match:
+  // two packages both declaring `Account` must not point one package's
+  // subclass at the other package's `Account` (#2863 review).
+  const idBySimpleNamePerPackage = new Map<string, Map<string, string>>();
 
   for (const input of sortedInputs) {
     const packageName = input.manifest.packageName ?? input.artifactPath;
+    const perPackage =
+      idBySimpleNamePerPackage.get(packageName) ?? new Map<string, string>();
     for (const object of input.manifest.objects) {
       const id = objectId(packageName, object);
       idByQualifiedName.set(object.qualifiedName ?? id, id);
       const bySimple = idBySimpleName.get(object.name) ?? [];
       bySimple.push(id);
       idBySimpleName.set(object.name, bySimple);
+      perPackage.set(object.name, id);
     }
+    idBySimpleNamePerPackage.set(packageName, perPackage);
   }
 
-  const resolveTarget = (raw: string | undefined): string | undefined => {
+  const resolveTarget = (
+    raw: string | undefined,
+    declaringPackageName?: string,
+  ): string | undefined => {
     if (!raw) return undefined;
     if (idByQualifiedName.has(raw)) return idByQualifiedName.get(raw);
+    if (declaringPackageName) {
+      const sameId = idBySimpleNamePerPackage
+        .get(declaringPackageName)
+        ?.get(raw);
+      if (sameId) return sameId;
+    }
     const bySimple = idBySimpleName.get(raw);
     if (bySimple && bySimple.length === 1) return bySimple[0];
     return undefined;
@@ -175,7 +223,8 @@ export function buildKnowledgeGraph(
           type: 'sti',
           from: id,
           to:
-            resolveTarget(object.extends) ?? `${packageName}#${object.extends}`,
+            resolveTarget(object.extends, packageName) ??
+            `${packageName}#${object.extends}`,
         });
       }
 
@@ -287,6 +336,7 @@ export function checkKnowledgeGraphFreshness(
     return issues;
   }
 
+  const recordedPaths = Object.keys(graph.sourceHashes ?? {});
   for (const [artifactPath, expectedHash] of Object.entries(
     graph.sourceHashes ?? {},
   )) {
@@ -310,6 +360,27 @@ export function checkKnowledgeGraphFreshness(
         file: graphPath,
       });
     }
+  }
+
+  // A per-key hash comparison alone cannot see an ADDED artifact: a package
+  // that just finished its first build, or just started exporting
+  // `./smrt-knowledge.json`, contributes a path the graph never recorded, so
+  // every recorded hash still matches. Compare the current discoverable SET
+  // against the recorded set to catch that (#2863 review).
+  const currentPaths = discoverKnowledgeArtifactPaths(rootDir);
+  const recordedSet = new Set(recordedPaths);
+  const newPaths = currentPaths.filter((path) => !recordedSet.has(path));
+  if (newPaths.length > 0) {
+    issues.push({
+      severity: 'error',
+      code: 'stale-knowledge-graph',
+      message: `${newPaths.join(', ')} ${
+        newPaths.length === 1
+          ? 'is a new package artifact'
+          : 'are new package artifacts'
+      } not yet merged into ${graphPath}; run \`pnpm knowledge:graph\``,
+      file: graphPath,
+    });
   }
 
   return issues;
