@@ -2138,6 +2138,174 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(pendingChanges[0].table).toBe('widgets_pending');
     expect(pendingChanges[0].name).toBe('new_id');
   });
+
+  it('slices a single table wider than the cross-table probe cap instead of issuing one oversized statement (PR #2888 review)', async () => {
+    // A pathologically wide table (401 declared candidate columns, one more
+    // than MAX_CROSS_TABLE_PROBE_COLUMNS = 400) used to land in one
+    // oversized chunk by itself: the chunker only split *between* whole
+    // tables, so a single wide table's own column list was never sliced.
+    // This proves each cross-table probe statement stays within the cap
+    // (no single query's alias count exceeds it) and that the slices are
+    // still merged back into one correct per-table result.
+    const CAP = 400;
+    const declaredColumnNames = [
+      'id',
+      ...Array.from({ length: CAP }, (_, i) => `col${i}`),
+    ];
+    // Every declared column holds data except the very last one
+    // (`col399`), which pairs with a type-compatible, populated orphan
+    // column — the rename-pending shape, deliberately placed at the tail
+    // end of the list so it falls in whichever slice the 401st column
+    // lands in.
+    const emptyColumn = declaredColumnNames[declaredColumnNames.length - 1];
+    const orphanColumn = 'legacy_col';
+
+    const columns: Record<
+      string,
+      { type: string; notNull: boolean; primaryKey: boolean }
+    > = {};
+    for (const name of declaredColumnNames) {
+      columns[name] = {
+        type: 'text',
+        notNull: false,
+        primaryKey: name === 'id',
+      };
+    }
+    columns[orphanColumn] = { type: 'text', notNull: false, primaryKey: false };
+
+    const queryWidths: number[] = [];
+
+    const mockDb = {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'wide_table' }] };
+        }
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          const pairs = [
+            ...sql.matchAll(/FROM "([^"]+)" WHERE "([^"]+)"/g),
+          ].map((m) => m[2]);
+          const aliases = [...sql.matchAll(/\) AS (\w+)/g)].map((m) => m[1]);
+          queryWidths.push(aliases.length);
+          const row: Record<string, number> = {};
+          pairs.forEach((column, index) => {
+            // Every column holds data except the one deliberately left
+            // empty and the orphan, which is populated (has data).
+            if (column !== emptyColumn) row[aliases[index]] = 1;
+          });
+          return { rows: [row] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({ columns, indexes: [] }),
+    };
+
+    const manifestColumns: Record<
+      string,
+      { type: 'TEXT'; primaryKey?: boolean }
+    > = {};
+    for (const name of declaredColumnNames) {
+      manifestColumns[name] =
+        name === 'id' ? { type: 'TEXT', primaryKey: true } : { type: 'TEXT' };
+    }
+    const manifest: Record<string, SchemaDefinition> = {
+      wide_table: {
+        tableName: 'wide_table',
+        columns: manifestColumns,
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+    const diff = await comparer.compare(manifest);
+
+    // No single cross-table probe statement exceeded the cap, even though
+    // this table alone has 401 declared candidate columns.
+    expect(queryWidths.every((width) => width <= CAP)).toBe(true);
+    // At least one statement was needed beyond the first (401 > 400).
+    expect(queryWidths.length).toBeGreaterThan(1);
+
+    const pendingChanges = diff.changes.filter(
+      (c) => c.type === 'rename_data_pending',
+    );
+    expect(pendingChanges).toHaveLength(1);
+    expect(pendingChanges[0].table).toBe('wide_table');
+    expect(pendingChanges[0].name).toBe(emptyColumn);
+  });
+
+  it('probes fresh live data on a standalone compareTable() call after compare() completes (cache lifetime regression)', async () => {
+    // Guards the `finally { this.renameDataPendingCache = null; }` fix:
+    // without it, this second compareTable() call (made directly on the
+    // same instance, not through compare()) would hit a stale cache entry
+    // from the first compare() run instead of probing the live data again.
+    let newIdHasData = false;
+
+    const mockDb = {
+      url: 'postgresql://localhost/test',
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'widgets' }] };
+        }
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          const present = newIdHasData
+            ? new Set(['id', 'new_id', 'old_id'])
+            : new Set(['id', 'old_id']);
+          return respondToBatchProbe(sql, present);
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notNull: true, primaryKey: true },
+          new_id: { type: 'text', notNull: false, primaryKey: false },
+          old_id: { type: 'text', notNull: false, primaryKey: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_id: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(mockDb as unknown as DatabaseProvider);
+
+    // First compare(): new_id is still empty, so the advisory fires.
+    const firstDiff = await comparer.compare(manifest);
+    expect(
+      firstDiff.changes.some((c) => c.type === 'rename_data_pending'),
+    ).toBe(true);
+
+    // The backfill completes between the two calls.
+    newIdHasData = true;
+
+    // A direct compareTable() call on the same instance -- not another
+    // compare() -- must reflect the now-populated column, not a cached
+    // finding from the run above.
+    const secondChanges = await comparer.compareTable(
+      'widgets',
+      manifest.widgets,
+      manifest,
+    );
+    expect(secondChanges.some((c) => c.type === 'rename_data_pending')).toBe(
+      false,
+    );
+  });
 });
 
 describe('hasActionableChanges', () => {

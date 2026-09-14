@@ -504,13 +504,19 @@ export class SchemaComparer {
   private renameDataPendingCache: Map<string, SchemaChange[]> | null = null;
 
   /**
-   * Cross-table batch queries stay bounded on a very large schema: this
+   * Cross-table batch queries stay bounded regardless of schema shape: this
    * caps how many scalar-subquery columns one probe statement packs into a
-   * single row before splitting into another round trip. Conservative
-   * relative to PostgreSQL's ~1600 column limit per result row, and SQLite
-   * has no such ceiling but benefits from the same bound for query-text
-   * size. Still O(1)-ish round trips for realistic schemas (a schema needs
-   * >1000 probed columns before this triggers a second statement).
+   * single row. Conservative relative to PostgreSQL's ~1600 column limit
+   * per result row, and SQLite has no such ceiling but benefits from the
+   * same bound for query-text size. Applied twice (PR #2888 review): once
+   * per table, so a single pathologically wide table (more probed columns
+   * than this cap) is itself sliced across more than one statement rather
+   * than landing in one oversized chunk; and again across tables, packing
+   * every (possibly sliced) entry into as few chunks as this cap allows.
+   * A schema with no single table wider than this cap needs more than
+   * `MAX_CROSS_TABLE_PROBE_COLUMNS` probed columns *in total* before a
+   * second statement is needed at all — still O(1)-ish round trips for a
+   * realistic schema.
    */
   private static readonly MAX_CROSS_TABLE_PROBE_COLUMNS = 400;
 
@@ -2400,12 +2406,40 @@ export class SchemaComparer {
     const nonEmpty = tables.filter((t) => t.colNames.length > 0);
     if (nonEmpty.length === 0) return new Map();
 
+    // Slice each table's own column list to the cap first (PR #2888 review):
+    // packing whole tables into chunks, as this used to do, bounds the
+    // cumulative width across *many* normal-sized tables but not a single
+    // pathologically wide one — a table with more probed columns than the
+    // cap would still land in one oversized chunk by itself, since the
+    // "start a new chunk" gate below only fires when the current chunk
+    // already holds something. Slicing up front means no single chunk
+    // entry is ever wider than the cap, so the same table can appear in
+    // more than one chunk; `result` (built across every chunk, table names
+    // merged via `result.get(tableName) ?? new Map()`) already gathers
+    // those pieces back into one map per table either way.
+    const slices: { tableName: string; colNames: string[] }[] = [];
+    for (const t of nonEmpty) {
+      for (
+        let i = 0;
+        i < t.colNames.length;
+        i += SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS
+      ) {
+        slices.push({
+          tableName: t.tableName,
+          colNames: t.colNames.slice(
+            i,
+            i + SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS,
+          ),
+        });
+      }
+    }
+
     const chunks: { tableName: string; colNames: string[] }[][] = [];
     let current: { tableName: string; colNames: string[] }[] = [];
     let currentWidth = 0;
-    for (const t of nonEmpty) {
+    for (const slice of slices) {
       if (
-        currentWidth + t.colNames.length >
+        currentWidth + slice.colNames.length >
           SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS &&
         current.length > 0
       ) {
@@ -2413,8 +2447,8 @@ export class SchemaComparer {
         current = [];
         currentWidth = 0;
       }
-      current.push(t);
-      currentWidth += t.colNames.length;
+      current.push(slice);
+      currentWidth += slice.colNames.length;
     }
     if (current.length > 0) chunks.push(current);
 
@@ -2440,8 +2474,16 @@ export class SchemaComparer {
           result.set(tableName, m);
         }
       } catch {
+        // Merge into any existing entry rather than overwriting it: a wide
+        // table sliced across two chunk entries in this same chunk (or a
+        // prior chunk) already has a partial result in `result`, and a
+        // plain `result.set` here would discard it instead of adding this
+        // slice's columns alongside it.
         for (const t of chunk) {
-          result.set(t.tableName, await singleTableFallback(t));
+          const m = result.get(t.tableName) ?? new Map<string, boolean>();
+          const fallback = await singleTableFallback(t);
+          for (const [colName, value] of fallback) m.set(colName, value);
+          result.set(t.tableName, m);
         }
       }
     }
