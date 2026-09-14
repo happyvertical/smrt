@@ -714,6 +714,116 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(artifact.moduleDocs).toBeUndefined();
     expect(artifact.sourceHashes).toHaveProperty('moduleDoc:agents/payouts.md');
   });
+
+  describe('derived tags and risks (#2872)', () => {
+    it('derives tags from package.json keywords when no config.tags is authored', () => {
+      writeFileSync(
+        join(rootDir, 'package.json'),
+        JSON.stringify({
+          name: '@example/orders',
+          version: '1.0.0',
+          keywords: ['orders', ' billing '],
+        }),
+      );
+      const manifest = fixtureManifest();
+      manifest.objects['@example/orders:Order'].decoratorConfig.knowledge =
+        undefined;
+
+      const artifact = buildDomainKnowledgeManifest({ manifest, rootDir });
+
+      expect(artifact.tags).toEqual(['billing', 'orders']);
+    });
+
+    it('adds the cross-package tag only when a dependency is another smrt package', () => {
+      writeFileSync(
+        join(rootDir, 'package.json'),
+        JSON.stringify({
+          name: '@example/orders',
+          version: '1.0.0',
+          dependencies: { '@happyvertical/smrt-core': 'workspace:*' },
+        }),
+      );
+      const withDep = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+      });
+      expect(withDep.tags).toContain('cross-package');
+
+      writeFileSync(
+        join(rootDir, 'package.json'),
+        JSON.stringify({ name: '@example/orders', version: '1.0.0' }),
+      );
+      const withoutDep = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+      });
+      expect(withoutDep.tags).not.toContain('cross-package');
+    });
+
+    it('lets an authored config.tags override win over the derived default', () => {
+      writeFileSync(
+        join(rootDir, 'package.json'),
+        JSON.stringify({
+          name: '@example/orders',
+          version: '1.0.0',
+          keywords: ['derived-only'],
+        }),
+      );
+      const artifact = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+        config: { tags: ['authored'] },
+      });
+
+      expect(artifact.tags).toEqual(['authored']);
+    });
+
+    it('always includes sensitive-fields-excluded and cross-package-refs:<n> by default', () => {
+      const artifact = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+      });
+
+      expect(artifact.risks).toContain('sensitive-fields-excluded');
+      expect(artifact.risks).toContain('cross-package-refs:1');
+    });
+
+    it('adds sti-inheritance when an object shares a table via tableStrategy sti', () => {
+      const artifact = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+      });
+
+      expect(artifact.risks).toContain('sti-inheritance');
+    });
+
+    it('adds polymorphic-associations:<n> when an object is a SmrtPolymorphicAssociation', () => {
+      const manifest = fixtureManifest();
+      manifest.objects['@example/orders:OrderTag'] = {
+        className: 'OrderTag',
+        qualifiedName: '@example/orders:OrderTag',
+        collection: 'order_tags',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        extends: 'SmrtPolymorphicAssociation',
+      } as SmartObjectManifest['objects'][string];
+
+      const artifact = buildDomainKnowledgeManifest({ manifest, rootDir });
+
+      expect(artifact.risks).toContain('polymorphic-associations:1');
+    });
+
+    it('lets an authored config.risks override win over every derived default', () => {
+      const artifact = buildDomainKnowledgeManifest({
+        manifest: fixtureManifest(),
+        rootDir,
+        config: { risks: ['authored-risk'] },
+      });
+
+      expect(artifact.risks).toEqual(['authored-risk']);
+    });
+  });
 });
 
 describe('resolveAgentModuleDocPaths', () => {
