@@ -374,13 +374,21 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # Computes whether this exact RELEASE_VERSION still needs work rather
+      # than failing outright when part of it already landed (npm publish is
+      # irreversible; a prior attempt can die before recording the release —
+      # see #2871). already-recorded=true means the tag is already pushed and
+      # every package is already on npm: the remaining steps become a no-op
+      # so the job still finishes green instead of erroring on repeat state.
       - name: Guard release publish target
+        id: guard
         env:
           RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/guard-release-publish.js
 
       - name: Verify complete release artifact set
+        if: steps.guard.outputs.already-recorded != 'true'
         run: node scripts/verify-publish-artifacts.mjs publish-pack-output
 
       # Recheck immediately before the irreversible release phase. Once npm
@@ -388,11 +396,13 @@ jobs:
       # doing so would strand a registry release that the collision guard cannot
       # safely reconstruct on a later run.
       - name: Recheck merge queue before publication
+        if: steps.guard.outputs.already-recorded != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/check-merge-queue-idle.mjs
 
       - name: Publish validated release
+        if: steps.guard.outputs.already-recorded != 'true'
         env:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}

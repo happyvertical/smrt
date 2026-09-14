@@ -53,9 +53,41 @@ test('skips existing versions, publishes the missing tarball, and verifies all',
   ]));
 });
 
-test('fails when registry verification still reports a package missing', () => {
+test('reports but does not fail when registry verification still reports a package missing', () => {
   const waits = [];
+  const logs = [];
 
+  const result = publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      runNpm: (args) => (args[0] === 'publish' ? '' : null),
+      log: (message) => logs.push(message),
+      initialVerificationDelayMs: 1,
+      maxVerificationDelayMs: 1,
+      verificationAttempts: 3,
+      wait: (delayMs) => waits.push(delayMs),
+    },
+  );
+
+  assert.deepEqual(waits, [1, 1]);
+  assert.deepEqual(result.unverified, ['@happyvertical/smrt-a']);
+  assert.deepEqual(result.published, ['@happyvertical/smrt-a']);
+  assert.ok(
+    logs.some((message) => /propagation lag, not a failure/.test(message)),
+    'expected a non-fatal propagation-lag warning to be logged',
+  );
+});
+
+test('publish command failures remain fatal even though verification misses are not', () => {
   assert.throws(
     () =>
       publishRelease(
@@ -70,17 +102,15 @@ test('fails when registry verification still reports a package missing', () => {
           ],
         },
         {
-          runNpm: (args) => (args[0] === 'publish' ? '' : null),
+          runNpm: (args) => {
+            if (args[0] === 'view') return null;
+            throw new Error('npm publish EAUTH: authentication failed');
+          },
           log: () => {},
-          initialVerificationDelayMs: 1,
-          maxVerificationDelayMs: 1,
-          verificationAttempts: 3,
-          wait: (delayMs) => waits.push(delayMs),
         },
       ),
-    /Registry verification failed/,
+    /EAUTH/,
   );
-  assert.deepEqual(waits, [1, 1]);
 });
 
 test('retries delayed registry visibility before failing the release', () => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyPublishArtifacts } from './publish-artifacts-lib.mjs';
 
@@ -94,15 +95,31 @@ export function publishRelease(
     wait(delayMs);
   }
 
+  // Every `npm publish` call above either succeeded or threw, so by this
+  // point the release is already on the registry as far as npm is
+  // concerned — publication is irreversible and complete. A `npm view`
+  // miss here reflects registry read-path propagation lag, not a failed
+  // publish, so it must never fail the run and strand the commit/tag that
+  // depend on this step succeeding. Report it and let the caller record
+  // the release; a later, separate check can keep confirming propagation
+  // without gating anything.
   if (missing.length > 0) {
-    throw new Error(
-      `Registry verification failed for: ${missing.map((entry) => entry.name).join(', ')}`,
+    log(
+      `⚠️ Registry verification did not observe ${missing
+        .map((entry) => entry.name)
+        .join(', ')} after ${verificationAttempts} attempts. Publication already happened and is irreversible; treating this as propagation lag, not a failure. Recording the release and continuing.`,
+    );
+  } else {
+    log(
+      `✅ Published and verified ${release.packages.length} artifacts for ${release.releaseVersion}`,
     );
   }
 
-  log(
-    `✅ Published and verified ${release.packages.length} artifacts for ${release.releaseVersion}`,
-  );
+  return {
+    releaseVersion: release.releaseVersion,
+    published: release.packages.map((artifact) => artifact.name),
+    unverified: missing.map((artifact) => artifact.name),
+  };
 }
 
 export function publishValidatedArtifacts(
@@ -120,7 +137,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         'Usage: publish-validated-artifacts.mjs <artifact-directory>',
       );
     }
-    publishValidatedArtifacts(artifactDir);
+    const result = publishValidatedArtifacts(artifactDir);
+    if (result.unverified.length > 0) {
+      // Advisory only: the packages are already published and that cannot
+      // be undone. Surface it as a workflow annotation so it stays visible
+      // without failing a run whose commit/tag recording must still happen.
+      console.log(
+        `::warning::Registry read-path did not confirm ${result.unverified.join(', ')} for v${result.releaseVersion} within the retry budget; publication is already complete on npm. If this persists after the run finishes, re-check manually — do not re-run the batch.`,
+      );
+      const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+      if (summaryPath) {
+        appendFileSync(
+          summaryPath,
+          `\n### ⚠️ Registry verification lag for v${result.releaseVersion}\n\nNot yet visible via \`npm view\` after retries (publish already succeeded):\n\n${result.unverified.map((name) => `- ${name}`).join('\n')}\n`,
+        );
+      }
+    }
   } catch (error) {
     console.error(`❌ ${error instanceof Error ? error.message : error}`);
     process.exit(1);

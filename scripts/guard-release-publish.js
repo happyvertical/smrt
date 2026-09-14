@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -190,7 +190,7 @@ export function assertHeadMatchesRemote({
   }
 }
 
-export function assertReleaseTagIsUnused({
+export function releaseTagExistsOnOrigin({
   releaseVersion,
   repoRoot = process.cwd(),
   spawn = spawnSync,
@@ -220,9 +220,7 @@ export function assertReleaseTagIsUnused({
   }
 
   if (result.status === 0) {
-    fail(
-      `Refusing to publish because release tag v${releaseVersion} already exists on origin.`,
-    );
+    return true;
   }
 
   if (result.status !== 2) {
@@ -230,6 +228,8 @@ export function assertReleaseTagIsUnused({
       `Failed to check release tag v${releaseVersion}:\n${result.stderr || result.stdout}`,
     );
   }
+
+  return false;
 }
 
 export function npmVersionExists({
@@ -287,6 +287,50 @@ export function findPublishedPackageConflicts({
   );
 }
 
+// Computes what this run still needs to do rather than treating "someone
+// already touched this version" as fatal. A prior attempt can die between
+// the (irreversible) npm publish and the git commit/tag/push that records
+// it — see happyvertical/smrt#2871 — and a retry of the exact same
+// RELEASE_VERSION must reconcile against that state instead of refusing to
+// run. Genuinely unrelated hazards (a stale checkout, a major-version bump)
+// still fail hard below; they are not resumability concerns.
+export function assessReleaseState({
+  publishablePackages,
+  releaseVersion,
+  repoRoot = process.cwd(),
+  skipGitCheck = false,
+  skipNpmCheck = false,
+  spawn = spawnSync,
+} = {}) {
+  const tagAlreadyPushed = skipGitCheck
+    ? false
+    : releaseTagExistsOnOrigin({ releaseVersion, repoRoot, spawn });
+
+  const alreadyPublished = skipNpmCheck
+    ? []
+    : findPublishedPackageConflicts({
+        packages: publishablePackages,
+        repoRoot,
+        spawn,
+      });
+  const alreadyPublishedNames = new Set(
+    alreadyPublished.map((pkg) => pkg.name),
+  );
+
+  const fullyRecorded =
+    tagAlreadyPushed &&
+    alreadyPublishedNames.size === publishablePackages.length;
+
+  return {
+    alreadyPublished,
+    fullyRecorded,
+    packagesToPublish: publishablePackages.filter(
+      (pkg) => !alreadyPublishedNames.has(pkg.name),
+    ),
+    tagAlreadyPushed,
+  };
+}
+
 export function guardReleasePublish({
   baseBranch = readEnv('RELEASE_BASE_BRANCH') ?? 'main',
   releaseVersion = readEnv('RELEASE_VERSION'),
@@ -312,32 +356,48 @@ export function guardReleasePublish({
     );
   }
 
+  // A stale checkout racing a newer merge is unrelated to resuming this
+  // exact release and stays a hard failure: let the newer main run compute
+  // and publish the next version instead.
   if (!skipGitCheck) {
     assertHeadMatchesRemote({ baseBranch, repoRoot, spawn });
-    assertReleaseTagIsUnused({ releaseVersion, repoRoot, spawn });
   }
 
-  if (!skipNpmCheck) {
-    const conflicts = findPublishedPackageConflicts({
-      packages: publishablePackages,
-      repoRoot,
-      spawn,
-    });
+  const state = assessReleaseState({
+    publishablePackages,
+    releaseVersion,
+    repoRoot,
+    skipGitCheck,
+    skipNpmCheck,
+    spawn,
+  });
 
-    if (conflicts.length > 0) {
-      fail(
-        `Refusing to publish because package versions already exist on npm:\n${conflicts
-          .map((pkg) => `- ${pkg.name}@${pkg.version}`)
-          .join(
-            '\n',
-          )}\nAn earlier job may already have performed the irreversible npm publish. Bump a new version instead of retagging this one.`,
-      );
-    }
+  if (state.fullyRecorded) {
+    console.log(
+      `Release v${releaseVersion} is already fully published and recorded (tag pushed, all ${publishablePackages.length} package(s) on npm); nothing left to do.`,
+    );
+    return { ...state, publishablePackages };
+  }
+
+  if (state.alreadyPublished.length > 0) {
+    console.log(
+      `↪ Resuming v${releaseVersion}: ${state.alreadyPublished.length} of ${publishablePackages.length} package(s) already exist on npm and will be skipped:\n${state.alreadyPublished
+        .map((pkg) => `  - ${pkg.name}@${pkg.version}`)
+        .join('\n')}`,
+    );
   }
 
   console.log(
-    `Release publish guard passed for v${releaseVersion} (${publishablePackages.length} package(s)).`,
+    `Release publish guard passed for v${releaseVersion} (${publishablePackages.length} package(s), ${state.packagesToPublish.length} pending publish).`,
   );
+
+  return { ...state, publishablePackages };
+}
+
+function writeGithubOutput(name, value) {
+  const outputPath = readEnv('GITHUB_OUTPUT');
+  if (!outputPath) return;
+  writeFileSync(outputPath, `${name}=${value}\n`, { flag: 'a' });
 }
 
 const isCli =
@@ -346,7 +406,11 @@ const isCli =
 
 if (isCli) {
   try {
-    guardReleasePublish();
+    const state = guardReleasePublish();
+    writeGithubOutput(
+      'already-recorded',
+      state.fullyRecorded ? 'true' : 'false',
+    );
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

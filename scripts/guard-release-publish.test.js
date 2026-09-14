@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertHeadMatchesRemote,
-  assertReleaseTagIsUnused,
+  assessReleaseState,
   findMajorVersionOffenders,
   findPublishedPackageConflicts,
+  guardReleasePublish,
   listPublishablePackages,
   npmVersionExists,
+  releaseTagExistsOnOrigin,
 } from './guard-release-publish.js';
 
 function writeJson(path, value) {
@@ -101,21 +103,6 @@ describe('guard-release-publish', () => {
     );
   });
 
-  it('fails when the release tag already exists', () => {
-    const spawn = spawnFromResponses(
-      new Map([
-        [
-          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
-          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
-        ],
-      ]),
-    );
-
-    expect(() =>
-      assertReleaseTagIsUnused({ releaseVersion: '0.39.0', spawn }),
-    ).toThrow(/release tag v0.39.0 already exists/);
-  });
-
   it('treats npm 404 as an unpublished package version', () => {
     const spawn = spawnFromResponses(
       new Map([
@@ -158,5 +145,159 @@ describe('guard-release-publish', () => {
         spawn,
       }).map((pkg) => pkg.name),
     ).toEqual(['@happyvertical/smrt-core']);
+  });
+
+  it('reports a release tag that already exists on origin without throwing', () => {
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
+        ],
+      ]),
+    );
+
+    expect(releaseTagExistsOnOrigin({ releaseVersion: '0.39.0', spawn })).toBe(
+      true,
+    );
+  });
+
+  it('assessReleaseState resumes a partially published release instead of failing', () => {
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 2, stdout: '', stderr: '' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 1, stderr: 'npm ERR! code E404\n' },
+        ],
+      ]),
+    );
+
+    const state = assessReleaseState({
+      publishablePackages: [
+        { name: '@happyvertical/smrt-core', version: '0.39.0' },
+        { name: '@happyvertical/smrt-extra', version: '0.39.0' },
+      ],
+      releaseVersion: '0.39.0',
+      spawn,
+    });
+
+    expect(state.fullyRecorded).toBe(false);
+    expect(state.tagAlreadyPushed).toBe(false);
+    expect(state.alreadyPublished.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/smrt-core',
+    ]);
+    expect(state.packagesToPublish.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/smrt-extra',
+    ]);
+  });
+
+  it('assessReleaseState reports a release as fully recorded once the tag and every package are on origin/npm', () => {
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+      ]),
+    );
+
+    const state = assessReleaseState({
+      publishablePackages: [
+        { name: '@happyvertical/smrt-core', version: '0.39.0' },
+      ],
+      releaseVersion: '0.39.0',
+      spawn,
+    });
+
+    expect(state.fullyRecorded).toBe(true);
+  });
+
+  it('guardReleasePublish no longer refuses a run that resumes an already-partly-published release', () => {
+    const repoRoot = createRepoFixture();
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+          { status: 0 },
+        ],
+        ['git rev-parse HEAD', { status: 0, stdout: 'same-head\n' }],
+        [
+          'git rev-parse refs/remotes/origin/main',
+          { status: 0, stdout: 'same-head\n' },
+        ],
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 2, stdout: '', stderr: '' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 1, stderr: 'npm ERR! code E404\n' },
+        ],
+      ]),
+    );
+
+    const state = guardReleasePublish({
+      releaseVersion: '0.39.0',
+      repoRoot,
+      spawn,
+    });
+
+    expect(state.fullyRecorded).toBe(false);
+    expect(state.packagesToPublish.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/smrt-extra',
+    ]);
+  });
+
+  it('guardReleasePublish treats a fully recorded release as a no-op success', () => {
+    const repoRoot = createRepoFixture();
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+          { status: 0 },
+        ],
+        ['git rev-parse HEAD', { status: 0, stdout: 'same-head\n' }],
+        [
+          'git rev-parse refs/remotes/origin/main',
+          { status: 0, stdout: 'same-head\n' },
+        ],
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+      ]),
+    );
+
+    const state = guardReleasePublish({
+      releaseVersion: '0.39.0',
+      repoRoot,
+      spawn,
+    });
+
+    expect(state.fullyRecorded).toBe(true);
   });
 });
