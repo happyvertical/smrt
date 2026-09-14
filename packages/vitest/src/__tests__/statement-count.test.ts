@@ -164,6 +164,73 @@ describe('withStatementCount / expectStatementCeiling (#2875)', () => {
     expect(issued).toBe(1);
   });
 
+  it('preserves the receiver when calling a receiver-sensitive query()', async () => {
+    // Same concern as beginTransaction() above, applied to the
+    // STATEMENT_METHODS loop itself.
+    const fakeDb = {
+      marker: 'receiver-ok',
+      query: async function (this: { marker: string }) {
+        if (this?.marker !== 'receiver-ok') {
+          throw new Error('query lost its receiver');
+        }
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as DatabaseInterface;
+
+    const { count } = await withStatementCount(fakeDb, async (countedDb) => {
+      await countedDb.query('SELECT 1');
+    });
+
+    expect(count).toBe(1);
+  });
+
+  it('does not double-count when a nested transaction() callback receives the same handle as its enclosing scope', async () => {
+    // @happyvertical/sql's PostgreSQL adapter builds nested transaction
+    // scopes this way: tx.transaction(cb) hands cb the *same* tx object
+    // (see createNestedTransaction/scopeFor in @happyvertical/sql), so the
+    // nested scope observes the enclosing transaction's uncommitted rows on
+    // one pooled connection. Re-instrumenting that shared object on every
+    // nesting level would wrap the wrapper and double-count every statement
+    // issued afterward on the shared handle. This fake reproduces that
+    // same-object shape without needing a real PostgreSQL connection.
+    let queryCount = 0;
+    const makePgLikeTx = (): DatabaseInterface => {
+      const txLike = {
+        query: async () => {
+          queryCount += 1;
+          return { rows: [], rowCount: 0 };
+        },
+        transaction: async (
+          callback: (tx: DatabaseInterface) => Promise<unknown>,
+        ) => callback(txLike as unknown as DatabaseInterface),
+      };
+      return txLike as unknown as DatabaseInterface;
+    };
+    const fakeDb = {
+      query: async () => {
+        throw new Error('unexpected call on the outer handle');
+      },
+      transaction: async (
+        callback: (tx: DatabaseInterface) => Promise<unknown>,
+      ) => callback(makePgLikeTx()),
+    } as unknown as DatabaseInterface;
+
+    const { count } = await withStatementCount(fakeDb, async (countedDb) => {
+      await countedDb.transaction?.(async (tx) => {
+        await tx.query('SELECT 1');
+        await tx.transaction?.(async (nestedTx) => {
+          await nestedTx.query('SELECT 2');
+        });
+        // Issued on the same shared handle after the nested scope returns —
+        // this is what inflates if the nested call left a second wrapper on it.
+        await tx.query('SELECT 3');
+      });
+    });
+
+    expect(count).toBe(3);
+    expect(queryCount).toBe(3);
+  });
+
   it('does not double-count statements issued on the outer handle around a transaction', async () => {
     const { count } = await withStatementCount(db, async (countedDb) => {
       await countedDb.query('SELECT 1');

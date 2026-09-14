@@ -170,8 +170,16 @@ the outer `db` would under-count work done inside a transaction and pass a
 ceiling that should have failed (`#2862`'s bootstrap path is exactly this
 shape). Restores every method it touches on the *outer* handle in a
 `finally`; transaction handles are ephemeral and never reused, so they are
-not restored. Engine-agnostic (SQLite and PostgreSQL); its own tests run
-in-memory SQLite so a ceiling built on it can live in the default unit lane.
+not restored — except on PostgreSQL, where `tx.transaction()` (a *nested*
+transaction on a handle already obtained from `transaction()`/
+`beginTransaction()`) hands its callback the exact same object as the
+enclosing handle (so the nested scope can see the enclosing transaction's
+uncommitted rows on one pooled connection). A per-session `WeakSet` makes
+re-instrumenting that shared object a no-op instead of double-counting every
+statement the handle issues afterward. Engine-agnostic (SQLite and
+PostgreSQL); its own tests run in-memory SQLite, including fakes that
+reproduce the PostgreSQL same-object nesting shape, so a ceiling built on it
+can live in the default unit lane.
 
 ## Singleton Cache Gotcha
 

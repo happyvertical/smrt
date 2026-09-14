@@ -167,14 +167,32 @@ function groupByShape(
  * across tests, so restoring it is the caller's responsibility (see the
  * `finally` in {@link withStatementCount}).
  *
+ * `instrumented` de-duplicates wrapping within one {@link withStatementCount}
+ * session: on PostgreSQL, `@happyvertical/sql`'s nested-transaction scope
+ * (`tx.transaction()` called on a handle already obtained from
+ * `db.transaction()`/`db.beginTransaction()`) hands the nested callback the
+ * *exact same object* as the enclosing handle, so it can see the enclosing
+ * transaction's uncommitted rows on one pooled connection. Re-instrumenting
+ * that shared object would wrap the wrapper, double-counting every statement
+ * the handle issues for the rest of the enclosing transaction. SQLite,
+ * DuckDB, and JSON mint a fresh scope object per nesting level and are
+ * unaffected either way.
+ *
  * @returns A `restore()` function that puts every method this call touched
  *   back to its original implementation on `target`. Safe to call more than
- *   once.
+ *   once. A no-op when `target` was already instrumented by an earlier call
+ *   in the same session — that earlier call owns the wrap and its restore.
  */
 function instrument(
   target: DatabaseInterface,
   statements: CountedStatement[],
+  instrumented: WeakSet<object> = new WeakSet(),
 ): () => void {
+  if (instrumented.has(target)) {
+    return () => {};
+  }
+  instrumented.add(target);
+
   const mutable = target as unknown as Record<string, unknown>;
   const originals = new Map<string, unknown>();
 
@@ -187,7 +205,10 @@ function instrument(
     mutable[method] = (...args: unknown[]) => {
       const sql = extractSqlText(args);
       statements.push({ sql, normalized: normalizeStatement(sql) });
-      return (original as (...callArgs: unknown[]) => unknown)(...args);
+      return (original as (...callArgs: unknown[]) => unknown).call(
+        target,
+        ...args,
+      );
     };
   }
 
@@ -198,7 +219,7 @@ function instrument(
       callback: (tx: DatabaseInterface) => Promise<unknown>,
     ) =>
       originalTransaction.call(target, (tx: DatabaseInterface) => {
-        instrument(tx, statements);
+        instrument(tx, statements, instrumented);
         return callback(tx);
       });
   }
@@ -210,12 +231,13 @@ function instrument(
       const tx = await (
         originalBeginTransaction as (...callArgs: unknown[]) => unknown
       ).call(target, ...args);
-      instrument(tx as DatabaseInterface, statements);
+      instrument(tx as DatabaseInterface, statements, instrumented);
       return tx;
     };
   }
 
   return () => {
+    instrumented.delete(target);
     for (const [method, original] of originals) {
       mutable[method] = original;
     }
