@@ -679,15 +679,17 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
         if (sql.includes('FROM pg_index')) {
           return { rows: [] };
         }
-        if (sql.includes('SELECT 1 AS present')) {
-          if (sql.includes('"new_id"')) return { rows: [] };
-          if (sql.includes('"old_id"')) {
-            return oldColumnEmpty ? { rows: [] } : { rows: [{ present: 1 }] };
-          }
-          return { rows: [] };
+        // #2874: batched "has non-empty value" probe — one row, one
+        // aggregate column per probed column, keyed by the quoted column
+        // name used as its alias.
+        if (sql.includes('MAX(CASE WHEN')) {
+          return {
+            rows: [{ new_id: 0, old_id: oldColumnEmpty ? 0 : 1 }],
+          };
         }
-        if (sql.includes('invalid_count')) {
-          return { rows: [{ invalid_count: invalidUuidCount }] };
+        // #2874: batched "all non-empty values UUID-shaped" probe.
+        if (sql.includes('SUM(CASE WHEN')) {
+          return { rows: [{ old_id: invalidUuidCount }] };
         }
         return { rows: [] };
       },

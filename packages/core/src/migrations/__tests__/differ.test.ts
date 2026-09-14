@@ -1579,13 +1579,17 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes('SELECT 1 AS present')) {
-          if (sql.includes('"new_id"')) return { rows: [] };
-          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
-          return { rows: [] };
+        // #2874: batched "has non-empty value" probe — one row, one
+        // aggregate column per probed column, keyed by the quoted column
+        // name used as its alias. `new_id` (declared) is empty; `old_id`
+        // (orphan) has data.
+        if (sql.includes('MAX(CASE WHEN')) {
+          return { rows: [{ new_id: 0, old_id: 1 }] };
         }
-        if (sql.includes('invalid_count')) {
-          return { rows: [{ invalid_count: 0 }] };
+        // #2874: batched "all non-empty values UUID-shaped" probe — 0
+        // invalid values for `old_id`.
+        if (sql.includes('SUM(CASE WHEN')) {
+          return { rows: [{ old_id: 0 }] };
         }
         return { rows: [] };
       },
@@ -1648,13 +1652,12 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes('SELECT 1 AS present')) {
-          if (sql.includes('"new_id"')) return { rows: [] };
-          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
-          return { rows: [] };
+        if (sql.includes('MAX(CASE WHEN')) {
+          return { rows: [{ new_id: 0, old_id: 1 }] };
         }
-        if (sql.includes('invalid_count')) {
-          return { rows: [{ invalid_count: 2 }] };
+        // 2 invalid (non-UUID-shaped) values for `old_id`.
+        if (sql.includes('SUM(CASE WHEN')) {
+          return { rows: [{ old_id: 2 }] };
         }
         return { rows: [] };
       },

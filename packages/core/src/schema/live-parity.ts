@@ -783,55 +783,83 @@ function renameCompatibility(
   return null;
 }
 
-async function columnHasNonEmptyValue(
+/**
+ * Live-data probe, batched across every column named: does each hold any
+ * non-null, non-empty value? One round trip regardless of column count
+ * (#2874) — mirrors `SchemaComparer`'s `columnsHaveNonEmptyValueBatch` in
+ * `migrations/differ.ts`, which this module's rename-pending detector
+ * duplicates (both trace to #2752/#2767). A per-column `MAX(CASE WHEN ...
+ * THEN 1 ELSE 0 END)` in a single aggregate query, portable across
+ * PostgreSQL and SQLite, replaces one `SELECT ... LIMIT 1` round trip per
+ * column.
+ */
+async function columnsHaveNonEmptyValueBatch(
   db: DatabaseInterface,
   table: string,
-  column: string,
-): Promise<boolean> {
+  columns: string[],
+): Promise<Map<string, boolean>> {
+  if (columns.length === 0) return new Map();
   const quotedTable = quoteIdentifier(table);
-  const quotedColumn = quoteIdentifier(column);
+  const selects = columns.map((column) => {
+    const quotedColumn = quoteIdentifier(column);
+    return (
+      `MAX(CASE WHEN ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' ` +
+      `THEN 1 ELSE 0 END) AS ${quotedColumn}`
+    );
+  });
   const result = await db.query(
-    `SELECT 1 AS present FROM ${quotedTable} ` +
-      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1`,
+    `SELECT ${selects.join(', ')} FROM ${quotedTable}`,
   );
-  return (result?.rows?.length ?? 0) > 0;
+  const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
+  const hasData = new Map<string, boolean>();
+  for (const column of columns) {
+    hasData.set(column, Number(row[column] ?? 0) > 0);
+  }
+  return hasData;
 }
 
-async function allNonEmptyValuesUuidShaped(
+/**
+ * Live-data probe, batched across every column named: are every one of
+ * each column's non-empty values UUID-shaped ({@link CANONICAL_UUID_PATTERN})?
+ * One round trip regardless of column count (#2874), mirroring
+ * {@link columnsHaveNonEmptyValueBatch}. PostgreSQL pushes the shape check
+ * into its regex operator; SQLite (the only other engine this detector runs
+ * against) has no regex operator, but its case-sensitive `GLOB` can still
+ * express the fixed 36-character canonical shape (against `LOWER(...)`,
+ * guarded by an exact `LENGTH(...) = 36`) — both engines run one
+ * server-side aggregate per column in the same query rather than fetching
+ * every non-empty value into JS to test in a loop (#2767 review).
+ */
+async function columnsAllValuesUuidShapedBatch(
   db: DatabaseInterface,
   engine: DatabaseEngine,
   table: string,
-  column: string,
-): Promise<boolean> {
+  columns: string[],
+): Promise<Map<string, boolean>> {
+  if (columns.length === 0) return new Map();
   const quotedTable = quoteIdentifier(table);
-  const quotedColumn = quoteIdentifier(column);
-  const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
-
-  if (engine === 'postgres') {
-    const result = await db.query(
-      `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
-        `WHERE ${nonEmptyPredicate} ` +
-        `AND CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`,
+  const selects = columns.map((column) => {
+    const quotedColumn = quoteIdentifier(column);
+    const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
+    const invalidPredicate =
+      engine === 'postgres'
+        ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
+        : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
+          `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
+    return (
+      `SUM(CASE WHEN ${nonEmptyPredicate} AND ${invalidPredicate} ` +
+      `THEN 1 ELSE 0 END) AS ${quotedColumn}`
     );
-    const row = result?.rows?.[0] as Record<string, unknown> | undefined;
-    return Number(row?.invalid_count ?? 0) === 0;
-  }
-
-  // SQLite (the only other engine this detector runs against) has no
-  // regex operator, but its case-sensitive `GLOB` can still express the
-  // fixed 36-character canonical shape (against `LOWER(...)`, guarded by an
-  // exact `LENGTH(...) = 36`), so this runs one server-side aggregate
-  // `count(*)` too rather than fetching every non-empty value into JS to
-  // test in a loop — important on a production table with many rows
-  // (#2767 review).
+  });
   const result = await db.query(
-    `SELECT count(*) AS invalid_count FROM ${quotedTable} ` +
-      `WHERE ${nonEmptyPredicate} ` +
-      `AND NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
-      `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`,
+    `SELECT ${selects.join(', ')} FROM ${quotedTable}`,
   );
-  const row = result?.rows?.[0] as Record<string, unknown> | undefined;
-  return Number(row?.invalid_count ?? 0) === 0;
+  const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
+  const shaped = new Map<string, boolean>();
+  for (const column of columns) {
+    shaped.set(column, Number(row[column] ?? 0) === 0);
+  }
+  return shaped;
 }
 
 function buildRenameDataPendingFinding(
@@ -884,26 +912,43 @@ async function detectRenameDataPending(
   );
   if (extraColumns.length === 0) return [];
 
-  const findings: LiveParityFinding[] = [];
+  const declaredCandidates = table.columns.filter((column) =>
+    liveColumns.has(column.name),
+  );
+  if (declaredCandidates.length === 0) return [];
+
+  // #2874: batch the "has non-empty value" probe for every declared
+  // candidate and every extra (undeclared) column into one round trip per
+  // table, instead of one `SELECT 1 ... LIMIT 1` per column — see
+  // {@link columnsHaveNonEmptyValueBatch}.
+  let hasData: Map<string, boolean>;
+  try {
+    hasData = await columnsHaveNonEmptyValueBatch(db, table.name, [
+      ...new Set([
+        ...declaredCandidates.map((column) => column.name),
+        ...extraColumns.map((extra) => extra.name),
+      ]),
+    ]);
+  } catch {
+    // Fail closed at table granularity, the same posture the original
+    // per-column try/catch had at column granularity.
+    return [];
+  }
+
+  type PendingCandidate = {
+    declaredName: string;
+    extraName: string;
+    requiresShapeCheck: boolean;
+  };
+  const pending: PendingCandidate[] = [];
+  const shapeCheckExtras = new Set<string>();
 
   for (const column of table.columns) {
     const live = liveColumns.get(column.name);
     if (!live) continue; // missing_column already covers this
-
-    let declaredHasData: boolean;
-    try {
-      declaredHasData = await columnHasNonEmptyValue(
-        db,
-        table.name,
-        column.name,
-      );
-    } catch {
-      continue;
-    }
-    if (declaredHasData) continue;
+    if (hasData.get(column.name) ?? false) continue;
 
     const declaredType = normalizeSqlType(column.type);
-    const candidates: string[] = [];
 
     for (const extra of extraColumns) {
       const compatibility = renameCompatibility(
@@ -911,41 +956,48 @@ async function detectRenameDataPending(
         normalizeSqlType(extra.type),
       );
       if (!compatibility) continue;
+      if (!(hasData.get(extra.name) ?? false)) continue;
 
-      let candidateHasData: boolean;
-      try {
-        candidateHasData = await columnHasNonEmptyValue(
-          db,
-          table.name,
-          extra.name,
-        );
-      } catch {
-        continue;
-      }
-      if (!candidateHasData) continue;
-
-      if (compatibility === 'text-to-uuid') {
-        let shaped: boolean;
-        try {
-          shaped = await allNonEmptyValuesUuidShaped(
-            db,
-            engine,
-            table.name,
-            extra.name,
-          );
-        } catch {
-          continue;
-        }
-        if (!shaped) continue;
-      }
-
-      candidates.push(extra.name);
+      const requiresShapeCheck = compatibility === 'text-to-uuid';
+      if (requiresShapeCheck) shapeCheckExtras.add(extra.name);
+      pending.push({
+        declaredName: column.name,
+        extraName: extra.name,
+        requiresShapeCheck,
+      });
     }
+  }
 
+  let shaped: Map<string, boolean> = new Map();
+  if (shapeCheckExtras.size > 0) {
+    try {
+      shaped = await columnsAllValuesUuidShapedBatch(db, engine, table.name, [
+        ...shapeCheckExtras,
+      ]);
+    } catch {
+      shaped = new Map([...shapeCheckExtras].map((name) => [name, false]));
+    }
+  }
+
+  const candidatesByColumn = new Map<string, string[]>();
+  for (const candidate of pending) {
+    if (
+      candidate.requiresShapeCheck &&
+      !(shaped.get(candidate.extraName) ?? false)
+    ) {
+      continue;
+    }
+    const list = candidatesByColumn.get(candidate.declaredName) ?? [];
+    list.push(candidate.extraName);
+    candidatesByColumn.set(candidate.declaredName, list);
+  }
+
+  const findings: LiveParityFinding[] = [];
+  for (const [declaredName, candidates] of candidatesByColumn) {
     if (candidates.length === 0) continue;
     candidates.sort();
     findings.push(
-      buildRenameDataPendingFinding(table, column.name, candidates),
+      buildRenameDataPendingFinding(table, declaredName, candidates),
     );
   }
 
