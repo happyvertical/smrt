@@ -9,9 +9,12 @@
  * database — exactly what happens across parallel Vitest files/workers that
  * all point at the one shared `SMRT_TEST_POSTGRES_URL` database, or across
  * concurrent `Suasor`/`Agent` instantiations in one process — race on
- * unguarded DDL and can either throw duplicate-object errors, hang on
- * catalog-lock contention, or trip `assertPostgresSystemTimestampsCurrent()`
- * on a table another caller is mid-creating.
+ * unguarded DDL. Proven below: concurrent `CREATE TABLE IF NOT EXISTS`
+ * throws `duplicate key value violates unique constraint
+ * "pg_type_typname_nsp_index"`. The same missing serialization also leaves
+ * catalog-lock contention (`ALTER TABLE`/`CREATE INDEX`) unguarded, which can
+ * plausibly present as a hang under heavier load than this test drives —
+ * that variant is not separately reproduced here.
  *
  * This suite runs only in the disposable PostgreSQL lane
  * (`SMRT_TEST_POSTGRES_URL`, see `scripts/run-with-ci-postgres.mjs`).

@@ -176,10 +176,16 @@ export class DispatchBus {
     // test files sharing one database) race on unguarded DDL — proven to
     // throw `duplicate key value violates unique constraint
     // "pg_type_typname_nsp_index"` on concurrent `CREATE TABLE IF NOT
-    // EXISTS`, and able to trip `assertPostgresSystemTimestampsCurrent()` on
-    // a table another session is mid-creating (#2861). Running this under the
-    // same advisory lock `ensureSystemTables()` uses makes every writer of
-    // these tables mutually exclusive instead of merely idempotent.
+    // EXISTS` (#2861). Fresh DDL always creates timezone-aware columns (see
+    // `getSystemTableDDLForEngine()`), so this race does not itself produce a
+    // legacy-typed column; a stale `assertPostgresSystemTimestampsCurrent()`
+    // guard requires a *separate* concurrent actor to have put some
+    // `_smrt_*` table into a legacy-typed state (e.g. a test deliberately
+    // simulating a pre-migration database), which this lock does not by
+    // itself rule out — see the issue for that residual risk. Running this
+    // under the same advisory lock `ensureSystemTables()` uses makes every
+    // writer of these tables mutually exclusive instead of merely
+    // idempotent, which is what the proven race requires.
     await runSerializedAgainstSystemTableBootstrap(
       this.db,
       undefined,
