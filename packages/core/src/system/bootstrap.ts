@@ -178,7 +178,7 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
     }
   }
 
-  if (transaction) {
+  if (typeof transaction === 'function') {
     // `db` has `transaction()` but no `beginTransaction()`. Two distinct
     // shapes reach here, and they are NOT the same case:
     //
@@ -224,19 +224,23 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
       const priorStatementTimeout = getQueryRows(
         await db.query('SHOW statement_timeout'),
       )[0]?.statement_timeout;
-      return (db as TransactionCapableDatabase).transaction!(async (tx): Promise<T> => {
-        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
-          await tx.query(sql);
-        }
-        try {
+      return (db as TransactionCapableDatabase).transaction?.(
+        async (tx): Promise<T> => {
+          for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+            await tx.query(sql);
+          }
           await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-          return await work(tx);
-        } finally {
-          // `SET LOCAL` is not scoped to a `SAVEPOINT` — confirmed directly:
-          // `RELEASE SAVEPOINT` does not undo it, so without this the raise
-          // would leak into the enclosing transaction exactly like the
-          // sibling branch below guards against. Restore before the
-          // callback returns (and the nested scope releases), not after.
+          const result = await work(tx);
+          // Restore only on success. On failure — DDL error or a timed-out
+          // lock wait — the (sub)transaction is already aborted (PostgreSQL
+          // 25P02: no statement but ROLLBACK/ROLLBACK TO SAVEPOINT is
+          // accepted), so issuing `SET LOCAL` here would itself error and
+          // replace the real failure. That path needs no explicit restore
+          // anyway: `db.transaction(cb)` rolls back to the savepoint on a
+          // thrown error, and `ROLLBACK TO SAVEPOINT` *does* undo `SET
+          // LOCAL` (unlike the `RELEASE SAVEPOINT` success path this
+          // restore guards against — confirmed directly against a live
+          // PostgreSQL 17 instance).
           if (typeof priorLockTimeout === 'string') {
             await tx.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
           }
@@ -245,8 +249,9 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
               `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
             );
           }
-        }
-      });
+          return result;
+        },
+      );
     }
 
     // `pg_advisory_xact_lock` run directly against `db` here (no new
@@ -301,21 +306,23 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
       await db.query('SHOW statement_timeout'),
     )[0]?.statement_timeout;
     for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) await db.query(sql);
-    try {
-      await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-    } finally {
-      // `SET LOCAL` is re-issuable within a transaction — this is a second
-      // explicit `SET LOCAL`, not something PostgreSQL prevents — so the
-      // caller's own values are restored deterministically regardless of
-      // whether the lock acquisition itself timed out.
-      if (typeof priorLockTimeout === 'string') {
-        await db.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
-      }
-      if (typeof priorStatementTimeout === 'string') {
-        await db.query(
-          `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
-        );
-      }
+    await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+    // Restore only after the lock is actually acquired. `db` here is the
+    // caller's real top-level transaction, not a savepoint: if the wait
+    // itself times out, PostgreSQL has already aborted that transaction
+    // (25P02 — no statement but ROLLBACK is accepted until it ends), so a
+    // `finally`-scoped restore would itself error and replace the real
+    // lock-timeout failure with a confusing "transaction is aborted"
+    // error. There is nothing to restore in that case either: the caller's
+    // transaction never reaches `work()` and ends via rollback, which
+    // discards the raised values along with everything else.
+    if (typeof priorLockTimeout === 'string') {
+      await db.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
+    }
+    if (typeof priorStatementTimeout === 'string') {
+      await db.query(
+        `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
+      );
     }
     return work(db);
   }
