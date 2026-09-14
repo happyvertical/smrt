@@ -559,6 +559,54 @@ If a package exports `./smrt-knowledge.json`, the package `files` allowlist must
 publish `dist` or `dist/smrt-knowledge.json`, and the deterministic checker must
 be able to find a current artifact.
 
+#### Default `tags`/`risks` derivation (#2863)
+
+When `@smrt({ knowledge: { tags, risks } })` is not set on an object, or
+`knowledge.tags`/`knowledge.risks` is not set on the package config passed to
+`buildDomainKnowledgeManifest`, package-level `tags`/`risks` are derived from
+facts the manifest already carries rather than left empty. This is a floor,
+not a substitute for authored review context — a package should still set
+`knowledge.tags`/`knowledge.risks` when it has one.
+
+- `tags`: `package.json#keywords` (authored), plus `cross-package` when the
+  package declares a `@happyvertical/smrt-*` dependency.
+- `risks`: `sensitive-fields-excluded` (generation always strips sensitive
+  fields — see `sensitiveFieldsExcluded` above), `cross-package-refs:<n>` when
+  `relationshipsV2.crossPackageRefFields > 0`, `sti-inheritance` when any
+  object uses `tableStrategy: 'sti'`, and
+  `polymorphic-associations:<n>` when `relationshipsV2.polymorphicAssociations
+  > 0`.
+
+Object-level `tags`/`risks` are never derived — only what `knowledge: { tags,
+risks }` declares on that object, so a fine-grained annotation always traces
+to an authored source.
+
+### Cross-package knowledge graph
+
+`.smrt/smrt-knowledge-graph.json` (schema version 1, gitignored like
+`.smrt/smrt-knowledge.json`) merges every discoverable per-package
+`smrt-knowledge.json` — checked at `packages/<pkg>/dist/smrt-knowledge.json`
+first, then `packages/<pkg>/.smrt/smrt-knowledge.json` — into one deterministic
+root artifact: `packages` and `objects` nodes, and typed `edges` derived
+directly from fields the per-package artifacts already carry (never invented):
+
+| Edge type | Derived from |
+|---|---|
+| `crossPackageRef` | An object field with `type: 'crossPackageRef'`; `to` resolves to the target object's node id when a scanned package declares it. |
+| `sti` | An object with `tableStrategy: 'sti'` and `extends` set; `to` is the parent object. |
+| `junction` / `hierarchical` / `polymorphic` | `relationshipFeatures` containing `SmrtJunction` / `SmrtHierarchical` / `SmrtPolymorphicAssociation`. |
+| `systemTable` | An object whose `tableName` starts with `_smrt_`. |
+
+Generate it with `pnpm knowledge:graph` (also runs after `pnpm build`, so a
+built repo always has a current graph). `pnpm knowledge:check --strict`
+additionally treats the graph as stale — the same `sourceHashes` mechanism a
+single package's artifact uses — whenever any per-package artifact it was
+built from has changed since generation; the check is a no-op until at least
+one package has a built `smrt-knowledge.json` to merge. `smrt docs:agents`
+exports the graph alongside its per-package snapshot when run inside a
+monorepo that has generated one. Implementation:
+`packages/core/src/knowledge-graph.ts`, `scripts/generate-knowledge-graph.ts`.
+
 ### Artifact and context vocabulary
 
 Use these terms consistently. Do not call every generated file or ambient input
@@ -569,6 +617,7 @@ Use these terms consistently. Do not call every generated file or ambient input
 | **Source model** | Authored TypeScript classes, decorators, and SMRT configuration. This is the source of truth. |
 | **Runtime manifest** | The generated intermediate representation written to `.smrt/manifest.json` in development and `dist/manifest.json` in builds, then consumed by registry, schema, route, type, CLI, and MCP tooling. It describes objects; it is not a cross-invocation provenance envelope. |
 | **Domain knowledge artifact** | `smrt-knowledge.json`, the deterministic, sanitized agent/developer projection of manifests plus package knowledge. It is not loaded as the runtime manifest. |
+| **Merged knowledge graph** | `.smrt/smrt-knowledge-graph.json`, the deterministic root artifact merging every discoverable per-package domain knowledge artifact into one node/edge graph with typed cross-package edges (#2863). Derived from, and only as fresh as, the domain knowledge artifacts it merges. |
 | **Review or architecture context** | A temporary prompt bundle assembled from knowledge artifacts and documentation for a specific model-assisted task. It is derived input, not a persisted runtime contract. |
 | **Generation snapshot** | The versioned, immutable reuse envelope implemented by `generationSnapshot` in `smrtPlugin()` and `smrtConsumer()`. It carries one merged runtime manifest with portable source paths, source-file digests, and caller-verified provenance; consumers verify its exact bytes and current source contents before selecting the project, dependency, or aggregate view they need. Future schema versions may add more normalized generator inputs or an output inventory without turning runtime/request state into persisted context. |
 | **Runtime or request context** | Live dependencies and authority for an operation, such as database, tenant, principal, AI, CLI, REST, or MCP state. It must not be serialized into a generation snapshot. |

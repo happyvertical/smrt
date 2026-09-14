@@ -341,7 +341,10 @@ drop `includeDroppedTables` (default `false`, both call sites explicit —
 - `src/commands/` — individual command implementations
 - `src/loaders/` — class-loader, local-loader, npm-loader, git-loader, template-loader
 - `src/discovery/manifest-discovery.ts` — manifest auto-discovery
-- `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias; no object scanning
+- `src/commands/docs-claude.ts` — downstream AGENTS.md generation + Claude alias;
+  no object scanning. Also copies the root merged knowledge graph
+  (`.smrt/smrt-knowledge-graph.json`, #2863) alongside the snapshot when run
+  inside a monorepo that has generated one.
 
 ## Gotchas
 

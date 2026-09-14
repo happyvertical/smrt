@@ -140,6 +140,27 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
 
         writeFileSync(outputPath, content, 'utf-8');
 
+        // Export the merged cross-package knowledge graph (#2863) alongside
+        // the per-package snapshot, when this run is inside the monorepo
+        // that generated one. A consumer app installing individual packages
+        // has no root graph to export — only the monorepo build does.
+        let graphExported = false;
+        if (monorepoRoot) {
+          const graphPath = join(
+            monorepoRoot,
+            '.smrt',
+            'smrt-knowledge-graph.json',
+          );
+          if (existsSync(graphPath)) {
+            const graphOutputPath = join(
+              dirname(outputPath),
+              'smrt-knowledge-graph.json',
+            );
+            writeFileSync(graphOutputPath, readFileSync(graphPath, 'utf-8'));
+            graphExported = true;
+          }
+        }
+
         const totalPackages = packages.length + sdkPackages.length;
         console.log(`\n✅ Generated ${outputPath}`);
         console.log(`   ${totalPackages} packages documented`);
@@ -164,6 +185,9 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
         if (rootDocs.length > 0) {
           console.log(`   ${rootDocs.length} framework documents included`);
+        }
+        if (graphExported) {
+          console.log('   cross-package knowledge graph exported');
         }
         console.log('');
       } catch (error) {
