@@ -128,18 +128,34 @@ async function rollbackBootstrap(tx: TransactionHandle): Promise<void> {
 }
 
 /**
- * Ensure every framework-owned SMRT system table exists before use.
+ * Run `work` serialized against concurrent SMRT system-table bootstrap.
  *
- * PostgreSQL provisioning is serialized in a bounded advisory-locked
- * transaction; other engines use the schema's idempotent DDL directly.
+ * `_smrt_dispatch`/`_smrt_dispatch_subscriptions` (and every other
+ * framework-owned `_smrt_*` table) are catalog objects shared by every
+ * caller against one physical database — including standalone initializers
+ * such as `DispatchBus.initialize()` that provision or verify a subset of
+ * {@link ALL_SYSTEM_TABLES} outside of a full {@link ensureSystemTables} run
+ * (#2861). PostgreSQL DDL against the same object from concurrent sessions is
+ * not internally serialized (`CREATE TABLE IF NOT EXISTS` races on
+ * `pg_type_typname_nsp_index` under true concurrency; `ALTER TABLE`/`CREATE
+ * INDEX` take catalog locks that queue behind each other), so every writer of
+ * a system table — full bootstrap or a standalone initializer alike — must
+ * take the *same* advisory lock before touching it. Using one shared lock key
+ * across all of them is what makes them mutually exclusive rather than each
+ * safe only against itself.
+ *
+ * PostgreSQL: wraps `work` in the same bounded advisory-locked transaction
+ * {@link bootstrapSystemTables} uses. Other engines have no comparable
+ * catalog race for this codebase's supported deployment shapes, so `work`
+ * runs directly against `db`.
  */
-export async function ensureSystemTables(
+export async function runSerializedAgainstSystemTableBootstrap<T>(
   db: DatabaseInterface,
-  typeHint?: string,
-): Promise<void> {
+  typeHint: string | undefined,
+  work: (scopedDb: DatabaseInterface) => Promise<T>,
+): Promise<T> {
   if (getDatabaseEngine(db, typeHint) !== 'postgres') {
-    await bootstrapSystemTables(db, typeHint);
-    return;
+    return work(db);
   }
 
   const beginTransaction = db.beginTransaction;
@@ -152,25 +168,43 @@ export async function ensureSystemTables(
       // runtime session timeouts would otherwise cancel (#2377).
       for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) await tx.query(sql);
       await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-      await bootstrapSystemTables(tx, typeHint);
+      const result = await work(tx);
       await tx.commit();
-      return;
+      return result;
     } catch (error) {
       await rollbackBootstrap(tx);
       throw error;
     }
   }
 
-  if (typeof transaction === 'function') {
-    await transaction.call(db, async (tx) => {
+  if (transaction) {
+    // Invoked as a method (not via `.call()`) so `this` binds to `db`
+    // naturally while TypeScript still infers `TResult` from the callback.
+    return (
+      db as TransactionCapableDatabase & Required<TransactionCapableDatabase>
+    ).transaction<T>(async (tx) => {
       for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) await tx.query(sql);
       await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-      await bootstrapSystemTables(tx, typeHint);
+      return work(tx);
     });
-    return;
   }
 
   throw new Error(
     'Postgres system table bootstrap requires a transaction-capable database adapter',
+  );
+}
+
+/**
+ * Ensure every framework-owned SMRT system table exists before use.
+ *
+ * PostgreSQL provisioning is serialized in a bounded advisory-locked
+ * transaction; other engines use the schema's idempotent DDL directly.
+ */
+export async function ensureSystemTables(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  await runSerializedAgainstSystemTableBootstrap(db, typeHint, (scopedDb) =>
+    bootstrapSystemTables(scopedDb, typeHint),
   );
 }

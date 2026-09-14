@@ -28,6 +28,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
+import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
 import {
   assertPostgresSystemTimestampsCurrent,
   ensureDispatchSubscriptionsSystemTableCompatibility,
@@ -165,41 +166,59 @@ export class DispatchBus {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
-    const engine = getDatabaseEngine(this.db);
 
-    // Create dispatch tables if they don't exist
-    const dispatchExists = await DispatchCollection.tableExists(this.db);
-    if (!dispatchExists) {
-      // Split the DDL into separate statements and execute each
-      const statements = getSystemTableDDLForEngine(
-        CREATE_SMRT_DISPATCH_TABLE,
-        engine,
-      )
-        .split(';')
-        .filter((s) => s.trim());
-      for (const stmt of statements) {
-        await this.db.query(stmt);
-      }
-    }
-    await assertPostgresSystemTimestampsCurrent(this.db);
-    await ensureDispatchSystemTableCompatibility(this.db);
-
-    const subsExists = await DispatchSubscriptionCollection.tableExists(
+    // `_smrt_dispatch`/`_smrt_dispatch_subscriptions` are framework-owned
+    // system tables (part of `ALL_SYSTEM_TABLES`), but this standalone
+    // initializer provisions/verifies them independently of a full
+    // `ensureSystemTables()` bootstrap. Without serialization, concurrent
+    // `DispatchBus` instances against the same already-warmed PostgreSQL
+    // database (e.g. multiple `Suasor`/`Agent` instantiations, or concurrent
+    // test files sharing one database) race on unguarded DDL — proven to
+    // throw `duplicate key value violates unique constraint
+    // "pg_type_typname_nsp_index"` on concurrent `CREATE TABLE IF NOT
+    // EXISTS`, and able to trip `assertPostgresSystemTimestampsCurrent()` on
+    // a table another session is mid-creating (#2861). Running this under the
+    // same advisory lock `ensureSystemTables()` uses makes every writer of
+    // these tables mutually exclusive instead of merely idempotent.
+    await runSerializedAgainstSystemTableBootstrap(
       this.db,
+      undefined,
+      async (db) => {
+        const engine = getDatabaseEngine(db);
+
+        // Create dispatch tables if they don't exist
+        const dispatchExists = await DispatchCollection.tableExists(db);
+        if (!dispatchExists) {
+          // Split the DDL into separate statements and execute each
+          const statements = getSystemTableDDLForEngine(
+            CREATE_SMRT_DISPATCH_TABLE,
+            engine,
+          )
+            .split(';')
+            .filter((s) => s.trim());
+          for (const stmt of statements) {
+            await db.query(stmt);
+          }
+        }
+        await assertPostgresSystemTimestampsCurrent(db);
+        await ensureDispatchSystemTableCompatibility(db);
+
+        const subsExists = await DispatchSubscriptionCollection.tableExists(db);
+        if (!subsExists) {
+          const statements = getSystemTableDDLForEngine(
+            CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
+            engine,
+          )
+            .split(';')
+            .filter((s) => s.trim());
+          for (const stmt of statements) {
+            await db.query(stmt);
+          }
+        }
+        await assertPostgresSystemTimestampsCurrent(db);
+        await ensureDispatchSubscriptionsSystemTableCompatibility(db);
+      },
     );
-    if (!subsExists) {
-      const statements = getSystemTableDDLForEngine(
-        CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
-        engine,
-      )
-        .split(';')
-        .filter((s) => s.trim());
-      for (const stmt of statements) {
-        await this.db.query(stmt);
-      }
-    }
-    await assertPostgresSystemTimestampsCurrent(this.db);
-    await ensureDispatchSubscriptionsSystemTableCompatibility(this.db);
 
     this.initialized = true;
   }
