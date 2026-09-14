@@ -507,6 +507,93 @@ test('still fails an npm publish-conflict on an already-published version whose 
   );
 });
 
+test('surfaces a confirmed content-identity mismatch discovered while resolving a publish conflict, instead of the conflict message', () => {
+  assert.throws(
+    () =>
+      publishRelease(
+        {
+          releaseVersion: '0.40.0',
+          packages: [
+            {
+              name: '@happyvertical/smrt-a',
+              version: '0.40.0',
+              path: '/artifacts/a.tgz',
+            },
+          ],
+        },
+        {
+          log: () => {},
+          runNpm: (args) => {
+            if (args[0] === 'view') {
+              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
+            }
+            if (args[0] === 'publish') {
+              throw new Error(
+                'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
+              );
+            }
+            throw new Error(`unexpected npm invocation: ${args.join(' ')}`);
+          },
+          verifyExistingContentMatches: () => {
+            throw new Error(
+              "Refusing to treat @happyvertical/smrt-a@0.40.0 as already published: registry tarball sha1 aaa does not match this run's verified local artifact sha1 bbb. That version already exists with different content — bump a new version instead of reusing this one.",
+            );
+          },
+        },
+      ),
+    /does not match this run's verified local artifact sha1/,
+  );
+});
+
+test('fails closed on the original publish conflict when content identity cannot be confirmed due to a transient error, instead of guessing', () => {
+  const logs = [];
+
+  assert.throws(
+    () =>
+      publishRelease(
+        {
+          releaseVersion: '0.40.0',
+          packages: [
+            {
+              name: '@happyvertical/smrt-a',
+              version: '0.40.0',
+              path: '/artifacts/a.tgz',
+            },
+          ],
+        },
+        {
+          log: (message) => logs.push(message),
+          runNpm: (args) => {
+            if (args[0] === 'view') {
+              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
+            }
+            if (args[0] === 'publish') {
+              throw new Error(
+                'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
+              );
+            }
+            throw new Error(`unexpected npm invocation: ${args.join(' ')}`);
+          },
+          // The content-identity check's own registry read fails
+          // transiently (not a confirmed mismatch, not a confirmed match).
+          verifyExistingContentMatches: () => {
+            throw new Error('npm ERR! 503 Service Unavailable');
+          },
+        },
+      ),
+    /You cannot publish over the previously published versions/,
+  );
+
+  assert.ok(
+    logs.some((message) =>
+      /Could not verify content identity .* treating the conflict as unresolved/.test(
+        message,
+      ),
+    ),
+    'expected the ambiguous content-identity failure to be logged',
+  );
+});
+
 test('a genuine publish failure unrelated to an existing version stays fatal', () => {
   assert.throws(
     () =>

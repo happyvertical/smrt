@@ -75,6 +75,17 @@ function isAlreadyPublishedConflict(message) {
   );
 }
 
+// defaultVerifyExistingContentMatches's own confirmed-mismatch error (a
+// registry tarball whose shasum genuinely differs from this run's
+// artifact) is the one throw from that function that must always be
+// surfaced, never treated as ambiguous — it is a definite different-content
+// collision, not a read failure.
+function isConfirmedContentMismatch(message) {
+  return /does not match this run's verified local artifact sha1/.test(
+    message,
+  );
+}
+
 // A version already on the registry could, in principle, have been
 // published from *different* content than what this run built — e.g. two
 // independent runs computing the same next version from a stale base (the
@@ -166,10 +177,35 @@ export function publishRelease(
       // dedup pass uses before accepting it — a genuine different-content
       // collision (the #2871 "different base" scenario) must keep failing,
       // not silently skip.
-      if (
-        !isAlreadyPublishedConflict(message) ||
-        !verifyExistingContentMatches(artifact, runNpm)
-      ) {
+      if (!isAlreadyPublishedConflict(message)) {
+        throw error;
+      }
+
+      let contentMatches;
+      try {
+        contentMatches = verifyExistingContentMatches(artifact, runNpm);
+      } catch (verifyError) {
+        const verifyMessage =
+          verifyError instanceof Error ? verifyError.message : String(verifyError);
+        if (isConfirmedContentMismatch(verifyMessage)) {
+          // A confirmed different-content collision, not an ambiguous read
+          // failure — must keep failing, exactly like the dedup pass.
+          throw verifyError;
+        }
+        // The content-identity check's own registry read failed transiently
+        // (the same EAI_AGAIN/timeout class handled elsewhere in this file).
+        // We cannot safely treat this as "already published with our
+        // content" (that would silently accept an unconfirmed, possibly
+        // mismatched, version) nor rule out a genuine collision, so fail
+        // closed on the original publish conflict — retryable, and nothing
+        // new was published this attempt — rather than guess.
+        log(
+          `⚠️ Could not verify content identity for ${artifact.name}@${artifact.version} after a publish conflict (${verifyMessage}); treating the conflict as unresolved rather than assuming a match.`,
+        );
+        throw error;
+      }
+
+      if (!contentMatches) {
         throw error;
       }
       log(
