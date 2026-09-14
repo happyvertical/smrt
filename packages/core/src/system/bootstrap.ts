@@ -224,34 +224,32 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
       const priorStatementTimeout = getQueryRows(
         await db.query('SHOW statement_timeout'),
       )[0]?.statement_timeout;
-      return (db as TransactionCapableDatabase).transaction?.(
-        async (tx): Promise<T> => {
-          for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
-            await tx.query(sql);
-          }
-          await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-          const result = await work(tx);
-          // Restore only on success. On failure — DDL error or a timed-out
-          // lock wait — the (sub)transaction is already aborted (PostgreSQL
-          // 25P02: no statement but ROLLBACK/ROLLBACK TO SAVEPOINT is
-          // accepted), so issuing `SET LOCAL` here would itself error and
-          // replace the real failure. That path needs no explicit restore
-          // anyway: `db.transaction(cb)` rolls back to the savepoint on a
-          // thrown error, and `ROLLBACK TO SAVEPOINT` *does* undo `SET
-          // LOCAL` (unlike the `RELEASE SAVEPOINT` success path this
-          // restore guards against — confirmed directly against a live
-          // PostgreSQL 17 instance).
-          if (typeof priorLockTimeout === 'string') {
-            await tx.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
-          }
-          if (typeof priorStatementTimeout === 'string') {
-            await tx.query(
-              `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
-            );
-          }
-          return result;
-        },
-      );
+      return transaction(async (tx): Promise<T> => {
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
+        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+        const result = await work(tx);
+        // Restore only on success. On failure — DDL error or a timed-out
+        // lock wait — the (sub)transaction is already aborted (PostgreSQL
+        // 25P02: no statement but ROLLBACK/ROLLBACK TO SAVEPOINT is
+        // accepted), so issuing `SET LOCAL` here would itself error and
+        // replace the real failure. That path needs no explicit restore
+        // anyway: `db.transaction(cb)` rolls back to the savepoint on a
+        // thrown error, and `ROLLBACK TO SAVEPOINT` *does* undo `SET
+        // LOCAL` (unlike the `RELEASE SAVEPOINT` success path this
+        // restore guards against — confirmed directly against a live
+        // PostgreSQL 17 instance).
+        if (typeof priorLockTimeout === 'string') {
+          await tx.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
+        }
+        if (typeof priorStatementTimeout === 'string') {
+          await tx.query(
+            `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
+          );
+        }
+        return result;
+      });
     }
 
     // `pg_advisory_xact_lock` run directly against `db` here (no new
