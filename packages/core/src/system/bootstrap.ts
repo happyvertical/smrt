@@ -232,12 +232,45 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
     // committed (visible) or rolled back (gone) — no catalog-lock stall
     // either way.
     //
-    // No `SET LOCAL` timeout raise here: that GUC change is exactly what
-    // leaked before, and this branch must not touch the caller's session
-    // timeouts. A lock wait that exceeds whatever `lock_timeout` the
-    // caller's session already has fails closed with PostgreSQL's own
-    // "canceling statement due to lock timeout" instead of hanging.
-    await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+    // The wait for this lock still needs the same raised budget the
+    // sibling branch above gives itself — every framework-owned connection
+    // (`applyPostgresRuntimeTimeouts()`, wired into `SmrtClass`,
+    // `createDispatchBus`'s own `getDatabase()` path, and the generators)
+    // bakes a request-sized `lock_timeout=10000ms` into the connection by
+    // default, so without a raise here a caller-owned transaction that
+    // holds this lock for longer than 10s (concurrent callers now correctly
+    // serialize on it — see the shapes above) would abort the *next*
+    // waiter with "canceling statement due to lock timeout", reproducing
+    // the #2861 symptom class through the timeout door instead of the
+    // catalog-race door. Unlike the sibling branch, this one must not keep
+    // the raise for the caller's remaining transaction: capture the
+    // caller's current values first and restore them immediately after
+    // acquiring the lock, before `work(db)` runs — the raise covers only
+    // the wait PostgreSQL's own lock manager enforces, never the caller's
+    // subsequent statements.
+    const priorLockTimeout = getQueryRows(
+      await db.query('SHOW lock_timeout'),
+    )[0]?.lock_timeout;
+    const priorStatementTimeout = getQueryRows(
+      await db.query('SHOW statement_timeout'),
+    )[0]?.statement_timeout;
+    for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) await db.query(sql);
+    try {
+      await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+    } finally {
+      // `SET LOCAL` is re-issuable within a transaction — this is a second
+      // explicit `SET LOCAL`, not something PostgreSQL prevents — so the
+      // caller's own values are restored deterministically regardless of
+      // whether the lock acquisition itself timed out.
+      if (typeof priorLockTimeout === 'string') {
+        await db.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
+      }
+      if (typeof priorStatementTimeout === 'string') {
+        await db.query(
+          `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
+        );
+      }
+    }
     return work(db);
   }
 
