@@ -1746,6 +1746,34 @@ export class SchemaComparer {
     );
     if (declaredCandidateNames.length === 0) return [];
 
+    // #2874 review finding F3: only probe an orphan column that is
+    // type-compatible with at least one declared candidate — an orphan
+    // whose type matches nothing can never produce a finding, so probing
+    // it anyway would force a full-table scan (the `LIMIT 1` subquery below
+    // never finds a qualifying row) for a column this detector could never
+    // act on. This restores the original per-column code's compatibility
+    // gate; it costs no extra round trip because every type involved is
+    // already known from `manifest`/`dbSchema`, not the live data.
+    const compatibleOrphanNames = orphanColumnNames.filter((orphanName) => {
+      const orphanNormalized = this.normalizeType(
+        dbSchema.columns[orphanName].type,
+      );
+      return declaredCandidateNames.some((colName) => {
+        const validatedType: SQLDataType = isValidSQLDataType(
+          manifest.columns[colName].type,
+        )
+          ? manifest.columns[colName].type
+          : 'TEXT';
+        const declaredNormalized = this.normalizeType(
+          this.ddlStrategy.mapType(validatedType),
+        );
+        const requiresShapeCheck =
+          validatedType === 'UUID' && orphanNormalized === 'TEXT';
+        return requiresShapeCheck || orphanNormalized === declaredNormalized;
+      });
+    });
+    if (compatibleOrphanNames.length === 0) return [];
+
     // #2874: this used to run one `SELECT 1 ... LIMIT 1` round trip per
     // declared column, then (for the declared columns still empty) one more
     // per type-compatible orphan column, then a third per UUID-shape check —
@@ -1756,18 +1784,18 @@ export class SchemaComparer {
     // one query's execution time (see #2874, matching the #2815 epic's
     // central finding). Batched below into at most two round trips per
     // table, independent of column count: one row of scalar subqueries
-    // covering every declared-candidate and orphan column's "has non-empty
-    // value" check (each subquery keeps its own `LIMIT 1` early exit —
-    // #2874 review finding F1), and (only when a logical-UUID declared
-    // column pairs with a TEXT orphan) one further row of subqueries
-    // covering every orphan column's "all non-empty values UUID-shaped"
-    // check. `columnsHaveNonEmptyValueBatch` falls back to isolated
-    // per-column probes on a batch failure, so one unresolvable column
-    // never discards the whole table's detection (#2874 review finding
-    // F2) — a column absent from the map below means "could not be
+    // covering every declared-candidate and type-compatible-orphan column's
+    // "has non-empty value" check (each subquery keeps its own `LIMIT 1`
+    // early exit — #2874 review finding F1), and (only when a
+    // logical-UUID declared column pairs with a TEXT orphan) one further
+    // row of subqueries covering every orphan column's "all non-empty
+    // values UUID-shaped" check. `columnsHaveNonEmptyValueBatch` falls back
+    // to isolated per-column probes on a batch failure, so one unresolvable
+    // column never discards the whole table's detection (#2874 review
+    // finding F2) — a column absent from the map below means "could not be
     // probed", not "confirmed empty".
     const hasData = await this.columnsHaveNonEmptyValueBatch(tableName, [
-      ...new Set([...declaredCandidateNames, ...orphanColumnNames]),
+      ...new Set([...declaredCandidateNames, ...compatibleOrphanNames]),
     ]);
 
     const changes: SchemaChange[] = [];
@@ -1811,7 +1839,7 @@ export class SchemaComparer {
         this.ddlStrategy.mapType(validatedType),
       );
 
-      for (const orphanName of orphanColumnNames) {
+      for (const orphanName of compatibleOrphanNames) {
         const orphanCol = dbSchema.columns[orphanName];
         const orphanNormalized = this.normalizeType(orphanCol.type);
 
@@ -1948,19 +1976,25 @@ export class SchemaComparer {
     colNames: string[],
   ): Promise<Map<string, boolean>> {
     const quotedTable = this.quoteIdentifier(tableName);
-    const selects = colNames.map((colName) => {
+    // Positional aliases (`c0`, `c1`, …), not the column name itself
+    // (#2874 review finding F2'): PostgreSQL silently truncates a `name`
+    // identifier — including a quoted alias — to 63 bytes, so a long column
+    // name, or two columns sharing their first 63 bytes, would collide on
+    // the same output key and mis-key a result. Positional aliases are
+    // immune to identifier length and never collide with each other.
+    const selects = colNames.map((colName, index) => {
       const quotedCol = this.quoteIdentifier(colName);
       return (
         `(SELECT 1 FROM ${quotedTable} WHERE ${quotedCol} IS NOT NULL ` +
-        `AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1) AS ${quotedCol}`
+        `AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1) AS c${index}`
       );
     });
     const result = await this.db.query(`SELECT ${selects.join(', ')}`);
     const row = (result.rows?.[0] ?? {}) as Record<string, unknown>;
     const hasData = new Map<string, boolean>();
-    for (const colName of colNames) {
-      hasData.set(colName, row[colName] != null);
-    }
+    colNames.forEach((colName, index) => {
+      hasData.set(colName, row[`c${index}`] != null);
+    });
     return hasData;
   }
 
@@ -2029,7 +2063,9 @@ export class SchemaComparer {
     colNames: string[],
   ): Promise<Map<string, boolean>> {
     const quotedTable = this.quoteIdentifier(tableName);
-    const selects = colNames.map((colName) => {
+    // Positional aliases, not the column name (#2874 review finding F2') —
+    // see {@link columnsHaveNonEmptyValueBatchQuery}.
+    const selects = colNames.map((colName, index) => {
       const quotedCol = this.quoteIdentifier(colName);
       const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
       const invalidPredicate =
@@ -2039,15 +2075,15 @@ export class SchemaComparer {
             `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
       return (
         `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-        `AND ${invalidPredicate} LIMIT 1) AS ${quotedCol}`
+        `AND ${invalidPredicate} LIMIT 1) AS c${index}`
       );
     });
     const result = await this.db.query(`SELECT ${selects.join(', ')}`);
     const row = (result.rows?.[0] ?? {}) as Record<string, unknown>;
     const shaped = new Map<string, boolean>();
-    for (const colName of colNames) {
-      shaped.set(colName, row[colName] == null);
-    }
+    colNames.forEach((colName, index) => {
+      shaped.set(colName, row[`c${index}`] == null);
+    });
     return shaped;
   }
 
@@ -2085,7 +2121,7 @@ export class SchemaComparer {
    *   for `integer`/`boolean`/`timestamp`/etc. before a same-type rename
    *   pair of one of those types ever copies anything. Fixed by comparing
    *   `CAST(col AS TEXT) = ''` instead, mirroring the same portable
-   *   emptiness check {@link columnHasNonEmptyValue} already uses for
+   *   emptiness check {@link columnsHaveNonEmptyValueBatch} already uses for
    *   detection, so the predicate is valid for every column type.
    * - (P2) An `UPDATE` unconditionally naming `oldColumn` fails once that
    *   column is gone, on either engine, regardless of the DROP's own

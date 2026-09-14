@@ -1448,6 +1448,33 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
 describe('SchemaComparer rename_data_pending (#2752)', () => {
   let db: DatabaseProvider;
 
+  /**
+   * Generic mock responder for the #2874 batched probes: both are one row
+   * of positionally-aliased scalar subqueries (`(SELECT 1 FROM t WHERE
+   * "col" ... LIMIT 1) AS c<N>`, #2874 review finding F2'), so this parses
+   * the alias -> column mapping out of the query text instead of assuming
+   * a fixed column/alias order, and looks up whether each referenced
+   * column should report present. `presentColumns` answers "has a
+   * non-empty value" for the has-data probe, and "has an invalid
+   * (non-UUID-shaped) value" for the shape probe (detected via `!~*`).
+   */
+  function respondToBatchProbe(
+    sql: string,
+    presentColumns: Set<string>,
+  ): { rows: Record<string, number>[] } {
+    // Each subquery's WHERE clause has its own nested `CAST(... AS TEXT)`
+    // parenthesis, so a single regex spanning "WHERE ... ) AS c<N>" cannot
+    // skip past it. Extract the two token streams separately instead —
+    // they appear in the same left-to-right order, one pair per subquery.
+    const columns = [...sql.matchAll(/WHERE "([^"]+)"/g)].map((m) => m[1]);
+    const aliases = [...sql.matchAll(/\) AS (c\d+)/g)].map((m) => m[1]);
+    const row: Record<string, number> = {};
+    columns.forEach((column, index) => {
+      if (presentColumns.has(column)) row[aliases[index]] = 1;
+    });
+    return { rows: [row] };
+  }
+
   afterEach(async () => {
     if (db && typeof db.close === 'function') {
       try {
@@ -1579,18 +1606,16 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        // #2874: batched probes are one row of uncorrelated scalar
-        // subqueries, keyed by the quoted column name used as its alias.
-        // The shape probe adds a `!~*` (postgres) / `GLOB` (sqlite) clause
-        // the plain "has non-empty value" probe does not, so key off that.
+        // #2874: batched probes are one row of positionally-aliased scalar
+        // subqueries. The shape probe adds a `!~*` clause the plain
+        // "has non-empty value" probe does not, so key off that. `id` and
+        // `old_id` have data; `new_id` (declared) is empty. `old_id` is
+        // UUID-shaped (no invalid row).
         if (sql.includes('SELECT (SELECT 1 FROM')) {
-          if (sql.includes('!~*') || sql.includes('GLOB')) {
-            // UUID-shape probe: no invalid row for `old_id` (absent).
-            return { rows: [{}] };
-          }
-          // "has non-empty value" probe: `new_id` (declared) is empty
-          // (absent); `old_id` (orphan) has data.
-          return { rows: [{ old_id: 1 }] };
+          const present = sql.includes('!~*')
+            ? new Set<string>() // shape probe: no invalid value for old_id
+            : new Set(['id', 'old_id']); // has-data probe
+          return respondToBatchProbe(sql, present);
         }
         return { rows: [] };
       },
@@ -1653,12 +1678,13 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
+        // `id` and `old_id` have data; `new_id` is empty. `old_id` has an
+        // invalid (non-UUID-shaped) value.
         if (sql.includes('SELECT (SELECT 1 FROM')) {
-          if (sql.includes('!~*') || sql.includes('GLOB')) {
-            // An invalid (non-UUID-shaped) row exists for `old_id`.
-            return { rows: [{ old_id: 1 }] };
-          }
-          return { rows: [{ old_id: 1 }] };
+          const present = sql.includes('!~*')
+            ? new Set(['old_id']) // shape probe: invalid value present
+            : new Set(['id', 'old_id']); // has-data probe
+          return respondToBatchProbe(sql, present);
         }
         return { rows: [] };
       },
@@ -1890,6 +1916,60 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     // isolated to a retry via per-column fallback probes, not a table-wide
     // loss of every finding.
     expect(names).toEqual(['new_a', 'new_b']);
+  });
+
+  it('never probes an orphan column whose type matches no declared column (#2874 review finding F3)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        new_slug TEXT,
+        old_slug TEXT,
+        junk_metadata INTEGER
+      )
+    `);
+    await db.query(
+      `INSERT INTO widgets (id, old_slug, junk_metadata) VALUES ('1', 'hello', 42)`,
+    );
+
+    const querySpy = vi.spyOn(db, 'query');
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_slug: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    // `junk_metadata` (INTEGER) matches no declared column's type (both
+    // declared columns are TEXT), so it must never appear in the batched
+    // probe — probing it would force a full-table scan for a column this
+    // detector could never act on (#2874 review finding F3). The
+    // type-compatible orphan `old_slug` still gets its finding.
+    const probeQueries = querySpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((sql) => sql.includes('IS NOT NULL'));
+    expect(probeQueries.some((sql) => sql.includes('"junk_metadata"'))).toBe(
+      false,
+    );
+    expect(probeQueries.some((sql) => sql.includes('"old_slug"'))).toBe(true);
+
+    const finding = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_slug',
+    );
+    expect(finding).toBeDefined();
+    querySpy.mockRestore();
   });
 });
 

@@ -661,6 +661,30 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
     expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
   });
 
+  /**
+   * Generic mock responder for the #2874 batched probes: both are one row
+   * of positionally-aliased scalar subqueries (`(SELECT 1 FROM t WHERE
+   * "col" ... LIMIT 1) AS c<N>`, #2874 review finding F2'), so this parses
+   * the alias -> column mapping out of the query text instead of assuming
+   * a fixed column/alias order.
+   */
+  function respondToBatchProbe(
+    sql: string,
+    presentColumns: Set<string>,
+  ): { rows: Record<string, number>[] } {
+    // Each subquery's WHERE clause has its own nested `CAST(... AS TEXT)`
+    // parenthesis, so a single regex spanning "WHERE ... ) AS c<N>" cannot
+    // skip past it. Extract the two token streams separately instead —
+    // they appear in the same left-to-right order, one pair per subquery.
+    const columns = [...sql.matchAll(/WHERE "([^"]+)"/g)].map((m) => m[1]);
+    const aliases = [...sql.matchAll(/\) AS (c\d+)/g)].map((m) => m[1]);
+    const row: Record<string, number> = {};
+    columns.forEach((column, index) => {
+      if (presentColumns.has(column)) row[aliases[index]] = 1;
+    });
+    return { rows: [row] };
+  }
+
   // SQLite has no native `uuid` type (a manifest UUID column maps to TEXT
   // there), so the text->uuid shape-gated branch only ever exercises on
   // PostgreSQL. Drive it with a mocked PostgreSQL adapter, matching the
@@ -679,21 +703,18 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
         if (sql.includes('FROM pg_index')) {
           return { rows: [] };
         }
-        // #2874: batched probes are one row of uncorrelated scalar
-        // subqueries, keyed by the quoted column name used as its alias.
-        // The shape probe adds a `!~*` clause the plain "has non-empty
-        // value" probe does not, so key off that.
+        // `id` and `old_id` have data (unless `oldColumnEmpty`); `new_id`
+        // is always empty here.
         if (sql.includes('SELECT (SELECT 1 FROM')) {
           if (sql.includes('!~*')) {
-            // Shape probe: a row means an invalid (non-UUID-shaped) value
-            // was found for `old_id`.
-            return invalidUuidCount > 0
-              ? { rows: [{ old_id: 1 }] }
-              : { rows: [{}] };
+            const present =
+              invalidUuidCount > 0 ? new Set(['old_id']) : new Set<string>();
+            return respondToBatchProbe(sql, present);
           }
-          // "has non-empty value" probe: `new_id` is always empty here;
-          // `old_id` has data unless `oldColumnEmpty`.
-          return oldColumnEmpty ? { rows: [{}] } : { rows: [{ old_id: 1 }] };
+          const present = oldColumnEmpty
+            ? new Set(['id'])
+            : new Set(['id', 'old_id']);
+          return respondToBatchProbe(sql, present);
         }
         return { rows: [] };
       },

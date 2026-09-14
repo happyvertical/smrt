@@ -833,19 +833,25 @@ async function columnsHaveNonEmptyValueBatchQuery(
   columns: string[],
 ): Promise<Map<string, boolean>> {
   const quotedTable = quoteIdentifier(table);
-  const selects = columns.map((column) => {
+  // Positional aliases (`c0`, `c1`, …), not the column name (#2874 review
+  // finding F2'): PostgreSQL silently truncates a `name` identifier —
+  // including a quoted alias — to 63 bytes, so a long column name, or two
+  // columns sharing their first 63 bytes, would collide on the same output
+  // key and mis-key a result. Positional aliases are immune to identifier
+  // length and never collide with each other.
+  const selects = columns.map((column, index) => {
     const quotedColumn = quoteIdentifier(column);
     return (
       `(SELECT 1 FROM ${quotedTable} WHERE ${quotedColumn} IS NOT NULL ` +
-      `AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1) AS ${quotedColumn}`
+      `AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1) AS c${index}`
     );
   });
   const result = await db.query(`SELECT ${selects.join(', ')}`);
   const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
   const hasData = new Map<string, boolean>();
-  for (const column of columns) {
-    hasData.set(column, row[column] != null);
-  }
+  columns.forEach((column, index) => {
+    hasData.set(column, row[`c${index}`] != null);
+  });
   return hasData;
 }
 
@@ -920,7 +926,9 @@ async function columnsAllValuesUuidShapedBatchQuery(
   columns: string[],
 ): Promise<Map<string, boolean>> {
   const quotedTable = quoteIdentifier(table);
-  const selects = columns.map((column) => {
+  // Positional aliases, not the column name (#2874 review finding F2') —
+  // see {@link columnsHaveNonEmptyValueBatchQuery}.
+  const selects = columns.map((column, index) => {
     const quotedColumn = quoteIdentifier(column);
     const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
     const invalidPredicate =
@@ -930,15 +938,15 @@ async function columnsAllValuesUuidShapedBatchQuery(
           `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
     return (
       `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-      `AND ${invalidPredicate} LIMIT 1) AS ${quotedColumn}`
+      `AND ${invalidPredicate} LIMIT 1) AS c${index}`
     );
   });
   const result = await db.query(`SELECT ${selects.join(', ')}`);
   const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
   const shaped = new Map<string, boolean>();
-  for (const column of columns) {
-    shaped.set(column, row[column] == null);
-  }
+  columns.forEach((column, index) => {
+    shaped.set(column, row[`c${index}`] == null);
+  });
   return shaped;
 }
 
@@ -1019,9 +1027,25 @@ async function detectRenameDataPending(
   );
   if (declaredCandidates.length === 0) return [];
 
+  // #2874 review finding F3: only probe an orphan (extra) column that is
+  // type-compatible with at least one declared candidate — an orphan whose
+  // type matches nothing can never produce a finding, so probing it anyway
+  // would force a full-table scan (the `LIMIT 1` subquery never finds a
+  // qualifying row) for a column this detector could never act on. This
+  // restores the original per-column code's compatibility gate at no extra
+  // round-trip cost: every type involved is already known from
+  // `table.columns`/`liveColumns`, not the live data.
+  const compatibleExtraColumns = extraColumns.filter((extra) => {
+    const extraNormalized = normalizeSqlType(extra.type);
+    return declaredCandidates.some((column) =>
+      renameCompatibility(normalizeSqlType(column.type), extraNormalized),
+    );
+  });
+  if (compatibleExtraColumns.length === 0) return [];
+
   // #2874: batch the "has non-empty value" probe for every declared
-  // candidate and every extra (undeclared) column into one round trip per
-  // table, instead of one `SELECT 1 ... LIMIT 1` per column — see
+  // candidate and every type-compatible orphan column into one round trip
+  // per table, instead of one `SELECT 1 ... LIMIT 1` per column — see
   // {@link columnsHaveNonEmptyValueBatch}, which falls back to isolated
   // per-column probes on a batch failure rather than discarding the whole
   // table (#2874 review finding F2). A column absent from the map below
@@ -1029,7 +1053,7 @@ async function detectRenameDataPending(
   const hasData = await columnsHaveNonEmptyValueBatch(db, table.name, [
     ...new Set([
       ...declaredCandidates.map((column) => column.name),
-      ...extraColumns.map((extra) => extra.name),
+      ...compatibleExtraColumns.map((extra) => extra.name),
     ]),
   ]);
 
@@ -1051,7 +1075,7 @@ async function detectRenameDataPending(
 
     const declaredType = normalizeSqlType(column.type);
 
-    for (const extra of extraColumns) {
+    for (const extra of compatibleExtraColumns) {
       const compatibility = renameCompatibility(
         declaredType,
         normalizeSqlType(extra.type),
