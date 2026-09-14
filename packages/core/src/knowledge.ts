@@ -3,6 +3,19 @@ export {
   readPackageAgentDoc,
   type ScopedPackageDirectory,
 } from './knowledge-discovery.js';
+export {
+  buildKnowledgeGraph,
+  checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
+  type KnowledgeGraphEdge,
+  type KnowledgeGraphEdgeType,
+  type KnowledgeGraphFreshnessIssue,
+  type KnowledgeGraphInput,
+  type KnowledgeGraphObjectNode,
+  type KnowledgeGraphPackageNode,
+  type SmrtKnowledgeGraph,
+  stableStringify,
+} from './knowledge-graph.js';
 
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -201,6 +214,7 @@ export function buildDomainKnowledgeManifest(
   const surfaces = objects.flatMap((object) => object.surfaces);
   const manifestJson = stableJson(normalizeManifestForHash(options.manifest));
   const agentSurface = normalizeAgentSurface(options.agentSurface);
+  const relationshipsV2 = summarizeRelationships(objects, manifestObjects);
 
   return {
     schemaVersion: 1,
@@ -240,14 +254,21 @@ export function buildDomainKnowledgeManifest(
     sdkDependencies: Object.keys(allDependencies)
       .filter((dep) => SDK_PACKAGE_NAMES.has(dep))
       .sort(),
-    tags: options.config?.tags ?? [],
+    tags:
+      options.config?.tags ?? deriveDefaultTags(packageJson, allDependencies),
     summary: options.config?.summary,
-    risks: options.config?.risks ?? [],
+    risks:
+      options.config?.risks ??
+      deriveDefaultRisks({
+        sensitiveFieldsExcluded: true,
+        relationshipsV2,
+        objects,
+      }),
     objects,
     surfaces,
     prompts:
       options.config?.includePrompts === false ? [] : readPrompts(rootDir),
-    relationshipsV2: summarizeRelationships(objects, manifestObjects),
+    relationshipsV2,
     agentDoc,
     moduleDocs:
       includeDocs && moduleDocPaths.length > 0
@@ -1103,6 +1124,84 @@ function summarizeRelationships(
       0,
     ),
   };
+}
+
+/**
+ * Documented default `tags` derivation for a package's domain-knowledge
+ * artifact when `@smrt({ knowledge: { tags } })` is not set (#2863).
+ *
+ * Never invents taxonomy: tags come only from `package.json#keywords`
+ * (authored by the package owner) plus a `cross-package` tag when the
+ * package declares a `@happyvertical/smrt-*` dependency. This keeps the
+ * derivation deterministic and traceable to an authored source, matching
+ * the "populate tags/risks from scanner output where the manifest carries
+ * the data" scope — a package that wants richer tags still sets
+ * `knowledge.tags` explicitly.
+ */
+function deriveDefaultTags(
+  packageJson: PackageJsonLike,
+  allDependencies: Record<string, string>,
+): string[] {
+  const tags = new Set<string>();
+  const keywords = packageJson.keywords;
+  if (Array.isArray(keywords)) {
+    for (const keyword of keywords) {
+      if (typeof keyword === 'string' && keyword.trim()) {
+        tags.add(keyword.trim());
+      }
+    }
+  }
+  if (
+    Object.keys(allDependencies).some((dep) =>
+      dep.startsWith('@happyvertical/smrt-'),
+    )
+  ) {
+    tags.add('cross-package');
+  }
+  return [...tags].sort();
+}
+
+/**
+ * Documented default `risks` derivation (#2863). Each entry names a
+ * structural fact the manifest already carries — never freeform prose — so
+ * it stays deterministic and regenerable:
+ *
+ * - `sensitive-fields-excluded`: generation always strips sensitive fields
+ *   before projecting objects (`sensitiveFieldsExcluded` is unconditionally
+ *   `true`), so a reviewer relying on this artifact must not treat it as a
+ *   complete field inventory.
+ * - `cross-package-refs:<n>`: the package reads or writes another package's
+ *   rows through `@crossPackageRef`; a reviewer must check that package's
+ *   tenancy and lifecycle guarantees too.
+ * - `sti-inheritance`: at least one object shares a table via
+ *   `tableStrategy: 'sti'`; a schema change must consider every sibling.
+ * - `polymorphic-associations:<n>`: at least one
+ *   `SmrtPolymorphicAssociation`, whose target type is resolved at read time
+ *   rather than by a foreign key constraint.
+ */
+function deriveDefaultRisks(options: {
+  sensitiveFieldsExcluded: true;
+  relationshipsV2: ReturnType<typeof summarizeRelationships>;
+  objects: DomainKnowledgeObject[];
+}): string[] {
+  const risks = new Set<string>();
+  if (options.sensitiveFieldsExcluded) {
+    risks.add('sensitive-fields-excluded');
+  }
+  if (options.relationshipsV2.crossPackageRefFields > 0) {
+    risks.add(
+      `cross-package-refs:${options.relationshipsV2.crossPackageRefFields}`,
+    );
+  }
+  if (options.objects.some((object) => object.tableStrategy === 'sti')) {
+    risks.add('sti-inheritance');
+  }
+  if (options.relationshipsV2.polymorphicAssociations > 0) {
+    risks.add(
+      `polymorphic-associations:${options.relationshipsV2.polymorphicAssociations}`,
+    );
+  }
+  return [...risks].sort();
 }
 
 function columnType(

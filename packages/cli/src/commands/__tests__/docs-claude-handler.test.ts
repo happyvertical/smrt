@@ -252,6 +252,112 @@ describe('docs:agents handler', () => {
     expect(printed).toContain('*Source: CONTRIBUTING.md*');
   });
 
+  it('exports the merged knowledge graph alongside the snapshot when present at the monorepo root (#2863)', async () => {
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      "packages:\n  - 'packages/*'\n",
+      'utf-8',
+    );
+    mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
+    makePackage('@happyvertical', 'smrt-content', {
+      agents: '# smrt-content\n\nDocs.',
+    });
+    mkdirSync(join(tempDir, '.smrt'), { recursive: true });
+    const graphContent = JSON.stringify({ schemaVersion: 1, packages: [] });
+    writeFileSync(
+      join(tempDir, '.smrt', 'smrt-knowledge-graph.json'),
+      graphContent,
+      'utf-8',
+    );
+
+    await docsCommands['docs:agents'].handler([], {});
+
+    const exportedPath = join(tempDir, '.agents', 'smrt-knowledge-graph.json');
+    expect(existsSync(exportedPath)).toBe(true);
+    expect(readFileSync(exportedPath, 'utf-8')).toBe(graphContent);
+
+    const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(printed).toContain('cross-package knowledge graph exported');
+  });
+
+  it('fails rather than exporting a stale knowledge graph (#2872)', async () => {
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      "packages:\n  - 'packages/*'\n",
+      'utf-8',
+    );
+    mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
+    makePackage('@happyvertical', 'smrt-content', {
+      agents: '# smrt-content\n\nDocs.',
+    });
+
+    // A per-package artifact the graph was built from, then changed after
+    // generation — the same staleness `checkKnowledgeGraphFreshness` detects
+    // for `pnpm knowledge:check`.
+    mkdirSync(join(tempDir, 'packages', 'orders', 'dist'), {
+      recursive: true,
+    });
+    const artifactPath = join(
+      tempDir,
+      'packages',
+      'orders',
+      'dist',
+      'smrt-knowledge.json',
+    );
+    writeFileSync(artifactPath, JSON.stringify({ tags: [] }), 'utf-8');
+    mkdirSync(join(tempDir, '.smrt'), { recursive: true });
+    writeFileSync(
+      join(tempDir, '.smrt', 'smrt-knowledge-graph.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        packages: [],
+        sourceHashes: {
+          'packages/orders/dist/smrt-knowledge.json': 'stale-hash',
+        },
+      }),
+      'utf-8',
+    );
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process.exit called');
+    }) as any);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(docsCommands['docs:agents'].handler([], {})).rejects.toThrow(
+      'process.exit called',
+    );
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(
+      existsSync(join(tempDir, '.agents', 'smrt-knowledge-graph.json')),
+    ).toBe(false);
+    const errPrinted = errSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(errPrinted).toContain('stale');
+    exitSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it('does not export a knowledge graph when none exists at the monorepo root', async () => {
+    writeFileSync(
+      join(tempDir, 'pnpm-workspace.yaml'),
+      "packages:\n  - 'packages/*'\n",
+      'utf-8',
+    );
+    mkdirSync(join(tempDir, 'packages'), { recursive: true });
+    writeFileSync(join(tempDir, 'AGENTS.md'), '# Root Agents\n', 'utf-8');
+    makePackage('@happyvertical', 'smrt-content', {
+      agents: '# smrt-content\n\nDocs.',
+    });
+
+    await docsCommands['docs:agents'].handler([], {});
+
+    expect(
+      existsSync(join(tempDir, '.agents', 'smrt-knowledge-graph.json')),
+    ).toBe(false);
+  });
+
   it('skips a package whose package.json cannot be parsed', async () => {
     // Valid package alongside one with broken package.json -> the broken one is
     // skipped via loadPackageInfo's catch, the valid one still documented.

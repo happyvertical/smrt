@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  checkKnowledgeGraphFreshness,
   discoverScopedPackageDirectories,
   readAgentModuleDocs,
   readPackageAgentDoc,
@@ -140,6 +141,52 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
 
         writeFileSync(outputPath, content, 'utf-8');
 
+        // Export the merged cross-package knowledge graph (#2863) alongside
+        // the per-package snapshot, when this run is inside the monorepo
+        // that generated one. A consumer app installing individual packages
+        // has no root graph to export — only the monorepo build does.
+        let graphExported = false;
+        if (monorepoRoot) {
+          const graphPath = join(
+            monorepoRoot,
+            '.smrt',
+            'smrt-knowledge-graph.json',
+          );
+          if (existsSync(graphPath)) {
+            // A stale graph — a per-package artifact changed since the graph
+            // was last generated — must not be copied out as if it were
+            // current: a consumer snapshot exporting it would carry a graph
+            // that no longer matches the packages it describes. Fail rather
+            // than regenerate here: this command reads artifacts, it does
+            // not own the scanner run `pnpm knowledge:graph` needs (#2872
+            // review).
+            const graphIssues = checkKnowledgeGraphFreshness(
+              monorepoRoot,
+              '.smrt/smrt-knowledge-graph.json',
+              { requireArtifact: true },
+            );
+            const graphErrors = graphIssues.filter(
+              (issue) => issue.severity === 'error',
+            );
+            if (graphErrors.length > 0) {
+              console.error(
+                '\n❌ Cross-package knowledge graph is stale; run `pnpm knowledge:graph` first:',
+              );
+              for (const issue of graphErrors) {
+                console.error(`   ${issue.code}: ${issue.message}`);
+              }
+              process.exit(1);
+            }
+
+            const graphOutputPath = join(
+              dirname(outputPath),
+              'smrt-knowledge-graph.json',
+            );
+            writeFileSync(graphOutputPath, readFileSync(graphPath, 'utf-8'));
+            graphExported = true;
+          }
+        }
+
         const totalPackages = packages.length + sdkPackages.length;
         console.log(`\n✅ Generated ${outputPath}`);
         console.log(`   ${totalPackages} packages documented`);
@@ -164,6 +211,9 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         }
         if (rootDocs.length > 0) {
           console.log(`   ${rootDocs.length} framework documents included`);
+        }
+        if (graphExported) {
+          console.log('   cross-package knowledge graph exported');
         }
         console.log('');
       } catch (error) {
