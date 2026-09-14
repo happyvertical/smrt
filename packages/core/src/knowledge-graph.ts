@@ -152,7 +152,12 @@ export function buildKnowledgeGraph(
   // one package can be resolved to the node emitted by whichever package
   // scanned it, regardless of scan order.
   const idByQualifiedName = new Map<string, string>();
-  const idBySimpleName = new Map<string, string[]>();
+  // Distinct ids per simple name, not a plain array: the same external
+  // object can appear in more than one input (e.g. a package artifact and a
+  // smrtConsumer aggregate that also scanned it), and counting the
+  // duplicate would make resolveTarget's `.length === 1` uniqueness check
+  // see a false ambiguity for an otherwise-unique name (#2872 review).
+  const idBySimpleName = new Map<string, Set<string>>();
   // A `tableStrategy: 'sti'` object's `extends` is an unqualified simple name
   // (its own package's base class, never a cross-package reference — STI
   // shares one table within a package), so a same-package simple-name match
@@ -175,8 +180,8 @@ export function buildKnowledgeGraph(
         idBySimpleNamePerPackage.get(packageName) ?? new Map<string, string>();
       const id = objectId(packageName, object);
       idByQualifiedName.set(object.qualifiedName ?? id, id);
-      const bySimple = idBySimpleName.get(object.name) ?? [];
-      bySimple.push(id);
+      const bySimple = idBySimpleName.get(object.name) ?? new Set<string>();
+      bySimple.add(id);
       idBySimpleName.set(object.name, bySimple);
       perPackage.set(object.name, id);
       idBySimpleNamePerPackage.set(packageName, perPackage);
@@ -196,7 +201,7 @@ export function buildKnowledgeGraph(
       if (sameId) return sameId;
     }
     const bySimple = idBySimpleName.get(raw);
-    if (bySimple && bySimple.length === 1) return bySimple[0];
+    if (bySimple && bySimple.size === 1) return [...bySimple][0];
     return undefined;
   };
 

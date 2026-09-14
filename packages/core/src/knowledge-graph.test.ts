@@ -363,6 +363,92 @@ describe('buildKnowledgeGraph', () => {
     );
   });
 
+  it('resolves an STI target by simple name even when a consumer aggregate duplicates it (#2872 review)', () => {
+    // A package's own artifact AND a consumer aggregate can both contain the
+    // same external object (e.g. Order scanned directly by its package, and
+    // again inside a local smrtConsumer snapshot). Before this object carried
+    // an id, `idBySimpleName` recorded that duplicate id twice, so
+    // resolveTarget's uniqueness check (`.length === 1`) saw two entries for
+    // an otherwise-unambiguous simple name and refused to resolve it.
+    const orders = manifest({
+      packageName: '@happyvertical/smrt-orders',
+      objects: [
+        {
+          name: 'Order',
+          qualifiedName: '@happyvertical/smrt-orders/Order',
+          collection: 'orders',
+          tableName: 'orders',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+        {
+          name: 'OrderLine',
+          qualifiedName: '@happyvertical/smrt-orders/OrderLine',
+          collection: 'order_lines',
+          tableName: 'order_lines',
+          tableStrategy: 'sti',
+          extends: 'Order',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+      ],
+    });
+    // The consumer aggregate re-scans the SAME Order object (same
+    // qualifiedName/packageName) alongside its own local objects.
+    const aggregate = manifest({
+      packageName: '@my-app/local',
+      objects: [
+        {
+          name: 'Order',
+          qualifiedName: '@happyvertical/smrt-orders/Order',
+          packageName: '@happyvertical/smrt-orders',
+          collection: 'orders',
+          tableName: 'orders',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+      ],
+    });
+
+    const graph = buildKnowledgeGraph([
+      {
+        artifactPath: 'packages/orders/dist/smrt-knowledge.json',
+        manifest: orders,
+      },
+      { artifactPath: '.smrt/smrt-knowledge.json', manifest: aggregate },
+    ]);
+
+    // The duplicate Order is deduped to one node.
+    expect(graph.objects.filter((o) => o.name === 'Order')).toHaveLength(1);
+
+    const sti = graph.edges.find(
+      (e) => e.type === 'sti' && e.from.includes('OrderLine'),
+    );
+    expect(sti?.to).toBe(
+      '@happyvertical/smrt-orders#@happyvertical/smrt-orders/Order',
+    );
+
+    const duplicateEdges =
+      graph.edges.length -
+      new Set(graph.edges.map((e) => JSON.stringify(e))).size;
+    expect(duplicateEdges).toBe(0);
+  });
+
   it('preserves generatedAt across a rebuild when nothing merged changed (#2872)', () => {
     vi.useFakeTimers();
     try {
