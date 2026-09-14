@@ -149,12 +149,48 @@ async function rollbackBootstrap(tx: TransactionHandle): Promise<void> {
  * catalog race for this codebase's supported deployment shapes, so `work`
  * runs directly against `db`.
  */
+/**
+ * True when `db` is itself an already-open transaction handle (e.g.
+ * `createIsolatedTestDb()`'s per-test transaction, #2861 review Finding 3:
+ * `packages/vitest/src/__tests__/issue-2429-postgres-system-tables.optional.test.ts`
+ * hands such a handle straight to `createDispatchBus`). Detected
+ * structurally by the `commit`/`rollback` pair only a `TransactionHandle`
+ * carries — `DatabaseInterface` has neither.
+ */
+function isOpenTransactionHandle(
+  db: DatabaseInterface,
+): db is DatabaseInterface & TransactionHandle {
+  const candidate = db as Partial<TransactionHandle>;
+  return (
+    typeof candidate.commit === 'function' &&
+    typeof candidate.rollback === 'function' &&
+    (typeof candidate.isActive !== 'function' || candidate.isActive())
+  );
+}
+
 export async function runSerializedAgainstSystemTableBootstrap<T>(
   db: DatabaseInterface,
   typeHint: string | undefined,
   work: (scopedDb: DatabaseInterface) => Promise<T>,
 ): Promise<T> {
   if (getDatabaseEngine(db, typeHint) !== 'postgres') {
+    return work(db);
+  }
+
+  if (isOpenTransactionHandle(db)) {
+    // PostgreSQL doesn't scope `pg_advisory_xact_lock`/`SET LOCAL` to
+    // savepoints — both live for the rest of the *transaction*, not the
+    // savepoint. Wrapping this handle's own `transaction()` (a savepoint on
+    // an already-open transaction, since it has no `beginTransaction`)
+    // would leak the lock hold and the raised timeout budget into the
+    // caller's transaction for its entire remaining life, stalling any
+    // other bootstrap-lock waiter for up to the full 300s budget. Every
+    // documented caller that hands this helper an already-open transaction
+    // (`createIsolatedTestDb()`) provisions system tables on the base
+    // connection, under this same lock, before opening the transaction —
+    // so no additional serialization is needed here. Run directly against
+    // the caller's transaction, matching this shape's behavior before
+    // #2861 introduced the lock.
     return work(db);
   }
 
