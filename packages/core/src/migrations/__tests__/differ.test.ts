@@ -1448,6 +1448,33 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
 describe('SchemaComparer rename_data_pending (#2752)', () => {
   let db: DatabaseProvider;
 
+  /**
+   * Generic mock responder for the #2874 batched probes: both are one row
+   * of positionally-aliased scalar subqueries (`(SELECT 1 FROM t WHERE
+   * "col" ... LIMIT 1) AS c<N>`, #2874 review finding F2'), so this parses
+   * the alias -> column mapping out of the query text instead of assuming
+   * a fixed column/alias order, and looks up whether each referenced
+   * column should report present. `presentColumns` answers "has a
+   * non-empty value" for the has-data probe, and "has an invalid
+   * (non-UUID-shaped) value" for the shape probe (detected via `!~*`).
+   */
+  function respondToBatchProbe(
+    sql: string,
+    presentColumns: Set<string>,
+  ): { rows: Record<string, number>[] } {
+    // Each subquery's WHERE clause has its own nested `CAST(... AS TEXT)`
+    // parenthesis, so a single regex spanning "WHERE ... ) AS c<N>" cannot
+    // skip past it. Extract the two token streams separately instead —
+    // they appear in the same left-to-right order, one pair per subquery.
+    const columns = [...sql.matchAll(/WHERE "([^"]+)"/g)].map((m) => m[1]);
+    const aliases = [...sql.matchAll(/\) AS (c\d+)/g)].map((m) => m[1]);
+    const row: Record<string, number> = {};
+    columns.forEach((column, index) => {
+      if (presentColumns.has(column)) row[aliases[index]] = 1;
+    });
+    return { rows: [row] };
+  }
+
   afterEach(async () => {
     if (db && typeof db.close === 'function') {
       try {
@@ -1579,13 +1606,16 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes('SELECT 1 AS present')) {
-          if (sql.includes('"new_id"')) return { rows: [] };
-          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
-          return { rows: [] };
-        }
-        if (sql.includes('invalid_count')) {
-          return { rows: [{ invalid_count: 0 }] };
+        // #2874: batched probes are one row of positionally-aliased scalar
+        // subqueries. The shape probe adds a `!~*` clause the plain
+        // "has non-empty value" probe does not, so key off that. `id` and
+        // `old_id` have data; `new_id` (declared) is empty. `old_id` is
+        // UUID-shaped (no invalid row).
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          const present = sql.includes('!~*')
+            ? new Set<string>() // shape probe: no invalid value for old_id
+            : new Set(['id', 'old_id']); // has-data probe
+          return respondToBatchProbe(sql, present);
         }
         return { rows: [] };
       },
@@ -1648,13 +1678,13 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes('SELECT 1 AS present')) {
-          if (sql.includes('"new_id"')) return { rows: [] };
-          if (sql.includes('"old_id"')) return { rows: [{ present: 1 }] };
-          return { rows: [] };
-        }
-        if (sql.includes('invalid_count')) {
-          return { rows: [{ invalid_count: 2 }] };
+        // `id` and `old_id` have data; `new_id` is empty. `old_id` has an
+        // invalid (non-UUID-shaped) value.
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          const present = sql.includes('!~*')
+            ? new Set(['old_id']) // shape probe: invalid value present
+            : new Set(['id', 'old_id']); // has-data probe
+          return respondToBatchProbe(sql, present);
         }
         return { rows: [] };
       },
@@ -1818,6 +1848,180 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(matches[0].advisory?.suggestedSql).toBeUndefined();
     expect(matches[0].mismatch?.actual).toContain('old_slug');
     expect(matches[0].mismatch?.actual).toContain('older_slug');
+  });
+
+  it('falls back to isolated per-column probes when the batched statement fails, so one bad table does not lose every finding (#2874 review finding F2)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        new_a TEXT,
+        new_b TEXT,
+        old_a TEXT,
+        old_b TEXT
+      )
+    `);
+    await db.query(
+      `INSERT INTO widgets (id, old_a, old_b) VALUES ('1', 'value-a', 'value-b')`,
+    );
+
+    // Force exactly the batched "has non-empty value" statement (the one
+    // selecting every declared-candidate and orphan column at once) to
+    // fail, while every other statement — including the per-column
+    // fallback probes — runs normally. This reproduces a column that
+    // becomes unprobeable mid-comparison without needing a real engine
+    // error.
+    const realQuery = db.query.bind(db);
+    const querySpy = vi
+      .spyOn(db, 'query')
+      .mockImplementation(async (...args: unknown[]) => {
+        const sql = String(args[0] ?? '');
+        if (
+          sql.includes('SELECT (SELECT 1 FROM') &&
+          sql.includes('"new_a"') &&
+          sql.includes('"new_b"')
+        ) {
+          throw new Error('simulated batched-probe failure');
+        }
+        return realQuery(
+          ...(args as Parameters<typeof realQuery>),
+        ) as ReturnType<typeof realQuery>;
+      });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_a: { type: 'TEXT' },
+          new_b: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+    querySpy.mockRestore();
+
+    const findings = diff.changes.filter(
+      (c) => c.type === 'rename_data_pending',
+    );
+    const names = findings.map((f) => f.name).sort();
+    // Both declared columns still get their finding: the batch failure was
+    // isolated to a retry via per-column fallback probes, not a table-wide
+    // loss of every finding.
+    expect(names).toEqual(['new_a', 'new_b']);
+  });
+
+  it('never probes an orphan column whose type matches no declared column (#2874 review finding F3)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        new_slug TEXT,
+        old_slug TEXT,
+        junk_metadata INTEGER
+      )
+    `);
+    await db.query(
+      `INSERT INTO widgets (id, old_slug, junk_metadata) VALUES ('1', 'hello', 42)`,
+    );
+
+    const querySpy = vi.spyOn(db, 'query');
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_slug: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    // `junk_metadata` (INTEGER) matches no declared column's type (both
+    // declared columns are TEXT), so it must never appear in the batched
+    // probe — probing it would force a full-table scan for a column this
+    // detector could never act on (#2874 review finding F3). The
+    // type-compatible orphan `old_slug` still gets its finding.
+    const probeQueries = querySpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((sql) => sql.includes('IS NOT NULL'));
+    expect(probeQueries.some((sql) => sql.includes('"junk_metadata"'))).toBe(
+      false,
+    );
+    expect(probeQueries.some((sql) => sql.includes('"old_slug"'))).toBe(true);
+
+    const finding = diff.changes.find(
+      (c) => c.type === 'rename_data_pending' && c.name === 'new_slug',
+    );
+    expect(finding).toBeDefined();
+    querySpy.mockRestore();
+  });
+
+  it('never probes a type-compatible orphan column when every declared candidate already holds data (#2874 review finding, third pass)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        legacy_unused TEXT
+      )
+    `);
+    // Every declared column (id, name) holds data; the type-compatible
+    // orphan `legacy_unused` is entirely empty — the ordinary shape of a
+    // healthy table carrying one long-dead, never-backfilled column.
+    await db.query(
+      `INSERT INTO widgets (id, name, legacy_unused) VALUES ('1', 'alice', NULL)`,
+    );
+
+    const querySpy = vi.spyOn(db, 'query');
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          name: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    // Phase one (declared candidates only) finds both `id` and `name`
+    // populated and returns before phase two ever runs, so no statement
+    // references `legacy_unused` at all — an empty, type-compatible orphan
+    // on an otherwise healthy table must never pay a full-table scan.
+    const probeQueries = querySpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((sql) => sql.includes('IS NOT NULL'));
+    querySpy.mockRestore();
+    expect(probeQueries.some((sql) => sql.includes('"legacy_unused"'))).toBe(
+      false,
+    );
+    expect(
+      diff.changes.find((c) => c.type === 'rename_data_pending'),
+    ).toBeUndefined();
   });
 });
 
