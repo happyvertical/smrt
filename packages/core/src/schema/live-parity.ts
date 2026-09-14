@@ -1027,35 +1027,51 @@ async function detectRenameDataPending(
   );
   if (declaredCandidates.length === 0) return [];
 
-  // #2874 review finding F3: only probe an orphan (extra) column that is
-  // type-compatible with at least one declared candidate — an orphan whose
-  // type matches nothing can never produce a finding, so probing it anyway
-  // would force a full-table scan (the `LIMIT 1` subquery never finds a
-  // qualifying row) for a column this detector could never act on. This
-  // restores the original per-column code's compatibility gate at no extra
-  // round-trip cost: every type involved is already known from
-  // `table.columns`/`liveColumns`, not the live data.
+  // #2874: two phases, mirroring the original code's own two gates (review
+  // findings F3 and its residual on the third pass). Phase one probes only
+  // the declared candidates. A table where every declared candidate already
+  // holds data — the ordinary, healthy case — returns here without ever
+  // touching an extra (orphan) column, exactly like the original
+  // `if (declaredHasData) continue;` gate. Only when some declared
+  // candidate is confirmed empty does phase two batch-probe the extra
+  // columns type-compatible with *those* empty candidates — an extra column
+  // whose type matches nothing (or only already-populated candidates) would
+  // either never produce a finding or never even be reachable, so probing
+  // it would force a full-table scan (the `LIMIT 1` subquery never finds a
+  // qualifying row) for nothing. Each phase is one round trip via
+  // {@link columnsHaveNonEmptyValueBatch}, which falls back to isolated
+  // per-column probes on a batch failure rather than discarding the whole
+  // table (#2874 review finding F2). A column absent from a map below means
+  // "could not be probed", not "confirmed empty".
+  const declaredHasData = await columnsHaveNonEmptyValueBatch(
+    db,
+    table.name,
+    declaredCandidates.map((column) => column.name),
+  );
+  const emptyDeclaredCandidates = declaredCandidates.filter(
+    (column) => !(declaredHasData.get(column.name) ?? true),
+  );
+  if (emptyDeclaredCandidates.length === 0) return [];
+
+  // Only probe an extra column that is type-compatible with at least one
+  // *empty* declared candidate — restores the original per-column code's
+  // compatibility gate, narrowed to the columns phase one actually found
+  // empty. Costs no extra round trip: every type involved is already known
+  // from `table.columns`/`liveColumns`, not the live data.
   const compatibleExtraColumns = extraColumns.filter((extra) => {
     const extraNormalized = normalizeSqlType(extra.type);
-    return declaredCandidates.some((column) =>
+    return emptyDeclaredCandidates.some((column) =>
       renameCompatibility(normalizeSqlType(column.type), extraNormalized),
     );
   });
   if (compatibleExtraColumns.length === 0) return [];
 
-  // #2874: batch the "has non-empty value" probe for every declared
-  // candidate and every type-compatible orphan column into one round trip
-  // per table, instead of one `SELECT 1 ... LIMIT 1` per column — see
-  // {@link columnsHaveNonEmptyValueBatch}, which falls back to isolated
-  // per-column probes on a batch failure rather than discarding the whole
-  // table (#2874 review finding F2). A column absent from the map below
-  // means "could not be probed", not "confirmed empty".
-  const hasData = await columnsHaveNonEmptyValueBatch(db, table.name, [
-    ...new Set([
-      ...declaredCandidates.map((column) => column.name),
-      ...compatibleExtraColumns.map((extra) => extra.name),
-    ]),
-  ]);
+  const extraHasData = await columnsHaveNonEmptyValueBatch(
+    db,
+    table.name,
+    compatibleExtraColumns.map((extra) => extra.name),
+  );
+  const hasData = new Map([...declaredHasData, ...extraHasData]);
 
   type PendingCandidate = {
     declaredName: string;

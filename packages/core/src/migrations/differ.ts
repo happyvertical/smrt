@@ -1746,19 +1746,55 @@ export class SchemaComparer {
     );
     if (declaredCandidateNames.length === 0) return [];
 
-    // #2874 review finding F3: only probe an orphan column that is
-    // type-compatible with at least one declared candidate — an orphan
-    // whose type matches nothing can never produce a finding, so probing
-    // it anyway would force a full-table scan (the `LIMIT 1` subquery below
-    // never finds a qualifying row) for a column this detector could never
-    // act on. This restores the original per-column code's compatibility
-    // gate; it costs no extra round trip because every type involved is
-    // already known from `manifest`/`dbSchema`, not the live data.
+    // #2874: this used to run one `SELECT 1 ... LIMIT 1` round trip per
+    // declared column, then (for the declared columns still empty) one more
+    // per type-compatible orphan column, then a third per UUID-shape check —
+    // O(declared columns × orphan columns) round trips for a single table.
+    // Across a realistic schema (dozens of tables, a handful of legacy
+    // columns each) that is thousands of individually sub-millisecond round
+    // trips per schema comparison — the statement count dominates, not any
+    // one query's execution time (see #2874, matching the #2815 epic's
+    // central finding).
+    //
+    // Two phases below, mirroring the original code's own two gates
+    // (#2874 review findings F3 and its residual on the third pass): phase
+    // one probes only the declared candidates. A table where every declared
+    // candidate already holds data — the ordinary, healthy case — returns
+    // here without ever touching an orphan column, exactly like the
+    // original `if (declaredHasData) continue;` gate. Only when some
+    // declared candidate is confirmed empty does phase two batch-probe the
+    // orphan columns type-compatible with *those* empty candidates — an
+    // orphan whose type matches nothing (or only already-populated
+    // candidates) would either never produce a finding or never even be
+    // reachable, so probing it would force a full-table scan (the `LIMIT 1`
+    // subquery never finds a qualifying row) for nothing. Each phase is one
+    // row of scalar subqueries with each column's own `LIMIT 1` early exit
+    // (#2874 review finding F1), so the common case costs one round trip
+    // and the rename-pending case costs two — both far below the original
+    // per-column O(declared × orphan) shape. `columnsHaveNonEmptyValueBatch`
+    // falls back to isolated per-column probes on a batch failure, so one
+    // unresolvable column never discards the whole table's detection
+    // (#2874 review finding F2) — a column absent from a map below means
+    // "could not be probed", not "confirmed empty".
+    const declaredHasData = await this.columnsHaveNonEmptyValueBatch(
+      tableName,
+      declaredCandidateNames,
+    );
+    const emptyDeclaredNames = declaredCandidateNames.filter(
+      (colName) => !(declaredHasData.get(colName) ?? true),
+    );
+    if (emptyDeclaredNames.length === 0) return [];
+
+    // Only probe an orphan column that is type-compatible with at least one
+    // *empty* declared candidate — restores the original per-column code's
+    // compatibility gate, narrowed to the columns phase one actually found
+    // empty. Costs no extra round trip: every type involved is already
+    // known from `manifest`/`dbSchema`, not the live data.
     const compatibleOrphanNames = orphanColumnNames.filter((orphanName) => {
       const orphanNormalized = this.normalizeType(
         dbSchema.columns[orphanName].type,
       );
-      return declaredCandidateNames.some((colName) => {
+      return emptyDeclaredNames.some((colName) => {
         const validatedType: SQLDataType = isValidSQLDataType(
           manifest.columns[colName].type,
         )
@@ -1774,29 +1810,11 @@ export class SchemaComparer {
     });
     if (compatibleOrphanNames.length === 0) return [];
 
-    // #2874: this used to run one `SELECT 1 ... LIMIT 1` round trip per
-    // declared column, then (for the declared columns still empty) one more
-    // per type-compatible orphan column, then a third per UUID-shape check —
-    // O(declared columns × orphan columns) round trips for a single table.
-    // Across a realistic schema (dozens of tables, a handful of legacy
-    // columns each) that is thousands of individually sub-millisecond round
-    // trips per schema comparison — the statement count dominates, not any
-    // one query's execution time (see #2874, matching the #2815 epic's
-    // central finding). Batched below into at most two round trips per
-    // table, independent of column count: one row of scalar subqueries
-    // covering every declared-candidate and type-compatible-orphan column's
-    // "has non-empty value" check (each subquery keeps its own `LIMIT 1`
-    // early exit — #2874 review finding F1), and (only when a
-    // logical-UUID declared column pairs with a TEXT orphan) one further
-    // row of subqueries covering every orphan column's "all non-empty
-    // values UUID-shaped" check. `columnsHaveNonEmptyValueBatch` falls back
-    // to isolated per-column probes on a batch failure, so one unresolvable
-    // column never discards the whole table's detection (#2874 review
-    // finding F2) — a column absent from the map below means "could not be
-    // probed", not "confirmed empty".
-    const hasData = await this.columnsHaveNonEmptyValueBatch(tableName, [
-      ...new Set([...declaredCandidateNames, ...compatibleOrphanNames]),
-    ]);
+    const orphanHasData = await this.columnsHaveNonEmptyValueBatch(
+      tableName,
+      compatibleOrphanNames,
+    );
+    const hasData = new Map([...declaredHasData, ...orphanHasData]);
 
     const changes: SchemaChange[] = [];
 

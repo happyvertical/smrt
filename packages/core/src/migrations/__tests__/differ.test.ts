@@ -1971,6 +1971,58 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(finding).toBeDefined();
     querySpy.mockRestore();
   });
+
+  it('never probes a type-compatible orphan column when every declared candidate already holds data (#2874 review finding, third pass)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        legacy_unused TEXT
+      )
+    `);
+    // Every declared column (id, name) holds data; the type-compatible
+    // orphan `legacy_unused` is entirely empty — the ordinary shape of a
+    // healthy table carrying one long-dead, never-backfilled column.
+    await db.query(
+      `INSERT INTO widgets (id, name, legacy_unused) VALUES ('1', 'alice', NULL)`,
+    );
+
+    const querySpy = vi.spyOn(db, 'query');
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          name: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    // Phase one (declared candidates only) finds both `id` and `name`
+    // populated and returns before phase two ever runs, so no statement
+    // references `legacy_unused` at all — an empty, type-compatible orphan
+    // on an otherwise healthy table must never pay a full-table scan.
+    const probeQueries = querySpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((sql) => sql.includes('IS NOT NULL'));
+    querySpy.mockRestore();
+    expect(probeQueries.some((sql) => sql.includes('"legacy_unused"'))).toBe(
+      false,
+    );
+    expect(
+      diff.changes.find((c) => c.type === 'rename_data_pending'),
+    ).toBeUndefined();
+  });
 });
 
 describe('hasActionableChanges', () => {
