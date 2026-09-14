@@ -1011,6 +1011,12 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
       'CREATE UNIQUE INDEX profile_types_slug_context_meta_type_global_idx ON profile_types (slug, context, _meta_type)',
     );
     if (publicDatabase) {
+      // PostgreSQL 14 and earlier grant PUBLIC CREATE on `public` by default,
+      // which would hand the restricted role the one privilege this fixture
+      // exists to deny. Revoke it so "no schema CREATE" is guaranteed by
+      // construction rather than by the server's default, matching
+      // packages/core/src/__tests__/postgres-permissions.optional.test.ts.
+      await rootDb.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
       await ensureSystemTables(rootDb);
     }
     await prepareOidcEmailKeyBackfills(rootDb);
