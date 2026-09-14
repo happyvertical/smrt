@@ -457,6 +457,27 @@ jobs:
           # match the repository's real gitdir even though public fetches work.
           node scripts/push-release-refs.mjs
 
+      # Deliberately not gated on `already-recorded` and not part of the step
+      # above: `already-recorded` only tracks the tag push and npm publishes,
+      # so gating release creation on it too means a `gh release create`
+      # failure (network blip, rate limit) after those succeed leaves the
+      # GitHub Release permanently missing — a rerun would see
+      # already-recorded=true and skip this whole step forever. Checking
+      # first and creating only if missing makes this its own idempotent,
+      # always-retried recovery step instead, so it can never strand the
+      # release object once the tag and packages are recorded. See the
+      # review discussion on #2877 (filed as #2879).
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          if gh release view "v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "Release v$RELEASE_VERSION already exists on GitHub; nothing to do."
+            exit 0
+          fi
+
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
           RELEASE_NOTES="${RELEASE_NOTES} npmjs.org"

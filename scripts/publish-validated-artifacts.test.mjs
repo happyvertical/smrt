@@ -9,7 +9,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { publishRelease } from './publish-validated-artifacts.mjs';
+import {
+  publishRelease,
+  reportUnverifiedPackages,
+} from './publish-validated-artifacts.mjs';
 
 function release() {
   return {
@@ -359,4 +362,230 @@ test('tolerates a transient registry error during post-publish verification inst
     logs.some((message) => /errored .*treating as not yet confirmed/.test(message)),
     'expected the transient verification error to be logged, not thrown',
   );
+});
+
+test('tolerates a transient registry error during the pre-publish existence check and still publishes', () => {
+  const logs = [];
+  const calls = [];
+  let versionViewCount = 0;
+
+  const result = publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      log: (message) => logs.push(message),
+      runNpm: (args) => {
+        calls.push(args);
+        if (args[0] === 'publish') return '';
+        if (args[0] === 'view' && args[2] === 'version') {
+          versionViewCount += 1;
+          // Only the pre-publish existence check (the first version view)
+          // errors transiently; the post-publish verification loop (every
+          // subsequent version view) confirms cleanly so this test isn't
+          // exercising that already-covered retry/backoff path.
+          if (versionViewCount === 1) {
+            throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
+          }
+          return '0.40.0';
+        }
+        return '0.40.0';
+      },
+      verificationAttempts: 1,
+      wait: () => {},
+    },
+  );
+
+  assert.deepEqual(
+    calls.find((args) => args[0] === 'publish'),
+    [
+      'publish',
+      '/artifacts/a.tgz',
+      '--registry',
+      'https://registry.npmjs.org/',
+      '--access',
+      'public',
+    ],
+    'a transient pre-publish read error must not block the publish attempt',
+  );
+  assert.ok(
+    logs.some((message) =>
+      /Pre-publish existence check .* errored .* treating as not yet published/.test(
+        message,
+      ),
+    ),
+    'expected the transient pre-publish read error to be logged, not thrown',
+  );
+  assert.deepEqual(result.published, ['@happyvertical/smrt-a']);
+});
+
+test('treats an npm publish-conflict on an already-published version as success once content is verified to match', () => {
+  const logs = [];
+
+  const result = publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      log: (message) => logs.push(message),
+      // The pre-publish check missed it (transient read error, treated as
+      // "not yet published" per the test above), so the publish loop
+      // attempts to publish; npm's own conflict is authoritative.
+      runNpm: (args) => {
+        if (args[0] === 'view') {
+          throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
+        }
+        if (args[0] === 'publish') {
+          throw new Error(
+            'npm error 403 403 Forbidden - PUT https://registry.npmjs.org/@happyvertical%2fsmrt-a - You cannot publish over the previously published versions: 0.40.0.',
+          );
+        }
+        throw new Error(`unexpected npm invocation: ${args.join(' ')}`);
+      },
+      verifyExistingContentMatches: () => true,
+      verificationAttempts: 1,
+      wait: () => {},
+    },
+  );
+
+  assert.deepEqual(result.published, ['@happyvertical/smrt-a']);
+  assert.ok(
+    logs.some((message) =>
+      /reported a publish conflict.*content verified matching/.test(message),
+    ),
+    'expected the publish conflict to be logged as an already-complete match',
+  );
+});
+
+test('still fails an npm publish-conflict on an already-published version whose content does not match', () => {
+  assert.throws(
+    () =>
+      publishRelease(
+        {
+          releaseVersion: '0.40.0',
+          packages: [
+            {
+              name: '@happyvertical/smrt-a',
+              version: '0.40.0',
+              path: '/artifacts/a.tgz',
+            },
+          ],
+        },
+        {
+          log: () => {},
+          runNpm: (args) => {
+            if (args[0] === 'view') {
+              throw new Error('npm ERR! network EAI_AGAIN registry.npmjs.org');
+            }
+            if (args[0] === 'publish') {
+              throw new Error(
+                'npm error 403 403 Forbidden - You cannot publish over the previously published versions: 0.40.0.',
+              );
+            }
+            throw new Error(`unexpected npm invocation: ${args.join(' ')}`);
+          },
+          // Registry content does not match this run's artifact — the
+          // conflict must not be silently treated as "already complete".
+          verifyExistingContentMatches: () => false,
+        },
+      ),
+    /You cannot publish over the previously published versions/,
+  );
+});
+
+test('a genuine publish failure unrelated to an existing version stays fatal', () => {
+  assert.throws(
+    () =>
+      publishRelease(
+        {
+          releaseVersion: '0.40.0',
+          packages: [
+            {
+              name: '@happyvertical/smrt-a',
+              version: '0.40.0',
+              path: '/artifacts/a.tgz',
+            },
+          ],
+        },
+        {
+          log: () => {},
+          runNpm: (args) => {
+            if (args[0] === 'view') return null;
+            throw new Error('npm publish EAUTH: authentication failed');
+          },
+        },
+      ),
+    /EAUTH/,
+  );
+});
+
+test('reportUnverifiedPackages is best-effort: an unwritable job summary is logged, not thrown', () => {
+  const logs = [];
+  const warnings = [];
+  const previousSummaryPath = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = '/unwritable/summary.md';
+
+  try {
+    assert.doesNotThrow(() => {
+      reportUnverifiedPackages(
+        {
+          releaseVersion: '0.40.0',
+          published: ['@happyvertical/smrt-a'],
+          unverified: ['@happyvertical/smrt-a'],
+        },
+        {
+          appendSummary: () => {
+            throw new Error('EACCES: permission denied');
+          },
+          log: (message) => logs.push(message),
+          warn: (message) => warnings.push(message),
+        },
+      );
+    });
+  } finally {
+    if (previousSummaryPath === undefined) {
+      delete process.env.GITHUB_STEP_SUMMARY;
+    } else {
+      process.env.GITHUB_STEP_SUMMARY = previousSummaryPath;
+    }
+  }
+
+  assert.ok(
+    logs.some((message) => /::warning::/.test(message)),
+    'expected the advisory annotation to still be logged',
+  );
+  assert.ok(
+    warnings.some((message) =>
+      /Could not write the advisory job-summary note/.test(message),
+    ),
+    'expected the summary-write failure to be logged as a warning, not thrown',
+  );
+});
+
+test('reportUnverifiedPackages is a no-op when nothing is unverified', () => {
+  const logs = [];
+  reportUnverifiedPackages(
+    { releaseVersion: '0.40.0', published: ['@happyvertical/smrt-a'], unverified: [] },
+    {
+      appendSummary: () => {
+        throw new Error('should not be called');
+      },
+      log: (message) => logs.push(message),
+    },
+  );
+  assert.deepEqual(logs, []);
 });

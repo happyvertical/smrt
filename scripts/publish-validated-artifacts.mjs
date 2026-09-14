@@ -43,6 +43,38 @@ function existsOnRegistry(name, version, runNpm) {
   );
 }
 
+// A transient registry read failure here (EAI_AGAIN, a timeout, any non-404
+// npm() throw) happens strictly before this run's own `npm publish` calls —
+// the dedup loop below always finishes before the publish loop starts — so
+// treating it as "not yet confirmed published" cannot mask a version this
+// run already published. It can only cause an unnecessary publish attempt
+// for a version that is, in fact, already there; npm's own publish-time
+// conflict response is the authoritative fallback for that (see
+// isAlreadyPublishedConflict below), and it still runs the content-identity
+// check before accepting the conflict as "already published" — so a real
+// different-content collision keeps aborting instead of silently skipping.
+function existsOnRegistryTolerant(name, version, runNpm, log) {
+  try {
+    return existsOnRegistry(name, version, runNpm);
+  } catch (error) {
+    log(
+      `⚠️ Pre-publish existence check for ${name}@${version} errored (${error instanceof Error ? error.message : error}); treating as not yet published. If it is already published, the publish attempt's own conflict response will be verified and recorded as complete instead of failing the run.`,
+    );
+    return false;
+  }
+}
+
+// npm's own message for "this exact version is already on the registry".
+// Trusting this (after a content-identity check) recovers a run whose
+// pre-publish existence check missed the version because of a transient
+// read failure, without trusting any other publish failure (auth, network,
+// a genuinely different-content collision) as harmless.
+function isAlreadyPublishedConflict(message) {
+  return /cannot publish over the previously published version/i.test(
+    message,
+  );
+}
+
 // A version already on the registry could, in principle, have been
 // published from *different* content than what this run built — e.g. two
 // independent runs computing the same next version from a stale base (the
@@ -104,7 +136,7 @@ export function publishRelease(
   const alreadyPublished = new Set();
   for (const artifact of release.packages) {
     if (
-      existsOnRegistry(artifact.name, artifact.version, runNpm) &&
+      existsOnRegistryTolerant(artifact.name, artifact.version, runNpm, log) &&
       verifyExistingContentMatches(artifact, runNpm)
     ) {
       alreadyPublished.add(artifact.name);
@@ -117,14 +149,33 @@ export function publishRelease(
       continue;
     }
     log(`📤 Publishing ${artifact.name}@${artifact.version}`);
-    runNpm([
-      'publish',
-      artifact.path,
-      '--registry',
-      registry,
-      '--access',
-      'public',
-    ]);
+    try {
+      runNpm([
+        'publish',
+        artifact.path,
+        '--registry',
+        registry,
+        '--access',
+        'public',
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // The dedup check above can miss an already-published version during
+      // a transient registry read failure; npm's own publish-time conflict
+      // is authoritative. Still run the same content-identity check the
+      // dedup pass uses before accepting it — a genuine different-content
+      // collision (the #2871 "different base" scenario) must keep failing,
+      // not silently skip.
+      if (
+        !isAlreadyPublishedConflict(message) ||
+        !verifyExistingContentMatches(artifact, runNpm)
+      ) {
+        throw error;
+      }
+      log(
+        `↪ ${artifact.name}@${artifact.version} was already published (npm reported a publish conflict); content verified matching, treating as already complete.`,
+      );
+    }
   }
 
   // Once `npm publish` has run (or been skipped as an already-verified
@@ -198,6 +249,40 @@ export function publishValidatedArtifacts(
   return publishRelease(verify(artifactDir), options);
 }
 
+// The publish already succeeded and is irreversible by the time this runs
+// (see publishRelease above). Writing the advisory job-summary note is pure
+// reporting on top of that success — if GITHUB_STEP_SUMMARY is missing,
+// unwritable, or over the runner's size cap, that must never turn a
+// successful publish into a failed step, so the write is best-effort and
+// its own errors are swallowed (logged, not thrown).
+export function reportUnverifiedPackages(
+  result,
+  { appendSummary = appendFileSync, log = console.log, warn = console.warn } = {},
+) {
+  if (result.unverified.length === 0) return;
+
+  // Advisory only: the packages are already published and that cannot
+  // be undone. Surface it as a workflow annotation so it stays visible
+  // without failing a run whose commit/tag recording must still happen.
+  log(
+    `::warning::Registry read-path did not confirm ${result.unverified.join(', ')} for v${result.releaseVersion} within the retry budget; publication is already complete on npm. If this persists after the run finishes, re-check manually — do not re-run the batch.`,
+  );
+
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  try {
+    appendSummary(
+      summaryPath,
+      `\n### ⚠️ Registry verification lag for v${result.releaseVersion}\n\nNot yet visible via \`npm view\` after retries (publish already succeeded):\n\n${result.unverified.map((name) => `- ${name}`).join('\n')}\n`,
+    );
+  } catch (error) {
+    warn(
+      `⚠️ Could not write the advisory job-summary note for v${result.releaseVersion} (${error instanceof Error ? error.message : error}); publication already succeeded and is unaffected.`,
+    );
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const artifactDir = process.argv[2];
@@ -207,21 +292,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       );
     }
     const result = publishValidatedArtifacts(artifactDir);
-    if (result.unverified.length > 0) {
-      // Advisory only: the packages are already published and that cannot
-      // be undone. Surface it as a workflow annotation so it stays visible
-      // without failing a run whose commit/tag recording must still happen.
-      console.log(
-        `::warning::Registry read-path did not confirm ${result.unverified.join(', ')} for v${result.releaseVersion} within the retry budget; publication is already complete on npm. If this persists after the run finishes, re-check manually — do not re-run the batch.`,
-      );
-      const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-      if (summaryPath) {
-        appendFileSync(
-          summaryPath,
-          `\n### ⚠️ Registry verification lag for v${result.releaseVersion}\n\nNot yet visible via \`npm view\` after retries (publish already succeeded):\n\n${result.unverified.map((name) => `- ${name}`).join('\n')}\n`,
-        );
-      }
-    }
+    reportUnverifiedPackages(result);
   } catch (error) {
     console.error(`❌ ${error instanceof Error ? error.message : error}`);
     process.exit(1);

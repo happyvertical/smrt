@@ -386,7 +386,34 @@ export function guardReleasePublish({
   // resuming this exact release and stays a hard failure: let the newer
   // main run compute and publish the next version instead.
   if (!skipGitCheck) {
-    assertHeadMatchesRemote({ baseBranch, repoRoot, spawn });
+    try {
+      assertHeadMatchesRemote({ baseBranch, repoRoot, spawn });
+    } catch (error) {
+      // The generic message below assumes an unrelated newer merge landed.
+      // When this release's own tag is already on origin, that's wrong:
+      // main moved because *this* release's own prior attempt already
+      // pushed it, and the only reason fullyRecorded is false is that this
+      // run's own npm-registry read still lags on at least one package
+      // (see #2881) — not that a different release superseded this one.
+      // Fail closed either way (no unsafe action taken); only the guidance
+      // differs.
+      if (state.tagAlreadyPushed) {
+        fail(
+          `${error instanceof Error ? error.message : String(error)}\n\nThis is release v${releaseVersion}'s own tag, already pushed by a prior attempt of this same run — not a newer, unrelated merge. The npm registry read for at least one package (${publishablePackages
+            .filter(
+              (pkg) =>
+                !state.alreadyPublished.some(
+                  (published) => published.name === pkg.name,
+                ),
+            )
+            .map((pkg) => pkg.name)
+            .join(
+              ', ',
+            )}) has not yet confirmed publication, which is the only reason this is not being treated as already fully recorded. Re-run once npm registry propagation catches up; do not bump a new version.`,
+        );
+      }
+      throw error;
+    }
   }
 
   if (state.alreadyPublished.length > 0) {

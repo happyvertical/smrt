@@ -373,4 +373,48 @@ describe('guard-release-publish', () => {
 
     expect(state.fullyRecorded).toBe(true);
   });
+
+  it("guardReleasePublish clarifies the stale-checkout failure when this release's own tag is already on origin and only the guard's npm read still lags (#2881)", () => {
+    const repoRoot = createRepoFixture();
+    // Tag already pushed (this run's own prior success moved origin/main),
+    // but the guard's own npm read for smrt-extra has not caught up yet, so
+    // fullyRecorded is false and assertHeadMatchesRemote() runs and fails.
+    // The generic "a newer merge has landed" message is wrong here — this
+    // is the release's own tag, not an unrelated newer release.
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main',
+          { status: 0 },
+        ],
+        ['git rev-parse HEAD', { status: 0, stdout: 'original-sha\n' }],
+        [
+          'git rev-parse refs/remotes/origin/main',
+          { status: 0, stdout: 'release-commit-sha\n' },
+        ],
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 1, stderr: 'npm ERR! code E404\n' },
+        ],
+      ]),
+    );
+
+    expect(() =>
+      guardReleasePublish({
+        releaseVersion: '0.39.0',
+        repoRoot,
+        spawn,
+      }),
+    ).toThrow(
+      /own tag, already pushed by a prior attempt.*smrt-extra.*Re-run once npm registry propagation catches up; do not bump a new version/s,
+    );
+  });
 });
