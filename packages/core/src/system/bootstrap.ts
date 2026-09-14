@@ -178,19 +178,42 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
   }
 
   if (isOpenTransactionHandle(db)) {
-    // PostgreSQL doesn't scope `pg_advisory_xact_lock`/`SET LOCAL` to
-    // savepoints — both live for the rest of the *transaction*, not the
-    // savepoint. Wrapping this handle's own `transaction()` (a savepoint on
-    // an already-open transaction, since it has no `beginTransaction`)
-    // would leak the lock hold and the raised timeout budget into the
-    // caller's transaction for its entire remaining life, stalling any
-    // other bootstrap-lock waiter for up to the full 300s budget. Every
-    // documented caller that hands this helper an already-open transaction
-    // (`createIsolatedTestDb()`) provisions system tables on the base
-    // connection, under this same lock, before opening the transaction —
-    // so no additional serialization is needed here. Run directly against
-    // the caller's transaction, matching this shape's behavior before
-    // #2861 introduced the lock.
+    // `db` is already inside an open transaction, so there is no need (and,
+    // per the leak below, no safe way) to open a *new* one to take the
+    // lock: `pg_advisory_xact_lock` run directly against this handle scopes
+    // to the transaction it is already in, exactly like the branches below
+    // that open their own — it auto-releases only when *that* transaction
+    // commits or rolls back, whenever the caller does so.
+    //
+    // That matters for more than tidiness. Wrapping this handle's own
+    // `transaction()` (a savepoint, since a `TransactionHandle` has no
+    // `beginTransaction`) to take the lock was tried and reverted:
+    // PostgreSQL does not scope `pg_advisory_xact_lock`/`SET LOCAL` to a
+    // savepoint — both live for the rest of the *transaction* — so it leaked
+    // the lock hold and a raised timeout budget into the caller's
+    // transaction (confirmed: `SHOW lock_timeout` read back the raised
+    // `5min` budget instead of the caller's original value after
+    // `createDispatchBus()` returned). A session-scoped
+    // `pg_advisory_lock`/`pg_advisory_unlock` pair released right after
+    // `work()` was tried next and also reverted: releasing the lock before
+    // the caller's own transaction ends does not close the actual race —
+    // two callers each holding their own uncommitted transaction still
+    // deadlock on PostgreSQL's ordinary catalog lock for the not-yet-visible
+    // `CREATE TABLE`, entirely independent of our advisory lock, because
+    // that catalog lock is held until the *first* caller's transaction ends,
+    // not until it releases our lock (confirmed by direct reproduction).
+    // Taking the xact-scoped lock directly on the caller's own transaction
+    // is the only scheme that actually closes this: the second caller's
+    // lock acquisition blocks until the first caller's transaction ends,
+    // by which point its DDL is either committed (visible) or rolled back
+    // (gone) — no catalog-lock stall either way.
+    //
+    // No `SET LOCAL` timeout raise here: that GUC change is exactly what
+    // leaked before, and this branch must not touch the caller's session
+    // timeouts. A lock wait that exceeds whatever `lock_timeout` the
+    // caller's session already has fails closed with PostgreSQL's own
+    // "canceling statement due to lock timeout" instead of hanging.
+    await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
     return work(db);
   }
 

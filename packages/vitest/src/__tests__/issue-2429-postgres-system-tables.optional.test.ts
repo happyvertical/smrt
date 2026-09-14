@@ -152,12 +152,25 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
         rowsOf(await result.db.query('SHOW statement_timeout'))[0],
       ).toEqual(statementTimeoutBefore);
 
-      const heldLocks = rowsOf(
+      // The bootstrap lock is legitimately held for the rest of this
+      // transaction (`runSerializedAgainstSystemTableBootstrap()` takes
+      // `pg_advisory_xact_lock` directly on `result.db` since it is already
+      // inside a transaction — see bootstrap.ts's `isOpenTransactionHandle`
+      // branch) — it auto-releases only at commit/rollback, which
+      // `result.cleanup()` performs below. That is what makes it real
+      // mutual exclusion instead of a no-op: two callers each holding their
+      // own open transaction still need this to serialize.
+      const [expectedKey] = rowsOf(
         await result.db.query(
-          "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()",
+          "SELECT hashtext('smrt')::int4::text AS classid, hashtext('system-tables')::int4::text AS objid",
         ),
       );
-      expect(heldLocks).toHaveLength(0);
+      const heldLocks = rowsOf(
+        await result.db.query(
+          "SELECT classid::int4::text AS classid, objid::int4::text AS objid FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()",
+        ),
+      );
+      expect(heldLocks).toEqual([expectedKey]);
     } finally {
       await result.cleanup();
     }
