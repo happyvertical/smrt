@@ -160,7 +160,22 @@ export interface DispatchCleanupResult {
  * Options for creating a DispatchBus
  */
 export interface DispatchBusOptions {
-  /** Database configuration or existing interface */
+  /**
+   * Database configuration or existing interface.
+   *
+   * BREAKING (#2861): on PostgreSQL, `initialize()` now serializes its
+   * dispatch-table bootstrap against concurrent `DispatchBus` instances
+   * using the same advisory-locked transaction `ensureSystemTables()` uses,
+   * which requires the handle to implement `beginTransaction()` or
+   * `transaction()`. A pre-existing `DatabaseInterface` passed here that
+   * implements neither now throws `"Postgres system table bootstrap
+   * requires a transaction-capable database adapter"` instead of silently
+   * running unguarded, racy DDL. This is a deliberate narrowing: a
+   * query-only handle cannot safely take the mutual-exclusion lock the fix
+   * for #2861 depends on, so failing closed replaces failing open. SQLite,
+   * DuckDB, and JSON adapters are unaffected — only the PostgreSQL path
+   * needs the lock.
+   */
   db?:
     | DatabaseInterface
     | {

@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { tableExists } from '../../system/compatibility.js';
 import {
   DispatchSubscription,
   type DispatchSubscriptionData,
@@ -342,14 +343,17 @@ export class DispatchSubscriptionCollection {
   }
 
   /**
-   * Check if subscriptions table exists
+   * Check if subscriptions table exists.
+   *
+   * Delegates to the shared, engine-aware {@link tableExists} rather than
+   * probing with `SELECT ... LIMIT 1` inside a try/catch — see
+   * `DispatchCollection.tableExists()` for why a probe-and-catch check is
+   * unsafe inside a PostgreSQL transaction (#2861).
    */
-  static async tableExists(db: DatabaseInterface): Promise<boolean> {
-    try {
-      await db.query(`SELECT 1 FROM _smrt_dispatch_subscriptions LIMIT 1`);
-      return true;
-    } catch {
-      return false;
-    }
+  static async tableExists(
+    db: DatabaseInterface,
+    typeHint?: string,
+  ): Promise<boolean> {
+    return tableExists(db, '_smrt_dispatch_subscriptions', typeHint);
   }
 }

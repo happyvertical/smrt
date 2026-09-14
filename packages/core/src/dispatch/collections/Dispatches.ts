@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { tableExists } from '../../system/compatibility.js';
 import { toSafeInteger } from '../../utils/safe-integer.js';
 import { Dispatch, type DispatchData } from '../models/Dispatch.js';
 import type { DispatchTenantScope } from '../tenant-resolver.js';
@@ -523,14 +524,22 @@ export class DispatchCollection {
   }
 
   /**
-   * Check if dispatch table exists
+   * Check if dispatch table exists.
+   *
+   * Delegates to the shared, engine-aware {@link tableExists} rather than
+   * probing with `SELECT ... LIMIT 1` inside a try/catch: on PostgreSQL, a
+   * caught query error still aborts the surrounding transaction (any
+   * statement error does, regardless of whether the application handles it),
+   * so a probe-and-catch existence check silently poisons a transaction any
+   * caller wraps this in — exactly what `DispatchBus.initialize()`'s
+   * lock-guarded bootstrap transaction needs to do (#2861). The shared helper
+   * uses `information_schema.tables` on PostgreSQL instead, which never
+   * raises for a missing table.
    */
-  static async tableExists(db: DatabaseInterface): Promise<boolean> {
-    try {
-      await db.query(`SELECT 1 FROM _smrt_dispatch LIMIT 1`);
-      return true;
-    } catch {
-      return false;
-    }
+  static async tableExists(
+    db: DatabaseInterface,
+    typeHint?: string,
+  ): Promise<boolean> {
+    return tableExists(db, '_smrt_dispatch', typeHint);
   }
 }

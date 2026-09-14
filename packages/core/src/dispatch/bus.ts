@@ -28,6 +28,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
+import { runSerializedAgainstSystemTableBootstrap } from '../system/bootstrap.js';
 import {
   assertPostgresSystemTimestampsCurrent,
   ensureDispatchSubscriptionsSystemTableCompatibility,
@@ -165,41 +166,82 @@ export class DispatchBus {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
+
+    // `_smrt_dispatch`/`_smrt_dispatch_subscriptions` are framework-owned
+    // system tables (part of `ALL_SYSTEM_TABLES`), but this standalone
+    // initializer provisions/verifies them independently of a full
+    // `ensureSystemTables()` bootstrap. Without serialization, concurrent
+    // `DispatchBus` instances against the same already-warmed PostgreSQL
+    // database (e.g. multiple `Suasor`/`Agent` instantiations, or concurrent
+    // test files sharing one database) race on unguarded DDL — proven to
+    // throw `duplicate key value violates unique constraint
+    // "pg_type_typname_nsp_index"` on concurrent `CREATE TABLE IF NOT
+    // EXISTS` (#2861). Fresh DDL always creates timezone-aware columns (see
+    // `getSystemTableDDLForEngine()`), so this race does not itself produce a
+    // legacy-typed column; a stale `assertPostgresSystemTimestampsCurrent()`
+    // guard requires a *separate* concurrent actor to have put some
+    // `_smrt_*` table into a legacy-typed state (e.g. a test deliberately
+    // simulating a pre-migration database), which this lock does not by
+    // itself rule out — see the issue for that residual risk. Running this
+    // under the same advisory lock `ensureSystemTables()` uses makes every
+    // writer of these tables mutually exclusive instead of merely
+    // idempotent, which is what the proven race requires.
+    //
+    // Resolve the engine from `this.db` — the caller-supplied handle — once,
+    // up front. `runSerializedAgainstSystemTableBootstrap()` hands the
+    // callback a *different* handle on PostgreSQL (the lock-holding
+    // transaction it opens), and that handle is not guaranteed to carry the
+    // `url`/`type` (or `config.url`/`config.type`) fields engine detection
+    // reads (see the `db.config?.url`-style adapters `getDatabaseEngine()`
+    // already supports elsewhere in this package). Recomputing the engine
+    // on the transaction handle can therefore silently disagree with the
+    // outer gate that just decided `postgres` — `detectEngine('', undefined)`
+    // falls back to `sqlite`, which would create the dispatch tables with
+    // `TIMESTAMP` instead of `TIMESTAMPTZ` and skip the PostgreSQL timestamp
+    // guard entirely. Threading the one resolved `engine` through — as
+    // `ensureSystemTables()`/`bootstrapSystemTables()` already thread
+    // `typeHint` — keeps the inner detection bound to the outer decision.
     const engine = getDatabaseEngine(this.db);
-
-    // Create dispatch tables if they don't exist
-    const dispatchExists = await DispatchCollection.tableExists(this.db);
-    if (!dispatchExists) {
-      // Split the DDL into separate statements and execute each
-      const statements = getSystemTableDDLForEngine(
-        CREATE_SMRT_DISPATCH_TABLE,
-        engine,
-      )
-        .split(';')
-        .filter((s) => s.trim());
-      for (const stmt of statements) {
-        await this.db.query(stmt);
-      }
-    }
-    await assertPostgresSystemTimestampsCurrent(this.db);
-    await ensureDispatchSystemTableCompatibility(this.db);
-
-    const subsExists = await DispatchSubscriptionCollection.tableExists(
+    await runSerializedAgainstSystemTableBootstrap(
       this.db,
+      engine,
+      async (tx) => {
+        // Create dispatch tables if they don't exist
+        const dispatchExists = await DispatchCollection.tableExists(tx, engine);
+        if (!dispatchExists) {
+          // Split the DDL into separate statements and execute each
+          const statements = getSystemTableDDLForEngine(
+            CREATE_SMRT_DISPATCH_TABLE,
+            engine,
+          )
+            .split(';')
+            .filter((s) => s.trim());
+          for (const stmt of statements) {
+            await tx.query(stmt);
+          }
+        }
+        await assertPostgresSystemTimestampsCurrent(tx, engine);
+        await ensureDispatchSystemTableCompatibility(tx, engine);
+
+        const subsExists = await DispatchSubscriptionCollection.tableExists(
+          tx,
+          engine,
+        );
+        if (!subsExists) {
+          const statements = getSystemTableDDLForEngine(
+            CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
+            engine,
+          )
+            .split(';')
+            .filter((s) => s.trim());
+          for (const stmt of statements) {
+            await tx.query(stmt);
+          }
+        }
+        await assertPostgresSystemTimestampsCurrent(tx, engine);
+        await ensureDispatchSubscriptionsSystemTableCompatibility(tx, engine);
+      },
     );
-    if (!subsExists) {
-      const statements = getSystemTableDDLForEngine(
-        CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
-        engine,
-      )
-        .split(';')
-        .filter((s) => s.trim());
-      for (const stmt of statements) {
-        await this.db.query(stmt);
-      }
-    }
-    await assertPostgresSystemTimestampsCurrent(this.db);
-    await ensureDispatchSubscriptionsSystemTableCompatibility(this.db);
 
     this.initialized = true;
   }

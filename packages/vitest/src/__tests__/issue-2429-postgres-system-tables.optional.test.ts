@@ -15,6 +15,15 @@ const postgresDescribe = process.env.SMRT_TEST_POSTGRES_URL
   ? describe.sequential
   : describe.skip;
 
+function rowsOf(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result as Record<string, unknown>[];
+  if (result && typeof result === 'object' && 'rows' in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as Record<string, unknown>[];
+  }
+  return [];
+}
+
 const tableSuffix = randomUUID().replaceAll('-', '').slice(0, 12);
 const tableName = `issue_2429_widget_${tableSuffix}`;
 
@@ -107,6 +116,22 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
     });
 
     try {
+      // #2861 review Finding 3: `result.db` is already an open transaction.
+      // `runSerializedAgainstSystemTableBootstrap()` must not wrap it in a
+      // savepoint to take the bootstrap advisory lock, because PostgreSQL
+      // scopes `pg_advisory_xact_lock`/`SET LOCAL` to the transaction, not
+      // the savepoint — doing so would leak the lock hold and the raised
+      // 300s lock_timeout/statement_timeout budget into this transaction
+      // for its entire remaining life, stalling any other bootstrap-lock
+      // waiter. Recorded before `createDispatchBus()` so a regression shows
+      // up as a changed value, not an absent baseline.
+      const timeoutsBefore = rowsOf(
+        await result.db.query('SHOW lock_timeout'),
+      )[0];
+      const statementTimeoutBefore = rowsOf(
+        await result.db.query('SHOW statement_timeout'),
+      )[0];
+
       const bus = await createDispatchBus({ db: result.db });
       const dispatch = await bus.emit(
         'issue-2429.transaction-probe',
@@ -119,6 +144,33 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
       await expect(
         result.db.query('SELECT 1 AS transaction_ok'),
       ).resolves.toBeDefined();
+
+      expect(rowsOf(await result.db.query('SHOW lock_timeout'))[0]).toEqual(
+        timeoutsBefore,
+      );
+      expect(
+        rowsOf(await result.db.query('SHOW statement_timeout'))[0],
+      ).toEqual(statementTimeoutBefore);
+
+      // The bootstrap lock is legitimately held for the rest of this
+      // transaction (`runSerializedAgainstSystemTableBootstrap()` takes
+      // `pg_advisory_xact_lock` directly on `result.db` since it is already
+      // inside a transaction — see bootstrap.ts's `isOpenTransactionHandle`
+      // branch) — it auto-releases only at commit/rollback, which
+      // `result.cleanup()` performs below. That is what makes it real
+      // mutual exclusion instead of a no-op: two callers each holding their
+      // own open transaction still need this to serialize.
+      const [expectedKey] = rowsOf(
+        await result.db.query(
+          "SELECT hashtext('smrt')::int4::text AS classid, hashtext('system-tables')::int4::text AS objid",
+        ),
+      );
+      const heldLocks = rowsOf(
+        await result.db.query(
+          "SELECT classid::int4::text AS classid, objid::int4::text AS objid FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()",
+        ),
+      );
+      expect(heldLocks).toEqual([expectedKey]);
     } finally {
       await result.cleanup();
     }
