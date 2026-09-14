@@ -29,18 +29,16 @@ import {
   preflightIntegerWidthWidening,
 } from '../migrations/integer-width.js';
 import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
+// The shared live-data column probes (#2874, consolidated for #2878): this
+// module's rename-pending detector used to duplicate `migrations/differ.ts`'s
+// copy of both probes exactly, which is why the #2874 regression had to be
+// fixed twice, in lockstep, in #2876.
+import {
+  columnsAllValuesUuidShapedBatch,
+  columnsHaveNonEmptyValueBatch,
+} from './column-data-probes.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
-// The canonical PostgreSQL uuid-text shape probe (#2608): every framework
-// guard that decides whether a `text` column can be reinterpreted as `uuid`
-// tests the same pattern (the orphan probe, the FK provisioning guard, the
-// uuid convergence planner). Reused here rather than duplicated so a rename
-// candidate and a uuid-convergence candidate never disagree about "shaped".
-import {
-  CANONICAL_UUID_PATTERN,
-  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
-} from './foreign-key-ddl.js';
-import { quoteIdentifier } from './sql-identifiers.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
 
@@ -781,195 +779,6 @@ function renameCompatibility(
     return 'text-to-uuid';
   }
   return null;
-}
-
-/**
- * Live-data probe, batched across every column named: does each hold any
- * non-null, non-empty value? One round trip regardless of column count
- * (#2874) — mirrors `SchemaComparer`'s `columnsHaveNonEmptyValueBatch` in
- * `migrations/differ.ts`, which this module's rename-pending detector
- * duplicates (both trace to #2752/#2767): one row of uncorrelated scalar
- * subqueries, `(SELECT 1 FROM t WHERE ... LIMIT 1) AS "col"`. Deliberately
- * not an aggregate (`MAX(CASE WHEN ...)`) over the whole table — an
- * aggregate forces a full scan per probed column even when the first row
- * already answers it, turning a healthy, mostly-populated large table into
- * a guaranteed full scan on every `db:status`/`db:diff` run (#2874 review
- * finding F1). Each subquery keeps the original `LIMIT 1` early exit; only
- * the round trip is batched.
- *
- * Falls back to {@link columnHasNonEmptyValueSingle} per column when the
- * batched statement itself fails, so one unresolvable column withholds
- * only its own result rather than discarding the whole table's detection
- * (#2874 review finding F2). A column absent from the returned map means
- * "could not be probed"; callers apply their own fail-closed default.
- */
-async function columnsHaveNonEmptyValueBatch(
-  db: DatabaseInterface,
-  table: string,
-  columns: string[],
-): Promise<Map<string, boolean>> {
-  if (columns.length === 0) return new Map();
-  try {
-    return await columnsHaveNonEmptyValueBatchQuery(db, table, columns);
-  } catch {
-    const hasData = new Map<string, boolean>();
-    for (const column of columns) {
-      try {
-        hasData.set(
-          column,
-          await columnHasNonEmptyValueSingle(db, table, column),
-        );
-      } catch {
-        // Left absent: the caller's own default applies (#2874 review F2).
-      }
-    }
-    return hasData;
-  }
-}
-
-async function columnsHaveNonEmptyValueBatchQuery(
-  db: DatabaseInterface,
-  table: string,
-  columns: string[],
-): Promise<Map<string, boolean>> {
-  const quotedTable = quoteIdentifier(table);
-  // Positional aliases (`c0`, `c1`, …), not the column name (#2874 review
-  // finding F2'): PostgreSQL silently truncates a `name` identifier —
-  // including a quoted alias — to 63 bytes, so a long column name, or two
-  // columns sharing their first 63 bytes, would collide on the same output
-  // key and mis-key a result. Positional aliases are immune to identifier
-  // length and never collide with each other.
-  const selects = columns.map((column, index) => {
-    const quotedColumn = quoteIdentifier(column);
-    return (
-      `(SELECT 1 FROM ${quotedTable} WHERE ${quotedColumn} IS NOT NULL ` +
-      `AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1) AS c${index}`
-    );
-  });
-  const result = await db.query(`SELECT ${selects.join(', ')}`);
-  const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
-  const hasData = new Map<string, boolean>();
-  columns.forEach((column, index) => {
-    hasData.set(column, row[`c${index}`] != null);
-  });
-  return hasData;
-}
-
-/** Single-column fallback for {@link columnsHaveNonEmptyValueBatch}. */
-async function columnHasNonEmptyValueSingle(
-  db: DatabaseInterface,
-  table: string,
-  column: string,
-): Promise<boolean> {
-  const quotedTable = quoteIdentifier(table);
-  const quotedColumn = quoteIdentifier(column);
-  const result = await db.query(
-    `SELECT 1 AS present FROM ${quotedTable} ` +
-      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1`,
-  );
-  return (result?.rows?.length ?? 0) > 0;
-}
-
-/**
- * Live-data probe, batched across every column named: are every one of
- * each column's non-empty values UUID-shaped ({@link CANONICAL_UUID_PATTERN})?
- * One round trip regardless of column count (#2874), mirroring
- * {@link columnsHaveNonEmptyValueBatch}: one row of uncorrelated scalar
- * subqueries, each `(SELECT 1 FROM t WHERE <non-empty> AND <invalid> LIMIT
- * 1)` — a value is absent exactly when no invalid row exists, so this also
- * short-circuits on the first invalid row rather than counting every one
- * (an early-exit improvement over the pre-#2874 per-column `count(*)`
- * probe, not just a batching change). PostgreSQL pushes the shape check
- * into its regex operator; SQLite (the only other engine this detector runs
- * against) has no regex operator, but its case-sensitive `GLOB` can still
- * express the fixed 36-character canonical shape (against `LOWER(...)`,
- * guarded by an exact `LENGTH(...) = 36`).
- *
- * Falls back to {@link allNonEmptyValuesUuidShapedSingle} per column on a
- * batch failure, same posture as {@link columnsHaveNonEmptyValueBatch}
- * (#2874 review finding F2).
- */
-async function columnsAllValuesUuidShapedBatch(
-  db: DatabaseInterface,
-  engine: DatabaseEngine,
-  table: string,
-  columns: string[],
-): Promise<Map<string, boolean>> {
-  if (columns.length === 0) return new Map();
-  try {
-    return await columnsAllValuesUuidShapedBatchQuery(
-      db,
-      engine,
-      table,
-      columns,
-    );
-  } catch {
-    const shaped = new Map<string, boolean>();
-    for (const column of columns) {
-      try {
-        shaped.set(
-          column,
-          await allNonEmptyValuesUuidShapedSingle(db, engine, table, column),
-        );
-      } catch {
-        // Left absent: the caller's own default applies (#2874 review F2).
-      }
-    }
-    return shaped;
-  }
-}
-
-async function columnsAllValuesUuidShapedBatchQuery(
-  db: DatabaseInterface,
-  engine: DatabaseEngine,
-  table: string,
-  columns: string[],
-): Promise<Map<string, boolean>> {
-  const quotedTable = quoteIdentifier(table);
-  // Positional aliases, not the column name (#2874 review finding F2') —
-  // see {@link columnsHaveNonEmptyValueBatchQuery}.
-  const selects = columns.map((column, index) => {
-    const quotedColumn = quoteIdentifier(column);
-    const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
-    const invalidPredicate =
-      engine === 'postgres'
-        ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-        : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
-          `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
-    return (
-      `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-      `AND ${invalidPredicate} LIMIT 1) AS c${index}`
-    );
-  });
-  const result = await db.query(`SELECT ${selects.join(', ')}`);
-  const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
-  const shaped = new Map<string, boolean>();
-  columns.forEach((column, index) => {
-    shaped.set(column, row[`c${index}`] == null);
-  });
-  return shaped;
-}
-
-/** Single-column fallback for {@link columnsAllValuesUuidShapedBatch}. */
-async function allNonEmptyValuesUuidShapedSingle(
-  db: DatabaseInterface,
-  engine: DatabaseEngine,
-  table: string,
-  column: string,
-): Promise<boolean> {
-  const quotedTable = quoteIdentifier(table);
-  const quotedColumn = quoteIdentifier(column);
-  const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
-  const invalidPredicate =
-    engine === 'postgres'
-      ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-      : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
-        `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
-  const result = await db.query(
-    `SELECT 1 AS invalid FROM ${quotedTable} ` +
-      `WHERE ${nonEmptyPredicate} AND ${invalidPredicate} LIMIT 1`,
-  );
-  return (result?.rows?.length ?? 0) === 0;
 }
 
 function buildRenameDataPendingFinding(

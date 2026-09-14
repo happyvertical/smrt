@@ -6,12 +6,16 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
+import {
+  columnsAllValuesUuidShapedBatch,
+  columnsHaveNonEmptyValueBatch,
+  nonEmptyValuePredicate,
+  uuidInvalidShapePredicate,
+} from '../schema/column-data-probes.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
-  CANONICAL_UUID_PATTERN,
-  CANONICAL_UUID_SQLITE_GLOB_PATTERN,
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyAddStatements,
@@ -480,6 +484,42 @@ export class SchemaComparer {
   /** Convergence plan for this run; `null` on non-PostgreSQL engines. */
   private uuidConvergence: UuidConvergencePlan | null = null;
 
+  /**
+   * Rename-pending advisory findings for this `compare()` run, keyed by
+   * table name (#2878). `compareTable()` reads from here when it is being
+   * driven by `compare()` over the full manifest, which lets the probe be
+   * batched *across every table in one round trip* instead of paying at
+   * least one round trip per table (#2876 batched a table's own columns
+   * into one round trip but never batched across tables — with a
+   * realistic 71-table schema that per-table floor was itself the entire
+   * residual). `null` means "not precomputed for this run" (a standalone
+   * `compareTable()` call outside `compare()`, or a non-PostgreSQL/SQLite
+   * engine), in which case `detectRenameDataPending()` falls back to the
+   * original single-table probe so standalone callers keep working
+   * unchanged. Cleared every `compare()` call, same as `liveSchemas` —
+   * this is a per-run cache, never reused across runs, so a live schema
+   * change is always seen on the next comparison (no invalidation story
+   * needed because nothing survives past one `compare()` call).
+   */
+  private renameDataPendingCache: Map<string, SchemaChange[]> | null = null;
+
+  /**
+   * Cross-table batch queries stay bounded regardless of schema shape: this
+   * caps how many scalar-subquery columns one probe statement packs into a
+   * single row. Conservative relative to PostgreSQL's ~1600 column limit
+   * per result row, and SQLite has no such ceiling but benefits from the
+   * same bound for query-text size. Applied twice (PR #2888 review): once
+   * per table, so a single pathologically wide table (more probed columns
+   * than this cap) is itself sliced across more than one statement rather
+   * than landing in one oversized chunk; and again across tables, packing
+   * every (possibly sliced) entry into as few chunks as this cap allows.
+   * A schema with no single table wider than this cap needs more than
+   * `MAX_CROSS_TABLE_PROBE_COLUMNS` probed columns *in total* before a
+   * second statement is needed at all — still O(1)-ish round trips for a
+   * realistic schema.
+   */
+  private static readonly MAX_CROSS_TABLE_PROBE_COLUMNS = 400;
+
   constructor(db: DatabaseInterface, options: DiffOptions = {}) {
     this.db = db;
     this.options = {
@@ -519,69 +559,93 @@ export class SchemaComparer {
     // migration, then diff again). Live introspection must not be memoized
     // across those runs.
     this.liveSchemas.clear();
+    this.renameDataPendingCache = null;
 
-    // Get list of existing tables
-    const existingTables = await this.getExistingTables();
+    // #2878 review: `renameDataPendingCache` is populated below for the
+    // duration of this call only. The `finally` clears it again on the way
+    // out (success *or* a mid-run throw) so a `compareTable()` call made
+    // directly on this instance after `compare()` returns — its own public
+    // method, reachable by any holder of this `SchemaComparer` — can never
+    // read a stale entry computed from a previous manifest and a previous
+    // run's live data. Without this, a cache hit for a table absent from
+    // the *next* standalone call's manifest/dbSchema would silently return
+    // a stale advisory rather than falling back to
+    // `detectRenameDataPendingSingleTable()`, and the doc comment on
+    // `renameDataPendingCache` claiming "nothing survives past one
+    // `compare()` call" would be false.
+    try {
+      // Get list of existing tables
+      const existingTables = await this.getExistingTables();
 
-    // #2608: plan the pre-R11 `text` -> `uuid` convergence before anything
-    // else so its statements lead the migration stream. Every foreign key in
-    // this diff — including the deferred constraints the orchestrator emits
-    // for newly created tables — depends on the columns it rewrites.
-    this.uuidConvergence = await this.buildUuidConvergencePlan(
-      manifestSchemas,
-      existingTables,
-    );
-    for (const change of this.uuidConvergenceChanges(manifestSchemas)) {
-      diff.changes.push(change);
-      if (!isInfoOnlyChange(change)) diff.has_changes = true;
-    }
+      // #2878: precompute every table's rename-pending advisory findings in
+      // one batched pass, across the whole manifest, before the per-table
+      // loop below reads them one table at a time via `detectRenameDataPending`.
+      // See `renameDataPendingCache` for why this is safe to compute ahead of
+      // (and share with) that loop.
+      await this.precomputeRenameDataPending(manifestSchemas, existingTables);
 
-    // Check each manifest schema against database
-    for (const [tableName, schema] of Object.entries(manifestSchemas)) {
-      if (!existingTables.has(tableName)) {
-        // Table doesn't exist - add to added_tables
-        diff.added_tables.push(schema);
-        diff.has_changes = true;
-      } else {
-        // Table exists - compare columns and indexes
-        const tableChanges = await this.compareTable(
-          tableName,
-          schema,
-          manifestSchemas,
-        );
-        if (tableChanges.length > 0) {
-          diff.changes.push(...tableChanges);
-          // Info-level report-only notes (a harmless orphan column, a stale
-          // default the manifest no longer declares) are listed but do not
-          // make the schema "changed": executable, manual, and warning-level
-          // findings do (#2369).
-          if (tableChanges.some((change) => !isInfoOnlyChange(change))) {
-            diff.has_changes = true;
+      // #2608: plan the pre-R11 `text` -> `uuid` convergence before anything
+      // else so its statements lead the migration stream. Every foreign key in
+      // this diff — including the deferred constraints the orchestrator emits
+      // for newly created tables — depends on the columns it rewrites.
+      this.uuidConvergence = await this.buildUuidConvergencePlan(
+        manifestSchemas,
+        existingTables,
+      );
+      for (const change of this.uuidConvergenceChanges(manifestSchemas)) {
+        diff.changes.push(change);
+        if (!isInfoOnlyChange(change)) diff.has_changes = true;
+      }
+
+      // Check each manifest schema against database
+      for (const [tableName, schema] of Object.entries(manifestSchemas)) {
+        if (!existingTables.has(tableName)) {
+          // Table doesn't exist - add to added_tables
+          diff.added_tables.push(schema);
+          diff.has_changes = true;
+        } else {
+          // Table exists - compare columns and indexes
+          const tableChanges = await this.compareTable(
+            tableName,
+            schema,
+            manifestSchemas,
+          );
+          if (tableChanges.length > 0) {
+            diff.changes.push(...tableChanges);
+            // Info-level report-only notes (a harmless orphan column, a stale
+            // default the manifest no longer declares) are listed but do not
+            // make the schema "changed": executable, manual, and warning-level
+            // findings do (#2369).
+            if (tableChanges.some((change) => !isInfoOnlyChange(change))) {
+              diff.has_changes = true;
+            }
           }
         }
       }
-    }
 
-    // Orphan tables are always reported (never silently retained); the
-    // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
-    const orphanTables: string[] = [];
-    for (const tableName of existingTables) {
-      // Skip system tables
-      if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
-        continue;
+      // Orphan tables are always reported (never silently retained); the
+      // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
+      const orphanTables: string[] = [];
+      for (const tableName of existingTables) {
+        // Skip system tables
+        if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
+          continue;
+        }
+        if (!manifestSchemas[tableName]) {
+          orphanTables.push(tableName);
+        }
       }
-      if (!manifestSchemas[tableName]) {
-        orphanTables.push(tableName);
+      orphanTables.sort();
+      diff.orphan_tables = orphanTables;
+      if (this.options.includeDroppedTables && orphanTables.length > 0) {
+        diff.dropped_tables.push(...orphanTables);
+        diff.has_changes = true;
       }
-    }
-    orphanTables.sort();
-    diff.orphan_tables = orphanTables;
-    if (this.options.includeDroppedTables && orphanTables.length > 0) {
-      diff.dropped_tables.push(...orphanTables);
-      diff.has_changes = true;
-    }
 
-    return diff;
+      return diff;
+    } finally {
+      this.renameDataPendingCache = null;
+    }
   }
 
   /**
@@ -1711,6 +1775,28 @@ export class SchemaComparer {
   }
 
   /**
+   * Detect a pending rename backfill (#2752) for one table. Reads
+   * `renameDataPendingCache` when `compare()` has already batched this
+   * table's probe across the whole manifest (#2878); otherwise falls back
+   * to {@link detectRenameDataPendingSingleTable}, so a standalone
+   * `compareTable()` call (outside `compare()`) still gets a correct
+   * answer, just without the cross-table batching.
+   */
+  private async detectRenameDataPending(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+  ): Promise<SchemaChange[]> {
+    const cached = this.renameDataPendingCache?.get(tableName);
+    if (cached !== undefined) return cached;
+    return this.detectRenameDataPendingSingleTable(
+      tableName,
+      manifest,
+      dbSchema,
+    );
+  }
+
+  /**
    * Detect a pending rename backfill (#2752): a manifest-declared column
    * that exists live but holds no data, paired with an orphan (undeclared)
    * live column of a compatible type that does hold data — the shape a
@@ -1722,8 +1808,14 @@ export class SchemaComparer {
    * `DO $$ ... $$` block); SQLite has no conditional-DDL construct, so its
    * repair is operator-mediated instead — a guard query plus instructions,
    * not a blind-rerun-safe statement. See {@link describeRenameDataPending}.
+   *
+   * Single-table probe: at least one round trip for this table alone.
+   * `compare()` does not call this directly — see
+   * {@link precomputeRenameDataPending} for the cross-table batched path
+   * that every ordinary `compare()` run takes instead (#2878). This stays
+   * as the fallback for a standalone `compareTable()` call.
    */
-  private async detectRenameDataPending(
+  private async detectRenameDataPendingSingleTable(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
@@ -1776,7 +1868,8 @@ export class SchemaComparer {
     // unresolvable column never discards the whole table's detection
     // (#2874 review finding F2) — a column absent from a map below means
     // "could not be probed", not "confirmed empty".
-    const declaredHasData = await this.columnsHaveNonEmptyValueBatch(
+    const declaredHasData = await columnsHaveNonEmptyValueBatch(
+      this.db,
       tableName,
       declaredCandidateNames,
     );
@@ -1810,7 +1903,8 @@ export class SchemaComparer {
     });
     if (compatibleOrphanNames.length === 0) return [];
 
-    const orphanHasData = await this.columnsHaveNonEmptyValueBatch(
+    const orphanHasData = await columnsHaveNonEmptyValueBatch(
+      this.db,
       tableName,
       compatibleOrphanNames,
     );
@@ -1896,9 +1990,12 @@ export class SchemaComparer {
     // just that candidate (#2874 review finding F2).
     const shaped: Map<string, boolean> =
       shapeCheckOrphans.size > 0
-        ? await this.columnsAllValuesUuidShapedBatch(tableName, [
-            ...shapeCheckOrphans,
-          ])
+        ? await columnsAllValuesUuidShapedBatch(
+            this.db,
+            this.engine,
+            tableName,
+            [...shapeCheckOrphans],
+          )
         : new Map();
 
     const candidatesByColumn = new Map<
@@ -1945,186 +2042,453 @@ export class SchemaComparer {
   }
 
   /**
-   * Live-data probe, batched across every column named: does each hold any
-   * non-null, non-empty value? One round trip regardless of column count
-   * (#2874) — one row of uncorrelated scalar subqueries,
-   * `(SELECT 1 FROM t WHERE ... LIMIT 1) AS "col"`, portable across
-   * PostgreSQL and SQLite. Deliberately *not* an aggregate
-   * (`MAX(CASE WHEN ...)`) over the whole table: an aggregate forces a full
-   * scan for every probed column even when the very first row already
-   * answers it, which would turn a healthy, mostly-populated large table
-   * into a guaranteed full scan on every comparison — worse than the
-   * original per-column probe for exactly the schemas #2874 cares about
-   * (#2874 review finding F1). Each subquery keeps the original
-   * `LIMIT 1` early exit; only the round trip is batched, not the
-   * per-column scan cost.
+   * Batch every table's rename-pending advisory probe (#2752/#2878) into a
+   * small, table-count-independent number of round trips, and populate
+   * {@link renameDataPendingCache} so `compareTable()`'s per-table
+   * `detectRenameDataPending()` call becomes a cache read for the rest of
+   * this `compare()` run.
    *
-   * Falls back to {@link columnHasNonEmptyValueSingle} per column when the
-   * batched statement itself fails (a column dropped concurrently, or a
-   * `CAST` the engine rejects) — #2874 review finding F2: a single bad
-   * column must withhold only that column's result, not the whole table's
-   * detection. A column absent from the returned map means "could not be
-   * probed"; callers apply their own fail-closed default.
+   * Mirrors {@link detectRenameDataPendingSingleTable}'s phases exactly —
+   * same gates, same type-compatibility rules, same per-column `LIMIT 1`
+   * early exit — just resequenced so each phase's *query* covers every
+   * table that needs it in one statement, instead of one statement per
+   * table. With a 71-table schema this is the difference between a
+   * 71-statement floor (#2878) and a handful of statements for the whole
+   * schema, independent of table count.
+   *
+   * No caching beyond this: the cache this populates is cleared at the top
+   * of every `compare()` call, so a live schema change is always visible
+   * on the next comparison.
    */
-  private async columnsHaveNonEmptyValueBatch(
-    tableName: string,
-    colNames: string[],
-  ): Promise<Map<string, boolean>> {
-    if (colNames.length === 0) return new Map();
-    try {
-      return await this.columnsHaveNonEmptyValueBatchQuery(tableName, colNames);
-    } catch {
-      const hasData = new Map<string, boolean>();
-      for (const colName of colNames) {
-        try {
-          hasData.set(
-            colName,
-            await this.columnHasNonEmptyValueSingle(tableName, colName),
+  private async precomputeRenameDataPending(
+    manifestSchemas: Record<string, SchemaDefinition>,
+    existingTables: Set<string>,
+  ): Promise<void> {
+    this.renameDataPendingCache = new Map();
+    if (this.engine !== 'postgres' && this.engine !== 'sqlite') return;
+
+    interface TableCtx {
+      tableName: string;
+      manifest: SchemaDefinition;
+      dbSchema: SqlTableSchemaInfo;
+      declaredCandidateNames: string[];
+      orphanColumnNames: string[];
+    }
+    const tables: TableCtx[] = [];
+
+    // Phase 0 (no queries): gate exactly like the single-table method's own
+    // early returns, using the live schema already fetched (or memoized)
+    // via `getLiveSchema` — this never issues an extra round trip beyond
+    // what `compareTable()` was going to do anyway.
+    for (const [tableName, manifest] of Object.entries(manifestSchemas)) {
+      if (!existingTables.has(tableName)) continue;
+      const dbSchema = await this.getLiveSchema(tableName);
+      if (!dbSchema) {
+        this.renameDataPendingCache.set(tableName, []);
+        continue;
+      }
+
+      const dbColumnNames = new Set(Object.keys(dbSchema.columns));
+      const manifestColumnNames = new Set(Object.keys(manifest.columns));
+      const orphanColumnNames = [...dbColumnNames].filter(
+        (name) => !manifestColumnNames.has(name),
+      );
+      if (orphanColumnNames.length === 0) {
+        this.renameDataPendingCache.set(tableName, []);
+        continue;
+      }
+
+      const declaredCandidateNames = Object.keys(manifest.columns).filter(
+        (colName) => dbSchema.columns[colName],
+      );
+      if (declaredCandidateNames.length === 0) {
+        this.renameDataPendingCache.set(tableName, []);
+        continue;
+      }
+
+      tables.push({
+        tableName,
+        manifest,
+        dbSchema,
+        declaredCandidateNames,
+        orphanColumnNames,
+      });
+    }
+    if (tables.length === 0) return;
+
+    // Phase 1: batch the declared-candidate "has any data" probe across
+    // every eligible table in as few round trips as the column-count cap
+    // allows (typically one for a realistic schema).
+    const declaredHasDataByTable =
+      await this.crossTableColumnsHaveNonEmptyValueBatch(
+        tables.map((t) => ({
+          tableName: t.tableName,
+          colNames: t.declaredCandidateNames,
+        })),
+      );
+
+    // Determine, per table, which declared candidates are confirmed empty
+    // (phase one's early exit, per table): a table where every declared
+    // candidate already holds data drops out here without ever reaching an
+    // orphan-column probe, exactly like the single-table method's
+    // `if (emptyDeclaredNames.length === 0) return [];`.
+    const phase2Tables: {
+      tableName: string;
+      compatibleOrphanNames: string[];
+    }[] = [];
+    for (const t of tables) {
+      const declaredHasData =
+        declaredHasDataByTable.get(t.tableName) ?? new Map<string, boolean>();
+      const emptyDeclaredNames = t.declaredCandidateNames.filter(
+        (colName) => !(declaredHasData.get(colName) ?? true),
+      );
+      if (emptyDeclaredNames.length === 0) {
+        this.renameDataPendingCache.set(t.tableName, []);
+        continue;
+      }
+
+      const compatibleOrphanNames = t.orphanColumnNames.filter((orphanName) => {
+        const orphanNormalized = this.normalizeType(
+          t.dbSchema.columns[orphanName].type,
+        );
+        return emptyDeclaredNames.some((colName) => {
+          const validatedType: SQLDataType = isValidSQLDataType(
+            t.manifest.columns[colName].type,
+          )
+            ? t.manifest.columns[colName].type
+            : 'TEXT';
+          const declaredNormalized = this.normalizeType(
+            this.ddlStrategy.mapType(validatedType),
           );
-        } catch {
-          // Left absent: the caller's own default applies (#2874 review F2).
+          const requiresShapeCheck =
+            validatedType === 'UUID' && orphanNormalized === 'TEXT';
+          return requiresShapeCheck || orphanNormalized === declaredNormalized;
+        });
+      });
+      if (compatibleOrphanNames.length === 0) {
+        this.renameDataPendingCache.set(t.tableName, []);
+        continue;
+      }
+      phase2Tables.push({ tableName: t.tableName, compatibleOrphanNames });
+    }
+    if (phase2Tables.length === 0) return;
+
+    // Phase 2: batch the compatible-orphan "has any data" probe, again in
+    // as few round trips as the cap allows, across only the tables that
+    // still have a candidate after phase one.
+    const orphanHasDataByTable =
+      await this.crossTableColumnsHaveNonEmptyValueBatch(
+        phase2Tables.map((t) => ({
+          tableName: t.tableName,
+          colNames: t.compatibleOrphanNames,
+        })),
+      );
+
+    const byName = new Map(tables.map((t) => [t.tableName, t]));
+    interface PendingCandidate {
+      colName: string;
+      orphanName: string;
+      isUuidCast: boolean;
+      requiresShapeCheck: boolean;
+    }
+    const pendingByTable = new Map<string, PendingCandidate[]>();
+    const shapeCheckByTable = new Map<string, Set<string>>();
+
+    // Phase 3 (no queries): identical pairing logic to the single-table
+    // method, now driven by the batched hasData maps.
+    for (const { tableName, compatibleOrphanNames } of phase2Tables) {
+      const t = byName.get(tableName);
+      if (!t) continue;
+      const declaredHasData =
+        declaredHasDataByTable.get(tableName) ?? new Map<string, boolean>();
+      const orphanHasData =
+        orphanHasDataByTable.get(tableName) ?? new Map<string, boolean>();
+      const hasData = new Map([...declaredHasData, ...orphanHasData]);
+
+      const pending: PendingCandidate[] = [];
+      const shapeCheckOrphans = new Set<string>();
+
+      for (const [colName, colDef] of Object.entries(t.manifest.columns)) {
+        const dbCol = t.dbSchema.columns[colName];
+        if (!dbCol) continue;
+        if (hasData.get(colName) ?? true) continue;
+
+        const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
+          ? colDef.type
+          : 'TEXT';
+        const isLogicalUuid = validatedType === 'UUID';
+        const declaredNormalized = this.normalizeType(
+          this.ddlStrategy.mapType(validatedType),
+        );
+
+        for (const orphanName of compatibleOrphanNames) {
+          const orphanCol = t.dbSchema.columns[orphanName];
+          const orphanNormalized = this.normalizeType(orphanCol.type);
+          const requiresShapeCheck =
+            isLogicalUuid && orphanNormalized === 'TEXT';
+          const isSameType = orphanNormalized === declaredNormalized;
+          if (!requiresShapeCheck && !isSameType) continue;
+          if (!(hasData.get(orphanName) ?? false)) continue;
+
+          if (requiresShapeCheck) shapeCheckOrphans.add(orphanName);
+          pending.push({
+            colName,
+            orphanName,
+            isUuidCast: declaredNormalized === 'UUID',
+            requiresShapeCheck,
+          });
         }
       }
-      return hasData;
+
+      pendingByTable.set(tableName, pending);
+      if (shapeCheckOrphans.size > 0) {
+        shapeCheckByTable.set(tableName, shapeCheckOrphans);
+      }
     }
-  }
 
-  private async columnsHaveNonEmptyValueBatchQuery(
-    tableName: string,
-    colNames: string[],
-  ): Promise<Map<string, boolean>> {
-    const quotedTable = this.quoteIdentifier(tableName);
-    // Positional aliases (`c0`, `c1`, …), not the column name itself
-    // (#2874 review finding F2'): PostgreSQL silently truncates a `name`
-    // identifier — including a quoted alias — to 63 bytes, so a long column
-    // name, or two columns sharing their first 63 bytes, would collide on
-    // the same output key and mis-key a result. Positional aliases are
-    // immune to identifier length and never collide with each other.
-    const selects = colNames.map((colName, index) => {
-      const quotedCol = this.quoteIdentifier(colName);
-      return (
-        `(SELECT 1 FROM ${quotedTable} WHERE ${quotedCol} IS NOT NULL ` +
-        `AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1) AS c${index}`
+    // Phase 4: batch the UUID-shape probe across every table that needs it,
+    // again in as few round trips as the cap allows.
+    let shapedByTable = new Map<string, Map<string, boolean>>();
+    if (shapeCheckByTable.size > 0) {
+      shapedByTable = await this.crossTableColumnsAllValuesUuidShapedBatch(
+        [...shapeCheckByTable.entries()].map(([tableName, cols]) => ({
+          tableName,
+          colNames: [...cols],
+        })),
       );
-    });
-    const result = await this.db.query(`SELECT ${selects.join(', ')}`);
-    const row = (result.rows?.[0] ?? {}) as Record<string, unknown>;
-    const hasData = new Map<string, boolean>();
-    colNames.forEach((colName, index) => {
-      hasData.set(colName, row[`c${index}`] != null);
-    });
-    return hasData;
-  }
+    }
 
-  /** Single-column fallback for {@link columnsHaveNonEmptyValueBatch}. */
-  private async columnHasNonEmptyValueSingle(
-    tableName: string,
-    colName: string,
-  ): Promise<boolean> {
-    const quotedTable = this.quoteIdentifier(tableName);
-    const quotedCol = this.quoteIdentifier(colName);
-    const result = await this.db.query(
-      `SELECT 1 AS present FROM ${quotedTable} ` +
-        `WHERE ${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> '' LIMIT 1`,
-    );
-    return (result.rows?.length ?? 0) > 0;
+    // Phase 5 (no queries): render the final advisory changes exactly like
+    // the single-table method's own tail end.
+    for (const [tableName, pending] of pendingByTable) {
+      const shaped = shapedByTable.get(tableName) ?? new Map<string, boolean>();
+      const changes: SchemaChange[] = [];
+      const candidatesByColumn = new Map<
+        string,
+        { orphanName: string; isUuidCast: boolean }[]
+      >();
+      for (const candidate of pending) {
+        if (
+          candidate.requiresShapeCheck &&
+          !(shaped.get(candidate.orphanName) ?? false)
+        ) {
+          continue;
+        }
+        const list = candidatesByColumn.get(candidate.colName) ?? [];
+        list.push({
+          orphanName: candidate.orphanName,
+          isUuidCast: candidate.isUuidCast,
+        });
+        candidatesByColumn.set(candidate.colName, list);
+      }
+
+      for (const [colName, candidates] of candidatesByColumn) {
+        if (candidates.length === 1) {
+          changes.push(
+            this.describeRenameDataPending(
+              tableName,
+              colName,
+              candidates[0].orphanName,
+              candidates[0].isUuidCast,
+            ),
+          );
+        } else if (candidates.length > 1) {
+          changes.push(
+            this.describeRenameDataPendingAmbiguous(
+              tableName,
+              colName,
+              candidates.map((c) => c.orphanName),
+            ),
+          );
+        }
+      }
+      this.renameDataPendingCache.set(tableName, changes);
+    }
   }
 
   /**
-   * Live-data probe, batched across every orphan column named: are every
-   * one of each column's non-empty values UUID-shaped
-   * ({@link CANONICAL_UUID_PATTERN})? One round trip regardless of column
-   * count (#2874), mirroring {@link columnsHaveNonEmptyValueBatch}: one row
-   * of uncorrelated scalar subqueries, each
-   * `(SELECT 1 FROM t WHERE <non-empty> AND <invalid> LIMIT 1)` — a live
-   * value is absent from the result exactly when no invalid row exists, so
-   * this also short-circuits on the first invalid row rather than counting
-   * every one (an early-exit improvement over the pre-#2874 per-column
-   * `count(*)` probe, not just a batching change). PostgreSQL pushes the
-   * shape check into its regex operator; SQLite has no regex operator, but
-   * its case-sensitive `GLOB` can still express the fixed 36-character
-   * canonical shape ({@link CANONICAL_UUID_SQLITE_GLOB_PATTERN} against
-   * `LOWER(...)`, guarded by an exact `LENGTH(...) = 36` check).
+   * Cross-table variant of {@link columnsHaveNonEmptyValueBatch}: the same
+   * uncorrelated-scalar-subquery, per-column `LIMIT 1` shape, but packed
+   * into one row *per query* across every named table's columns instead of
+   * one row per table — the #2878 lever. Chunks at
+   * {@link MAX_CROSS_TABLE_PROBE_COLUMNS} columns per statement so a very
+   * large schema still issues a small, bounded number of round trips
+   * rather than one arbitrarily wide row.
    *
-   * Falls back to {@link allNonEmptyValuesUuidShapedSingle} per column on a
-   * batch failure, same posture as {@link columnsHaveNonEmptyValueBatch}
-   * (#2874 review finding F2).
+   * Falls back to the existing per-table batch (itself falling back
+   * further to per-column) for any chunk whose combined statement fails,
+   * so one bad table never discards another table's detection — the same
+   * failure-isolation guarantee {@link columnsHaveNonEmptyValueBatch}
+   * already gives per-column, extended one level up.
    */
-  private async columnsAllValuesUuidShapedBatch(
-    tableName: string,
-    colNames: string[],
-  ): Promise<Map<string, boolean>> {
-    if (colNames.length === 0) return new Map();
-    try {
-      return await this.columnsAllValuesUuidShapedBatchQuery(
-        tableName,
-        colNames,
-      );
-    } catch {
-      const shaped = new Map<string, boolean>();
-      for (const colName of colNames) {
-        try {
-          shaped.set(
-            colName,
-            await this.allNonEmptyValuesUuidShapedSingle(tableName, colName),
-          );
-        } catch {
-          // Left absent: the caller's own default applies (#2874 review F2).
+  private async crossTableColumnsHaveNonEmptyValueBatch(
+    tables: { tableName: string; colNames: string[] }[],
+  ): Promise<Map<string, Map<string, boolean>>> {
+    return this.crossTableProbeBatch(
+      tables,
+      (t) => columnsHaveNonEmptyValueBatch(this.db, t.tableName, t.colNames),
+      (quotedTable, quotedCol, alias) =>
+        `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedCol)} ` +
+        `LIMIT 1) AS ${alias}`,
+      (value) => value != null,
+    );
+  }
+
+  /**
+   * Cross-table variant of {@link columnsAllValuesUuidShapedBatch} — same
+   * shape as {@link crossTableColumnsHaveNonEmptyValueBatch}, engine-aware
+   * invalid-shape predicate included.
+   */
+  private async crossTableColumnsAllValuesUuidShapedBatch(
+    tables: { tableName: string; colNames: string[] }[],
+  ): Promise<Map<string, Map<string, boolean>>> {
+    return this.crossTableProbeBatch(
+      tables,
+      (t) =>
+        columnsAllValuesUuidShapedBatch(
+          this.db,
+          this.engine,
+          t.tableName,
+          t.colNames,
+        ),
+      (quotedTable, quotedCol, alias) =>
+        `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyValuePredicate(quotedCol)} ` +
+        `AND ${uuidInvalidShapePredicate(this.engine, quotedCol)} LIMIT 1) AS ${alias}`,
+      (value) => value == null,
+    );
+  }
+
+  /**
+   * Shared cross-table batching engine for the two probes above. Builds one
+   * `SELECT` per chunk with a scalar subquery per (table, column) pair,
+   * globally aliased `t{tableIndex}_c{colIndex}` — PostgreSQL truncates a
+   * `name` identifier to 63 bytes, so a positional alias is used instead of
+   * the real column name for the same reason the single-table batch does
+   * (#2874 review finding F2'). On a chunk's query failure, that chunk's
+   * tables fall back to the single-table batch path individually (each of
+   * which falls back further to per-column) rather than discarding every
+   * table's result.
+   *
+   * Known lock-footprint change (#2878 final review F2, deferred to
+   * #2887): one chunked statement takes `ACCESS SHARE` on every
+   * table in that chunk *simultaneously*, where the pre-#2878 per-table
+   * probe held at most one table's `ACCESS SHARE` at a time (each
+   * autocommitted statement releases its lock before the next one runs).
+   * That is a materially different PostgreSQL locking pattern: it is now
+   * possible, in principle, for this session to be one side of a deadlock
+   * with a concurrent multi-table DDL transaction (e.g. a `db:migrate` in
+   * flight) in a way the old per-table probe structurally could not be.
+   * PostgreSQL's deadlock detector resolves any such cycle by aborting one
+   * side with a loud `deadlock detected` error — never silently, and never
+   * with partial/corrupt state — so if this session is the victim, the
+   * `catch` above already degrades it to the safe per-table fallback; if
+   * the *other* side (the migration) is the victim, that transaction rolls
+   * back cleanly and is safe to re-run. No test in this repository exercises
+   * concurrent DDL against the probed tables, so this risk is unverified by
+   * suite rather than disproven. Bounding it further — chunking by table
+   * count as well as column count, and/or a short `lock_timeout` on these
+   * statements so this session always yields first — is deferred to #2887
+   * rather than fixed here.
+   */
+  private async crossTableProbeBatch(
+    tables: { tableName: string; colNames: string[] }[],
+    singleTableFallback: (t: {
+      tableName: string;
+      colNames: string[];
+    }) => Promise<Map<string, boolean>>,
+    renderSelect: (
+      quotedTable: string,
+      quotedCol: string,
+      alias: string,
+    ) => string,
+    isTrue: (value: unknown) => boolean,
+  ): Promise<Map<string, Map<string, boolean>>> {
+    const nonEmpty = tables.filter((t) => t.colNames.length > 0);
+    if (nonEmpty.length === 0) return new Map();
+
+    // Slice each table's own column list to the cap first (PR #2888 review):
+    // packing whole tables into chunks, as this used to do, bounds the
+    // cumulative width across *many* normal-sized tables but not a single
+    // pathologically wide one — a table with more probed columns than the
+    // cap would still land in one oversized chunk by itself, since the
+    // "start a new chunk" gate below only fires when the current chunk
+    // already holds something. Slicing up front means no single chunk
+    // entry is ever wider than the cap, so the same table can appear in
+    // more than one chunk; `result` (built across every chunk, table names
+    // merged via `result.get(tableName) ?? new Map()`) already gathers
+    // those pieces back into one map per table either way.
+    const slices: { tableName: string; colNames: string[] }[] = [];
+    for (const t of nonEmpty) {
+      for (
+        let i = 0;
+        i < t.colNames.length;
+        i += SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS
+      ) {
+        slices.push({
+          tableName: t.tableName,
+          colNames: t.colNames.slice(
+            i,
+            i + SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS,
+          ),
+        });
+      }
+    }
+
+    const chunks: { tableName: string; colNames: string[] }[][] = [];
+    let current: { tableName: string; colNames: string[] }[] = [];
+    let currentWidth = 0;
+    for (const slice of slices) {
+      if (
+        currentWidth + slice.colNames.length >
+          SchemaComparer.MAX_CROSS_TABLE_PROBE_COLUMNS &&
+        current.length > 0
+      ) {
+        chunks.push(current);
+        current = [];
+        currentWidth = 0;
+      }
+      current.push(slice);
+      currentWidth += slice.colNames.length;
+    }
+    if (current.length > 0) chunks.push(current);
+
+    const result = new Map<string, Map<string, boolean>>();
+    for (const chunk of chunks) {
+      const selects: string[] = [];
+      const index: { tableName: string; colName: string; alias: string }[] = [];
+      chunk.forEach((t, ti) => {
+        const quotedTable = this.quoteIdentifier(t.tableName);
+        t.colNames.forEach((colName, ci) => {
+          const quotedCol = this.quoteIdentifier(colName);
+          const alias = `t${ti}_c${ci}`;
+          selects.push(renderSelect(quotedTable, quotedCol, alias));
+          index.push({ tableName: t.tableName, colName, alias });
+        });
+      });
+      try {
+        const queryResult = await this.db.query(`SELECT ${selects.join(', ')}`);
+        const row = (queryResult.rows?.[0] ?? {}) as Record<string, unknown>;
+        for (const { tableName, colName, alias } of index) {
+          const m = result.get(tableName) ?? new Map<string, boolean>();
+          m.set(colName, isTrue(row[alias]));
+          result.set(tableName, m);
+        }
+      } catch {
+        // Merge into any existing entry rather than overwriting it: a wide
+        // table sliced across two chunk entries in this same chunk (or a
+        // prior chunk) already has a partial result in `result`, and a
+        // plain `result.set` here would discard it instead of adding this
+        // slice's columns alongside it.
+        for (const t of chunk) {
+          const m = result.get(t.tableName) ?? new Map<string, boolean>();
+          const fallback = await singleTableFallback(t);
+          for (const [colName, value] of fallback) m.set(colName, value);
+          result.set(t.tableName, m);
         }
       }
-      return shaped;
     }
+    return result;
   }
-
-  private async columnsAllValuesUuidShapedBatchQuery(
-    tableName: string,
-    colNames: string[],
-  ): Promise<Map<string, boolean>> {
-    const quotedTable = this.quoteIdentifier(tableName);
-    // Positional aliases, not the column name (#2874 review finding F2') —
-    // see {@link columnsHaveNonEmptyValueBatchQuery}.
-    const selects = colNames.map((colName, index) => {
-      const quotedCol = this.quoteIdentifier(colName);
-      const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
-      const invalidPredicate =
-        this.engine === 'postgres'
-          ? `CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-          : `NOT (LENGTH(CAST(${quotedCol} AS TEXT)) = 36 ` +
-            `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
-      return (
-        `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
-        `AND ${invalidPredicate} LIMIT 1) AS c${index}`
-      );
-    });
-    const result = await this.db.query(`SELECT ${selects.join(', ')}`);
-    const row = (result.rows?.[0] ?? {}) as Record<string, unknown>;
-    const shaped = new Map<string, boolean>();
-    colNames.forEach((colName, index) => {
-      shaped.set(colName, row[`c${index}`] == null);
-    });
-    return shaped;
-  }
-
-  /** Single-column fallback for {@link columnsAllValuesUuidShapedBatch}. */
-  private async allNonEmptyValuesUuidShapedSingle(
-    tableName: string,
-    colName: string,
-  ): Promise<boolean> {
-    const quotedTable = this.quoteIdentifier(tableName);
-    const quotedCol = this.quoteIdentifier(colName);
-    const nonEmptyPredicate = `${quotedCol} IS NOT NULL AND CAST(${quotedCol} AS TEXT) <> ''`;
-    const invalidPredicate =
-      this.engine === 'postgres'
-        ? `CAST(${quotedCol} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
-        : `NOT (LENGTH(CAST(${quotedCol} AS TEXT)) = 36 ` +
-          `AND LOWER(CAST(${quotedCol} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
-    const result = await this.db.query(
-      `SELECT 1 AS invalid FROM ${quotedTable} ` +
-        `WHERE ${nonEmptyPredicate} AND ${invalidPredicate} LIMIT 1`,
-    );
-    return (result.rows?.length ?? 0) === 0;
-  }
-
   /**
    * Render the repair for one rename-data-pending pair (#2752): copy
    * non-empty `oldColumn` into `newColumn` only where `newColumn` is still
