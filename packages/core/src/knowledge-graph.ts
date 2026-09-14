@@ -121,9 +121,23 @@ function objectId(packageName: string, object: DomainKnowledgeObject): string {
   return `${packageName}#${object.qualifiedName ?? object.name}`;
 }
 
+export interface BuildKnowledgeGraphOptions {
+  /**
+   * The graph currently on disk, when regenerating. `generatedAt` is
+   * preserved from it rather than reset to the clock whenever the rebuilt
+   * graph is otherwise semantically identical — the same pattern
+   * `preserveKnowledgeGeneratedAt` uses for per-package artifacts
+   * (`packages/core/src/vite-plugin/index.ts`) — so re-running the generator
+   * with nothing merged actually changed does not churn the file (#2872
+   * review).
+   */
+  previousGraph?: SmrtKnowledgeGraph;
+}
+
 /** Builds the merged graph. Deterministic: every array is sorted. */
 export function buildKnowledgeGraph(
   inputs: KnowledgeGraphInput[],
+  options: BuildKnowledgeGraphOptions = {},
 ): SmrtKnowledgeGraph {
   const sortedInputs = [...inputs].sort((a, b) =>
     a.artifactPath.localeCompare(b.artifactPath),
@@ -148,18 +162,25 @@ export function buildKnowledgeGraph(
   const idBySimpleNamePerPackage = new Map<string, Map<string, string>>();
 
   for (const input of sortedInputs) {
-    const packageName = input.manifest.packageName ?? input.artifactPath;
-    const perPackage =
-      idBySimpleNamePerPackage.get(packageName) ?? new Map<string, string>();
+    const manifestPackageName =
+      input.manifest.packageName ?? input.artifactPath;
     for (const object of input.manifest.objects) {
+      // A merged consumer manifest (`smrtConsumer`) aggregates objects
+      // scanned from multiple external packages under one local artifact;
+      // each object then carries its own `packageName` and that must own
+      // the id, or every external object misattributes to the local
+      // project and edges resolve to the wrong node (#2872 review).
+      const packageName = object.packageName ?? manifestPackageName;
+      const perPackage =
+        idBySimpleNamePerPackage.get(packageName) ?? new Map<string, string>();
       const id = objectId(packageName, object);
       idByQualifiedName.set(object.qualifiedName ?? id, id);
       const bySimple = idBySimpleName.get(object.name) ?? [];
       bySimple.push(id);
       idBySimpleName.set(object.name, bySimple);
       perPackage.set(object.name, id);
+      idBySimpleNamePerPackage.set(packageName, perPackage);
     }
-    idBySimpleNamePerPackage.set(packageName, perPackage);
   }
 
   const resolveTarget = (
@@ -179,6 +200,7 @@ export function buildKnowledgeGraph(
     return undefined;
   };
 
+  const seenObjectIds = new Set<string>();
   for (const input of sortedInputs) {
     sourceHashes[input.artifactPath] = hashContent(
       stableStringify(input.manifest),
@@ -196,17 +218,23 @@ export function buildKnowledgeGraph(
     });
 
     for (const object of input.manifest.objects) {
-      const id = objectId(packageName, object);
-      objects.push({
-        id,
-        packageName,
-        name: object.name,
-        qualifiedName: object.qualifiedName,
-        collection: object.collection,
-        tableName: object.tableName,
-        tableStrategy: object.tableStrategy,
-        extends: object.extends,
-      });
+      // See the id-map pass above: an aggregated consumer manifest attributes
+      // each object to its own scanned package, not the local project.
+      const objectPackageName = object.packageName ?? packageName;
+      const id = objectId(objectPackageName, object);
+      if (!seenObjectIds.has(id)) {
+        seenObjectIds.add(id);
+        objects.push({
+          id,
+          packageName: objectPackageName,
+          name: object.name,
+          qualifiedName: object.qualifiedName,
+          collection: object.collection,
+          tableName: object.tableName,
+          tableStrategy: object.tableStrategy,
+          extends: object.extends,
+        });
+      }
 
       for (const field of object.relationships) {
         if (field.type !== 'crossPackageRef') continue;
@@ -223,8 +251,8 @@ export function buildKnowledgeGraph(
           type: 'sti',
           from: id,
           to:
-            resolveTarget(object.extends, packageName) ??
-            `${packageName}#${object.extends}`,
+            resolveTarget(object.extends, objectPackageName) ??
+            `${objectPackageName}#${object.extends}`,
         });
       }
 
@@ -252,7 +280,7 @@ export function buildKnowledgeGraph(
     return key(a).localeCompare(key(b));
   });
 
-  return {
+  const graph: SmrtKnowledgeGraph = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     sourceHashes: sortRecord(sourceHashes),
@@ -260,6 +288,20 @@ export function buildKnowledgeGraph(
     objects,
     edges,
   };
+
+  const { previousGraph } = options;
+  if (
+    previousGraph &&
+    semanticGraphJson(previousGraph) === semanticGraphJson(graph)
+  ) {
+    return { ...graph, generatedAt: previousGraph.generatedAt };
+  }
+  return graph;
+}
+
+function semanticGraphJson(graph: SmrtKnowledgeGraph): string {
+  const { generatedAt: _generatedAt, ...rest } = graph;
+  return stableStringify(rest);
 }
 
 /** Deterministic `JSON.stringify` — object keys are sorted at every level. */
@@ -286,7 +328,7 @@ function sortRecord(record: Record<string, string>): Record<string, string> {
 }
 
 export interface KnowledgeGraphFreshnessIssue {
-  severity: 'error';
+  severity: 'error' | 'warning';
   code:
     | 'missing-knowledge-graph'
     | 'stale-knowledge-graph'
@@ -350,7 +392,20 @@ export function checkKnowledgeGraphFreshness(
       });
       continue;
     }
-    const manifest = JSON.parse(readFileSync(absoluteArtifactPath, 'utf8'));
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(readFileSync(absoluteArtifactPath, 'utf8'));
+    } catch (error) {
+      issues.push({
+        severity: 'error',
+        code: 'stale-knowledge-graph',
+        message: `${artifactPath} is not valid JSON (${
+          error instanceof Error ? error.message : String(error)
+        }); run \`pnpm knowledge:graph\``,
+        file: graphPath,
+      });
+      continue;
+    }
     const actualHash = hashContent(stableStringify(manifest));
     if (actualHash !== expectedHash) {
       issues.push({

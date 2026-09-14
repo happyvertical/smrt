@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildKnowledgeGraph,
   checkKnowledgeGraphFreshness,
@@ -303,6 +303,104 @@ describe('buildKnowledgeGraph', () => {
       to: '@example/messages#@example/messages/Account',
     });
   });
+
+  it('attributes objects by their own packageName in a merged consumer manifest (#2872)', () => {
+    // smrtConsumer (packages/core/src/consumer-plugin/index.ts) writes one
+    // local artifact whose top-level packageName is the consumer PROJECT,
+    // but whose objects retain the packageName of whichever external
+    // package they were actually scanned from.
+    const aggregate = manifest({
+      packageName: '@my-app/local',
+      objects: [
+        {
+          name: 'Order',
+          qualifiedName: '@happyvertical/smrt-orders/Order',
+          packageName: '@happyvertical/smrt-orders',
+          collection: 'orders',
+          tableName: 'orders',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+        {
+          name: 'OrderLine',
+          qualifiedName: '@happyvertical/smrt-orders/OrderLine',
+          packageName: '@happyvertical/smrt-orders',
+          collection: 'order_lines',
+          tableName: 'order_lines',
+          tableStrategy: 'sti',
+          extends: 'Order',
+          fields: [],
+          relationships: [],
+          methods: [],
+          surfaces: [],
+          relationshipFeatures: [],
+          tags: [],
+          risks: [],
+        },
+      ],
+    });
+
+    const graph = buildKnowledgeGraph([
+      { artifactPath: '.smrt/smrt-knowledge.json', manifest: aggregate },
+    ]);
+
+    const orderNode = graph.objects.find((o) => o.name === 'Order');
+    expect(orderNode?.packageName).toBe('@happyvertical/smrt-orders');
+    expect(orderNode?.id).toBe(
+      '@happyvertical/smrt-orders#@happyvertical/smrt-orders/Order',
+    );
+
+    const sti = graph.edges.find(
+      (e) => e.type === 'sti' && e.from.includes('OrderLine'),
+    );
+    expect(sti?.to).toBe(
+      '@happyvertical/smrt-orders#@happyvertical/smrt-orders/Order',
+    );
+  });
+
+  it('preserves generatedAt across a rebuild when nothing merged changed (#2872)', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      const orders = manifest({ packageName: '@example/orders' });
+      const inputs = [
+        {
+          artifactPath: 'packages/orders/dist/smrt-knowledge.json',
+          manifest: orders,
+        },
+      ];
+
+      const first = buildKnowledgeGraph(inputs);
+
+      vi.setSystemTime(new Date('2026-01-02T00:00:00.000Z'));
+      const rebuilt = buildKnowledgeGraph(inputs, { previousGraph: first });
+      expect(rebuilt.generatedAt).toBe(first.generatedAt);
+
+      vi.setSystemTime(new Date('2026-01-03T00:00:00.000Z'));
+      const changedOrders = manifest({
+        packageName: '@example/orders',
+        tags: ['changed'],
+      });
+      const changed = buildKnowledgeGraph(
+        [
+          {
+            artifactPath: 'packages/orders/dist/smrt-knowledge.json',
+            manifest: changedOrders,
+          },
+        ],
+        { previousGraph: first },
+      );
+      expect(changed.generatedAt).not.toBe(first.generatedAt);
+      expect(changed.generatedAt).toBe('2026-01-03T00:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('checkKnowledgeGraphFreshness', () => {
@@ -422,5 +520,47 @@ describe('checkKnowledgeGraphFreshness', () => {
     expect(stale).toHaveLength(1);
     expect(stale[0].code).toBe('stale-knowledge-graph');
     expect(stale[0].message).toContain('packages/crm/dist/smrt-knowledge.json');
+  });
+
+  it('yields a stale-knowledge-graph issue rather than throwing on invalid source JSON (#2872)', () => {
+    mkdirSync(join(rootDir, 'packages', 'orders', 'dist'), {
+      recursive: true,
+    });
+    const artifactPath = join(
+      rootDir,
+      'packages',
+      'orders',
+      'dist',
+      'smrt-knowledge.json',
+    );
+    const original = manifest({ packageName: '@example/orders' });
+    writeFileSync(artifactPath, stableStringify(original));
+
+    const graph = buildKnowledgeGraph([
+      {
+        artifactPath: 'packages/orders/dist/smrt-knowledge.json',
+        manifest: original,
+      },
+    ]);
+    mkdirSync(join(rootDir, '.smrt'), { recursive: true });
+    writeFileSync(
+      join(rootDir, '.smrt', 'smrt-knowledge-graph.json'),
+      stableStringify(graph),
+    );
+
+    // Corrupt the recorded source artifact with invalid JSON.
+    writeFileSync(artifactPath, '{ not valid json');
+
+    expect(() =>
+      checkKnowledgeGraphFreshness(rootDir, '.smrt/smrt-knowledge-graph.json'),
+    ).not.toThrow();
+
+    const issues = checkKnowledgeGraphFreshness(
+      rootDir,
+      '.smrt/smrt-knowledge-graph.json',
+    );
+    expect(issues).toHaveLength(1);
+    expect(issues[0].code).toBe('stale-knowledge-graph');
+    expect(issues[0].message).toContain('not valid JSON');
   });
 });

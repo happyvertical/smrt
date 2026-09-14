@@ -6,6 +6,7 @@ export {
 export {
   buildKnowledgeGraph,
   checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
   type KnowledgeGraphEdge,
   type KnowledgeGraphEdgeType,
   type KnowledgeGraphFreshnessIssue,
