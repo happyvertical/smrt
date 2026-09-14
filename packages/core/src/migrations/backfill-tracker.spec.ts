@@ -145,6 +145,98 @@ describe('BackfillTracker', () => {
     expect(await tracker.isApplied('still-works')).toBe(true);
   });
 
+  it('adopts an existing root tracker without CREATE while retaining compatibility verification', async () => {
+    await db.query(`CREATE TABLE _smrt_backfills (
+      name TEXT PRIMARY KEY,
+      applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      description TEXT,
+      package_name TEXT
+    )`);
+    let createCalls = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        createCalls += 1;
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    await new BackfillTracker({ db }).initialize();
+    expect(createCalls).toBe(0);
+    db.query = originalQuery as typeof db.query;
+  });
+
+  it('fails closed on an existing-table permission denial without attempting CREATE', async () => {
+    let createCalls = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql === 'SELECT 1 FROM _smrt_backfills LIMIT 1') {
+        return Promise.reject(
+          new Error('permission denied for table _smrt_backfills'),
+        );
+      }
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        createCalls += 1;
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    await expect(new BackfillTracker({ db }).initialize()).rejects.toThrow(
+      'permission denied for table _smrt_backfills',
+    );
+    expect(createCalls).toBe(0);
+    db.query = originalQuery as typeof db.query;
+  });
+
+  it('classifies a missing table then fails closed when its role cannot CREATE', async () => {
+    let createCalls = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql === 'SELECT 1 FROM _smrt_backfills LIMIT 1') {
+        return Promise.reject(new Error('no such table: _smrt_backfills'));
+      }
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        createCalls += 1;
+        return Promise.reject(new Error('permission denied for schema main'));
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    await expect(new BackfillTracker({ db }).initialize()).rejects.toThrow(
+      'permission denied for schema main',
+    );
+    expect(createCalls).toBe(1);
+    db.query = originalQuery as typeof db.query;
+  });
+
+  it('rejects an existing PostgreSQL tracker with legacy timestamps before DDL', async () => {
+    let createCalls = 0;
+    const postgres = {
+      beginTransaction: async () => undefined,
+      query: async (sql: string) => {
+        if (sql === 'SELECT 1 FROM _smrt_backfills LIMIT 1')
+          return { rows: [] };
+        if (sql.includes('information_schema.columns')) {
+          return {
+            rows: [
+              { table_name: '_smrt_backfills', column_name: 'applied_at' },
+            ],
+          };
+        }
+        if (sql.includes('CREATE TABLE')) createCalls += 1;
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+      url: 'postgresql://tracker-test',
+    } as unknown as DatabaseInterface;
+
+    await expect(
+      new BackfillTracker({ db: postgres }).initialize(),
+    ).rejects.toThrow(
+      'Legacy SMRT system timestamps remain (_smrt_backfills.applied_at)',
+    );
+    expect(createCalls).toBe(0);
+  });
+
   it('initialize is safe under concurrent calls — DDL runs once', async () => {
     // Wrap the underlying query so we can count how many times the
     // CREATE TABLE actually fires. Pre-memoization, two concurrent
@@ -281,6 +373,73 @@ describe('BackfillTracker', () => {
     await expect(
       new BackfillTracker({ db }).isApplied('same-client-reset'),
     ).resolves.toBe(false);
+  });
+
+  it('reads markers on a caller-owned transaction without DDL when the table exists', async () => {
+    await tracker.recordApplied('caller-owned-ready');
+    const transaction = db.transaction;
+    if (!transaction)
+      throw new Error('SQLite test database requires transaction().');
+
+    await transaction.call(db, async (tx) => {
+      let transactionCreates = 0;
+      const observedTx = new Proxy(tx, {
+        get(target, property, receiver) {
+          if (property === 'query') {
+            return async (sql: string, ...params: unknown[]) => {
+              if (
+                sql.includes('CREATE TABLE') &&
+                sql.includes('_smrt_backfills')
+              ) {
+                transactionCreates += 1;
+              }
+              return target.query(sql, ...params);
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      BackfillTracker.requireExistingTable(observedTx);
+
+      await expect(
+        new BackfillTracker({ db: observedTx }).isApplied('caller-owned-ready'),
+      ).resolves.toBe(true);
+      expect(transactionCreates).toBe(0);
+    });
+  });
+
+  it('fails a caller-owned transaction closed when the required table is missing', async () => {
+    await tracker.initialize();
+    await db.query('DROP TABLE _smrt_backfills');
+    const transaction = db.transaction;
+    if (!transaction)
+      throw new Error('SQLite test database requires transaction().');
+
+    let transactionCreates = 0;
+    let failure: unknown;
+    await expect(
+      transaction.call(db, async (tx) => {
+        const originalTxQuery = tx.query.bind(tx);
+        tx.query = ((sql: string, ...params: unknown[]) => {
+          if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+            transactionCreates += 1;
+          }
+          return originalTxQuery(sql as never, ...(params as []));
+        }) as typeof tx.query;
+        BackfillTracker.requireExistingTable(tx);
+        try {
+          return await new BackfillTracker({ db: tx }).isApplied('missing');
+        } catch (error) {
+          failure = error;
+          throw error;
+        } finally {
+          tx.query = originalTxQuery as typeof tx.query;
+        }
+      }),
+    ).rejects.toThrow();
+    expect(failure).toBeInstanceOf(BackfillTableUnavailableError);
+    expect(transactionCreates).toBe(0);
   });
 
   it('invalidates the root cache when an inherited transaction finds the table missing', async () => {

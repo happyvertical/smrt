@@ -104,6 +104,23 @@ export class BackfillTracker {
   }
 
   /**
+   * A cold runtime process must be able to adopt a migration-created tracker
+   * using its ordinary read privilege. PostgreSQL requires schema CREATE even
+   * for CREATE TABLE IF NOT EXISTS, so do not issue that DDL until absence is
+   * positively classified.
+   */
+  private async hasUsableExistingTable(): Promise<boolean> {
+    try {
+      await this.db.query('SELECT 1 FROM _smrt_backfills LIMIT 1');
+      await assertPostgresSystemTimestampsCurrent(this.db);
+      return true;
+    } catch (error) {
+      if (isMissingBackfillTableError(error)) return false;
+      throw error;
+    }
+  }
+
+  /**
    * Create the `_smrt_backfills` table if it doesn't already exist.
    * Safe to call repeatedly and concurrently.
    */
@@ -130,7 +147,10 @@ export class BackfillTracker {
     }
 
     if (isRootDatabase(this.db)) {
-      const initialization = this.createTable()
+      const initialization = (async () => {
+        if (await this.hasUsableExistingTable()) return;
+        await this.createTable();
+      })()
         .then(() => undefined)
         .catch((error) => {
           if (getSharedInitialization(target) === initialization) {
