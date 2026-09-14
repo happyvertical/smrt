@@ -10,8 +10,16 @@ pre-commit:
         - CI
   commands:
     format:
+      # Safe fixes and formatting only. Biome's --unsafe fixes may change runtime
+      # behavior, and `stage_fixed: true` would land such a rewrite in the commit
+      # with no prompt, no diff, and exit 0 — so the committed revision could
+      # differ from the reviewed one while every check stayed green (#2869; it
+      # also silently dropped a test case during a merge in #2735). Unsafe fixes
+      # are now opt-in and reviewable via `pnpm lint:fix-unsafe`; error-level lint
+      # is still enforced by pre-push `biome ci` and by CI. Do not re-add
+      # --unsafe here.
       glob: "*.{ts,js,tsx,jsx,svelte}"
-      run: npx biome check --write --unsafe --no-errors-on-unmatched {staged_files}
+      run: npx biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
       fail_text: |
         ❌ Formatting/linting failed!

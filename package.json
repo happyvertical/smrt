@@ -19,6 +19,7 @@
     "test:ui": "npx vitest --ui",
     "lint": "npx --yes @biomejs/biome@2.5.2 ci --diagnostic-level=error .",
     "lint:fix": "pnpm run format",
+    "lint:fix-unsafe": "npx --yes @biomejs/biome@2.5.2 check --write --unsafe .",
     "clean": "turbo clean && rm -rf .turbo node_modules/.cache",
     "build": "turbo build",
     "build:clean": "pnpm run clean && pnpm run build",
