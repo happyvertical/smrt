@@ -149,25 +149,6 @@ async function rollbackBootstrap(tx: TransactionHandle): Promise<void> {
  * catalog race for this codebase's supported deployment shapes, so `work`
  * runs directly against `db`.
  */
-/**
- * True when `db` is itself an already-open transaction handle (e.g.
- * `createIsolatedTestDb()`'s per-test transaction, #2861 review Finding 3:
- * `packages/vitest/src/__tests__/issue-2429-postgres-system-tables.optional.test.ts`
- * hands such a handle straight to `createDispatchBus`). Detected
- * structurally by the `commit`/`rollback` pair only a `TransactionHandle`
- * carries — `DatabaseInterface` has neither.
- */
-function isOpenTransactionHandle(
-  db: DatabaseInterface,
-): db is DatabaseInterface & TransactionHandle {
-  const candidate = db as Partial<TransactionHandle>;
-  return (
-    typeof candidate.commit === 'function' &&
-    typeof candidate.rollback === 'function' &&
-    (typeof candidate.isActive !== 'function' || candidate.isActive())
-  );
-}
-
 export async function runSerializedAgainstSystemTableBootstrap<T>(
   db: DatabaseInterface,
   typeHint: string | undefined,
@@ -177,48 +158,9 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
     return work(db);
   }
 
-  if (isOpenTransactionHandle(db)) {
-    // `db` is already inside an open transaction, so there is no need (and,
-    // per the leak below, no safe way) to open a *new* one to take the
-    // lock: `pg_advisory_xact_lock` run directly against this handle scopes
-    // to the transaction it is already in, exactly like the branches below
-    // that open their own — it auto-releases only when *that* transaction
-    // commits or rolls back, whenever the caller does so.
-    //
-    // That matters for more than tidiness. Wrapping this handle's own
-    // `transaction()` (a savepoint, since a `TransactionHandle` has no
-    // `beginTransaction`) to take the lock was tried and reverted:
-    // PostgreSQL does not scope `pg_advisory_xact_lock`/`SET LOCAL` to a
-    // savepoint — both live for the rest of the *transaction* — so it leaked
-    // the lock hold and a raised timeout budget into the caller's
-    // transaction (confirmed: `SHOW lock_timeout` read back the raised
-    // `5min` budget instead of the caller's original value after
-    // `createDispatchBus()` returned). A session-scoped
-    // `pg_advisory_lock`/`pg_advisory_unlock` pair released right after
-    // `work()` was tried next and also reverted: releasing the lock before
-    // the caller's own transaction ends does not close the actual race —
-    // two callers each holding their own uncommitted transaction still
-    // deadlock on PostgreSQL's ordinary catalog lock for the not-yet-visible
-    // `CREATE TABLE`, entirely independent of our advisory lock, because
-    // that catalog lock is held until the *first* caller's transaction ends,
-    // not until it releases our lock (confirmed by direct reproduction).
-    // Taking the xact-scoped lock directly on the caller's own transaction
-    // is the only scheme that actually closes this: the second caller's
-    // lock acquisition blocks until the first caller's transaction ends,
-    // by which point its DDL is either committed (visible) or rolled back
-    // (gone) — no catalog-lock stall either way.
-    //
-    // No `SET LOCAL` timeout raise here: that GUC change is exactly what
-    // leaked before, and this branch must not touch the caller's session
-    // timeouts. A lock wait that exceeds whatever `lock_timeout` the
-    // caller's session already has fails closed with PostgreSQL's own
-    // "canceling statement due to lock timeout" instead of hanging.
-    await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-    return work(db);
-  }
-
   const beginTransaction = db.beginTransaction;
   const transaction = (db as TransactionCapableDatabase).transaction;
+
   if (typeof beginTransaction === 'function') {
     const tx = await beginTransaction.call(db);
     if (!tx) throw new Error('Database transaction could not be started');
@@ -237,15 +179,66 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
   }
 
   if (transaction) {
-    // Invoked as a method (not via `.call()`) so `this` binds to `db`
-    // naturally while TypeScript still infers `TResult` from the callback.
-    return (
-      db as TransactionCapableDatabase & Required<TransactionCapableDatabase>
-    ).transaction<T>(async (tx) => {
-      for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) await tx.query(sql);
-      await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-      return work(tx);
-    });
+    // `db` has `transaction()` but no `beginTransaction()`. For the one
+    // PostgreSQL adapter this codebase ships and tests against
+    // (`@happyvertical/sql`), every *fresh* top-level handle carries both
+    // methods together (see `getDatabase()`'s returned object); the only
+    // handles that carry `transaction` alone are ones `db` already *is*
+    // inside — either `beginTransaction()`'s own returned handle (which
+    // additionally carries `commit`/`rollback`/`isActive`, e.g.
+    // `createIsolatedTestDb()`'s per-test transaction, #2861 review
+    // Finding 3: `packages/vitest/src/__tests__/
+    // issue-2429-postgres-system-tables.optional.test.ts` hands one straight
+    // to `createDispatchBus`) or the callback argument of `db.transaction(cb)`
+    // itself (which carries neither — #2861 review recall: `class.ts`/
+    // `agent.ts` can reach this shape via `db: tx` inside such a callback).
+    // Treating "has `transaction`, lacks `beginTransaction`" as "already
+    // inside a transaction" is therefore exhaustive for this adapter, without
+    // needing to separately probe for `commit`/`rollback`.
+    //
+    // A custom `DatabaseInterface` that implements only `transaction()` and
+    // is *not* already inside one is a real, if currently unexercised, gap
+    // this local heuristic cannot rule out — `@happyvertical/sql` has no
+    // public marker for "this handle is already inside a transaction"
+    // (upstream tracked: happyvertical/sdk#1249). Filed rather than silently
+    // widened further.
+    //
+    // `pg_advisory_xact_lock` run directly against `db` here (no new
+    // transaction, no savepoint) scopes to the transaction `db` is already
+    // in and auto-releases only when *that* transaction commits or rolls
+    // back — exactly like the branch above, which opens and promptly
+    // commits its own. This matters for more than tidiness:
+    //
+    // - Wrapping `db`'s own `transaction()` (a savepoint) to take the lock
+    //   was tried and reverted: PostgreSQL does not scope
+    //   `pg_advisory_xact_lock`/`SET LOCAL` to a savepoint — both live for
+    //   the rest of the *transaction* — so it leaked the lock hold and a
+    //   raised timeout budget into the caller's transaction (confirmed:
+    //   `SHOW lock_timeout` read back the raised `5min` budget instead of
+    //   the caller's original value after `createDispatchBus()` returned).
+    // - A session-scoped `pg_advisory_lock`/`pg_advisory_unlock` pair
+    //   released right after `work()` was tried next and also reverted:
+    //   releasing the lock before the caller's own transaction ends does
+    //   not close the actual race — two callers each holding their own
+    //   uncommitted transaction still deadlock on PostgreSQL's ordinary
+    //   catalog lock for the not-yet-visible `CREATE TABLE`, entirely
+    //   independent of our advisory lock, because that catalog lock is held
+    //   until the *first* caller's transaction ends, not until it releases
+    //   our lock (confirmed by direct reproduction).
+    //
+    // Taking the xact-scoped lock directly on `db` is the only scheme that
+    // actually closes this: a second caller's lock acquisition blocks until
+    // the first caller's transaction ends, by which point its DDL is either
+    // committed (visible) or rolled back (gone) — no catalog-lock stall
+    // either way.
+    //
+    // No `SET LOCAL` timeout raise here: that GUC change is exactly what
+    // leaked before, and this branch must not touch the caller's session
+    // timeouts. A lock wait that exceeds whatever `lock_timeout` the
+    // caller's session already has fails closed with PostgreSQL's own
+    // "canceling statement due to lock timeout" instead of hanging.
+    await db.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+    return work(db);
   }
 
   throw new Error(
