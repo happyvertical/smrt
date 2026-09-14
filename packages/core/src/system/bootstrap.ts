@@ -179,30 +179,76 @@ export async function runSerializedAgainstSystemTableBootstrap<T>(
   }
 
   if (transaction) {
-    // `db` has `transaction()` but no `beginTransaction()`. For the one
-    // PostgreSQL adapter this codebase ships and tests against
-    // (`@happyvertical/sql`), every *fresh* top-level handle carries both
-    // methods together (see `getDatabase()`'s returned object); the only
-    // handles that carry `transaction` alone are ones `db` already *is*
-    // inside — either `beginTransaction()`'s own returned handle (which
-    // additionally carries `commit`/`rollback`/`isActive`, e.g.
-    // `createIsolatedTestDb()`'s per-test transaction, #2861 review
-    // Finding 3: `packages/vitest/src/__tests__/
-    // issue-2429-postgres-system-tables.optional.test.ts` hands one straight
-    // to `createDispatchBus`) or the callback argument of `db.transaction(cb)`
-    // itself (which carries neither — #2861 review recall: `class.ts`/
-    // `agent.ts` can reach this shape via `db: tx` inside such a callback).
-    // Treating "has `transaction`, lacks `beginTransaction`" as "already
-    // inside a transaction" is therefore exhaustive for this adapter, without
-    // needing to separately probe for `commit`/`rollback`.
+    // `db` has `transaction()` but no `beginTransaction()`. Two distinct
+    // shapes reach here, and they are NOT the same case:
     //
-    // A custom `DatabaseInterface` that implements only `transaction()` and
-    // is *not* already inside one is a real, if currently unexercised, gap
-    // this local heuristic cannot rule out — `@happyvertical/sql` has no
-    // public marker for "this handle is already inside a transaction"
-    // (upstream tracked: happyvertical/sdk#1249). Filed rather than silently
-    // widened further.
-    //
+    // - `beginTransaction()`'s own returned handle additionally carries
+    //   `commit`/`rollback`/`isActive` (e.g. `createIsolatedTestDb()`'s
+    //   per-test transaction, #2861 review Finding 3:
+    //   `packages/vitest/src/__tests__/
+    //   issue-2429-postgres-system-tables.optional.test.ts` hands one
+    //   straight to `createDispatchBus`). That handle already *is* inside a
+    //   transaction.
+    // - Everything else that carries `transaction` alone and neither
+    //   `commit` nor `rollback` is NOT necessarily already inside one.
+    //   Issue #35's pre-existing contract
+    //   (`packages/core/src/__tests__/
+    //   issue-35-system-tables-initialization.test.ts`) requires a
+    //   transaction-capable-but-idle adapter of exactly this shape to run
+    //   its DDL through `db.transaction(cb)`, not directly against `db`.
+    //   The callback argument of `db.transaction(cb)` itself (#2861 review
+    //   recall: `class.ts`/`agent.ts` can reach this shape via `db: tx`)
+    //   carries the identical shape while already being inside the
+    //   enclosing transaction — `@happyvertical/sql` has no public marker
+    //   for "this handle is already inside a transaction" to tell the two
+    //   apart (upstream tracked: happyvertical/sdk#1249). Filed rather than
+    //   silently widened further: opening via `db.transaction(cb)` serves
+    //   both — for a genuinely idle handle it is an ordinary transaction
+    //   (issue #35's contract), and for the callback-argument shape
+    //   `@happyvertical/sql` documents that nesting re-enters the enclosing
+    //   transaction under a `SAVEPOINT` on the same connection, so the DDL
+    //   still runs against the one real transaction either way.
+    const alreadyInTransaction =
+      typeof (db as Partial<TransactionHandle>).commit === 'function' &&
+      typeof (db as Partial<TransactionHandle>).rollback === 'function';
+
+    if (!alreadyInTransaction) {
+      // Capture on `db` *before* opening the nested scope: for the
+      // callback-argument shape this reads the enclosing transaction's
+      // current budget so it can be restored; for a genuinely idle handle
+      // it reads the ambient session default, which the restore below then
+      // harmlessly reapplies to the (about to end) fresh transaction.
+      const priorLockTimeout = getQueryRows(
+        await db.query('SHOW lock_timeout'),
+      )[0]?.lock_timeout;
+      const priorStatementTimeout = getQueryRows(
+        await db.query('SHOW statement_timeout'),
+      )[0]?.statement_timeout;
+      return (db as TransactionCapableDatabase).transaction!(async (tx): Promise<T> => {
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
+        try {
+          await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+          return await work(tx);
+        } finally {
+          // `SET LOCAL` is not scoped to a `SAVEPOINT` — confirmed directly:
+          // `RELEASE SAVEPOINT` does not undo it, so without this the raise
+          // would leak into the enclosing transaction exactly like the
+          // sibling branch below guards against. Restore before the
+          // callback returns (and the nested scope releases), not after.
+          if (typeof priorLockTimeout === 'string') {
+            await tx.query(`SET LOCAL lock_timeout = '${priorLockTimeout}'`);
+          }
+          if (typeof priorStatementTimeout === 'string') {
+            await tx.query(
+              `SET LOCAL statement_timeout = '${priorStatementTimeout}'`,
+            );
+          }
+        }
+      });
+    }
+
     // `pg_advisory_xact_lock` run directly against `db` here (no new
     // transaction, no savepoint) scopes to the transaction `db` is already
     // in and auto-releases only when *that* transaction commits or rolls
