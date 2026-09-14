@@ -10,13 +10,35 @@ pre-commit:
         - CI
   commands:
     format:
+      # Safe fixes and formatting only. Biome's --unsafe fixes may change runtime
+      # behavior, and `stage_fixed: true` would land such a rewrite in the commit
+      # with no prompt, no diff, and exit 0 — so the committed revision could
+      # differ from the reviewed one while every check stayed green (#2869; it
+      # also silently dropped a test case during a merge in #2735). Unsafe fixes
+      # are now opt-in and reviewable via `pnpm lint:fix-unsafe`, which is scoped
+      # to staged files (`--staged`) so the remedy touches only what the author
+      # is committing; error-level lint is still enforced by pre-push
+      # `biome ci` and by CI. Do not re-add --unsafe here.
+      #
+      # One consequence is intended, not accidental: an error-severity rule whose
+      # only fix is unsafe (e.g. noConsole) now FAILS the commit instead of
+      # silently rewriting the file. Previously `--unsafe` deleted the offending
+      # statement outright and exited 0. Failing loudly is the point.
       glob: "*.{ts,js,tsx,jsx,svelte}"
-      run: npx biome check --write --unsafe --no-errors-on-unmatched {staged_files}
+      run: npx biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
       fail_text: |
         ❌ Formatting/linting failed!
 
-        Could not fix issues in staged files. Please check the error above and fix manually.
+        Could not fix issues in staged files with safe fixes alone. Read the rule
+        named in the error above and fix it by hand.
+
+        If the diagnostic offers an "unsafe fix" and you have reviewed it, apply
+        it to your staged files only:
+          pnpm lint:fix-unsafe
+
+        Unsafe fixes can change runtime behavior (#2869) — read the resulting
+        diff before staging it.
 
     validate-workflows:
       glob: ".github/workflows/*.{yml,yaml}"
