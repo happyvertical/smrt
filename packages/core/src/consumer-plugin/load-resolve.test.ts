@@ -14,6 +14,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -37,7 +38,7 @@ import { smrtConsumer } from './index.js';
 let projectRoot: string;
 
 beforeEach(() => {
-  projectRoot = mkdtempSync(join(tmpdir(), 'smrt-consumer-'));
+  projectRoot = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-consumer-')));
 });
 
 afterEach(() => {
