@@ -374,13 +374,22 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # Computes whether this exact RELEASE_VERSION still needs work rather
+      # than failing outright when part of it already landed (npm publish is
+      # irreversible; a prior attempt can die before recording the release —
+      # see #2871). already-recorded=true means the tag is already pushed and
+      # every package is already on npm: the remaining steps become a no-op
+      # so the job still finishes green instead of erroring on repeat state.
       - name: Guard release publish target
+        id: guard
         env:
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
           RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/guard-release-publish.js
 
       - name: Verify complete release artifact set
+        if: steps.guard.outputs.already-recorded != 'true'
         run: node scripts/verify-publish-artifacts.mjs publish-pack-output
 
       # Recheck immediately before the irreversible release phase. Once npm
@@ -388,11 +397,13 @@ jobs:
       # doing so would strand a registry release that the collision guard cannot
       # safely reconstruct on a later run.
       - name: Recheck merge queue before publication
+        if: steps.guard.outputs.already-recorded != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/check-merge-queue-idle.mjs
 
       - name: Publish validated release
+        if: steps.guard.outputs.already-recorded != 'true'
         env:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
@@ -445,6 +456,27 @@ jobs:
           # path-conditional credentials installed by actions/checkout do not
           # match the repository's real gitdir even though public fetches work.
           node scripts/push-release-refs.mjs
+
+      # Deliberately not gated on `already-recorded` and not part of the step
+      # above: `already-recorded` only tracks the tag push and npm publishes,
+      # so gating release creation on it too means a `gh release create`
+      # failure (network blip, rate limit) after those succeed leaves the
+      # GitHub Release permanently missing — a rerun would see
+      # already-recorded=true and skip this whole step forever. Checking
+      # first and creating only if missing makes this its own idempotent,
+      # always-retried recovery step instead, so it can never strand the
+      # release object once the tag and packages are recorded. See the
+      # review discussion on #2877 (filed as #2879).
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          if gh release view "v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "Release v$RELEASE_VERSION already exists on GitHub; nothing to do."
+            exit 0
+          fi
 
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
