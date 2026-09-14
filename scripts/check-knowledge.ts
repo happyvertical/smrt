@@ -53,23 +53,35 @@ async function main(): Promise<void> {
 
   // The merged root graph (#2863) is checked alongside each package's own
   // artifact: it is stale, in the same sense, whenever any per-package
-  // artifact it was built from has changed since generation.
-  const graphIssues = checkKnowledgeGraphFreshness(
+  // artifact it was built from has changed since generation. A staleness
+  // finding is a warning outside --strict, exactly like every other
+  // `stale-*` finding from checkKnowledgeFreshness; only a genuinely missing
+  // graph or source artifact stays an error unconditionally.
+  const rawGraphIssues = checkKnowledgeGraphFreshness(
     process.cwd(),
     '.smrt/smrt-knowledge-graph.json',
     {
       requireArtifact: discoverKnowledgeArtifactPaths(process.cwd()).length > 0,
     },
   );
+  const graphIssues = rawGraphIssues.map((issue) =>
+    issue.code === 'stale-knowledge-graph' && !hasFlag('--strict')
+      ? { ...issue, severity: 'warning' as const }
+      : issue,
+  );
   const combinedIssues = [...result.issues, ...graphIssues];
-  const combinedErrorCount =
-    result.errorCount +
-    graphIssues.filter((i) => i.severity === 'error').length;
+  const combinedErrorCount = combinedIssues.filter(
+    (i) => i.severity === 'error',
+  ).length;
+  const combinedWarningCount = combinedIssues.filter(
+    (i) => i.severity === 'warning',
+  ).length;
   const combinedResult = {
     ...result,
-    ok: result.ok && graphIssues.length === 0,
+    ok: combinedErrorCount === 0,
     issueCount: combinedIssues.length,
     errorCount: combinedErrorCount,
+    warningCount: combinedWarningCount,
     issues: combinedIssues,
   };
 
@@ -77,12 +89,6 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(combinedResult, null, 2));
   } else {
     console.log(renderFreshnessResult(combinedResult));
-    if (graphIssues.length > 0) {
-      console.log('\n## Knowledge graph\n');
-      for (const issue of graphIssues) {
-        console.log(`- [${issue.severity}] ${issue.code}: ${issue.message}`);
-      }
-    }
   }
 
   if (!combinedResult.ok) process.exit(1);

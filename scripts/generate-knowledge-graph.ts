@@ -29,28 +29,50 @@ function resolveRepoRoot(): string {
   return process.cwd();
 }
 
+/**
+ * A discovered artifact that cannot be read as JSON is a generation error,
+ * not a package that opted out: unlike a package that never produced an
+ * artifact, `discoverKnowledgeArtifactPaths` already found this file on
+ * disk, so silently omitting it would merge an incomplete graph and report
+ * success (#2872 review).
+ */
 function discoverInputs(): KnowledgeGraphInput[] {
   const inputs: KnowledgeGraphInput[] = [];
   for (const artifactPath of discoverKnowledgeArtifactPaths(rootDir)) {
+    let manifest: unknown;
     try {
-      const manifest = JSON.parse(
-        readFileSync(join(rootDir, artifactPath), 'utf8'),
-      );
-      inputs.push({ artifactPath, manifest });
+      manifest = JSON.parse(readFileSync(join(rootDir, artifactPath), 'utf8'));
     } catch (error) {
-      console.warn(
-        `⚠️  Skipping ${artifactPath}: ${
+      console.error(
+        `❌ ${artifactPath} is not valid JSON: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      process.exit(1);
     }
+    inputs.push({
+      artifactPath,
+      manifest: manifest as KnowledgeGraphInput['manifest'],
+    });
   }
   return inputs;
 }
 
+function readPreviousGraph():
+  | ReturnType<typeof buildKnowledgeGraph>
+  | undefined {
+  try {
+    return JSON.parse(readFileSync(outputPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 function main(): void {
   const inputs = discoverInputs();
-  const graph = buildKnowledgeGraph(inputs);
+  const graph = buildKnowledgeGraph(inputs, {
+    previousGraph: readPreviousGraph(),
+  });
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, `${stableStringify(graph)}\n`, 'utf8');
   console.log(
