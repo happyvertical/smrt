@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
+  checkKnowledgeGraphFreshness,
   discoverScopedPackageDirectories,
   readAgentModuleDocs,
   readPackageAgentDoc,
@@ -152,6 +153,31 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
             'smrt-knowledge-graph.json',
           );
           if (existsSync(graphPath)) {
+            // A stale graph — a per-package artifact changed since the graph
+            // was last generated — must not be copied out as if it were
+            // current: a consumer snapshot exporting it would carry a graph
+            // that no longer matches the packages it describes. Fail rather
+            // than regenerate here: this command reads artifacts, it does
+            // not own the scanner run `pnpm knowledge:graph` needs (#2872
+            // review).
+            const graphIssues = checkKnowledgeGraphFreshness(
+              monorepoRoot,
+              '.smrt/smrt-knowledge-graph.json',
+              { requireArtifact: true },
+            );
+            const graphErrors = graphIssues.filter(
+              (issue) => issue.severity === 'error',
+            );
+            if (graphErrors.length > 0) {
+              console.error(
+                '\n❌ Cross-package knowledge graph is stale; run `pnpm knowledge:graph` first:',
+              );
+              for (const issue of graphErrors) {
+                console.error(`   ${issue.code}: ${issue.message}`);
+              }
+              process.exit(1);
+            }
+
             const graphOutputPath = join(
               dirname(outputPath),
               'smrt-knowledge-graph.json',
