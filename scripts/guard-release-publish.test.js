@@ -338,4 +338,39 @@ describe('guard-release-publish', () => {
 
     expect(state.fullyRecorded).toBe(true);
   });
+
+  it('guardReleasePublish reaches the fully-recorded no-op even when HEAD is stale, because push-release-refs.mjs moved origin/main by publishing this exact release', () => {
+    const repoRoot = createRepoFixture();
+    // No git-fetch/rev-parse entries here on purpose: a rerun after this
+    // run's own earlier successful push checks out the *original*, now
+    // superseded SHA — assertHeadMatchesRemote() must never run (and would
+    // fail "stale checkout") once the tag/npm state already shows the
+    // release fully recorded. If guardReleasePublish regresses to running
+    // the HEAD check first, this spawn stub throws "Unexpected command"
+    // for the fetch/rev-parse calls it doesn't expect.
+    const spawn = spawnFromResponses(
+      new Map([
+        [
+          'git ls-remote --exit-code --tags origin refs/tags/v0.39.0',
+          { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+        [
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          { status: 0, stdout: '"0.39.0"\n' },
+        ],
+      ]),
+    );
+
+    const state = guardReleasePublish({
+      releaseVersion: '0.39.0',
+      repoRoot,
+      spawn,
+    });
+
+    expect(state.fullyRecorded).toBe(true);
+  });
 });

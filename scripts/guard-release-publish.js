@@ -357,13 +357,15 @@ export function guardReleasePublish({
     );
   }
 
-  // A stale checkout racing a newer merge is unrelated to resuming this
-  // exact release and stays a hard failure: let the newer main run compute
-  // and publish the next version instead.
-  if (!skipGitCheck) {
-    assertHeadMatchesRemote({ baseBranch, repoRoot, spawn });
-  }
-
+  // Compute tag/npm state BEFORE the HEAD-staleness check. push-release-refs.mjs
+  // pushes the release commit and the tag atomically to `main`, so a rerun
+  // after that succeeded checks out the *original*, now-superseded SHA —
+  // origin/main has legitimately moved on, by this run's own prior success.
+  // Running assertHeadMatchesRemote() first would reject that as "a newer
+  // merge landed" and make the fullyRecorded no-op below unreachable for
+  // the exact case it exists to handle (publish + push succeeded, only
+  // `gh release create` failed). Staleness only matters when there is
+  // still real publish work to do, so check it after, not before.
   const state = assessReleaseState({
     publishablePackages,
     releaseVersion,
@@ -378,6 +380,13 @@ export function guardReleasePublish({
       `Release v${releaseVersion} is already fully published and recorded (tag pushed, all ${publishablePackages.length} package(s) on npm); nothing left to do.`,
     );
     return { ...state, publishablePackages };
+  }
+
+  // A stale checkout racing a newer, unrelated merge is unrelated to
+  // resuming this exact release and stays a hard failure: let the newer
+  // main run compute and publish the next version instead.
+  if (!skipGitCheck) {
+    assertHeadMatchesRemote({ baseBranch, repoRoot, spawn });
   }
 
   if (state.alreadyPublished.length > 0) {

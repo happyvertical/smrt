@@ -95,11 +95,24 @@ export function publishRelease(
     wait = waitSynchronously,
   } = {},
 ) {
+  // Verify every already-existing package's content BEFORE publishing
+  // anything new. A mismatch must abort while every `npm publish` call is
+  // still avoidable — checking and publishing interleaved, one artifact at
+  // a time, would let earlier artifacts in the list get newly (and
+  // irreversibly) published before a later artifact's mismatch is ever
+  // discovered, widening the blast radius of an abort for no benefit.
+  const alreadyPublished = new Set();
   for (const artifact of release.packages) {
     if (
       existsOnRegistry(artifact.name, artifact.version, runNpm) &&
       verifyExistingContentMatches(artifact, runNpm)
     ) {
+      alreadyPublished.add(artifact.name);
+    }
+  }
+
+  for (const artifact of release.packages) {
+    if (alreadyPublished.has(artifact.name)) {
       log(`↪ ${artifact.name}@${artifact.version} already exists (content verified)`);
       continue;
     }

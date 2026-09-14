@@ -271,6 +271,56 @@ test('forces registry views to revalidate cached package metadata', () => {
   );
 });
 
+test('verifies every already-existing package before publishing anything new, so a mismatch on one artifact cannot leave an earlier artifact newly (and irreversibly) published first', () => {
+  const publishCalls = [];
+  const runNpm = (args) => {
+    if (args[0] === 'publish') {
+      publishCalls.push(args[1]);
+      return '';
+    }
+    return '0.40.0';
+  };
+
+  assert.throws(
+    () =>
+      publishRelease(
+        {
+          releaseVersion: '0.40.0',
+          packages: [
+            {
+              name: '@happyvertical/smrt-a',
+              version: '0.40.0',
+              path: '/artifacts/a.tgz',
+            },
+            {
+              name: '@happyvertical/smrt-b',
+              version: '0.40.0',
+              path: '/artifacts/b.tgz',
+            },
+          ],
+        },
+        {
+          runNpm,
+          log: () => {},
+          // Only @happyvertical/smrt-b (later in the list) mismatches.
+          verifyExistingContentMatches: (artifact) => {
+            if (artifact.name === '@happyvertical/smrt-b') {
+              throw new Error(`does not match for ${artifact.name}`);
+            }
+            return true;
+          },
+        },
+      ),
+    /does not match/,
+  );
+
+  assert.deepEqual(
+    publishCalls,
+    [],
+    'no package should have been published before the pre-flight content check ran for every existing artifact',
+  );
+});
+
 test('tolerates a transient registry error during post-publish verification instead of crashing the step', () => {
   const logs = [];
   let viewCount = 0;
