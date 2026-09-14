@@ -231,6 +231,40 @@ describe('withStatementCount / expectStatementCeiling (#2875)', () => {
     expect(queryCount).toBe(3);
   });
 
+  it('counts statements issued through db.acquireSession() via the session handle', async () => {
+    // @happyvertical/sql's migration tracker pins a SessionHandle for the
+    // PostgreSQL concurrent-index phase (SET lock_timeout, invalid-index
+    // scan, DROP/CREATE INDEX CONCURRENTLY) and falls back to db.query() on
+    // single-connection adapters that don't implement acquireSession. A
+    // ceiling built only against SQLite would silently under-count on
+    // PostgreSQL if the session handle were not instrumented too.
+    let sessionQueryCount = 0;
+    const fakeSession = {
+      query: async () => {
+        sessionQueryCount += 1;
+        return { rows: [], rowCount: 0 };
+      },
+      isActive: () => true,
+      release: async () => {},
+    };
+    const fakeDb = {
+      query: async () => {
+        throw new Error('unexpected call on the outer handle');
+      },
+      acquireSession: async () => fakeSession,
+    } as unknown as DatabaseInterface;
+
+    const { count } = await withStatementCount(fakeDb, async (countedDb) => {
+      const session = await countedDb.acquireSession?.();
+      await session?.query('SET lock_timeout = 5000');
+      await session?.query('DROP INDEX CONCURRENTLY IF EXISTS "idx_a"');
+      await session?.release();
+    });
+
+    expect(count).toBe(2);
+    expect(sessionQueryCount).toBe(2);
+  });
+
   it('does not double-count statements issued on the outer handle around a transaction', async () => {
     const { count } = await withStatementCount(db, async (countedDb) => {
       await countedDb.query('SELECT 1');

@@ -163,23 +163,28 @@ transport directly through a private closure, not through the object's own
 externally-applied wrap; the schema-introspection/migration paths this helper
 targets issue their statements through `query()`.
 
-Also instruments `transaction()`/`beginTransaction()` recursively so a
-callback's `tx` handle is counted too — a transaction handle is built from an
-independent closure set over its own connection/executor, so wrapping only
-the outer `db` would under-count work done inside a transaction and pass a
-ceiling that should have failed (`#2862`'s bootstrap path is exactly this
-shape). Restores every method it touches on the *outer* handle in a
-`finally`; transaction handles are ephemeral and never reused, so they are
-not restored — except on PostgreSQL, where `tx.transaction()` (a *nested*
-transaction on a handle already obtained from `transaction()`/
-`beginTransaction()`) hands its callback the exact same object as the
-enclosing handle (so the nested scope can see the enclosing transaction's
-uncommitted rows on one pooled connection). A per-session `WeakSet` makes
-re-instrumenting that shared object a no-op instead of double-counting every
-statement the handle issues afterward. Engine-agnostic (SQLite and
-PostgreSQL); its own tests run in-memory SQLite, including fakes that
-reproduce the PostgreSQL same-object nesting shape, so a ceiling built on it
-can live in the default unit lane.
+Also instruments `transaction()`/`beginTransaction()`/`acquireSession()`
+recursively so a callback's `tx` or pinned-session handle is counted too —
+each is built from independent state over its own connection, so wrapping
+only the outer `db` would under-count work done inside a transaction or a
+session and pass a ceiling that should have failed (`#2862`'s bootstrap path
+is exactly this shape for transactions; the migration tracker's
+`acquireSession()`-pinned PostgreSQL concurrent-index phase — `SET
+lock_timeout`, the invalid-index scan, `DROP`/`CREATE INDEX CONCURRENTLY` —
+is the same shape for sessions, falling back to plain `db.query()` on
+single-connection adapters that don't implement `acquireSession`). Restores
+every method it touches on the *outer* handle in a `finally`; transaction and
+session handles are ephemeral and never reused, so they are not restored —
+except on PostgreSQL, where `tx.transaction()` (a *nested* transaction on a
+handle already obtained from `transaction()`/`beginTransaction()`) hands its
+callback the exact same object as the enclosing handle (so the nested scope
+can see the enclosing transaction's uncommitted rows on one pooled
+connection). A per-session `WeakSet` makes re-instrumenting that shared
+object a no-op instead of double-counting every statement the handle issues
+afterward. Engine-agnostic (SQLite and PostgreSQL); its own tests run
+in-memory SQLite, including fakes that reproduce the PostgreSQL same-object
+nesting shape and a fake `acquireSession()`, so a ceiling built on it can
+live in the default unit lane.
 
 ## Singleton Cache Gotcha
 

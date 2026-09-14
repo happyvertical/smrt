@@ -152,14 +152,17 @@ function groupByShape(
  * Instrument every statement-issuing method on `target` so each call is
  * recorded into `statements`, then delegates to the original implementation.
  *
- * Also instruments `transaction()`/`beginTransaction()` so any transaction
- * handle a wrapped call produces is itself instrumented before the caller
- * ever sees it. Transaction handles are built from an independent set of
- * closures over their own connection/executor in `@happyvertical/sql` — a
- * counter that only wraps the outer handle would under-count work done
- * inside `beginTransaction()`/`transaction(cb)` and yield a falsely passing
- * ceiling (the #2862 bootstrap path is exactly this shape). Wrapping is
- * applied recursively, so a nested `tx.transaction()` is covered too.
+ * Also instruments `transaction()`/`beginTransaction()`/`acquireSession()` so
+ * any transaction or pinned-session handle a wrapped call produces is itself
+ * instrumented before the caller ever sees it. Each is built from an
+ * independent set of closures/state over its own connection in
+ * `@happyvertical/sql` — a counter that only wraps the outer handle would
+ * under-count work done inside `beginTransaction()`/`transaction(cb)` or on
+ * an `acquireSession()` handle, and yield a falsely passing ceiling (the
+ * #2862 bootstrap path is exactly this shape for transactions; the
+ * PostgreSQL-only concurrent-index migration phase, pinned via
+ * `acquireSession()`, is the same shape for sessions). Wrapping is applied
+ * recursively, so a nested `tx.transaction()` is covered too.
  *
  * Transaction handles are scoped to a single callback/statement and
  * discarded afterwards — nothing else holds a reference to reuse them, so
@@ -233,6 +236,32 @@ function instrument(
       ).call(target, ...args);
       instrument(tx as DatabaseInterface, statements, instrumented);
       return tx;
+    };
+  }
+
+  // Pinned single-connection session handles (DatabaseInterface#acquireSession)
+  // are a third independent-handle accessor alongside transaction()/
+  // beginTransaction() -- @happyvertical/sql's migration tracker uses one to
+  // pin the concurrent-index phase on PostgreSQL (SET lock_timeout, the
+  // pg_index invalid-index scan, DROP/CREATE INDEX CONCURRENTLY), falling
+  // back to the plain db.query() on single-connection adapters. A
+  // SessionHandle only exposes query/isActive/release -- no transaction of
+  // its own -- but its query is a plain object property callers look up
+  // dynamically (`session.query(...)`), not a closure-captured reference, so
+  // instrumenting it here is externally observable exactly like the
+  // STATEMENT_METHODS loop above. Left uninstrumented, a PostgreSQL-only
+  // migration ceiling would silently under-count relative to the identical
+  // SQLite run -- the same falsely-passing gap #2862 already guards against
+  // for transactions, through this other accessor.
+  const originalAcquireSession = target.acquireSession;
+  if (typeof originalAcquireSession === 'function') {
+    originals.set('acquireSession', originalAcquireSession);
+    mutable.acquireSession = async (...args: unknown[]) => {
+      const session = await (
+        originalAcquireSession as (...callArgs: unknown[]) => unknown
+      ).call(target, ...args);
+      instrument(session as DatabaseInterface, statements, instrumented);
+      return session;
     };
   }
 

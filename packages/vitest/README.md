@@ -139,7 +139,7 @@ it('should insert and query', async () => {
 
 | Export | Description |
 |--------|-------------|
-| `withStatementCount(db, fn)` | Run `fn` against `db`, counting every statement `fn` issues -- including through any `db.transaction()`/`db.beginTransaction()` handle it opens -- and returning the total plus a normalized, grouped breakdown |
+| `withStatementCount(db, fn)` | Run `fn` against `db`, counting every statement `fn` issues -- including through any `db.transaction()`/`db.beginTransaction()`/`db.acquireSession()` handle it opens -- and returning the total plus a normalized, grouped breakdown |
 | `expectStatementCeiling(statementResult, ceiling, options?)` | Assert `statementResult.count <= ceiling`; on failure, formats the top statement shapes by count into the failure message |
 | `normalizeStatement(sql)` | Collapse whitespace and elide literal values/placeholders, for grouping statements that differ only by parameter values |
 
