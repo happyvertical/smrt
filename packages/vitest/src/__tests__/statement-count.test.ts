@@ -125,6 +125,45 @@ describe('withStatementCount / expectStatementCeiling (#2875)', () => {
     expect(count).toBe(2);
   });
 
+  it('preserves the receiver when calling a receiver-sensitive beginTransaction()', async () => {
+    // A fake handle whose beginTransaction() reads instance state off `this`
+    // rather than closing over it -- if instrument() ever invoked the
+    // original as a bare function (losing `this`), this would throw instead
+    // of returning a working transaction handle.
+    let issued = 0;
+    // The tx handle is a distinct object from the outer db, matching every
+    // real @happyvertical/sql adapter (beginTransaction() always returns a
+    // fresh handle, never `this`).
+    const fakeTx = {
+      query: async () => {
+        issued += 1;
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    const fakeDb = {
+      marker: 'receiver-ok',
+      query: async () => {
+        throw new Error('unexpected call on the outer handle');
+      },
+      beginTransaction: async function (this: {
+        marker: string;
+      }): Promise<DatabaseInterface> {
+        if (this?.marker !== 'receiver-ok') {
+          throw new Error('beginTransaction lost its receiver');
+        }
+        return fakeTx as unknown as DatabaseInterface;
+      },
+    } as unknown as DatabaseInterface;
+
+    const { count } = await withStatementCount(fakeDb, async (countedDb) => {
+      const tx = await countedDb.beginTransaction?.();
+      await tx?.query('SELECT 1');
+    });
+
+    expect(count).toBe(1);
+    expect(issued).toBe(1);
+  });
+
   it('does not double-count statements issued on the outer handle around a transaction', async () => {
     const { count } = await withStatementCount(db, async (countedDb) => {
       await countedDb.query('SELECT 1');

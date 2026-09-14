@@ -209,7 +209,7 @@ function instrument(
     mutable.beginTransaction = async (...args: unknown[]) => {
       const tx = await (
         originalBeginTransaction as (...callArgs: unknown[]) => unknown
-      )(...args);
+      ).call(target, ...args);
       instrument(tx as DatabaseInterface, statements);
       return tx;
     };
