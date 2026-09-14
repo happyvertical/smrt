@@ -164,20 +164,26 @@ postgresDescribe(
         );
       }
 
-      // Regression ceiling (#2874): before the fix, `detectRenameDataPending`
-      // (landed in 0.47.2, #2752/#2767) issued one `SELECT 1 ... LIMIT 1`
-      // round trip per declared column, then one more per type-compatible
-      // orphan column, for every table with any orphan columns — measured
-      // at 427 statements/run for this fixture (71 tables × ~6
-      // columns/table), 5.9x the pre-regression 72 statements/run. The fix
-      // batches every table's live-data probe into one aggregate query
-      // (plus, only when needed, one UUID-shape query), independent of
-      // column count — measured at 143 statements/run for this fixture (2
-      // statements/table: one batched probe, one `pg_indexes` read). The
-      // ceiling below sits between the fixed measurement (143) and the
-      // regressed one (427): comfortably above normal variance, but low
-      // enough that a reintroduced per-column probe loop trips it.
-      expect(perRun).toBeLessThan(200);
+      // Regression ceiling (#2874, tightened by #2878): before the #2876
+      // fix, `detectRenameDataPending` (landed in 0.47.2, #2752/#2767)
+      // issued one `SELECT 1 ... LIMIT 1` round trip per declared column,
+      // then one more per type-compatible orphan column, for every table
+      // with any orphan columns — measured at 427 statements/run for this
+      // fixture (71 tables × ~6 columns/table), 5.9x the pre-regression 72
+      // statements/run. #2876 batched every *table's* live-data probe into
+      // one query each, independent of column count, but still paid at
+      // least one round trip *per table* — measured at 143 statements/run
+      // (72 pre-regression baseline + a 71-statement per-table floor, one
+      // per table). #2878 batches the probe *across every table* into a
+      // small, table-count-independent number of round trips instead of
+      // one per table — measured at 73 statements/run for this fixture (72
+      // pre-regression baseline + 1: the whole 71-table schema's
+      // rename-pending probe now costs a single statement, not 71). The
+      // ceiling below sits just above that fixed measurement: comfortably
+      // clear of normal variance, but low enough that a reintroduced
+      // per-table probe loop (143-shaped) or a per-column one (427-shaped)
+      // both trip it.
+      expect(perRun).toBeLessThan(90);
     }, 120_000);
   },
 );

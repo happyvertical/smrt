@@ -1466,8 +1466,12 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     // parenthesis, so a single regex spanning "WHERE ... ) AS c<N>" cannot
     // skip past it. Extract the two token streams separately instead —
     // they appear in the same left-to-right order, one pair per subquery.
+    // The alias itself is matched generically (`\w+`, not `c\d+`): #2878's
+    // cross-table batching aliases every (table, column) pair positionally
+    // as `t<tableIndex>_c<colIndex>` instead of the single-table `c<N>`,
+    // and this helper simulates the wire format for both shapes.
     const columns = [...sql.matchAll(/WHERE "([^"]+)"/g)].map((m) => m[1]);
-    const aliases = [...sql.matchAll(/\) AS (c\d+)/g)].map((m) => m[1]);
+    const aliases = [...sql.matchAll(/\) AS (\w+)/g)].map((m) => m[1]);
     const row: Record<string, number> = {};
     columns.forEach((column, index) => {
       if (presentColumns.has(column)) row[aliases[index]] = 1;
