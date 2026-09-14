@@ -679,17 +679,21 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
         if (sql.includes('FROM pg_index')) {
           return { rows: [] };
         }
-        // #2874: batched "has non-empty value" probe — one row, one
-        // aggregate column per probed column, keyed by the quoted column
-        // name used as its alias.
-        if (sql.includes('MAX(CASE WHEN')) {
-          return {
-            rows: [{ new_id: 0, old_id: oldColumnEmpty ? 0 : 1 }],
-          };
-        }
-        // #2874: batched "all non-empty values UUID-shaped" probe.
-        if (sql.includes('SUM(CASE WHEN')) {
-          return { rows: [{ old_id: invalidUuidCount }] };
+        // #2874: batched probes are one row of uncorrelated scalar
+        // subqueries, keyed by the quoted column name used as its alias.
+        // The shape probe adds a `!~*` clause the plain "has non-empty
+        // value" probe does not, so key off that.
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          if (sql.includes('!~*')) {
+            // Shape probe: a row means an invalid (non-UUID-shaped) value
+            // was found for `old_id`.
+            return invalidUuidCount > 0
+              ? { rows: [{ old_id: 1 }] }
+              : { rows: [{}] };
+          }
+          // "has non-empty value" probe: `new_id` is always empty here;
+          // `old_id` has data unless `oldColumnEmpty`.
+          return oldColumnEmpty ? { rows: [{}] } : { rows: [{ old_id: 1 }] };
         }
         return { rows: [] };
       },

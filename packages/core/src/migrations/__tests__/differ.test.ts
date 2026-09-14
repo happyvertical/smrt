@@ -1579,17 +1579,18 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        // #2874: batched "has non-empty value" probe — one row, one
-        // aggregate column per probed column, keyed by the quoted column
-        // name used as its alias. `new_id` (declared) is empty; `old_id`
-        // (orphan) has data.
-        if (sql.includes('MAX(CASE WHEN')) {
-          return { rows: [{ new_id: 0, old_id: 1 }] };
-        }
-        // #2874: batched "all non-empty values UUID-shaped" probe — 0
-        // invalid values for `old_id`.
-        if (sql.includes('SUM(CASE WHEN')) {
-          return { rows: [{ old_id: 0 }] };
+        // #2874: batched probes are one row of uncorrelated scalar
+        // subqueries, keyed by the quoted column name used as its alias.
+        // The shape probe adds a `!~*` (postgres) / `GLOB` (sqlite) clause
+        // the plain "has non-empty value" probe does not, so key off that.
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          if (sql.includes('!~*') || sql.includes('GLOB')) {
+            // UUID-shape probe: no invalid row for `old_id` (absent).
+            return { rows: [{}] };
+          }
+          // "has non-empty value" probe: `new_id` (declared) is empty
+          // (absent); `old_id` (orphan) has data.
+          return { rows: [{ old_id: 1 }] };
         }
         return { rows: [] };
       },
@@ -1652,12 +1653,12 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
         if (sql.includes('information_schema.tables')) {
           return { rows: [{ table_name: 'widgets' }] };
         }
-        if (sql.includes('MAX(CASE WHEN')) {
-          return { rows: [{ new_id: 0, old_id: 1 }] };
-        }
-        // 2 invalid (non-UUID-shaped) values for `old_id`.
-        if (sql.includes('SUM(CASE WHEN')) {
-          return { rows: [{ old_id: 2 }] };
+        if (sql.includes('SELECT (SELECT 1 FROM')) {
+          if (sql.includes('!~*') || sql.includes('GLOB')) {
+            // An invalid (non-UUID-shaped) row exists for `old_id`.
+            return { rows: [{ old_id: 1 }] };
+          }
+          return { rows: [{ old_id: 1 }] };
         }
         return { rows: [] };
       },
@@ -1821,6 +1822,74 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(matches[0].advisory?.suggestedSql).toBeUndefined();
     expect(matches[0].mismatch?.actual).toContain('old_slug');
     expect(matches[0].mismatch?.actual).toContain('older_slug');
+  });
+
+  it('falls back to isolated per-column probes when the batched statement fails, so one bad table does not lose every finding (#2874 review finding F2)', async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE widgets (
+        id TEXT PRIMARY KEY,
+        new_a TEXT,
+        new_b TEXT,
+        old_a TEXT,
+        old_b TEXT
+      )
+    `);
+    await db.query(
+      `INSERT INTO widgets (id, old_a, old_b) VALUES ('1', 'value-a', 'value-b')`,
+    );
+
+    // Force exactly the batched "has non-empty value" statement (the one
+    // selecting every declared-candidate and orphan column at once) to
+    // fail, while every other statement — including the per-column
+    // fallback probes — runs normally. This reproduces a column that
+    // becomes unprobeable mid-comparison without needing a real engine
+    // error.
+    const realQuery = db.query.bind(db);
+    const querySpy = vi
+      .spyOn(db, 'query')
+      .mockImplementation(async (...args: unknown[]) => {
+        const sql = String(args[0] ?? '');
+        if (
+          sql.includes('SELECT (SELECT 1 FROM') &&
+          sql.includes('"new_a"') &&
+          sql.includes('"new_b"')
+        ) {
+          throw new Error('simulated batched-probe failure');
+        }
+        return realQuery(
+          ...(args as Parameters<typeof realQuery>),
+        ) as ReturnType<typeof realQuery>;
+      });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          new_a: { type: 'TEXT' },
+          new_b: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+    querySpy.mockRestore();
+
+    const findings = diff.changes.filter(
+      (c) => c.type === 'rename_data_pending',
+    );
+    const names = findings.map((f) => f.name).sort();
+    // Both declared columns still get their finding: the batch failure was
+    // isolated to a retry via per-column fallback probes, not a table-wide
+    // loss of every finding.
+    expect(names).toEqual(['new_a', 'new_b']);
   });
 });
 

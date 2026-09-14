@@ -788,10 +788,20 @@ function renameCompatibility(
  * non-null, non-empty value? One round trip regardless of column count
  * (#2874) — mirrors `SchemaComparer`'s `columnsHaveNonEmptyValueBatch` in
  * `migrations/differ.ts`, which this module's rename-pending detector
- * duplicates (both trace to #2752/#2767). A per-column `MAX(CASE WHEN ...
- * THEN 1 ELSE 0 END)` in a single aggregate query, portable across
- * PostgreSQL and SQLite, replaces one `SELECT ... LIMIT 1` round trip per
- * column.
+ * duplicates (both trace to #2752/#2767): one row of uncorrelated scalar
+ * subqueries, `(SELECT 1 FROM t WHERE ... LIMIT 1) AS "col"`. Deliberately
+ * not an aggregate (`MAX(CASE WHEN ...)`) over the whole table — an
+ * aggregate forces a full scan per probed column even when the first row
+ * already answers it, turning a healthy, mostly-populated large table into
+ * a guaranteed full scan on every `db:status`/`db:diff` run (#2874 review
+ * finding F1). Each subquery keeps the original `LIMIT 1` early exit; only
+ * the round trip is batched.
+ *
+ * Falls back to {@link columnHasNonEmptyValueSingle} per column when the
+ * batched statement itself fails, so one unresolvable column withholds
+ * only its own result rather than discarding the whole table's detection
+ * (#2874 review finding F2). A column absent from the returned map means
+ * "could not be probed"; callers apply their own fail-closed default.
  */
 async function columnsHaveNonEmptyValueBatch(
   db: DatabaseInterface,
@@ -799,36 +809,79 @@ async function columnsHaveNonEmptyValueBatch(
   columns: string[],
 ): Promise<Map<string, boolean>> {
   if (columns.length === 0) return new Map();
+  try {
+    return await columnsHaveNonEmptyValueBatchQuery(db, table, columns);
+  } catch {
+    const hasData = new Map<string, boolean>();
+    for (const column of columns) {
+      try {
+        hasData.set(
+          column,
+          await columnHasNonEmptyValueSingle(db, table, column),
+        );
+      } catch {
+        // Left absent: the caller's own default applies (#2874 review F2).
+      }
+    }
+    return hasData;
+  }
+}
+
+async function columnsHaveNonEmptyValueBatchQuery(
+  db: DatabaseInterface,
+  table: string,
+  columns: string[],
+): Promise<Map<string, boolean>> {
   const quotedTable = quoteIdentifier(table);
   const selects = columns.map((column) => {
     const quotedColumn = quoteIdentifier(column);
     return (
-      `MAX(CASE WHEN ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' ` +
-      `THEN 1 ELSE 0 END) AS ${quotedColumn}`
+      `(SELECT 1 FROM ${quotedTable} WHERE ${quotedColumn} IS NOT NULL ` +
+      `AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1) AS ${quotedColumn}`
     );
   });
-  const result = await db.query(
-    `SELECT ${selects.join(', ')} FROM ${quotedTable}`,
-  );
+  const result = await db.query(`SELECT ${selects.join(', ')}`);
   const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
   const hasData = new Map<string, boolean>();
   for (const column of columns) {
-    hasData.set(column, Number(row[column] ?? 0) > 0);
+    hasData.set(column, row[column] != null);
   }
   return hasData;
+}
+
+/** Single-column fallback for {@link columnsHaveNonEmptyValueBatch}. */
+async function columnHasNonEmptyValueSingle(
+  db: DatabaseInterface,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const quotedTable = quoteIdentifier(table);
+  const quotedColumn = quoteIdentifier(column);
+  const result = await db.query(
+    `SELECT 1 AS present FROM ${quotedTable} ` +
+      `WHERE ${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> '' LIMIT 1`,
+  );
+  return (result?.rows?.length ?? 0) > 0;
 }
 
 /**
  * Live-data probe, batched across every column named: are every one of
  * each column's non-empty values UUID-shaped ({@link CANONICAL_UUID_PATTERN})?
  * One round trip regardless of column count (#2874), mirroring
- * {@link columnsHaveNonEmptyValueBatch}. PostgreSQL pushes the shape check
+ * {@link columnsHaveNonEmptyValueBatch}: one row of uncorrelated scalar
+ * subqueries, each `(SELECT 1 FROM t WHERE <non-empty> AND <invalid> LIMIT
+ * 1)` — a value is absent exactly when no invalid row exists, so this also
+ * short-circuits on the first invalid row rather than counting every one
+ * (an early-exit improvement over the pre-#2874 per-column `count(*)`
+ * probe, not just a batching change). PostgreSQL pushes the shape check
  * into its regex operator; SQLite (the only other engine this detector runs
  * against) has no regex operator, but its case-sensitive `GLOB` can still
  * express the fixed 36-character canonical shape (against `LOWER(...)`,
- * guarded by an exact `LENGTH(...) = 36`) — both engines run one
- * server-side aggregate per column in the same query rather than fetching
- * every non-empty value into JS to test in a loop (#2767 review).
+ * guarded by an exact `LENGTH(...) = 36`).
+ *
+ * Falls back to {@link allNonEmptyValuesUuidShapedSingle} per column on a
+ * batch failure, same posture as {@link columnsHaveNonEmptyValueBatch}
+ * (#2874 review finding F2).
  */
 async function columnsAllValuesUuidShapedBatch(
   db: DatabaseInterface,
@@ -837,6 +890,35 @@ async function columnsAllValuesUuidShapedBatch(
   columns: string[],
 ): Promise<Map<string, boolean>> {
   if (columns.length === 0) return new Map();
+  try {
+    return await columnsAllValuesUuidShapedBatchQuery(
+      db,
+      engine,
+      table,
+      columns,
+    );
+  } catch {
+    const shaped = new Map<string, boolean>();
+    for (const column of columns) {
+      try {
+        shaped.set(
+          column,
+          await allNonEmptyValuesUuidShapedSingle(db, engine, table, column),
+        );
+      } catch {
+        // Left absent: the caller's own default applies (#2874 review F2).
+      }
+    }
+    return shaped;
+  }
+}
+
+async function columnsAllValuesUuidShapedBatchQuery(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: string,
+  columns: string[],
+): Promise<Map<string, boolean>> {
   const quotedTable = quoteIdentifier(table);
   const selects = columns.map((column) => {
     const quotedColumn = quoteIdentifier(column);
@@ -847,19 +929,39 @@ async function columnsAllValuesUuidShapedBatch(
         : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
           `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
     return (
-      `SUM(CASE WHEN ${nonEmptyPredicate} AND ${invalidPredicate} ` +
-      `THEN 1 ELSE 0 END) AS ${quotedColumn}`
+      `(SELECT 1 FROM ${quotedTable} WHERE ${nonEmptyPredicate} ` +
+      `AND ${invalidPredicate} LIMIT 1) AS ${quotedColumn}`
     );
   });
-  const result = await db.query(
-    `SELECT ${selects.join(', ')} FROM ${quotedTable}`,
-  );
+  const result = await db.query(`SELECT ${selects.join(', ')}`);
   const row = (result?.rows?.[0] ?? {}) as Record<string, unknown>;
   const shaped = new Map<string, boolean>();
   for (const column of columns) {
-    shaped.set(column, Number(row[column] ?? 0) === 0);
+    shaped.set(column, row[column] == null);
   }
   return shaped;
+}
+
+/** Single-column fallback for {@link columnsAllValuesUuidShapedBatch}. */
+async function allNonEmptyValuesUuidShapedSingle(
+  db: DatabaseInterface,
+  engine: DatabaseEngine,
+  table: string,
+  column: string,
+): Promise<boolean> {
+  const quotedTable = quoteIdentifier(table);
+  const quotedColumn = quoteIdentifier(column);
+  const nonEmptyPredicate = `${quotedColumn} IS NOT NULL AND CAST(${quotedColumn} AS TEXT) <> ''`;
+  const invalidPredicate =
+    engine === 'postgres'
+      ? `CAST(${quotedColumn} AS TEXT) !~* '${CANONICAL_UUID_PATTERN}'`
+      : `NOT (LENGTH(CAST(${quotedColumn} AS TEXT)) = 36 ` +
+        `AND LOWER(CAST(${quotedColumn} AS TEXT)) GLOB '${CANONICAL_UUID_SQLITE_GLOB_PATTERN}')`;
+  const result = await db.query(
+    `SELECT 1 AS invalid FROM ${quotedTable} ` +
+      `WHERE ${nonEmptyPredicate} AND ${invalidPredicate} LIMIT 1`,
+  );
+  return (result?.rows?.length ?? 0) === 0;
 }
 
 function buildRenameDataPendingFinding(
@@ -920,20 +1022,16 @@ async function detectRenameDataPending(
   // #2874: batch the "has non-empty value" probe for every declared
   // candidate and every extra (undeclared) column into one round trip per
   // table, instead of one `SELECT 1 ... LIMIT 1` per column — see
-  // {@link columnsHaveNonEmptyValueBatch}.
-  let hasData: Map<string, boolean>;
-  try {
-    hasData = await columnsHaveNonEmptyValueBatch(db, table.name, [
-      ...new Set([
-        ...declaredCandidates.map((column) => column.name),
-        ...extraColumns.map((extra) => extra.name),
-      ]),
-    ]);
-  } catch {
-    // Fail closed at table granularity, the same posture the original
-    // per-column try/catch had at column granularity.
-    return [];
-  }
+  // {@link columnsHaveNonEmptyValueBatch}, which falls back to isolated
+  // per-column probes on a batch failure rather than discarding the whole
+  // table (#2874 review finding F2). A column absent from the map below
+  // means "could not be probed", not "confirmed empty".
+  const hasData = await columnsHaveNonEmptyValueBatch(db, table.name, [
+    ...new Set([
+      ...declaredCandidates.map((column) => column.name),
+      ...extraColumns.map((extra) => extra.name),
+    ]),
+  ]);
 
   type PendingCandidate = {
     declaredName: string;
@@ -946,7 +1044,10 @@ async function detectRenameDataPending(
   for (const column of table.columns) {
     const live = liveColumns.get(column.name);
     if (!live) continue; // missing_column already covers this
-    if (hasData.get(column.name) ?? false) continue;
+    // Absent from the map means the probe could not run for this column
+    // (#2874 review finding F2); default to "has data" so it is skipped,
+    // matching the original per-column `catch { continue; }`.
+    if (hasData.get(column.name) ?? true) continue;
 
     const declaredType = normalizeSqlType(column.type);
 
@@ -956,6 +1057,9 @@ async function detectRenameDataPending(
         normalizeSqlType(extra.type),
       );
       if (!compatibility) continue;
+      // Absent here defaults to "no data": this specific candidate is
+      // excluded without affecting any other extra or declared column
+      // (#2874 review finding F2).
       if (!(hasData.get(extra.name) ?? false)) continue;
 
       const requiresShapeCheck = compatibility === 'text-to-uuid';
@@ -968,16 +1072,15 @@ async function detectRenameDataPending(
     }
   }
 
-  let shaped: Map<string, boolean> = new Map();
-  if (shapeCheckExtras.size > 0) {
-    try {
-      shaped = await columnsAllValuesUuidShapedBatch(db, engine, table.name, [
-        ...shapeCheckExtras,
-      ]);
-    } catch {
-      shaped = new Map([...shapeCheckExtras].map((name) => [name, false]));
-    }
-  }
+  // `columnsAllValuesUuidShapedBatch` falls back to isolated per-column
+  // probes on a batch failure and never throws; a column absent from the
+  // result defaults to "not shaped" below, excluding just that candidate.
+  const shaped: Map<string, boolean> =
+    shapeCheckExtras.size > 0
+      ? await columnsAllValuesUuidShapedBatch(db, engine, table.name, [
+          ...shapeCheckExtras,
+        ])
+      : new Map();
 
   const candidatesByColumn = new Map<string, string[]>();
   for (const candidate of pending) {
