@@ -1,5 +1,36 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - serialize DispatchBus system-table bootstrap against concurrent init (#2862) (core)
+
+  ### Features
+
+  - merge per-package knowledge into a root cross-package graph (#2872) (core)
+  - cli.skipApiCheck accepts a method-name array (#2860) (core)
+
+  ### Bug Fixes
+
+  - decouple registry verification from recording a release (#2877) (release)
+  - batch rename-pending live-data probes into O(1) round trips per table (#2876) (core)
+  - drop biome --unsafe from the pre-commit format hook (#2870) (hooks)
+  - reuse existing backfill tracking table without schema CREATE privilege (#2867) (core)
+
+  ### Other Changes
+
+  - chore: record shipped 0.50.0 versions on main (#2886) (release)
+  - chore: sync sdk packages to v0.89.9 (#2855) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.49.8
 
 ### Patch Changes
