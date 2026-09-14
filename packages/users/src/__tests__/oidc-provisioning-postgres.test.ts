@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
+  ensureSystemTables,
+  migratePostgresSystemTimestamps,
+} from '@happyvertical/smrt-core';
+import {
   backfillProfileEmailKeys,
   createProfileFromOidc,
   PROFILE_EMAIL_KEY_BACKFILL_NAME,
@@ -54,16 +58,20 @@ const EXECUTED_POSTGRES_PROFILE_MATRIX_IDS = [
 describePostgres('Postgres OIDC provisioning concurrency', () => {
   let adminDb: DatabaseInterface | undefined;
   let schemaName: string | undefined;
+  let fixtureDatabaseName: string | undefined;
   const connections: DatabaseInterface[] = [];
 
   afterEach(async () => {
     await Promise.all(connections.splice(0).map(closeDatabase));
-    if (adminDb && schemaName) {
+    if (adminDb && fixtureDatabaseName) {
+      await adminDb.query(`DROP DATABASE IF EXISTS "${fixtureDatabaseName}"`);
+    } else if (adminDb && schemaName) {
       await adminDb.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
     }
     await closeDatabase(adminDb);
     adminDb = undefined;
     schemaName = undefined;
+    fixtureDatabaseName = undefined;
   });
 
   it('executes every PostgreSQL-required matrix row for each applicable surface', () => {
@@ -139,6 +147,107 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     await expect(
       countRows(firstDb, 'oidc_profile_email_reservations'),
     ).resolves.toBe(1);
+  });
+
+  it('reuses an authorized owner from a cold root PostgreSQL adapter without schema CREATE', async () => {
+    const fixture = await createFixture(true);
+    await seedPersonType(fixture.rootDb);
+    const approved = await seedAuthorizedOwner(
+      fixture.rootDb,
+      'postgres-restricted-owner@example.com',
+    );
+    const role = `oidc_runtime_${randomUUID().replaceAll('-', '')}`;
+    await adminDb?.query(
+      `CREATE ROLE "${role}" LOGIN PASSWORD 'synthetic-runtime-password'`,
+    );
+    await fixture.rootDb.query(
+      `GRANT USAGE ON SCHEMA "${fixture.schemaName}" TO "${role}"`,
+    );
+    await fixture.rootDb.query(
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "${fixture.schemaName}" TO "${role}"`,
+    );
+    await fixture.rootDb.query(
+      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "${fixture.schemaName}" TO "${role}"`,
+    );
+    const runtimeUrl = new URL(fixture.config.url);
+    runtimeUrl.username = role;
+    runtimeUrl.password = 'synthetic-runtime-password';
+    const runtimeDb = await getDatabase({
+      ...fixture.config,
+      url: runtimeUrl.toString(),
+      dbid: `oidc-restricted-root-${Date.now()}`,
+    });
+    connections.push(runtimeDb);
+    await setSearchPath(runtimeDb, fixture.schemaName);
+
+    try {
+      const privilege = await runtimeDb.query(
+        "SELECT current_user AS current_user, has_schema_privilege(current_user, ?, 'CREATE') AS can_create",
+        fixture.schemaName,
+      );
+      expect(privilege.rows[0]?.current_user).toBe(role);
+      expect(privilege.rows[0]?.can_create).toBe(false);
+      await expect(
+        runtimeDb.query(
+          'SELECT 1 FROM _smrt_migrations WHERE version = ? LIMIT 1',
+          '1.10.1',
+        ),
+      ).resolves.toMatchObject({ rows: [{ '?column?': 1 }] });
+      let createStatements = 0;
+      const rootQuery = runtimeDb.query.bind(runtimeDb);
+      runtimeDb.query = ((sql: string, ...params: unknown[]) => {
+        if (/CREATE\s+TABLE/iu.test(sql)) createStatements += 1;
+        return rootQuery(sql as never, ...(params as []));
+      }) as typeof runtimeDb.query;
+      const users = await UserCollection.create({ db: runtimeDb });
+      const authorizeProfileOwner = async ({
+        db,
+        users: txUsers,
+      }: {
+        db: DatabaseInterface;
+        users: UserCollection;
+      }) => {
+        const profiles = await ProfileCollection.create({ db });
+        const [profile, user] = await Promise.all([
+          profiles.get({ id: approved.profileId }),
+          txUsers.get({ id: approved.userId }),
+        ]);
+        return profile && user ? { profile, user } : null;
+      };
+      const claims = {
+        email: 'postgres-restricted-owner@example.com',
+        email_verified: true,
+        iss: 'https://issuer.example.com',
+        sub: 'postgres-restricted-owner',
+      };
+      const first = await users.getOrCreateFromOidc(claims, 'dex', {
+        authorizeProfileOwner,
+      });
+      const second = await users.getOrCreateFromOidc(claims, 'dex', {
+        authorizeProfileOwner,
+      });
+      expect(first.user.id).toBe(approved.userId);
+      expect(first.profile.id).toBe(approved.profileId);
+      expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
+      expect(createStatements).toBe(0);
+      await expect(countRows(runtimeDb, 'users')).resolves.toBe(1);
+      await expect(countRows(runtimeDb, 'profiles')).resolves.toBe(1);
+      await expect(countRows(runtimeDb, 'oidc_identities')).resolves.toBe(1);
+    } finally {
+      await closeDatabase(runtimeDb);
+      const connectionIndex = connections.indexOf(runtimeDb);
+      if (connectionIndex >= 0) connections.splice(connectionIndex, 1);
+      await fixture.rootDb.query(
+        `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA "${fixture.schemaName}" FROM "${role}"`,
+      );
+      await fixture.rootDb.query(
+        `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "${fixture.schemaName}" FROM "${role}"`,
+      );
+      await fixture.rootDb.query(
+        `REVOKE ALL PRIVILEGES ON SCHEMA "${fixture.schemaName}" FROM "${role}"`,
+      );
+      await adminDb?.query(`DROP ROLE IF EXISTS "${role}"`);
+    }
   });
 
   it.each([
@@ -855,7 +964,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     expect(personTypes.rows[0]?.id).toBe(first.profile.typeId);
   });
 
-  async function createFixture(): Promise<{
+  async function createFixture(publicDatabase = false): Promise<{
     config: {
       __smrtSkipVitestSchemaPreparation: true;
       type: 'postgres';
@@ -868,13 +977,22 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     if (baseConfig.type !== 'postgres') {
       throw new Error('Expected a Postgres test database.');
     }
-    schemaName = `oidc_${randomUUID().replaceAll('-', '')}`;
+    schemaName = publicDatabase
+      ? 'public'
+      : `oidc_${randomUUID().replaceAll('-', '')}`;
     adminDb = await getDatabase({
       ...baseConfig,
+      __smrtSkipVitestSchemaPreparation: true,
       dbid: `oidc-admin-${schemaName}`,
     });
-    await adminDb.query(`CREATE SCHEMA "${schemaName}"`);
+    if (publicDatabase) {
+      fixtureDatabaseName = `smrt2812_${randomUUID().replaceAll('-', '')}`;
+      await adminDb.query(`CREATE DATABASE "${fixtureDatabaseName}"`);
+    } else {
+      await adminDb.query(`CREATE SCHEMA "${schemaName}"`);
+    }
     const url = new URL(baseConfig.url);
+    if (fixtureDatabaseName) url.pathname = `/${fixtureDatabaseName}`;
     url.searchParams.set('options', `-csearch_path=${schemaName}`);
     const config = {
       __smrtSkipVitestSchemaPreparation: true as const,
@@ -888,6 +1006,13 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     connections.push(rootDb);
     await setSearchPath(rootDb, schemaName);
     await executeSchema(rootDb, OIDC_USERS_TEST_SCHEMA);
+    await migratePostgresSystemTimestamps(rootDb, { legacyTimezone: 'UTC' });
+    await rootDb.query(
+      'CREATE UNIQUE INDEX profile_types_slug_context_meta_type_global_idx ON profile_types (slug, context, _meta_type)',
+    );
+    if (publicDatabase) {
+      await ensureSystemTables(rootDb);
+    }
     await prepareOidcEmailKeyBackfills(rootDb);
     return { config, rootDb, schemaName };
   }
