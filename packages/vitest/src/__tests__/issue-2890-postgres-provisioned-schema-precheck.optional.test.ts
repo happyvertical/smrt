@@ -47,14 +47,32 @@ smrt({ tableName })(Issue2890Widget);
 
 /**
  * Counts every query the real `pg` driver issues, by wrapping
- * `pg.Client.prototype.query`. `@happyvertical/sql`'s PostgreSQL adapter is
- * loaded from THIS worktree's `node_modules` resolution, so `createRequire`
- * against this test file resolves the exact `pg` module instance the
- * mocked-through `actual.getDatabase()`/`actual.syncSchema()` calls use.
+ * `pg.Client.prototype.query`.
+ *
+ * `pg` is not a declared dependency of `@happyvertical/smrt-vitest` (this
+ * package only depends on `@happyvertical/sql`, which depends on `pg`
+ * itself), and under pnpm's strict isolation neither
+ * `packages/vitest/node_modules/pg` nor the workspace root's `node_modules/pg`
+ * is guaranteed to exist for this package to `require`/`import` directly —
+ * confirmed with `node -e "console.log(require.resolve('pg'))"` from
+ * `packages/vitest`, which fails with `MODULE_NOT_FOUND`. Resolving through
+ * `@happyvertical/sql`'s own resolved location instead walks pnpm's sibling
+ * `node_modules` the same way `@happyvertical/sql`'s internal `import('pg')`
+ * does, so this reaches the exact module instance
+ * `actual.getDatabase()`/`actual.syncSchema()` use. `@happyvertical/sql`'s
+ * `package.json` `exports` map has no `./package.json` entry and no
+ * CJS-resolvable bare `main`, so this resolves its real entry file via the
+ * ESM-only `import.meta.resolve()` first (verified with the same `node -e`
+ * probe: `await import.meta.resolve('@happyvertical/sql')` from
+ * `packages/vitest`, then `createRequire(<that file>)('pg')`), and then
+ * `createRequire()`s `pg` from that file's location.
  */
-function countPgQueries(): { count: () => number; restore: () => void } {
-  const require = createRequire(import.meta.url);
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+async function countPgQueries(): Promise<{
+  count: () => number;
+  restore: () => void;
+}> {
+  const sqlEntry = await import.meta.resolve('@happyvertical/sql');
+  const require = createRequire(sqlEntry);
   const pg = require('pg') as {
     Client: { prototype: { query: (...args: unknown[]) => unknown } };
   };
@@ -106,7 +124,7 @@ postgresDescribe(
       // object) and `preparedSchemasByConfig` (a different cache key), so the
       // precheck itself -- not the pre-existing cache -- is what is under
       // test here.
-      const counter = countPgQueries();
+      const counter = await countPgQueries();
       const second = await getDatabase({
         type: 'postgres',
         url: baseUrl,
@@ -134,7 +152,7 @@ postgresDescribe(
       } as Parameters<typeof getDatabase>[0] & { dbid: string });
       const columnRows = await third.query(
         `SELECT column_name FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'quantity'`,
+         WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'quantity'`,
         [tableName],
       );
       const rows = Array.isArray(columnRows)

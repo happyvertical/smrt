@@ -428,6 +428,17 @@ function buildSchemaSqlBatches(
  * so this reduces a fully-provisioned handle's schema preparation to two
  * queries total regardless of registered class count.
  *
+ * Both queries filter on `current_schema()`, never a literal `'public'`:
+ * `@happyvertical/sql`'s own `syncSchema`/`tableExists` resolve table
+ * existence through `to_regclass`, which follows the session `search_path`,
+ * and several in-repo suites open PostgreSQL handles against a non-`public`
+ * schema via `?options=-c%20search_path%3D<schema>` (see
+ * `packages/core/src/__tests__/issue-2649-change-feed-deadlock-postgres.optional.test.ts`
+ * and `packages/cli`'s `db-migrate-uuid.test.ts`). Hardcoding `'public'`
+ * would misclassify every batch as already-provisioned whenever `public`
+ * happens to carry the same tables from a sibling suite, even though the
+ * session's own schema has never been touched.
+ *
  * A batch is skipped only when its table exists, every declared column
  * exists, and every declared index exists. Trigger statements are NOT part
  * of that check: per `SchemaDefinition.triggers`'s own contract (see
@@ -440,10 +451,43 @@ function buildSchemaSqlBatches(
  * REPLACE`/`IF NOT EXISTS`-style) statement list for it, matching today's
  * behavior exactly.
  *
- * Never throws: any failure reading the live schema (connectivity, an
- * unexpected result shape, a driver error) falls back to running
- * `syncSchema` for every batch, i.e. today's behavior.
+ * Callers must not invoke this on a transactional handle (see the
+ * `beginTransaction`-presence gate at the `prepareSchema` call site): the two
+ * reads below run un-savepointed, and an error on a PostgreSQL transaction
+ * aborts every later statement on it silently (a `COMMIT` on an aborted
+ * transaction returns as a `ROLLBACK`, not an error), which would falsify
+ * the "never throws" guarantee below for that case.
+ *
+ * Never throws on a non-transactional handle: any failure reading the live
+ * schema (connectivity, an unexpected result shape, a driver error) falls
+ * back to running `syncSchema` for every batch, i.e. today's behavior.
  */
+/**
+ * Distinguishes a base (non-transactional) `@happyvertical/sql` PostgreSQL
+ * handle from a transaction handle/scope, so {@link findSchemaBatchesNeedingSync}
+ * is only ever run un-savepointed on a handle where a failed read is
+ * actually safe to swallow.
+ *
+ * `@happyvertical/sql`'s base `getDatabase()` handle exposes `beginTransaction`
+ * (to start one); every transaction-scoped handle it hands to a callback
+ * (`db.transaction(cb)`) or returns from `db.beginTransaction()` does not —
+ * see `dist/index.js`'s `db = { ..., transaction, beginTransaction, ... }`
+ * base-handle literal versus its `txDb`/`txHandle` literals, neither of
+ * which repeats `beginTransaction`. That asymmetry holds for both
+ * transaction shapes the library produces, so checking for the absence of
+ * `beginTransaction` (rather than the presence of the manually-controlled
+ * handle's own `commit`/`rollback`/`isActive`, which the callback-scoped
+ * `db.transaction(cb)` shape does not have) covers both.
+ */
+function isTransactionalPostgresHandle(database: unknown): boolean {
+  return (
+    typeof database === 'object' &&
+    database !== null &&
+    typeof (database as { beginTransaction?: unknown }).beginTransaction !==
+      'function'
+  );
+}
+
 async function findSchemaBatchesNeedingSync(
   database: { query: (sql: string, params?: unknown) => Promise<unknown> },
   batches: SchemaSqlBatch[],
@@ -467,12 +511,12 @@ async function findSchemaBatchesNeedingSync(
     const [columnRows, indexRows] = await Promise.all([
       database.query(
         `SELECT table_name, column_name FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = ANY($1)`,
+         WHERE table_schema = current_schema() AND table_name = ANY($1)`,
         [tableNames],
       ),
       database.query(
         `SELECT tablename, indexname FROM pg_indexes
-         WHERE schemaname = 'public' AND tablename = ANY($1)`,
+         WHERE schemaname = current_schema() AND tablename = ANY($1)`,
         [tableNames],
       ),
     ]);
@@ -629,7 +673,8 @@ vi.mock('@happyvertical/sql', async () => {
       ): Promise<void> => {
         await applySqliteSpeedPragmas(database, options);
         const batchesToSync =
-          schemaEngine === 'postgres'
+          schemaEngine === 'postgres' &&
+          !isTransactionalPostgresHandle(database)
             ? await findSchemaBatchesNeedingSync(
                 database as unknown as {
                   query: (sql: string, params?: unknown) => Promise<unknown>;
