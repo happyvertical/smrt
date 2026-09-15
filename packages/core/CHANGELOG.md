@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - close the residual ~2x in init schema introspection (143 -> 73 statements/run) (#2888) (core)
+  - @happyvertical/smrt-config@0.51.1
+  - @happyvertical/smrt-types@0.51.1
+  - @happyvertical/smrt-scanner@0.51.1
+
 ## 1.0.0
 
 ### Minor Changes
