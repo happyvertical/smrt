@@ -116,6 +116,27 @@ the test transaction. Transaction handles are treated as already initialized
 by SMRT objects, so moving this provisioning into the transaction would leave
 the first interceptor-driven write without its required function (#2427).
 
+The setup file's mocked `getDatabase()` also prechecks a PostgreSQL handle's
+live schema before calling `syncSchema` (#2890): two constant-count queries
+(`information_schema.columns` joined to `information_schema.tables` on
+`table_type = 'BASE TABLE'` + `pg_indexes`, scoped to `current_schema()` —
+never a literal `'public'`, since in-repo suites open handles against other
+schemas via `search_path` — and batched across every registered table)
+replace a per-column `SELECT EXISTS` round trip for every table on every
+call, so a handle reopened against an already-provisioned database (a
+per-test database name defeats the connection-URL-keyed
+`preparedSchemasByConfig` cache) skips `syncSchema` entirely for tables that
+already have every declared column and index. The `BASE TABLE` join matters
+because `information_schema.columns` alone also lists a VIEW's columns; a
+same-named view would otherwise satisfy the precheck (no `pg_indexes` rows
+required) but cannot store rows. The precheck never runs on a
+transactional handle (it would read un-savepointed, and PostgreSQL silently
+no-ops every later statement on an aborted transaction) — `syncSchema` runs
+for every table there, same as on any precheck failure on a non-transactional
+handle, matching pre-#2890 behavior in both cases. Opt out per call with
+`getDatabase({ ..., __smrtSkipVitestSchemaPreparation: true })`, or disable
+automatic schema preparation globally with `SMRT_VITEST_AUTO_SCHEMA=0`.
+
 For local file-backed SQLite, identical schemas are prepared once per Vitest
 process and cloned from an immutable schema-only template for later databases.
 The cache key is the full generated DDL, concurrent first callers share one

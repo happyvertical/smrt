@@ -334,11 +334,31 @@ function normalizeSchemaStatement(statement: string): string {
   return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
 }
 
+/**
+ * One table's worth of schema-preparation DDL plus the identifiers a
+ * PostgreSQL precheck (see {@link findSchemaBatchesNeedingSync}) needs to
+ * decide whether `syncSchema` can be skipped for that table entirely.
+ * `columnNames`/`indexNames` come from the structured `SchemaDefinition`
+ * (`schema.columns`/`schema.indexes`), not by re-parsing `sql` — the
+ * structured source is authoritative and avoids re-deriving identifiers
+ * `generateDDLForEngine` already rendered from.
+ */
+interface SchemaSqlBatch {
+  tableName: string;
+  columnNames: string[];
+  indexNames: string[];
+  hasTriggers: boolean;
+  sql: string;
+}
+
 function buildSchemaSqlBatches(
   smrtCore: SmrtCoreSchemaModule,
   db: { url?: string; exportTable?: unknown },
   options: VitestDatabaseOptions,
-): string[] {
+): {
+  engine: 'sqlite' | 'duckdb' | 'json' | 'postgres';
+  batches: SchemaSqlBatch[];
+} {
   const dbConfig =
     options && typeof options === 'object' && !('query' in options)
       ? (options as { type?: string; url?: string })
@@ -351,42 +371,213 @@ function buildSchemaSqlBatches(
           dbConfig.type,
         );
 
-  return Object.values(smrtCore.ObjectRegistry.getAllSchemasAsDefinitions())
-    .map((schema) => {
-      // Generate DDL per-schema, in isolation: `ObjectRegistry` in this
-      // process now holds every manifest-registered class from every
-      // discovered smrt package (#2750's worker-side re-registration fix),
-      // not just the classes this particular test file happens to import.
-      // A handful of those classes are legitimately incompatible with a
-      // given engine by design (e.g. a cross-package foreign key using
-      // `ON DELETE CASCADE`, which DuckDB's strategy deliberately rejects —
-      // see `duckdb-strategy.ts`) and `generateDDLForEngine` throws for
-      // them. Before the worker-side fix, those unrelated classes were
-      // simply never registered in this process, so the throw never
-      // happened. Letting one such throw escape here aborts
-      // `Promise.all`/`.map` for the WHOLE batch, silently skipping table
-      // creation even for the class this test actually needs — reproduced
-      // for `packages/events` (`EventType`/`event_types`) via an unrelated
-      // `EventAsset` FK, and for `packages/analytics`
-      // (`AnalyticsProperty`/`analytics_properties`) the same way. Catch and
-      // skip only the offending schema so every other registered class,
-      // including the one under test, still gets its table.
-      try {
-        const ddl = smrtCore.generateDDLForEngine(schema, engine);
-        return [
-          ddl.createTable,
-          ...ddl.indexes,
-          ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
-        ]
-          .filter(Boolean)
-          .map(normalizeSchemaStatement)
-          .join('\n');
-      } catch (error) {
-        warnOnceForSchemaDdlFailure(schema.tableName, engine, error);
-        return '';
+  const batches: SchemaSqlBatch[] = [];
+  for (const schema of Object.values(
+    smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
+  )) {
+    // Generate DDL per-schema, in isolation: `ObjectRegistry` in this
+    // process now holds every manifest-registered class from every
+    // discovered smrt package (#2750's worker-side re-registration fix),
+    // not just the classes this particular test file happens to import.
+    // A handful of those classes are legitimately incompatible with a
+    // given engine by design (e.g. a cross-package foreign key using
+    // `ON DELETE CASCADE`, which DuckDB's strategy deliberately rejects —
+    // see `duckdb-strategy.ts`) and `generateDDLForEngine` throws for
+    // them. Before the worker-side fix, those unrelated classes were
+    // simply never registered in this process, so the throw never
+    // happened. Letting one such throw escape here aborts
+    // `Promise.all`/`.map` for the WHOLE batch, silently skipping table
+    // creation even for the class this test actually needs — reproduced
+    // for `packages/events` (`EventType`/`event_types`) via an unrelated
+    // `EventAsset` FK, and for `packages/analytics`
+    // (`AnalyticsProperty`/`analytics_properties`) the same way. Catch and
+    // skip only the offending schema so every other registered class,
+    // including the one under test, still gets its table.
+    try {
+      const ddl = smrtCore.generateDDLForEngine(schema, engine);
+      const triggerStatements =
+        engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers;
+      const sql = [ddl.createTable, ...ddl.indexes, ...triggerStatements]
+        .filter(Boolean)
+        .map(normalizeSchemaStatement)
+        .join('\n');
+      if (!sql) {
+        continue;
       }
-    })
-    .filter(Boolean);
+      batches.push({
+        tableName: schema.tableName,
+        columnNames: Object.keys(schema.columns ?? {}),
+        indexNames: (schema.indexes ?? []).map((index) => index.name),
+        hasTriggers: triggerStatements.length > 0,
+        sql,
+      });
+    } catch (error) {
+      warnOnceForSchemaDdlFailure(schema.tableName, engine, error);
+    }
+  }
+  return { engine, batches };
+}
+
+/**
+ * Distinguishes a base (non-transactional) `@happyvertical/sql` PostgreSQL
+ * handle from a transaction handle/scope, so {@link findSchemaBatchesNeedingSync}
+ * is only ever run un-savepointed on a handle where a failed read is
+ * actually safe to swallow.
+ *
+ * `@happyvertical/sql`'s base `getDatabase()` handle exposes `beginTransaction`
+ * (to start one); every transaction-scoped handle it hands to a callback
+ * (`db.transaction(cb)`) or returns from `db.beginTransaction()` does not —
+ * see `dist/index.js`'s `db = { ..., transaction, beginTransaction, ... }`
+ * base-handle literal versus its `txDb`/`txHandle` literals, neither of
+ * which repeats `beginTransaction`. That asymmetry holds for both
+ * transaction shapes the library produces, so checking for the absence of
+ * `beginTransaction` (rather than the presence of the manually-controlled
+ * handle's own `commit`/`rollback`/`isActive`, which the callback-scoped
+ * `db.transaction(cb)` shape does not have) covers both.
+ */
+function isTransactionalPostgresHandle(database: unknown): boolean {
+  return (
+    typeof database === 'object' &&
+    database !== null &&
+    typeof (database as { beginTransaction?: unknown }).beginTransaction !==
+      'function'
+  );
+}
+
+/**
+ * PostgreSQL-only precheck (#2890): reads the live schema for every
+ * candidate table in two constant-count round trips instead of paying
+ * `syncSchema`'s per-column `SELECT EXISTS` probe for every table on every
+ * `getDatabase()` call. A test database cloned from an already-provisioned
+ * template (a per-test database name defeats `preparedSchemasByConfig`'s
+ * connection-URL cache) has every table, column and index already in place,
+ * so this reduces a fully-provisioned handle's schema preparation to two
+ * queries total regardless of registered class count.
+ *
+ * Both queries filter on `current_schema()`, never a literal `'public'`:
+ * `@happyvertical/sql`'s own `syncSchema`/`tableExists` resolve table
+ * existence through `to_regclass`, which follows the session `search_path`,
+ * and several in-repo suites open PostgreSQL handles against a non-`public`
+ * schema via `?options=-c%20search_path%3D<schema>` (see
+ * `packages/core/src/__tests__/issue-2649-change-feed-deadlock-postgres.optional.test.ts`
+ * and `packages/cli`'s `db-migrate-uuid.test.ts`). Hardcoding `'public'`
+ * would misclassify every batch as already-provisioned whenever `public`
+ * happens to carry the same tables from a sibling suite, even though the
+ * session's own schema has never been touched.
+ *
+ * The column query is joined against `information_schema.tables` and
+ * requires `table_type = 'BASE TABLE'`: `information_schema.columns` alone
+ * also lists a VIEW's columns, so a same-named view exposing every declared
+ * column (with no declared indexes, since views don't carry `pg_indexes`
+ * rows) would otherwise be misclassified as an already-provisioned table —
+ * the caller then gets a relation it cannot write rows into. The join stays
+ * inside the one columns query, so this is still two round trips total.
+ *
+ * A batch is skipped only when its table is a real base table, every
+ * declared column exists on it, and every declared index exists. Trigger
+ * statements are NOT part of that check: per `SchemaDefinition.triggers`'s
+ * own contract (see `packages/core/src/schema/types.ts`), no
+ * `@smrt()`/`@field()` path currently populates them, so `ddl.triggers` is
+ * always `[]` for every schema this file can build from `ObjectRegistry`
+ * today. `hasTriggers` is threaded through and recorded here (rather than
+ * assumed) so if that changes, a batch carrying real trigger DDL is simply
+ * never treated as skippable — `syncSchema` still runs its full (idempotent,
+ * `CREATE OR REPLACE`/`IF NOT EXISTS`-style) statement list for it, matching
+ * today's behavior exactly.
+ *
+ * Callers must not invoke this on a transactional handle (see the
+ * `beginTransaction`-presence gate at the `prepareSchema` call site): the two
+ * reads below run un-savepointed, and an error on a PostgreSQL transaction
+ * aborts every later statement on it silently (a `COMMIT` on an aborted
+ * transaction returns as a `ROLLBACK`, not an error), which would falsify
+ * the "never throws" guarantee below for that case.
+ *
+ * Never throws on a non-transactional handle: any failure reading the live
+ * schema (connectivity, an unexpected result shape, a driver error) falls
+ * back to running `syncSchema` for every batch, i.e. today's behavior.
+ */
+async function findSchemaBatchesNeedingSync(
+  database: { query: (sql: string, params?: unknown) => Promise<unknown> },
+  batches: SchemaSqlBatch[],
+): Promise<SchemaSqlBatch[]> {
+  const candidates = batches.filter((batch) => !batch.hasTriggers);
+  if (candidates.length === 0) {
+    return batches;
+  }
+
+  try {
+    const tableNames = candidates.map((batch) => batch.tableName);
+    const rowsOf = (result: unknown): Record<string, unknown>[] => {
+      if (Array.isArray(result)) return result as Record<string, unknown>[];
+      if (result && typeof result === 'object' && 'rows' in result) {
+        const rows = (result as { rows?: unknown }).rows;
+        if (Array.isArray(rows)) return rows as Record<string, unknown>[];
+      }
+      return [];
+    };
+
+    const [columnRows, indexRows] = await Promise.all([
+      database.query(
+        `SELECT c.table_name, c.column_name
+         FROM information_schema.columns c
+         JOIN information_schema.tables t
+           ON t.table_schema = c.table_schema
+          AND t.table_name = c.table_name
+         WHERE c.table_schema = current_schema()
+           AND t.table_type = 'BASE TABLE'
+           AND c.table_name = ANY($1)`,
+        [tableNames],
+      ),
+      database.query(
+        `SELECT tablename, indexname FROM pg_indexes
+         WHERE schemaname = current_schema() AND tablename = ANY($1)`,
+        [tableNames],
+      ),
+    ]);
+
+    const existingColumnsByTable = new Map<string, Set<string>>();
+    for (const row of rowsOf(columnRows)) {
+      const table = String(row.table_name);
+      const set = existingColumnsByTable.get(table) ?? new Set<string>();
+      set.add(String(row.column_name));
+      existingColumnsByTable.set(table, set);
+    }
+    const existingIndexesByTable = new Map<string, Set<string>>();
+    for (const row of rowsOf(indexRows)) {
+      const table = String(row.tablename);
+      const set = existingIndexesByTable.get(table) ?? new Set<string>();
+      set.add(String(row.indexname));
+      existingIndexesByTable.set(table, set);
+    }
+
+    const skippable = new Set<string>();
+    for (const batch of candidates) {
+      const existingColumns = existingColumnsByTable.get(batch.tableName);
+      if (!existingColumns) {
+        continue; // table missing entirely
+      }
+      const hasAllColumns = batch.columnNames.every((name) =>
+        existingColumns.has(name),
+      );
+      if (!hasAllColumns) {
+        continue;
+      }
+      const existingIndexes =
+        existingIndexesByTable.get(batch.tableName) ?? new Set<string>();
+      const hasAllIndexes = batch.indexNames.every((name) =>
+        existingIndexes.has(name),
+      );
+      if (!hasAllIndexes) {
+        continue;
+      }
+      skippable.add(batch.tableName);
+    }
+
+    return batches.filter((batch) => !skippable.has(batch.tableName));
+  } catch {
+    // Fall back to today's behavior: sync every batch.
+    return batches;
+  }
 }
 
 /**
@@ -441,24 +632,23 @@ vi.mock('@happyvertical/sql', async () => {
         canUseSqliteSchemaTemplate
           ? undefined
           : await actual.getDatabase(options);
-      let schemaSqlBatches: string[] = [];
+      let schemaSqlBatches: SchemaSqlBatch[] = [];
+      let schemaEngine: 'sqlite' | 'duckdb' | 'json' | 'postgres' = 'sqlite';
 
       try {
         const smrtCore = await loadSmrtCoreModule();
         if (canUseSqliteSchemaTemplate) {
           const dbConfig = options as { url?: string };
-          schemaSqlBatches = buildSchemaSqlBatches(
-            smrtCore,
-            { url: dbConfig.url },
-            options,
-          );
+          ({ engine: schemaEngine, batches: schemaSqlBatches } =
+            buildSchemaSqlBatches(smrtCore, { url: dbConfig.url }, options));
         } else {
           db ??= await actual.getDatabase(options);
-          schemaSqlBatches = buildSchemaSqlBatches(
-            smrtCore,
-            db as { url?: string; exportTable?: unknown },
-            options,
-          );
+          ({ engine: schemaEngine, batches: schemaSqlBatches } =
+            buildSchemaSqlBatches(
+              smrtCore,
+              db as { url?: string; exportTable?: unknown },
+              options,
+            ));
         }
       } catch {
         const fallbackDb = db ?? (await actual.getDatabase(options));
@@ -466,7 +656,10 @@ vi.mock('@happyvertical/sql', async () => {
         return fallbackDb;
       }
 
-      const schemaSql = schemaSqlBatches.filter(Boolean).join('\n-- smrt --\n');
+      const schemaSql = schemaSqlBatches
+        .map((batch) => batch.sql)
+        .filter(Boolean)
+        .join('\n-- smrt --\n');
       if (!schemaSql) {
         const bareDb = db ?? (await actual.getDatabase(options));
         await applySqliteSpeedPragmas(bareDb, options);
@@ -493,11 +686,21 @@ vi.mock('@happyvertical/sql', async () => {
         database: Awaited<ReturnType<typeof actual.getDatabase>>,
       ): Promise<void> => {
         await applySqliteSpeedPragmas(database, options);
-        for (const schemaBatch of schemaSqlBatches) {
-          if (!schemaBatch) {
+        const batchesToSync =
+          schemaEngine === 'postgres' &&
+          !isTransactionalPostgresHandle(database)
+            ? await findSchemaBatchesNeedingSync(
+                database as unknown as {
+                  query: (sql: string, params?: unknown) => Promise<unknown>;
+                },
+                schemaSqlBatches,
+              )
+            : schemaSqlBatches;
+        for (const schemaBatch of batchesToSync) {
+          if (!schemaBatch.sql) {
             continue;
           }
-          await actual.syncSchema({ db: database, schema: schemaBatch });
+          await actual.syncSchema({ db: database, schema: schemaBatch.sql });
         }
       };
 
