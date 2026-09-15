@@ -29,25 +29,66 @@ const postgresDescribe = process.env.SMRT_TEST_POSTGRES_URL
   ? describe.sequential
   : describe.skip;
 
-const tableSuffix = randomUUID().replaceAll('-', '').slice(0, 12);
-const tableName = `issue_2890_widget_${tableSuffix}`;
+const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
+const wideTableName = `issue_2890_wide_${suffix}`;
+const alphaTableName = `issue_2890_alpha_${suffix}`;
+const betaTableName = `issue_2890_beta_${suffix}`;
+const gammaTableName = `issue_2890_gamma_${suffix}`;
 
 // Called as plain functions (not `@decorator` syntax): this package's own
 // `tsconfig.json` does not enable `experimentalDecorators` (unlike the root
 // tsconfig every other consumer builds against via `smrtVitestPlugin`'s oxc
 // config), matching the pattern the sibling #2429/#2427 optional tests use
 // for `smrt()`.
-class Issue2890Widget extends SmrtObject {
-  name: string = '';
-  quantity: number = 0;
+//
+// One table carries a large number of explicitly declared columns, and
+// three more small tables are registered alongside it, so the assertions
+// below are discriminating: the pre-#2890 implementation issues at least one
+// `SELECT EXISTS` probe against `information_schema.columns` per declared
+// column per table on every `getDatabase()` call, so a handful of columns on
+// a single class would stay well under any reasonable statement-count
+// threshold on BOTH the old and new code paths and prove nothing. This
+// registers `WIDE_COLUMN_COUNT` (30) columns on one class alone, so the
+// pre-fix statement count for a second, already-provisioned handle must be
+// at least 30 -- the post-fix assertions below require it to be strictly
+// less than that.
+const WIDE_COLUMN_COUNT = 30;
+const wideColumnNames = Array.from(
+  { length: WIDE_COLUMN_COUNT },
+  (_, i) => `w${i}`,
+);
+
+class Issue2890WideWidget extends SmrtObject {}
+for (const columnName of wideColumnNames) {
+  field({ type: 'text' })(Issue2890WideWidget.prototype, columnName);
 }
-field({ type: 'text' })(Issue2890Widget.prototype, 'name');
-field({ type: 'integer' })(Issue2890Widget.prototype, 'quantity');
-smrt({ tableName })(Issue2890Widget);
+smrt({ tableName: wideTableName })(Issue2890WideWidget);
+
+class Issue2890Alpha extends SmrtObject {}
+field({ type: 'text' })(Issue2890Alpha.prototype, 'label');
+field({ type: 'integer' })(Issue2890Alpha.prototype, 'count');
+smrt({ tableName: alphaTableName })(Issue2890Alpha);
+
+class Issue2890Beta extends SmrtObject {}
+field({ type: 'text' })(Issue2890Beta.prototype, 'label');
+field({ type: 'boolean' })(Issue2890Beta.prototype, 'active');
+smrt({ tableName: betaTableName })(Issue2890Beta);
+
+class Issue2890Gamma extends SmrtObject {}
+field({ type: 'text' })(Issue2890Gamma.prototype, 'label');
+smrt({ tableName: gammaTableName })(Issue2890Gamma);
+
+const allTableNames = [
+  wideTableName,
+  alphaTableName,
+  betaTableName,
+  gammaTableName,
+];
 
 /**
  * Counts every query the real `pg` driver issues, by wrapping
- * `pg.Client.prototype.query`.
+ * `pg.Client.prototype.query`, and records each statement's SQL text so
+ * callers can assert on *which* statements ran, not just how many.
  *
  * `pg` is not a declared dependency of `@happyvertical/smrt-vitest` (this
  * package only depends on `@happyvertical/sql`, which depends on `pg`
@@ -69,6 +110,7 @@ smrt({ tableName })(Issue2890Widget);
  */
 async function countPgQueries(): Promise<{
   count: () => number;
+  statements: () => string[];
   restore: () => void;
 }> {
   const sqlEntry = await import.meta.resolve('@happyvertical/sql');
@@ -77,16 +119,24 @@ async function countPgQueries(): Promise<{
     Client: { prototype: { query: (...args: unknown[]) => unknown } };
   };
   const original = pg.Client.prototype.query;
-  let count = 0;
+  const statements: string[] = [];
   pg.Client.prototype.query = function patchedQuery(
     this: unknown,
     ...args: unknown[]
   ) {
-    count += 1;
+    const first = args[0];
+    const text =
+      typeof first === 'string'
+        ? first
+        : typeof first === 'object' && first !== null && 'text' in first
+          ? String((first as { text: unknown }).text)
+          : '';
+    statements.push(text);
     return original.apply(this, args as never);
   };
   return {
-    count: () => count,
+    count: () => statements.length,
+    statements: () => statements.slice(),
     restore: () => {
       pg.Client.prototype.query = original;
     },
@@ -96,7 +146,23 @@ async function countPgQueries(): Promise<{
 postgresDescribe(
   'PostgreSQL vitest auto-schema precheck skips fully-provisioned tables (#2890)',
   () => {
+    const openHandles: Array<{ close: () => Promise<void> }> = [];
+
+    async function openDb(
+      options: Record<string, unknown>,
+    ): Promise<Awaited<ReturnType<typeof getDatabase>>> {
+      const db = await getDatabase(
+        options as Parameters<typeof getDatabase>[0],
+      );
+      openHandles.push(db as unknown as { close: () => Promise<void> });
+      return db;
+    }
+
     afterAll(async () => {
+      for (const handle of openHandles.splice(0)) {
+        await handle.close();
+      }
+
       const admin = await getDatabase({
         type: 'postgres',
         url: process.env.DATABASE_URL as string,
@@ -105,19 +171,23 @@ postgresDescribe(
         __smrtSkipVitestSchemaPreparation: boolean;
       });
       try {
-        await admin.query(`DROP TABLE IF EXISTS "${tableName}"`);
+        for (const table of allTableNames) {
+          await admin.query(`DROP TABLE IF EXISTS "${table}"`);
+        }
       } finally {
         await admin.close();
       }
     });
 
-    it('issues a small, constant number of statements against an already-provisioned table, and still repairs a dropped column', async () => {
+    it('issues a small, constant number of statements against already-provisioned tables, and still repairs a dropped column', async () => {
       const baseUrl = process.env.DATABASE_URL as string;
 
-      // First handle: provisions the table (goes through the full
-      // `syncSchema` path since the table does not exist yet).
-      const first = await getDatabase({ type: 'postgres', url: baseUrl });
-      expect(await first.tableExists(tableName)).toBe(true);
+      // First handle: provisions every table (goes through the full
+      // `syncSchema` path since none of them exist yet).
+      const first = await openDb({ type: 'postgres', url: baseUrl });
+      for (const table of allTableNames) {
+        expect(await first.tableExists(table)).toBe(true);
+      }
 
       // Second handle: a distinct `dbid` against the SAME already-provisioned
       // database bypasses both `preparedSchemasByDb` (a fresh connection
@@ -125,35 +195,47 @@ postgresDescribe(
       // precheck itself -- not the pre-existing cache -- is what is under
       // test here.
       const counter = await countPgQueries();
-      const second = await getDatabase({
+      const second = await openDb({
         type: 'postgres',
         url: baseUrl,
-        dbid: `issue-2890-second-${tableSuffix}`,
-      } as Parameters<typeof getDatabase>[0] & { dbid: string });
-      const statementsForProvisionedHandle = counter.count();
+        dbid: `issue-2890-second-${suffix}`,
+      });
+      const statementCount = counter.count();
+      const statements = counter.statements();
       counter.restore();
 
-      expect(await second.tableExists(tableName)).toBe(true);
-      // Two precheck round trips (columns + indexes) plus a handful of
-      // framework-owned system-table checks/opens the mocked getDatabase
-      // performs regardless -- nowhere near one probe per declared column
-      // across every registered class, which is what reproduced #2890.
-      expect(statementsForProvisionedHandle).toBeGreaterThan(0);
-      expect(statementsForProvisionedHandle).toBeLessThan(40);
+      for (const table of allTableNames) {
+        expect(await second.tableExists(table)).toBe(true);
+      }
+
+      // Discriminating vs. the pre-#2890 implementation: `Issue2890WideWidget`
+      // alone declares `WIDE_COLUMN_COUNT` (30) columns, so the old
+      // per-column-per-table `SELECT EXISTS` probe would issue at least 30
+      // statements for that one table alone on this second, already-
+      // provisioned handle. The fixed precheck issues a small, table-count-
+      // scaled number of statements (two round trips, batched across all
+      // four tables) regardless of how many columns each table declares.
+      expect(statementCount).toBeGreaterThan(0);
+      expect(statementCount).toBeLessThan(WIDE_COLUMN_COUNT);
+      expect(
+        statements.some((sql) =>
+          /SELECT\s+EXISTS[\s\S]*information_schema\.columns/i.test(sql),
+        ),
+      ).toBe(false);
 
       // Drift is still repaired: drop a column with raw SQL, then obtain
       // another fresh handle and confirm the column comes back.
-      await first.query(`ALTER TABLE "${tableName}" DROP COLUMN "quantity"`);
+      await first.query(`ALTER TABLE "${wideTableName}" DROP COLUMN "w0"`);
 
-      const third = await getDatabase({
+      const third = await openDb({
         type: 'postgres',
         url: baseUrl,
-        dbid: `issue-2890-third-${tableSuffix}`,
-      } as Parameters<typeof getDatabase>[0] & { dbid: string });
+        dbid: `issue-2890-third-${suffix}`,
+      });
       const columnRows = await third.query(
         `SELECT column_name FROM information_schema.columns
-         WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'quantity'`,
-        [tableName],
+         WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'w0'`,
+        [wideTableName],
       );
       const rows = Array.isArray(columnRows)
         ? columnRows
