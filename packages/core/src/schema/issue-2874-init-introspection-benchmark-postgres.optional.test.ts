@@ -137,23 +137,39 @@ postgresDescribe(
 
     it(`issues a bounded number of statements across ${INIT_COUNT} SchemaComparer.compare() runs at ${OBJECT_COUNT} objects`, async () => {
       const manifest = buildManifest();
+
+      // Warmup run, excluded from both the statement count and the wall-time
+      // samples below: the first `compare()` against a fresh connection pays
+      // one-time JIT/connection-setup cost unrelated to the algorithm this
+      // benchmark pins (#2890).
+      {
+        const warmup = new SchemaComparer(db, {});
+        await warmup.compare(manifest);
+      }
+
       const { counts } = wrapCountingQuery(db);
 
+      const perRunMs: number[] = [];
       const started = performance.now();
       for (let run = 0; run < INIT_COUNT; run++) {
+        const runStarted = performance.now();
         const comparer = new SchemaComparer(db, {});
         await comparer.compare(manifest);
+        perRunMs.push(performance.now() - runStarted);
       }
       const elapsedMs = performance.now() - started;
 
       const { total, byPrefix } = counts();
       const perRun = total / INIT_COUNT;
       const perObjectPerRun = perRun / OBJECT_COUNT;
+      const sortedMs = [...perRunMs].sort((a, b) => a - b);
+      const medianMs = sortedMs[Math.floor(sortedMs.length / 2)];
+      const slowestMs = sortedMs[sortedMs.length - 1];
 
       console.log(
         `[issue-2874-bench] total_statements=${total} runs=${INIT_COUNT} objects=${OBJECT_COUNT} ` +
           `statements_per_run=${perRun.toFixed(2)} statements_per_object_per_run=${perObjectPerRun.toFixed(3)} ` +
-          `elapsed_ms=${elapsedMs.toFixed(1)}`,
+          `elapsed_ms=${elapsedMs.toFixed(1)} median_run_ms=${medianMs.toFixed(1)} slowest_run_ms=${slowestMs.toFixed(1)}`,
       );
       const top = [...byPrefix.entries()]
         .sort((a, b) => b[1] - a[1])
@@ -184,6 +200,39 @@ postgresDescribe(
       // per-table probe loop (143-shaped) or a per-column one (427-shaped)
       // both trip it.
       expect(perRun).toBeLessThan(90);
+
+      // Wall-time ceiling (#2890). #2878 restored statement count to
+      // baseline, but a downstream measurement found wall time *for the
+      // real migration pipeline* still ~4x slower than pre-regression
+      // (0.45.1) despite the matched statement count — i.e. the same round
+      // trips got individually more expensive, or non-SQL work grew,
+      // somewhere the statement-count ceiling above cannot see.
+      //
+      // Direct A/B measurement of *this exact benchmark* (SchemaComparer
+      // .compare() in isolation, statement-count matched) against published
+      // 0.45.1 and 0.51.1 builds found no reproducible difference here: both
+      // land at ~300-400ms/run on this fixture and machine. The 3-4x
+      // regression #2890 measured lives outside `compare()` — most likely
+      // in `SmrtObject.save()`/`prepareSave()`/`completeSave()` (grown
+      // materially across the same version range: cross-package-ref
+      // validation, embedding-generation checks, additional interceptor
+      // work per row) exercised by the real migration's per-row writes, not
+      // in the schema-diff round trip this suite already pins by statement
+      // count. See #2890 for the full localization writeup.
+      //
+      // This ceiling exists so a *future* regression that reintroduces
+      // per-statement cost inflation inside `compare()` itself — the
+      // scenario #2890's H1 hypothesized for this function specifically —
+      // is still caught even if it does not move the statement count. It is
+      // deliberately generous (~4-5x the ~300-400ms/run observed locally) to
+      // tolerate shared-runner noise and cross-machine variance while still
+      // catching a regression of the same order of magnitude #2890 measured
+      // downstream. A tighter absolute threshold would be noise-flaky on CI;
+      // a relative (version-over-version) comparison would need a second
+      // build to compare against and does not fit this single-run shape.
+      // Median (not mean) guards against one slow outlier run tripping the
+      // suite while a real regression still fails every run.
+      expect(medianMs).toBeLessThan(1800);
     }, 120_000);
   },
 );
