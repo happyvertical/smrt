@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - skip automatic schema sync for already-provisioned PostgreSQL tables (#2890) (#2892) (vitest)
+  - @happyvertical/smrt-config@0.51.2
+  - @happyvertical/smrt-types@0.51.2
+  - @happyvertical/smrt-scanner@0.51.2
+
 ## 0.51.1
 
 ### Patch Changes
