@@ -15,6 +15,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   defaultConflictColumns,
   resolveTenantColumn,
@@ -90,8 +91,10 @@ type SchemaGeneratorLike = {
 const require = createRequire(import.meta.url);
 
 // Build-time schema/manifest-generation diagnostics route through the shared
-// logger (S14 / dim-9, #1579) instead of unconditional stdout writes.
-const logger = createLogger({ level: 'info' });
+// logger (S14 / dim-9, #1579) instead of unconditional stdout writes. Level
+// follows the repo-wide SMRT_VERBOSE/DEBUG convention (#2896) so per-class
+// detail is opt-in rather than always-on info.
+const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
 
 /**
  * Framework abstract base classes whose declared fields must be merged
@@ -511,7 +514,7 @@ export class ManifestGenerator {
       },
     };
 
-    logger.info(
+    logger.debug(
       `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
     );
   }
@@ -839,7 +842,7 @@ export class ManifestGenerator {
           aggregatedManifest.objects[rootKey]?.decoratorConfig ??
           obj.decoratorConfig;
 
-        logger.info(
+        logger.debug(
           `[manifest-generator] Generating STI schema for ${name} (root: ${rootKey}, table: ${rootTableName})`,
         );
 
@@ -854,7 +857,7 @@ export class ManifestGenerator {
         this.applySqlTypeOverrides(obj);
       } else {
         // CTI class - generate individual table schema
-        logger.info(
+        logger.debug(
           `[manifest-generator] Generating CTI schema for ${name} (table: ${tableName})`,
         );
 
@@ -1370,7 +1373,7 @@ export class ManifestGenerator {
             }
           }
 
-          logger.info(
+          logger.debug(
             `[manifest-generator] Aggregated ${Object.keys(externalManifest.objects).length} objects from ${packageName}`,
           );
         }
@@ -1624,7 +1627,7 @@ export class ManifestGenerator {
       //     #2624).
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
 
-      logger.info(
+      logger.debug(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
       );
 
@@ -1670,7 +1673,7 @@ export class ManifestGenerator {
         currentClass = parentObj.extends;
       }
 
-      logger.info(
+      logger.debug(
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
@@ -1790,7 +1793,7 @@ export class ManifestGenerator {
         // Inherit tableName from STI base
         obj.decoratorConfig = obj.decoratorConfig || {};
         obj.decoratorConfig.tableName = baseTableName;
-        logger.info(
+        logger.debug(
           `[manifest-generator] ${obj.className} inherits tableName: '${baseTableName}' from ${stiBase.className}`,
         );
 
@@ -1798,21 +1801,21 @@ export class ManifestGenerator {
         if (stiBase.decoratorConfig?.tableStrategy) {
           obj.decoratorConfig.tableStrategy =
             stiBase.decoratorConfig.tableStrategy;
-          logger.info(
+          logger.debug(
             `[manifest-generator] ${obj.className} inherits tableStrategy: '${stiBase.decoratorConfig.tableStrategy}' from ${stiBase.className}`,
           );
         }
 
         // Inherit collection name from STI base (all STI classes share one table)
         if (stiBase.collection !== obj.collection) {
-          logger.info(
+          logger.debug(
             `[manifest-generator] ${obj.className} inherits collection: '${stiBase.collection}' from ${stiBase.className}`,
           );
           obj.collection = stiBase.collection;
         }
       }
 
-      logger.info(
+      logger.debug(
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
     }
@@ -1830,7 +1833,7 @@ export class ManifestGenerator {
         const itemClass = this.findItemClass(obj, manifest, objectsByName);
 
         if (itemClass) {
-          logger.info(
+          logger.debug(
             `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
           );
 
@@ -1838,14 +1841,14 @@ export class ManifestGenerator {
           if (itemClass.decoratorConfig?.tableName) {
             obj.decoratorConfig = obj.decoratorConfig || {};
             obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
-            logger.info(
+            logger.debug(
               `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
             );
           }
 
           // Inherit collection name from item class
           if (itemClass.collection !== obj.collection) {
-            logger.info(
+            logger.debug(
               `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
             );
             obj.collection = itemClass.collection;
@@ -1879,7 +1882,7 @@ export class ManifestGenerator {
             ) {
               obj.decoratorConfig = obj.decoratorConfig || {};
               obj.decoratorConfig[key] = false;
-              logger.info(
+              logger.debug(
                 `[manifest-generator] ${obj.className} inherits ${key}: false from item class ${itemClass.className}`,
               );
             }
@@ -1943,14 +1946,14 @@ export class ManifestGenerator {
     // This is the most reliable method: SmrtCollection<Meeting> -> "Meeting"
     if (collectionObj.extendsTypeArg) {
       const itemClassName = collectionObj.extendsTypeArg;
-      logger.info(
+      logger.debug(
         `[manifest-generator] ${collectionObj.className} has extendsTypeArg: ${itemClassName}`,
       );
 
       // Try to find the item class by name in local manifest
       const itemClass = objectsByName.get(itemClassName);
       if (itemClass) {
-        logger.info(
+        logger.debug(
           `[manifest-generator] Found item class ${itemClassName} in local manifest`,
         );
         return itemClass;
@@ -1964,7 +1967,7 @@ export class ManifestGenerator {
           objectsByName,
         );
         if (externalItemClass) {
-          logger.info(
+          logger.debug(
             `[manifest-generator] Found item class ${itemClassName} in external package`,
           );
           return externalItemClass;
@@ -3188,7 +3191,7 @@ ${fields}
 
       obj.agent = agentManifest;
 
-      logger.info(
+      logger.debug(
         `[manifest-generator] Generated agent manifest for ${obj.className}: ` +
           `${permissions.length} permissions, ${features.length} features, ` +
           `${menuItems.length} menu items, ${components.length} components`,
