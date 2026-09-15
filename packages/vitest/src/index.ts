@@ -1530,6 +1530,16 @@ export async function setupSmrtManifests(
 
 export default smrtVitestPlugin;
 
+// Export statement-counting test helper (#2875)
+export {
+  type CountedStatement,
+  expectStatementCeiling,
+  normalizeStatement,
+  type StatementCountResult,
+  type StatementShapeGroup,
+  withStatementCount,
+} from './statement-count.js';
+
 // Export test database utilities
 export {
   createIsolatedTestDb,

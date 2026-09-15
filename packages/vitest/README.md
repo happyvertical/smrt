@@ -135,6 +135,32 @@ it('should insert and query', async () => {
 
 `IsolatedTestDbOptions`, `IsolatedTestDbResult`, `ManifestTestDbOptions`, `TestDbAdapter`, `TestDbConfig`, `TransactionHandle`
 
+### Statement-Count Ceiling (#2875)
+
+| Export | Description |
+|--------|-------------|
+| `withStatementCount(db, fn)` | Run `fn` against `db`, counting every statement `fn` issues -- including through any `db.transaction()`/`db.beginTransaction()`/`db.acquireSession()` handle it opens -- and returning the total plus a normalized, grouped breakdown |
+| `expectStatementCeiling(statementResult, ceiling, options?)` | Assert `statementResult.count <= ceiling`; on failure, formats the top statement shapes by count into the failure message |
+| `normalizeStatement(sql)` | Collapse whitespace and elide literal values/placeholders, for grouping statements that differ only by parameter values |
+
+Turns the hand-rolled `db.query` wrapping in
+`packages/core/src/__tests__/collection-read-plan-postgres.optional.test.ts`
+into a reusable instrument, so a round-trip ceiling is one call instead of a
+bespoke monkey-patch per test file. Works on SQLite and PostgreSQL alike, so a
+ceiling built on it can live in the default unit lane. Counts calls through
+`query`/`many`/`single`/`pluck`/`execute` (and their `oo`/`oO`/`ox`/`xx`
+aliases) -- the raw-statement surface schema-introspection and migration code
+uses -- not the higher-level `insert`/`get`/`list`/... convenience methods.
+
+```typescript
+import { expectStatementCeiling, withStatementCount } from '@happyvertical/smrt-vitest';
+
+const statementResult = await withStatementCount(db, (countedDb) =>
+  migrateSmrtSchemas(countedDb, manifest),
+);
+expectStatementCeiling(statementResult, 30); // 71 registered objects
+```
+
 ## Dependencies
 
 - `@happyvertical/smrt-core` -- manifest builder, object registry

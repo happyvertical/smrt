@@ -164,6 +164,49 @@ beforeEach(async () => {
 afterEach(async () => { await cleanup(); }); // rolls back transaction
 ```
 
+## Statement-Count Ceiling (#2875)
+
+`withStatementCount(db, fn)` / `expectStatementCeiling(result, ceiling)` in
+`src/statement-count.ts` generalize the hand-rolled `db.query` wrapping in
+`packages/core/src/__tests__/collection-read-plan-postgres.optional.test.ts`
+into a reusable instrument for round-trip ceiling assertions (motivated by
+#2874: an uncounted 3.7x per-object schema-introspection regression shipped
+in 0.47.2 and survived to 0.50.0).
+
+Instruments the raw-statement surface only —
+`query`/`many`/`single`/`pluck`/`execute` and their `oo`/`oO`/`ox`/`xx`
+aliases (each an independent property, not a dynamic passthrough to its
+long-form counterpart — every alias needs its own wrap). Every
+`@happyvertical/sql` adapter routes the higher-level `insert`/`get`/`list`/
+`update`/`upsert`/`delete`/`count`/`getOrInsert` convenience methods to the
+transport directly through a private closure, not through the object's own
+`query`/`many`/... properties, so those are out of scope for an
+externally-applied wrap; the schema-introspection/migration paths this helper
+targets issue their statements through `query()`.
+
+Also instruments `transaction()`/`beginTransaction()`/`acquireSession()`
+recursively so a callback's `tx` or pinned-session handle is counted too —
+each is built from independent state over its own connection, so wrapping
+only the outer `db` would under-count work done inside a transaction or a
+session and pass a ceiling that should have failed (`#2862`'s bootstrap path
+is exactly this shape for transactions; the migration tracker's
+`acquireSession()`-pinned PostgreSQL concurrent-index phase — `SET
+lock_timeout`, the invalid-index scan, `DROP`/`CREATE INDEX CONCURRENTLY` —
+is the same shape for sessions, falling back to plain `db.query()` on
+single-connection adapters that don't implement `acquireSession`). Restores
+every method it touches on the *outer* handle in a `finally`; transaction and
+session handles are ephemeral and never reused, so they are not restored —
+except on PostgreSQL, where `tx.transaction()` (a *nested* transaction on a
+handle already obtained from `transaction()`/`beginTransaction()`) hands its
+callback the exact same object as the enclosing handle (so the nested scope
+can see the enclosing transaction's uncommitted rows on one pooled
+connection). A per-session `WeakSet` makes re-instrumenting that shared
+object a no-op instead of double-counting every statement the handle issues
+afterward. Engine-agnostic (SQLite and PostgreSQL); its own tests run
+in-memory SQLite, including fakes that reproduce the PostgreSQL same-object
+nesting shape and a fake `acquireSession()`, so a ceiling built on it can
+live in the default unit lane.
+
 ## Singleton Cache Gotcha
 
 Module-level singleton caches (common in SMRT collections) persist across tests, ignoring new mocks.
@@ -216,3 +259,4 @@ Pattern: render → assert role/name/state → drive with user-event → prove a
 - `src/svelte.ts` — component-test surface (Testing Library + a11y, one import)
 - `src/a11y.ts` — `expectNoA11yViolations` (axe-core)
 - `src/test-db.ts` — createIsolatedTestDb, createIsolatedTestDbFromManifest, createTestDb
+- `src/statement-count.ts` — withStatementCount, expectStatementCeiling, normalizeStatement
