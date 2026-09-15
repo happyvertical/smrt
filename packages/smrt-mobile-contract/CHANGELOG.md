@@ -1,5 +1,7 @@
 # @happyvertical/smrt-mobile-contract
 
+## 0.51.3
+
 ## 0.51.2
 
 ## 0.51.1

@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.51.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - demote bootstrap logging; document pool/isolate trade-offs (#2899) (vitest,core)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.89.11 (#2901) (deps)
+  - chore: sync sdk packages to v0.89.10 (#2900) (deps)
+  - @happyvertical/smrt-config@0.51.3
+  - @happyvertical/smrt-types@0.51.3
+  - @happyvertical/smrt-scanner@0.51.3
+
 ## 0.51.2
 
 ### Patch Changes
