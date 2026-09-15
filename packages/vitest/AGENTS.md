@@ -24,6 +24,31 @@ Without the plugin → "unregistered class" / "No field metadata found" errors.
 4. Registers all classes in ObjectRegistry
 5. Watch mode caveat: manifest only generated at startup — restart vitest after adding new classes/fields
 
+## Pool and isolation (#2897)
+
+Measured on a 333-file, 3,259-test unit suite, 16 cores (follow-up to #2893):
+
+| mode | wall | CPU | result |
+|---|---|---|---|
+| `pool: 'forks'`, isolated (default) | 22.9 s | 274 s | all pass |
+| `pool: 'threads'`, isolated | 19.4 s | 234 s | all pass |
+| `pool: 'forks'`, `isolate: false` | 12.1 s | 93 s | 7 fail in 1 file (leaked module mock from another file) |
+
+- `pool: 'threads'` is supported and ran ~15% cheaper here; try it per project
+  since native drivers can behave differently under threads vs. forks.
+- `isolate: false` is supported by this plugin's own setup: the registration
+  guard in `src/setup.ts` is self-healing by design (it re-registers after
+  `ObjectRegistry.clear()`, which is why that guard exists — #2750). Turning
+  isolation off is a consumer decision: it removes the leak guard between test
+  files, so a failing file under it is a real cross-file leak to fix, not a
+  plugin bug. Recommend it for unit projects only, never for integration
+  projects.
+- The per-file fixed cost is process + module-graph bootstrap (roughly half a
+  second of CPU per file), not manifest registration (50-90 ms). Precomputing
+  registration saves little against that fixed cost; see the #2893
+  measurements. Lazy-loading `@happyvertical/ai` in core is the
+  isolation-preserving lever, tracked separately.
+
 ## Vite 8 (rolldown/oxc) normalization (#2017)
 
 The plugin's `config` hook normalizes three vite 8 behaviors so consumers
