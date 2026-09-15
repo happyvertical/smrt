@@ -33,7 +33,7 @@ Without this plugin, tests fail with `"No field metadata found"` or `"unregister
 | `include` | `string[]` | `['src/**/*.ts']` | Source patterns to scan |
 | `exclude` | `string[]` | `['**/*.d.ts', ...]` | Patterns to exclude |
 | `packages` | `string[]` | `[]` | Additional packages beyond auto-discovered |
-| `verbose` | `boolean` | `false` | Enable detailed logging |
+| `verbose` | `boolean` | `false` | Emit per-package manifest-registration log lines. Also on with `SMRT_VERBOSE=true` or `DEBUG` containing `smrt`, regardless of this option. A one-line per-process summary (`Loaded manifests from N/M packages`) always logs once even when this is `false`. |
 | `root` | `string` | `process.cwd()` | Root directory |
 | `setupFile` | `string` | package setup entry | Override the setup file injected into Vitest projects |
 | `aliasFilter` | `(entry) => boolean` | keep all | Drop auto-generated workspace alias entries (receives the raw string `find` and `replacement`) |
@@ -82,6 +82,31 @@ settings on vite 8.
 ### Watch Mode Note
 
 The manifest is generated once at vitest startup. Restart vitest after adding new `@smrt()` classes or fields.
+
+### Pool and Isolation
+
+Measured on a 333-file, 3,259-test unit suite, 16 cores (#2897, follow-up to #2893):
+
+| mode | wall | CPU | result |
+|---|---|---|---|
+| `pool: 'forks'`, isolated (default) | 22.9 s | 274 s | all pass |
+| `pool: 'threads'`, isolated | 19.4 s | 234 s | all pass |
+| `pool: 'forks'`, `isolate: false` | 12.1 s | 93 s | 7 fail in 1 file (leaked module mock from another file) |
+
+- **`pool: 'threads'` is supported** and came in ~15% cheaper on this suite. Try it per
+  project -- native drivers can behave differently under threads vs. forks.
+- **`isolate: false` is supported** by this plugin's own setup: the registration guard
+  in `src/setup.ts` is self-healing by design (it re-registers after
+  `ObjectRegistry.clear()`, which is why that guard exists -- #2750). Turning isolation
+  off is a consumer decision, though: it removes the leak guard *between* test files, so
+  a failing file under it is signaling a real cross-file leak to fix, not a plugin bug.
+  Recommended for unit projects only, never for integration projects.
+- The per-file fixed cost this plugin pays is process + module-graph bootstrap
+  (roughly half a second of CPU per file), not manifest registration itself
+  (50-90 ms). Precomputing registration would save little against that fixed cost; see
+  the measurements in #2893. Lazy-loading `@happyvertical/ai` in core (a separate,
+  isolation-preserving change) is the bigger lever for consumers with the ai package on
+  their dependency graph.
 
 ## API
 

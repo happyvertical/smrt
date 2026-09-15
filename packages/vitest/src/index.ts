@@ -31,6 +31,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vitest/config';
+import { isVerbose, shouldLogManifestSummaryOnce } from './log.js';
 
 /**
  * Environment variable carrying this plugin's manifest-registration options
@@ -149,6 +150,9 @@ export interface SmrtVitestPluginOptions {
   /**
    * Emit diagnostic log lines for each manifest discovered, loaded, or
    * skipped.  Helpful when debugging "No field metadata found" errors.
+   * Also honours the repo-wide `SMRT_VERBOSE=true` / `DEBUG` (containing
+   * `smrt`) env conventions, so this can stay `false` and still be turned
+   * on per-run.
    *
    * @default false
    */
@@ -896,7 +900,7 @@ async function loadAndRegisterManifest(
       manifest.packageName || packageName,
     );
 
-    if (verbose || registered > 0) {
+    if (isVerbose(verbose)) {
       console.log(
         `[smrt-vitest] Loaded ${registered} classes from ${packageName}`,
       );
@@ -1017,7 +1021,7 @@ async function loadAndRegisterLocalManifest(
       manifest.packageName,
     );
 
-    if (verbose || registered > 0) {
+    if (isVerbose(verbose)) {
       console.log(
         `[smrt-vitest] Loaded ${registered} classes from local manifest`,
       );
@@ -1245,12 +1249,13 @@ export function smrtVitestPlugin(
 ): Plugin {
   const {
     packages = [],
-    verbose = false,
+    verbose: verboseOption = false,
     root = process.cwd(),
     generateManifest = true,
     setupFile = resolveDefaultSetupFile(),
     aliasFilter,
   } = options;
+  const verbose = isVerbose(verboseOption);
 
   let manifestsLoaded = false;
   const setupFileId = setupFile;
@@ -1482,7 +1487,7 @@ export function smrtVitestPlugin(
  *
  * export default defineConfig({
  *   test: {
- *     globalSetup: ['@happyvertical/smrt-vitest/setup'],
+ *     setupFiles: ['@happyvertical/smrt-vitest/setup'],
  *   },
  * });
  * ```
@@ -1500,7 +1505,12 @@ export function smrtVitestPlugin(
 export async function setupSmrtManifests(
   options: SmrtVitestPluginOptions = {},
 ): Promise<void> {
-  const { packages = [], verbose = false, root = process.cwd() } = options;
+  const {
+    packages = [],
+    verbose: verboseOption = false,
+    root = process.cwd(),
+  } = options;
+  const verbose = isVerbose(verboseOption);
 
   await loadAndRegisterLocalManifest(root, verbose);
 
@@ -1523,9 +1533,14 @@ export async function setupSmrtManifests(
   );
 
   const successCount = results.filter(Boolean).length;
-  console.log(
-    `[smrt-vitest] Loaded manifests from ${successCount}/${smrtPackages.length} packages`,
-  );
+  // Always mark the once-per-process guard, even when verbose: a verbose
+  // call must not leave a later quiet call free to log its own summary.
+  const isFirstSummaryThisProcess = shouldLogManifestSummaryOnce();
+  if (isVerbose(verbose) || isFirstSummaryThisProcess) {
+    console.log(
+      `[smrt-vitest] Loaded manifests from ${successCount}/${smrtPackages.length} packages`,
+    );
+  }
 }
 
 export default smrtVitestPlugin;
