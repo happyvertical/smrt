@@ -34,9 +34,12 @@
  * safely needs that engine ported first. Tracked as a follow-up (see PR body).
  */
 
+import { createHash } from 'node:crypto';
 import {
+  canonicalizeDataQuery,
   createDataQueryFingerprint,
   DataQueryValidationError,
+  MAX_DATA_QUERY_OFFSET,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -652,19 +655,18 @@ function normalizeScopeConditions(
   });
 }
 
-function denyAllScopeCondition(identityField: string): WhereCondition {
-  return Object.freeze({ [identityField]: null });
-}
-
+/**
+ * Normalize the caller's trusted application scope. An explicit,
+ * normalized-empty scope (deny-all) is handled by a short-circuit in
+ * `executeSmrtCollectionQuery` before this is ever reached, so this never
+ * needs a nullable-identity sentinel to represent "no rows."
+ */
 function normalizeApplicationScope(
   scope: SmrtCollectionQueryScope | undefined,
-  identityField: string,
+  _identityField: string,
 ): WhereCondition[] {
   if (scope === undefined) return [];
-  const conditions = normalizeScopeConditions(scope);
-  return conditions.length > 0
-    ? conditions
-    : [{ ...denyAllScopeCondition(identityField) }];
+  return normalizeScopeConditions(scope);
 }
 
 /**
@@ -697,21 +699,67 @@ function orderByTerms(sort: DataQuerySort[] | undefined): string[] | undefined {
   );
 }
 
-/** Opaque cursor: base64 of the row offset it resumes from. Never introspect. */
-function encodeCursor(offset: number): string {
-  return Buffer.from(String(offset), 'utf8').toString('base64url');
+/**
+ * Fingerprint binding a cursor to the exact query (and trusted scope) that
+ * produced it: the normalized request minus `requestId`/`page` (via
+ * `canonicalizeDataQuery`, which already strips both) plus the merged
+ * tenant/application `where` scope, so a cursor cannot be replayed against a
+ * different filter, sort, projection, or — critically — a different tenant.
+ */
+function computeCursorBinding(
+  request: DataQueryRequest,
+  schema: DataQuerySchema,
+  where: WhereDnf | undefined,
+): string {
+  const canonicalRequest = canonicalizeDataQuery(request, schema);
+  return createHash('sha256')
+    .update(canonicalRequest)
+    .update(' ')
+    .update(JSON.stringify(where ?? null))
+    .digest('base64url');
 }
 
-function decodeCursor(cursor: string | undefined): number {
-  if (!cursor) return 0;
-  const decoded = Number.parseInt(
-    Buffer.from(cursor, 'base64url').toString('utf8'),
-    10,
+/** Opaque cursor: base64url JSON of `{ binding, offset }`. Never introspect. */
+function encodeCursor(offset: number, binding: string): string {
+  return Buffer.from(JSON.stringify({ binding, offset }), 'utf8').toString(
+    'base64url',
   );
-  if (!Number.isFinite(decoded) || decoded < 0) {
+}
+
+function decodeCursor(
+  cursor: string | undefined,
+  binding: string,
+): number {
+  if (!cursor) return 0;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+  } catch {
     return queryFail('Data query cursor is invalid', 'DATA_QUERY_UNSUPPORTED');
   }
-  return decoded;
+  if (
+    !isPlainRecord(parsed) ||
+    typeof parsed.binding !== 'string' ||
+    typeof parsed.offset !== 'number'
+  ) {
+    return queryFail('Data query cursor is invalid', 'DATA_QUERY_UNSUPPORTED');
+  }
+  if (!Number.isInteger(parsed.offset) || parsed.offset < 0) {
+    return queryFail('Data query cursor is invalid', 'DATA_QUERY_UNSUPPORTED');
+  }
+  if (parsed.offset > MAX_DATA_QUERY_OFFSET) {
+    return queryFail(
+      `Data query cursor offset cannot exceed ${MAX_DATA_QUERY_OFFSET}`,
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
+  if (parsed.binding !== binding) {
+    return queryFail(
+      'Data query cursor does not match the current query',
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
+  return parsed.offset;
 }
 
 async function resolveCollection(
@@ -765,6 +813,71 @@ export async function executeSmrtCollectionQuery(
   const queryFingerprint = createDataQueryFingerprint(request, schema);
   const descriptors = new Map(schema.fields.map((field) => [field.id, field]));
   const declared = new Set(descriptors.keys());
+  const warnings: string[] = [];
+
+  // Deny-all application scope: an explicit, normalized-empty scope means
+  // "no rows are ever in bounds," never a `{ [identityField]: null }`
+  // sentinel that depends on a nullable identity column. Short-circuit
+  // without ever calling the collection.
+  if (
+    options.scope !== undefined &&
+    normalizeScopeConditions(options.scope).length === 0
+  ) {
+    if (request.mode === 'rows') {
+      const isCursor = request.page?.kind === 'cursor';
+      const offset =
+        !isCursor && request.page?.kind === 'offset' ? request.page.offset : 0;
+      const limit =
+        request.page?.limit ?? schema.defaultPageLimit ?? DEFAULT_PAGE_LIMIT;
+      const page: DataQueryResult['page'] = isCursor
+        ? { kind: 'cursor', limit, hasMore: false }
+        : { kind: 'offset', offset, limit, hasMore: false };
+      return normalizeDataQueryResult(
+        {
+          version: 1 as const,
+          requestId: request.requestId,
+          queryFingerprint,
+          identityField: schema.identityField,
+          rows: [],
+          page,
+          total: { kind: 'exact' as const, value: 0 },
+          freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
+          warnings,
+          truncated: false,
+        },
+        request,
+        schema,
+      );
+    }
+    let deniedFacets: DataQueryFacetResult[] | undefined;
+    if (request.mode === 'facets') {
+      deniedFacets = (request.facets ?? []).map((facet) => {
+        if (!descriptors.has(facet.field)) {
+          return queryFail(
+            `Data query returned an undeclared facet: ${facet.field}`,
+            'DATA_QUERY_RESULT_NOT_ALLOWED',
+          );
+        }
+        return { field: facet.field, values: [], truncated: false };
+      });
+    }
+    return normalizeDataQueryResult(
+      {
+        version: 1 as const,
+        requestId: request.requestId,
+        queryFingerprint,
+        identityField: schema.identityField,
+        rows: [],
+        total: { kind: 'exact' as const, value: 0 },
+        ...(deniedFacets === undefined ? {} : { facets: deniedFacets }),
+        freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
+        warnings,
+        truncated: false,
+      },
+      request,
+      schema,
+    );
+  }
 
   const callerWhere = request.filter
     ? filterToDnf(request.filter, declared)
@@ -778,8 +891,7 @@ export async function executeSmrtCollectionQuery(
     callerWhere,
   );
   const countOptions = where === undefined ? undefined : { where };
-
-  const warnings: string[] = [];
+  const cursorBinding = computeCursorBinding(request, schema, where);
 
   if (request.mode === 'rows') {
     const projection = request.projection ?? [schema.identityField];
@@ -787,11 +899,12 @@ export async function executeSmrtCollectionQuery(
     const offset = isCursor
       ? decodeCursor(
           request.page?.kind === 'cursor' ? request.page.after : undefined,
+          cursorBinding,
         )
       : request.page?.kind === 'offset'
         ? request.page.offset
         : 0;
-    const limit =
+    let limit =
       request.page?.limit ?? schema.defaultPageLimit ?? DEFAULT_PAGE_LIMIT;
     const orderBy = orderByTerms(request.sort);
     if (signal) assertNotAborted(signal);
@@ -819,14 +932,32 @@ export async function executeSmrtCollectionQuery(
     });
     if (signal) assertNotAborted(signal);
     const total = await collection.count(countOptions);
+    if (signal) assertNotAborted(signal);
     const hasMore = offset + rows.length < total;
+    // `SmrtCollectionQueryCollection` is structural, so the adapter cannot
+    // read a host collection's own `maxListLimit`. Detect the collection
+    // having silently clamped the requested limit (fewer rows than asked
+    // for, but more rows still exist) and, for offset paging, report the
+    // clamped limit so `offset + limit` on the next page still lines up
+    // with what the collection actually returned. The cursor path already
+    // resumes from `offset + rows.length`, so it needs no adjustment. See
+    // the `maxPageLimit` <= host `maxListLimit` requirement documented on
+    // `CreateSmrtCollectionDataSurfaceOptions`.
+    const clamped = rows.length < limit && offset + rows.length < total;
+    if (clamped) {
+      warnings.push(
+        'The collection returned fewer rows than requested; it may enforce ' +
+          'its own maximum list limit below this schema’s maxPageLimit.',
+      );
+      if (!isCursor) limit = rows.length;
+    }
     const page: DataQueryResult['page'] = isCursor
       ? {
           kind: 'cursor',
           limit,
           hasMore,
           ...(hasMore
-            ? { nextCursor: encodeCursor(offset + rows.length) }
+            ? { nextCursor: encodeCursor(offset + rows.length, cursorBinding) }
             : {}),
         }
       : { kind: 'offset', offset, limit, hasMore };
@@ -850,6 +981,7 @@ export async function executeSmrtCollectionQuery(
 
   if (signal) assertNotAborted(signal);
   const total = await collection.count(countOptions);
+  if (signal) assertNotAborted(signal);
   let facets: DataQueryFacetResult[] | undefined;
 
   if (request.mode === 'facets') {
@@ -868,6 +1000,7 @@ export async function executeSmrtCollectionQuery(
       })),
       ...(where === undefined ? {} : { where }),
     });
+    if (signal) assertNotAborted(signal);
     const byField = new Map(sourceFacets.map((facet) => [facet.field, facet]));
     facets = requested.map((facet) => {
       if (!descriptors.has(facet.field)) {
@@ -880,6 +1013,9 @@ export async function executeSmrtCollectionQuery(
         0,
         facet.limit,
       );
+      // Fewer facet values than requested is indistinguishable from a
+      // collection-side clamp (same structural limitation as row limit
+      // clamping above); this is documented rather than guessed at.
       return {
         field: facet.field,
         values: values.map((entry) => ({
@@ -978,6 +1114,7 @@ export async function createSmrtCollectionDataSurfaceDefinition(
     schema: executableSchema,
     execute: async (_surface, request, context) => {
       normalizeDataQueryRequest(request, executableSchema);
+      assertNotAborted(context.signal);
       const run = async () =>
         executeSmrtCollectionQuery(
           await resolveCollection(options, context),
