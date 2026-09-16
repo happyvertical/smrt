@@ -35,6 +35,31 @@ identity and action content belongs in `topLeftCorner` / `topRightCorner`,
 wrapped in `ShellCorner side="left"` or `ShellCorner side="right"` so it follows
 the corresponding shell track as that edge expands and collapses.
 
+## AssistantDock recipe (#2904)
+
+`ShellDockTool` also hosts `@happyvertical/smrt-chat/svelte`'s `AssistantDock`
+— a route-aware assistant surface. This package has no runtime dependency on
+`@happyvertical/smrt-chat` (only a devDependency, for tests); the composition
+below is intentionally application code, not a `workspace/` export:
+
+```svelte
+<script lang="ts">
+  import { ShellDockTool } from '@happyvertical/smrt-svelte/workspace';
+  import { AssistantDock } from '@happyvertical/smrt-chat/svelte';
+</script>
+
+<ShellDockTool id="assistant" label="Assistant" icon="bot">
+  {#snippet render()}
+    <AssistantDock {transport} {registry} />
+  {/snippet}
+</ShellDockTool>
+```
+
+`registry` is the same `DataSurfaceRegistry` instance mounted routes register
+their descriptors on. See
+[`docs/assistant-dock.md`](../../../../../docs/assistant-dock.md) for the full
+design.
+
 ## Migration
 
 See [MIGRATION.md](./MIGRATION.md) for the first-generation workspace migration
