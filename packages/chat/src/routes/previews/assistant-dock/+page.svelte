@@ -27,6 +27,7 @@ import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
 import ToolCallDisplay from '../../../svelte/components/agent/ToolCallDisplay.svelte';
 import AssistantComposer from '../../../svelte/components/assistant/AssistantComposer.svelte';
 import AssistantThreadList from '../../../svelte/components/assistant/AssistantThreadList.svelte';
+import { toolCallStatusForAction } from '../../../svelte/components/assistant/action-status.js';
 import {
   type AssistantAttachmentRef,
   createInMemoryAssistantTransport,
@@ -398,7 +399,7 @@ function formatAttachmentSize(bytes: number): string {
                       toolCall={{
                         toolName: action.request.actionId,
                         toolCallId: requestId,
-                        status: action.status === 'failed' ? 'error' : 'success',
+                        status: toolCallStatusForAction(action.status),
                         error: action.error,
                       }}
                       actionResult={action.applyResult ?? action.previewResult}

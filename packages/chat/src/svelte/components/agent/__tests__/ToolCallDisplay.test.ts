@@ -38,6 +38,20 @@ describe('ToolCallDisplay', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument();
   });
 
+  // #2904 review, Copilot PR #2919 jAwua/jAwtb: AssistantDock/the demo route
+  // map an in-flight preview/apply action to this 'running' toolCall status
+  // (see action-status.test.ts) — assert it actually renders "Running", not
+  // "Completed".
+  it('renders "Running" for a running tool call', () => {
+    render(ToolCallDisplay, {
+      props: {
+        toolCall: makeToolCall({ status: 'running', result: undefined }),
+      },
+    });
+    expect(screen.getByText('Running')).toBeInTheDocument();
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+  });
+
   it('expands to reveal arguments and result on click', async () => {
     render(ToolCallDisplay, { props: { toolCall: makeToolCall() } });
     const header = screen.getByRole('button');

@@ -21,6 +21,7 @@ import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
+import { toolCallStatusForAction } from './action-status.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
@@ -310,12 +311,7 @@ async function handleConfirmAction(requestId: string) {
                 toolCall={{
                   toolName: action.request.actionId,
                   toolCallId: requestId,
-                  status:
-                    action.status === 'failed'
-                      ? 'error'
-                      : action.status === 'applying'
-                        ? 'running'
-                        : 'success',
+                  status: toolCallStatusForAction(action.status),
                   error: action.error,
                 }}
                 actionResult={action.applyResult ??
