@@ -44,7 +44,40 @@ the framework owns normalization, bounds, and refusal behavior.
 2. Mount a `DataSurfaceDescriptor` on `DataTable` (or a ContentList/report
    adapter) using the same identity, row key, version, schema version, and
    column capabilities. Human header interactions and registry commands must
-   update the same controller snapshot.
+   update the same controller snapshot. A page with its own hand-rolled list
+   markup that already mirrors a headless `DataTableController`'s
+   search/filters/sort/page/selection should not hand-write this registration
+   itself — `mountListDataSurface()`
+   (`@happyvertical/smrt-svelte/web`, `packages/smrt-svelte/src/web/list-data-surface.svelte.ts`,
+   #2906) is a same-behavior port of `registerContentListDataSurface`'s
+   registration/translation logic, generalized off ContentList's view-mode
+   concept. The two copies are not yet unified behind a shared
+   `@happyvertical/smrt-ui/data` implementation (#2917), and are not
+   currently identical — see that module's doc comment for the specific
+   divergences #2917 must reconcile. It mirrors the controller into the
+   registry, translates
+   visible table commands back into controller dispatches (denying anything a
+   descriptor or `acceptsTableCommand` predicate does not allow), and bumps a
+   monotonic per-identity revision on every controller change it observes
+   automatically. App-owned context (`totalRows`, freshness, a query
+   fingerprint, …) is a one-time snapshot at mount, not observed — the page
+   must call the returned handle's `update()` whenever that state changes, or
+   the published context goes stale while the controller-driven half of the
+   same snapshot stays live (an `$effect` keyed on those values is the usual
+   place). It routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight`
+   controls to page callbacks, and dispatches any other `controlId` through
+   an `onControl` escape hatch (denied by default) — except a canonical
+   table-control id (any member of `DATA_TABLE_SURFACE_CONTROL_IDS` from
+   `@happyvertical/smrt-ui/data`, e.g. `set-filters`/`reset`/`set-page`),
+   which is always intercepted first and never reaches `onControl`, even if
+   a descriptor declares it under a custom label. If `controller` is controlled
+   (`controller.isControlled()`), `dispatch()` only proposes state via
+   `onStateChange` and never applies it, so `applyControlledState` is
+   required to settle the candidate state — mirroring `DataTable`'s own
+   controlled-table contract — or every table command is denied once
+   dispatched. Call it during component initialization and `destroy()` the
+   returned handle on unmount; it touches neither `window` nor `document`,
+   so it works the same under SSR and `ssr = false` SPAs.
 3. Send visible commands through the authenticated bridge. The browser may
    return a snapshot as an acknowledgement, but it cannot grant permissions;
    server authorization runs before bytes are sent and bridge acknowledgements
