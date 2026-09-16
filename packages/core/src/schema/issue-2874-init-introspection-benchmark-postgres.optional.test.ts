@@ -201,38 +201,42 @@ postgresDescribe(
       // both trip it.
       expect(perRun).toBeLessThan(90);
 
-      // Wall-time ceiling (#2890). #2878 restored statement count to
-      // baseline, but a downstream measurement found wall time *for the
-      // real migration pipeline* still ~4x slower than pre-regression
-      // (0.45.1) despite the matched statement count — i.e. the same round
-      // trips got individually more expensive, or non-SQL work grew,
-      // somewhere the statement-count ceiling above cannot see.
+      // Wall-time ceiling. #2890 (closed; retitled — the wall-time
+      // regression it reported was root-caused outside this benchmark and
+      // fixed in #2892, shipped in 0.51.2: the affected downstream test
+      // dropped from 53.34s on 0.51.1 to 2.03s on 0.51.3, better than the
+      // pre-regression 0.45.1 baseline of 13.68s) still exposed a real gap
+      // in the statement-count assertion above: #2890's regression held
+      // statement count at baseline (73 vs 72) while wall time ran 3-4x
+      // worse, so a pure round-trip *count* is blind to a round trip that
+      // stays the same in number but grows individually more expensive (or
+      // to added non-SQL work between round trips). This second assertion
+      // adds that missing dimension so a future regression of that shape —
+      // same statement count, worse per-statement or per-run cost — still
+      // fails the suite.
       //
-      // Direct A/B measurement of *this exact benchmark* (SchemaComparer
-      // .compare() in isolation, statement-count matched) against published
-      // 0.45.1 and 0.51.1 builds found no reproducible difference here: both
-      // land at ~300-400ms/run on this fixture and machine. The 3-4x
-      // regression #2890 measured lives outside `compare()` — most likely
-      // in `SmrtObject.save()`/`prepareSave()`/`completeSave()` (grown
-      // materially across the same version range: cross-package-ref
-      // validation, embedding-generation checks, additional interceptor
-      // work per row) exercised by the real migration's per-row writes, not
-      // in the schema-diff round trip this suite already pins by statement
-      // count. See #2890 for the full localization writeup.
-      //
-      // This ceiling exists so a *future* regression that reintroduces
-      // per-statement cost inflation inside `compare()` itself — the
-      // scenario #2890's H1 hypothesized for this function specifically —
-      // is still caught even if it does not move the statement count. It is
-      // deliberately generous (~4-5x the ~300-400ms/run observed locally) to
-      // tolerate shared-runner noise and cross-machine variance while still
-      // catching a regression of the same order of magnitude #2890 measured
-      // downstream. A tighter absolute threshold would be noise-flaky on CI;
-      // a relative (version-over-version) comparison would need a second
-      // build to compare against and does not fit this single-run shape.
-      // Median (not mean) guards against one slow outlier run tripping the
-      // suite while a real regression still fails every run.
-      expect(medianMs).toBeLessThan(1800);
+      // What this ceiling can and cannot promise: measured on this suite's
+      // own dev machine, idle wall-clock medians across 5 runs were tight
+      // (662-677ms, ~2% spread) — but a sixth and seventh run repeated
+      // under heavy concurrent CPU load (16 saturated cores, no code change
+      // at all) produced medians of 3725ms and 3896ms, a 5.5-5.9x jump from
+      // noise alone, comfortably exceeding what a 4x-regression-sized
+      // ceiling would need to allow. That rules out a tight absolute
+      // threshold: ordinary shared-runner contention can produce swings
+      // larger than the regression class this guard is meant to catch, so
+      // a threshold precise enough to reliably flag a 4x `compare()`
+      // regression would also flag normal noise and get disabled as flaky
+      // within weeks — the same failure mode that let #2890 through in
+      // spirit, just inverted. The ceiling below is set well above the
+      // worst noise-only sample observed (3896ms) so it does not fire on
+      // ordinary contention, which means it only reliably catches a gross,
+      // order-of-magnitude regression (roughly 9x this suite's idle
+      // baseline here) — not a precise 4x one. A relative
+      // (version-over-version) comparison would need a second build to
+      // diff against and does not fit this single-run shape; median (not
+      // mean) still guards against one slow outlier run tripping the suite
+      // while a real regression fails every run.
+      expect(medianMs).toBeLessThan(6000);
     }, 120_000);
   },
 );
