@@ -529,11 +529,234 @@ describe('createAssistantDockController', () => {
     expect(controller.actions.get(requestId)?.status).toBe('previewed');
 
     unregister();
+    // Copilot PR #2919 jAwwg: unregister() invalidates the previewed entry
+    // to 'failed' (via invalidatePreviewedActionsFor) with its request still
+    // at the PREVIEW phase — applyAction's new status/phase guard now
+    // refuses it at the top (before ever reaching the apply-time mount
+    // re-check below), since a preview-phase failure is never a valid apply
+    // retry target. The end result is the same fail-closed outcome, just
+    // caught one step earlier with a different message.
     await controller.applyAction(requestId);
 
     expect(applySpy).not.toHaveBeenCalled();
     expect(controller.actions.get(requestId)?.status).toBe('failed');
-    expect(controller.actions.get(requestId)?.error).toMatch(/not mounted/);
+    expect(controller.actions.get(requestId)?.error).toMatch(
+      /applyAction refused/,
+    );
+  });
+
+  // Copilot PR #2919 jAwwg: applyAction() previously only blocked a second
+  // CONCURRENT apply ('applying') — 'previewing', 'applied', and a
+  // preview-phase 'failed' were all still callable, letting a failed
+  // preview reach AssistantActionClient.apply without a successful
+  // preview/confirmation, and letting an already-applied action be
+  // replayed outside the intended retry path.
+  describe('applyAction() status/phase guard (cycle-3 second final, jAwwg)', () => {
+    function makeActionClient(applySpy = vi.fn()) {
+      return {
+        preview: async (request: DataSurfaceActionRequest) => ({
+          version: 1 as const,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview' as const,
+          ok: true,
+        }),
+        apply: async (request: DataSurfaceActionRequest) => {
+          applySpy();
+          return {
+            version: 1 as const,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply' as const,
+            ok: true,
+          };
+        },
+      };
+    }
+
+    it('refuses a still-"previewing" action (never resolved) with a clear error', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: makeActionClient(applySpy),
+      });
+      const requestId = 'req-previewing';
+      controller.actions.set(requestId, {
+        request: {
+          version: 1,
+          requestId,
+          identity,
+          actionId: 'archive',
+          phase: 'preview',
+          selection: { scope: 'current-page' },
+        },
+        status: 'previewing',
+        idempotencyKey: 'idem-previewing',
+      });
+
+      await controller.applyAction(requestId);
+
+      expect(applySpy).not.toHaveBeenCalled();
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.error).toMatch(
+        /applyAction refused/,
+      );
+      controller.dispose();
+    });
+
+    it('refuses a preview-phase "failed" action (never successfully previewed) with a clear error', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: makeActionClient(applySpy),
+      });
+      const requestId = 'req-preview-failed';
+      controller.actions.set(requestId, {
+        request: {
+          version: 1,
+          requestId,
+          identity,
+          actionId: 'archive',
+          phase: 'preview',
+          selection: { scope: 'current-page' },
+        },
+        status: 'failed',
+        error: 'preview rejected by the server',
+        idempotencyKey: 'idem-preview-failed',
+      });
+
+      await controller.applyAction(requestId);
+
+      expect(applySpy).not.toHaveBeenCalled();
+      expect(controller.actions.get(requestId)?.error).toMatch(
+        /applyAction refused/,
+      );
+      controller.dispose();
+    });
+
+    it('refuses an already-"applied" action — no replay outside the intended retry path', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: makeActionClient(applySpy),
+      });
+      const requestId = 'req-already-applied';
+      controller.actions.set(requestId, {
+        request: {
+          version: 1,
+          requestId,
+          identity,
+          actionId: 'archive',
+          phase: 'apply',
+          selection: { scope: 'current-page' },
+        },
+        status: 'applied',
+        applyResult: {
+          version: 1,
+          requestId,
+          identity,
+          actionId: 'archive',
+          phase: 'apply',
+          ok: true,
+        },
+        idempotencyKey: 'idem-applied',
+      });
+
+      await controller.applyAction(requestId);
+
+      expect(applySpy).not.toHaveBeenCalled();
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.error).toMatch(
+        /applyAction refused/,
+      );
+      controller.dispose();
+    });
+
+    it('permits a normal previewed -> apply transition', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: makeActionClient(applySpy),
+      });
+      const requestId = 'req-normal-flow';
+      await controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+      await controller.applyAction(requestId);
+
+      expect(applySpy).toHaveBeenCalledOnce();
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+      controller.dispose();
+    });
+
+    it('permits a retry of an APPLY-phase failure (a transient apply error after a successful preview)', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      let shouldFail = true;
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: {
+          preview: async (request) => ({
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'preview',
+            ok: true,
+          }),
+          apply: async (request) => {
+            applySpy();
+            if (shouldFail) throw new Error('transient 500');
+            return {
+              version: 1,
+              requestId: request.requestId,
+              identity: request.identity,
+              actionId: request.actionId,
+              phase: 'apply',
+              ok: true,
+            };
+          },
+        },
+      });
+      const requestId = 'req-apply-retry';
+      await controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+
+      await controller.applyAction(requestId);
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.request.phase).toBe('apply');
+
+      shouldFail = false;
+      await controller.applyAction(requestId);
+
+      expect(applySpy).toHaveBeenCalledTimes(2);
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+      controller.dispose();
+    });
   });
 
   it('invalidates an outstanding previewed action when its surface unregisters', async () => {

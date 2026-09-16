@@ -882,14 +882,46 @@ export function createAssistantDockController(
     if (!state) return;
     // Finding 3 (#2904 review, fresh cycle): refuse a second concurrent
     // apply for the same request — Confirm/Reject were previously still
-    // live (and clickable) while an apply was already in flight.
+    // live (and clickable) while an apply was already in flight. Silent
+    // no-op (not an error): a duplicate click while genuinely busy, not a
+    // caller mistake.
     if (state.status === 'applying') return;
+    // Copilot PR #2919 jAwwg: this guard previously only blocked a second
+    // CONCURRENT apply — 'previewing', 'applied', and 'failed' (from ANY
+    // phase, including a preview-time failure that never reached apply)
+    // were all still accepted here, so a failed preview (`ok: false`)
+    // remained callable through the public headless controller without a
+    // successful preview/confirmation, and an already-applied action could
+    // be replayed outside the intended retry path. Permit only a genuinely
+    // `previewed` action, or a `failed` action whose most recent attempt
+    // was already in the APPLY phase (`state.request.phase === 'apply'`,
+    // set by `previewAction`'s `normalizeDataSurfaceActionRequest` for a
+    // preview-phase entry and re-set below for an apply-phase one) — i.e. an
+    // apply retry after a transient failure, never a preview-phase failure.
+    const isApplyPhaseRetry =
+      state.status === 'failed' && state.request.phase === 'apply';
+    if (state.status !== 'previewed' && !isApplyPhaseRetry) {
+      actions.set(requestId, {
+        ...state,
+        status: 'failed',
+        error:
+          `AssistantDock: applyAction refused — action "${requestId}" is ` +
+          `"${state.status}"${
+            state.status === 'failed' ? ' from an unsuccessful preview' : ''
+          }, not a confirmed preview or a retryable apply failure.`,
+      });
+      return;
+    }
     // F2 (#2904 review): re-check mount status at apply time, not only at
     // preview time — a route change between preview and Confirm can unmount
     // the surface, and previewAction's gate alone cannot catch that.
     if (!isSurfaceMounted(state.request.identity)) {
       actions.set(requestId, {
         ...state,
+        // Copilot PR #2919 jAwwg: mark this failure as an APPLY-phase one
+        // (the user had a valid preview and clicked Confirm) so a retry
+        // after the surface remounts is permitted by the guard above.
+        request: { ...state.request, phase: 'apply' },
         status: 'failed',
         error: `AssistantDock: surface "${surfaceKey(state.request.identity)}" is not mounted`,
       });
