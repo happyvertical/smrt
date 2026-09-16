@@ -74,7 +74,7 @@ describe('ToolCallDisplay', () => {
     };
   }
 
-  it('renders a successful preview with Confirm/Reject and fires callbacks', async () => {
+  it('a pending preview reads "Awaiting confirmation", starts expanded, and exposes Confirm/Reject', async () => {
     const onconfirmaction = vi.fn();
     const onrejectaction = vi.fn();
     render(ToolCallDisplay, {
@@ -85,7 +85,12 @@ describe('ToolCallDisplay', () => {
         onrejectaction,
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: /search/i }));
+    // #2904 review fix: a preview must never read "Completed" and must be
+    // expanded by default so Confirm/Reject are visible without a click.
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+    expect(screen.getByText('Awaiting confirmation')).toBeInTheDocument();
+    const header = screen.getByRole('button', { name: /search/i });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Proposed change')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(onconfirmaction).toHaveBeenCalledOnce();
@@ -93,28 +98,58 @@ describe('ToolCallDisplay', () => {
     expect(onrejectaction).toHaveBeenCalledOnce();
   });
 
-  it('renders an applied result without Confirm/Reject', async () => {
+  it('the header toggle still collapses an awaiting-confirmation card', async () => {
+    render(ToolCallDisplay, {
+      props: { toolCall: makeToolCall(), actionResult: makeActionResult() },
+    });
+    const header = screen.getByRole('button', { name: /search/i });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(header);
+    expect(header).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('renders "Applied" with a result body and no Confirm/Reject once applied', async () => {
+    render(ToolCallDisplay, {
+      props: {
+        toolCall: makeToolCall(),
+        actionResult: makeActionResult({
+          phase: 'apply',
+          details: { rowId: 'order-2', status: 'shipped' },
+        }),
+      },
+    });
+    expect(screen.getByText('Applied')).toBeInTheDocument();
+    const header = screen.getByRole('button', { name: /search/i });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Applied change')).toBeInTheDocument();
+    expect(screen.getByText(/order-2/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirm' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('falls back to a plain confirmation line when an applied result has no details', () => {
     render(ToolCallDisplay, {
       props: {
         toolCall: makeToolCall(),
         actionResult: makeActionResult({ phase: 'apply' }),
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: /search/i }));
-    expect(screen.getByText('Applied change')).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Confirm' }),
-    ).not.toBeInTheDocument();
+      screen.getByText('Change applied successfully.'),
+    ).toBeInTheDocument();
   });
 
-  it('renders a failure reason when the action result is not ok', async () => {
+  it('renders "Failed" with the reason when the action result is not ok', async () => {
     render(ToolCallDisplay, {
       props: {
         toolCall: makeToolCall(),
         actionResult: makeActionResult({ ok: false, reason: 'stale_revision' }),
       },
     });
-    await userEvent.click(screen.getByRole('button', { name: /search/i }));
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    const header = screen.getByRole('button', { name: /search/i });
+    expect(header).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('stale_revision')).toBeInTheDocument();
   });
 });

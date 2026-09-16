@@ -29,10 +29,31 @@ const { toolCall, actionResult, onconfirmaction, onrejectaction }: Props =
 
 const { t } = useI18n();
 
-let isExpanded = $state(false);
+// When an actionResult is present it overrides the generic tool-call status
+// for both the pill and the outer card's color: a preview that's still
+// awaiting Confirm/Reject must never read "Completed" (#2904 review fix) —
+// only an applied action reads that way.
+const effectiveStatus = $derived.by(() => {
+  if (!actionResult) return toolCall.status;
+  if (!actionResult.ok) return 'error';
+  return actionResult.phase === 'preview' ? 'awaiting-confirmation' : 'applied';
+});
+
+// A pending preview (awaiting Confirm/Reject), a running tool call, or a
+// failed action starts expanded so the action buttons / live output /
+// failure reason are visible without a click; the user's own toggle always
+// wins after that.
+let userToggledExpanded = $state<boolean | null>(null);
+const autoExpanded = $derived(
+  effectiveStatus === 'awaiting-confirmation' ||
+    effectiveStatus === 'applied' ||
+    toolCall.status === 'running' ||
+    (Boolean(actionResult) && effectiveStatus === 'error'),
+);
+const isExpanded = $derived(userToggledExpanded ?? autoExpanded);
 
 const statusLabel = $derived.by(() => {
-  switch (toolCall.status) {
+  switch (effectiveStatus) {
     case 'pending':
       return 'Pending';
     case 'running':
@@ -40,9 +61,13 @@ const statusLabel = $derived.by(() => {
     case 'success':
       return 'Completed';
     case 'error':
-      return 'Error';
+      return actionResult ? 'Failed' : 'Error';
+    case 'awaiting-confirmation':
+      return 'Awaiting confirmation';
+    case 'applied':
+      return 'Applied';
     default:
-      return toolCall.status;
+      return effectiveStatus;
   }
 });
 
@@ -61,12 +86,12 @@ function formatDuration(ms: number | undefined): string {
 }
 </script>
 
-<div class="tool-call tool-call--{toolCall.status}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })}>
+<div class="tool-call tool-call--{effectiveStatus}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })}>
   <!-- raw-primitive-allow: full-width disclosure trigger with aria-expanded and aria-controls toggling an externally-rendered collapsible panel, wrapping rich content (status dot, name, duration, status label, rotating chevron); structural accordion header no Button primitive owns -->
   <button
     class="tool-call__header"
     type="button"
-    onclick={() => isExpanded = !isExpanded}
+    onclick={() => userToggledExpanded = !isExpanded}
     aria-expanded={isExpanded}
     aria-controls="tool-call-body-{toolCall.toolCallId}"
   >
@@ -131,6 +156,10 @@ function formatDuration(ms: number | undefined): string {
           {#if actionResult.ok}
             {#if actionResult.details}
               <pre class="tool-call__json">{formatJson(actionResult.details)}</pre>
+            {:else if actionResult.phase === 'apply'}
+              <p class="tool-call__applied-fallback">
+                Change applied successfully.
+              </p>
             {/if}
             {#if actionResult.phase === 'preview'}
               <div class="tool-call__data-surface-action-buttons">
@@ -169,6 +198,14 @@ function formatDuration(ms: number | undefined): string {
 
   .tool-call--error {
     border-left: 3px solid var(--smrt-color-error, #b3261e);
+  }
+
+  .tool-call--awaiting-confirmation {
+    border-left: 3px solid var(--smrt-color-tertiary, #7d5260);
+  }
+
+  .tool-call--applied {
+    border-left: 3px solid var(--smrt-color-success, #1e8e3e);
   }
 
   .tool-call__header {
@@ -217,6 +254,20 @@ function formatDuration(ms: number | undefined): string {
 
   .tool-call--error .tool-call__status-dot {
     background: var(--smrt-color-error, #b3261e);
+  }
+
+  .tool-call--awaiting-confirmation .tool-call__status-dot {
+    background: var(--smrt-color-tertiary, #7d5260);
+  }
+
+  .tool-call--applied .tool-call__status-dot {
+    background: var(--smrt-color-success, #1e8e3e);
+  }
+
+  .tool-call__applied-fallback {
+    margin: 0;
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .tool-call__name {
