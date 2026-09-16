@@ -59,10 +59,14 @@ the framework owns normalization, bounds, and refusal behavior.
    monotonic per-identity revision on controller or app-owned context change,
    routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight` controls to
    page callbacks, and dispatches any other `controlId` through an `onControl`
-   escape hatch (denied by default). Call it during component initialization
-   and `destroy()` the returned handle on unmount; it touches neither
-   `window` nor `document`, so it works the same under SSR and `ssr = false`
-   SPAs.
+   escape hatch (denied by default). If `controller` is controlled
+   (`controller.isControlled()`), `dispatch()` only proposes state via
+   `onStateChange` and never applies it, so `applyControlledState` is
+   required to settle the candidate state — mirroring `DataTable`'s own
+   controlled-table contract — or every table command is denied once
+   dispatched. Call it during component initialization and `destroy()` the
+   returned handle on unmount; it touches neither `window` nor `document`,
+   so it works the same under SSR and `ssr = false` SPAs.
 3. Send visible commands through the authenticated bridge. The browser may
    return a snapshot as an acknowledgement, but it cannot grant permissions;
    server authorization runs before bytes are sent and bridge acknowledgements

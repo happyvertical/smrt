@@ -35,6 +35,7 @@ import type {
   DataSurfaceSelectionReference,
   DataSurfaceVisibleCommand,
   DataTableCommand,
+  DataTableControlledStateApplier,
   DataTableController,
   DataTableSelection,
 } from '@happyvertical/smrt-ui/data';
@@ -77,6 +78,19 @@ export interface MountListDataSurfaceOptions {
    * a transient state a later effect would correct.
    */
   acceptsTableCommand?: (command: DataTableCommand) => boolean;
+  /**
+   * REQUIRED when `controller` is controlled (`controller.isControlled()`):
+   * a controlled controller's `dispatch()` only proposes state via its
+   * `onStateChange` callback — it never applies it or notifies subscribers,
+   * so without this the registry would acknowledge `ok: true` while nothing
+   * actually changed. Mirrors `DataTable`'s own controlled-table contract
+   * (`DataTableDataSurfaceOptions.applyControlledState`): settle the
+   * candidate state (typically by awaiting whatever the page's
+   * `onStateChange` triggered) and return the state that was actually
+   * applied, or `undefined` to deny. The command is denied whenever the
+   * controller's post-settle state does not match what was applied.
+   */
+  applyControlledState?: DataTableControlledStateApplier;
   /** Non-table visible commands (`refresh`/`retry`/`focus`/`reveal`/`highlight`) the page implements. */
   refresh?: () => boolean | Promise<boolean>;
   retry?: () => boolean | Promise<boolean>;
@@ -104,7 +118,11 @@ export interface MountListDataSurfaceOptions {
 }
 
 export interface ListDataSurfaceHandle {
-  /** Fold in new app-owned context state, bumping the revision if it changed. */
+  /**
+   * Merge new app-owned context state over what is already published,
+   * bumping the revision if the result changed. Keys `next` does not
+   * mention are retained; pass a key explicitly as `undefined` to drop it.
+   */
   update(context: ListDataSurfaceContext): void;
   /** Unsubscribe from the controller and unregister from the registry. */
   destroy(): void;
@@ -290,7 +308,15 @@ export function mountListDataSurface(
     options.onRevision?.(revision);
   };
   const updateContext = (next: ListDataSurfaceContext) => {
-    const merged: DataSurfaceJsonObject = { ...next };
+    // Genuinely "fold in": keys already published that `next` does not
+    // mention are retained, matching this function's own documented
+    // contract. A caller that wants a key gone passes it explicitly as
+    // `undefined`; the registry rejects a literal `undefined` value (it is
+    // not JSON-safe), so that case deletes the key outright instead.
+    const merged: DataSurfaceJsonObject = { ...context, ...next };
+    for (const key of Object.keys(next)) {
+      if (next[key] === undefined) delete merged[key];
+    }
     assertNoReservedContextKeys(merged);
     // `merged` may still carry a transport-reserved key (`tenantId`, `token`,
     // `where`, …) that only the registry's own boundary-safety check knows
@@ -340,7 +366,23 @@ export function mountListDataSurface(
           options.acceptsTableCommand?.(tableCommand) === false
         )
           return { ok: false };
-        options.controller.dispatch(tableCommand);
+        const transition = options.controller.dispatch(tableCommand);
+        if (options.controller.isControlled() && transition.changed) {
+          // A controlled controller's dispatch() only proposed state via
+          // onStateChange — it never applied it. Settle it (or deny) exactly
+          // like DataTable's own controlled-table contract.
+          const settled = await options.applyControlledState?.(
+            transition.next.state,
+            tableCommand,
+          );
+          if (settled) options.controller.replaceState(settled);
+          if (
+            JSON.stringify(options.controller.getState()) !==
+            JSON.stringify(transition.next.state)
+          ) {
+            return { ok: false };
+          }
+        }
         return;
       }
       switch (command.controlId) {

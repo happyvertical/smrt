@@ -387,6 +387,105 @@ describe('mountListDataSurface', () => {
     handle.destroy();
   });
 
+  it('denies a table command on a controlled controller when the settled state does not converge', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controlledState = { filters: [] as unknown[] } as ReturnType<
+      ReturnType<typeof createDataTableController>['getState']
+    >;
+    const controller = createDataTableController({
+      state: controlledState,
+      onStateChange: () => {
+        // Simulate a host that never feeds the proposed state back.
+      },
+    });
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      // No applyControlledState supplied — the proposal is never settled.
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'controlled-unsettled',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'set-filters',
+        payload: {
+          filters: [{ columnId: 'title', operator: 'contains', value: 'x' }],
+        },
+      }),
+    ).resolves.toMatchObject({ ok: false });
+    // The controller's own state must be unaffected — dispatch on a
+    // controlled controller never applies state on its own.
+    expect(controller.getState().filters).toEqual([]);
+
+    handle.destroy();
+  });
+
+  it('acknowledges a table command on a controlled controller once applyControlledState settles it', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController({
+      state: { filters: [] },
+    });
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      applyControlledState: (state) => {
+        // Simulate a host that immediately accepts and feeds back the
+        // proposed state.
+        return state;
+      },
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'controlled-settled',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'set-filters',
+        payload: {
+          filters: [{ columnId: 'title', operator: 'contains', value: 'x' }],
+        },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(controller.getState().filters).toEqual([
+      { columnId: 'title', operator: 'contains', value: 'x' },
+    ]);
+
+    handle.destroy();
+  });
+
+  it('merges update() context over the previous published state instead of replacing it', () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context({ totalRows: 2, queryFingerprint: 'query-1' }),
+    });
+
+    handle.update({ totalRows: 5 });
+    const after = registry.inspect(identity);
+    expect(after?.state.totalRows).toBe(5);
+    // queryFingerprint was not mentioned in this update() call and must be
+    // retained, not dropped.
+    expect(after?.state.queryFingerprint).toBe('query-1');
+
+    handle.update({ queryFingerprint: undefined });
+    const cleared = registry.inspect(identity);
+    expect(cleared?.state.queryFingerprint).toBeUndefined();
+    expect(cleared?.state.totalRows).toBe(5);
+
+    handle.destroy();
+  });
+
   it('bumps the revision when app-owned context changes via update()', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createDataTableController();
