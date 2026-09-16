@@ -48,6 +48,15 @@ let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
 let sending = $state(false);
 let sendError = $state<string | null>(null);
+// Cycle-2 third final: a rejecting onupload (e.g. the default
+// createSmrtAssistantTransport's requireWrite('uploadAttachment') error when
+// no writeEndpoint is configured) previously had no catch anywhere in
+// handleFileChange/handleDrop — the chip row silently never updated and the
+// rejection escaped as an unhandled promise rejection from the DOM event
+// handler. Distinct slot from `sendError` since the two failures are
+// unrelated and can occur independently (e.g. staging fails while a
+// previous message is still sending).
+let uploadError = $state<string | null>(null);
 let fileInputEl: HTMLInputElement | undefined;
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
@@ -58,9 +67,16 @@ async function handleFileChange(event: Event) {
   const files = input.files;
   if (!files || files.length === 0) return;
   uploading = true;
+  uploadError = null;
   try {
     const uploaded = await onupload(files);
     stagedAttachments = [...stagedAttachments, ...uploaded];
+  } catch (error) {
+    // Already-staged chips are left untouched — only this batch failed.
+    uploadError =
+      error instanceof Error
+        ? error.message
+        : t(M['chat.assistant_composer.upload_failed']);
   } finally {
     uploading = false;
     input.value = '';
@@ -73,9 +89,16 @@ async function handleDrop(event: DragEvent) {
   const files = event.dataTransfer?.files;
   if (!files || files.length === 0) return;
   uploading = true;
+  uploadError = null;
   try {
     const uploaded = await onupload(files);
     stagedAttachments = [...stagedAttachments, ...uploaded];
+  } catch (error) {
+    // Already-staged chips are left untouched — only this batch failed.
+    uploadError =
+      error instanceof Error
+        ? error.message
+        : t(M['chat.assistant_composer.upload_failed']);
   } finally {
     uploading = false;
   }
@@ -133,6 +156,11 @@ function removeAttachment(id: string) {
   {#if sendError}
     <p class="assistant-composer-error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
+    </p>
+  {/if}
+  {#if uploadError}
+    <p class="assistant-composer-error" role="alert">
+      {t(M['chat.assistant_composer.upload_error'], { message: uploadError })}
     </p>
   {/if}
   {#if stagedAttachments.length > 0}

@@ -208,12 +208,23 @@ const controller = createAssistantDockController({
 
 let ready = $state(false);
 $effect(() => {
+  // Cycle-2 third final sweep: this IIFE is not awaited by the effect body,
+  // so a rejecting createThread/openThread previously escaped as an
+  // unhandled rejection (the same shape fixed everywhere else in this demo
+  // and in AssistantDock.svelte itself). loadThreads()/openThread() already
+  // catch internally; only createThread can still reject.
   (async () => {
-    await controller.loadThreads();
-    const thread =
-      controller.threads[0] ?? (await controller.createThread('Order support'));
-    await controller.openThread(thread.id);
-    ready = true;
+    try {
+      await controller.loadThreads();
+      const thread =
+        controller.threads[0] ??
+        (await controller.createThread('Order support'));
+      await controller.openThread(thread.id);
+    } catch {
+      // Already recorded on controller.error.
+    } finally {
+      ready = true;
+    }
   })();
   controller.startPolling();
   return () => controller.dispose();
@@ -242,11 +253,20 @@ async function handleSend(
 async function handleUpload(
   files: FileList,
 ): Promise<AssistantAttachmentRef[]> {
-  const uploaded: AssistantAttachmentRef[] = [];
-  for (const file of Array.from(files)) {
-    uploaded.push(await transport.uploadAttachment(file));
+  // Cycle-2 third final: mirrors AssistantDock.svelte's handleUpload — the
+  // composer's own catch needs the rejection, so this rethrows (never
+  // returns [] on failure) after recording it on controller.error.
+  try {
+    const uploaded: AssistantAttachmentRef[] = [];
+    for (const file of Array.from(files)) {
+      uploaded.push(await transport.uploadAttachment(file));
+    }
+    controller.setError(null);
+    return uploaded;
+  } catch (error) {
+    controller.setError(error instanceof Error ? error.message : String(error));
+    throw error;
   }
-  return uploaded;
 }
 
 async function handleConfirmAction(requestId: string) {
@@ -300,8 +320,18 @@ async function handleConfirmAction(requestId: string) {
             activeThreadId={controller.activeThreadId}
             onselect={(threadId) => controller.openThread(threadId)}
             oncreate={async () => {
-              const thread = await controller.createThread('New conversation');
-              await controller.openThread(thread.id);
+              // Cycle-2 third final sweep: AssistantThreadList calls
+              // `oncreate` from an un-awaited onclick, so a rejecting
+              // createThread previously escaped as an unhandled rejection
+              // here too (mirrors AssistantDock.svelte's handleCreateThread
+              // fix).
+              try {
+                const thread =
+                  await controller.createThread('New conversation');
+                await controller.openThread(thread.id);
+              } catch {
+                // Already recorded on controller.error.
+              }
             }}
           />
 

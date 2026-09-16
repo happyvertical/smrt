@@ -192,11 +192,23 @@ async function handleSend(
 async function handleUpload(
   files: FileList,
 ): Promise<AssistantAttachmentRef[]> {
-  const uploaded: AssistantAttachmentRef[] = [];
-  for (const file of Array.from(files)) {
-    uploaded.push(await transport.uploadAttachment(file));
+  // Cycle-2 third final: rethrows on failure (mirrors handleSend's pattern)
+  // rather than returning [] — the composer's own catch (added alongside
+  // this fix) needs the rejection to show its inline per-attempt error;
+  // returning [] here would make a failed upload look like a successful
+  // empty batch. This handler ALSO records the failure on controller.error
+  // so the dock-level banner matches the send path.
+  try {
+    const uploaded: AssistantAttachmentRef[] = [];
+    for (const file of Array.from(files)) {
+      uploaded.push(await transport.uploadAttachment(file));
+    }
+    controller.setError(null);
+    return uploaded;
+  } catch (error) {
+    controller.setError(error instanceof Error ? error.message : String(error));
+    throw error;
   }
-  return uploaded;
 }
 
 async function handleConfirmAction(requestId: string) {

@@ -312,4 +312,38 @@ describe('AssistantDock (mounted component)', () => {
       ),
     ).toBeInTheDocument();
   });
+
+  // Cycle-2 third final: a rejecting uploadAttachment previously had no
+  // catch in AssistantDock's handleUpload, so the dock-level banner never
+  // reflected an attachment failure the way it does for send/thread
+  // failures.
+  it('a rejecting uploadAttachment shows the dock-level error banner', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    transport.uploadAttachment = async () => {
+      throw new Error('no writeEndpoint configured');
+    };
+
+    const { container } = render(AssistantDock, {
+      props: { transport, registry },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    await screen.findByLabelText('Message');
+
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error('file input not found');
+    await userEvent.upload(
+      fileInput,
+      new File(['data'], 'photo.png', { type: 'image/png' }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Something went wrong: no writeEndpoint configured/i,
+      ),
+    ).toBeInTheDocument();
+  });
 });

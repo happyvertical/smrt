@@ -49,6 +49,8 @@ export const M = defineMessages({
   'chat.assistant_composer.remove_attachment': 'Remove {name}',
   'chat.assistant_composer.send_error': 'Could not send: {message}',
   'chat.assistant_composer.send_failed': 'Send failed',
+  'chat.assistant_composer.upload_error': 'Could not attach file: {message}',
+  'chat.assistant_composer.upload_failed': 'Attachment failed',
 
   // AssistantThreadList (#2904)
   'chat.assistant_thread_list.conversations_label': 'Assistant conversations',
