@@ -760,7 +760,7 @@ function computeCursorBinding(
   const canonicalRequest = canonicalizeDataQuery(request, schema);
   return createHash('sha256')
     .update(canonicalRequest)
-    .update(' ')
+    .update('\0')
     .update(JSON.stringify(where ?? null))
     .digest('base64url');
 }
