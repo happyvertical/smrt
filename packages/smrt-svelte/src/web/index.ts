@@ -23,6 +23,13 @@ export {
   type ShellActivityInput,
 } from './activity-feed.svelte.js';
 export {
+  type ListDataSurfaceContext,
+  type ListDataSurfaceControlResult,
+  type ListDataSurfaceHandle,
+  type MountListDataSurfaceOptions,
+  mountListDataSurface,
+} from './list-data-surface.svelte.js';
+export {
   type LiveCollection,
   type LiveCollectionMutation,
   type LiveCollectionOptions,

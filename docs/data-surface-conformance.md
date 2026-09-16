@@ -44,7 +44,23 @@ the framework owns normalization, bounds, and refusal behavior.
 2. Mount a `DataSurfaceDescriptor` on `DataTable` (or a ContentList/report
    adapter) using the same identity, row key, version, schema version, and
    column capabilities. Human header interactions and registry commands must
-   update the same controller snapshot.
+   update the same controller snapshot. A page with its own hand-rolled list
+   markup that already mirrors a headless `DataTableController`'s
+   search/filters/sort/page/selection should not hand-write this registration
+   itself — `mountListDataSurface()`
+   (`@happyvertical/smrt-svelte/web`, `packages/smrt-svelte/src/web/list-data-surface.svelte.ts`,
+   #2906) is the same registration/translation logic
+   `registerContentListDataSurface` uses, generalized off ContentList's
+   view-mode concept: it mirrors the controller into the registry, translates
+   visible table commands back into controller dispatches (denying anything a
+   descriptor or `acceptsTableCommand` predicate does not allow), bumps a
+   monotonic per-identity revision on controller or app-owned context change,
+   routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight` controls to
+   page callbacks, and dispatches any other `controlId` through an `onControl`
+   escape hatch (denied by default). Call it during component initialization
+   and `destroy()` the returned handle on unmount; it touches neither
+   `window` nor `document`, so it works the same under SSR and `ssr = false`
+   SPAs.
 3. Send visible commands through the authenticated bridge. The browser may
    return a snapshot as an acknowledgement, but it cannot grant permissions;
    server authorization runs before bytes are sent and bridge acknowledgements
