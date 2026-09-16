@@ -4,6 +4,7 @@
  * Collapsible card showing tool name, arguments (as JSON), status indicator,
  * and result/error. Color-coded by status (pending, running, success, error).
  */
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import type { ToolCallDisplayData } from '../../types.js';
@@ -11,9 +12,20 @@ import type { ToolCallDisplayData } from '../../types.js';
 export interface Props {
   /** Tool call data */
   toolCall: ToolCallDisplayData;
+  /**
+   * Data-surface action preview/apply outcome (#2904, AssistantDock). Additive:
+   * when present, the body renders a preview/applied/failed panel for the
+   * action alongside the generic tool-call rendering above; existing callers
+   * that never pass this prop see no change.
+   */
+  actionResult?: DataSurfaceActionResult;
+  /** Shown only while `actionResult.phase === 'preview' && actionResult.ok`. */
+  onconfirmaction?: () => void;
+  onrejectaction?: () => void;
 }
 
-const { toolCall }: Props = $props();
+const { toolCall, actionResult, onconfirmaction, onrejectaction }: Props =
+  $props();
 
 const { t } = useI18n();
 
@@ -108,6 +120,27 @@ function formatDuration(ms: number | undefined): string {
         <div class="tool-call__running">
           <div class="tool-call__spinner" aria-label={t(M['chat.tool_call_display.running'])}></div>
           <span>Executing...</span>
+        </div>
+      {/if}
+
+      {#if actionResult}
+        <div class="tool-call__section tool-call__data-surface-action" data-phase={actionResult.phase} data-ok={actionResult.ok}>
+          <span class="tool-call__section-label">
+            {actionResult.phase === 'preview' ? 'Proposed change' : 'Applied change'}
+          </span>
+          {#if actionResult.ok}
+            {#if actionResult.details}
+              <pre class="tool-call__json">{formatJson(actionResult.details)}</pre>
+            {/if}
+            {#if actionResult.phase === 'preview'}
+              <div class="tool-call__data-surface-action-buttons">
+                <button type="button" onclick={() => onconfirmaction?.()}>Confirm</button>
+                <button type="button" onclick={() => onrejectaction?.()}>Reject</button>
+              </div>
+            {/if}
+          {:else}
+            <pre class="tool-call__json tool-call__json--error">{actionResult.reason ?? 'Action failed'}</pre>
+          {/if}
         </div>
       {/if}
     </div>
