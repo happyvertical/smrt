@@ -51,9 +51,11 @@ the framework owns normalization, bounds, and refusal behavior.
    (`@happyvertical/smrt-svelte/web`, `packages/smrt-svelte/src/web/list-data-surface.svelte.ts`,
    #2906) is a same-behavior port of `registerContentListDataSurface`'s
    registration/translation logic, generalized off ContentList's view-mode
-   concept (the two copies are not yet unified behind a shared
-   `@happyvertical/smrt-ui/data` implementation — see that module's doc
-   comment): it mirrors the controller into the registry, translates
+   concept. The two copies are not yet unified behind a shared
+   `@happyvertical/smrt-ui/data` implementation (#2917), and are not
+   currently identical — see that module's doc comment for the specific
+   divergences #2917 must reconcile. It mirrors the controller into the
+   registry, translates
    visible table commands back into controller dispatches (denying anything a
    descriptor or `acceptsTableCommand` predicate does not allow), bumps a
    monotonic per-identity revision on controller or app-owned context change,

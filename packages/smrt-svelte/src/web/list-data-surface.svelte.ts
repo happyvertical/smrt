@@ -17,7 +17,12 @@
  * calling `registry.register` itself). The two copies must be kept in sync
  * by hand until they are unified behind a shared implementation in
  * `@happyvertical/smrt-ui/data` (both packages already depend on it) —
- * tracked as a follow-up.
+ * tracked as a follow-up (#2917). They are NOT currently identical: this
+ * copy denies a controlled controller's table command that fails to settle
+ * (see `applyControlledState` below) and calls `registry.register` before
+ * subscribing to the controller to avoid leaking a subscription on a
+ * throwing register; `registerContentListDataSurface` predates both fixes.
+ * #2917 should adopt them rather than treat this copy as the odd one out.
  *
  * Call during component initialization (top level of `<script>`, or inside
  * an `$effect`); `destroy()` unregisters and unsubscribes, so tearing it down
@@ -56,6 +61,17 @@ import {
  */
 export type ListDataSurfaceContext = Readonly<
   Record<string, DataSurfaceJsonValue>
+>;
+
+/**
+ * A {@link ListDataSurfaceContext} update: same shape, but a key may also be
+ * `undefined` to delete it from the published state (see
+ * {@link ListDataSurfaceHandle.update}). Kept distinct from
+ * `ListDataSurfaceContext` itself so the initial `context` option — which
+ * has no delete affordance — stays exactly JSON-safe.
+ */
+export type ListDataSurfaceContextPatch = Readonly<
+  Record<string, DataSurfaceJsonValue | undefined>
 >;
 
 export interface ListDataSurfaceControlResult {
@@ -123,7 +139,7 @@ export interface ListDataSurfaceHandle {
    * bumping the revision if the result changed. Keys `next` does not
    * mention are retained; pass a key explicitly as `undefined` to drop it.
    */
-  update(context: ListDataSurfaceContext): void;
+  update(context: ListDataSurfaceContextPatch): void;
   /** Unsubscribe from the controller and unregister from the registry. */
   destroy(): void;
 }
@@ -307,16 +323,20 @@ export function mountListDataSurface(
     revisions.set(key, revision);
     options.onRevision?.(revision);
   };
-  const updateContext = (next: ListDataSurfaceContext) => {
+  const updateContext = (next: ListDataSurfaceContextPatch) => {
     // Genuinely "fold in": keys already published that `next` does not
     // mention are retained, matching this function's own documented
     // contract. A caller that wants a key gone passes it explicitly as
     // `undefined`; the registry rejects a literal `undefined` value (it is
     // not JSON-safe), so that case deletes the key outright instead.
-    const merged: DataSurfaceJsonObject = { ...context, ...next };
-    for (const key of Object.keys(next)) {
-      if (next[key] === undefined) delete merged[key];
+    const draft: Record<string, DataSurfaceJsonValue | undefined> = {
+      ...context,
+      ...next,
+    };
+    for (const patchKey of Object.keys(next)) {
+      if (next[patchKey] === undefined) delete draft[patchKey];
     }
+    const merged = draft as DataSurfaceJsonObject;
     assertNoReservedContextKeys(merged);
     // `merged` may still carry a transport-reserved key (`tenantId`, `token`,
     // `where`, …) that only the registry's own boundary-safety check knows

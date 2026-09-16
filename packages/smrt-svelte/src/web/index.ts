@@ -24,6 +24,7 @@ export {
 } from './activity-feed.svelte.js';
 export {
   type ListDataSurfaceContext,
+  type ListDataSurfaceContextPatch,
   type ListDataSurfaceControlResult,
   type ListDataSurfaceHandle,
   type MountListDataSurfaceOptions,
