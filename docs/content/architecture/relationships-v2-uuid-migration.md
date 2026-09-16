@@ -132,9 +132,33 @@ As of #2752, `smrt db:status --parity` reports a `rename_data_pending` finding
 when, on one table, a manifest-declared column exists live and holds no
 non-null/non-empty values while an undeclared live column of a compatible type
 (same type, `TEXT` → `UUID` when every non-empty value is already UUID-shaped,
-or `TEXT` → `TEXT`) holds at least one. It is `warning` severity and names both
-columns; when several undeclared columns qualify it lists all of them rather
-than guessing which one holds the pre-rename data.
+or `TEXT` → `TEXT`) holds at least one. It names both columns; when several
+undeclared columns qualify it lists all of them rather than guessing which one
+holds the pre-rename data.
+
+As of #2911, this finding is always `info` severity, never `warning`: it is a
+suggestion about data, not a schema mismatch (the live schema already matches
+the manifest column-for-column), so a wrong guess must not be able to gate
+anything that treats `warning`/`error` findings as failing closed. `smrt
+db:status`'s plain (non-`--parity`) output reflects this too — the finding
+appears in its `notes`, never its `drift`, so it cannot fail `db:status:assert`
+or any other drift-counting check the way real schema drift correctly does.
+`smrt db:diff`/`db:status --parity --verbose` and `smrt db:status` alike still
+surface it in full: `printSchemaAdvisories` always prints a
+`rename_data_pending` note's message and suggested repair SQL, unlike an
+ordinary info-level note (a harmless orphan column, say), which is compact
+unless `--verbose` is passed.
+
+#2911 also tightened the inference itself: the same undeclared column being a
+type-compatible, populated candidate for *more than one* empty declared column
+at once (not several undeclared columns competing for the *same* declared
+column, described above — the reverse shape) is proof the heuristic's signal
+is too weak to support any of those inferences, not weaker evidence that
+should still produce a guess per target. That shape suppresses every affected
+finding entirely rather than emitting one wrong recommendation per target —
+e.g. an unrelated legacy column like `tenants.timezone` must never be reported
+as the rename source for three different empty columns simultaneously, the
+production incident that prompted #2911.
 
 `smrt db:diff` (and `db:migrate`, via the same advisory) prints the repair as
 a commented, never-executed advisory — the same copy-then-drop shape the
