@@ -632,6 +632,41 @@ describe('review findings (#2910)', () => {
       );
       expect(result).toMatchObject({ total: { kind: 'exact', value: 1 } });
     });
+
+    it('rejects execute() for a tenant-less principal when a mismatched ambient tenant context is active', async () => {
+      registerTenantScopedClass(QUALIFIED_NAME, { field: 'tenantId' });
+      const rows = [{ id: 'event-a', tenantId: 'tenant-other', name: 'Leak' }];
+      const list = vi.fn(async () => rows);
+      const definition = await createSmrtCollectionDataSurfaceDefinition({
+        qualifiedName: QUALIFIED_NAME,
+        collectionName: 'events',
+        collection: { list, count: async () => rows.length },
+      });
+      // A principal that holds no tenant claim at all (`tenantId: null`)
+      // must not silently fall through to `run()` when an unrelated ambient
+      // tenant context is active: the mismatch check must not be gated on
+      // the principal's own `tenantId` being truthy.
+      await withTenant({ tenantId: 'tenant-other' }, async () => {
+        await expect(
+          definition.execute?.(
+            definition,
+            {
+              version: 1,
+              requestId: 'mismatch-null',
+              mode: 'rows',
+              projection: ['id'],
+              page: { kind: 'offset', offset: 0, limit: 10 },
+            },
+            {
+              run: {} as DataSurfaceExecutionContext['run'],
+              principal: { userId: 'user-a', tenantId: null },
+              signal: new AbortController().signal,
+            },
+          ),
+        ).rejects.toThrow(/tenant context/i);
+      });
+      expect(list).not.toHaveBeenCalled();
+    });
   });
 
   describe('finding 3: query-bound opaque cursors', () => {

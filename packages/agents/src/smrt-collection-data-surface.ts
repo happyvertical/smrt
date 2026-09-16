@@ -1199,10 +1199,11 @@ export async function createSmrtCollectionDataSurfaceDefinition(
       // context already in force: only enter a new one when tenancy is
       // enabled, no tenant context is currently active, and the caller is
       // not already running under a system-context or super-admin bypass.
-      if (isTenancyEnabled() && context.principal.tenantId) {
+      if (isTenancyEnabled()) {
         const activeTenant = getCurrentTenant();
         if (
           activeTenant === undefined &&
+          context.principal.tenantId &&
           !isSystemContext() &&
           !isSuperAdminBypass()
         ) {
@@ -1214,19 +1215,23 @@ export async function createSmrtCollectionDataSurfaceDefinition(
         // principal this execution is bound to, or when the caller is
         // explicitly and deliberately in a system-context/super-admin-bypass
         // path. Otherwise `resolveTenantReadScope()` would silently scope
-        // (or fail to scope) rows to whatever tenant happens to be ambient
-        // rather than the principal actually authorized for this call — a
-        // silent cross-tenant disclosure with no upstream gate.
+        // rows to whatever tenant happens to be ambient rather than the
+        // principal actually authorized for this call — a silent
+        // cross-tenant disclosure with no upstream gate. Compare against
+        // `context.principal.tenantId ?? null` (not the truthy value alone)
+        // so a tenant-less principal (`tenantId: null`) is still refused
+        // when a mismatched ambient tenant context is active, rather than
+        // silently falling through to `run()`.
         if (
           activeTenant !== undefined &&
-          activeTenant.tenantId !== context.principal.tenantId &&
+          activeTenant.tenantId !== (context.principal.tenantId ?? null) &&
           !isSystemContext() &&
           !isSuperAdminBypass()
         ) {
           throw new Error(
             'Data surface execution refused: an active tenant context ' +
               `('${activeTenant.tenantId}') does not match the authenticated ` +
-              `principal's tenant ('${context.principal.tenantId}').`,
+              `principal's tenant ('${context.principal.tenantId ?? 'null'}').`,
           );
         }
       }
