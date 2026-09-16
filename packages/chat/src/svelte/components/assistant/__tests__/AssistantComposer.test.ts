@@ -6,7 +6,12 @@
  * synchronously before `onsend`'s promise settled, so a transport failure
  * discarded the user's typed message with no visible error.
  */
-import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
+import {
+  expectNoA11yViolations,
+  render,
+  screen,
+  userEvent,
+} from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssistantComposer from '../AssistantComposer.svelte';
 
@@ -83,5 +88,15 @@ describe('AssistantComposer', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('existing.png')).toBeInTheDocument();
     expect(screen.queryByText('second.png')).not.toBeInTheDocument();
+  });
+
+  // Cycle-3 second final finding 2: the hidden file input had no accessible
+  // name (the visually-hidden `clip: rect(0 0 0 0)` styling keeps it in the
+  // a11y tree, unlike ../shared/FileUpload.svelte's wrapping visible label).
+  it('is axe-clean', async () => {
+    const { container } = render(AssistantComposer, {
+      props: { onsend: vi.fn(), onupload: vi.fn() },
+    });
+    await expectNoA11yViolations(container);
   });
 });

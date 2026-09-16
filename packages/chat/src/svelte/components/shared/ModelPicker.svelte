@@ -10,6 +10,8 @@
  * follow-up (docs/assistant-dock.md "Gaps").
  */
 import { Select } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from '../../i18n.js';
 
 export interface ModelOption {
   id: string;
@@ -34,6 +36,12 @@ export interface Props {
   value: string;
   /** Fired with the newly selected model id. */
   onchange?: (modelId: string) => void;
+  /** Accessible name for the underlying `<select>` (#2904 review, cycle-3
+   * second final F2 — the control previously had no aria-label, id, or
+   * wrapping `FormGroup`, so axe/screen readers saw an unnamed combobox).
+   * Defaults to an i18n'd "Model" label; override when a host embeds this
+   * picker somewhere the generic default isn't descriptive enough. */
+  ariaLabel?: string;
 }
 
 let {
@@ -41,7 +49,10 @@ let {
   allowedModelIds = [],
   value = $bindable(),
   onchange,
+  ariaLabel,
 }: Props = $props();
+
+const { t } = useI18n();
 
 const availableModels = $derived(
   allowedModelIds.length > 0
@@ -61,7 +72,12 @@ function handleChange(event: Event) {
 }
 </script>
 
-<Select class="smrt-select model-picker-select" bind:value onchange={handleChange}>
+<Select
+  class="smrt-select model-picker-select"
+  bind:value
+  onchange={handleChange}
+  aria-label={ariaLabel ?? t(M['chat.model_picker.label'])}
+>
   {#each availableModels as model (model.id)}
     <option value={model.id}>{model.label}</option>
   {/each}

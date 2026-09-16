@@ -42,6 +42,9 @@ export const M = defineMessages({
   'chat.tool_call_display.confirm': 'Confirm',
   'chat.tool_call_display.reject': 'Reject',
 
+  // ModelPicker (#2904)
+  'chat.model_picker.label': 'Model',
+
   // AssistantComposer (#2904)
   'chat.assistant_composer.attach_files': 'Attach files',
   'chat.assistant_composer.message_label': 'Message',

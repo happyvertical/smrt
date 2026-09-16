@@ -207,7 +207,7 @@ function removeAttachment(id: string) {
         />
       </svg>
     </Button>
-    <!-- raw-primitive-allow: visually-hidden native file input that backs the attach button's OS picker; the base Input primitive renders a visible bordered control and cannot be this hidden picker (same pattern as ../shared/FileUpload.svelte) -->
+    <!-- raw-primitive-allow: visually-hidden native file input that backs the attach button's OS picker; the base Input primitive renders a visible bordered control and cannot be this hidden picker (same pattern as ../shared/FileUpload.svelte). Cycle-3 second final F2: the visually-hidden clip-rect styling keeps this element IN the accessibility tree, so unlike FileUpload's own wrapping label element with visible text, this needs an explicit aria-label to avoid an unnamed file control. -->
     <input
       bind:this={fileInputEl}
       type="file"
@@ -216,6 +216,7 @@ function removeAttachment(id: string) {
       onchange={handleFileChange}
       disabled={disabled || uploading}
       tabindex="-1"
+      aria-label={t(M['chat.assistant_composer.attach_files'])}
     />
     <Textarea
       bind:value={content}
