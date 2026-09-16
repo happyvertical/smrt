@@ -244,6 +244,52 @@ describe('createAssistantDockController', () => {
     expect(seenIds[0]).toBe(seenIds[1]);
   });
 
+  // Copilot PR #2919 jAwwB: the draft key was (threadId, content) only,
+  // even though attachments are part of the send input. After an
+  // in-progress send('same text', [A]) cleared the composer, a second
+  // send('same text', [B]) before the first resolved reused the SAME
+  // clientRequestId — a deduplicating transport returned the first
+  // request's cached result and silently dropped attachment B.
+  it('a second send() with the same text but a DIFFERENT attachment set mints a new clientRequestId', async () => {
+    const seenAttachmentSets: (string | undefined)[][] = [];
+    const transport = createInMemoryAssistantTransport({
+      simulateInProgressOnce: false,
+    });
+    transport.sendMessage = async (input) => {
+      seenAttachmentSets.push((input.attachments ?? []).map((a) => a.id));
+      return { inProgress: true, userMessage: undefined };
+    };
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id);
+
+    await controller.send('same text', [{ id: 'att-A', name: 'a.png' }]);
+    const clientRequestIdA = controller.pendingSends[0]?.clientRequestId;
+    expect(clientRequestIdA).toBeDefined();
+
+    await controller.send('same text', [{ id: 'att-B', name: 'b.png' }]);
+    const clientRequestIdB = controller.pendingSends.find(
+      (p) => p.content === 'same text' && p.attachments?.[0]?.id === 'att-B',
+    )?.clientRequestId;
+
+    expect(clientRequestIdB).toBeDefined();
+    expect(clientRequestIdB).not.toBe(clientRequestIdA);
+    expect(seenAttachmentSets).toEqual([['att-A'], ['att-B']]);
+
+    // A THIRD send of the exact same (text, attachments) as the second one
+    // — while it's still unresolved — must reuse clientRequestIdB, not mint
+    // a third id (retries of the same draft still bind to the same key).
+    await controller.send('same text', [{ id: 'att-B', name: 'b.png' }]);
+    expect(seenAttachmentSets).toEqual([['att-A'], ['att-B'], ['att-B']]);
+    const thirdCallClientRequestId = controller.pendingSends.find(
+      (p) => p.content === 'same text' && p.attachments?.[0]?.id === 'att-B',
+    )?.clientRequestId;
+    expect(thirdCallClientRequestId).toBe(clientRequestIdB);
+  });
+
   it('marks a pending send stale after the timeout and offers retry via the same clientRequestId', async () => {
     vi.useFakeTimers();
     try {

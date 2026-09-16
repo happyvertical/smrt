@@ -224,12 +224,30 @@ export function createAssistantDockController(
   // proxy behavior for built-in objects it doesn't already deep-proxy.
   const actions = new SvelteMap<string, AssistantActionState>();
 
-  // Cache of the in-flight/most-recent clientRequestId per (threadId, content)
-  // draft — mirrors PortalChatTool.svelte:304-322 exactly: a resend of the
-  // same unsent draft reuses the id instead of minting a new one.
+  // Cache of the in-flight/most-recent clientRequestId per (threadId,
+  // content, attachments) draft — mirrors PortalChatTool.svelte:304-322: a
+  // resend of the same unsent draft reuses the id instead of minting a new
+  // one. Copilot PR #2919 jAwwB: the key was previously (threadId, content)
+  // only, even though attachments are part of the send input — after an
+  // in-progress send('same text', [A]) cleared the composer, a second send
+  // with [B] before polling resolved reused the FIRST clientRequestId, and a
+  // deduplicating transport returned the first request's cached result,
+  // silently dropping attachment B. Attachment identity (id, falling back to
+  // url then name) is now part of the key, sorted so the same SET of
+  // attachments (regardless of staging order) still binds to one key —
+  // retries of the exact same draft (same text AND same attachments) still
+  // reuse it.
   const draftIds = new Map<string, string>();
-  function draftKey(threadId: string, content: string): string {
-    return `${threadId}\n${content}`;
+  function draftKey(
+    threadId: string,
+    content: string,
+    attachments?: AssistantAttachmentRef[],
+  ): string {
+    const attachmentIdentity = (attachments ?? [])
+      .map((a) => a.id || a.url || a.name)
+      .sort()
+      .join(' ');
+    return `${threadId}\n${content}\n${attachmentIdentity}`;
   }
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -472,7 +490,8 @@ export function createAssistantDockController(
       // `inProgress` send that doSend() deliberately left the draft id
       // cached for — clear it now so a later resend of the same draft
       // mints a fresh id instead of reusing a long-resolved one.
-      if (resolved) draftIds.delete(draftKey(p.threadId, p.content));
+      if (resolved)
+        draftIds.delete(draftKey(p.threadId, p.content, p.attachments));
       return !resolved;
     });
   }
@@ -665,7 +684,7 @@ export function createAssistantDockController(
         startPolling();
         return;
       }
-      draftIds.delete(draftKey(threadId, content));
+      draftIds.delete(draftKey(threadId, content, attachments));
       if (activeThreadId === threadId) {
         const toAppend = [result.userMessage, result.assistantMessage].filter(
           (m): m is AssistantMessage => Boolean(m),
@@ -678,7 +697,7 @@ export function createAssistantDockController(
         (p) => p.clientRequestId !== clientRequestId,
       );
     } catch (error) {
-      draftIds.delete(draftKey(threadId, content));
+      draftIds.delete(draftKey(threadId, content, attachments));
       // Cycle-3 first final sweep: same disposed re-check as the success
       // branch above; the throw below still needs to happen regardless (the
       // pending send's own 'failed' status is best-effort UI polish, not
@@ -699,7 +718,7 @@ export function createAssistantDockController(
       throw new Error('AssistantDock: send() called with no active thread');
     }
     const threadId = activeThreadId;
-    const key = draftKey(threadId, content);
+    const key = draftKey(threadId, content, attachments);
     let clientRequestId = draftIds.get(key);
     if (!clientRequestId) {
       clientRequestId =
