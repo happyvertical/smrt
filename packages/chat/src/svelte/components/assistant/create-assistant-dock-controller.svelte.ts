@@ -258,6 +258,9 @@ export function createAssistantDockController(
   // of `disposed` for that same in-flight-await race — set by
   // `stopPolling()`, cleared by `startPolling()`.
   let pollingStopped = false;
+  // Cycle-3 first final sweep: monotonic counter guarding openThread()'s
+  // post-await write — see openThread() below.
+  let openThreadRequestId = 0;
 
   // Cycle-2 second final finding 1: `options.surfaces` is a getter (a live
   // prop passthrough from AssistantDock.svelte), so it must be RE-READ on
@@ -499,9 +502,15 @@ export function createAssistantDockController(
   // and reports the rejection itself (see AssistantDock.svelte).
   async function loadThreads() {
     try {
-      threads = await options.transport.listThreads();
+      const fresh = await options.transport.listThreads();
+      // Cycle-3 first final sweep: dispose() can run while this await is in
+      // flight — bail before writing state on a torn-down controller, same
+      // "still current" discipline pollTick/openThread apply.
+      if (disposed) return;
+      threads = fresh;
       error = null;
     } catch (err) {
+      if (disposed) return;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -511,12 +520,17 @@ export function createAssistantDockController(
       models = [];
       return;
     }
+    let fresh: ModelOption[];
     try {
-      models = await options.transport.listModels();
+      fresh = await options.transport.listModels();
     } catch (err) {
+      // Cycle-3 first final sweep: same disposed re-check as loadThreads.
+      if (disposed) return;
       error = err instanceof Error ? err.message : String(err);
       return;
     }
+    if (disposed) return;
+    models = fresh;
     if (models.length > 0 && !selectedModel) {
       selectedModel = models[0].id;
     }
@@ -535,12 +549,21 @@ export function createAssistantDockController(
   // success, and any failure is caught and recorded on `error` rather than
   // thrown.
   async function openThread(threadId: string) {
+    // Cycle-3 first final sweep: without this, two overlapping openThread()
+    // calls (e.g. a fast double-click on two different threads) race —
+    // whichever loadMessages() resolves LAST wins regardless of which was
+    // started last, so an older, slower request can stomp the newer one's
+    // activeThreadId/messages after the user has already moved on. Only the
+    // most recently STARTED call may write.
+    const requestId = ++openThreadRequestId;
     try {
       const fresh = await options.transport.loadMessages(threadId);
+      if (disposed || requestId !== openThreadRequestId) return;
       activeThreadId = threadId;
       messages = fresh;
       error = null;
     } catch (err) {
+      if (disposed || requestId !== openThreadRequestId) return;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -554,11 +577,19 @@ export function createAssistantDockController(
   async function createThread(title: string) {
     try {
       const thread = await options.transport.createThread(title);
-      threads = [...threads, thread];
-      error = null;
+      // Cycle-3 first final sweep: dispose() can run while this await is in
+      // flight. The return value stays load-bearing for the caller (see the
+      // comment above) even on a disposed controller, so this only skips
+      // the STATE writes, not the return.
+      if (!disposed) {
+        threads = [...threads, thread];
+        error = null;
+      }
       return thread;
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (!disposed) {
+        error = err instanceof Error ? err.message : String(err);
+      }
       throw err;
     }
   }
@@ -593,6 +624,12 @@ export function createAssistantDockController(
         clientRequestId,
         model: selectedModel,
       });
+      // Cycle-3 first final sweep: dispose() can run while sendMessage() is
+      // in flight — bail before any of the writes below run on a torn-down
+      // controller. draftIds is a plain (non-reactive) Map so clearing it is
+      // harmless either way, but it's skipped too for a clean, single bail
+      // point.
+      if (disposed) return;
       if (result.inProgress) {
         // F5 (#2904 review): do NOT clear the draft id here — the turn is
         // still unresolved. Clearing it now would let a same-draft resend
@@ -622,11 +659,17 @@ export function createAssistantDockController(
       );
     } catch (error) {
       draftIds.delete(draftKey(threadId, content));
-      pendingSends = pendingSends.map((p) =>
-        p.clientRequestId === clientRequestId
-          ? { ...p, status: 'failed' as const }
-          : p,
-      );
+      // Cycle-3 first final sweep: same disposed re-check as the success
+      // branch above; the throw below still needs to happen regardless (the
+      // pending send's own 'failed' status is best-effort UI polish, not
+      // load-bearing for the caller's control flow).
+      if (!disposed) {
+        pendingSends = pendingSends.map((p) =>
+          p.clientRequestId === clientRequestId
+            ? { ...p, status: 'failed' as const }
+            : p,
+        );
+      }
       throw error;
     }
   }
@@ -665,8 +708,12 @@ export function createAssistantDockController(
         clientRequestId,
         pending.attachments,
       );
+      // Cycle-3 first final sweep: dispose() can run while doSend() is in
+      // flight — bail before writing `error` on a torn-down controller.
+      if (disposed) return;
       error = null;
     } catch (err) {
+      if (disposed) return;
       error = err instanceof Error ? err.message : String(err);
     }
   }

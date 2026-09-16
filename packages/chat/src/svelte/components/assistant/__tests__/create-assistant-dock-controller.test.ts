@@ -1666,4 +1666,64 @@ describe('createAssistantDockController', () => {
       controller.dispose();
     });
   });
+
+  // Cycle-3 first final sweep: openThread() wrote activeThreadId/messages
+  // unconditionally after its await, so two overlapping calls (e.g. a fast
+  // double-click on two different threads) raced on whichever
+  // loadMessages() happened to resolve LAST, regardless of which openThread
+  // call was started last — an older, slower request could stomp the
+  // newer one's messages after the user had already moved on.
+  it('openThread() only writes from the MOST RECENTLY STARTED call when two calls overlap', async () => {
+    const { transport, store } = scriptedTransport({
+      'thread-a': [
+        {
+          id: 'a1',
+          threadId: 'thread-a',
+          content: 'hello from a',
+          role: 'user',
+          createdAt: new Date(),
+        },
+      ],
+      'thread-b': [
+        {
+          id: 'b1',
+          threadId: 'thread-b',
+          content: 'hello from b',
+          role: 'user',
+          createdAt: new Date(),
+        },
+      ],
+    });
+    let resolveA: (() => void) | undefined;
+    const gateA = new Promise<void>((resolve) => {
+      resolveA = resolve;
+    });
+    const originalLoadMessages = transport.loadMessages.bind(transport);
+    transport.loadMessages = async (threadId: string) => {
+      if (threadId === 'thread-a') await gateA;
+      return originalLoadMessages(threadId);
+    };
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+
+    // Start opening thread-a (its loadMessages call is gated) and, before it
+    // resolves, start opening thread-b (unGated — resolves first).
+    const openA = controller.openThread('thread-a');
+    const openB = controller.openThread('thread-b');
+    await openB;
+    expect(controller.activeThreadId).toBe('thread-b');
+    expect(controller.messages.map((m) => m.id)).toEqual(['b1']);
+
+    // thread-a's older, slower request now resolves — it must NOT stomp
+    // thread-b's state, since a newer openThread() call has since started.
+    resolveA?.();
+    await openA;
+    expect(controller.activeThreadId).toBe('thread-b');
+    expect(controller.messages.map((m) => m.id)).toEqual(['b1']);
+
+    void store;
+    controller.dispose();
+  });
 });
