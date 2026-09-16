@@ -162,6 +162,12 @@ const handle = mountListDataSurface({
   refresh: () => reload(),
 });
 
+// Only `controller` is observed automatically. App-owned `context` is a
+// one-time snapshot at mount — publish a fresh one whenever totalRows,
+// queryFingerprint, or freshness changes (an $effect keyed on those values
+// is the usual place):
+handle.update({ totalRows, queryFingerprint });
+
 // on unmount:
 handle.destroy();
 ```

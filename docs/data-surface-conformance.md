@@ -57,11 +57,16 @@ the framework owns normalization, bounds, and refusal behavior.
    divergences #2917 must reconcile. It mirrors the controller into the
    registry, translates
    visible table commands back into controller dispatches (denying anything a
-   descriptor or `acceptsTableCommand` predicate does not allow), bumps a
-   monotonic per-identity revision on controller or app-owned context change,
-   routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight` controls to
-   page callbacks, and dispatches any other `controlId` through an `onControl`
-   escape hatch (denied by default). If `controller` is controlled
+   descriptor or `acceptsTableCommand` predicate does not allow), and bumps a
+   monotonic per-identity revision on every controller change it observes
+   automatically. App-owned context (`totalRows`, freshness, a query
+   fingerprint, …) is a one-time snapshot at mount, not observed — the page
+   must call the returned handle's `update()` whenever that state changes, or
+   the published context goes stale while the controller-driven half of the
+   same snapshot stays live (an `$effect` keyed on those values is the usual
+   place). It routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight`
+   controls to page callbacks, and dispatches any other `controlId` through
+   an `onControl` escape hatch (denied by default). If `controller` is controlled
    (`controller.isControlled()`), `dispatch()` only proposes state via
    `onStateChange` and never applies it, so `applyControlledState` is
    required to settle the candidate state — mirroring `DataTable`'s own
