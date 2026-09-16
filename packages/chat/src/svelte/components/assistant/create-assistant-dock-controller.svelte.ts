@@ -142,6 +142,12 @@ export interface AssistantDockController {
   rejectAction(requestId: string): void;
   startPolling(): void;
   stopPolling(): void;
+  /** Re-checks whether the host has reassigned the `registry` prop to a
+   * different instance and, if so, re-subscribes and resyncs `surfaces`
+   * (#2904 review finding B). A no-op when unchanged. Call from a
+   * `registry`-scoped effect, never from the mount effect (see
+   * AssistantDock.svelte — F1 requires that one to run exactly once). */
+  syncRegistry(): void;
   dispose(): void;
 }
 
@@ -200,6 +206,13 @@ export function createAssistantDockController(
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let unsubscribeRegistry: (() => void) | null = null;
+  // Finding B (#2904 review, third final pass): the registry SUBSCRIPTION
+  // used to bind once, at construction, to whatever `options.registry`
+  // happened to be at that instant — even though `options.registry` is a
+  // getter and AssistantDock.svelte documents that reassigning the prop is
+  // observed. `subscribedRegistry` is the instance we're CURRENTLY
+  // subscribed to, so `syncRegistry()` (below) can detect a swap.
+  let subscribedRegistry: DataSurfaceRegistry | null = null;
   // F3 (#2904 review): pollTick's loadMessages await can outlive dispose();
   // this flag lets it (and resetPollInterval) bail instead of re-arming a
   // timer past unmount.
@@ -232,10 +245,20 @@ export function createAssistantDockController(
     }
   }
 
-  // Initial sync + live updates as routes mount/unmount surfaces.
-  syncSurfacesFromRegistry();
-  if (!options.surfaces) {
-    unsubscribeRegistry = options.registry.subscribe((event) => {
+  // Finding B: a whole-registry swap (e.g. a host switching tenant/workspace
+  // context) invalidates every outstanding preview, not just one surface's —
+  // the new registry instance is a different trust boundary, so a preview
+  // taken under the old one must never be confirmable against it.
+  function invalidateAllPreviewedActions(reason: string) {
+    for (const [requestId, state] of actions) {
+      if (state.status === 'previewed' || state.status === 'previewing') {
+        actions.set(requestId, { ...state, status: 'failed', error: reason });
+      }
+    }
+  }
+
+  function subscribeToRegistry(registry: DataSurfaceRegistry) {
+    return registry.subscribe((event) => {
       if (event.type === 'registered' || event.type === 'unregistered') {
         syncSurfacesFromRegistry();
       }
@@ -243,6 +266,38 @@ export function createAssistantDockController(
         invalidatePreviewedActionsFor(event.identity);
       }
     });
+  }
+
+  // Finding B: re-checks whether `options.registry` (the getter) now returns
+  // a DIFFERENT instance than the one we're subscribed to, and if so,
+  // unsubscribes the old one, subscribes the new one, invalidates every
+  // outstanding preview (they were taken under the old registry's trust
+  // boundary), and resyncs `surfaces` from the new instance. A no-op when
+  // the registry hasn't changed. Called once at construction and again by
+  // the host's own `registry`-scoped effect (see AssistantDock.svelte) —
+  // never from inside the mount effect that must run exactly once (F1).
+  function syncRegistry() {
+    if (options.surfaces) return; // explicit override wins; no subscription
+    if (disposed) return;
+    const current = options.registry;
+    if (current === subscribedRegistry) return;
+    // Only reached on an actual swap: the constructor sets
+    // `subscribedRegistry` directly (bypassing this function), so every call
+    // that gets here past the guard above is a genuine registry change.
+    unsubscribeRegistry?.();
+    subscribedRegistry = current;
+    unsubscribeRegistry = subscribeToRegistry(current);
+    invalidateAllPreviewedActions(
+      'AssistantDock: the registry changed — this preview was taken under a previous context',
+    );
+    syncSurfacesFromRegistry();
+  }
+
+  // Initial sync + subscription.
+  syncSurfacesFromRegistry();
+  if (!options.surfaces) {
+    subscribedRegistry = options.registry;
+    unsubscribeRegistry = subscribeToRegistry(subscribedRegistry);
   }
 
   function markStalePendingSends() {
@@ -613,6 +668,7 @@ export function createAssistantDockController(
     rejectAction,
     startPolling,
     stopPolling,
+    syncRegistry,
     dispose,
   };
 }

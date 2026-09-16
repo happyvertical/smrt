@@ -97,6 +97,20 @@ $effect(() => {
   return () => controller.dispose();
 });
 
+// Finding B (#2904 review, third final pass): a SEPARATE effect, scoped to
+// only the `registry` prop, so reassigning it (a host swapping
+// tenant/workspace context) is actually observed — the getter passed to
+// createAssistantDockController above makes `options.registry` return the
+// new value, but nothing previously re-subscribed to it. `registry` is read
+// directly here (a tracked dependency) so this effect reruns on a prop
+// swap; everything inside stays `untrack`-ed so it does NOT also rerun on
+// unrelated $state changes elsewhere (preserving the F1 guarantee that the
+// mount effect above runs exactly once per mount).
+$effect(() => {
+  void registry;
+  untrack(() => controller.syncRegistry());
+});
+
 async function handleSelectThread(threadId: string) {
   await controller.openThread(threadId);
 }

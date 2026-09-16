@@ -104,4 +104,62 @@ describe('AssistantDock (mounted component)', () => {
     // per send/poll re-run of a re-triggered effect.
     expect(listThreadsSpy).toHaveBeenCalledTimes(1);
   });
+
+  // Finding B (#2904 review, third final pass): reassigning the `registry`
+  // prop (a host swapping tenant/workspace context) must be observed by the
+  // MOUNTED component's own controller, not just a freshly-constructed one.
+  // The corresponding controller-level test in
+  // create-assistant-dock-controller.test.ts asserts the harder-to-observe
+  // parts (surfaces content, previewAction rejection, preview invalidation)
+  // directly against syncRegistry(); this test proves the DOM-visible
+  // surfaces-empty notice reacts to the same prop swap through the real
+  // component, and that F1's "mount effect runs once" guarantee still
+  // holds afterward.
+  it('re-subscribes when the registry prop is reassigned to a different instance', async () => {
+    const r1 = createDataSurfaceRegistry();
+    r1.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    const transport = createInMemoryAssistantTransport();
+    const listThreadsSpy = vi.spyOn(transport, 'listThreads');
+
+    const { rerender } = render(AssistantDock, {
+      props: { transport, registry: r1 },
+    });
+
+    // R1 has a mounted surface — the empty notice must not show.
+    expect(
+      screen.queryByText(/No data surfaces are mounted on this route/i),
+    ).not.toBeInTheDocument();
+
+    // Reassign the prop to a DIFFERENT, empty registry instance (R2).
+    const r2 = createDataSurfaceRegistry();
+    await rerender({ transport, registry: r2 });
+
+    expect(
+      await screen.findByText(/No data surfaces are mounted on this route/i),
+    ).toBeInTheDocument();
+
+    // Registering a surface on R2 must be discovered — proves the
+    // subscription actually moved to R2, not just a one-time resync.
+    const r2Identity = { ...identity, surfaceId: 'products' };
+    r2.register({
+      descriptor: { ...descriptor, identity: r2Identity },
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!screen.queryByText(/No data surfaces are mounted on this route/i)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(
+      screen.queryByText(/No data surfaces are mounted on this route/i),
+    ).not.toBeInTheDocument();
+
+    // F1 guarantee preserved: the registry-scoped effect must not have
+    // caused the SEPARATE mount effect to re-run.
+    expect(listThreadsSpy).toHaveBeenCalledTimes(1);
+  });
 });

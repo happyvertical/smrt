@@ -809,4 +809,133 @@ describe('createAssistantDockController', () => {
 
     controller.dispose();
   });
+
+  // Finding B (#2904 review, third final pass): the registry subscription
+  // must follow a getter-based `options.registry` when the host reassigns
+  // it, not stay bound to whatever instance was current at construction.
+  // This is the direct controller-level test of syncRegistry(); the
+  // corresponding component-level test in AssistantDock.test.ts drives the
+  // same swap through a real `<AssistantDock>` prop reassignment and
+  // asserts the DOM-visible surfaces-empty notice reacts to it.
+  it('syncRegistry() re-subscribes, resyncs surfaces, and invalidates outstanding previews on a registry swap', async () => {
+    const r1 = realRegistryWithSurface('orders');
+    let currentRegistry = r1.registry;
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      get registry() {
+        return currentRegistry;
+      },
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'apply',
+          ok: true,
+        }),
+      },
+    });
+
+    expect(controller.surfaces).toHaveLength(1);
+
+    const outstandingRequestId = 'req-outstanding-on-r1';
+    await controller.previewAction({
+      version: 1,
+      requestId: outstandingRequestId,
+      identity: r1.identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(outstandingRequestId)?.status).toBe(
+      'previewed',
+    );
+
+    // Swap to an empty registry (R2) — mirrors a host switching
+    // tenant/workspace context.
+    const r2 = createDataSurfaceRegistry();
+    currentRegistry = r2;
+    controller.syncRegistry();
+
+    expect(controller.surfaces).toHaveLength(0);
+    // The preview taken under R1 must not survive the swap to R2.
+    expect(controller.actions.get(outstandingRequestId)?.status).toBe('failed');
+
+    // A preview against R1's surface must now be rejected — R1 is no longer
+    // the registry this controller is watching.
+    const rejectedRequestId = 'req-r1-after-swap';
+    await controller.previewAction({
+      version: 1,
+      requestId: rejectedRequestId,
+      identity: r1.identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(rejectedRequestId)?.status).toBe('failed');
+    expect(controller.actions.get(rejectedRequestId)?.error).toMatch(
+      /not mounted/,
+    );
+
+    // Registering a surface on R2 must be discovered (the subscription
+    // really did move to R2, not just resync once).
+    const r2Identity: DataSurfaceIdentity = {
+      surfaceId: 'products',
+      kind: 'table',
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    r2.register({
+      descriptor: {
+        version: 1,
+        identity: r2Identity,
+        schemaVersion: 1,
+        label: 'products',
+        rowKey: 'id',
+        columns: [
+          { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+        ],
+        query: {
+          modes: ['rows'],
+          projectableColumnIds: ['id'],
+          searchableColumnIds: [],
+          filterableColumnIds: [],
+          sortableColumnIds: [],
+        },
+        actions: [],
+        controls: [],
+        limits: {
+          maxQueryRows: 10,
+          maxQueryBytes: 10_000,
+          maxSelectionSize: 10,
+        },
+      },
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    expect(controller.surfaces).toHaveLength(1);
+    expect(controller.surfaces[0]?.surfaceId).toBe('products');
+
+    controller.dispose();
+  });
+
+  it('syncRegistry() is a no-op when the registry has not changed', () => {
+    const { registry } = realRegistryWithSurface('orders');
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+    });
+    expect(controller.surfaces).toHaveLength(1);
+    controller.syncRegistry();
+    controller.syncRegistry();
+    expect(controller.surfaces).toHaveLength(1);
+    controller.dispose();
+  });
 });
