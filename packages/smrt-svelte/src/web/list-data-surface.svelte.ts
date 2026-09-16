@@ -19,10 +19,13 @@
  * `@happyvertical/smrt-ui/data` (both packages already depend on it) —
  * tracked as a follow-up (#2917). They are NOT currently identical: this
  * copy denies a controlled controller's table command that fails to settle
- * (see `applyControlledState` below) and calls `registry.register` before
+ * (see `applyControlledState` below), calls `registry.register` before
  * subscribing to the controller to avoid leaking a subscription on a
- * throwing register; `registerContentListDataSurface` predates both fixes.
- * #2917 should adopt them rather than treat this copy as the odd one out.
+ * throwing register, and ignores `update()` once `destroy()` has run so a
+ * late-resolving page callback cannot resurrect this identity's entry in the
+ * registry-scoped revision map after a later mount has taken it over;
+ * `registerContentListDataSurface` predates all three fixes. #2917 should
+ * adopt them rather than treat this copy as the odd one out.
  *
  * Call during component initialization (top level of `<script>`, or inside
  * an `$effect`); `destroy()` unregisters and unsubscribes, so tearing it down
@@ -313,7 +316,14 @@ export function mountListDataSurface(
     revisions.set(key, revision);
     options.onRevision?.(revision);
   };
+  let destroyed = false;
   const updateContext = (next: ListDataSurfaceContextPatch) => {
+    // A page callback captured before unmount (e.g. an async `refresh` that
+    // calls `handle.update()` after its promise resolves) must not resurrect
+    // this identity's entry in the registry-scoped, cross-mount `revisions`
+    // map after `destroy()` — doing so would corrupt the monotonic revision
+    // a LATER, unrelated mount of the same identity seeds from.
+    if (destroyed) return;
     // Genuinely "fold in": keys already published that `next` does not
     // mention are retained, matching this function's own documented
     // contract. A caller that wants a key gone passes it explicitly as
@@ -442,6 +452,7 @@ export function mountListDataSurface(
   return {
     update: updateContext,
     destroy() {
+      destroyed = true;
       unsubscribe();
       unregister();
     },

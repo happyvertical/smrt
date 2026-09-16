@@ -503,6 +503,38 @@ describe('mountListDataSurface', () => {
     handle.destroy();
   });
 
+  it('ignores update() called after destroy() instead of corrupting a later mount of the same identity', () => {
+    const registry = createDataSurfaceRegistry();
+    const controllerA = createDataTableController();
+    const surfaceIdentity = { surfaceId: 'reused', kind: 'list' as const };
+    const first = mountListDataSurface({
+      registry,
+      descriptor: descriptor({ identity: surfaceIdentity }),
+      controller: controllerA,
+      context: context(),
+    });
+    first.destroy();
+
+    const controllerB = createDataTableController();
+    const second = mountListDataSurface({
+      registry,
+      descriptor: descriptor({ identity: surfaceIdentity }),
+      controller: controllerB,
+      context: context(),
+    });
+    const beforeStaleUpdate = registry.inspect(surfaceIdentity)?.revision ?? 0;
+
+    // A callback captured by `first` (e.g. an async refresh) resolves late,
+    // after `first.destroy()` and after `second` has already mounted the
+    // same identity. It must be a no-op, not resurrect the shared revision
+    // counter for an identity `first` no longer owns.
+    expect(() => first.update(context({ totalRows: 999 }))).not.toThrow();
+    expect(registry.inspect(surfaceIdentity)?.revision).toBe(beforeStaleUpdate);
+    expect(registry.inspect(surfaceIdentity)?.state.totalRows).not.toBe(999);
+
+    second.destroy();
+  });
+
   it('keeps two mounted lists independently addressable', async () => {
     const registry = createDataSurfaceRegistry();
     const first = mountListDataSurface({

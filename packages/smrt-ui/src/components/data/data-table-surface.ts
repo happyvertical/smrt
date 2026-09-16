@@ -163,29 +163,124 @@ function dataTableRowIds(
 /**
  * Every `controlId` {@link dataTableCommandFromDataSurfaceCommand} below
  * understands as a table command (as opposed to a component-local control it
- * returns `null` for). The canonical, single-sourced enumeration: a consumer
- * that must distinguish "this controlId names a table command whose payload
- * failed to translate" from "this is a genuinely unknown/custom control" —
- * for example to deny the former outright rather than forwarding it to a
- * generic escape hatch — imports this instead of hand-copying the `case`
- * list. Keep in exact sync with the `switch` below; add a new id to both in
- * the same change.
+ * returns `null` for). Declared once, here, as the sole source of truth: the
+ * `Record` below is a mapped type over this union, so the compiler — not a
+ * comment — rejects both a missing handler for a listed id and a handler
+ * keyed by an id not listed here. There is no second list and no `switch` to
+ * drift out of sync with it.
  */
-export const DATA_TABLE_SURFACE_CONTROL_IDS = [
-  'set-search',
-  'set-filters',
-  'set-sorting',
-  'toggle-sorting',
-  'set-page',
-  'set-page-size',
-  'set-column-order',
-  'set-column-visibility',
-  'set-selected-rows',
-  'toggle-row-selection',
-  'set-expanded-rows',
-  'toggle-row-expansion',
-  'reset',
-] as const;
+export type DataTableSurfaceControlId =
+  | 'set-search'
+  | 'set-filters'
+  | 'set-sorting'
+  | 'toggle-sorting'
+  | 'set-page'
+  | 'set-page-size'
+  | 'set-column-order'
+  | 'set-column-visibility'
+  | 'set-selected-rows'
+  | 'toggle-row-selection'
+  | 'set-expanded-rows'
+  | 'toggle-row-expansion'
+  | 'reset';
+
+type DataTableSurfaceControlHandler = (
+  payload: Record<string, DataSurfaceJsonValue> | undefined,
+) => DataTableCommand | null;
+
+const dataTableSurfaceControlHandlers: Record<
+  DataTableSurfaceControlId,
+  DataTableSurfaceControlHandler
+> = {
+  'set-search': (payload) => {
+    const search = stringValue(payload?.search);
+    return search === undefined ? null : { type: 'setSearch', search };
+  },
+  'set-filters': (payload) => {
+    const filters = dataTableFilters(payload?.filters);
+    return filters === undefined ? null : { type: 'setFilters', filters };
+  },
+  'set-sorting': (payload) => {
+    const sorting = dataTableSorting(payload?.sorting);
+    return sorting === undefined ? null : { type: 'setSorting', sorting };
+  },
+  'toggle-sorting': (payload) => {
+    const columnId = stringValue(payload?.columnId);
+    if (!columnId) return null;
+    const multi = booleanValue(payload?.multi);
+    return {
+      type: 'toggleSorting',
+      columnId,
+      ...(multi === undefined ? {} : { multi }),
+    };
+  },
+  'set-page': (payload) => {
+    const page = numberValue(payload?.page);
+    return page === undefined ? null : { type: 'setPage', page };
+  },
+  'set-page-size': (payload) => {
+    const pageSize = payload?.pageSize;
+    if (pageSize === null) return { type: 'setPageSize', pageSize: null };
+    const numericPageSize = numberValue(pageSize);
+    return numericPageSize === undefined
+      ? null
+      : { type: 'setPageSize', pageSize: numericPageSize };
+  },
+  'set-column-order': (payload) => {
+    const columnIds = arrayValue(payload?.columnIds);
+    if (!columnIds?.every((value) => typeof value === 'string')) return null;
+    const ids: string[] = [];
+    for (const value of columnIds) {
+      if (typeof value !== 'string' || value.length === 0) return null;
+      ids.push(value);
+    }
+    return { type: 'setColumnOrder', columnIds: ids };
+  },
+  'set-column-visibility': (payload) => {
+    const columns = dataTableVisibilities(payload?.columns);
+    return columns === undefined
+      ? null
+      : { type: 'setColumnVisibility', columns };
+  },
+  'set-selected-rows': (payload) => {
+    const rowIds = dataTableRowIds(payload?.rowIds);
+    return rowIds === undefined ? null : { type: 'setSelectedRows', rowIds };
+  },
+  'toggle-row-selection': (payload) => {
+    const rowId = payload?.rowId;
+    return typeof rowId === 'string' || typeof rowId === 'number'
+      ? { type: 'toggleRowSelection', rowId }
+      : null;
+  },
+  'set-expanded-rows': (payload) => {
+    const rowIds = dataTableRowIds(payload?.rowIds);
+    return rowIds === undefined ? null : { type: 'setExpandedRows', rowIds };
+  },
+  'toggle-row-expansion': (payload) => {
+    const rowId = payload?.rowId;
+    return typeof rowId === 'string' || typeof rowId === 'number'
+      ? { type: 'toggleRowExpansion', rowId }
+      : null;
+  },
+  reset: () => ({ type: 'reset' }),
+};
+
+/**
+ * Mechanically derived from {@link dataTableSurfaceControlHandlers} — never
+ * hand-copy this list. A consumer that must distinguish "this controlId
+ * names a table command whose payload failed to translate" from "this is a
+ * genuinely unknown/custom control" (for example to deny the former outright
+ * rather than forwarding it to a generic escape hatch) imports this.
+ */
+export const DATA_TABLE_SURFACE_CONTROL_IDS = Object.keys(
+  dataTableSurfaceControlHandlers,
+) as DataTableSurfaceControlId[];
+
+function isDataTableSurfaceControlId(
+  value: string,
+): value is DataTableSurfaceControlId {
+  return Object.hasOwn(dataTableSurfaceControlHandlers, value);
+}
 
 /**
  * Returns `null` for a component-local control (focus, reveal, refresh, …) or
@@ -194,81 +289,7 @@ export const DATA_TABLE_SURFACE_CONTROL_IDS = [
 export function dataTableCommandFromDataSurfaceCommand(
   command: DataSurfaceVisibleCommand,
 ): DataTableCommand | null {
+  if (!isDataTableSurfaceControlId(command.controlId)) return null;
   const payload = payloadObject(command.payload);
-  switch (command.controlId) {
-    case 'set-search': {
-      const search = stringValue(payload?.search);
-      return search === undefined ? null : { type: 'setSearch', search };
-    }
-    case 'set-filters': {
-      const filters = dataTableFilters(payload?.filters);
-      return filters === undefined ? null : { type: 'setFilters', filters };
-    }
-    case 'set-sorting': {
-      const sorting = dataTableSorting(payload?.sorting);
-      return sorting === undefined ? null : { type: 'setSorting', sorting };
-    }
-    case 'toggle-sorting': {
-      const columnId = stringValue(payload?.columnId);
-      if (!columnId) return null;
-      const multi = booleanValue(payload?.multi);
-      return {
-        type: 'toggleSorting',
-        columnId,
-        ...(multi === undefined ? {} : { multi }),
-      };
-    }
-    case 'set-page': {
-      const page = numberValue(payload?.page);
-      return page === undefined ? null : { type: 'setPage', page };
-    }
-    case 'set-page-size': {
-      const pageSize = payload?.pageSize;
-      if (pageSize === null) return { type: 'setPageSize', pageSize: null };
-      const numericPageSize = numberValue(pageSize);
-      return numericPageSize === undefined
-        ? null
-        : { type: 'setPageSize', pageSize: numericPageSize };
-    }
-    case 'set-column-order': {
-      const columnIds = arrayValue(payload?.columnIds);
-      if (!columnIds?.every((value) => typeof value === 'string')) return null;
-      const ids: string[] = [];
-      for (const value of columnIds) {
-        if (typeof value !== 'string' || value.length === 0) return null;
-        ids.push(value);
-      }
-      return { type: 'setColumnOrder', columnIds: ids };
-    }
-    case 'set-column-visibility': {
-      const columns = dataTableVisibilities(payload?.columns);
-      return columns === undefined
-        ? null
-        : { type: 'setColumnVisibility', columns };
-    }
-    case 'set-selected-rows': {
-      const rowIds = dataTableRowIds(payload?.rowIds);
-      return rowIds === undefined ? null : { type: 'setSelectedRows', rowIds };
-    }
-    case 'toggle-row-selection': {
-      const rowId = payload?.rowId;
-      return typeof rowId === 'string' || typeof rowId === 'number'
-        ? { type: 'toggleRowSelection', rowId }
-        : null;
-    }
-    case 'set-expanded-rows': {
-      const rowIds = dataTableRowIds(payload?.rowIds);
-      return rowIds === undefined ? null : { type: 'setExpandedRows', rowIds };
-    }
-    case 'toggle-row-expansion': {
-      const rowId = payload?.rowId;
-      return typeof rowId === 'string' || typeof rowId === 'number'
-        ? { type: 'toggleRowExpansion', rowId }
-        : null;
-    }
-    case 'reset':
-      return { type: 'reset' };
-    default:
-      return null;
-  }
+  return dataTableSurfaceControlHandlers[command.controlId](payload);
 }
