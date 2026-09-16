@@ -224,7 +224,9 @@ describe.skipIf(!pgUrl)('live-schema parity (PostgreSQL)', () => {
         item.kind === 'rename_data_pending' && item.target === 'source_context',
     );
     expect(finding).toBeDefined();
-    expect(finding?.severity).toBe('warning');
+    // #2911: a data suggestion, not schema drift — kept visible but no
+    // longer able to fail closed the way `warning`/`error` severity does.
+    expect(finding?.severity).toBe('info');
     expect(finding?.details?.candidates).toEqual(['legacy_context']);
   });
 });

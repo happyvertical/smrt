@@ -1522,7 +1522,9 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
       (c) => c.type === 'rename_data_pending' && c.name === 'new_slug',
     );
     expect(change).toBeDefined();
-    expect(change?.advisory?.severity).toBe('warning');
+    // #2911: a data suggestion, not schema drift — must not gate
+    // `db:status:assert` the way `warning`/`error` severity does.
+    expect(change?.advisory?.severity).toBe('info');
     expect(change?.sql).toBeUndefined();
     expect(change?.sqlStatements).toBeUndefined();
 
@@ -1852,6 +1854,70 @@ describe('SchemaComparer rename_data_pending (#2752)', () => {
     expect(matches[0].advisory?.suggestedSql).toBeUndefined();
     expect(matches[0].mismatch?.actual).toContain('old_slug');
     expect(matches[0].mismatch?.actual).toContain('older_slug');
+  });
+
+  it('suppresses every finding when one undeclared column is nominated as the rename source for several unrelated targets (#2911)', async () => {
+    // #2911: `anytown/anytown.ai` production reported the same undeclared
+    // column (`tenants.timezone`) as the rename source for THREE unrelated
+    // empty declared columns (`hierarchy_path`, `repo_template`,
+    // `github_org`) simultaneously. One column cannot be the renamed
+    // predecessor of three others at once — this is proof the heuristic's
+    // signal (same table, type-compatible, target empty, source non-empty)
+    // is too weak to support any of the three inferences, not weaker
+    // evidence that should still produce three guesses. Ambiguity must
+    // suppress every affected finding, not multiply a wrong one three
+    // times.
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    await db.query(`
+      CREATE TABLE tenants (
+        id TEXT PRIMARY KEY,
+        hierarchy_path TEXT,
+        repo_template TEXT,
+        github_org TEXT,
+        timezone TEXT
+      )
+    `);
+    await db.query(
+      `INSERT INTO tenants (id, hierarchy_path, repo_template, github_org, timezone) ` +
+        `VALUES ('1', NULL, NULL, NULL, 'America/Edmonton')`,
+    );
+
+    const manifest: Record<string, SchemaDefinition> = {
+      tenants: {
+        tableName: 'tenants',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          hierarchy_path: { type: 'TEXT' },
+          repo_template: { type: 'TEXT' },
+          github_org: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const comparer = new SchemaComparer(db);
+    const diff = await comparer.compare(manifest);
+
+    expect(
+      diff.changes.filter((c) => c.type === 'rename_data_pending'),
+    ).toHaveLength(0);
+
+    // The standalone (uncached) single-table path — a bare `compareTable()`
+    // call outside `compare()`, which never populates
+    // `renameDataPendingCache` — must resolve the same way as the batched
+    // `compare()` path above.
+    const standaloneComparer = new SchemaComparer(db);
+    const standaloneChanges = await standaloneComparer.compareTable(
+      'tenants',
+      manifest.tenants,
+    );
+    expect(
+      standaloneChanges.filter((c) => c.type === 'rename_data_pending'),
+    ).toHaveLength(0);
   });
 
   it('falls back to isolated per-column probes when the batched statement fails, so one bad table does not lose every finding (#2874 review finding F2)', async () => {

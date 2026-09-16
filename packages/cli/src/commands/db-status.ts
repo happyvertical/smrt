@@ -397,17 +397,14 @@ export function summarizeSchemaDiff(diff: {
         });
         break;
 
-      case 'rename_data_pending':
-        // Advisory-only (#2752): report-only, warning severity.
-        if (change.advisory?.severity !== 'warning') break;
-        drift.push({
-          name: `${change.table}.${change.name ?? '(unknown)'}`,
-          type: 'rename_data_pending',
-          recommendation:
-            change.advisory?.message ??
-            'A declared column is empty while an undeclared column of a compatible type holds data — data appears to still live in the old column after a field rename. Run `smrt db:diff` for the suggested backfill SQL.',
-        });
-        break;
+      // `rename_data_pending` (#2752) is intentionally absent here (#2911):
+      // it is a suggestion about data, not a schema mismatch — the live
+      // schema already matches the manifest column-for-column — and the
+      // differ now always emits it at `info` severity for exactly that
+      // reason. A wrong guess would recommend copying data into the wrong
+      // column, so it must never gate `db:status:assert` the way real
+      // drift correctly does. It still surfaces, via
+      // {@link summarizeSchemaNotes}, as a no-action-required note.
     }
   }
 

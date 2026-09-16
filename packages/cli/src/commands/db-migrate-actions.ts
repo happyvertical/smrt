@@ -958,7 +958,14 @@ export function printSchemaAdvisories(
     log(`ℹ️  Live schema notes (${infos.length}, not applied):`);
     for (const item of infos) {
       log(`   ${describeAdvisory(item)}`);
-      if (options.verbose) {
+      // #2911: `rename_data_pending` moved from `warning` to `info`
+      // severity so a wrong guess can no longer gate `db:status:assert`,
+      // but its message and suggested repair SQL are the entire point of
+      // the finding — unlike a harmless orphan-column note, there is
+      // nothing useful left to say without them. Print unconditionally,
+      // the same as it always has, rather than gating it on `--verbose`
+      // the way a merely informational note is.
+      if (options.verbose || item.type === 'rename_data_pending') {
         log(`     ${item.advisory.message}`);
         for (const suggestion of item.advisory.suggestedSql ?? []) {
           log(`     ↳ ${suggestion}`);
