@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.51.4
+
+### Patch Changes
+
+- ### Features
+
+  - generic SmrtObject collection -> DataSurface adapter (#2910) (agents)
+  - SvelteKit wiring helper for the data-surface action queue (#2909) (smrt-agents)
+  - @happyvertical/smrt-config@0.51.4
+  - @happyvertical/smrt-types@0.51.4
+  - @happyvertical/smrt-scanner@0.51.4
+
 ## 0.51.3
 
 ### Patch Changes
