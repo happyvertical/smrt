@@ -1,5 +1,53 @@
 # @happyvertical/smrt-agents
 
+## 0.51.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.6
+  - @happyvertical/smrt-jobs@0.51.6
+  - @happyvertical/smrt-playbooks@0.51.6
+  - @happyvertical/smrt-reports@0.51.6
+  - @happyvertical/smrt-secrets@0.51.6
+  - @happyvertical/smrt-tenancy@0.51.6
+  - @happyvertical/smrt-users@0.51.6
+  - @happyvertical/smrt-config@0.51.6
+  - @happyvertical/smrt-types@0.51.6
+  - @happyvertical/smrt-ui@0.51.6
+
+## 0.51.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.5
+  - @happyvertical/smrt-jobs@0.51.5
+  - @happyvertical/smrt-playbooks@0.51.5
+  - @happyvertical/smrt-reports@0.51.5
+  - @happyvertical/smrt-secrets@0.51.5
+  - @happyvertical/smrt-tenancy@0.51.5
+  - @happyvertical/smrt-users@0.51.5
+  - @happyvertical/smrt-config@0.51.5
+  - @happyvertical/smrt-types@0.51.5
+  - @happyvertical/smrt-ui@0.51.5
+
+## 0.51.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.4
+  - @happyvertical/smrt-jobs@0.51.4
+  - @happyvertical/smrt-playbooks@0.51.4
+  - @happyvertical/smrt-reports@0.51.4
+  - @happyvertical/smrt-secrets@0.51.4
+  - @happyvertical/smrt-tenancy@0.51.4
+  - @happyvertical/smrt-users@0.51.4
+  - @happyvertical/smrt-config@0.51.4
+  - @happyvertical/smrt-types@0.51.4
+  - @happyvertical/smrt-ui@0.51.4
+
 ## 0.51.3
 
 ### Patch Changes

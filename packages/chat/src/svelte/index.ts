@@ -26,6 +26,10 @@ import AgentChat from './components/agent/AgentChat.svelte';
 import AgentSelector from './components/agent/AgentSelector.svelte';
 import AgentSessionPanel from './components/agent/AgentSessionPanel.svelte';
 import ToolCallDisplay from './components/agent/ToolCallDisplay.svelte';
+// Assistant dock components (#2904)
+import AssistantComposer from './components/assistant/AssistantComposer.svelte';
+import AssistantDock from './components/assistant/AssistantDock.svelte';
+import AssistantThreadList from './components/assistant/AssistantThreadList.svelte';
 // Dialog components
 import RoomCreateDialog from './components/dialogs/RoomCreateDialog.svelte';
 import SearchMessages from './components/dialogs/SearchMessages.svelte';
@@ -44,6 +48,8 @@ import Avatar from './components/shared/Avatar.svelte';
 import FileUpload from './components/shared/FileUpload.svelte';
 import LinkPreview from './components/shared/LinkPreview.svelte';
 import MentionAutocomplete from './components/shared/MentionAutocomplete.svelte';
+// Shared model picker
+import ModelPicker from './components/shared/ModelPicker.svelte';
 import ReactionPicker from './components/shared/ReactionPicker.svelte';
 import ReadReceipts from './components/shared/ReadReceipts.svelte';
 import UserPresence from './components/shared/UserPresence.svelte';
@@ -61,6 +67,30 @@ export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
 export { default as ToolCallDisplay } from './components/agent/ToolCallDisplay.svelte';
+export { default as AssistantComposer } from './components/assistant/AssistantComposer.svelte';
+export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
+export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
+export {
+  type AssistantAttachmentRef,
+  type AssistantMessage,
+  type AssistantSendMessageInput,
+  type AssistantSendMessageResult,
+  type AssistantThreadSummary,
+  type AssistantTransport,
+  createInMemoryAssistantTransport,
+  createSmrtAssistantTransport,
+  type InMemoryAssistantTransportOptions,
+  type SmrtAssistantTransportOptions,
+} from './components/assistant/assistant-transport.js';
+export {
+  type AssistantActionClient,
+  type AssistantActionState,
+  type AssistantDockController,
+  type AssistantDockControllerOptions,
+  type AssistantPendingSend,
+  type AssistantPendingSendStatus,
+  createAssistantDockController,
+} from './components/assistant/create-assistant-dock-controller.svelte.js';
 export { default as RoomCreateDialog } from './components/dialogs/RoomCreateDialog.svelte';
 export { default as SearchMessages } from './components/dialogs/SearchMessages.svelte';
 // Export components
@@ -76,6 +106,8 @@ export { default as Avatar } from './components/shared/Avatar.svelte';
 export { default as FileUpload } from './components/shared/FileUpload.svelte';
 export { default as LinkPreview } from './components/shared/LinkPreview.svelte';
 export { default as MentionAutocomplete } from './components/shared/MentionAutocomplete.svelte';
+export type { ModelOption } from './components/shared/ModelPicker.svelte';
+export { default as ModelPicker } from './components/shared/ModelPicker.svelte';
 export { default as ReactionPicker } from './components/shared/ReactionPicker.svelte';
 export { default as ReadReceipts } from './components/shared/ReadReceipts.svelte';
 export { default as UserPresence } from './components/shared/UserPresence.svelte';

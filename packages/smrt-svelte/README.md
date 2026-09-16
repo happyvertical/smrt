@@ -144,6 +144,44 @@ should be discoverable:
 </Provider>
 ```
 
+A page with its own hand-rolled list markup — not `DataTable` — that already
+mirrors a headless `DataTableController`'s search/filters/sort/page/selection
+can register that same registry in one call with `mountListDataSurface`
+(`@happyvertical/smrt-svelte/web`) instead of hand-writing the registration:
+
+```ts
+import { createDataTableController } from '@happyvertical/smrt-ui/data';
+import { mountListDataSurface } from '@happyvertical/smrt-svelte/web';
+
+const controller = createDataTableController();
+const handle = mountListDataSurface({
+  registry: surfaces,
+  descriptor: myListDescriptor,
+  controller,
+  context: { totalRows, queryFingerprint },
+  refresh: () => reload(),
+});
+
+// Only `controller` is observed automatically. App-owned `context` is a
+// one-time snapshot at mount — publish a fresh one whenever totalRows,
+// queryFingerprint, or freshness changes (an $effect keyed on those values
+// is the usual place):
+handle.update({ totalRows, queryFingerprint });
+
+// on unmount:
+handle.destroy();
+```
+
+It mirrors `controller` into the registry, translates visible table commands
+back into `controller.dispatch()` calls, and routes the fixed
+`refresh`/`retry`/`focus`/`reveal`/`highlight` controls to callbacks; any
+other `controlId` goes through an `onControl` escape hatch (denied by
+default) — except a canonical table-control id (`set-filters`, `reset`,
+`set-page`, … the full `DATA_TABLE_SURFACE_CONTROL_IDS` list from
+`@happyvertical/smrt-ui/data`), which is always intercepted first and never
+reaches `onControl`, even under a custom label. See
+`docs/data-surface-conformance.md` for the full contract.
+
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
 must coexist in one document; the same prefix cannot be registered twice. The
 six derived names are reserved through the document-global tool-name lock, so
@@ -306,7 +344,7 @@ importable, even if it appears in `dist/`.
 | `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
 | `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |
 | `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte AI components (VoiceInput, CapabilityGate, etc.) |
-| `@happyvertical/smrt-svelte/web` | `smrt-web` live-query bindings (`liveCollection`, `activityFeed`, `useUpdateAvailable`) |
+| `@happyvertical/smrt-svelte/web` | `smrt-web` live-query bindings (`liveCollection`, `activityFeed`, `useUpdateAvailable`) plus `mountListDataSurface` (custom-list data-surface registration) |
 | `@happyvertical/smrt-svelte/i18n/server` | Server-side i18n resolver (Node only) |
 
 Domain-agnostic UI lives in `@happyvertical/smrt-ui`. There is no `ui`,

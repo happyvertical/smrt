@@ -1,5 +1,39 @@
 # @happyvertical/smrt-core
 
+## 0.51.6
+
+### Patch Changes
+
+- ### Features
+
+  - AssistantDock, a shell-mounted route-aware assistant surface (#2919) (chat)
+  - @happyvertical/smrt-config@0.51.6
+  - @happyvertical/smrt-types@0.51.6
+  - @happyvertical/smrt-scanner@0.51.6
+
+## 0.51.5
+
+### Patch Changes
+
+- ### Features
+
+  - mountListDataSurface for custom list markup (#2916) (smrt-svelte)
+  - @happyvertical/smrt-config@0.51.5
+  - @happyvertical/smrt-types@0.51.5
+  - @happyvertical/smrt-scanner@0.51.5
+
+## 0.51.4
+
+### Patch Changes
+
+- ### Features
+
+  - generic SmrtObject collection -> DataSurface adapter (#2910) (agents)
+  - SvelteKit wiring helper for the data-surface action queue (#2909) (smrt-agents)
+  - @happyvertical/smrt-config@0.51.4
+  - @happyvertical/smrt-types@0.51.4
+  - @happyvertical/smrt-scanner@0.51.4
+
 ## 0.51.3
 
 ### Patch Changes

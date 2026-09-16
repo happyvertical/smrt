@@ -246,6 +246,18 @@ export {
   AgentScheduleCollection,
   type ScheduleStatus,
 } from './schedule.js';
+// Generic SmrtObject collection -> DataSurface adapter (#2905).
+export {
+  assertSmrtCollectionQuerySchema,
+  buildDataQuerySchemaForClass,
+  type CreateSmrtCollectionDataSurfaceOptions,
+  clearSmrtCollectionQuerySchemaCache,
+  createSmrtCollectionDataSurfaceDefinition,
+  executeSmrtCollectionQuery,
+  type SmrtCollectionDataSurfaceAction,
+  type SmrtCollectionQueryCollection,
+  type SmrtCollectionQueryScope,
+} from './smrt-collection-data-surface.js';
 export type {
   SummaryArticleImage,
   SummaryArticleOptions,
