@@ -21,18 +21,24 @@
  *   would hand the collection — cannot collide in the cache.
  * - `authToken` participates through a SHA-256 digest, never as cleartext:
  *   cache keys are not credentials storage, and a leaked log line must not
- *   carry a bearer token.
+ *   carry a bearer token. URL-embedded credentials (`postgres://user:pass@…`)
+ *   get the same treatment: the userinfo is replaced by a digest so the key
+ *   stays deterministic without carrying a password.
  * - Remaining properties are canonicalized deterministically: sorted keys,
- *   nested containers recursed, and opaque values (functions, symbols,
- *   bigints) reduced to a digest so property order and identity noise
- *   cannot split equivalent configs.
+ *   nested containers recursed, and every string value runs through the
+ *   same URL-credential redaction (not just `url`) so a
+ *   `connectionString`-style option cannot smuggle a password into the
+ *   key; opaque values (functions, symbols, bigints, non-plain objects
+ *   such as pre-created `client` handles) are reduced to a
+ *   reference-identity digest so property order and identity noise cannot
+ *   split equivalent configs — while two distinct live objects can never
+ *   merge into one cache entry.
  *
  * @see https://github.com/happyvertical/smrt/issues/2306
  * @packageDocumentation
  */
 
 import { createHash } from 'node:crypto';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import { isDatabaseInterface } from '../database.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 import { getDbInstanceIds, getNextDbId, setNextDbId } from './shared-state.js';
@@ -51,6 +57,70 @@ const HASHED_DB_KEYS = new Set(['authToken']);
  */
 const opaqueFunctionIds = new WeakMap<object, number>();
 let nextOpaqueFunctionId = 1;
+
+/**
+ * Reference-identity registry for opaque non-plain objects (PR #2922
+ * review). A pre-created adapter `client` (e.g. a pg `Pool` passed through
+ * a config object, `class.ts` Format 3) typically exposes its API on the
+ * prototype with few or no own enumerable keys — canonicalizing it as a
+ * plain record would reduce two distinct clients to the same `{}` and hand
+ * both configs a collection bound to the wrong client. Non-plain objects
+ * therefore key by reference: the same handle shares the entry, distinct
+ * handles never merge (splitting only costs a cache entry).
+ */
+const opaqueObjectIds = new WeakMap<object, number>();
+let nextOpaqueObjectId = 1;
+
+/**
+ * True for values safe to canonicalize by structure: plain records
+ * (`{...}`, `Object.create(null)`) and arrays. Class instances, Maps,
+ * Sets, and other builtins carry behavior/identity on the prototype and
+ * must not be flattened to their enumerable keys.
+ */
+function isPlainStructure(value: object): boolean {
+  if (Array.isArray(value)) return true;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Reference-identity key fragment for opaque non-plain objects (see
+ * {@link opaqueObjectIds}).
+ */
+function objectIdentityDigest(value: object): string {
+  let id = opaqueObjectIds.get(value);
+  if (id === undefined) {
+    id = nextOpaqueObjectId++;
+    opaqueObjectIds.set(value, id);
+  }
+  return `objref:${id}`;
+}
+
+/**
+ * Redact URL-embedded credentials (PR #2922 review). A PostgreSQL URL such
+ * as `postgres://user:secret@host/db` would otherwise land verbatim in the
+ * cache key, contradicting this module's contract that keys never carry
+ * secrets. The userinfo is replaced by a truncated SHA-256 digest:
+ * deterministic (equal credentials → equal keys), distinguishing
+ * (different credentials → different keys), and irreversible.
+ * Non-URL strings (file paths, `:memory:`) pass through untouched.
+ */
+function redactUrlCredentials(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (!parsed.username && !parsed.password) return url;
+  const fingerprint = createHash('sha256')
+    .update(`${parsed.username}:${parsed.password}`)
+    .digest('hex')
+    .slice(0, 32);
+  parsed.username = `cred-${fingerprint}`;
+  parsed.password = '';
+  return parsed.toString();
+}
 
 /**
  * Render an opaque value (symbol, bigint, over-deep object) as a stable
@@ -96,6 +166,16 @@ function canonicalizeValue(
     return `sha256:${createHash('sha256').update(value).digest('hex')}`;
   }
 
+  // String values anywhere in a config can carry URL-embedded credentials
+  // (`connectionString`, nested option URLs) — the same redaction that
+  // guards the `url` key applies to every string: deterministic (equal
+  // values → equal redaction), distinguishing, and secret-free. Strings
+  // that are not userinfo-bearing URLs (paths, `:memory:`, `smrt:` dbids)
+  // pass through untouched.
+  if (typeof value === 'string' && value !== '') {
+    return redactUrlCredentials(value);
+  }
+
   const t = typeof value;
   if (t === 'string' || t === 'number' || t === 'boolean') return value;
   if (t === 'function') {
@@ -113,6 +193,12 @@ function canonicalizeValue(
     // since two distinct instances are never value-equal.
     if (isDatabaseInterface(value)) {
       return instanceKey(value);
+    }
+    // Non-plain objects (class instances such as a pre-created `client`
+    // handle, Maps, Sets) key by reference — flattening them to enumerable
+    // keys would merge distinct live objects into one cache entry.
+    if (!isPlainStructure(value)) {
+      return objectIdentityDigest(value);
     }
     if (depth >= 8) {
       return digest(value);
@@ -165,8 +251,11 @@ export function resolveCollectionDbCacheKey(db: unknown): string | undefined {
     // resolution's database), so every caller of that string hits the same
     // underlying database — sharing the cached collection preserves the
     // existing behavior issue #117's string-isolation test pins (distinct
-    // strings stay distinct; identical strings already shared).
-    return `string:${db}`;
+    // (distinct strings stay distinct; identical strings already shared).
+    // URL-embedded credentials are still digested (`redactUrlCredentials`)
+    // — the string path is as loggable as the config path, and a
+    // `postgres://user:***@host/db` db value must not reach the key either.
+    return `string:${redactUrlCredentials(db)}`;
   }
 
   if (typeof db !== 'object') return undefined;
@@ -183,16 +272,24 @@ export function resolveCollectionDbCacheKey(db: unknown): string | undefined {
     [key: string]: unknown;
   };
 
-  // `:memory:` configs must stay isolated per call site: two equivalent
+  // In-memory configs must stay isolated per call site: two equivalent
   // config objects each resolving to their own in-memory database would
   // share a cached collection otherwise. resolveDatabase() defaults a
   // missing url to `:memory:` only for sqlite/json (or unspecified type);
   // other adapters require an explicit url, so only those types can reach
-  // the memory path here.
+  // the memory path here. `SmrtClass` treats both `':memory:'` and
+  // `'memory'` as memory (`class.ts`), and the table verifier additionally
+  // excludes `'file::memory:'` — all three spellings isolate here so the
+  // collection cache agrees with the pool/db identity those paths assume.
   const rawUrl = typeof config.url === 'string' ? config.url : '';
   const canUseMemory =
     !config.type || config.type === 'sqlite' || config.type === 'json';
-  if (rawUrl === ':memory:' || (!rawUrl && canUseMemory)) {
+  if (
+    rawUrl === ':memory:' ||
+    rawUrl === 'memory' ||
+    rawUrl === 'file::memory:' ||
+    (!rawUrl && canUseMemory)
+  ) {
     return instanceKey(db);
   }
 

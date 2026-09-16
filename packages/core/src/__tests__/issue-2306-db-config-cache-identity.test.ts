@@ -13,6 +13,11 @@
  * - equivalent config objects share one cached collection;
  * - `:memory:` databases and live adapter instances stay isolated;
  * - auth tokens change the key without ever appearing in it.
+ *
+ * PR #2922 review follow-ups pinned here as well:
+ * - alternate in-memory spellings (`memory`, `file::memory:`) isolate;
+ * - pre-created `client` handles key by reference, never merge;
+ * - URL-embedded credentials are digested, never embedded.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -319,6 +324,156 @@ describe('Issue #2306: collection-cache identity for db config objects', () => {
       );
 
       expect(second).toBe(first);
+    });
+  });
+
+  describe('alternate in-memory spellings stay isolated (PR #2922 review)', () => {
+    // Key-level assertions only: resolving these spellings through
+    // getCollection would hand the sqlite adapter a literal filename and
+    // create a real file in the working directory. What matters here is
+    // that the cache key takes the per-call-site `instance:` branch (as
+    // `class.ts` and the table verifier assume) instead of a shared value
+    // key — the getCollection-level isolation pattern is already pinned by
+    // the `:memory:` tests above.
+    it("keys 'memory' configs by instance, never by value", () => {
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'sqlite',
+        url: 'memory',
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        url: 'memory',
+        type: 'sqlite',
+      });
+
+      expect(keyA).toMatch(/^instance:\d+$/);
+      expect(keyB).toMatch(/^instance:\d+$/);
+      expect(keyA).not.toBe(keyB);
+    });
+
+    it("keys 'file::memory:' configs by instance, never by value", () => {
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'sqlite',
+        url: 'file::memory:',
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        url: 'file::memory:',
+        type: 'sqlite',
+      });
+
+      expect(keyA).toMatch(/^instance:\d+$/);
+      expect(keyB).toMatch(/^instance:\d+$/);
+      expect(keyA).not.toBe(keyB);
+    });
+  });
+
+  describe('pre-created client handles keep reference identity (PR #2922 review)', () => {
+    // A minimal stand-in for a pg Pool: API on the prototype, no own
+    // enumerable keys — exactly the shape that flattened to `{}`.
+    class FakePool {
+      async query() {
+        return { rows: [] };
+      }
+    }
+
+    const dbUrl = 'postgres://localhost/app';
+
+    it('never merges configs holding distinct client instances', () => {
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: dbUrl,
+        client: new FakePool(),
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: dbUrl,
+        client: new FakePool(),
+      });
+
+      expect(keyA).toBeDefined();
+      expect(keyB).toBeDefined();
+      expect(keyA).not.toBe(keyB);
+    });
+
+    it('shares the key when the same client instance is reused', () => {
+      const client = new FakePool();
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: dbUrl,
+        client,
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        client,
+        url: dbUrl,
+        type: 'postgres',
+      });
+
+      expect(keyA).toBe(keyB);
+    });
+  });
+
+  describe('URL-embedded credentials never reach the key (PR #2922 review)', () => {
+    it('derives different keys for different URL passwords', () => {
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: 'postgres://app:secret-one@localhost/app',
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: 'postgres://app:secret-two@localhost/app',
+      });
+
+      expect(keyA).toBeDefined();
+      expect(keyB).toBeDefined();
+      expect(keyA).not.toBe(keyB);
+    });
+
+    it('never embeds the URL password (or fragments) in the key', () => {
+      const key = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: 'postgres://appuser:s3cr3t-pw-fragment@localhost/app',
+      });
+
+      expect(key).toBeDefined();
+      expect(key).not.toContain('s3cr3t-pw-fragment');
+      expect(key).not.toContain('s3cr3t');
+      expect(key).not.toContain('pw-fragment');
+      expect(key).not.toContain('appuser:s3cr3t');
+    });
+
+    it('is stable across fresh equivalent configs with URL credentials', () => {
+      const keyA = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: 'postgres://app:***@localhost/app',
+      });
+      const keyB = resolveCollectionDbCacheKey({
+        url: 'postgres://app:***@localhost/app',
+        type: 'postgres',
+      });
+
+      expect(keyA).toBe(keyB);
+    });
+
+    it('never embeds credentials from a bare string db URL', () => {
+      const key = resolveCollectionDbCacheKey(
+        'postgres://appuser:***@localhost/app',
+      );
+
+      expect(key).toBeDefined();
+      expect(key).not.toContain('str0ng-pw');
+      expect(key).not.toContain('appuser:str0ng-pw');
+    });
+
+    it('never embeds credentials in other string options', () => {
+      const key = resolveCollectionDbCacheKey({
+        type: 'postgres',
+        url: 'postgres://localhost/app',
+        connectionString:
+          'postgres://reporting:***@localhost/app?sslmode=require',
+      });
+
+      expect(key).toBeDefined();
+      expect(key).not.toContain('r3porting-pw');
+      expect(key).not.toContain('reporting:r3porting-pw');
     });
   });
 });
