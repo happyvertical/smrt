@@ -235,6 +235,8 @@ data-surface actions; the content-specific sanitizer stays specific to
 | `AssistantDock`'s mount effect runs once (not per send); registry subscription survives a send through the mounted component | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts` | svelte component (#2904 review F1) |
 | `ToolCallDisplay` preview/applied/failed rendering | `packages/chat/src/svelte/components/agent/__tests__/ToolCallDisplay.test.ts` | svelte component |
 | End-to-end: fail-closed DOM, live discovery + send/receive, preview→confirm→apply→registry `'command'` event | `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte integration, conformance-style (mirrors `data-surface-conformance.integration.svelte.test.ts`) |
+| `message.attachments` render as a chip/link list on the bubble, after both `send()` and `loadMessages()` | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; also asserted end-to-end in `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte component + integration (#2904 review, cycle-3 second final F1) |
+| `ModelPicker`, `AssistantComposer`'s file input, and every AssistantDock-family component have an accessible name / pass `expectNoA11yViolations` | `packages/chat/src/svelte/components/shared/__tests__/ModelPicker.test.ts`, `AssistantComposer.test.ts`, `AssistantDock.test.ts`, `AssistantThreadList.test.ts` | svelte component (#2904 review, cycle-3 second final F2) |
 
 The integration test's harness follows the exemplar's stated scope: a real
 `DataSurfaceRegistry` and a real `createAssistantDockController`/`AssistantDock`

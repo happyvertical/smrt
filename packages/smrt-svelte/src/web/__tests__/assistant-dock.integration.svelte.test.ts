@@ -146,13 +146,24 @@ describe('AssistantDock integration (#2904)', () => {
     // visible to a controller built against this exact registry instance.
     const controller = createAssistantDockController({ transport, registry });
     await controller.openThread(thread.id);
-    await controller.send('please archive this order');
+    // Cycle-3 second final finding 1: an attached file must round-trip onto
+    // the sent message, not just the message text — this is the surface
+    // that previously rendered nothing for message.attachments.
+    await controller.send('please archive this order', [
+      { id: 'att-1', name: 'order-details.pdf' },
+    ]);
 
     await waitFor(() => {
       expect(
         controller.messages.some((m) => m.content === 'Archived the order.'),
       ).toBe(true);
     });
+    const sentMessage = controller.messages.find(
+      (m) => m.content === 'please archive this order',
+    );
+    expect(sentMessage?.attachments).toEqual([
+      { id: 'att-1', name: 'order-details.pdf' },
+    ]);
     expect(controller.surfaces).toHaveLength(1);
     expect(controller.surfaces[0].surfaceId).toBe('assistant-dock-orders');
     controller.dispose();

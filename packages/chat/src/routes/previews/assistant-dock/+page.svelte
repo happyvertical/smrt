@@ -272,6 +272,15 @@ async function handleUpload(
 async function handleConfirmAction(requestId: string) {
   await controller.applyAction(requestId);
 }
+
+// Cycle-3 second final finding 1: mirrors AssistantDock.svelte's own fix —
+// message.attachments was populated by sendMessage/loadMessages but never
+// rendered anywhere in this demo either.
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 </script>
 
 <svelte:head>
@@ -350,8 +359,35 @@ async function handleConfirmAction(requestId: string) {
                         ? 'default'
                         : 'agent'}
                     own={message.role === 'user'}
-                    content={message.content}
-                  />
+                  >
+                    {#snippet children()}
+                      <p class="message-content">{message.content}</p>
+                      {#if message.attachments && message.attachments.length > 0}
+                        <ul class="message-attachments" aria-label="Attachments">
+                          {#each message.attachments as attachment (attachment.id)}
+                            <li class="message-attachment">
+                              {#if attachment.url}
+                                <a
+                                  href={attachment.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {attachment.name}
+                                </a>
+                              {:else}
+                                <span>{attachment.name}</span>
+                              {/if}
+                              {#if attachment.size !== undefined}
+                                <span class="message-attachment-size">
+                                  {formatAttachmentSize(attachment.size)}
+                                </span>
+                              {/if}
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    {/snippet}
+                  </MessageBubble>
                 </li>
               {/each}
             </ul>
@@ -423,6 +459,28 @@ async function handleConfirmAction(requestId: string) {
   }
   .dock-panel > :global(*:first-child) {
     flex-shrink: 0;
+  }
+  .message-content {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .message-attachments {
+    list-style: none;
+    margin: var(--smrt-spacing-2, 0.5rem) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+  .message-attachment {
+    display: flex;
+    align-items: baseline;
+    gap: var(--smrt-spacing-1, 0.25rem);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+  .message-attachment-size {
+    opacity: 0.75;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
   table {
     width: 100%;

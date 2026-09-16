@@ -66,6 +66,7 @@ export const M = defineMessages({
   'chat.assistant_dock.error': 'Something went wrong: {message}',
   'chat.assistant_dock.send_failed':
     'A message failed to send. You can retry it below.',
+  'chat.assistant_dock.attachments': 'Attachments',
 
   // RoomCreateDialog
   'chat.room_create_dialog.close': 'Close room creation dialog',

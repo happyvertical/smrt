@@ -346,4 +346,61 @@ describe('AssistantDock (mounted component)', () => {
       ),
     ).toBeInTheDocument();
   });
+
+  // Cycle-3 second final finding 1: message.attachments was populated by the
+  // transport but never rendered anywhere — an uploaded, sent attachment
+  // became permanently invisible the instant the composer's chip row
+  // cleared on success.
+  it('renders an attachment chip on a message after send()', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+
+    const { container } = render(AssistantDock, {
+      props: { transport, registry },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const textarea = await screen.findByLabelText('Message');
+
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error('file input not found');
+    await userEvent.upload(
+      fileInput,
+      new File(['data'], 'report.pdf', { type: 'application/pdf' }),
+    );
+
+    await userEvent.type(textarea, 'here is the report');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText('report.pdf')).toBeInTheDocument();
+  });
+
+  it('renders an attachment chip on a message loaded via loadMessages()', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const originalLoadMessages = transport.loadMessages.bind(transport);
+    transport.loadMessages = async (threadId: string) => {
+      const existing = await originalLoadMessages(threadId);
+      if (existing.length > 0) return existing;
+      return [
+        {
+          id: 'seeded-1',
+          threadId,
+          content: 'attached earlier',
+          role: 'user',
+          createdAt: new Date(),
+          attachments: [{ id: 'att-seeded', name: 'contract.docx' }],
+        },
+      ];
+    };
+
+    render(AssistantDock, { props: { transport, registry } });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+
+    expect(await screen.findByText('contract.docx')).toBeInTheDocument();
+  });
 });

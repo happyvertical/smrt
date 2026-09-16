@@ -47,6 +47,17 @@ function bubbleVariant(
   return 'agent';
 }
 
+// Cycle-3 second final finding 1: message.attachments was populated by the
+// transport (sendMessage/loadMessages) but never rendered anywhere — a
+// staged, uploaded, and sent attachment became permanently invisible once
+// the composer's chip row cleared on send. Same non-i18n unit formatting
+// precedent as ../shared/FileUpload.svelte's own formatSize().
+function formatAttachmentSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface Props {
   /** Thread/message I/O backend; see `./assistant-transport.js`. */
   transport: AssistantTransport;
@@ -249,8 +260,41 @@ async function handleConfirmAction(requestId: string) {
             <MessageBubble
               variant={bubbleVariant(message.role)}
               own={message.role === 'user'}
-              content={message.content}
-            />
+            >
+              {#snippet children()}
+                <p class="assistant-dock-message-content">{message.content}</p>
+                {#if message.attachments && message.attachments.length > 0}
+                  <ul
+                    class="assistant-dock-attachments"
+                    aria-label={t(M['chat.assistant_dock.attachments'])}
+                  >
+                    {#each message.attachments as attachment (attachment.id)}
+                      <li class="assistant-dock-attachment">
+                        {#if attachment.url}
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="assistant-dock-attachment-link"
+                          >
+                            {attachment.name}
+                          </a>
+                        {:else}
+                          <span class="assistant-dock-attachment-name">
+                            {attachment.name}
+                          </span>
+                        {/if}
+                        {#if attachment.size !== undefined}
+                          <span class="assistant-dock-attachment-size">
+                            {formatAttachmentSize(attachment.size)}
+                          </span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              {/snippet}
+            </MessageBubble>
           </li>
         {/each}
       </ul>
@@ -389,6 +433,43 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-message-content {
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  .assistant-dock-attachments {
+    list-style: none;
+    margin: var(--smrt-spacing-2, 8px) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-1, 4px);
+  }
+
+  .assistant-dock-attachment {
+    display: flex;
+    align-items: baseline;
+    gap: var(--smrt-spacing-1, 4px);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-attachment-link {
+    color: inherit;
+    text-decoration: underline;
+  }
+
+  .assistant-dock-attachment-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .assistant-dock-attachment-size {
+    opacity: 0.75;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
 
   .assistant-dock-actions {
