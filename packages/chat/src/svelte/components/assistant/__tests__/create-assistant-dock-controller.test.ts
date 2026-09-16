@@ -283,6 +283,50 @@ describe('createAssistantDockController', () => {
     }
   });
 
+  // Copilot PR #2919 jAwu8: `simulateInProgressOnce` alone left a turn
+  // `inProgress: true` FOREVER — it was never appended or scheduled to
+  // resolve, so the shipped in-memory transport could not exercise
+  // successful stale-send recovery. `resolveInProgressAfterLoads` makes
+  // that resolution configurable and exercisable via polling.
+  it('resolves a simulated in-progress turn on a later loadMessages(), letting stale-send recovery succeed', async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = 0;
+      const transport = createInMemoryAssistantTransport({
+        simulateInProgressOnce: true,
+        resolveInProgressAfterLoads: 1,
+        now: () => clock,
+      });
+      const controller = createAssistantDockController({
+        transport,
+        registry: fakeRegistry([]),
+        now: () => clock,
+        staleAfterMs: 1_000,
+        activePollIntervalMs: 500,
+        idlePollIntervalMs: 500,
+      });
+      const thread = await controller.createThread('t1');
+      await controller.openThread(thread.id);
+
+      await controller.send('hi');
+      expect(controller.pendingSends[0]?.status).toBe('processing');
+
+      // The next poll tick's loadMessages() call resolves the turn — the
+      // assistant reply appears and the pending send clears, WITHOUT ever
+      // hitting the staleness timeout.
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(controller.pendingSends).toHaveLength(0);
+      expect(
+        controller.messages.some(
+          (m) => m.role === 'assistant' && m.content === 'echo: hi',
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('startPolling/stopPolling toggle the interval without throwing', () => {
     const controller = createAssistantDockController({
       transport: createInMemoryAssistantTransport(),

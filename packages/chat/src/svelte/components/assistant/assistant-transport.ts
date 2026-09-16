@@ -115,6 +115,17 @@ export interface InMemoryAssistantTransportOptions {
   /** Simulates a still-processing turn: the Nth send for a given thread
    * returns `inProgress: true` before resolving on a later `loadMessages`. */
   simulateInProgressOnce?: boolean;
+  /** Copilot PR #2919 jAwu8: `simulateInProgressOnce` alone previously left a
+   * turn `inProgress: true` FOREVER — it was never appended or scheduled to
+   * resolve, so this shipped transport could not exercise successful
+   * stale-send recovery (retry after the pending send goes 'stale'). When
+   * set, the pending turn's assistant reply is appended on the Nth
+   * `loadMessages()` call for that thread AFTER the send went in-progress
+   * (1 = the very next load). Omitted (the default) preserves the prior
+   * "never resolves on its own" behavior, which the existing stale-marking
+   * test relies on (polling must NOT resolve it before the staleness
+   * timeout fires). */
+  resolveInProgressAfterLoads?: number;
   now?: () => number;
   /** Deterministic id generator for tests; defaults to an incrementing counter. */
   createId?: () => string;
@@ -140,6 +151,18 @@ export function createInMemoryAssistantTransport(
   const messages = new Map<string, AssistantMessage[]>();
   const seenClientRequestIds = new Map<string, AssistantSendMessageResult>();
   const pendingOnce = new Set<string>();
+  // Copilot PR #2919 jAwu8: tracks an in-progress turn awaiting its
+  // simulated resolution, keyed by threadId. `loadsRemaining` counts down on
+  // each loadMessages() call for that thread; the assistant reply is
+  // appended when it reaches 0.
+  const pendingTurns = new Map<
+    string,
+    {
+      userMessage: AssistantMessage;
+      model: string | undefined;
+      loadsRemaining: number;
+    }
+  >();
 
   function requireThread(threadId: string): AssistantThreadSummary {
     const thread = threads.get(threadId);
@@ -174,6 +197,31 @@ export function createInMemoryAssistantTransport(
 
     async loadMessages(threadId: string) {
       requireThread(threadId);
+      // Copilot PR #2919 jAwu8: resolve a pending simulated in-progress turn
+      // (only when `resolveInProgressAfterLoads` opted in — see its doc).
+      const pending = pendingTurns.get(threadId);
+      if (pending) {
+        pending.loadsRemaining -= 1;
+        if (pending.loadsRemaining <= 0) {
+          pendingTurns.delete(threadId);
+          const list = messages.get(threadId) ?? [];
+          const assistantMessage: AssistantMessage = options.respond?.(
+            threadId,
+            pending.userMessage,
+            pending.model,
+          ) ?? {
+            id: createId(),
+            threadId,
+            content: `echo: ${pending.userMessage.content}`,
+            role: 'assistant',
+            createdAt: new Date(now()),
+          };
+          list.push(assistantMessage);
+          messages.set(threadId, list);
+          const thread = threads.get(threadId);
+          if (thread) thread.messageCount = (thread.messageCount ?? 0) + 1;
+        }
+      }
       return [...(messages.get(threadId) ?? [])];
     },
 
@@ -204,6 +252,13 @@ export function createInMemoryAssistantTransport(
 
       if (options.simulateInProgressOnce && !pendingOnce.has(input.threadId)) {
         pendingOnce.add(input.threadId);
+        if (options.resolveInProgressAfterLoads !== undefined) {
+          pendingTurns.set(input.threadId, {
+            userMessage,
+            model: input.model,
+            loadsRemaining: options.resolveInProgressAfterLoads,
+          });
+        }
         const result: AssistantSendMessageResult = {
           inProgress: true,
           userMessage,
