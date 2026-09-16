@@ -224,31 +224,44 @@ postgresDescribe(
       // incident did not originate here.
       //
       // What this ceiling can and cannot promise: measured on this session's
-      // dev machine (16 cores, local Postgres 18 in Docker), idle wall-clock
-      // medians across 5 runs were tight (662-677ms, ~2% spread) — but a
-      // sixth and seventh run repeated under heavy concurrent CPU load (16
-      // saturated cores, no code change at all) produced medians of 3725ms
-      // and 3896ms, a 5.5-5.9x jump from noise alone, comfortably exceeding
-      // what a 4x-regression-sized ceiling would need to allow. (Idle
-      // baseline is environment-specific, not a portable constant: an
+      // dev machine (16 cores, local Postgres 18 in Docker, but not a
+      // dedicated/quiescent box — ~13 unrelated Docker containers from other
+      // projects run on it continuously), best-case idle wall-clock medians
+      // across 5 back-to-back runs were tight (662-677ms, ~2% spread). But
+      // two other classes of sample on this same machine ran markedly
+      // higher with zero code change: (a) two runs with no *deliberate*
+      // load applied, just ordinary incidental background activity (other
+      // work happening on the same machine at the time), measured
+      // 1737-1774ms — ~2.6-2.7x the best-case idle band; and (b) two runs
+      // under heavy *deliberate* concurrent CPU load (16 saturated cores)
+      // measured 3725-3896ms, 5.5-5.9x the best-case idle band. (Idle
+      // baseline is also environment-specific, not a portable constant: an
       // earlier measurement of this identical code on a different local
       // setup recorded ~300-400ms/run — roughly 1.7-2.2x faster than this
-      // session's ~665ms idle median on the same fixture. Any "Nx baseline" framing
-      // below is this machine's ratio, not a universal one.) That variance
-      // rules out a tight absolute threshold: ordinary shared-runner
-      // contention can produce swings larger than the regression class this
-      // guard is meant to catch, so a threshold precise enough to reliably
-      // flag a 4x `compare()` regression would also flag normal noise and
-      // get disabled as flaky within weeks — the same failure mode that let
+      // machine's best-case ~665ms idle median on the same fixture.) Both
+      // findings point the same way: on a real, shared, non-quiescent
+      // machine, "idle" is not a stable reference point, and ordinary
+      // (not even deliberately adversarial) noise alone can already erode
+      // most of the margin between a tight ceiling and a real 4x
+      // regression — a threshold precise enough to reliably flag a 4x
+      // `compare()` regression would also flag normal noise and get
+      // disabled as flaky within weeks, the same failure mode that let
       // #2890 through in spirit, just inverted. The ceiling below is set
       // well above the worst noise-only sample observed on this machine
-      // (3896ms, ~1.5x margin) so it does not fire on the contention level
-      // measured here, which means it only reliably catches a gross,
-      // order-of-magnitude regression (roughly 9x this session's idle
-      // baseline, though that multiple shifts with the measuring
-      // environment) — not a precise 4x one. This has only been exercised
-      // against local dev-machine variance, not the actual ARC CI runner
-      // this suite runs on nightly via `.github/workflows/postgres-tests.yml`
+      // under deliberate stress (3896ms, ~1.5x margin) and comfortably
+      // above the worst *ordinary*, non-deliberately-stressed sample
+      // (1774ms, ~3.4x margin), so it should not fire on either contention
+      // level measured here — which means its real, defensible guarantee
+      // is that margin (~1.5-3.4x above measured noise, depending how hard
+      // the environment is contending), not a clean multiple of the
+      // best-case idle baseline: "roughly 9x this session's idle baseline"
+      // sounds precise but is calculated against the best sample this
+      // machine produced, not the range it actually produces. Treat this
+      // ceiling as catching a gross, order-of-magnitude-class regression on
+      // an ordinarily-loaded machine, closer to the noisy end of that
+      // margin than the idle end. This has only been exercised against
+      // local dev-machine variance, not the actual ARC CI runner this
+      // suite runs on nightly via `.github/workflows/postgres-tests.yml`
       // (`test:postgres`); the CI margin above is inferred from this
       // machine's noise profile, not observed on the runner itself. A
       // relative (version-over-version) comparison would need a second
