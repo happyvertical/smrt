@@ -94,3 +94,11 @@ export {
   SqlDataSurfaceActionStateStore,
   type SqlDataSurfaceActionStateStoreOptions,
 } from './sql-data-surface-action-state.js';
+export {
+  createDataSurfaceActionRouteHandlers,
+  type DataSurfaceBulkSelectionResolver,
+  type DataSurfaceRouteHandlerOptions,
+  type DataSurfaceRouteHandlers,
+  type DataSurfaceRoutePrincipalResolver,
+  resolveBulkExplicitIds,
+} from './sveltekit-data-surface-routes.js';

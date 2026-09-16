@@ -193,6 +193,16 @@ persisted envelope field and is never added to the job payload. Worker delivery 
 before mutation. The original `job.run()` callback remains available for
 in-process queue adapters.
 
+`createDataSurfaceActionRouteHandlers()` wires a SvelteKit (or any Web
+`Request`/`Response`) route to the adapter: it resolves the principal per
+request, parses the body, and maps every refusal reason to an HTTP status.
+`resolveBulkExplicitIds()` expands a browser-supplied anchor row id into a
+full bulk selection server-side (e.g. "every reference photo for this
+performer") so one idempotency key covers the whole set. See
+[`docs/data-surface-sveltekit-wiring.md`](../../docs/data-surface-sveltekit-wiring.md)
+for the full route → principal → action → queue wiring guide, including the
+refusal-to-status table.
+
 ### UI Export (`@happyvertical/smrt-agents/ui`)
 
 | Export | Description |
