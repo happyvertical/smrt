@@ -319,8 +319,7 @@ async function registryFieldPolicyExclusionSet(
     string,
     RegistryFieldLike
   >;
-  const tenantField =
-    getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
+  const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const excluded = new Set<string>();
   for (const [name, field] of registered) {
     if (isPolicyExcludedField(name, field, tenantField, exclude)) {
@@ -358,8 +357,7 @@ async function buildQuerySchemaForClass(
     string,
     RegistryFieldLike
   >;
-  const tenantField =
-    getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
+  const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (isPolicyExcludedField(name, field, tenantField, options.exclude))
@@ -774,10 +772,7 @@ function encodeCursor(offset: number, binding: string): string {
   );
 }
 
-function decodeCursor(
-  cursor: string | undefined,
-  binding: string,
-): number {
+function decodeCursor(cursor: string | undefined, binding: string): number {
   if (!cursor) return 0;
   let parsed: unknown;
   try {
@@ -889,7 +884,10 @@ export async function executeSmrtCollectionQuery(
           rows: [],
           page,
           total: { kind: 'exact' as const, value: 0 },
-          freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
+          freshness: {
+            state: 'fresh' as const,
+            asOf: new Date().toISOString(),
+          },
           warnings,
           truncated: false,
         },
@@ -952,7 +950,7 @@ export async function executeSmrtCollectionQuery(
       : request.page?.kind === 'offset'
         ? request.page.offset
         : 0;
-    let limit =
+    const limit =
       request.page?.limit ?? schema.defaultPageLimit ?? DEFAULT_PAGE_LIMIT;
     const orderBy = orderByTerms(request.sort);
     if (signal) assertNotAborted(signal);
@@ -985,19 +983,20 @@ export async function executeSmrtCollectionQuery(
     // `SmrtCollectionQueryCollection` is structural, so the adapter cannot
     // read a host collection's own `maxListLimit`. Detect the collection
     // having silently clamped the requested limit (fewer rows than asked
-    // for, but more rows still exist) and, for offset paging, report the
-    // clamped limit so `offset + limit` on the next page still lines up
-    // with what the collection actually returned. The cursor path already
-    // resumes from `offset + rows.length`, so it needs no adjustment. See
-    // the `maxPageLimit` <= host `maxListLimit` requirement documented on
-    // `CreateSmrtCollectionDataSurfaceOptions`.
-    const clamped = rows.length < limit && offset + rows.length < total;
-    if (clamped) {
+    // for, but more rows still exist) and warn about it; the returned
+    // `page.limit` must still equal the requested limit — the shared result
+    // normalizer requires exact agreement with the request — so a clamp is
+    // reported, not corrected. `hasMore`/`nextCursor` are computed from the
+    // actual `rows.length`, and the cursor path already resumes from
+    // `offset + rows.length`, so the next page still lines up with what the
+    // collection actually returned; only the *reported* limit for that page
+    // stays nominal. See the `maxPageLimit` <= host `maxListLimit`
+    // requirement documented on `CreateSmrtCollectionDataSurfaceOptions`.
+    if (rows.length < limit && offset + rows.length < total) {
       warnings.push(
         'The collection returned fewer rows than requested; it may enforce ' +
           'its own maximum list limit below this schema’s maxPageLimit.',
       );
-      if (!isCursor) limit = rows.length;
     }
     const page: DataQueryResult['page'] = isCursor
       ? {
