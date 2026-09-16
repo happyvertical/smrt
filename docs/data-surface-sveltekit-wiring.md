@@ -51,15 +51,21 @@ export const approveCandidate: DataSurfaceServerActionDefinition = {
   operation: { id: 'candidates:update', collection: 'candidates', action: 'update' },
   authorize: () => true, // RBAC already gated by `operation`; add domain rules here
   eligible: async (invocation, rowId) => {
-    const candidate = await invocation.run.context.db
-      ? (await CandidateCollection.create({ db: invocation.run.context.db })).get(String(rowId))
+    // `PrincipalRun.context` is a `SessionPermissionRuntimeContext`, whose
+    // database handle is `context.database` (optional — absent when the
+    // principal has no bound database session), never `context.db`.
+    const db = invocation.run.context.database;
+    const candidate = db
+      ? await (await CandidateCollection.create({ db })).get(String(rowId))
       : null;
     return candidate?.status === 'pending'
       ? { eligible: true }
       : { eligible: false, reason: 'not_pending' };
   },
   apply: async (invocation, rowId) => {
-    const candidates = await CandidateCollection.create({ db: invocation.run.context.db });
+    const db = invocation.run.context.database;
+    if (!db) throw new Error('no bound database session');
+    const candidates = await CandidateCollection.create({ db });
     const candidate = await candidates.get(String(rowId));
     if (!candidate) throw new Error('candidate vanished');
     candidate.status = 'approved';
@@ -95,13 +101,26 @@ export async function resolveReferencePhotosSelection(invocation, selection) {
   if (selection.scope !== 'explicit-ids') {
     return { revision: 1, queryFingerprint: 'n/a', rowIds: [] };
   }
+  const db = invocation.run.context.database;
+  if (!db) throw new Error('no bound database session');
+  // descriptor.limits.maxSelectionSize is the adapter's own selection-size
+  // gate (checked after this resolves) — cap the query at one row past it so
+  // a high-cardinality anchor still returns `limit_exceeded` instead of
+  // silently materializing an unbounded result set.
+  const maxRows = descriptor.limits.maxSelectionSize + 1;
   const rowIds = await resolveBulkExplicitIds(selection.rowIds, {
     // The browser sent one performer id as the "anchor"; expand it to every
-    // reference photo currently on file for that performer.
+    // reference photo currently on file for that performer. SMRT collection
+    // filters use the suffixed key form for the IN operator.
     expand: async (anchors) => {
-      const photos = await ReferencePhotoCollection.create({ db: invocation.run.context.db });
-      const rows = await photos.list({ where: { performerId: { in: anchors } } });
-      return rows.map((row) => row.id);
+      const photos = await ReferencePhotoCollection.create({ db });
+      const rows = await photos.list({
+        where: { 'performerId in': anchors },
+        limit: maxRows,
+      });
+      return rows
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === 'string');
     },
   });
   return { revision: 1, queryFingerprint: 'reference-photos-v1', rowIds };
@@ -151,14 +170,17 @@ test-only.
 
 ## 3. Wire the route
 
+`handlers.preview` and `handlers.apply` are two distinct functions, so the
+route layer only needs to call the right one — it never needs to branch on
+the request itself. Put the shared handlers in one server-only module:
+
 ```typescript
-// src/routes/api/reference-photos/actions/+server.ts
+// src/lib/server/data-surfaces/reference-photos-routes.ts
 import { createDataSurfaceActionRouteHandlers } from '@happyvertical/smrt-agents/server';
-import type { RequestHandler } from './$types';
-import { referencePhotosAdapter } from '$lib/server/data-surfaces/adapter';
+import { referencePhotosAdapter } from './adapter';
 import { resolvePrincipalFromEvent } from '$lib/server/auth';
 
-const handlers = createDataSurfaceActionRouteHandlers({
+export const referencePhotosActionHandlers = createDataSurfaceActionRouteHandlers({
   adapter: referencePhotosAdapter,
   // Resolve the bound principal (runAsUserId, tenantId, allowedTools, ...)
   // from the request's session/cookie — never trust a client-supplied id.
@@ -166,33 +188,58 @@ const handlers = createDataSurfaceActionRouteHandlers({
   // the adapter.
   resolvePrincipal: (request) => resolvePrincipalFromEvent(request),
 });
-
-export const POST: RequestHandler = ({ request, url }) => {
-  const phase = url.pathname.endsWith('/preview') ? 'preview' : 'apply';
-  return phase === 'preview' ? handlers.preview(request) : handlers.apply(request);
-};
 ```
 
-A common layout is two sibling route files sharing the same handlers object:
-`src/routes/api/reference-photos/actions/preview/+server.ts` calls
-`handlers.preview`, and `.../apply/+server.ts` calls `handlers.apply`. Either
-layout is fine — the helper does not care how the app splits preview and
-apply across routes, only that each call passes the matching `phase` in the
-request body (`DataSurfaceServerActionRequest.phase`), which the shared
-`DataSurfaceActionAdapter` also validates.
+Then give preview and apply their own sibling routes, each a one-line call
+into the matching handler — the phase is which route file runs, not
+something parsed from the request:
+
+```typescript
+// src/routes/api/reference-photos/actions/preview/+server.ts
+import type { RequestHandler } from './$types';
+import { referencePhotosActionHandlers } from '$lib/server/data-surfaces/reference-photos-routes';
+
+export const POST: RequestHandler = ({ request }) =>
+  referencePhotosActionHandlers.preview(request);
+```
+
+```typescript
+// src/routes/api/reference-photos/actions/apply/+server.ts
+import type { RequestHandler } from './$types';
+import { referencePhotosActionHandlers } from '$lib/server/data-surfaces/reference-photos-routes';
+
+export const POST: RequestHandler = ({ request }) =>
+  referencePhotosActionHandlers.apply(request);
+```
+
+A `[phase]` dynamic route segment (validated to only `preview` or `apply`
+before dispatch) works the same way if the app prefers one route file. What
+does not work is inferring the phase from a single shared route's `url` —
+the request body's own `phase` field is for the adapter's internal
+consistency check, not for routing, so the route itself must determine which
+handler to call.
 
 ## 4. Handle refusals in the browser client
 
 `createDataSurfaceActionRouteHandlers()` maps every adapter refusal reason to
 an HTTP status so a client can branch on `response.status` without parsing
-`reason` for common cases (though `reason` is always present in the body for
-logging/telemetry):
+the body for common cases. There are two distinct body shapes, and only one
+of them carries `reason`:
 
-| `reason` | status | meaning |
+- **Route-level refusals** — an oversized body (413) or a `resolvePrincipal`
+  throw (401) — never reach the adapter, so the body is `{ error: string }`
+  (`error: 'payload_too_large'` or `error: 'unauthorized'`). There is no
+  `reason` field on these responses.
+- **Adapter results** — everything the adapter itself returned or refused —
+  are a full `DataSurfaceActionResult`, whose `reason` is optional: present
+  on every refusal (`ok: false`), typically absent on success (`ok: true`).
+
+| `reason` (adapter result) or `error` (route-level) | status | meaning |
 | --- | --- | --- |
+| `error: 'payload_too_large'` | 413 | body exceeded the request-byte cap before it was parsed |
+| `error: 'unauthorized'` | 401 | `resolvePrincipal` refused |
 | `invalid_request` | 400 | malformed body; a client bug, not a retry |
-| `unauthorized` (route-level) | 401 | `resolvePrincipal` refused |
-| `denied` | 403 | RBAC/tool/domain authorization refused |
+| `denied` | 403 | RBAC/tool/domain authorization refused (including an authorization error thrown by `assertToolAllowed`/`assertOperation`, which this helper catches and maps) |
 | `not_found` / `unsupported` | 404 | surface, action, or identity mismatch |
 | `selection_not_supported` | 400 | action does not support this selection scope |
 | `limit_exceeded` | 413 | selection exceeds `descriptor.limits.maxSelectionSize` |
@@ -203,9 +250,27 @@ logging/telemetry):
 | `background_unavailable` | 503 | queue/signing-key misconfiguration on the server; not a client-fixable state |
 | anything else | 422 | a domain-specific refusal from `mapError()`; treat as terminal for this request |
 
-`idempotency_in_progress` and `idempotency_conflict` are the only two that
-should ever prompt a client-side retry, and only with the **same**
-`idempotencyKey` — see
+Only `idempotency_in_progress` is retryable by the client, and only with the
+**same** `idempotencyKey` — it means another attempt with that key is still
+being reserved or executed, so the client should back off and retry the
+identical request. `idempotency_conflict` is **terminal**: it means the same
+key was already used for a logically different request (a different action,
+selection, or payload), and the state store's contract enforces that the
+first request's fingerprint owns the key permanently — retrying it, with or
+without changes, cannot succeed. Use a new idempotency key for a distinct
+logical operation.
+
+An orphaned reservation (the process that reserved a key crashed or was
+killed mid-mutation, with unknown external effects) does **not** expire on
+its own — the state store deliberately never times out a reservation whose
+side effects are unknown, so a same-key retry from the client keeps
+returning `idempotency_in_progress` forever. Recovering it is an operator
+action, not a client retry: call `createSqlDataSurfaceActionStateStore()`'s
+`reconcileIdempotency()` with live-authority evidence for the exact request
+fingerprint and reservation timestamp (e.g. a confirmed durable-queue job
+outcome, or a manual on-call check against the actual mutated rows), which
+settles the reservation to a terminal completed/failed result before any
+further attempt with that key can proceed. See
 [Refusal behavior](./data-surface-conformance.md#refusal-behavior) for the
 full contract this reuses.
 
@@ -216,3 +281,9 @@ for the pattern: build a real SQLite-backed collection and
 `createJobsDataSurfaceBackgroundQueue`, drive the route handlers with plain
 `Request` objects, and run a real `TaskRunner` to prove the background job
 executes and a retried apply replays instead of re-mutating.
+
+Every code sample above is mirrored, verbatim in substance, in
+`packages/agents/src/server/__typecheck__/sveltekit-data-surface-routes-doc-examples.ts`,
+which `tsc --noEmit` compiles as part of the package (it is never imported or
+executed). Keep that file in sync with this guide — a sample that does not
+type-check there means the guide is wrong.
