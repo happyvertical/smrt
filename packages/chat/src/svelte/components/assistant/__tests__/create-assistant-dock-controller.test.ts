@@ -714,6 +714,59 @@ describe('createAssistantDockController', () => {
     expect(callCount).toBe(1);
   }, 10_000);
 
+  // Cycle-3 first final finding 2: mirrors the dispose-race test above —
+  // stopPolling() had no in-flight-await guard of its own, so a pollTick
+  // already awaiting loadMessages when stopPolling() ran would still call
+  // resetPollInterval(...) afterward and re-arm a brand new timer, undoing
+  // the stop.
+  it('does not re-arm the poll interval when stopPolling() races an in-flight pollTick', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      transport,
+      registry: realRegistryWithSurface('orders').registry,
+      // Long enough that no second natural tick fires during the test —
+      // the only pollTick in play is the one the real interval fires once.
+      activePollIntervalMs: 30,
+      idlePollIntervalMs: 30,
+    });
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id); // consumes its own loadMessages call, unrelated to the gate below
+
+    // Gate ONLY loadMessages calls made from here on — i.e. the poll's own
+    // call, not openThread's.
+    let resolveGatedLoadMessages: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      resolveGatedLoadMessages = resolve;
+    });
+    let callCount = 0;
+    const originalLoadMessages = transport.loadMessages.bind(transport);
+    transport.loadMessages = async (threadId: string) => {
+      callCount += 1;
+      if (callCount === 1) await gate;
+      return originalLoadMessages(threadId);
+    };
+
+    controller.startPolling();
+    // Wait for the interval to fire once and land inside the gated await.
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    expect(callCount).toBe(1);
+
+    // stopPolling() runs WHILE that pollTick is still awaiting loadMessages.
+    controller.stopPolling();
+    resolveGatedLoadMessages?.();
+    // Give pollTick's continuation, and any (incorrect) re-armed interval,
+    // several multiples of the poll interval to fire again.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // The bug: pollTick's post-await code called resetPollInterval(...)
+    // unconditionally, re-arming a timer after stopPolling(). The fix must
+    // leave the call count at exactly 1 — the single tick already in flight
+    // when stopPolling() ran, and nothing after.
+    expect(callCount).toBe(1);
+
+    controller.dispose();
+  }, 10_000);
+
   // Finding A (#2904 review, third final pass): pollTick's pending-send
   // resolution must not match an earlier, already-answered occurrence of the
   // same content, and must not cross threads.

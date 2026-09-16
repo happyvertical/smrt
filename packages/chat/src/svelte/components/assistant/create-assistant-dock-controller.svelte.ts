@@ -250,6 +250,14 @@ export function createAssistantDockController(
   // owns on the next successful poll, rather than clobbering an unrelated
   // failure (e.g. a send or thread-open error) that hasn't been resolved.
   let pollErrorActive = false;
+  // Cycle-3 first final finding 2: `stopPolling()` only cleared the timer —
+  // it never recorded that polling was explicitly stopped. A tick's
+  // `loadMessages` await can still be in flight when `stopPolling()` runs;
+  // its post-await `resetPollInterval(...)` call then immediately re-arms a
+  // NEW timer, undoing the stop. This flag is the `stopPolling()` analogue
+  // of `disposed` for that same in-flight-await race — set by
+  // `stopPolling()`, cleared by `startPolling()`.
+  let pollingStopped = false;
 
   // Cycle-2 second final finding 1: `options.surfaces` is a getter (a live
   // prop passthrough from AssistantDock.svelte), so it must be RE-READ on
@@ -394,8 +402,11 @@ export function createAssistantDockController(
       return;
     }
     // F3 (#2904 review): dispose() can run while this await is in flight —
-    // bail before touching state or re-arming the interval.
-    if (disposed) return;
+    // bail before touching state or re-arming the interval. Cycle-3 first
+    // final finding 2: an explicit stopPolling() call is the same race —
+    // resetPollInterval() below would otherwise re-arm a timer the host just
+    // asked to stop.
+    if (disposed || pollingStopped) return;
     if (activeThreadId !== threadId) return; // thread switched mid-flight
     if (pollErrorActive) {
       pollErrorActive = false;
@@ -445,7 +456,11 @@ export function createAssistantDockController(
 
   function resetPollInterval(active: boolean) {
     if (pollTimer) clearInterval(pollTimer);
-    if (disposed) {
+    // Cycle-3 first final finding 2: bail on `pollingStopped` exactly as on
+    // `disposed` — this is the same guard `pollTick`'s post-await call site
+    // above relies on, kept here too so any other caller of
+    // `resetPollInterval` gets the same protection.
+    if (disposed || pollingStopped) {
       pollTimer = null;
       return;
     }
@@ -457,10 +472,17 @@ export function createAssistantDockController(
 
   function startPolling() {
     if (disposed || pollTimer) return;
+    pollingStopped = false;
     resetPollInterval(pendingSends.some((p) => p.status === 'processing'));
   }
 
+  // Cycle-3 first final finding 2: sets `pollingStopped` (cleared by
+  // `startPolling()`) so an in-flight `pollTick()` await that resolves AFTER
+  // this call cannot undo it by re-arming a new timer via
+  // `resetPollInterval()` — the same in-flight-await race `dispose()`
+  // already closed via `disposed`.
   function stopPolling() {
+    pollingStopped = true;
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
