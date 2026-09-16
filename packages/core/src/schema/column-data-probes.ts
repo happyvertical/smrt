@@ -256,21 +256,27 @@ export interface RenameDataPendingCandidate<Extra = undefined> {
  *    cross-target check below.
  *  - **One source, multiple targets (#2911's actual bug).** A source column
  *    that would otherwise be the single, *unambiguous* match for a target
- *    is simultaneously the single, unambiguous match for one or more
+ *    is also a candidate — sole or one of several — for one or more
  *    *other* targets too — e.g. `tenants.timezone` alone nominated as the
  *    rename source for `hierarchy_path`, `repo_template`, and `github_org`
  *    simultaneously. A single column cannot be the renamed predecessor of
  *    three unrelated columns at once, so a source this heuristic was about
- *    to trust as one target's sole candidate is disqualified the moment it
- *    is also some other target's sole candidate — every one of those
- *    targets is dropped from the result entirely, rather than emitting a
- *    wrong recommendation for each. This check applies only to
- *    would-be-unambiguous (single-candidate) targets: it must not reach
- *    into an already-ambiguous target's candidate list, or two targets that
- *    happen to share the same *pair* of ambiguous candidates (a
- *    plausible, unrelated coincidence — see the batched-probe-fallback
- *    regression in `migrations/__tests__/differ.test.ts`) would wrongly
- *    lose their otherwise-correct ambiguous findings too.
+ *    to trust as one target's sole (and therefore actionable,
+ *    `suggestedSql`-bearing) candidate is disqualified the moment *any*
+ *    other target's candidate list — sole or ambiguous — also names it:
+ *    printing a confident copy-then-`DROP COLUMN` for one target while
+ *    another target's own advisory names that same column as a possible
+ *    source is exactly the data-corrupting guess #2911 exists to prevent,
+ *    even though the second target's own ambiguous finding is already
+ *    safe (no `suggestedSql`) on its own. Only a target that would
+ *    otherwise resolve to exactly one candidate can be suppressed this
+ *    way — an already-ambiguous target's own finding is never dropped,
+ *    only consulted as evidence that a *different* target's sole source is
+ *    contested; two targets that merely happen to share the same pair of
+ *    ambiguous candidates (a plausible, unrelated coincidence — see the
+ *    batched-probe-fallback regression in
+ *    `migrations/__tests__/differ.test.ts`) keep both of their
+ *    already-safe ambiguous findings untouched.
  *
  * A target absent from the returned map produced no surviving, trustworthy
  * candidate — emit nothing for it. A target present with exactly one
@@ -293,24 +299,27 @@ export function resolveRenameDataPendingCandidates<Extra = undefined>(
     byTarget.set(candidate.targetName, list);
   }
 
-  // One source, multiple targets (#2911): among targets that would
-  // otherwise resolve to exactly one candidate, count how many distinct
-  // targets each such sole source was the sole candidate for.
-  const soleTargetsBySource = new Map<string, Set<string>>();
+  // One source, multiple targets (#2911): for every surviving source, how
+  // many distinct targets does it appear as a candidate for at all —
+  // whether it is that target's sole candidate or one of several. A sole
+  // candidate is only trustworthy (and only then actionable, carrying
+  // `suggestedSql`) when no other target's candidate list, ambiguous or
+  // not, also names it.
+  const targetsBySource = new Map<string, Set<string>>();
   for (const [targetName, list] of byTarget) {
-    if (list.length !== 1) continue;
-    const sourceName = list[0].sourceName;
-    const set = soleTargetsBySource.get(sourceName) ?? new Set<string>();
-    set.add(targetName);
-    soleTargetsBySource.set(sourceName, set);
+    for (const { sourceName } of list) {
+      const set = targetsBySource.get(sourceName) ?? new Set<string>();
+      set.add(targetName);
+      targetsBySource.set(sourceName, set);
+    }
   }
 
   const resolved = new Map<string, { sourceName: string; extra: Extra }[]>();
   for (const [targetName, list] of byTarget) {
     if (list.length === 1) {
-      const isSharedSoleSource =
-        (soleTargetsBySource.get(list[0].sourceName)?.size ?? 0) > 1;
-      if (isSharedSoleSource) continue;
+      const isContestedSoleSource =
+        (targetsBySource.get(list[0].sourceName)?.size ?? 0) > 1;
+      if (isContestedSoleSource) continue;
     }
     resolved.set(targetName, list);
   }

@@ -221,9 +221,41 @@ export function formatParityReport(
     }
   }
 
-  if (report.counts.info > 0 && !options.verbose) {
+  // #2911: `rename_data_pending` is always `info` severity (a suggestion
+  // about data, not schema drift — see column-data-probes.ts) so a wrong
+  // guess cannot fail closed the way a real `warning`/`error` parity
+  // finding does. But unlike an ordinary info-level note on this surface
+  // (an expected undeclared table/column on a shared database — "numerous
+  // and expected", see this function's own doc comment above), its
+  // message and recommendation ARE the finding; there is nothing useful
+  // left to say without them. This is the only renderer for `smrt
+  // db:status --parity` and `doctor --db`, so without this exemption the
+  // finding would be silently indistinguishable from having been disabled
+  // outside `--verbose`. Mirrors the same exemption
+  // `printSchemaAdvisories` makes on the `db:diff`/`db:migrate` surface.
+  //
+  // `doctor --db`'s passed/warnings bucketing (utilities.ts) still keys
+  // off `warning`/`error` severity only, deliberately: an info-only
+  // rename_data_pending finding coexisting with "Live schema parity:
+  // passed" mirrors `db:diff`'s own precedent ("up to date — see notes
+  // below") where a visible note does not count as a failure.
+  const infoFindings = selectFindings(report, 'info');
+  const renameFindings = infoFindings.filter(
+    (finding) => finding.kind === 'rename_data_pending',
+  );
+  if (!options.verbose) {
+    for (const finding of renameFindings) {
+      lines.push(`   ${SEVERITY_ICON.info} ${finding.message}`);
+      lines.push(`      → ${finding.recommendation}`);
+    }
+  }
+
+  const hiddenInfoCount = options.verbose
+    ? 0
+    : infoFindings.length - renameFindings.length;
+  if (hiddenInfoCount > 0) {
     lines.push(
-      `   ℹ️  ${report.counts.info} informational finding(s) hidden; re-run with --verbose.`,
+      `   ℹ️  ${hiddenInfoCount} informational finding(s) hidden; re-run with --verbose.`,
     );
   }
 
