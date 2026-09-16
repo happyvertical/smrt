@@ -298,6 +298,17 @@ export function createAssistantDockController(
   // Cycle-3 first final sweep: monotonic counter guarding openThread()'s
   // post-await write — see openThread() below.
   let openThreadRequestId = 0;
+  // Cycle-4 final finding 1: `openThreadRequestId` only guards openThread()
+  // — `resetConversationStateForContextSwap()`'s own invariant ("an old
+  // in-flight load could still write it back") had NO guard at all for
+  // loadThreads()/loadModels()/createThread()/doSend()/retry()/pollTick()/
+  // previewAction()/applyAction(). `contextEpoch` is the general-purpose
+  // counterpart: bumped by resetConversationStateForContextSwap() on every
+  // registry/transport swap, captured before each of those functions'
+  // await(s), and compared after — if it changed, the write is dropped, on
+  // top of (not instead of) each function's existing disposed/stopped/
+  // requestId checks.
+  let contextEpoch = 0;
 
   // Cycle-2 second final finding 1: `options.surfaces` is a getter (a live
   // prop passthrough from AssistantDock.svelte), so it must be RE-READ on
@@ -395,6 +406,9 @@ export function createAssistantDockController(
     error = null;
     draftIds.clear();
     openThreadRequestId += 1;
+    // Cycle-4 final finding 1: bump BEFORE the reload calls below so their
+    // own captured-epoch checks see this swap.
+    contextEpoch += 1;
     void loadThreads();
     void loadModels();
   }
@@ -485,6 +499,12 @@ export function createAssistantDockController(
     if (disposed || !isVisible() || !activeThreadId) return;
     markStalePendingSends();
     const threadId = activeThreadId;
+    // Cycle-4 final finding 1: `activeThreadId !== threadId` below already
+    // catches a swap incidentally (the reset nulls activeThreadId), but a
+    // host reopening a same-named thread in the new context could coincide;
+    // the explicit epoch check makes this the same discipline as every
+    // other async writer rather than relying on that coincidence.
+    const epoch = contextEpoch;
     // Cycle-2 second final finding 2: `setInterval(() => void pollTick(), …)`
     // means an unhandled rejection here previously fired once per poll
     // interval, indefinitely, with the dock rendering a normal-looking, just
@@ -494,7 +514,7 @@ export function createAssistantDockController(
       fresh = await options.transport.loadMessages(threadId);
     } catch (err) {
       // F3 (#2904 review): dispose() can run while this await is in flight.
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       if (!pollErrorActive) {
         pollErrorActive = true;
         error = err instanceof Error ? err.message : String(err);
@@ -506,7 +526,7 @@ export function createAssistantDockController(
     // final finding 2: an explicit stopPolling() call is the same race —
     // resetPollInterval() below would otherwise re-arm a timer the host just
     // asked to stop.
-    if (disposed || pollingStopped) return;
+    if (disposed || pollingStopped || epoch !== contextEpoch) return;
     if (activeThreadId !== threadId) return; // thread switched mid-flight
     if (pollErrorActive) {
       pollErrorActive = false;
@@ -599,16 +619,22 @@ export function createAssistantDockController(
   // dock's rendered message stays in sync even if a future caller catches
   // and reports the rejection itself (see AssistantDock.svelte).
   async function loadThreads() {
+    // Cycle-4 final finding 1: captured before the await so a swap that
+    // happens WHILE listThreads() is in flight (resetConversationState...()
+    // bumps this) is detected after — an old context's thread list must
+    // never win the race and overwrite the new context's freshly-reset
+    // (empty, then reloading) `threads`.
+    const epoch = contextEpoch;
     try {
       const fresh = await options.transport.listThreads();
       // Cycle-3 first final sweep: dispose() can run while this await is in
       // flight — bail before writing state on a torn-down controller, same
       // "still current" discipline pollTick/openThread apply.
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       threads = fresh;
       error = null;
     } catch (err) {
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -618,16 +644,18 @@ export function createAssistantDockController(
       models = [];
       return;
     }
+    // Cycle-4 final finding 1: same epoch discipline as loadThreads().
+    const epoch = contextEpoch;
     let fresh: ModelOption[];
     try {
       fresh = await options.transport.listModels();
     } catch (err) {
       // Cycle-3 first final sweep: same disposed re-check as loadThreads.
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       error = err instanceof Error ? err.message : String(err);
       return;
     }
-    if (disposed) return;
+    if (disposed || epoch !== contextEpoch) return;
     models = fresh;
     if (models.length > 0 && !selectedModel) {
       selectedModel = models[0].id;
@@ -654,14 +682,30 @@ export function createAssistantDockController(
     // activeThreadId/messages after the user has already moved on. Only the
     // most recently STARTED call may write.
     const requestId = ++openThreadRequestId;
+    // Cycle-4 final finding 1: a context swap also bumps openThreadRequestId
+    // (resetConversationStateForContextSwap()), so this call is technically
+    // already covered — the explicit epoch check is added for symmetry with
+    // every other async writer and to stay correct even if that coupling
+    // ever changes.
+    const epoch = contextEpoch;
     try {
       const fresh = await options.transport.loadMessages(threadId);
-      if (disposed || requestId !== openThreadRequestId) return;
+      if (
+        disposed ||
+        requestId !== openThreadRequestId ||
+        epoch !== contextEpoch
+      )
+        return;
       activeThreadId = threadId;
       messages = fresh;
       error = null;
     } catch (err) {
-      if (disposed || requestId !== openThreadRequestId) return;
+      if (
+        disposed ||
+        requestId !== openThreadRequestId ||
+        epoch !== contextEpoch
+      )
+        return;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -673,19 +717,23 @@ export function createAssistantDockController(
   // rethrow is what AssistantDock's `handleCreateThread` catches to stop the
   // un-awaited onclick from producing an unhandled rejection.
   async function createThread(title: string) {
+    // Cycle-4 final finding 1: a swap during this await must not let the
+    // created thread land in the (now-reset, differently-contexted) threads
+    // array — the return value stays load-bearing regardless (see below).
+    const epoch = contextEpoch;
     try {
       const thread = await options.transport.createThread(title);
       // Cycle-3 first final sweep: dispose() can run while this await is in
       // flight. The return value stays load-bearing for the caller (see the
       // comment above) even on a disposed controller, so this only skips
       // the STATE writes, not the return.
-      if (!disposed) {
+      if (!disposed && epoch === contextEpoch) {
         threads = [...threads, thread];
         error = null;
       }
       return thread;
     } catch (err) {
-      if (!disposed) {
+      if (!disposed && epoch === contextEpoch) {
         error = err instanceof Error ? err.message : String(err);
       }
       throw err;
@@ -713,6 +761,11 @@ export function createAssistantDockController(
       existingIndex >= 0
         ? pendingSends.map((p, i) => (i === existingIndex ? pending : p))
         : [...pendingSends, pending];
+    // Cycle-4 final finding 1: a context swap during sendMessage() must not
+    // let this write land in the (reset) pendingSends/messages of the NEW
+    // context — resurrecting an entry for a thread that no longer even
+    // belongs to the current transport.
+    const epoch = contextEpoch;
 
     try {
       const result = await options.transport.sendMessage({
@@ -727,7 +780,7 @@ export function createAssistantDockController(
       // controller. draftIds is a plain (non-reactive) Map so clearing it is
       // harmless either way, but it's skipped too for a clean, single bail
       // point.
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       if (result.inProgress) {
         // F5 (#2904 review): do NOT clear the draft id here — the turn is
         // still unresolved. Clearing it now would let a same-draft resend
@@ -760,8 +813,9 @@ export function createAssistantDockController(
       // Cycle-3 first final sweep: same disposed re-check as the success
       // branch above; the throw below still needs to happen regardless (the
       // pending send's own 'failed' status is best-effort UI polish, not
-      // load-bearing for the caller's control flow).
-      if (!disposed) {
+      // load-bearing for the caller's control flow). Cycle-4 final finding 1:
+      // same epoch re-check.
+      if (!disposed && epoch === contextEpoch) {
         pendingSends = pendingSends.map((p) =>
           p.clientRequestId === clientRequestId
             ? { ...p, status: 'failed' as const }
@@ -799,6 +853,8 @@ export function createAssistantDockController(
       (p) => p.clientRequestId === clientRequestId,
     );
     if (!pending) return;
+    // Cycle-4 final finding 1: same epoch discipline as doSend() itself.
+    const epoch = contextEpoch;
     try {
       await doSend(
         pending.threadId,
@@ -808,10 +864,10 @@ export function createAssistantDockController(
       );
       // Cycle-3 first final sweep: dispose() can run while doSend() is in
       // flight — bail before writing `error` on a torn-down controller.
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       error = null;
     } catch (err) {
-      if (disposed) return;
+      if (disposed || epoch !== contextEpoch) return;
       error = err instanceof Error ? err.message : String(err);
     }
   }
@@ -883,6 +939,14 @@ export function createAssistantDockController(
       status: 'previewing',
       idempotencyKey,
     });
+    // Cycle-4 final finding 1: a context swap during actionClient.preview()
+    // must not let this write land in the (cleared) actions map of the new
+    // context. Largely redundant with the idempotencyKey re-check below
+    // (the swap already clears `actions`, so `current` would be undefined
+    // unless a same-id preview happened to be re-started with a colliding
+    // key), but captured for the same explicit discipline every other async
+    // writer now uses.
+    const epoch = contextEpoch;
     // Finding 2 (#2904 review, fresh cycle): actionClient.preview is
     // documented as "an authenticated HTTP call to a server route" — i.e. it
     // rejects on any network error/5xx. Every path below must reach a
@@ -908,7 +972,8 @@ export function createAssistantDockController(
       if (
         current &&
         current.status === 'previewing' &&
-        current.idempotencyKey === idempotencyKey
+        current.idempotencyKey === idempotencyKey &&
+        epoch === contextEpoch
       ) {
         actions.set(actionKey(normalized), {
           request: normalized,
@@ -923,6 +988,7 @@ export function createAssistantDockController(
     const current = actions.get(actionKey(normalized));
     if (
       current &&
+      epoch === contextEpoch &&
       current.status === 'previewing' &&
       current.idempotencyKey === idempotencyKey
     ) {
@@ -971,6 +1037,9 @@ export function createAssistantDockController(
       });
       return;
     }
+    // Cycle-4 final finding 1: a context swap during this call's own work
+    // must not let a stale write land in the new context.
+    const epoch = contextEpoch;
     // F2 (#2904 review): re-check mount status at apply time, not only at
     // preview time — a route change between preview and Confirm can unmount
     // the surface, and previewAction's gate alone cannot catch that.
@@ -1029,8 +1098,9 @@ export function createAssistantDockController(
       // explicitly rejected it, silently overriding that decision (and
       // clobbering any other concurrent transition for this request id).
       // If the entry is gone or no longer 'applying', drop the write.
+      // Cycle-4 final finding 1: also drop it on a context swap.
       const current = actions.get(requestId);
-      if (current && current.status === 'applying') {
+      if (current && current.status === 'applying' && epoch === contextEpoch) {
         actions.set(requestId, {
           ...current,
           request: applyRequest,
@@ -1057,13 +1127,17 @@ export function createAssistantDockController(
           ];
         }
       }
-    } catch (error) {
+    } catch (caughtError) {
       const current = actions.get(requestId);
-      if (current && current.status === 'applying') {
+      // Cycle-4 final finding 1: also drop this write on a context swap.
+      if (current && current.status === 'applying' && epoch === contextEpoch) {
         actions.set(requestId, {
           ...current,
           status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
+          error:
+            caughtError instanceof Error
+              ? caughtError.message
+              : String(caughtError),
         });
       }
     }

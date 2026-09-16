@@ -1296,6 +1296,185 @@ describe('createAssistantDockController', () => {
     controller.dispose();
   });
 
+  // Cycle-4 final finding 1: `openThreadRequestId` guards openThread()
+  // alone — resetConversationStateForContextSwap()'s own invariant ("an old
+  // in-flight load could still write it back") had NO guard at all for
+  // loadThreads()/loadModels()/createThread(). `contextEpoch` closes that:
+  // captured before each of those functions' await(s) and compared after.
+  describe('contextEpoch guards loadThreads/loadModels/createThread against a swap (cycle-4 final finding 1)', () => {
+    it('a slow listThreads() from transport A resolves after a swap to B — threads stay Bs', async () => {
+      let resolveA: ((threads: AssistantThreadSummary[]) => void) | undefined;
+      const gateA = new Promise<AssistantThreadSummary[]>((resolve) => {
+        resolveA = resolve;
+      });
+      const transportA: AssistantTransport = {
+        async listThreads() {
+          return gateA;
+        },
+        async createThread(title) {
+          return { id: 'a-thread', title, isResolved: false, messageCount: 0 };
+        },
+        async loadMessages() {
+          return [];
+        },
+        async sendMessage() {
+          throw new Error('unused');
+        },
+        async uploadAttachment() {
+          throw new Error('unused');
+        },
+      };
+      const transportB = createInMemoryAssistantTransport();
+      const threadB = await transportB.createThread('Context B thread');
+
+      let currentTransport: AssistantTransport = transportA;
+      let currentRegistry = realRegistryWithSurface('orders').registry;
+      const controller = createAssistantDockController({
+        get transport() {
+          return currentTransport;
+        },
+        get registry() {
+          return currentRegistry;
+        },
+      });
+
+      // Kick off a loadThreads() against A — it stays gated (in flight).
+      const staleLoad = controller.loadThreads();
+
+      // Swap to B WHILE A's listThreads() is still in flight.
+      currentTransport = transportB;
+      currentRegistry = realRegistryWithSurface('orders').registry;
+      controller.syncRegistry();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+      // A's stale listThreads() now resolves — it must NOT overwrite B's
+      // already-loaded thread list.
+      resolveA?.([
+        { id: 'a-thread', title: 'From A', isResolved: false, messageCount: 0 },
+      ]);
+      await staleLoad;
+      expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+      controller.dispose();
+    });
+
+    it('a slow listModels() from transport A resolves after a swap to B — models stay Bs', async () => {
+      let resolveA: ((models: ModelOption[]) => void) | undefined;
+      const gateA = new Promise<ModelOption[]>((resolve) => {
+        resolveA = resolve;
+      });
+      const transportA: AssistantTransport = {
+        async listThreads() {
+          return [];
+        },
+        async createThread(title) {
+          return { id: 'a-thread', title, isResolved: false, messageCount: 0 };
+        },
+        async loadMessages() {
+          return [];
+        },
+        async sendMessage() {
+          throw new Error('unused');
+        },
+        async uploadAttachment() {
+          throw new Error('unused');
+        },
+        async listModels() {
+          return gateA;
+        },
+      };
+      const transportB = createInMemoryAssistantTransport({
+        models: [{ id: 'model-b', label: 'Model B' }],
+      });
+
+      let currentTransport: AssistantTransport = transportA;
+      let currentRegistry = realRegistryWithSurface('orders').registry;
+      const controller = createAssistantDockController({
+        get transport() {
+          return currentTransport;
+        },
+        get registry() {
+          return currentRegistry;
+        },
+      });
+
+      const staleLoad = controller.loadModels();
+
+      currentTransport = transportB;
+      currentRegistry = realRegistryWithSurface('orders').registry;
+      controller.syncRegistry();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(controller.models.map((m) => m.id)).toEqual(['model-b']);
+
+      resolveA?.([{ id: 'model-a', label: 'Model A' }]);
+      await staleLoad;
+      expect(controller.models.map((m) => m.id)).toEqual(['model-b']);
+
+      controller.dispose();
+    });
+
+    it('a slow createThread() against transport A resolving after a swap to B does not land in threads', async () => {
+      let resolveA: ((thread: AssistantThreadSummary) => void) | undefined;
+      const gateA = new Promise<AssistantThreadSummary>((resolve) => {
+        resolveA = resolve;
+      });
+      const transportA: AssistantTransport = {
+        async listThreads() {
+          return [];
+        },
+        async createThread() {
+          return gateA;
+        },
+        async loadMessages() {
+          return [];
+        },
+        async sendMessage() {
+          throw new Error('unused');
+        },
+        async uploadAttachment() {
+          throw new Error('unused');
+        },
+      };
+      const transportB = createInMemoryAssistantTransport();
+      const threadB = await transportB.createThread('Context B thread');
+
+      let currentTransport: AssistantTransport = transportA;
+      let currentRegistry = realRegistryWithSurface('orders').registry;
+      const controller = createAssistantDockController({
+        get transport() {
+          return currentTransport;
+        },
+        get registry() {
+          return currentRegistry;
+        },
+      });
+
+      const staleCreate = controller.createThread('From A');
+
+      currentTransport = transportB;
+      currentRegistry = realRegistryWithSurface('orders').registry;
+      controller.syncRegistry();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+      // A's stale createThread() now resolves — the returned value stays
+      // load-bearing for the (test's own) caller, but it must NOT land in
+      // `threads`, which belongs to context B now.
+      resolveA?.({
+        id: 'a-thread-created',
+        title: 'From A',
+        isResolved: false,
+        messageCount: 0,
+      });
+      const created = await staleCreate;
+      expect(created.id).toBe('a-thread-created');
+      expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+      controller.dispose();
+    });
+  });
+
   // Copilot PR #2919 jAwsd: a registry (and, via syncTransport(), a
   // transport) swap now clears threads/activeThreadId/messages/pendingSends
   // and reloads from the NEW transport, and discards an old in-flight
