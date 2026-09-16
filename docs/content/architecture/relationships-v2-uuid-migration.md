@@ -143,11 +143,17 @@ anything that treats `warning`/`error` findings as failing closed. `smrt
 db:status`'s plain (non-`--parity`) output reflects this too — the finding
 appears in its `notes`, never its `drift`, so it cannot fail `db:status:assert`
 or any other drift-counting check the way real schema drift correctly does.
-`smrt db:diff`/`db:status --parity --verbose` and `smrt db:status` alike still
-surface it in full: `printSchemaAdvisories` always prints a
-`rename_data_pending` note's message and suggested repair SQL, unlike an
-ordinary info-level note (a harmless orphan column, say), which is compact
-unless `--verbose` is passed.
+`smrt db:diff`/`db:migrate` (via `printSchemaAdvisories`) and `smrt db:status
+--parity` (via `formatParityReport`) always print a `rename_data_pending`
+finding's message and suggested repair SQL in full, at any verbosity, unlike
+an ordinary info-level note (a harmless orphan column, say), which is compact
+unless `--verbose` is passed. Plain `smrt db:status` (no `--parity`) is less
+detailed on this specific point: its `notes` list names the finding compactly
+(`table.column: rename_data_pending`) and gates the advisory message itself
+behind `--verbose` the same as any other note, and never prints the suggested
+SQL at all in text output — `smrt db:status --json`'s `notes[].recommendation`
+carries the full message regardless. Use `smrt db:diff` or `smrt db:status
+--parity` for the repair SQL and full detail.
 
 #2911 also tightened the inference itself: the same undeclared column being a
 type-compatible, populated candidate for *more than one* empty declared column
