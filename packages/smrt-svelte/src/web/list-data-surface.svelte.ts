@@ -142,6 +142,33 @@ function selectionReference(
 
 const RESERVED_CONTEXT_KEYS = ['table'] as const;
 
+/**
+ * Every `controlId` `dataTableCommandFromDataSurfaceCommand`
+ * (`@happyvertical/smrt-ui/data`) understands. A command declaring one of
+ * these ids that still fails to translate (an unparseable payload — e.g.
+ * `set-filters` with a non-array `filters`) must be denied directly, never
+ * forwarded to `onControl`: the descriptor and `acceptsTableCommand` gate
+ * never ran for it, so treating it as a generic custom control would let an
+ * `onControl` catch-all silently acknowledge a table mutation that was never
+ * applied. Kept in sync by hand with `data-table-surface.ts`'s `case` list
+ * until #2917 unifies the two implementations.
+ */
+const TABLE_CONTROL_IDS = new Set([
+  'set-search',
+  'set-filters',
+  'set-sorting',
+  'toggle-sorting',
+  'set-page',
+  'set-page-size',
+  'set-column-order',
+  'set-column-visibility',
+  'set-selected-rows',
+  'toggle-row-selection',
+  'set-expanded-rows',
+  'toggle-row-expansion',
+  'reset',
+]);
+
 function assertNoReservedContextKeys(context: DataSurfaceJsonObject): void {
   for (const key of RESERVED_CONTEXT_KEYS) {
     if (key in context) {
@@ -248,15 +275,20 @@ export function mountListDataSurface(
     options.initialRevision ?? 0,
     previousRevision === undefined ? 0 : previousRevision + 1,
   );
-  revisions.set(key, revision);
+  // Do NOT commit `revision` to the shared per-identity map, or subscribe to
+  // the controller, until `registry.register` below succeeds. Both a bad
+  // descriptor (duplicate identity, unknown column/control ids, …) and a
+  // reserved context key throw synchronously; committing shared state first
+  // would leave an orphaned controller subscriber writing a phantom revision
+  // counter for an identity this call never actually owns.
+  let context: DataSurfaceJsonObject = { ...(options.context ?? {}) };
+  assertNoReservedContextKeys(context);
+  let contextSignature = JSON.stringify(context);
   const advanceRevision = () => {
     revision += 1;
     revisions.set(key, revision);
     options.onRevision?.(revision);
   };
-  let context: DataSurfaceJsonObject = { ...(options.context ?? {}) };
-  assertNoReservedContextKeys(context);
-  let contextSignature = JSON.stringify(context);
   const updateContext = (next: ListDataSurfaceContext) => {
     const merged: DataSurfaceJsonObject = { ...next };
     assertNoReservedContextKeys(merged);
@@ -267,9 +299,6 @@ export function mountListDataSurface(
     }
     context = merged;
   };
-  const unsubscribe = options.controller.subscribe((transition) => {
-    if (transition.changed) advanceRevision();
-  });
   const unregister = options.registry.register({
     descriptor: options.descriptor,
     getSnapshot: () => {
@@ -320,6 +349,12 @@ export function mountListDataSurface(
           options.highlight();
           return;
         default: {
+          // A declared table-control id that failed to translate (e.g. an
+          // unparseable payload) must be denied directly — it never reached
+          // `commandAllowed`/`acceptsTableCommand`, so treating it as a
+          // generic custom control would let `onControl` silently
+          // acknowledge a table mutation that was never applied.
+          if (TABLE_CONTROL_IDS.has(command.controlId)) return { ok: false };
           if (!options.onControl) return { ok: false };
           const result = normalizeControlResult(
             await options.onControl(command.controlId, command.payload),
@@ -328,6 +363,12 @@ export function mountListDataSurface(
         }
       }
     },
+  });
+  // Registration succeeded — now, and only now, commit the shared per-identity
+  // revision and subscribe to the controller (see the note above).
+  revisions.set(key, revision);
+  const unsubscribe = options.controller.subscribe((transition) => {
+    if (transition.changed) advanceRevision();
   });
   options.onRevision?.(revision);
   return {

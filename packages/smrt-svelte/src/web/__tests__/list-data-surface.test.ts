@@ -280,6 +280,89 @@ describe('mountListDataSurface', () => {
     handle.destroy();
   });
 
+  it('denies a declared table control whose payload fails to translate, never reaching onControl', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const onControl = vi.fn().mockResolvedValue(true);
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      onControl,
+    });
+
+    // `filters` must be an array; a string fails
+    // `dataTableCommandFromDataSurfaceCommand`'s translation and returns null.
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'malformed-filters',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'set-filters',
+        payload: { filters: 'not-an-array' },
+      }),
+    ).resolves.toMatchObject({ ok: false });
+    expect(onControl).not.toHaveBeenCalled();
+    expect(controller.getState().filters).toEqual([]);
+
+    handle.destroy();
+  });
+
+  it('does not leak a controller subscription or corrupt the shared revision counter when register() throws', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+
+    // A duplicate identity makes registry.register() throw synchronously.
+    const first = mountListDataSurface({
+      registry,
+      descriptor: descriptor({ identity: { surfaceId: 'dup', kind: 'list' } }),
+      controller: createDataTableController(),
+      context: context(),
+    });
+
+    expect(() =>
+      mountListDataSurface({
+        registry,
+        descriptor: descriptor({
+          identity: { surfaceId: 'dup', kind: 'list' },
+        }),
+        controller,
+        context: context(),
+      }),
+    ).toThrow();
+
+    // The failed mount must not have subscribed to this controller: dispatching
+    // through it must not advance any registry-visible revision for 'dup'.
+    const before = registry.inspect({
+      surfaceId: 'dup',
+      kind: 'list',
+    })?.revision;
+    controller.dispatch({ type: 'setSearch', search: 'x' });
+    const after = registry.inspect({
+      surfaceId: 'dup',
+      kind: 'list',
+    })?.revision;
+    expect(after).toBe(before);
+
+    // A later, successful mount of the same identity starts strictly above
+    // the last revision the first (still-live) registration published.
+    first.destroy();
+    const rebound = mountListDataSurface({
+      registry,
+      descriptor: descriptor({ identity: { surfaceId: 'dup', kind: 'list' } }),
+      controller,
+      context: context(),
+    });
+    const reboundRevision = registry.inspect({
+      surfaceId: 'dup',
+      kind: 'list',
+    })?.revision;
+    expect(reboundRevision).toBeGreaterThan(before ?? -1);
+    rebound.destroy();
+  });
+
   it('bumps the revision when app-owned context changes via update()', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createDataTableController();
