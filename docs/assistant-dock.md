@@ -199,7 +199,11 @@ empty, the "no data surfaces mounted" notice renders, and
 `previewAction`/`applyAction` reject client-side before ever reaching an
 `AssistantActionClient` — see `isSurfaceMounted` in
 `create-assistant-dock-controller.svelte.ts`. This is a fail-closed
-construction, not a runtime permission check layered on top.
+construction, not a runtime permission check layered on top. The mount gate's
+`surfaceKey()` keys on `kind`, `surfaceId`, **and** `subject` (mirroring the
+registry's own `identityKey` tuple), so a same-kind/same-`surfaceId` identity
+for a different subject — another tenant, site, or project instance — is
+treated as a distinct, unmounted surface, not the same one (#2904 review F6).
 
 ## Reuse from ContentAgentChat
 

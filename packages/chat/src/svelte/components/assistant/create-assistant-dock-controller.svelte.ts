@@ -152,8 +152,21 @@ function defaultClientRequestId(threadId: string): string {
   return `assistant-message-${threadId}-${random}`;
 }
 
+// Mirrors the registry's own private `identityKey` tuple exactly
+// (`packages/smrt-ui/src/components/data/data-surface.ts:501-507`, not
+// exported so it can't be reused directly): kind + surfaceId + subject
+// type/id, with an absent subject treated as a distinct third value (`null`)
+// rather than collapsing into the same key as any subject-bearing identity.
+// Dropping `subject` here (#2904 review F6) let a same-kind/same-surfaceId
+// identity for a DIFFERENT subject (e.g. another tenant, site, or project
+// instance) pass the mount gate — the client-side fail-closed scoping this
+// component exists to provide.
 function surfaceKey(identity: DataSurfaceIdentity): string {
-  return `${identity.kind}:${identity.surfaceId}`;
+  return JSON.stringify([
+    identity.kind,
+    identity.surfaceId,
+    identity.subject ? [identity.subject.type, identity.subject.id] : null,
+  ]);
 }
 
 export function createAssistantDockController(

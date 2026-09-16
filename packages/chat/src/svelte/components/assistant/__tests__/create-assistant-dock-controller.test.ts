@@ -15,11 +15,14 @@ import { createAssistantDockController } from '../create-assistant-dock-controll
 
 // A real registry (not the static fakeRegistry below) so 'unregistered'
 // events actually fire, for the F2 invalidation test.
-function realRegistryWithSurface(surfaceId: string) {
+function realRegistryWithSurface(
+  surfaceId: string,
+  subject: { type: string; id: string } = { type: 'tenant', id: 'tenant-a' },
+) {
   const identity: DataSurfaceIdentity = {
     surfaceId,
     kind: 'table',
-    subject: { type: 'tenant', id: 'tenant-a' },
+    subject,
   };
   const descriptor: DataSurfaceDescriptor = {
     version: 1,
@@ -405,6 +408,161 @@ describe('createAssistantDockController', () => {
 
     expect(controller.actions.get(requestId)?.status).toBe('failed');
     expect(controller.actions.get(requestId)?.error).toMatch(/unmounted/);
+  });
+
+  // F6 (#2904 review): surfaceKey() must key by subject too, not just
+  // kind + surfaceId — otherwise a request for the same surfaceId/kind but a
+  // DIFFERENT subject (another tenant, site, or project instance) passes the
+  // mount gate.
+  it('rejects preview and apply for the same kind/surfaceId mounted under a different subject', async () => {
+    const { registry, identity: mountedIdentity } = realRegistryWithSurface(
+      'orders',
+      { type: 'tenant', id: 'tenant-a' },
+    );
+    const otherSubjectIdentity: DataSurfaceIdentity = {
+      ...mountedIdentity,
+      subject: { type: 'tenant', id: 'tenant-b' },
+    };
+    const applySpy = vi.fn();
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => {
+          applySpy();
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok: true,
+          };
+        },
+      },
+    });
+
+    const requestId = 'req-other-subject';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity: otherSubjectIdentity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('failed');
+    expect(controller.actions.get(requestId)?.error).toMatch(/not mounted/);
+
+    // Force the action into a previewed state directly (bypassing the
+    // preview-time gate) to isolate applyAction's OWN re-check from
+    // previewAction's — F2's apply-time gate must independently reject the
+    // subject-swapped identity too.
+    controller.actions.set(requestId, {
+      request: {
+        version: 1,
+        requestId,
+        identity: otherSubjectIdentity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      },
+      status: 'previewed',
+      idempotencyKey: 'idem-other-subject',
+    });
+    await controller.applyAction(requestId);
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(controller.actions.get(requestId)?.status).toBe('failed');
+    expect(controller.actions.get(requestId)?.error).toMatch(/not mounted/);
+  });
+
+  it("does not invalidate a sibling subject's outstanding preview when a different subject unregisters", async () => {
+    const tenantA = realRegistryWithSurface('orders', {
+      type: 'tenant',
+      id: 'tenant-a',
+    });
+    // Mount a SECOND surface for tenant-b, same kind/surfaceId, on the SAME
+    // registry instance the controller watches.
+    const tenantBIdentity: DataSurfaceIdentity = {
+      surfaceId: 'orders',
+      kind: 'table',
+      subject: { type: 'tenant', id: 'tenant-b' },
+    };
+    const unregisterTenantB = tenantA.registry.register({
+      descriptor: {
+        version: 1,
+        identity: tenantBIdentity,
+        schemaVersion: 1,
+        label: 'orders',
+        rowKey: 'id',
+        columns: [
+          { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+        ],
+        query: {
+          modes: ['rows'],
+          projectableColumnIds: ['id'],
+          searchableColumnIds: [],
+          filterableColumnIds: [],
+          sortableColumnIds: [],
+        },
+        actions: [],
+        controls: [],
+        limits: {
+          maxQueryRows: 10,
+          maxQueryBytes: 10_000,
+          maxSelectionSize: 10,
+        },
+      },
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry: tenantA.registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'apply',
+          ok: true,
+        }),
+      },
+    });
+
+    const requestId = 'req-tenant-a-survives';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity: tenantA.identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    // Unregister tenant-b's surface — same kind/surfaceId as tenant-a's,
+    // different subject. tenant-a's outstanding preview must be untouched.
+    unregisterTenantB();
+
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
   });
 
   // F3 (#2904 review): dispose() during an in-flight loadMessages must not
