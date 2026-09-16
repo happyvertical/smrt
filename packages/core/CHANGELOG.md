@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.6
+
+### Patch Changes
+
+- ### Features
+
+  - AssistantDock, a shell-mounted route-aware assistant surface (#2919) (chat)
+  - @happyvertical/smrt-config@0.51.6
+  - @happyvertical/smrt-types@0.51.6
+  - @happyvertical/smrt-scanner@0.51.6
+
 ## 0.51.5
 
 ### Patch Changes
