@@ -69,7 +69,10 @@ is the intended host:
 
   // `registry` is the same DataSurfaceRegistry instance the shell's mounted
   // routes register their descriptors on (see smrt-svelte/src/data-surface.ts).
-  const transport = createSmrtAssistantTransport({ baseUrl, token, writeEndpoint });
+  // `readEndpoint` must be a host-supplied, MEMBER-scoped endpoint — see
+  // "Transport" below; it is never the generated ChatThread/ChatMessage
+  // list REST routes directly.
+  const transport = createSmrtAssistantTransport({ readEndpoint, token, writeEndpoint });
 </script>
 
 <ShellDockTool id="assistant" label="Assistant" icon="bot">
@@ -139,15 +142,51 @@ ships the interface but not an HTTP implementation (see "Gaps").
 `ChatClientBackend` (`packages/chat/src/client.ts`): `listThreads`,
 `createThread`, `loadMessages`, `sendMessage`, `uploadAttachment`.
 
-- `ChatThread`/`ChatMessage` are configured with `api: { include: ['list', 'get'] }`
-  only (`packages/chat/src/models/ChatThread.ts:16`,
-  `packages/chat/src/models/ChatMessage.ts:26`), so `createSmrtAssistantTransport`
-  can serve `listThreads`/`loadMessages` from the generated REST routes
-  directly, but `createThread`/`sendMessage`/`uploadAttachment` have no
-  generated `create` route to call. `createSmrtAssistantTransport` requires an
-  explicit `writeEndpoint` (a `ChatService`-backed implementation the host
-  supplies) for those three and throws a descriptive error if it is missing,
-  rather than silently no-opping.
+- **Reads are host-endpoint scoped, never the raw generated list routes**
+  (Copilot PR #2919 review, threads jAwqo/jAwrQ/jAwvV). `ChatThread`/
+  `ChatMessage` are configured with `api: { include: ['list', 'get'] }` only
+  (`packages/chat/src/models/ChatThread.ts:16`,
+  `packages/chat/src/models/ChatMessage.ts:26`), and an earlier version of
+  `createSmrtAssistantTransport` called those generated list routes directly.
+  That was a real cross-tenant/cross-thread read: the generated handler
+  enforces authentication and tenant scope only — the per-room MEMBERSHIP
+  check lives in `ChatService.listRoomThreads`
+  (`packages/chat/src/services/ChatService.ts:1042`) — and `threadId` isn't
+  even a filter the generated list handler parses (only `limit`/`offset`),
+  so every `loadMessages(threadId)` call returned the same latest
+  tenant-wide page regardless of which thread was asked for.
+  `createSmrtAssistantTransport` now **requires** a host-supplied,
+  member-scoped `readEndpoint` and calls:
+  - `GET {readEndpoint}/threads` for `listThreads()`
+  - `GET {readEndpoint}/threads/{id}/messages` for `loadMessages(threadId)`
+
+  Both must bind the endpoint's own authenticated actor/tenant/membership
+  context server-side before returning rows — `ChatService.listRoomThreads`
+  is the server-side building block a host's endpoint implementation should
+  call to get that scoping for free.
+
+  **Wire shape.** The documented contract is camelCase JSON, field names
+  matching `AssistantThreadSummary`/`AssistantMessage` directly:
+  `ThreadSummary: { id, title, isResolved, messageCount, lastMessageAt? }`;
+  `Message: { id, threadId, content, role, createdAt, attachments?: { name,
+  url?, size? }[] }`, returned in **chronological** (oldest-first) order.
+  `normalizeAssistantThreadSummary`/`normalizeAssistantMessage`
+  (`assistant-transport.ts`, exported for tests) are a defensive fallback,
+  not a second contract: a host that wraps the raw generated-model JSON
+  rather than writing a shape-converting endpoint commonly hands back
+  snake_case (`created_at`, `thread_id`), a `ChatMessage.attachments` value
+  that is still the stored JSON-encoded STRING with `filename` fields rather
+  than a parsed `{ name }` array, and newest-first pagination order — all
+  three are tolerated so `loadMessages` still resolves in-progress replies
+  (the resolution check searches for an assistant/tool message AFTER the
+  triggering user message, which fails silently against a newest-first list)
+  and renders attachments/messages correctly either way.
+- `createThread`/`sendMessage`/`uploadAttachment` have no generated `create`
+  route to call (same `api: { include: ['list', 'get'] }` constraint).
+  `createSmrtAssistantTransport` requires an explicit `writeEndpoint` (a
+  `ChatService`-backed implementation the host supplies) for those three and
+  throws a descriptive error if it is missing, rather than silently
+  no-opping.
 - `createInMemoryAssistantTransport` is a full, deterministic implementation
   for tests and demos.
 
@@ -244,6 +283,8 @@ data-surface actions; the content-specific sanitizer stays specific to
 | End-to-end: fail-closed DOM, live discovery + send/receive, preview→confirm→apply→registry `'command'` event | `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte integration, conformance-style (mirrors `data-surface-conformance.integration.svelte.test.ts`) |
 | `message.attachments` render as a chip/link list on the bubble, after both `send()` and `loadMessages()` | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; also asserted end-to-end in `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte component + integration (#2904 review, cycle-3 second final F1) |
 | `ModelPicker`, `AssistantComposer`'s file input, and every AssistantDock-family component have an accessible name / pass `expectNoA11yViolations` | `packages/chat/src/svelte/components/shared/__tests__/ModelPicker.test.ts`, `AssistantComposer.test.ts`, `AssistantDock.test.ts`, `AssistantThreadList.test.ts` | svelte component (#2904 review, cycle-3 second final F2) |
+| `createSmrtAssistantTransport` calls `GET {readEndpoint}/threads`/`.../threads/{id}/messages`, never a raw generated list route; `normalizeAssistantThreadSummary`/`normalizeAssistantMessage` tolerate snake_case fields, a JSON-string `attachments` column, and newest-first pagination | `packages/chat/src/svelte/components/assistant/__tests__/assistant-transport.test.ts` | unit (Copilot PR #2919 review, threads jAwqo/jAwrQ/jAwvV) |
+| A registry (or transport) swap clears threads/activeThreadId/messages/pendingSends/actions and reloads from the new transport, discarding an old in-flight load; `surfaces` narrows against the live registry (an unregistered override entry is not mounted); `applyAction` permits only `previewed` or an apply-phase `failed` retry | `packages/chat/src/svelte/components/assistant/__tests__/create-assistant-dock-controller.test.ts` | unit (Copilot PR #2919 review, threads jAwsd/jAwr0/jAwwg) |
 
 The integration test's harness follows the exemplar's stated scope: a real
 `DataSurfaceRegistry` and a real `createAssistantDockController`/`AssistantDock`
@@ -297,3 +338,17 @@ index, next to `ui-surfaces.md`.
    `PortalChatTool.svelte`'s `assistantStore` already uses for a global dock
    mount. No anytown-specific API was added to this package.
 6. **Streaming remains out of scope**, tracked separately as #2908.
+7. **`readEndpoint` has no shipped HTTP implementation either** (Copilot PR
+   #2919 review, threads jAwqo/jAwrQ/jAwvV). The package now requires a
+   host-supplied, member-scoped read endpoint (see "Transport" above) rather
+   than calling the generated `ChatThread`/`ChatMessage` list routes
+   directly — but it ships only the client-side contract and the
+   `normalizeAssistantThreadSummary`/`normalizeAssistantMessage` defensive
+   normalizers, not a reference server route. A host must implement
+   `GET {readEndpoint}/threads` and
+   `GET {readEndpoint}/threads/{id}/messages` itself, calling
+   `ChatService.listRoomThreads` (`packages/chat/src/services/ChatService.ts:1042`)
+   or equivalent membership-scoped logic server-side. This mirrors the
+   already-documented `writeEndpoint` gap above (item 1) for the identical
+   reason: neither model exposes a generated route safe to call unscoped
+   from the browser.

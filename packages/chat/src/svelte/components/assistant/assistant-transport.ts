@@ -13,15 +13,20 @@
  * Two implementations ship in this file:
  *  - `createInMemoryAssistantTransport` — deterministic, no network, for tests
  *    and the package dev workbench/demos.
- *  - `createSmrtAssistantTransport` — backed by the generated
- *    `ChatThread`/`ChatMessage` REST routes. Those models are configured with
- *    `api: { include: ['list', 'get'] }` only (see `../../../models/ChatThread.ts:16`
- *    and `../../../models/ChatMessage.ts:26`), so this implementation can serve
- *    `listThreads`/`loadMessages` directly, but `createThread`/`sendMessage`
- *    have no generated REST counterpart to call (no `create`/`post` route is
- *    exposed) and must be wired to an application's own `ChatService`-backed
- *    endpoint by the host. This is documented as a known gap in
- *    `docs/assistant-dock.md` rather than silently faked.
+ *  - `createSmrtAssistantTransport` — reads go through a host-supplied,
+ *    MEMBER-scoped `readEndpoint` (Copilot PR #2919 jAwqo/jAwrQ/jAwvV: NEVER
+ *    the generated `ChatThread`/`ChatMessage` list REST routes directly —
+ *    those enforce only authentication + tenant scope, not the per-room
+ *    membership check that lives in `ChatService.listRoomThreads`, and
+ *    `threadId` isn't even a filter the generated list handler understands).
+ *    `createThread`/`sendMessage`/`uploadAttachment` have no generated REST
+ *    counterpart to call either way (no `create`/`post` route is exposed on
+ *    `ChatThread`/`ChatMessage`, `api: { include: ['list', 'get'] }` —
+ *    `../../../models/ChatThread.ts:16`, `../../../models/ChatMessage.ts:26`)
+ *    and must be wired to an application's own `ChatService`-backed
+ *    `writeEndpoint`. Both gaps are documented in `docs/assistant-dock.md`
+ *    rather than silently faked. See the "smrt-generated-REST-backed
+ *    transport" section below for the full read wire contract.
  */
 
 /**
@@ -305,8 +310,184 @@ export function createInMemoryAssistantTransport(
 // smrt-generated-REST-backed transport
 // ---------------------------------------------------------------------------
 
+/**
+ * Wire contract for `createSmrtAssistantTransport`'s reads (Copilot PR #2919
+ * jAwqo/jAwrQ/jAwvV). `readEndpoint` must be a host-supplied, MEMBER-scoped
+ * endpoint — never the generated `ChatThread`/`ChatMessage` REST list routes
+ * directly, which enforce only authentication + tenant scope, not the
+ * per-room/per-thread membership check that lives in
+ * `ChatService.listRoomThreads` (`packages/chat/src/services/ChatService.ts:1042`).
+ * Calling the generated list route straight from the browser would let any
+ * authenticated tenant member read every thread (and, for messages, every
+ * OTHER thread's messages too — `threadId` isn't even a filter the generated
+ * handler understands, it only parses `limit`/`offset`). See
+ * `docs/assistant-dock.md`'s "Transport" section for the full contract this
+ * endpoint must implement.
+ *
+ * Two calls:
+ *  - `GET {readEndpoint}/threads` -> `{ items: <ThreadSummary wire shape>[] }`
+ *  - `GET {readEndpoint}/threads/{id}/messages` -> `{ items: <Message wire shape>[] }`
+ *
+ * Documented wire shape (camelCase JSON, matching `AssistantThreadSummary`/
+ * `AssistantMessage` field names directly) — this is what a CONFORMING
+ * endpoint should send:
+ *   ThreadSummary: `{ id, title, isResolved, messageCount, lastMessageAt? }`
+ *   Message: `{ id, threadId, content, role, createdAt,
+ *               attachments?: { name, url?, size? }[] }`, in CHRONOLOGICAL
+ *            (oldest-first) order.
+ *
+ * `normalizeAssistantThreadSummary`/`normalizeAssistantMessage` below are
+ * DEFENSIVE, not a second contract: a host wrapping the raw generated model
+ * JSON (rather than writing a shape-converting endpoint) commonly hands back
+ * snake_case (`created_at`, `thread_id`), a `ChatMessage.attachments` value
+ * that is still the STORED JSON STRING with `filename` fields rather than a
+ * parsed array with `name`, and newest-first pagination order. Both
+ * normalizers tolerate that shape too so `loadMessages` still resolves
+ * in-progress replies and renders attachments/messages correctly either way.
+ */
+export interface AssistantThreadSummaryWire {
+  id: string;
+  title: string;
+  isResolved?: boolean;
+  messageCount?: number;
+  lastMessageAt?: string | Date | null;
+  // Defensive snake_case fallbacks a raw generated-model JSON response uses.
+  is_resolved?: boolean;
+  message_count?: number;
+  last_message_at?: string | Date | null;
+}
+
+export interface AssistantMessageWire {
+  id: string;
+  threadId?: string;
+  content?: string;
+  role?: AssistantMessage['role'];
+  createdAt?: string | Date;
+  attachments?: unknown;
+  clientRequestId?: string;
+  // Defensive snake_case fallbacks a raw generated-model JSON response uses.
+  thread_id?: string;
+  created_at?: string | Date;
+  client_request_id?: string;
+}
+
+/**
+ * Normalizes one attachment entry to `AssistantAttachmentRef`'s shape.
+ * Accepts the documented `{ name, url?, size? }` shape directly, or a raw
+ * generated-model `{ filename, ... }` entry (`filename` -> `name`).
+ */
+function normalizeAssistantAttachment(
+  raw: unknown,
+  index: number,
+): AssistantAttachmentRef | undefined {
+  if (raw == null || typeof raw !== 'object') return undefined;
+  const obj = raw as Record<string, unknown>;
+  const name =
+    typeof obj.name === 'string'
+      ? obj.name
+      : typeof obj.filename === 'string'
+        ? obj.filename
+        : undefined;
+  if (!name) return undefined;
+  return {
+    id: typeof obj.id === 'string' ? obj.id : `att-${index}`,
+    name,
+    url: typeof obj.url === 'string' ? obj.url : undefined,
+    size: typeof obj.size === 'number' ? obj.size : undefined,
+    contentType:
+      typeof obj.contentType === 'string'
+        ? obj.contentType
+        : typeof obj.content_type === 'string'
+          ? (obj.content_type as string)
+          : undefined,
+  };
+}
+
+/**
+ * Normalizes a message's `attachments` field, which the documented wire
+ * shape sends as an array but `ChatMessage.attachments` (the raw generated
+ * model column) stores as a JSON-encoded STRING (Copilot PR #2919 jAwvV).
+ */
+function normalizeAssistantAttachments(
+  raw: unknown,
+): AssistantAttachmentRef[] | undefined {
+  let value: unknown = raw;
+  if (typeof value === 'string') {
+    if (value.length === 0) return undefined;
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!Array.isArray(value)) return undefined;
+  const normalized = value
+    .map((entry, index) => normalizeAssistantAttachment(entry, index))
+    .filter((ref): ref is AssistantAttachmentRef => ref !== undefined);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/** Normalizes one thread summary row from either the documented camelCase
+ * wire shape or a raw generated-model snake_case row. Exported for tests
+ * (Copilot PR #2919 jAwvV). */
+export function normalizeAssistantThreadSummary(
+  raw: AssistantThreadSummaryWire,
+): AssistantThreadSummary {
+  return {
+    id: raw.id,
+    title: raw.title,
+    isResolved: raw.isResolved ?? raw.is_resolved ?? false,
+    messageCount: raw.messageCount ?? raw.message_count ?? 0,
+    lastMessageAt: raw.lastMessageAt ?? raw.last_message_at ?? null,
+  };
+}
+
+/** Normalizes one message row from either the documented camelCase wire
+ * shape or a raw generated-model snake_case row, including its
+ * (possibly JSON-string) `attachments` field. Exported for tests (Copilot
+ * PR #2919 jAwvV). */
+export function normalizeAssistantMessage(
+  raw: AssistantMessageWire,
+): AssistantMessage {
+  return {
+    id: raw.id,
+    threadId: raw.threadId ?? raw.thread_id ?? '',
+    content: raw.content ?? '',
+    role: raw.role ?? 'assistant',
+    createdAt: raw.createdAt ?? raw.created_at ?? new Date(),
+    attachments: normalizeAssistantAttachments(raw.attachments),
+    clientRequestId: raw.clientRequestId ?? raw.client_request_id,
+  };
+}
+
+function messageTimeValue(message: AssistantMessage): number {
+  const t = new Date(message.createdAt).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/** Sorts messages chronologically (oldest first) — the documented wire order
+ * this transport requires, but a raw generated-model list response is
+ * newest-first (Copilot PR #2919 jAwvV): without this, an in-progress
+ * reply's resolution check (which searches for an assistant/tool message
+ * AFTER the triggering user message) never finds it. Exported for tests. */
+export function sortAssistantMessagesChronologically(
+  messages: AssistantMessage[],
+): AssistantMessage[] {
+  return [...messages].sort(
+    (a, b) => messageTimeValue(a) - messageTimeValue(b),
+  );
+}
+
 export interface SmrtAssistantTransportOptions {
-  baseUrl: string;
+  /** Host-supplied, MEMBER-scoped read endpoint (Copilot PR #2919
+   * jAwqo/jAwrQ) — required. `GET {readEndpoint}/threads` and
+   * `GET {readEndpoint}/threads/{id}/messages`; see this file's
+   * "smrt-generated-REST-backed transport" section header for the full wire
+   * contract and why the generated `ChatThread`/`ChatMessage` list routes
+   * must never be called directly from here. `ChatService.listRoomThreads`
+   * (`packages/chat/src/services/ChatService.ts:1042`) is the server-side
+   * building block a host's endpoint implementation should call. */
+  readEndpoint: string;
   token: string;
   /** Required for sendMessage/createThread, which have no generated REST route
    * (ChatThread/ChatMessage only expose `list`/`get` — see file header). Host
@@ -344,10 +525,12 @@ async function getJson<T>(
 }
 
 /**
- * Backed by ChatThread/ChatMessage's generated `list`/`get` REST routes for
- * reads. Writes (`createThread`, `sendMessage`, `uploadAttachment`) require an
- * explicit `writeEndpoint` supplied by the host application, since neither
- * model exposes a generated `create` route (`api: { include: ['list', 'get'] }`,
+ * Reads go through a host-supplied, MEMBER-scoped `readEndpoint` (never the
+ * generated `ChatThread`/`ChatMessage` list routes directly — see this
+ * section's header comment above `SmrtAssistantTransportOptions`). Writes
+ * (`createThread`, `sendMessage`, `uploadAttachment`) require an explicit
+ * `writeEndpoint` supplied by the host application, since neither model
+ * exposes a generated `create` route (`api: { include: ['list', 'get'] }`,
  * `../../../models/ChatThread.ts:16`, `../../../models/ChatMessage.ts:26`).
  */
 export function createSmrtAssistantTransport(
@@ -373,12 +556,12 @@ export function createSmrtAssistantTransport(
 
   return {
     async listThreads() {
-      const page = await getJson<{ items: AssistantThreadSummary[] }>(
+      const page = await getJson<{ items: AssistantThreadSummaryWire[] }>(
         fetchImpl,
-        `${options.baseUrl}/chat-threads`,
+        `${options.readEndpoint}/threads`,
         options.token,
       );
-      return page.items ?? [];
+      return (page.items ?? []).map(normalizeAssistantThreadSummary);
     },
 
     ...(options.models
@@ -390,12 +573,13 @@ export function createSmrtAssistantTransport(
     },
 
     async loadMessages(threadId: string) {
-      const page = await getJson<{ items: AssistantMessage[] }>(
+      const page = await getJson<{ items: AssistantMessageWire[] }>(
         fetchImpl,
-        `${options.baseUrl}/chat-messages?threadId=${encodeURIComponent(threadId)}`,
+        `${options.readEndpoint}/threads/${encodeURIComponent(threadId)}/messages`,
         options.token,
       );
-      return page.items ?? [];
+      const normalized = (page.items ?? []).map(normalizeAssistantMessage);
+      return sortAssistantMessagesChronologically(normalized);
     },
 
     async sendMessage(input: AssistantSendMessageInput) {
