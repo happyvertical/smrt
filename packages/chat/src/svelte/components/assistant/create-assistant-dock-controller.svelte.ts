@@ -50,6 +50,7 @@ import type {
   AssistantMessage,
   AssistantThreadSummary,
   AssistantTransport,
+  ModelOption,
 } from './assistant-transport.js';
 
 export type AssistantPendingSendStatus =
@@ -87,6 +88,11 @@ export interface AssistantActionState {
   applyResult?: DataSurfaceActionResult;
   status: 'previewing' | 'previewed' | 'applying' | 'applied' | 'failed';
   error?: string;
+  /** Minted once when the preview is created and reused for every apply
+   * attempt on this proposed action (including retries after a failure), so
+   * a retried Confirm click after a timeout where the server DID apply
+   * dedups against that earlier attempt instead of re-executing. */
+  idempotencyKey: string;
 }
 
 export interface AssistantDockControllerOptions {
@@ -100,6 +106,9 @@ export interface AssistantDockControllerOptions {
   actionClient?: AssistantActionClient;
   now?: () => number;
   createClientRequestId?: () => string;
+  /** Generator for the per-action idempotency key minted at preview time;
+   * defaults to `crypto.randomUUID()`. */
+  createIdempotencyKey?: () => string;
   /** Poll cadence while a send is in flight. Default 3000ms. */
   activePollIntervalMs?: number;
   /** Poll cadence while idle (thread open, no send in flight). Default 15000ms. */
@@ -117,13 +126,19 @@ export interface AssistantDockController {
   readonly pendingSends: AssistantPendingSend[];
   readonly surfaces: DataSurfaceIdentity[];
   readonly actions: Map<string, AssistantActionState>;
+  readonly models: ModelOption[];
+  readonly selectedModel: string | undefined;
   loadThreads(): Promise<void>;
+  loadModels(): Promise<void>;
+  setSelectedModel(modelId: string | undefined): void;
   openThread(threadId: string): Promise<void>;
   createThread(title: string): Promise<AssistantThreadSummary>;
   send(content: string, attachments?: AssistantAttachmentRef[]): Promise<void>;
   retry(clientRequestId: string): Promise<void>;
   previewAction(request: DataSurfaceActionRequest): Promise<void>;
-  applyAction(requestId: string, idempotencyKey: string): Promise<void>;
+  /** Applies the action using the idempotency key minted at preview time
+   * (`AssistantActionState.idempotencyKey`) — never a fresh key per call. */
+  applyAction(requestId: string): Promise<void>;
   rejectAction(requestId: string): void;
   startPolling(): void;
   stopPolling(): void;
@@ -155,6 +170,8 @@ export function createAssistantDockController(
   let messages = $state<AssistantMessage[]>([]);
   let pendingSends = $state<AssistantPendingSend[]>([]);
   let surfaces = $state<DataSurfaceIdentity[]>(options.surfaces ?? []);
+  let models = $state<ModelOption[]>([]);
+  let selectedModel = $state<string | undefined>(undefined);
   // SvelteMap (not a plain Map) so `.set()` mutations are reactive to
   // template reads of `controller.actions`, matching Svelte 5's `$state`
   // proxy behavior for built-in objects it doesn't already deep-proxy.
@@ -245,6 +262,21 @@ export function createAssistantDockController(
     threads = await options.transport.listThreads();
   }
 
+  async function loadModels() {
+    if (!options.transport.listModels) {
+      models = [];
+      return;
+    }
+    models = await options.transport.listModels();
+    if (models.length > 0 && !selectedModel) {
+      selectedModel = models[0].id;
+    }
+  }
+
+  function setSelectedModel(modelId: string | undefined) {
+    selectedModel = modelId;
+  }
+
   async function openThread(threadId: string) {
     activeThreadId = threadId;
     messages = await options.transport.loadMessages(threadId);
@@ -284,6 +316,7 @@ export function createAssistantDockController(
         content,
         attachments,
         clientRequestId,
+        model: selectedModel,
       });
       draftIds.delete(draftKey(threadId, content));
       if (result.inProgress) {
@@ -348,7 +381,21 @@ export function createAssistantDockController(
     return request.requestId;
   }
 
+  function defaultIdempotencyKey(): string {
+    return (
+      globalThis.crypto?.randomUUID?.() ??
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+  }
+
   async function previewAction(request: DataSurfaceActionRequest) {
+    // The idempotency key is minted HERE, once per proposed action, and
+    // stored on the action state — never regenerated on a later apply/retry.
+    // Binding decision #2904 (build phase 2): a fresh key per Confirm click
+    // would defeat apply dedup when a retried click follows a timeout where
+    // the server had actually already applied the first attempt.
+    const idempotencyKey =
+      options.createIdempotencyKey?.() ?? defaultIdempotencyKey();
     if (!isSurfaceMounted(request.identity)) {
       // Fail closed (binding decision #2904, item 5): a request targeting an
       // unmounted surface is rejected client-side before preview.
@@ -356,6 +403,7 @@ export function createAssistantDockController(
         request,
         status: 'failed',
         error: `AssistantDock: surface "${surfaceKey(request.identity)}" is not mounted`,
+        idempotencyKey,
       });
       return;
     }
@@ -369,6 +417,7 @@ export function createAssistantDockController(
     actions.set(actionKey(normalized), {
       request: normalized,
       status: 'previewing',
+      idempotencyKey,
     });
     const result = await options.actionClient.preview(normalized);
     actions.set(actionKey(normalized), {
@@ -376,10 +425,11 @@ export function createAssistantDockController(
       status: result.ok ? 'previewed' : 'failed',
       previewResult: result,
       error: result.ok ? undefined : result.reason,
+      idempotencyKey,
     });
   }
 
-  async function applyAction(requestId: string, idempotencyKey: string) {
+  async function applyAction(requestId: string) {
     const state = actions.get(requestId);
     if (!state) return;
     if (!options.actionClient) {
@@ -391,10 +441,18 @@ export function createAssistantDockController(
     // `packages/types/src/data-surface.ts:274`) by the host's actionClient
     // implementation; the client-facing `DataSurfaceActionRequest` itself
     // has no idempotency field, only `confirmationToken` from the preview.
+    // Reuses `state.idempotencyKey`, minted once in `previewAction` — a
+    // retried apply (e.g. after a client-side timeout) replays against the
+    // same key instead of re-executing.
     const applyRequest = normalizeDataSurfaceActionRequest({
       ...state.request,
       phase: 'apply',
-      confirmationToken: state.previewResult?.confirmationToken,
+      // Only set when defined: an explicit `confirmationToken: undefined`
+      // key fails normalizeDataSurfaceActionRequest's JSON-safety check for
+      // an action whose preview didn't require confirmation.
+      ...(state.previewResult?.confirmationToken
+        ? { confirmationToken: state.previewResult.confirmationToken }
+        : {}),
     });
     actions.set(requestId, {
       ...state,
@@ -403,7 +461,7 @@ export function createAssistantDockController(
     });
     const result = await options.actionClient.apply(
       applyRequest,
-      idempotencyKey,
+      state.idempotencyKey,
     );
     actions.set(requestId, {
       ...state,
@@ -442,7 +500,15 @@ export function createAssistantDockController(
     get actions() {
       return actions;
     },
+    get models() {
+      return models;
+    },
+    get selectedModel() {
+      return selectedModel;
+    },
     loadThreads,
+    loadModels,
+    setSelectedModel,
     openThread,
     createThread,
     send,

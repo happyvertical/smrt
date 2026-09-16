@@ -10,6 +10,7 @@
  */
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
+import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import type {
@@ -31,15 +32,27 @@ export interface Props {
 
 const { transport, registry, actionClient, visible = true }: Props = $props();
 
+// Passed to the controller as getters (not direct values) so a later
+// reassignment of these bound props (e.g. a host swapping the transport or
+// registry instance) is actually observed, rather than only the value
+// captured at the first run of this script — this also silences Svelte's
+// `state_referenced_locally` warning for props read once outside a closure.
 const controller: AssistantDockController = createAssistantDockController({
-  transport,
-  registry,
-  actionClient,
+  get transport() {
+    return transport;
+  },
+  get registry() {
+    return registry;
+  },
+  get actionClient() {
+    return actionClient;
+  },
   visible: () => visible,
 });
 
 $effect(() => {
   void controller.loadThreads();
+  void controller.loadModels();
   controller.startPolling();
   return () => controller.dispose();
 });
@@ -71,12 +84,12 @@ async function handleUpload(
 }
 
 async function handleConfirmAction(requestId: string) {
-  // A fresh idempotencyKey per apply attempt; a retried Confirm click after a
-  // failure gets a new key, matching the "apply requires an idempotency key
-  // at the server boundary" contract (`packages/types/src/data-surface.ts:270`).
-  const idempotencyKey =
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-  await controller.applyAction(requestId, idempotencyKey);
+  // No idempotencyKey minted here: `applyAction` reuses the key generated
+  // once in `previewAction` and stored on the action state, so a retried
+  // Confirm click (e.g. after a client-side timeout on a call the server
+  // actually completed) dedups against that same attempt instead of
+  // re-executing. See `AssistantActionState.idempotencyKey`.
+  await controller.applyAction(requestId);
 }
 </script>
 
@@ -133,11 +146,22 @@ async function handleConfirmAction(requestId: string) {
       </div>
     {/if}
 
-    <AssistantComposer
-      onsend={handleSend}
-      onupload={handleUpload}
-      disabled={!controller.activeThreadId}
-    />
+    <div class="assistant-dock-composer">
+      {#if controller.models.length > 0}
+        <div class="assistant-dock-composer-header">
+          <ModelPicker
+            models={controller.models}
+            value={controller.selectedModel ?? controller.models[0].id}
+            onchange={(modelId) => controller.setSelectedModel(modelId)}
+          />
+        </div>
+      {/if}
+      <AssistantComposer
+        onsend={handleSend}
+        onupload={handleUpload}
+        disabled={!controller.activeThreadId}
+      />
+    </div>
   </div>
 </div>
 

@@ -59,6 +59,12 @@ export interface AssistantAttachmentRef {
   url?: string;
 }
 
+/** A selectable model, matching `shared/ModelPicker.svelte`'s `ModelOption`. */
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export interface AssistantSendMessageInput {
   threadId: string;
   content: string;
@@ -66,6 +72,8 @@ export interface AssistantSendMessageInput {
   /** Client-generated idempotency key for the send transport, distinct from
    * any data-surface action `idempotencyKey` (binding decision, #2904). */
   clientRequestId: string;
+  /** The model selected via ModelPicker, when the transport supports one. */
+  model?: string;
 }
 
 export interface AssistantSendMessageResult {
@@ -85,6 +93,11 @@ export interface AssistantTransport {
     input: AssistantSendMessageInput,
   ): Promise<AssistantSendMessageResult>;
   uploadAttachment(file: File): Promise<AssistantAttachmentRef>;
+  /** When present, `AssistantDock` renders `ModelPicker` in the composer
+   * header and threads the selected id through `sendMessage`'s `model`. A
+   * transport that has no model choice (e.g. a single fixed backend model)
+   * simply omits this method. */
+  listModels?(): Promise<ModelOption[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +114,12 @@ export interface InMemoryAssistantTransportOptions {
   respond?: (
     threadId: string,
     userMessage: AssistantMessage,
+    model?: string,
   ) => AssistantMessage | null;
+  /** When set, `listModels()` resolves to this list, and `AssistantDock`
+   * renders `ModelPicker`. Omit to simulate a transport with no model
+   * choice. */
+  models?: ModelOption[];
 }
 
 export function createInMemoryAssistantTransport(
@@ -128,6 +146,10 @@ export function createInMemoryAssistantTransport(
     async listThreads() {
       return Array.from(threads.values());
     },
+
+    ...(options.models
+      ? { listModels: async () => options.models as ModelOption[] }
+      : {}),
 
     async createThread(title: string) {
       const id = createId();
@@ -183,6 +205,7 @@ export function createInMemoryAssistantTransport(
       const assistantMessage: AssistantMessage = options.respond?.(
         input.threadId,
         userMessage,
+        input.model,
       ) ?? {
         id: createId(),
         threadId: input.threadId,
@@ -232,6 +255,10 @@ export interface SmrtAssistantTransportOptions {
     ) => Promise<AssistantSendMessageResult>;
     uploadAttachment: (file: File) => Promise<AssistantAttachmentRef>;
   };
+  /** Static model catalog; when supplied, `listModels()` resolves to it and
+   * `AssistantDock` renders `ModelPicker`. The `model` field of a `send` is
+   * threaded straight through to `writeEndpoint.sendMessage`'s `input`. */
+  models?: ModelOption[];
   fetchImpl?: typeof fetch;
 }
 
@@ -288,6 +315,10 @@ export function createSmrtAssistantTransport(
       );
       return page.items ?? [];
     },
+
+    ...(options.models
+      ? { listModels: async () => options.models as ModelOption[] }
+      : {}),
 
     async createThread(title: string) {
       return requireWrite('createThread')(title);

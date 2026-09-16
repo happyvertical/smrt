@@ -223,7 +223,9 @@ describe('AssistantDock integration (#2904)', () => {
     expect(controller.actions.get(requestId)?.status).toBe('previewed');
     expect(state()).toBe(false); // preview never mutated the surface
 
-    await controller.applyAction(requestId, 'idem-key-1');
+    // applyAction now takes only requestId — it reuses the idempotencyKey
+    // minted once by previewAction (binding decision #2904, build phase 2).
+    await controller.applyAction(requestId);
     expect(controller.actions.get(requestId)?.status).toBe('applied');
     expect(state()).toBe(true);
 

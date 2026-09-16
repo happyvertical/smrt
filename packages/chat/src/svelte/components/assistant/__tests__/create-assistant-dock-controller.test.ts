@@ -162,4 +162,104 @@ describe('createAssistantDockController', () => {
     controller.stopPolling(); // idempotent
     controller.dispose();
   });
+
+  it('has no models when the transport does not provide listModels', async () => {
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry: fakeRegistry([]),
+    });
+    await controller.loadModels();
+    expect(controller.models).toEqual([]);
+    expect(controller.selectedModel).toBeUndefined();
+  });
+
+  it('the selected model reaches the transport on send', async () => {
+    const seenModels: (string | undefined)[] = [];
+    const transport = createInMemoryAssistantTransport({
+      models: [
+        { id: 'model-a', label: 'Model A' },
+        { id: 'model-b', label: 'Model B' },
+      ],
+    });
+    const originalSend = transport.sendMessage.bind(transport);
+    transport.sendMessage = async (input) => {
+      seenModels.push(input.model);
+      return originalSend(input);
+    };
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+    await controller.loadModels();
+    expect(controller.models).toHaveLength(2);
+    // loadModels defaults selectedModel to the first entry.
+    expect(controller.selectedModel).toBe('model-a');
+
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id);
+    await controller.send('hello');
+    expect(seenModels).toEqual(['model-a']);
+
+    controller.setSelectedModel('model-b');
+    await controller.send('hello again');
+    expect(seenModels).toEqual(['model-a', 'model-b']);
+  });
+
+  it('reuses the idempotencyKey minted at preview across a retried apply', async () => {
+    const seenKeys: string[] = [];
+    let attempt = 0;
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry: fakeRegistry([{ surfaceId: 'orders', kind: 'table' }]),
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+          confirmationToken: 'token-1',
+        }),
+        apply: async (request, idempotencyKey) => {
+          seenKeys.push(idempotencyKey);
+          attempt += 1;
+          // First attempt fails client-side (e.g. simulated timeout); the
+          // second (retried) apply must reuse the SAME idempotencyKey.
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok: attempt > 1,
+            reason: attempt > 1 ? undefined : 'timeout',
+          };
+        },
+      },
+    });
+
+    const requestId = 'req-idem-1';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity: {
+        surfaceId: 'orders',
+        kind: 'table',
+        subject: { type: 'tenant', id: 'tenant-a' },
+      },
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    await controller.applyAction(requestId);
+    expect(controller.actions.get(requestId)?.status).toBe('failed');
+    await controller.applyAction(requestId);
+    expect(controller.actions.get(requestId)?.status).toBe('applied');
+
+    expect(seenKeys).toHaveLength(2);
+    expect(seenKeys[0]).toBe(seenKeys[1]);
+  });
 });

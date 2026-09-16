@@ -24,7 +24,11 @@ No new `./assistant` subpath was needed — `./svelte` carries it cleanly.
   `createInMemoryAssistantTransport` and `createSmrtAssistantTransport`.
 - `shared/ModelPicker.svelte` — extracted from
   `@happyvertical/smrt-content`'s `ContentAgentChat.svelte` (its `AI_MODELS` +
-  `availableAIModels` filtering, `packages/content/src/svelte/components/ContentAgentChat.svelte:28-121`).
+  `availableAIModels` filtering, `packages/content/src/svelte/components/ContentAgentChat.svelte:28-121`),
+  and adopted by `AssistantDock` itself: the composer header renders
+  `ModelPicker` whenever `AssistantTransport.listModels()` is defined
+  (`controller.models.length > 0`), and the selected model id is threaded
+  through `AssistantSendMessageInput.model` on every send.
   `ContentAgentChat` itself is **not** migrated to this component in this
   change (see "Gaps" below).
 
@@ -91,9 +95,18 @@ Sequence: `send → poll → render → action preview → confirm → apply`.
    `phase: 'preview' | 'apply'`). The controller normalizes it
    (`normalizeDataSurfaceActionRequest`) and calls
    `AssistantActionClient.preview(request)`. The result renders through
-   `ToolCallDisplay`'s new `actionResult` prop (preview/applied/failed). On
-   confirm, `applyAction(requestId, idempotencyKey)` calls
-   `AssistantActionClient.apply(request, idempotencyKey)`.
+   `ToolCallDisplay`'s new `actionResult` prop (preview/applied/failed). The
+   apply `idempotencyKey` is minted exactly once, at preview time, and stored
+   on the action's state (`AssistantActionState.idempotencyKey`) — not
+   regenerated per apply attempt. On confirm, `applyAction(requestId)` reads
+   that stored key and calls `AssistantActionClient.apply(request,
+   idempotencyKey)`. This matters for retries: if a Confirm click times out
+   client-side after the server actually applied the action, a second Confirm
+   click reuses the same key so the server-side dedup
+   (`DataSurfaceActionWireRequest.idempotencyKey`,
+   `packages/types/src/data-surface.ts:274`) recognizes the replay instead of
+   re-executing. Minting a fresh key per click (an earlier version of this
+   component did) would defeat that dedup entirely.
 
 ### Correction from the phase-1 design note
 
@@ -204,6 +217,8 @@ data-surface actions; the content-specific sanitizer stays specific to
 | Client-side rejection of an action on an unmounted surface | same file | unit |
 | `clientRequestId` reuse on retry of the same draft | same file | unit |
 | Stale-send marking + retry reusing the same `clientRequestId` | same file | unit (fake timers) |
+| Selected model reaches the transport's `sendMessage` | same file | unit |
+| `applyAction` reuses the `idempotencyKey` minted at preview across a retried apply | same file | unit |
 | `startPolling`/`stopPolling` idempotency | same file | unit |
 | `ToolCallDisplay` preview/applied/failed rendering | `packages/chat/src/svelte/components/agent/__tests__/ToolCallDisplay.test.ts` | svelte component |
 | End-to-end: fail-closed DOM, live discovery + send/receive, preview→confirm→apply→registry `'command'` event | `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte integration, conformance-style (mirrors `data-surface-conformance.integration.svelte.test.ts`) |
