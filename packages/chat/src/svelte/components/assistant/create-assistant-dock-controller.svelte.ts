@@ -687,34 +687,83 @@ export function createAssistantDockController(
     // kept rendering live Confirm/Reject with no error) AND escaped as an
     // unhandled promise rejection. Every path below must reach a terminal
     // status.
+    let normalized: DataSurfaceActionRequest;
     try {
       if (!options.actionClient) {
         throw new Error(
           'AssistantDock: previewAction requires an actionClient',
         );
       }
-      const normalized = normalizeDataSurfaceActionRequest({
+      normalized = normalizeDataSurfaceActionRequest({
         ...request,
         phase: 'preview',
       });
-      actions.set(actionKey(normalized), {
-        request: normalized,
-        status: 'previewing',
+    } catch (error) {
+      // Synchronous failure (missing actionClient, or normalize rejecting a
+      // malformed proposal) — NOTHING has awaited yet, so there is no race
+      // window an invalidation could have landed in. Write unconditionally,
+      // same as before cycle-3 first final finding 1.
+      actions.set(actionKey(request), {
+        request,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
         idempotencyKey,
       });
-      const result = await options.actionClient.preview(normalized);
+      return;
+    }
+    actions.set(actionKey(normalized), {
+      request: normalized,
+      status: 'previewing',
+      idempotencyKey,
+    });
+    // Finding 2 (#2904 review, fresh cycle): actionClient.preview is
+    // documented as "an authenticated HTTP call to a server route" — i.e. it
+    // rejects on any network error/5xx. Every path below must reach a
+    // terminal status.
+    let result: DataSurfaceActionResult;
+    try {
+      result = await options.actionClient.preview(normalized);
+    } catch (error) {
+      // Cycle-3 first final finding 1: re-read the CURRENT entry, not the
+      // pre-await snapshot — an invalidation (registry 'unregistered', a
+      // narrowing `syncSurfaces()`, a registry swap via `syncRegistry()`) or
+      // an explicit `rejectAction()` can land while this preview was in
+      // flight and already moved the entry to a terminal 'failed' state (or
+      // deleted it). Writing back unconditionally here would resurrect a
+      // fail-closed preview as confirmable, or restore an entry the user
+      // explicitly rejected — the exact class of bug the identical guard on
+      // applyAction's post-await write (below) already closed. Only write
+      // when the entry still exists, is still 'previewing', and carries the
+      // SAME idempotencyKey (a fresh previewAction() call racing this one
+      // for the same request id would mint a new key, meaning this result
+      // belongs to a superseded attempt).
+      const current = actions.get(actionKey(normalized));
+      if (
+        current &&
+        current.status === 'previewing' &&
+        current.idempotencyKey === idempotencyKey
+      ) {
+        actions.set(actionKey(normalized), {
+          request: normalized,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+          idempotencyKey,
+        });
+      }
+      return;
+    }
+    // Cycle-3 first final finding 1: same re-check as the catch branch above.
+    const current = actions.get(actionKey(normalized));
+    if (
+      current &&
+      current.status === 'previewing' &&
+      current.idempotencyKey === idempotencyKey
+    ) {
       actions.set(actionKey(normalized), {
         request: normalized,
         status: result.ok ? 'previewed' : 'failed',
         previewResult: result,
         error: result.ok ? undefined : result.reason,
-        idempotencyKey,
-      });
-    } catch (error) {
-      actions.set(actionKey(request), {
-        request,
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
         idempotencyKey,
       });
     }

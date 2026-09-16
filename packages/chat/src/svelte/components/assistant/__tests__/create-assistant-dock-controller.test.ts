@@ -2,6 +2,7 @@
 
 import {
   createDataSurfaceRegistry,
+  type DataSurfaceActionRequest,
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
   type DataSurfaceRegistry,
@@ -1467,6 +1468,148 @@ describe('createAssistantDockController', () => {
         controller.pendingSends.find((p) => p.content === 'hi there')?.status,
       ).toBe('failed');
 
+      controller.dispose();
+    });
+  });
+
+  // Cycle-3 first final finding 1: previewAction's post-await write used the
+  // pre-await snapshot unconditionally, so an invalidation (unregister,
+  // syncSurfaces narrowing, registry swap) or an explicit rejectAction()
+  // landing WHILE the preview call is in flight got clobbered the instant
+  // the preview resolved — resurrecting a fail-closed/rejected entry as a
+  // confirmable 'previewed' card. Mirrors the guard applyAction already had
+  // (cycle-2 finding 3's "slow apply does not resurrect a rejected action"
+  // test above).
+  describe('previewAction post-await re-check (cycle-3 first final finding 1)', () => {
+    function gatedPreviewClient() {
+      let resolvePreview: ((ok: boolean) => void) | undefined;
+      const previewGate = new Promise<boolean>((resolve) => {
+        resolvePreview = resolve;
+      });
+      return {
+        client: {
+          preview: async (request: DataSurfaceActionRequest) => {
+            const ok = await previewGate;
+            return {
+              version: 1 as const,
+              requestId: request.requestId,
+              identity: request.identity,
+              actionId: request.actionId,
+              phase: 'preview' as const,
+              ok,
+            };
+          },
+          apply: async () => {
+            throw new Error('unreachable');
+          },
+        },
+        resolvePreview: () => resolvePreview?.(true),
+      };
+    }
+
+    it('an unregister during a pending preview leaves it failed after the preview resolves', async () => {
+      const { registry, identity, unregister } =
+        realRegistryWithSurface('orders');
+      const { client, resolvePreview } = gatedPreviewClient();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: client,
+      });
+
+      const requestId = 'req-preview-unregister-race';
+      const previewPromise = controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get(requestId)?.status).toBe('previewing');
+
+      // The surface unmounts WHILE the preview call is in flight.
+      unregister();
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+
+      // The preview call now resolves 'ok' — the stale success write must
+      // NOT resurrect the entry as 'previewed'.
+      resolvePreview();
+      await previewPromise;
+
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.error).toMatch(/unmounted/);
+      controller.dispose();
+    });
+
+    it('rejectAction during a pending preview leaves the entry deleted', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const { client, resolvePreview } = gatedPreviewClient();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: client,
+      });
+
+      const requestId = 'req-preview-reject-race';
+      const previewPromise = controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get(requestId)?.status).toBe('previewing');
+
+      // The user rejects WHILE the preview call is in flight.
+      controller.rejectAction(requestId);
+      expect(controller.actions.has(requestId)).toBe(false);
+
+      resolvePreview();
+      await previewPromise;
+
+      // The stale success write must NOT resurrect the rejected entry.
+      expect(controller.actions.has(requestId)).toBe(false);
+      controller.dispose();
+    });
+
+    it('a registry swap during a pending preview leaves the entry failed', async () => {
+      const r1 = realRegistryWithSurface('orders');
+      const r2 = realRegistryWithSurface('orders');
+      const { client, resolvePreview } = gatedPreviewClient();
+      let currentRegistry = r1.registry;
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        get registry() {
+          return currentRegistry;
+        },
+        actionClient: client,
+      });
+
+      const requestId = 'req-preview-registry-swap-race';
+      const previewPromise = controller.previewAction({
+        version: 1,
+        requestId,
+        identity: r1.identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get(requestId)?.status).toBe('previewing');
+
+      // The host swaps the registry instance (e.g. a route/tenant change)
+      // WHILE the preview call is in flight.
+      currentRegistry = r2.registry;
+      controller.syncRegistry();
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+
+      resolvePreview();
+      await previewPromise;
+
+      // The stale success write must NOT resurrect the entry as 'previewed'
+      // under the OLD registry's trust boundary.
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
       controller.dispose();
     });
   });
