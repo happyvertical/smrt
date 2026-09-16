@@ -49,6 +49,13 @@ export interface AssistantMessage {
   createdAt: string | Date;
   attachments?: AssistantAttachmentRef[];
   toolCallData?: unknown;
+  /** The send transport's `clientRequestId` that produced this message, when
+   * the transport echoes it back on the persisted row (#2904 review finding
+   * A). Lets the controller resolve a pending send by id instead of by
+   * `(threadId, content)` equality, which is ambiguous when a thread repeats
+   * the same text (e.g. "yes") across turns. Optional: a transport that
+   * doesn't persist/return this falls back to content matching. */
+  clientRequestId?: string;
 }
 
 export interface AssistantAttachmentRef {
@@ -187,6 +194,9 @@ export function createInMemoryAssistantTransport(
         role: 'user',
         createdAt: new Date(now()),
         attachments: input.attachments,
+        // Echoed back so the controller can resolve this exact send by id
+        // rather than by (threadId, content) equality (#2904 review F-A).
+        clientRequestId: input.clientRequestId,
       };
       list.push(userMessage);
       messages.set(input.threadId, list);

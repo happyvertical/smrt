@@ -266,12 +266,32 @@ export function createAssistantDockController(
     messages = fresh;
     const hasProcessing = pendingSends.some((p) => p.status === 'processing');
     resetPollInterval(hasProcessing);
-    // Any pending send whose content now appears in the thread as a user
-    // message followed by an assistant/tool reply is resolved.
+    // A pending send is resolved once its message appears in the thread
+    // followed by an assistant/tool reply (#2904 review finding A):
+    //  - scoped to `p.threadId === threadId` — `messages` only ever holds
+    //    the CURRENTLY POLLED thread, but `pendingSends` can carry entries
+    //    for other threads the user has since switched away from; matching
+    //    across all of them let another thread's unrelated reply resolve
+    //    this one.
+    //  - id-first: if the transport echoed `clientRequestId` on the
+    //    persisted message (assistant-transport.ts), match by that —
+    //    unambiguous even when the same text is sent twice in one thread.
+    //  - content fallback uses the LAST occurrence (not the first), so an
+    //    earlier already-answered repeat of the same text (e.g. "yes") can
+    //    never be mistaken for this send's own reply.
     pendingSends = pendingSends.filter((p) => {
-      const userIndex = messages.findIndex(
-        (m) => m.role === 'user' && m.content === p.content,
-      );
+      if (p.threadId !== threadId) return true;
+      const byId = p.clientRequestId
+        ? messages.findIndex(
+            (m) => m.role === 'user' && m.clientRequestId === p.clientRequestId,
+          )
+        : -1;
+      const userIndex =
+        byId >= 0
+          ? byId
+          : messages.findLastIndex(
+              (m) => m.role === 'user' && m.content === p.content,
+            );
       if (userIndex < 0) return true;
       const resolved = messages
         .slice(userIndex + 1)

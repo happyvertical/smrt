@@ -9,9 +9,87 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import {
   type AssistantMessage,
+  type AssistantThreadSummary,
+  type AssistantTransport,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
 import { createAssistantDockController } from '../create-assistant-dock-controller.svelte.js';
+
+// A hand-rolled transport (not the stock in-memory one) for the finding-A
+// poll-resolution tests: gives full control over exactly what loadMessages()
+// returns on each poll, independent of when/whether sendMessage() resolves.
+function scriptedTransport(seed: Record<string, AssistantMessage[]> = {}) {
+  const store = new Map<string, AssistantMessage[]>(
+    Object.entries(seed).map(([threadId, msgs]) => [threadId, [...msgs]]),
+  );
+  const threads = new Map<string, AssistantThreadSummary>();
+  for (const threadId of store.keys()) {
+    threads.set(threadId, {
+      id: threadId,
+      title: threadId,
+      isResolved: false,
+      messageCount: store.get(threadId)?.length ?? 0,
+    });
+  }
+  let counter = 0;
+  const transport: AssistantTransport = {
+    async listThreads() {
+      return Array.from(threads.values());
+    },
+    async createThread(title: string) {
+      const id = `thread-${++counter}`;
+      const thread: AssistantThreadSummary = {
+        id,
+        title,
+        isResolved: false,
+        messageCount: 0,
+      };
+      threads.set(id, thread);
+      store.set(id, []);
+      return thread;
+    },
+    async loadMessages(threadId: string) {
+      return [...(store.get(threadId) ?? [])];
+    },
+    async sendMessage(input) {
+      const list = store.get(input.threadId) ?? [];
+      const userMessage: AssistantMessage = {
+        id: `msg-${++counter}`,
+        threadId: input.threadId,
+        content: input.content,
+        role: 'user',
+        createdAt: new Date(),
+        clientRequestId: input.clientRequestId,
+      };
+      list.push(userMessage);
+      store.set(input.threadId, list);
+      // Always reports inProgress: the test drives resolution purely
+      // through what a later loadMessages() poll returns, by pushing an
+      // assistant reply onto `store` directly.
+      return { inProgress: true, userMessage };
+    },
+    async uploadAttachment(file: File) {
+      return { id: `att-${++counter}`, name: file.name };
+    },
+  };
+  return { transport, store };
+}
+
+function pushAssistantReply(
+  store: Map<string, AssistantMessage[]>,
+  threadId: string,
+  content: string,
+) {
+  const list = store.get(threadId) ?? [];
+  list.push({
+    id: `reply-${list.length}`,
+    threadId,
+    content,
+    role: 'assistant',
+    createdAt: new Date(),
+  });
+  store.set(threadId, list);
+}
 
 // A real registry (not the static fakeRegistry below) so 'unregistered'
 // events actually fire, for the F2 invalidation test.
@@ -634,4 +712,101 @@ describe('createAssistantDockController', () => {
     // already in flight when dispose() ran, and nothing after.
     expect(callCount).toBe(1);
   }, 10_000);
+
+  // Finding A (#2904 review, third final pass): pollTick's pending-send
+  // resolution must not match an earlier, already-answered occurrence of the
+  // same content, and must not cross threads.
+  it('does not resolve a new in-flight repeat of an already-answered message until ITS OWN reply follows', async () => {
+    const { transport, store } = scriptedTransport({
+      t1: [
+        {
+          id: 'old-user',
+          threadId: 't1',
+          content: 'yes',
+          role: 'user',
+          createdAt: new Date(0),
+        },
+        {
+          id: 'old-reply',
+          threadId: 't1',
+          content: 'Understood.',
+          role: 'assistant',
+          createdAt: new Date(1),
+        },
+      ],
+    });
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+      activePollIntervalMs: 15,
+      idlePollIntervalMs: 15,
+    });
+    await controller.openThread('t1');
+    expect(controller.messages).toHaveLength(2);
+
+    await controller.send('yes'); // repeats the earlier, already-answered text
+    expect(controller.pendingSends).toHaveLength(1);
+    expect(controller.pendingSends[0]?.status).toBe('processing');
+
+    controller.startPolling();
+    // Several poll ticks elapse with NO new assistant reply in the store —
+    // before the fix, the OLD "yes" → "Understood." pair (an earlier index
+    // match) would have resolved this immediately.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(controller.pendingSends).toHaveLength(1);
+    expect(controller.pendingSends[0]?.status).toBe('processing');
+
+    // Now the reply to THIS send arrives.
+    pushAssistantReply(store, 't1', 'Confirmed, again.');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(controller.pendingSends).toHaveLength(0);
+
+    controller.dispose();
+  });
+
+  it("does not resolve a pending send for thread A using thread B's messages", async () => {
+    const { transport, store } = scriptedTransport({ a: [], b: [] });
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+      activePollIntervalMs: 15,
+      idlePollIntervalMs: 15,
+    });
+
+    await controller.openThread('a');
+    await controller.send('hello');
+    expect(controller.pendingSends).toHaveLength(1);
+    const pendingForA = controller.pendingSends[0];
+    expect(pendingForA?.threadId).toBe('a');
+
+    // Switch to thread B, which happens to contain the SAME text followed by
+    // a reply — this must never be read as resolving thread A's pending send.
+    store.set('b', [
+      {
+        id: 'b-user',
+        threadId: 'b',
+        content: 'hello',
+        role: 'user',
+        createdAt: new Date(),
+      },
+      {
+        id: 'b-reply',
+        threadId: 'b',
+        content: 'hi there',
+        role: 'assistant',
+        createdAt: new Date(),
+      },
+    ]);
+    await controller.openThread('b');
+    controller.startPolling();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(controller.pendingSends).toHaveLength(1);
+    expect(controller.pendingSends[0]?.clientRequestId).toBe(
+      pendingForA?.clientRequestId,
+    );
+    expect(controller.pendingSends[0]?.status).toBe('processing');
+
+    controller.dispose();
+  });
 });
