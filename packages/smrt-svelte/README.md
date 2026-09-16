@@ -176,7 +176,11 @@ It mirrors `controller` into the registry, translates visible table commands
 back into `controller.dispatch()` calls, and routes the fixed
 `refresh`/`retry`/`focus`/`reveal`/`highlight` controls to callbacks; any
 other `controlId` goes through an `onControl` escape hatch (denied by
-default). See `docs/data-surface-conformance.md` for the full contract.
+default) — except a canonical table-control id (`set-filters`, `reset`,
+`set-page`, … the full `DATA_TABLE_SURFACE_CONTROL_IDS` list from
+`@happyvertical/smrt-ui/data`), which is always intercepted first and never
+reaches `onControl`, even under a custom label. See
+`docs/data-surface-conformance.md` for the full contract.
 
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
 must coexist in one document; the same prefix cannot be registered twice. The

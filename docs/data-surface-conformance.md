@@ -66,7 +66,11 @@ the framework owns normalization, bounds, and refusal behavior.
    same snapshot stays live (an `$effect` keyed on those values is the usual
    place). It routes the fixed `refresh`/`retry`/`focus`/`reveal`/`highlight`
    controls to page callbacks, and dispatches any other `controlId` through
-   an `onControl` escape hatch (denied by default). If `controller` is controlled
+   an `onControl` escape hatch (denied by default) — except a canonical
+   table-control id (any member of `DATA_TABLE_SURFACE_CONTROL_IDS` from
+   `@happyvertical/smrt-ui/data`, e.g. `set-filters`/`reset`/`set-page`),
+   which is always intercepted first and never reaches `onControl`, even if
+   a descriptor declares it under a custom label. If `controller` is controlled
    (`controller.isControlled()`), `dispatch()` only proposes state via
    `onStateChange` and never applies it, so `applyControlledState` is
    required to settle the candidate state — mirroring `DataTable`'s own

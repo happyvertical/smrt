@@ -119,13 +119,21 @@ export interface MountListDataSurfaceOptions {
   highlight?: () => void;
   /**
    * Escape hatch for custom controls beyond the fixed set above — a page can
-   * expose any additional `controlId` its markup understands. Only invoked
-   * when the command's `controlId` is not one of the fixed controls (a fixed
-   * control with no matching callback is denied directly, never forwarded
-   * here). Returning `false`/`{ ok: false }` denies the command; returning
-   * `true`, `{ ok: true }`, or nothing (`void`) is treated as success. A
-   * thrown error propagates out of `execute` and the registry reports it as
-   * `execution_failed` — it is never silently treated as success.
+   * expose any additional `controlId` its markup understands, PROVIDED it is
+   * not one of `DATA_TABLE_SURFACE_CONTROL_IDS` (`@happyvertical/smrt-ui/data`,
+   * e.g. `set-filters`, `reset`, `set-page`): those ids are always
+   * intercepted first (translated and dispatched to `controller`, or denied
+   * outright if the payload fails to translate — see `TABLE_CONTROL_IDS`
+   * below) and never reach `onControl`, even if a descriptor declares one of
+   * them with a custom label. A descriptor control id must avoid that set to
+   * be reachable here. Only invoked when the command's `controlId` is
+   * neither a fixed control (`refresh`/`retry`/`focus`/`reveal`/`highlight`
+   * — a fixed control with no matching callback is denied directly, never
+   * forwarded here) nor a table-control id. Returning `false`/`{ ok: false }`
+   * denies the command; returning `true`, `{ ok: true }`, or nothing
+   * (`void`) is treated as success. A thrown error propagates out of
+   * `execute` and the registry reports it as `execution_failed` — it is
+   * never silently treated as success.
    */
   onControl?: (
     controlId: string,
