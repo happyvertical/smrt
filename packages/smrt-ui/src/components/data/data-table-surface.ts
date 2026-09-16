@@ -161,6 +161,33 @@ function dataTableRowIds(
 }
 
 /**
+ * Every `controlId` {@link dataTableCommandFromDataSurfaceCommand} below
+ * understands as a table command (as opposed to a component-local control it
+ * returns `null` for). The canonical, single-sourced enumeration: a consumer
+ * that must distinguish "this controlId names a table command whose payload
+ * failed to translate" from "this is a genuinely unknown/custom control" —
+ * for example to deny the former outright rather than forwarding it to a
+ * generic escape hatch — imports this instead of hand-copying the `case`
+ * list. Keep in exact sync with the `switch` below; add a new id to both in
+ * the same change.
+ */
+export const DATA_TABLE_SURFACE_CONTROL_IDS = [
+  'set-search',
+  'set-filters',
+  'set-sorting',
+  'toggle-sorting',
+  'set-page',
+  'set-page-size',
+  'set-column-order',
+  'set-column-visibility',
+  'set-selected-rows',
+  'toggle-row-selection',
+  'set-expanded-rows',
+  'toggle-row-expansion',
+  'reset',
+] as const;
+
+/**
  * Returns `null` for a component-local control (focus, reveal, refresh, …) or
  * an invalid table command. The mounted component owns those local controls.
  */

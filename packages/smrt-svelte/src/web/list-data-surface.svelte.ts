@@ -45,6 +45,7 @@ import type {
   DataTableSelection,
 } from '@happyvertical/smrt-ui/data';
 import {
+  DATA_TABLE_SURFACE_CONTROL_IDS,
   dataTableCommandFromDataSurfaceCommand,
   dataTableRowIdKey,
 } from '@happyvertical/smrt-ui/data';
@@ -177,31 +178,20 @@ function selectionReference(
 const RESERVED_CONTEXT_KEYS = ['table'] as const;
 
 /**
- * Every `controlId` `dataTableCommandFromDataSurfaceCommand`
- * (`@happyvertical/smrt-ui/data`) understands. A command declaring one of
- * these ids that still fails to translate (an unparseable payload — e.g.
- * `set-filters` with a non-array `filters`) must be denied directly, never
- * forwarded to `onControl`: the descriptor and `acceptsTableCommand` gate
- * never ran for it, so treating it as a generic custom control would let an
- * `onControl` catch-all silently acknowledge a table mutation that was never
- * applied. Kept in sync by hand with `data-table-surface.ts`'s `case` list
- * until #2917 unifies the two implementations.
+ * A command declaring a `controlId` from the canonical
+ * `DATA_TABLE_SURFACE_CONTROL_IDS` (`@happyvertical/smrt-ui/data`) that still
+ * fails to translate (an unparseable payload — e.g. `set-filters` with a
+ * non-array `filters`) must be denied directly, never forwarded to
+ * `onControl`: the descriptor and `acceptsTableCommand` gate never ran for
+ * it, so treating it as a generic custom control would let an `onControl`
+ * catch-all silently acknowledge a table mutation that was never applied.
+ * Sourced from the same upstream enumeration `dataTableCommandFromDataSurfaceCommand`
+ * is derived from — never a local copy of the id list — so an upstream
+ * addition to that switch is covered here automatically.
  */
-const TABLE_CONTROL_IDS = new Set([
-  'set-search',
-  'set-filters',
-  'set-sorting',
-  'toggle-sorting',
-  'set-page',
-  'set-page-size',
-  'set-column-order',
-  'set-column-visibility',
-  'set-selected-rows',
-  'toggle-row-selection',
-  'set-expanded-rows',
-  'toggle-row-expansion',
-  'reset',
-]);
+const TABLE_CONTROL_IDS: ReadonlySet<string> = new Set(
+  DATA_TABLE_SURFACE_CONTROL_IDS,
+);
 
 function assertNoReservedContextKeys(context: DataSurfaceJsonObject): void {
   for (const key of RESERVED_CONTEXT_KEYS) {
