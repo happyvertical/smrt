@@ -10,6 +10,7 @@
  */
 import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
+import { untrack } from 'svelte';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
@@ -67,10 +68,21 @@ const controller: AssistantDockController = createAssistantDockController({
   visible: () => visible,
 });
 
+// F1 (#2904 review): the whole body runs under `untrack` so the effect takes
+// NO dependency on any $state read transitively by loadThreads/loadModels/
+// startPolling (e.g. controller.pendingSends inside startPolling). Without
+// this, every send() (which reassigns pendingSends before its first await)
+// re-ran this effect, and the cleanup below permanently unsubscribed the
+// registry listener on the very first message — freezing `surfaces` and
+// silently breaking the route-scoping fail-closed guarantee. This effect
+// must run exactly once per mount (loadThreads/loadModels fire once), with
+// its cleanup firing exactly once, on unmount.
 $effect(() => {
-  void controller.loadThreads();
-  void controller.loadModels();
-  controller.startPolling();
+  untrack(() => {
+    void controller.loadThreads();
+    void controller.loadModels();
+    controller.startPolling();
+  });
   return () => controller.dispose();
 });
 
