@@ -161,7 +161,12 @@ checkout) and `apps/dashboard/src/lib/server/site-assistant.ts`.
   distinct `(threadId, content, contextKey)` draft and reused on every retry
   of that exact draft until the send resolves (success or error), at which
   point it is cleared. `createAssistantDockController`'s `draftIds` map
-  mirrors this exactly, keyed on `(threadId, content)`.
+  mirrors this exactly, keyed on `(threadId, content)` — including that an
+  `inProgress` (still-unresolved) response must NOT clear the id. An earlier
+  build cleared it on the `inProgress` branch too (#2904 review finding F5:
+  a same-draft resend during that window minted a fresh id, defeating the
+  transport's dedup); the id is now cleared only on terminal resolution
+  (success, error, or the poll-detected reply-arrived transition).
 - `payload.inProgress` (`PortalChatTool.svelte:391`) and `scheduleThreadPoll`
   (`PortalChatTool.svelte:339-353`): a still-processing send schedules a poll
   of the thread (there: a fixed 8 attempts at a 1500ms interval, stopping once
@@ -215,11 +220,15 @@ data-surface actions; the content-specific sanitizer stays specific to
 | Fail-closed with an empty registry | `packages/chat/src/svelte/components/assistant/__tests__/create-assistant-dock-controller.test.ts` | unit |
 | Mounted-surface discovery | same file | unit |
 | Client-side rejection of an action on an unmounted surface | same file | unit |
-| `clientRequestId` reuse on retry of the same draft | same file | unit |
+| `clientRequestId` reuse across two `send()` calls for the same draft while it is still unresolved (`inProgress`) | same file | unit — asserts the transport observes the identical id both times, not merely that a post-resolution resend produces one call (#2904 review F5) |
 | Stale-send marking + retry reusing the same `clientRequestId` | same file | unit (fake timers) |
 | Selected model reaches the transport's `sendMessage` | same file | unit |
 | `applyAction` reuses the `idempotencyKey` minted at preview across a retried apply | same file | unit |
-| `startPolling`/`stopPolling` idempotency | same file | unit |
+| `applyAction` re-checks mount status and fails closed if the surface was unmounted after preview | same file | unit (#2904 review F2) |
+| An outstanding previewed action is invalidated when its surface unregisters | same file | unit (#2904 review F2) |
+| `startPolling`/`stopPolling` idempotency; `startPolling()` after `dispose()` is a no-op | same file | unit (#2904 review F3) |
+| `dispose()` racing an in-flight `pollTick` does not re-arm the poll interval | same file | unit (#2904 review F3) |
+| `AssistantDock`'s mount effect runs once (not per send); registry subscription survives a send through the mounted component | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts` | svelte component (#2904 review F1) |
 | `ToolCallDisplay` preview/applied/failed rendering | `packages/chat/src/svelte/components/agent/__tests__/ToolCallDisplay.test.ts` | svelte component |
 | End-to-end: fail-closed DOM, live discovery + send/receive, preview→confirm→apply→registry `'command'` event | `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte integration, conformance-style (mirrors `data-surface-conformance.integration.svelte.test.ts`) |
 
