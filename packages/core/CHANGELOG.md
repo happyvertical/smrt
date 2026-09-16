@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.5
+
+### Patch Changes
+
+- ### Features
+
+  - mountListDataSurface for custom list markup (#2916) (smrt-svelte)
+  - @happyvertical/smrt-config@0.51.5
+  - @happyvertical/smrt-types@0.51.5
+  - @happyvertical/smrt-scanner@0.51.5
+
 ## 0.51.4
 
 ### Patch Changes

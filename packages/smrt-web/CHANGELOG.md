@@ -1,5 +1,7 @@
 # @happyvertical/smrt-web
 
+## 0.51.5
+
 ## 0.51.4
 
 ## 0.51.3
