@@ -194,7 +194,13 @@ describe('AssistantDock (mounted component)', () => {
     ).toBeInTheDocument();
   });
 
-  it('the `surfaces` override alone makes discovery non-empty, even with nothing registered', async () => {
+  // Copilot PR #2919 jAwr0: `surfaces` is a NARROWING filter over the live
+  // registry — an override identity that isn't genuinely registered must
+  // NOT make discovery non-empty (that broke the documented fail-closed
+  // route scoping). Renamed from "the `surfaces` override alone makes
+  // discovery non-empty, even with nothing registered", which asserted the
+  // now-fixed behavior.
+  it('the `surfaces` override does NOT make discovery non-empty when the override identity is not registered', async () => {
     const registry = createDataSurfaceRegistry(); // nothing registered
     const transport = createInMemoryAssistantTransport();
 
@@ -202,8 +208,23 @@ describe('AssistantDock (mounted component)', () => {
       props: { transport, registry, surfaces: [identity] },
     });
 
-    // Registry alone would show the empty notice; the override must
-    // suppress it.
+    expect(
+      await screen.findByText(/No data surfaces are mounted on this route/i),
+    ).toBeInTheDocument();
+  });
+
+  it('the `surfaces` override makes discovery non-empty only when the identity IS also registered', async () => {
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    const transport = createInMemoryAssistantTransport();
+
+    render(AssistantDock, {
+      props: { transport, registry, surfaces: [identity] },
+    });
+
     expect(
       screen.queryByText(/No data surfaces are mounted on this route/i),
     ).not.toBeInTheDocument();
@@ -242,6 +263,13 @@ describe('AssistantDock (mounted component)', () => {
       ...identity,
       surfaceId: 'products',
     };
+    // Copilot PR #2919 jAwr0: `surfaces` narrows against the live registry,
+    // so `products` must be genuinely registered too, or it would never
+    // pass the mount gate regardless of the override.
+    registry.register({
+      descriptor: { ...descriptor, identity: productsIdentity },
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
 
     const { rerender } = render(AssistantDock, {
       props: { transport, registry, surfaces: [productsIdentity] },

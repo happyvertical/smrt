@@ -69,14 +69,15 @@ export interface Props {
   /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
    * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
-  /** Explicit surface override (#2904 review finding 1): when set, the dock
-   * scopes discovery AND the preview/apply mount gate to exactly this list
-   * instead of the registry's live contents — `registry` is still required
-   * (the action pathway needs it for `syncRegistry`'s swap handling), but
-   * `surfaces` takes over what `isSurfaceMounted` checks against. Documented
-   * in `docs/assistant-dock.md` "Tenant scoping"; previously only reachable
-   * by constructing `createAssistantDockController` directly, which this
-   * component itself does not expose. */
+  /** Explicit surface narrowing filter (#2904 review finding 1; narrowed
+   * against the live registry per Copilot PR #2919 jAwr0): when set, the
+   * dock scopes discovery AND the preview/apply mount gate to the
+   * INTERSECTION of this list and `registry.list()` — an identity present
+   * here but not genuinely registered is never mounted. `registry` is still
+   * required (both for that intersection and for `syncRegistry`'s swap
+   * handling). Documented in `docs/assistant-dock.md` "Tenant scoping";
+   * previously only reachable by constructing `createAssistantDockController`
+   * directly, which this component itself does not expose. */
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;

@@ -98,10 +98,12 @@ export interface AssistantActionState {
 export interface AssistantDockControllerOptions {
   transport: AssistantTransport;
   registry: DataSurfaceRegistry;
-  /** Explicit surface override (design decision #2904: `AssistantDock`
+  /** Explicit surface narrowing filter (design decision #2904: `AssistantDock`
    * accepts `registry` plus an optional `surfaces` override rather than only
-   * ever trusting live discovery). When set, this list is used instead of the
-   * registry's current entries. */
+   * ever trusting live discovery). When set, only identities present in
+   * BOTH this list and `registry.list()` are ever mounted (Copilot PR #2919
+   * jAwr0) — an override entry that isn't genuinely registered is never
+   * treated as mounted. */
   surfaces?: DataSurfaceIdentity[];
   actionClient?: AssistantActionClient;
   now?: () => number;
@@ -271,10 +273,28 @@ export function createAssistantDockController(
   // `surfaces` prop (exactly what docs/assistant-dock.md's "Tenant scoping"
   // recipe describes) was never observed, and neither was the
   // override→registry (undefined) transition.
+  // Copilot PR #2919 jAwr0: `options.surfaces` previously REPLACED
+  // `registry.list()` wholesale, so an override identity that was never
+  // genuinely registered still passed `isSurfaceMounted` — an override
+  // could make an unmounted (or entirely fictitious) surface "appear"
+  // mounted while the live registry had nothing, breaking the documented
+  // fail-closed route scoping. The override is now a NARROWING filter: only
+  // identities present in BOTH the override and the live registry are ever
+  // mounted.
   function syncSurfacesFromRegistry() {
-    surfaces =
-      options.surfaces ??
-      options.registry.list().map((descriptor) => descriptor.identity);
+    const liveIdentities = options.registry
+      .list()
+      .map((descriptor) => descriptor.identity);
+    if (!options.surfaces) {
+      surfaces = liveIdentities;
+      return;
+    }
+    const liveKeys = new Set(
+      liveIdentities.map((identity) => surfaceKey(identity)),
+    );
+    surfaces = options.surfaces.filter((identity) =>
+      liveKeys.has(surfaceKey(identity)),
+    );
   }
 
   function isSurfaceMounted(identity: DataSurfaceIdentity): boolean {

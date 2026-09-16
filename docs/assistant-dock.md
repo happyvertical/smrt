@@ -46,8 +46,10 @@ props; it discovers mounted surfaces by calling `registry.list()` and
 subscribing to `registry.subscribe()` for `'registered'`/`'unregistered'`
 events (`packages/types/src/data-surface.ts:336-349`) — routes register their
 descriptors and unregister them on unmount, so the registry's current set IS
-the active route's surfaces. An explicit `surfaces` prop can override live
-discovery when a host wants to scope the dock manually.
+the active route's surfaces. An explicit `surfaces` prop can narrow live
+discovery when a host wants to scope the dock manually — it is intersected
+against `registry.list()`, so an identity named in `surfaces` that is not
+genuinely registered is never treated as mounted (Copilot PR #2919 jAwr0).
 
 Consumers place `AssistantDock` inside their own shell's focus-tool
 primitive. In this repository, smrt-svelte's `ShellDockTool`

@@ -993,26 +993,62 @@ describe('createAssistantDockController', () => {
     controller.dispose();
   });
 
-  // Finding 1 (#2904 review, fresh cycle): the "gate" half of the `surfaces`
-  // override — a request against a surface NOT in the override is rejected
-  // even if it's genuinely registered on the live registry, and a request
-  // against a surface IN the override is accepted even if the registry
-  // knows nothing about it. Complements AssistantDock.test.ts's DOM-level
-  // discovery assertions for the same override, wired through the
-  // component's exact `get surfaces() { return surfaces; }` pattern.
-  it('the `surfaces` override gates previewAction/applyAction independently of registry contents', async () => {
+  // Copilot PR #2919 jAwr0: `surfaces` is a NARROWING filter over the live
+  // registry, not a full replacement — an override entry that isn't
+  // genuinely registered must never pass the mount gate (that would let an
+  // override alone make an unmounted/unregistered surface "appear" mounted,
+  // breaking the documented fail-closed route scoping). Complements
+  // AssistantDock.test.ts's DOM-level discovery assertions for the same
+  // override, wired through the component's exact
+  // `get surfaces() { return surfaces; }` pattern.
+  it('the `surfaces` override narrows against the live registry — an unregistered override entry is NOT mounted', async () => {
     const { registry, identity: ordersIdentity } =
       realRegistryWithSurface('orders'); // registered, but NOT in the override
-    const overrideOnlyIdentity: DataSurfaceIdentity = {
+    const productsIdentity: DataSurfaceIdentity = {
       surfaceId: 'products',
       kind: 'table',
       subject: { type: 'tenant', id: 'tenant-a' },
-    }; // in the override, but NOT registered anywhere
+    };
+    // Also register `products`, so the override below can demonstrate BOTH
+    // halves: a registered+overridden identity passes, an overridden-only
+    // (never registered) identity does not.
+    registry.register({
+      descriptor: {
+        version: 1,
+        identity: productsIdentity,
+        schemaVersion: 1,
+        label: 'products',
+        rowKey: 'id',
+        columns: [
+          { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+        ],
+        query: {
+          modes: ['rows'],
+          projectableColumnIds: ['id'],
+          searchableColumnIds: [],
+          filterableColumnIds: [],
+          sortableColumnIds: [],
+        },
+        actions: [],
+        controls: [],
+        limits: {
+          maxQueryRows: 10,
+          maxQueryBytes: 10_000,
+          maxSelectionSize: 10,
+        },
+      },
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    const unregisteredOverrideIdentity: DataSurfaceIdentity = {
+      surfaceId: 'invoices',
+      kind: 'table',
+      subject: { type: 'tenant', id: 'tenant-a' },
+    }; // in the override, but never registered anywhere
     const applySpy = vi.fn();
     const controller = createAssistantDockController({
       transport: createInMemoryAssistantTransport(),
       registry,
-      surfaces: [overrideOnlyIdentity],
+      surfaces: [productsIdentity, unregisteredOverrideIdentity],
       actionClient: {
         preview: async (request) => ({
           version: 1,
@@ -1036,7 +1072,9 @@ describe('createAssistantDockController', () => {
       },
     });
 
-    expect(controller.surfaces).toEqual([overrideOnlyIdentity]);
+    // Only the intersection of the override and the live registry is
+    // mounted — `unregisteredOverrideIdentity` is filtered out.
+    expect(controller.surfaces).toEqual([productsIdentity]);
 
     // Registered on the live registry, but NOT in the override: rejected.
     await controller.previewAction({
@@ -1054,21 +1092,40 @@ describe('createAssistantDockController', () => {
       controller.actions.get('req-registered-not-in-override')?.error,
     ).toMatch(/not mounted/);
 
-    // In the override, though never registered on the live registry: accepted.
+    // In the override, but never registered anywhere: ALSO rejected — this
+    // is the exact case the fix closes (previously accepted).
     await controller.previewAction({
       version: 1,
-      requestId: 'req-override-only',
-      identity: overrideOnlyIdentity,
+      requestId: 'req-override-only-unregistered',
+      identity: unregisteredOverrideIdentity,
       actionId: 'archive',
       phase: 'preview',
       selection: { scope: 'current-page' },
     });
-    expect(controller.actions.get('req-override-only')?.status).toBe(
-      'previewed',
-    );
-    await controller.applyAction('req-override-only');
+    expect(
+      controller.actions.get('req-override-only-unregistered')?.status,
+    ).toBe('failed');
+    expect(
+      controller.actions.get('req-override-only-unregistered')?.error,
+    ).toMatch(/not mounted/);
+
+    // Both registered AND in the override: accepted.
+    await controller.previewAction({
+      version: 1,
+      requestId: 'req-registered-and-in-override',
+      identity: productsIdentity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(
+      controller.actions.get('req-registered-and-in-override')?.status,
+    ).toBe('previewed');
+    await controller.applyAction('req-registered-and-in-override');
     expect(applySpy).toHaveBeenCalledOnce();
-    expect(controller.actions.get('req-override-only')?.status).toBe('applied');
+    expect(
+      controller.actions.get('req-registered-and-in-override')?.status,
+    ).toBe('applied');
 
     controller.dispose();
   });
@@ -1266,6 +1323,36 @@ describe('createAssistantDockController', () => {
         kind: 'table',
         subject: { type: 'tenant', id: 'tenant-a' },
       };
+      // Copilot PR #2919 jAwr0: `surfaces` narrows against the live
+      // registry, so `products` must be genuinely registered too, or it
+      // would never pass the mount gate regardless of the override.
+      registry.register({
+        descriptor: {
+          version: 1,
+          identity: productsIdentity,
+          schemaVersion: 1,
+          label: 'products',
+          rowKey: 'id',
+          columns: [
+            { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+          ],
+          query: {
+            modes: ['rows'],
+            projectableColumnIds: ['id'],
+            searchableColumnIds: [],
+            filterableColumnIds: [],
+            sortableColumnIds: [],
+          },
+          actions: [],
+          controls: [],
+          limits: {
+            maxQueryRows: 10,
+            maxQueryBytes: 10_000,
+            maxSelectionSize: 10,
+          },
+        },
+        getSnapshot: () => ({ revision: 1, state: {} }),
+      });
       let currentSurfaces: DataSurfaceIdentity[] = [productsIdentity];
       const controller = createAssistantDockController({
         transport: createInMemoryAssistantTransport(),
