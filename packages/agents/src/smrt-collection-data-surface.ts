@@ -1199,14 +1199,36 @@ export async function createSmrtCollectionDataSurfaceDefinition(
       // context already in force: only enter a new one when tenancy is
       // enabled, no tenant context is currently active, and the caller is
       // not already running under a system-context or super-admin bypass.
-      if (
-        isTenancyEnabled() &&
-        context.principal.tenantId &&
-        getCurrentTenant() === undefined &&
-        !isSystemContext() &&
-        !isSuperAdminBypass()
-      ) {
-        return withTenant({ tenantId: context.principal.tenantId }, run);
+      if (isTenancyEnabled() && context.principal.tenantId) {
+        const activeTenant = getCurrentTenant();
+        if (
+          activeTenant === undefined &&
+          !isSystemContext() &&
+          !isSuperAdminBypass()
+        ) {
+          return withTenant({ tenantId: context.principal.tenantId }, run);
+        }
+        // An ambient tenant context (e.g. from a caller nested on the same
+        // async chain, such as `executeAsPrincipal({ enterTenantContext:
+        // false })`) is trusted only when it agrees with the authenticated
+        // principal this execution is bound to, or when the caller is
+        // explicitly and deliberately in a system-context/super-admin-bypass
+        // path. Otherwise `resolveTenantReadScope()` would silently scope
+        // (or fail to scope) rows to whatever tenant happens to be ambient
+        // rather than the principal actually authorized for this call — a
+        // silent cross-tenant disclosure with no upstream gate.
+        if (
+          activeTenant !== undefined &&
+          activeTenant.tenantId !== context.principal.tenantId &&
+          !isSystemContext() &&
+          !isSuperAdminBypass()
+        ) {
+          throw new Error(
+            'Data surface execution refused: an active tenant context ' +
+              `('${activeTenant.tenantId}') does not match the authenticated ` +
+              `principal's tenant ('${context.principal.tenantId}').`,
+          );
+        }
       }
       return run();
     },

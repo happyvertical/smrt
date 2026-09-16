@@ -576,6 +576,62 @@ describe('review findings (#2910)', () => {
         'tenant-active',
       );
     });
+
+    it('rejects execute() when an ambient tenant context disagrees with the authenticated principal', async () => {
+      registerTenantScopedClass(QUALIFIED_NAME, { field: 'tenantId' });
+      const rows = [{ id: 'event-a', tenantId: 'tenant-other', name: 'Leak' }];
+      const list = vi.fn(async () => rows);
+      const definition = await createSmrtCollectionDataSurfaceDefinition({
+        qualifiedName: QUALIFIED_NAME,
+        collectionName: 'events',
+        collection: { list, count: async () => rows.length },
+      });
+      // A caller nested inside an unrelated ambient tenant context (e.g.
+      // `executeAsPrincipal({ enterTenantContext: false })` running under a
+      // stale outer `withTenant`) must never silently scope to that ambient
+      // tenant instead of the authenticated principal's own tenant.
+      await withTenant({ tenantId: 'tenant-other' }, async () => {
+        await expect(
+          definition.execute?.(
+            definition,
+            {
+              version: 1,
+              requestId: 'mismatch-1',
+              mode: 'rows',
+              projection: ['id'],
+              page: { kind: 'offset', offset: 0, limit: 10 },
+            },
+            context('tenant-a'),
+          ),
+        ).rejects.toThrow(/tenant context/i);
+      });
+      expect(list).not.toHaveBeenCalled();
+    });
+
+    it('proceeds when the ambient tenant context matches the authenticated principal', async () => {
+      registerTenantScopedClass(QUALIFIED_NAME, { field: 'tenantId' });
+      const rows = [{ id: 'event-a', tenantId: 'tenant-a', name: 'Alpha' }];
+      const definition = await createSmrtCollectionDataSurfaceDefinition({
+        qualifiedName: QUALIFIED_NAME,
+        collectionName: 'events',
+        collection: fakeCollection(rows),
+        scope: (execution) => ({ tenantId: execution.principal.tenantId }),
+      });
+      const result = await withTenant({ tenantId: 'tenant-a' }, () =>
+        definition.execute?.(
+          definition,
+          {
+            version: 1,
+            requestId: 'match-1',
+            mode: 'rows',
+            projection: ['id'],
+            page: { kind: 'offset', offset: 0, limit: 10 },
+          },
+          context('tenant-a'),
+        ),
+      );
+      expect(result).toMatchObject({ total: { kind: 'exact', value: 1 } });
+    });
   });
 
   describe('finding 3: query-bound opaque cursors', () => {
