@@ -18,8 +18,13 @@ No new `./assistant` subpath was needed — `./svelte` carries it cleanly.
 - `createAssistantDockController` (`create-assistant-dock-controller.svelte.ts`)
   — headless runes state: threads, active thread, messages, pending sends,
   discovered surfaces, action lifecycle.
-- `AssistantThreadList.svelte`, `AssistantComposer.svelte` (reuses
-  `shared/FileUpload.svelte` for attachment staging).
+- `AssistantThreadList.svelte`, `AssistantComposer.svelte` — the composer
+  implements its own compact attach control for attachment staging (a small
+  icon-only attach `Button` plus a visually-hidden native
+  `<input type="file">`) rather than reusing `shared/FileUpload.svelte`'s
+  full dropzone/preview UI, which is sized for a dedicated upload panel, not
+  a one-line composer (Copilot PR #2919 jAwxM — this recipe previously
+  claimed the FileUpload reuse the shipped composer doesn't actually do).
 - `assistant-transport.ts` — the `AssistantTransport` contract plus
   `createInMemoryAssistantTransport` and `createSmrtAssistantTransport`.
 - `shared/ModelPicker.svelte` — extracted from
