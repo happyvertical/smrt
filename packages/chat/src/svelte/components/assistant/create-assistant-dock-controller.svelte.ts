@@ -161,6 +161,14 @@ export interface AssistantDockController {
    * `registry`-scoped effect, never from the mount effect (see
    * AssistantDock.svelte — F1 requires that one to run exactly once). */
   syncRegistry(): void;
+  /** Re-reads the `surfaces` override getter (and falls back to the live
+   * registry contents when unset) and invalidates outstanding previews for
+   * any surface that fell out of scope on a narrowing change (#2904 review,
+   * cycle-2 second final finding 1). A no-op when the effective set is
+   * unchanged. Call from a `surfaces`-scoped effect, never from the mount
+   * effect (see AssistantDock.svelte — F1 requires that one to run exactly
+   * once). */
+  syncSurfaces(): void;
   dispose(): void;
 }
 
@@ -236,9 +244,19 @@ export function createAssistantDockController(
   // timer past unmount.
   let disposed = false;
 
+  // Cycle-2 second final finding 1: `options.surfaces` is a getter (a live
+  // prop passthrough from AssistantDock.svelte), so it must be RE-READ on
+  // every call, not captured once. Previously this function early-returned
+  // whenever an override was present at construction time, which froze
+  // `surfaces` at whatever `options.surfaces` first returned and also
+  // suppressed all future registry-driven resyncs — a host reassigning the
+  // `surfaces` prop (exactly what docs/assistant-dock.md's "Tenant scoping"
+  // recipe describes) was never observed, and neither was the
+  // override→registry (undefined) transition.
   function syncSurfacesFromRegistry() {
-    if (options.surfaces) return; // explicit override wins; no live discovery
-    surfaces = options.registry.list().map((descriptor) => descriptor.identity);
+    surfaces =
+      options.surfaces ??
+      options.registry.list().map((descriptor) => descriptor.identity);
   }
 
   function isSurfaceMounted(identity: DataSurfaceIdentity): boolean {
@@ -295,13 +313,15 @@ export function createAssistantDockController(
   // the host's own `registry`-scoped effect (see AssistantDock.svelte) —
   // never from inside the mount effect that must run exactly once (F1).
   function syncRegistry() {
-    if (options.surfaces) return; // explicit override wins; no subscription
     if (disposed) return;
     const current = options.registry;
     if (current === subscribedRegistry) return;
     // Only reached on an actual swap: the constructor sets
     // `subscribedRegistry` directly (bypassing this function), so every call
-    // that gets here past the guard above is a genuine registry change.
+    // that gets here past the guard above is a genuine registry change. The
+    // subscription is kept live even while `surfaces` is overridden (cycle-2
+    // second final finding 1) so a later override→registry transition has a
+    // subscription already in place instead of needing its own bootstrap.
     unsubscribeRegistry?.();
     subscribedRegistry = current;
     unsubscribeRegistry = subscribeToRegistry(current);
@@ -311,12 +331,31 @@ export function createAssistantDockController(
     syncSurfacesFromRegistry();
   }
 
-  // Initial sync + subscription.
-  syncSurfacesFromRegistry();
-  if (!options.surfaces) {
-    subscribedRegistry = options.registry;
-    unsubscribeRegistry = subscribeToRegistry(subscribedRegistry);
+  // Cycle-2 second final finding 1: re-reads the `surfaces` getter (and, when
+  // unset, the registry) and, on a narrowing change, invalidates outstanding
+  // previews for any surface that fell out of scope — mirrors
+  // `invalidateAllPreviewedActions`'s rationale for a registry swap, but
+  // scoped per-identity since an override change doesn't necessarily change
+  // the trust boundary for surfaces that remain mounted. Call from a
+  // `surfaces`-scoped effect (see AssistantDock.svelte), never from the mount
+  // effect (F1 requires that one to run exactly once).
+  function syncSurfaces() {
+    if (disposed) return;
+    const previous = surfaces;
+    syncSurfacesFromRegistry();
+    for (const identity of previous) {
+      if (!isSurfaceMounted(identity)) {
+        invalidatePreviewedActionsFor(identity);
+      }
+    }
   }
+
+  // Initial sync + subscription. The registry subscription is unconditional
+  // (cycle-2 second final finding 1) so it's already live for a later
+  // override→registry (undefined) transition.
+  syncSurfacesFromRegistry();
+  subscribedRegistry = options.registry;
+  unsubscribeRegistry = subscribeToRegistry(subscribedRegistry);
 
   function markStalePendingSends() {
     const cutoff = now() - staleAfterMs;
@@ -775,6 +814,7 @@ export function createAssistantDockController(
     startPolling,
     stopPolling,
     syncRegistry,
+    syncSurfaces,
     dispose,
   };
 }

@@ -137,6 +137,20 @@ $effect(() => {
   untrack(() => controller.syncRegistry());
 });
 
+// Cycle-2 second final finding 1: a SEPARATE effect, scoped to only the
+// `surfaces` prop, mirroring the `registry` effect above — reassigning
+// `surfaces` (a host recomputing the override per route) is now observed:
+// the controller re-reads the getter and invalidates any outstanding preview
+// for a surface that fell out of scope. `surfaces` is read directly here (a
+// tracked dependency) so this effect reruns on a prop swap; the body stays
+// `untrack`-ed so it does not also rerun on unrelated $state changes
+// elsewhere (preserving the F1 guarantee that the mount effect runs exactly
+// once per mount).
+$effect(() => {
+  void surfaces;
+  untrack(() => controller.syncSurfaces());
+});
+
 async function handleSelectThread(threadId: string) {
   await controller.openThread(threadId);
 }

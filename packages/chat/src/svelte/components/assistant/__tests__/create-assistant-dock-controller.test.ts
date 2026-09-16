@@ -1199,4 +1199,135 @@ describe('createAssistantDockController', () => {
     expect(controller.error).toBeNull();
     controller.dispose();
   });
+
+  // Cycle-2 second final finding 1: `surfaces` is captured once at
+  // construction and reassignment was never observed — reachable exactly the
+  // way AssistantDock.svelte passes it, via a live getter.
+  describe('syncSurfaces() (cycle-2 second final finding 1)', () => {
+    it('re-reads a reassigned `surfaces` getter and gates previewAction accordingly, in both directions', async () => {
+      const { registry, identity: ordersIdentity } =
+        realRegistryWithSurface('orders');
+      const productsIdentity: DataSurfaceIdentity = {
+        surfaceId: 'products',
+        kind: 'table',
+        subject: { type: 'tenant', id: 'tenant-a' },
+      };
+      let currentSurfaces: DataSurfaceIdentity[] = [productsIdentity];
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        get surfaces() {
+          return currentSurfaces;
+        },
+        actionClient: {
+          preview: async (request) => ({
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'preview',
+            ok: true,
+          }),
+          apply: async (request) => ({
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok: true,
+          }),
+        },
+      });
+
+      // Initial override: only `products` is mounted, `orders` is gated out
+      // even though it's genuinely registered.
+      expect(controller.surfaces).toEqual([productsIdentity]);
+      await controller.previewAction({
+        version: 1,
+        requestId: 'req-orders-1',
+        identity: ordersIdentity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get('req-orders-1')?.status).toBe('failed');
+
+      // Narrow the override to an EMPTY list — the previously-mounted
+      // `products` preview must be invalidated (it fell out of scope), and a
+      // fresh preview against it must now be gated too.
+      const productsPreview: DataSurfaceIdentity = productsIdentity;
+      await controller.previewAction({
+        version: 1,
+        requestId: 'req-products-1',
+        identity: productsPreview,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get('req-products-1')?.status).toBe(
+        'previewed',
+      );
+      currentSurfaces = [];
+      controller.syncSurfaces();
+      expect(controller.surfaces).toEqual([]);
+      expect(controller.actions.get('req-products-1')?.status).toBe('failed');
+
+      // Widen the override back to include `orders` — discovery AND the
+      // gate must follow the reassignment.
+      currentSurfaces = [ordersIdentity];
+      controller.syncSurfaces();
+      expect(controller.surfaces).toEqual([ordersIdentity]);
+      await controller.previewAction({
+        version: 1,
+        requestId: 'req-orders-2',
+        identity: ordersIdentity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get('req-orders-2')?.status).toBe('previewed');
+
+      controller.dispose();
+    });
+
+    it('falls back to live registry discovery when `surfaces` is reassigned from defined to undefined', () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      let currentSurfaces: DataSurfaceIdentity[] | undefined = [];
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        get surfaces() {
+          return currentSurfaces;
+        },
+      });
+
+      // Override is an explicit empty list: registry's real `orders` entry
+      // is suppressed.
+      expect(controller.surfaces).toEqual([]);
+
+      // Reassign to undefined: discovery must fall back to the live
+      // registry contents.
+      currentSurfaces = undefined;
+      controller.syncSurfaces();
+      expect(controller.surfaces).toEqual([identity]);
+
+      controller.dispose();
+    });
+
+    it('the mounted-once "listThreads called exactly once" guarantee (F1) is unaffected by syncSurfaces() calls', async () => {
+      const transport = createInMemoryAssistantTransport();
+      const listThreadsSpy = vi.spyOn(transport, 'listThreads');
+      const { registry } = realRegistryWithSurface('orders');
+      const controller = createAssistantDockController({
+        transport,
+        registry,
+        surfaces: [],
+      });
+      await controller.loadThreads();
+      controller.syncSurfaces();
+      controller.syncSurfaces();
+      expect(listThreadsSpy).toHaveBeenCalledTimes(1);
+      controller.dispose();
+    });
+  });
 });

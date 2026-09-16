@@ -220,4 +220,70 @@ describe('AssistantDock (mounted component)', () => {
       await screen.findByText(/Something went wrong: offline/i),
     ).toBeInTheDocument();
   });
+
+  // Cycle-2 second final finding 1: the `surfaces` override was captured
+  // once at construction — a mounted component's own controller never
+  // observed a reassignment of the prop. Drives it through the real
+  // component (rerender), not just the controller directly, mirroring how
+  // Finding B's registry-swap test complements the controller-level test.
+  it('re-scopes discovery and the action gate when the `surfaces` prop is reassigned, in both directions', async () => {
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    const transport = createInMemoryAssistantTransport();
+    const productsIdentity: DataSurfaceIdentity = {
+      ...identity,
+      surfaceId: 'products',
+    };
+
+    const { rerender } = render(AssistantDock, {
+      props: { transport, registry, surfaces: [productsIdentity] },
+    });
+
+    // Override only includes `products`; the registered `orders` surface is
+    // gated out even though it's genuinely registered — the "no surfaces"
+    // notice must NOT show (the override list is non-empty).
+    expect(
+      screen.queryByText(/No data surfaces are mounted on this route/i),
+    ).not.toBeInTheDocument();
+
+    // Narrow the override to an EMPTY list.
+    await rerender({ transport, registry, surfaces: [] });
+    expect(
+      await screen.findByText(/No data surfaces are mounted on this route/i),
+    ).toBeInTheDocument();
+
+    // Widen back to include the registered `orders` surface — discovery
+    // must follow the reassignment and the notice must clear.
+    await rerender({ transport, registry, surfaces: [identity] });
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (!screen.queryByText(/No data surfaces are mounted on this route/i)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(
+      screen.queryByText(/No data surfaces are mounted on this route/i),
+    ).not.toBeInTheDocument();
+  });
+
+  // Cycle-2 second final finding 1: the F1 "mount effect runs exactly once"
+  // guarantee must hold even with the new `surfaces`-scoped effect added
+  // alongside the existing `registry` one.
+  it('loadThreads still fires exactly once per mount when `surfaces` is reassigned', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const listThreadsSpy = vi.spyOn(transport, 'listThreads');
+
+    const { rerender } = render(AssistantDock, {
+      props: { transport, registry, surfaces: [] },
+    });
+    await screen.findByText(/No data surfaces are mounted on this route/i);
+    await rerender({ transport, registry, surfaces: [identity] });
+    await rerender({ transport, registry, surfaces: [] });
+
+    expect(listThreadsSpy).toHaveBeenCalledTimes(1);
+  });
 });
