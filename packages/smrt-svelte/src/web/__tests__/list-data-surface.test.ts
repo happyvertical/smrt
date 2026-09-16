@@ -363,6 +363,30 @@ describe('mountListDataSurface', () => {
     rebound.destroy();
   });
 
+  it('rejects a registry-forbidden boundary key at update() instead of deferring the failure to a later read', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+    });
+    const before = registry.inspect(identity);
+
+    // `tenantId` is one of the registry's own boundary-forbidden keys
+    // (FORBIDDEN_BOUNDARY_KEYS in @happyvertical/smrt-ui/data) — not
+    // something this module hand-copies. update() must throw here, not
+    // leave the surface poisoned for a later inspect()/execute().
+    expect(() => handle.update(context({ tenantId: 'nope' }))).toThrow();
+
+    // The surface must be unaffected: still readable, at the same revision.
+    const after = registry.inspect(identity);
+    expect(after).toEqual(before);
+
+    handle.destroy();
+  });
+
   it('bumps the revision when app-owned context changes via update()', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createDataTableController();

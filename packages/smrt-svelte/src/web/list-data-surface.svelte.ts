@@ -292,12 +292,28 @@ export function mountListDataSurface(
   const updateContext = (next: ListDataSurfaceContext) => {
     const merged: DataSurfaceJsonObject = { ...next };
     assertNoReservedContextKeys(merged);
+    // `merged` may still carry a transport-reserved key (`tenantId`, `token`,
+    // `where`, …) that only the registry's own boundary-safety check knows
+    // about (`FORBIDDEN_BOUNDARY_KEYS` in `@happyvertical/smrt-ui/data`,
+    // in-repo upstream — no local copy of that list here). Validate eagerly
+    // by forcing the same read `registry.register` already performed at
+    // mount, so a bad key throws synchronously at THIS call site instead of
+    // being committed and only failing later on an unrelated `inspect()`/
+    // `execute()` call against the now-poisoned surface. Roll back on
+    // failure so the surface is left exactly as it was.
+    const previousContext = context;
+    context = merged;
+    try {
+      options.registry.inspect(options.descriptor.identity);
+    } catch (error) {
+      context = previousContext;
+      throw error;
+    }
     const signature = JSON.stringify(merged);
     if (signature !== contextSignature) {
       advanceRevision();
       contextSignature = signature;
     }
-    context = merged;
   };
   const unregister = options.registry.register({
     descriptor: options.descriptor,
