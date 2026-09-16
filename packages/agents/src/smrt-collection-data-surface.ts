@@ -44,9 +44,11 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
+  getTenantScopedConfig,
   isSuperAdminBypass,
   isSystemContext,
   isTenancyEnabled,
+  isTenantScopedClass,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type {
@@ -247,7 +249,11 @@ function isTransientField(field: RegistryFieldLike): boolean {
   return field.transient === true || meta(field).transient === true;
 }
 
-function isTenantField(name: string, field: RegistryFieldLike): boolean {
+function isTenantField(
+  name: string,
+  field: RegistryFieldLike,
+  tenantField: string,
+): boolean {
   const fieldMeta = meta(field);
   const tenancy = isPlainRecord(field.__tenancy)
     ? field.__tenancy
@@ -256,6 +262,7 @@ function isTenantField(name: string, field: RegistryFieldLike): boolean {
       : undefined;
   return (
     tenancy?.isTenantIdField === true ||
+    name === tenantField ||
     name === 'tenantId' ||
     name === 'tenant_id'
   );
@@ -288,13 +295,15 @@ async function buildQuerySchemaForClass(
     string,
     RegistryFieldLike
   >;
+  const tenantField =
+    getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
     if (name.startsWith('_')) continue;
     if (options.exclude.has(name)) continue;
     if (isRestrictedField(field)) continue;
     if (isTransientField(field)) continue;
-    if (isTenantField(name, field)) continue;
+    if (isTenantField(name, field, tenantField)) continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
     const filterOperators = filterOperatorsFor(type);
@@ -433,10 +442,14 @@ export function assertSmrtCollectionQuerySchema(schema: DataQuerySchema): void {
  * unfiltered. `withSystemContext()` and super-admin bypass remain the
  * explicit, deliberate cross-tenant paths.
  */
-function resolveTenantReadScope(): { tenantId: string | null } | undefined {
+function resolveTenantReadScope(
+  qualifiedName: string,
+): WhereCondition | undefined {
   if (!isTenancyEnabled()) return undefined;
+  if (!isTenantScopedClass(qualifiedName)) return undefined;
   if (isSuperAdminBypass() || isSystemContext()) return undefined;
-  return { tenantId: getCurrentTenant()?.tenantId ?? null };
+  const tenantField = getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
+  return { [tenantField]: getCurrentTenant()?.tenantId ?? null };
 }
 
 function inverseOperator(
@@ -706,6 +719,7 @@ export async function executeSmrtCollectionQuery(
   rawRequest: unknown,
   options: {
     schema: DataQuerySchema;
+    qualifiedName: string;
     scope?: SmrtCollectionQueryScope;
     signal?: AbortSignal;
   },
@@ -726,7 +740,7 @@ export async function executeSmrtCollectionQuery(
     ? filterToDnf(request.filter, declared)
     : undefined;
   const scopeConditions = [
-    ...normalizeScopeConditions(resolveTenantReadScope()),
+    ...normalizeScopeConditions(resolveTenantReadScope(options.qualifiedName)),
     ...normalizeApplicationScope(options.scope, schema.identityField),
   ];
   const where = mergeQueryScope(
@@ -935,6 +949,7 @@ export async function createSmrtCollectionDataSurfaceDefinition(
           request,
           {
             schema: executableSchema,
+            qualifiedName: options.qualifiedName,
             scope: await resolveScope(options, context),
             signal: context.signal,
           },
@@ -944,8 +959,17 @@ export async function createSmrtCollectionDataSurfaceDefinition(
       // though `resolveTenantReadScope()` already ANDs the tenant condition
       // into the `where`. Establish that context from the same authenticated
       // principal the scope is derived from, so a required-mode collection
-      // works out of the box.
-      if (isTenancyEnabled() && context.principal.tenantId) {
+      // works out of the box. Never clobber an existing system/bypass/tenant
+      // context already in force: only enter a new one when tenancy is
+      // enabled, no tenant context is currently active, and the caller is
+      // not already running under a system-context or super-admin bypass.
+      if (
+        isTenancyEnabled() &&
+        context.principal.tenantId &&
+        getCurrentTenant() === undefined &&
+        !isSystemContext() &&
+        !isSuperAdminBypass()
+      ) {
         return withTenant({ tenantId: context.principal.tenantId }, run);
       }
       return run();
