@@ -1619,6 +1619,139 @@ describe('createAssistantDockController', () => {
     });
   });
 
+  // Cycle-4 second final finding 1: resetConversationStateForContextSwap()
+  // cleared threads/activeThreadId/messages/pendingSends/actions/error/
+  // draftIds and bumped the epoch counters, but left `selectedModel` and
+  // `pollErrorActive` (both per-context) untouched — a model id chosen
+  // under the OLD transport's catalog kept flowing into every send() under
+  // the NEW one, and the first loadMessages() failure in the NEW context
+  // was silently swallowed by a "record once" gate that never re-armed.
+  describe('resetConversationStateForContextSwap() resets selectedModel and pollErrorActive (cycle-4 second final finding 1)', () => {
+    it("re-defaults selectedModel from B's catalog after a swap, even when A's listModels() resolved BEFORE the swap", async () => {
+      const transportA = createInMemoryAssistantTransport({
+        models: [{ id: 'model-a', label: 'Model A' }],
+      });
+      const transportB = createInMemoryAssistantTransport({
+        models: [{ id: 'model-b', label: 'Model B' }],
+      });
+
+      let currentTransport: AssistantTransport = transportA;
+      let currentRegistry = realRegistryWithSurface('orders').registry;
+      const controller = createAssistantDockController({
+        get transport() {
+          return currentTransport;
+        },
+        get registry() {
+          return currentRegistry;
+        },
+      });
+
+      // A's listModels() resolves BEFORE the swap — selectedModel defaults
+      // to A's catalog, exactly the case the fix must still cover (the
+      // pre-fix bug only reproduced once `selectedModel` was truthy).
+      await controller.loadModels();
+      expect(controller.selectedModel).toBe('model-a');
+
+      currentTransport = transportB;
+      currentRegistry = realRegistryWithSurface('orders').registry;
+      controller.syncRegistry();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(controller.models.map((m) => m.id)).toEqual(['model-b']);
+      expect(controller.selectedModel).toBe('model-b');
+
+      controller.dispose();
+    });
+
+    it('records the first poll error in the NEW context after a swap, even when a poll error preceded the swap', async () => {
+      // Context A: openThread's own loadMessages() call succeeds (call 1);
+      // every poll tick after that (call 2+) fails — this is what arms
+      // pollTick's `pollErrorActive` "record once" gate via a REAL pollTick,
+      // not openThread's own separate catch.
+      let callsA = 0;
+      const transportA: AssistantTransport = {
+        async listThreads() {
+          return [];
+        },
+        async createThread(title) {
+          return { id: 'a-thread', title, isResolved: false, messageCount: 0 };
+        },
+        async loadMessages() {
+          callsA += 1;
+          if (callsA === 1) return [];
+          throw new Error('A poll failed');
+        },
+        async sendMessage() {
+          throw new Error('unused');
+        },
+        async uploadAttachment() {
+          throw new Error('unused');
+        },
+      };
+      // Context B: same shape — first call (the post-swap openThread)
+      // succeeds, every call after that fails with a DIFFERENT message, so
+      // the assertion can only pass if pollErrorActive was actually reset
+      // (pre-fix, it stayed armed from A and B's failure was swallowed —
+      // `controller.error` would incorrectly stay `null`).
+      let callsB = 0;
+      const transportB: AssistantTransport = {
+        async listThreads() {
+          return [];
+        },
+        async createThread(title) {
+          return { id: 'b-thread', title, isResolved: false, messageCount: 0 };
+        },
+        async loadMessages() {
+          callsB += 1;
+          if (callsB === 1) return [];
+          throw new Error('B poll failed');
+        },
+        async sendMessage() {
+          throw new Error('unused');
+        },
+        async uploadAttachment() {
+          throw new Error('unused');
+        },
+      };
+
+      let currentTransport: AssistantTransport = transportA;
+      let currentRegistry = realRegistryWithSurface('orders').registry;
+      const controller = createAssistantDockController({
+        get transport() {
+          return currentTransport;
+        },
+        get registry() {
+          return currentRegistry;
+        },
+        activePollIntervalMs: 20,
+        idlePollIntervalMs: 20,
+      });
+
+      await controller.openThread('t1-a');
+      expect(controller.error).toBeNull();
+      controller.startPolling();
+      // Wait for a poll tick to fail against A.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(controller.error).toBe('A poll failed');
+
+      // Swap WHILE pollErrorActive is still armed from A's failure.
+      currentTransport = transportB;
+      currentRegistry = realRegistryWithSurface('orders').registry;
+      controller.syncRegistry();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The reset's own loadThreads()/loadModels() succeed and clear
+      // `error` — confirms the reset put us in a clean slate.
+      expect(controller.error).toBeNull();
+
+      await controller.openThread('b-thread');
+      // Wait for a poll tick to fail against B.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(controller.error).toBe('B poll failed');
+
+      controller.dispose();
+    }, 10_000);
+  });
+
   // Copilot PR #2919 jAwsd: a registry (and, via syncTransport(), a
   // transport) swap now clears threads/activeThreadId/messages/pendingSends
   // and reloads from the NEW transport, and discards an old in-flight
@@ -2033,6 +2166,96 @@ describe('createAssistantDockController', () => {
         m.content.includes('already applied by the server'),
       ),
     ).toBe(true);
+
+    controller.dispose();
+  });
+
+  // Cycle-4 second final finding 2: the `else if (!current && result.ok)`
+  // "applied after reject" branch was the one post-await write in
+  // applyAction() still missing the `contextEpoch` guard its siblings (the
+  // success and catch branches) already carry. A context swap ALSO produces
+  // `!current` (resetConversationStateForContextSwap()'s actions.clear()),
+  // so without the guard, an apply resolving `ok: true` after a swap would
+  // append a system message naming the OLD context's actionId into the NEW
+  // context's `messages`, stamped with the NEW `activeThreadId`.
+  it('does not append an "already applied" system message into the NEW context after a swap during an in-flight apply', async () => {
+    const { registry: registryA, identity } = realRegistryWithSurface('orders');
+    let resolveApply: ((ok: boolean) => void) | undefined;
+    const applyGate = new Promise<boolean>((resolve) => {
+      resolveApply = resolve;
+    });
+    const transportA = createInMemoryAssistantTransport();
+    const transportB = createInMemoryAssistantTransport();
+
+    let currentTransport: AssistantTransport = transportA;
+    let currentRegistry = registryA;
+    const controller = createAssistantDockController({
+      get transport() {
+        return currentTransport;
+      },
+      get registry() {
+        return currentRegistry;
+      },
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => {
+          const ok = await applyGate;
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok,
+          };
+        },
+      },
+    });
+    const threadA = await controller.createThread('t1');
+    await controller.openThread(threadA.id);
+
+    const requestId = 'req-swap-during-apply';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    const applyPromise = controller.applyAction(requestId);
+    expect(controller.actions.get(requestId)?.status).toBe('applying');
+
+    // Context swap WHILE the apply above is still in flight — this clears
+    // `actions` (producing the same `!current` condition a reject would)
+    // and opens a thread in the NEW context.
+    currentTransport = transportB;
+    currentRegistry = realRegistryWithSurface('orders').registry;
+    controller.syncRegistry();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const threadB = await controller.createThread('t2');
+    await controller.openThread(threadB.id);
+    expect(controller.actions.has(requestId)).toBe(false);
+
+    // The stale apply from context A now resolves ok:true — it must NOT
+    // write a system message into the NEW context's messages.
+    resolveApply?.(true);
+    await applyPromise;
+
+    expect(
+      controller.messages.some((m) =>
+        m.content.includes('already applied by the server'),
+      ),
+    ).toBe(false);
 
     controller.dispose();
   });

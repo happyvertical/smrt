@@ -408,6 +408,34 @@ export function createAssistantDockController(
   // transport. Bumping `openThreadRequestId` here reuses `openThread()`'s
   // own "most recently started call wins" guard to drop an in-flight load
   // that was still in flight under the old context.
+  // Cycle-4 second final finding 1: full audit of every `$state`/`let` in
+  // this closure, with the reset/kept rationale for each (also recorded in
+  // the commit body):
+  //  RESET here — old-context data that must never survive a swap:
+  //   threads, activeThreadId, messages, pendingSends, actions (.clear()),
+  //   error, draftIds (.clear()), models, selectedModel, pollErrorActive.
+  //  BUMPED here (not reset to a value, but advanced) — these ARE the
+  //  swap-detection/invalidation counters themselves:
+  //   openThreadRequestId, contextEpoch.
+  //  KEPT — not conversation/context data, or managed by the swap's OWN
+  //  caller rather than by this function:
+  //   surfaces (resynced by syncRegistry()'s own syncSurfacesFromRegistry()
+  //     call immediately before this function runs — see syncRegistry()
+  //     below);
+  //   pollTimer, unsubscribeRegistry (interval/subscription handles —
+  //     lifecycle-managed elsewhere, not per-context data; a live poll
+  //     interval continuing into the new context is correct, since
+  //     pollTick()'s own contextEpoch guard already drops a stale RESULT);
+  //   subscribedRegistry, subscribedTransport (these are the "what are we
+  //     currently watching" markers syncRegistry()/syncTransport() update
+  //     themselves, immediately before calling this function — resetting
+  //     them here would make the swap they just detected undetectable);
+  //   disposed (component lifecycle, orthogonal to which context is
+  //     active — a disposed controller must stay disposed across a swap
+  //     that can no longer reach it anyway);
+  //   pollingStopped (an explicit host stopPolling() call is a polling
+  //     preference, not context data — a swap must not silently resume
+  //     polling the host asked to stop).
   function resetConversationStateForContextSwap() {
     threads = [];
     activeThreadId = null;
@@ -416,6 +444,23 @@ export function createAssistantDockController(
     actions.clear();
     error = null;
     draftIds.clear();
+    // Cycle-4 second final finding 1: `models`/`selectedModel` previously
+    // survived a swap untouched — loadModels() below only re-defaults
+    // `selectedModel` when it's falsy (`if (models.length > 0 &&
+    // !selectedModel)`), so a model id chosen under the OLD transport's
+    // catalog kept flowing into every `doSend`'s `model: selectedModel`
+    // under the NEW one, and `AssistantDock.svelte`'s `<Select>` bound a
+    // value with no matching `<option>` in the new catalog. `models` is
+    // cleared immediately for the same reason `threads` already is — the
+    // stale list must not render even for the brief window before
+    // loadModels() below resolves.
+    models = [];
+    selectedModel = undefined;
+    // Cycle-4 second final finding 1: `pollErrorActive`'s "record once"
+    // gate stayed armed across a swap, so the FIRST loadMessages() failure
+    // in the NEW context was silently swallowed (error stayed null) — the
+    // exact failure mode cycle-2 finding 2 closed, reopened across a swap.
+    pollErrorActive = false;
     openThreadRequestId += 1;
     // Cycle-4 final finding 1: bump BEFORE the reload calls below so their
     // own captured-epoch checks see this swap.
@@ -1120,12 +1165,19 @@ export function createAssistantDockController(
           // retryable only when it failed, cleared on success.
           retryable: !result.ok,
         });
-      } else if (!current && result.ok) {
+      } else if (!current && result.ok && epoch === contextEpoch) {
         // The user rejected while this apply was in flight, and the server
         // mutation landed anyway — the rejection cannot undo a real server
         // effect. Surface that as a system message in the thread rather
         // than silently dropping it, so the user isn't left unaware their
-        // rejected action still happened.
+        // rejected action still happened. Cycle-4 second final finding 2:
+        // `actions.clear()` on a context swap ALSO produces `!current` —
+        // without the epoch check, a swap mid-apply would append this
+        // system message (naming the OLD context's actionId) into the NEW
+        // context's `messages`, stamped with the new `activeThreadId`. Every
+        // other post-await write in this function already carries this
+        // check (see the sibling branch above and the catch block below);
+        // this was the one that didn't.
         if (activeThreadId) {
           messages = [
             ...messages,
