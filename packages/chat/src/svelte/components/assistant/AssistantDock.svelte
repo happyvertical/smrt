@@ -26,6 +26,7 @@ import type {
   AssistantMessage,
   AssistantTransport,
 } from './assistant-transport.js';
+import { safeAttachmentHref } from './attachment-href.js';
 import {
   type AssistantActionClient,
   type AssistantDockController,
@@ -269,10 +270,11 @@ async function handleConfirmAction(requestId: string) {
                     aria-label={t(M['chat.assistant_dock.attachments'])}
                   >
                     {#each message.attachments as attachment (attachment.id)}
+                      {@const href = safeAttachmentHref(attachment.url)}
                       <li class="assistant-dock-attachment">
-                        {#if attachment.url}
+                        {#if href}
                           <a
-                            href={attachment.url}
+                            {href}
                             target="_blank"
                             rel="noopener noreferrer"
                             class="assistant-dock-attachment-link"

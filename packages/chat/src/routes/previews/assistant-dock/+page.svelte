@@ -31,6 +31,7 @@ import {
   type AssistantAttachmentRef,
   createInMemoryAssistantTransport,
 } from '../../../svelte/components/assistant/assistant-transport.js';
+import { safeAttachmentHref } from '../../../svelte/components/assistant/attachment-href.js';
 import { createAssistantDockController } from '../../../svelte/components/assistant/create-assistant-dock-controller.svelte.js';
 
 interface DemoOrderRow {
@@ -365,13 +366,10 @@ function formatAttachmentSize(bytes: number): string {
                       {#if message.attachments && message.attachments.length > 0}
                         <ul class="message-attachments" aria-label="Attachments">
                           {#each message.attachments as attachment (attachment.id)}
+                            {@const href = safeAttachmentHref(attachment.url)}
                             <li class="message-attachment">
-                              {#if attachment.url}
-                                <a
-                                  href={attachment.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
+                              {#if href}
+                                <a {href} target="_blank" rel="noopener noreferrer">
                                   {attachment.name}
                                 </a>
                               {:else}

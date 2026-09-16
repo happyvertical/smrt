@@ -16,7 +16,12 @@ import {
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
 } from '@happyvertical/smrt-ui/data-surface';
-import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
+import {
+  expectNoA11yViolations,
+  render,
+  screen,
+  userEvent,
+} from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssistantDock from '../AssistantDock.svelte';
 import { createInMemoryAssistantTransport } from '../assistant-transport.js';
@@ -402,5 +407,80 @@ describe('AssistantDock (mounted component)', () => {
     );
 
     expect(await screen.findByText('contract.docx')).toBeInTheDocument();
+  });
+
+  // Cycle-3 second final finding 2: a `models`-bearing transport mounts
+  // ModelPicker (previously untested and unnamed anywhere in this suite);
+  // an attachment-bearing message exercises the chip/link list added for
+  // finding 1 above. Neither path had ever been axe-checked.
+  it('is axe-clean with ModelPicker mounted and an attachment-bearing message', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport({
+      models: [
+        { id: 'model-a', label: 'Model A' },
+        { id: 'model-b', label: 'Model B' },
+      ],
+    });
+
+    const { container } = render(AssistantDock, {
+      props: { transport, registry },
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    const textarea = await screen.findByLabelText('Message');
+
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]');
+    if (!fileInput) throw new Error('file input not found');
+    await userEvent.upload(
+      fileInput,
+      new File(['data'], 'report.pdf', { type: 'application/pdf' }),
+    );
+    await userEvent.type(textarea, 'here is the report');
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await screen.findByText('report.pdf');
+
+    // ModelPicker must have mounted (its accessible name resolves).
+    expect(screen.getByLabelText('Model')).toBeInTheDocument();
+
+    await expectNoA11yViolations(container);
+  });
+
+  // Cycle-3 second final F1 addendum: attachment.url is transport-supplied
+  // data bound to <a href> — a javascript: URL must never render a
+  // clickable anchor.
+  it('renders a javascript: attachment URL as plain text, not an anchor', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const originalLoadMessages = transport.loadMessages.bind(transport);
+    transport.loadMessages = async (threadId: string) => {
+      const existing = await originalLoadMessages(threadId);
+      if (existing.length > 0) return existing;
+      return [
+        {
+          id: 'seeded-xss',
+          threadId,
+          content: 'attached earlier',
+          role: 'user',
+          createdAt: new Date(),
+          attachments: [
+            {
+              id: 'att-xss',
+              name: 'evil.txt',
+              url: 'javascript:alert(1)',
+            },
+          ],
+        },
+      ];
+    };
+
+    render(AssistantDock, { props: { transport, registry } });
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+
+    const attachmentText = await screen.findByText('evil.txt');
+    expect(attachmentText.closest('a')).toBeNull();
   });
 });
