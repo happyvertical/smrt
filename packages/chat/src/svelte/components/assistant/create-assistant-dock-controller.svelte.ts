@@ -187,6 +187,10 @@ export function createAssistantDockController(
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let unsubscribeRegistry: (() => void) | null = null;
+  // F3 (#2904 review): pollTick's loadMessages await can outlive dispose();
+  // this flag lets it (and resetPollInterval) bail instead of re-arming a
+  // timer past unmount.
+  let disposed = false;
 
   function syncSurfacesFromRegistry() {
     if (options.surfaces) return; // explicit override wins; no live discovery
@@ -197,12 +201,33 @@ export function createAssistantDockController(
     return surfaces.some((s) => surfaceKey(s) === surfaceKey(identity));
   }
 
+  // F2 (#2904 review): a route change can unmount a surface between preview
+  // and Confirm. Fail its outstanding preview closed rather than let a stale
+  // Confirm reach applyAction.
+  function invalidatePreviewedActionsFor(identity: DataSurfaceIdentity) {
+    for (const [requestId, state] of actions) {
+      if (
+        surfaceKey(state.request.identity) === surfaceKey(identity) &&
+        (state.status === 'previewed' || state.status === 'previewing')
+      ) {
+        actions.set(requestId, {
+          ...state,
+          status: 'failed',
+          error: `AssistantDock: surface "${surfaceKey(identity)}" was unmounted before this action was applied`,
+        });
+      }
+    }
+  }
+
   // Initial sync + live updates as routes mount/unmount surfaces.
   syncSurfacesFromRegistry();
   if (!options.surfaces) {
     unsubscribeRegistry = options.registry.subscribe((event) => {
       if (event.type === 'registered' || event.type === 'unregistered') {
         syncSurfacesFromRegistry();
+      }
+      if (event.type === 'unregistered') {
+        invalidatePreviewedActionsFor(event.identity);
       }
     });
   }
@@ -217,10 +242,13 @@ export function createAssistantDockController(
   }
 
   async function pollTick() {
-    if (!isVisible() || !activeThreadId) return;
+    if (disposed || !isVisible() || !activeThreadId) return;
     markStalePendingSends();
     const threadId = activeThreadId;
     const fresh = await options.transport.loadMessages(threadId);
+    // F3 (#2904 review): dispose() can run while this await is in flight —
+    // bail before touching state or re-arming the interval.
+    if (disposed) return;
     if (activeThreadId !== threadId) return; // thread switched mid-flight
     messages = fresh;
     const hasProcessing = pendingSends.some((p) => p.status === 'processing');
@@ -232,14 +260,24 @@ export function createAssistantDockController(
         (m) => m.role === 'user' && m.content === p.content,
       );
       if (userIndex < 0) return true;
-      return !messages
+      const resolved = messages
         .slice(userIndex + 1)
         .some((m) => m.role === 'assistant' || m.role === 'tool');
+      // F5 (#2904 review): this is the terminal resolution for an
+      // `inProgress` send that doSend() deliberately left the draft id
+      // cached for — clear it now so a later resend of the same draft
+      // mints a fresh id instead of reusing a long-resolved one.
+      if (resolved) draftIds.delete(draftKey(p.threadId, p.content));
+      return !resolved;
     });
   }
 
   function resetPollInterval(active: boolean) {
     if (pollTimer) clearInterval(pollTimer);
+    if (disposed) {
+      pollTimer = null;
+      return;
+    }
     pollTimer = setInterval(
       () => void pollTick(),
       active ? activePollIntervalMs : idlePollIntervalMs,
@@ -247,7 +285,7 @@ export function createAssistantDockController(
   }
 
   function startPolling() {
-    if (pollTimer) return;
+    if (disposed || pollTimer) return;
     resetPollInterval(pendingSends.some((p) => p.status === 'processing'));
   }
 
@@ -318,8 +356,13 @@ export function createAssistantDockController(
         clientRequestId,
         model: selectedModel,
       });
-      draftIds.delete(draftKey(threadId, content));
       if (result.inProgress) {
+        // F5 (#2904 review): do NOT clear the draft id here — the turn is
+        // still unresolved. Clearing it now would let a same-draft resend
+        // during this window mint a fresh clientRequestId, defeating the
+        // transport's dedup (mirrors PortalChatTool.svelte:304-322, which
+        // only clears on terminal resolution). The id is cleared below, on
+        // the poll-driven terminal transitions, and on error.
         pendingSends = pendingSends.map((p) =>
           p.clientRequestId === clientRequestId
             ? { ...p, status: 'processing' as const }
@@ -328,6 +371,7 @@ export function createAssistantDockController(
         startPolling();
         return;
       }
+      draftIds.delete(draftKey(threadId, content));
       if (activeThreadId === threadId) {
         const toAppend = [result.userMessage, result.assistantMessage].filter(
           (m): m is AssistantMessage => Boolean(m),
@@ -340,6 +384,7 @@ export function createAssistantDockController(
         (p) => p.clientRequestId !== clientRequestId,
       );
     } catch (error) {
+      draftIds.delete(draftKey(threadId, content));
       pendingSends = pendingSends.map((p) =>
         p.clientRequestId === clientRequestId
           ? { ...p, status: 'failed' as const }
@@ -432,6 +477,17 @@ export function createAssistantDockController(
   async function applyAction(requestId: string) {
     const state = actions.get(requestId);
     if (!state) return;
+    // F2 (#2904 review): re-check mount status at apply time, not only at
+    // preview time — a route change between preview and Confirm can unmount
+    // the surface, and previewAction's gate alone cannot catch that.
+    if (!isSurfaceMounted(state.request.identity)) {
+      actions.set(requestId, {
+        ...state,
+        status: 'failed',
+        error: `AssistantDock: surface "${surfaceKey(state.request.identity)}" is not mounted`,
+      });
+      return;
+    }
     if (!options.actionClient) {
       throw new Error('AssistantDock: applyAction requires an actionClient');
     }
@@ -477,8 +533,14 @@ export function createAssistantDockController(
   }
 
   function dispose() {
+    // Idempotent (#2904 review F1/F3): safe to call more than once — a
+    // second dispose() (or one racing an in-flight pollTick) must not
+    // re-arm the timer or double-unsubscribe.
+    if (disposed) return;
+    disposed = true;
     stopPolling();
     unsubscribeRegistry?.();
+    unsubscribeRegistry = null;
   }
 
   return {

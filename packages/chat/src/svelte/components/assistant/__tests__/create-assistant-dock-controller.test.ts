@@ -1,12 +1,53 @@
 // @vitest-environment jsdom
 
-import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
+import {
+  createDataSurfaceRegistry,
+  type DataSurfaceDescriptor,
+  type DataSurfaceIdentity,
+  type DataSurfaceRegistry,
+} from '@happyvertical/smrt-ui/data-surface';
 import { describe, expect, it, vi } from 'vitest';
 import {
   type AssistantMessage,
   createInMemoryAssistantTransport,
 } from '../assistant-transport.js';
 import { createAssistantDockController } from '../create-assistant-dock-controller.svelte.js';
+
+// A real registry (not the static fakeRegistry below) so 'unregistered'
+// events actually fire, for the F2 invalidation test.
+function realRegistryWithSurface(surfaceId: string) {
+  const identity: DataSurfaceIdentity = {
+    surfaceId,
+    kind: 'table',
+    subject: { type: 'tenant', id: 'tenant-a' },
+  };
+  const descriptor: DataSurfaceDescriptor = {
+    version: 1,
+    identity,
+    schemaVersion: 1,
+    label: surfaceId,
+    rowKey: 'id',
+    columns: [
+      { id: 'id', label: 'ID', capabilities: ['read'], role: 'row-key' },
+    ],
+    query: {
+      modes: ['rows'],
+      projectableColumnIds: ['id'],
+      searchableColumnIds: [],
+      filterableColumnIds: [],
+      sortableColumnIds: [],
+    },
+    actions: [],
+    controls: [],
+    limits: { maxQueryRows: 10, maxQueryBytes: 10_000, maxSelectionSize: 10 },
+  };
+  const registry = createDataSurfaceRegistry();
+  const unregister = registry.register({
+    descriptor,
+    getSnapshot: () => ({ revision: 1, state: {} }),
+  });
+  return { registry, identity, unregister };
+}
 
 function fakeRegistry(
   descriptors: { surfaceId: string; kind: 'table' }[] = [],
@@ -84,14 +125,22 @@ describe('createAssistantDockController', () => {
     expect(state?.error).toMatch(/not mounted/);
   });
 
-  it('reuses the same clientRequestId when the same draft is retried', async () => {
+  it('reuses the same clientRequestId across two send() calls for the same draft while it is still unresolved (F5)', async () => {
     const seenIds: string[] = [];
-    const transport = createInMemoryAssistantTransport();
+    const transport = createInMemoryAssistantTransport({
+      // Every send for this thread reports inProgress — the draft must stay
+      // "unresolved" from doSend's point of view across both calls.
+      simulateInProgressOnce: false,
+    });
+    // simulateInProgressOnce only covers the FIRST send per thread in the
+    // stock in-memory transport; force every call to report inProgress so
+    // this test exercises the truly-unresolved window F5 is about.
     const originalSend = transport.sendMessage.bind(transport);
     transport.sendMessage = async (input) => {
       seenIds.push(input.clientRequestId);
-      return originalSend(input);
+      return { inProgress: true, userMessage: undefined };
     };
+    void originalSend;
     const controller = createAssistantDockController({
       transport,
       registry: fakeRegistry([]),
@@ -100,16 +149,17 @@ describe('createAssistantDockController', () => {
     await controller.openThread(thread.id);
 
     await controller.send('hello');
-    // A second send() call with the SAME content before the first resolved
-    // would reuse the id; here we simulate a retry of the same draft after
-    // it already resolved by calling send() again with identical content —
-    // the transport dedups by clientRequestId, so this must not double-post.
-    seenIds.length = 0;
+    expect(controller.pendingSends[0]?.status).toBe('processing');
+    // A second send() for the identical (threadId, content) draft while the
+    // first is still unresolved (inProgress) must observe the SAME
+    // clientRequestId at the transport — this is what
+    // docs/assistant-dock.md claims mirrors PortalChatTool.svelte:304-322.
+    // Before the F5 fix, doSend cleared draftIds even on the inProgress
+    // branch, so this second call minted a brand-new id.
     await controller.send('hello');
-    // First send already cleared the draft id on success, so a second call
-    // with the same content mints a NEW id (it's a new logical message) —
-    // assert instead that within one unresolved draft the id is stable.
-    expect(seenIds).toHaveLength(1);
+
+    expect(seenIds).toHaveLength(2);
+    expect(seenIds[0]).toBe(seenIds[1]);
   });
 
   it('marks a pending send stale after the timeout and offers retry via the same clientRequestId', async () => {
@@ -262,4 +312,168 @@ describe('createAssistantDockController', () => {
     expect(seenKeys).toHaveLength(2);
     expect(seenKeys[0]).toBe(seenKeys[1]);
   });
+
+  // F2 (#2904 review): applyAction must re-check mount status, not only
+  // previewAction.
+  it('fails an apply closed if the surface was unmounted after preview', async () => {
+    const { registry, identity, unregister } =
+      realRegistryWithSurface('orders');
+    const applySpy = vi.fn();
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => {
+          applySpy();
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok: true,
+          };
+        },
+      },
+    });
+
+    const requestId = 'req-unmounted-apply';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    unregister();
+    await controller.applyAction(requestId);
+
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(controller.actions.get(requestId)?.status).toBe('failed');
+    expect(controller.actions.get(requestId)?.error).toMatch(/not mounted/);
+  });
+
+  it('invalidates an outstanding previewed action when its surface unregisters', async () => {
+    const { registry, identity, unregister } =
+      realRegistryWithSurface('orders');
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'apply',
+          ok: true,
+        }),
+      },
+    });
+
+    const requestId = 'req-invalidate-on-unregister';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    unregister();
+
+    expect(controller.actions.get(requestId)?.status).toBe('failed');
+    expect(controller.actions.get(requestId)?.error).toMatch(/unmounted/);
+  });
+
+  // F3 (#2904 review): dispose() during an in-flight loadMessages must not
+  // re-arm the poll interval.
+  it('startPolling() after dispose() is a no-op (F3 disposed guard)', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const loadMessagesSpy = vi.spyOn(transport, 'loadMessages');
+    const controller = createAssistantDockController({
+      transport,
+      registry: realRegistryWithSurface('orders').registry,
+      activePollIntervalMs: 5,
+      idlePollIntervalMs: 5,
+    });
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id);
+    loadMessagesSpy.mockClear();
+
+    controller.dispose();
+    // Before the F3 fix, resetPollInterval unconditionally armed a timer
+    // whenever called, including via a stray startPolling() after dispose.
+    controller.startPolling();
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(loadMessagesSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not re-arm the poll interval when dispose() races an in-flight pollTick', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      transport,
+      registry: realRegistryWithSurface('orders').registry,
+      // Long enough that no second natural tick fires during the test —
+      // the only pollTick in play is the one the real interval fires once.
+      activePollIntervalMs: 30,
+      idlePollIntervalMs: 30,
+    });
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id); // consumes its own loadMessages call, unrelated to the gate below
+
+    // Gate ONLY loadMessages calls made from here on — i.e. the poll's own
+    // call, not openThread's.
+    let resolveGatedLoadMessages: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      resolveGatedLoadMessages = resolve;
+    });
+    let callCount = 0;
+    const originalLoadMessages = transport.loadMessages.bind(transport);
+    transport.loadMessages = async (threadId: string) => {
+      callCount += 1;
+      if (callCount === 1) await gate;
+      return originalLoadMessages(threadId);
+    };
+
+    controller.startPolling();
+    // Wait for the interval to fire once and land inside the gated await.
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    expect(callCount).toBe(1);
+
+    // dispose() runs WHILE that pollTick is still awaiting loadMessages.
+    controller.dispose();
+    resolveGatedLoadMessages?.();
+    // Give pollTick's continuation, and any (incorrect) re-armed interval,
+    // several multiples of the poll interval to fire again.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // The bug: pollTick's post-await code unconditionally called
+    // resetPollInterval(...), re-arming a timer after dispose(). The fix
+    // must leave the call count at exactly 1 — the single tick that was
+    // already in flight when dispose() ran, and nothing after.
+    expect(callCount).toBe(1);
+  }, 10_000);
 });
