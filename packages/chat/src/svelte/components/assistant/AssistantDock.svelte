@@ -204,10 +204,25 @@ async function handleConfirmAction(requestId: string) {
                 toolCall={{
                   toolName: action.request.actionId,
                   toolCallId: requestId,
-                  status: action.status === 'failed' ? 'error' : 'success',
+                  status:
+                    action.status === 'failed'
+                      ? 'error'
+                      : action.status === 'applying'
+                        ? 'running'
+                        : 'success',
                   error: action.error,
                 }}
-                actionResult={action.applyResult ?? action.previewResult}
+                actionResult={action.applyResult ??
+                  // Finding 3 (#2904 review, fresh cycle): only surface the
+                  // preview result — and its live Confirm/Reject — while the
+                  // action is actually AWAITING confirmation. Once Confirm
+                  // has been clicked ('applying'), the preview's phase:
+                  // 'preview' result must stop rendering those buttons; the
+                  // toolCall.status 'running' mapping above shows the
+                  // existing spinner/"Executing..." state instead.
+                  (action.status === 'previewed'
+                    ? action.previewResult
+                    : undefined)}
                 onconfirmaction={() => handleConfirmAction(requestId)}
                 onrejectaction={() => controller.rejectAction(requestId)}
               />

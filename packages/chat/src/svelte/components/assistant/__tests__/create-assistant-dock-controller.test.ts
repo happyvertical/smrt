@@ -1093,4 +1093,78 @@ describe('createAssistantDockController', () => {
     expect(state?.error).toBe('server 500');
     controller.dispose();
   });
+
+  // Finding 3 (#2904 review, fresh cycle): a Reject during an in-flight
+  // apply must not be silently overridden by that apply landing afterward.
+  it('a slow apply does not resurrect a rejected action as applied', async () => {
+    const { registry, identity } = realRegistryWithSurface('orders');
+    let resolveApply: ((ok: boolean) => void) | undefined;
+    const applyGate = new Promise<boolean>((resolve) => {
+      resolveApply = resolve;
+    });
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => {
+          const ok = await applyGate;
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok,
+          };
+        },
+      },
+    });
+    const thread = await controller.createThread('t1');
+    await controller.openThread(thread.id);
+
+    const requestId = 'req-reject-during-apply';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    const applyPromise = controller.applyAction(requestId);
+    // A second concurrent call is refused outright — it must not disturb
+    // the first one's in-flight apply.
+    await controller.applyAction(requestId);
+    expect(controller.actions.get(requestId)?.status).toBe('applying');
+
+    // The user rejects WHILE the apply above is still in flight.
+    controller.rejectAction(requestId);
+    expect(controller.actions.has(requestId)).toBe(false);
+
+    // The server mutation "lands" (resolves ok:true) after the rejection.
+    resolveApply?.(true);
+    await applyPromise;
+
+    // The entry must NOT be resurrected as 'applied' — it stays gone.
+    expect(controller.actions.has(requestId)).toBe(false);
+    // The server mutation genuinely happened despite the rejection — the
+    // controller surfaces that as a message rather than hiding it.
+    expect(
+      controller.messages.some((m) =>
+        m.content.includes('already applied by the server'),
+      ),
+    ).toBe(true);
+
+    controller.dispose();
+  });
 });

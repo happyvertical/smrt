@@ -584,6 +584,10 @@ export function createAssistantDockController(
   async function applyAction(requestId: string) {
     const state = actions.get(requestId);
     if (!state) return;
+    // Finding 3 (#2904 review, fresh cycle): refuse a second concurrent
+    // apply for the same request — Confirm/Reject were previously still
+    // live (and clickable) while an apply was already in flight.
+    if (state.status === 'applying') return;
     // F2 (#2904 review): re-check mount status at apply time, not only at
     // preview time — a route change between preview and Confirm can unmount
     // the surface, and previewAction's gate alone cannot catch that.
@@ -631,19 +635,50 @@ export function createAssistantDockController(
         applyRequest,
         state.idempotencyKey,
       );
-      actions.set(requestId, {
-        ...state,
-        request: applyRequest,
-        status: result.ok ? 'applied' : 'failed',
-        applyResult: result,
-        error: result.ok ? undefined : result.reason,
-      });
+      // Finding 3 (#2904 review, fresh cycle): re-read the CURRENT entry,
+      // not the pre-await `state` snapshot — a Reject click during this
+      // await deletes the entry (rejectAction), and writing back the stale
+      // snapshot here would resurrect it as 'applied' even though the user
+      // explicitly rejected it, silently overriding that decision (and
+      // clobbering any other concurrent transition for this request id).
+      // If the entry is gone or no longer 'applying', drop the write.
+      const current = actions.get(requestId);
+      if (current && current.status === 'applying') {
+        actions.set(requestId, {
+          ...current,
+          request: applyRequest,
+          status: result.ok ? 'applied' : 'failed',
+          applyResult: result,
+          error: result.ok ? undefined : result.reason,
+        });
+      } else if (!current && result.ok) {
+        // The user rejected while this apply was in flight, and the server
+        // mutation landed anyway — the rejection cannot undo a real server
+        // effect. Surface that as a system message in the thread rather
+        // than silently dropping it, so the user isn't left unaware their
+        // rejected action still happened.
+        if (activeThreadId) {
+          messages = [
+            ...messages,
+            {
+              id: `applied-after-reject-${requestId}`,
+              threadId: activeThreadId,
+              content: `The action "${applyRequest.actionId}" you rejected was already applied by the server before the rejection took effect.`,
+              role: 'system',
+              createdAt: new Date(now()),
+            },
+          ];
+        }
+      }
     } catch (error) {
-      actions.set(requestId, {
-        ...state,
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
-      });
+      const current = actions.get(requestId);
+      if (current && current.status === 'applying') {
+        actions.set(requestId, {
+          ...current,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
