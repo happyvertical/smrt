@@ -180,13 +180,31 @@ const definition = await createSmrtCollectionDataSurfaceDefinition({
 ```
 
 The schema is derived from `ObjectRegistry.getAllFields()`: `sensitive` and
-`readPermission`-gated fields, transient/non-column-backed fields, the tenant
-field, and internal `_`-prefixed fields are never declared — the same
-field-policy boundary `@happyvertical/smrt-content`'s ContentList adapter
-enforces. Execution ANDs the tenant read scope and the application `scope`
-into every branch of the caller's filter (`all`/`any`/`not`/condition,
-lowered to bounded disjunctive-normal-form `where` conditions), supports both
-offset and opaque-cursor paging, and never hydrates the full collection. See
+`readPermission`-gated fields, transient/non-column-backed fields, the
+class's configured tenant field (from `@TenantScoped()`; unscoped classes get
+no tenant field exclusion or scoping at all), and internal `_`-prefixed
+fields are never declared — the same field-policy boundary
+`@happyvertical/smrt-content`'s ContentList adapter enforces. A host-supplied
+`schema` override is intersected with this same registry-derived exclusion
+set, so it can only narrow, never widen, what is advertised. Execution ANDs
+the tenant read scope and the application `scope` into every branch of the
+caller's filter (`all`/`any`/`not`/condition, lowered to bounded
+disjunctive-normal-form `where` conditions), supports both offset and
+opaque-cursor paging, and never hydrates the full collection. An explicit,
+normalized-empty application `scope` denies all rows and short-circuits
+without calling the collection.
+
+Cursors are opaque and bound to the exact query: they encode `{ binding,
+offset }`, where `binding` fingerprints the normalized request (filter, sort,
+projection) plus the merged tenant/application scope, so a cursor from a
+different query, filter, sort, or tenant is rejected rather than silently
+misapplied. `facets` support defaults from the collection's shape
+(`typeof collection.facets === 'function'` for a static collection; `true`
+for a resolver-backed one, which must set `facets: false` if its resolved
+collection lacks `facets()`). Because `SmrtCollectionQueryCollection` is
+structural, the adapter cannot read a host collection's own row-limit cap —
+set `maxPageLimit` at or below that cap, or a clamped page is detected and
+reported via a result warning rather than corrected. See
 `src/smrt-collection-data-surface.ts` for the full contract and
 `docs/data-surface-conformance.md` for the integration checklist.
 

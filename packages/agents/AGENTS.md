@@ -250,7 +250,7 @@ const tool = createInvokeAgentTool({
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
 | `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
-| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction, DNF filter/scope lowering, and offset/cursor paging (#2905) |
+| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/playbook-preflight.ts` | `playbooks.preflight` PrincipalTool — advisory per-step verdicts, never a grant (#2590) |

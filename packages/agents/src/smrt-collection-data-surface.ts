@@ -31,7 +31,7 @@
  * that would not fit `maxResultBytes` here fails normalization instead of
  * being shrunk. `createContentListDataSurfaceDefinition` is therefore not
  * reimplemented as a thin wrapper over this adapter in this change — doing so
- * safely needs that engine ported first. Tracked as a follow-up (see PR body).
+ * safely needs that engine ported first. Tracked as a follow-up in #2912.
  */
 
 import { createHash } from 'node:crypto';
@@ -126,7 +126,15 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
   identityField?: string;
   /** Extra field ids to exclude beyond the standard field-policy exclusions. */
   exclude?: readonly string[];
+  /** Defaults to `min(50, maxPageLimit)` when omitted. */
   defaultPageLimit?: number;
+  /**
+   * Upper bound on `page.limit`. `SmrtCollectionQueryCollection` is
+   * structural, so the adapter cannot read a host collection's own
+   * `maxListLimit`; hosts MUST set this to a value <= the collection's
+   * actual `maxListLimit`, or a clamped response will under-report the
+   * effective page size (detected and warned about, but not corrected).
+   */
   maxPageLimit?: number;
   maxResultBytes?: number;
   defaultSort?: DataQuerySort[];
