@@ -10,7 +10,10 @@
  */
 import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
+import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
 import AssistantComposer from './AssistantComposer.svelte';
@@ -42,13 +45,21 @@ function bubbleVariant(
 }
 
 export interface Props {
+  /** Thread/message I/O backend; see `./assistant-transport.js`. */
   transport: AssistantTransport;
+  /** The host shell's `DataSurfaceRegistry` instance — the dock discovers
+   * currently-mounted surfaces from this and fails closed when none are
+   * registered. */
   registry: DataSurfaceRegistry;
+  /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
+   * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
+  /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
 }
 
 const { transport, registry, actionClient, visible = true }: Props = $props();
+const { t } = useI18n();
 
 // Passed to the controller as getters (not direct values) so a later
 // reassignment of these bound props (e.g. a host swapping the transport or
@@ -133,8 +144,7 @@ async function handleConfirmAction(requestId: string) {
   <div class="assistant-dock-main">
     {#if controller.surfaces.length === 0}
       <p class="assistant-dock-empty">
-        No data surfaces are mounted on this route — the assistant can chat
-        but has no actions available here.
+        {t(M['chat.assistant_dock.no_surfaces'])}
       </p>
     {/if}
 
@@ -173,11 +183,15 @@ async function handleConfirmAction(requestId: string) {
 
       {#if controller.pendingSends.some((p) => p.status === 'stale')}
         <div class="assistant-dock-stale">
-          <p>The assistant is taking longer than expected.</p>
+          <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
           {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
-            <button type="button" onclick={() => controller.retry(pending.clientRequestId)}>
-              Retry "{pending.content}"
-            </button>
+            <Button
+              type="button"
+              size="sm"
+              onclick={() => controller.retry(pending.clientRequestId)}
+            >
+              {t(M['chat.assistant_dock.retry'], { content: pending.content })}
+            </Button>
           {/each}
         </div>
       {/if}

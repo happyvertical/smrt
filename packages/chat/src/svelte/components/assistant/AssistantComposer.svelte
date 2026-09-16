@@ -10,12 +10,23 @@
  * (#2904 review fix).
  */
 import { Textarea } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from '../../i18n.js';
 import type { AssistantAttachmentRef } from './assistant-transport.js';
 
+const { t } = useI18n();
+
 export interface Props {
+  /** Called with the trimmed message text and any staged attachments when
+   * the user sends — via Enter or the Send button. */
   onsend: (content: string, attachments: AssistantAttachmentRef[]) => void;
+  /** Called with the picked/dropped files; resolves to the uploaded
+   * attachment refs to stage as removable chips above the input. */
   onupload: (files: FileList) => Promise<AssistantAttachmentRef[]>;
+  /** Disables the composer (e.g. no active thread yet). */
   disabled?: boolean;
+  /** Placeholder text for the empty textarea. */
   placeholder?: string;
 }
 
@@ -102,27 +113,33 @@ function removeAttachment(id: string) {
       {#each stagedAttachments as attachment (attachment.id)}
         <li class="assistant-composer-chip">
           <span class="assistant-composer-chip-name">{attachment.name}</span>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             class="assistant-composer-chip-remove"
             onclick={() => removeAttachment(attachment.id)}
-            aria-label={`Remove ${attachment.name}`}
+            aria-label={t(M['chat.assistant_composer.remove_attachment'], {
+              name: attachment.name,
+            })}
           >
             ×
-          </button>
+          </Button>
         </li>
       {/each}
     </ul>
   {/if}
   <div class="assistant-composer-row">
     <!-- raw-primitive-allow: compact icon-only attach control backed by a hidden native file input; opens the OS picker, matching MessageInput's icon-button send control pattern -->
-    <button
+    <Button
       type="button"
+      variant="secondary"
+      size="sm"
       class="assistant-composer-attach"
       onclick={() => fileInputEl?.click()}
       disabled={disabled || uploading}
-      aria-label="Attach files"
-      title="Attach files"
+      aria-label={t(M['chat.assistant_composer.attach_files'])}
+      title={t(M['chat.assistant_composer.attach_files'])}
     >
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
         <path
@@ -134,7 +151,8 @@ function removeAttachment(id: string) {
           stroke-linejoin="round"
         />
       </svg>
-    </button>
+    </Button>
+    <!-- raw-primitive-allow: visually-hidden native file input that backs the attach button's OS picker; the base Input primitive renders a visible bordered control and cannot be this hidden picker (same pattern as ../shared/FileUpload.svelte) -->
     <input
       bind:this={fileInputEl}
       type="file"
@@ -152,16 +170,16 @@ function removeAttachment(id: string) {
       rows={1}
       onkeydown={handleKeydown}
       oninput={handleInput}
-      aria-label="Message"
+      aria-label={t(M['chat.assistant_composer.message_label'])}
     />
-    <button
+    <Button
       type="button"
       class="assistant-composer-send"
       onclick={handleSend}
       disabled={disabled || uploading || !content.trim()}
     >
-      Send
-    </button>
+      {t(M['chat.assistant_composer.send'])}
+    </Button>
   </div>
 </div>
 
@@ -179,7 +197,7 @@ function removeAttachment(id: string) {
     gap: var(--smrt-spacing-2, 8px);
   }
 
-  .assistant-composer-attach {
+  :global(.assistant-composer-attach) {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -194,11 +212,11 @@ function removeAttachment(id: string) {
     cursor: pointer;
   }
 
-  .assistant-composer-attach:hover:not(:disabled) {
+  :global(.assistant-composer-attach:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container, #f0f0f4);
   }
 
-  .assistant-composer-attach:disabled {
+  :global(.assistant-composer-attach:disabled) {
     opacity: 0.5;
     cursor: not-allowed;
   }
@@ -216,7 +234,7 @@ function removeAttachment(id: string) {
     resize: none;
   }
 
-  .assistant-composer-send {
+  :global(.assistant-composer-send) {
     flex-shrink: 0;
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border: none;
@@ -227,7 +245,7 @@ function removeAttachment(id: string) {
     cursor: pointer;
   }
 
-  .assistant-composer-send:disabled {
+  :global(.assistant-composer-send:disabled) {
     opacity: 0.5;
     cursor: not-allowed;
   }
@@ -260,7 +278,7 @@ function removeAttachment(id: string) {
     white-space: nowrap;
   }
 
-  .assistant-composer-chip-remove {
+  :global(.assistant-composer-chip-remove) {
     border: none;
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);

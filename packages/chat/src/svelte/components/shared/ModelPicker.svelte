@@ -30,7 +30,9 @@ export interface Props {
   models?: ModelOption[];
   /** Allow-list of model ids; empty/omitted means all `models` are offered. */
   allowedModelIds?: string[];
+  /** The selected model id; bindable. */
   value: string;
+  /** Fired with the newly selected model id. */
   onchange?: (modelId: string) => void;
 }
 

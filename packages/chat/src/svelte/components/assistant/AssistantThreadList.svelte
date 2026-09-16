@@ -2,39 +2,60 @@
 /**
  * AssistantThreadList - sidebar list of assistant threads (#2904).
  */
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from '../../i18n.js';
 import type { AssistantThreadSummary } from './assistant-transport.js';
 
+const { t } = useI18n();
+
 export interface Props {
+  /** Threads to list, most-recent-first order left to the caller. */
   threads: AssistantThreadSummary[];
+  /** The currently open thread id, highlighted and `aria-current`. */
   activeThreadId?: string | null;
+  /** Fired with a thread's id when the user clicks its row. */
   onselect: (threadId: string) => void;
+  /** Shown as a "+ New conversation" row when present; fired on click. */
   oncreate?: () => void;
 }
 
 const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
 </script>
 
-<nav class="assistant-thread-list" aria-label="Assistant conversations">
+<nav
+  class="assistant-thread-list"
+  aria-label={t(M['chat.assistant_thread_list.conversations_label'])}
+>
   {#if oncreate}
-    <button type="button" class="assistant-thread-list-new" onclick={oncreate}>
-      + New conversation
-    </button>
+    <Button
+      type="button"
+      variant="ghost"
+      class="assistant-thread-list-new"
+      onclick={oncreate}
+    >
+      {t(M['chat.assistant_thread_list.new_conversation'])}
+    </Button>
   {/if}
   <ul>
     {#each threads as thread (thread.id)}
       <li>
-        <button
+        <Button
           type="button"
-          class="assistant-thread-list-item"
-          class:active={thread.id === activeThreadId}
+          variant="ghost"
+          class={thread.id === activeThreadId
+            ? 'assistant-thread-list-item active'
+            : 'assistant-thread-list-item'}
           onclick={() => onselect(thread.id)}
           aria-current={thread.id === activeThreadId ? 'true' : undefined}
         >
-          <span class="title">{thread.title || 'Untitled'}</span>
+          <span class="title">
+            {thread.title || t(M['chat.assistant_thread_list.untitled'])}
+          </span>
           {#if thread.messageCount > 0}
             <span class="count">{thread.messageCount}</span>
           {/if}
-        </button>
+        </Button>
       </li>
     {/each}
   </ul>
@@ -50,7 +71,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     overflow-y: auto;
   }
 
-  .assistant-thread-list-new {
+  :global(.assistant-thread-list-new) {
     margin: var(--smrt-spacing-2, 8px);
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border: 1px dashed var(--smrt-color-outline-variant, #c4c6cf);
@@ -62,7 +83,7 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     text-align: left;
   }
 
-  .assistant-thread-list-new:hover {
+  :global(.assistant-thread-list-new:hover) {
     background: var(--smrt-color-surface-container, #f0f0f4);
   }
 
@@ -72,10 +93,10 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     padding: 0 var(--smrt-spacing-2, 8px) var(--smrt-spacing-2, 8px);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
-  .assistant-thread-list-item {
+  :global(.assistant-thread-list-item) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -91,23 +112,23 @@ const { threads, activeThreadId = null, onselect, oncreate }: Props = $props();
     cursor: pointer;
   }
 
-  .assistant-thread-list-item:hover {
+  :global(.assistant-thread-list-item:hover) {
     background: var(--smrt-color-surface-container, #f0f0f4);
   }
 
-  .assistant-thread-list-item.active {
+  :global(.assistant-thread-list-item.active) {
     background: var(--smrt-color-secondary-container, #d7e3f8);
     color: var(--smrt-color-on-secondary-container, #0e1d31);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  .assistant-thread-list-item .title {
+  .title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .assistant-thread-list-item .count {
+  .count {
     flex-shrink: 0;
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);

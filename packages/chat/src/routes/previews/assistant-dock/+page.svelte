@@ -407,7 +407,7 @@ async function handleConfirmAction(requestId: string) {
   }
   .status-shipped {
     color: var(--smrt-color-success, #1a7a3a);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
   .dock-scroll {
     flex: 1;

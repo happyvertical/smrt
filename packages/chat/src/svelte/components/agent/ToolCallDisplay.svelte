@@ -6,6 +6,7 @@
  */
 import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 import type { ToolCallDisplayData } from '../../types.js';
 
@@ -19,8 +20,10 @@ export interface Props {
    * that never pass this prop see no change.
    */
   actionResult?: DataSurfaceActionResult;
-  /** Shown only while `actionResult.phase === 'preview' && actionResult.ok`. */
+  /** Fired by the Confirm button, shown only while
+   * `actionResult.phase === 'preview' && actionResult.ok`. */
   onconfirmaction?: () => void;
+  /** Fired by the Reject button, shown alongside `onconfirmaction`. */
   onrejectaction?: () => void;
 }
 
@@ -158,13 +161,22 @@ function formatDuration(ms: number | undefined): string {
               <pre class="tool-call__json">{formatJson(actionResult.details)}</pre>
             {:else if actionResult.phase === 'apply'}
               <p class="tool-call__applied-fallback">
-                Change applied successfully.
+                {t(M['chat.tool_call_display.applied_successfully'])}
               </p>
             {/if}
             {#if actionResult.phase === 'preview'}
               <div class="tool-call__data-surface-action-buttons">
-                <button type="button" onclick={() => onconfirmaction?.()}>Confirm</button>
-                <button type="button" onclick={() => onrejectaction?.()}>Reject</button>
+                <Button type="button" size="sm" onclick={() => onconfirmaction?.()}>
+                  {t(M['chat.tool_call_display.confirm'])}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onclick={() => onrejectaction?.()}
+                >
+                  {t(M['chat.tool_call_display.reject'])}
+                </Button>
               </div>
             {/if}
           {:else}
