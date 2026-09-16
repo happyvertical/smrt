@@ -540,26 +540,45 @@ export function createAssistantDockController(
       });
       return;
     }
-    if (!options.actionClient) {
-      throw new Error('AssistantDock: previewAction requires an actionClient');
+    // Finding 2 (#2904 review, fresh cycle): normalizeDataSurfaceActionRequest
+    // can throw (e.g. a malformed proposal) and actionClient.preview is
+    // documented as "an authenticated HTTP call to a server route" — i.e. it
+    // rejects on any network error/5xx. Neither was previously caught, so a
+    // throw/reject here left the entry stuck at 'previewing' (ToolCallDisplay
+    // kept rendering live Confirm/Reject with no error) AND escaped as an
+    // unhandled promise rejection. Every path below must reach a terminal
+    // status.
+    try {
+      if (!options.actionClient) {
+        throw new Error(
+          'AssistantDock: previewAction requires an actionClient',
+        );
+      }
+      const normalized = normalizeDataSurfaceActionRequest({
+        ...request,
+        phase: 'preview',
+      });
+      actions.set(actionKey(normalized), {
+        request: normalized,
+        status: 'previewing',
+        idempotencyKey,
+      });
+      const result = await options.actionClient.preview(normalized);
+      actions.set(actionKey(normalized), {
+        request: normalized,
+        status: result.ok ? 'previewed' : 'failed',
+        previewResult: result,
+        error: result.ok ? undefined : result.reason,
+        idempotencyKey,
+      });
+    } catch (error) {
+      actions.set(actionKey(request), {
+        request,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+        idempotencyKey,
+      });
     }
-    const normalized = normalizeDataSurfaceActionRequest({
-      ...request,
-      phase: 'preview',
-    });
-    actions.set(actionKey(normalized), {
-      request: normalized,
-      status: 'previewing',
-      idempotencyKey,
-    });
-    const result = await options.actionClient.preview(normalized);
-    actions.set(actionKey(normalized), {
-      request: normalized,
-      status: result.ok ? 'previewed' : 'failed',
-      previewResult: result,
-      error: result.ok ? undefined : result.reason,
-      idempotencyKey,
-    });
   }
 
   async function applyAction(requestId: string) {
@@ -576,44 +595,56 @@ export function createAssistantDockController(
       });
       return;
     }
-    if (!options.actionClient) {
-      throw new Error('AssistantDock: applyAction requires an actionClient');
+    // Finding 2 (#2904 review, fresh cycle): same rationale as previewAction
+    // above — normalize can throw and actionClient.apply can reject; neither
+    // was caught, leaving the entry stuck at 'applying' (Confirm/Reject
+    // still rendered, no error shown) and an unhandled promise rejection.
+    try {
+      if (!options.actionClient) {
+        throw new Error('AssistantDock: applyAction requires an actionClient');
+      }
+      // idempotencyKey is distinct from send's clientRequestId (binding
+      // decision #2904) and is carried on the wire request
+      // (`DataSurfaceActionWireRequest.idempotencyKey`,
+      // `packages/types/src/data-surface.ts:274`) by the host's actionClient
+      // implementation; the client-facing `DataSurfaceActionRequest` itself
+      // has no idempotency field, only `confirmationToken` from the preview.
+      // Reuses `state.idempotencyKey`, minted once in `previewAction` — a
+      // retried apply (e.g. after a client-side timeout) replays against the
+      // same key instead of re-executing.
+      const applyRequest = normalizeDataSurfaceActionRequest({
+        ...state.request,
+        phase: 'apply',
+        // Only set when defined: an explicit `confirmationToken: undefined`
+        // key fails normalizeDataSurfaceActionRequest's JSON-safety check for
+        // an action whose preview didn't require confirmation.
+        ...(state.previewResult?.confirmationToken
+          ? { confirmationToken: state.previewResult.confirmationToken }
+          : {}),
+      });
+      actions.set(requestId, {
+        ...state,
+        request: applyRequest,
+        status: 'applying',
+      });
+      const result = await options.actionClient.apply(
+        applyRequest,
+        state.idempotencyKey,
+      );
+      actions.set(requestId, {
+        ...state,
+        request: applyRequest,
+        status: result.ok ? 'applied' : 'failed',
+        applyResult: result,
+        error: result.ok ? undefined : result.reason,
+      });
+    } catch (error) {
+      actions.set(requestId, {
+        ...state,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    // idempotencyKey is distinct from send's clientRequestId (binding
-    // decision #2904) and is carried on the wire request
-    // (`DataSurfaceActionWireRequest.idempotencyKey`,
-    // `packages/types/src/data-surface.ts:274`) by the host's actionClient
-    // implementation; the client-facing `DataSurfaceActionRequest` itself
-    // has no idempotency field, only `confirmationToken` from the preview.
-    // Reuses `state.idempotencyKey`, minted once in `previewAction` — a
-    // retried apply (e.g. after a client-side timeout) replays against the
-    // same key instead of re-executing.
-    const applyRequest = normalizeDataSurfaceActionRequest({
-      ...state.request,
-      phase: 'apply',
-      // Only set when defined: an explicit `confirmationToken: undefined`
-      // key fails normalizeDataSurfaceActionRequest's JSON-safety check for
-      // an action whose preview didn't require confirmation.
-      ...(state.previewResult?.confirmationToken
-        ? { confirmationToken: state.previewResult.confirmationToken }
-        : {}),
-    });
-    actions.set(requestId, {
-      ...state,
-      request: applyRequest,
-      status: 'applying',
-    });
-    const result = await options.actionClient.apply(
-      applyRequest,
-      state.idempotencyKey,
-    );
-    actions.set(requestId, {
-      ...state,
-      request: applyRequest,
-      status: result.ok ? 'applied' : 'failed',
-      applyResult: result,
-      error: result.ok ? undefined : result.reason,
-    });
   }
 
   function rejectAction(requestId: string) {

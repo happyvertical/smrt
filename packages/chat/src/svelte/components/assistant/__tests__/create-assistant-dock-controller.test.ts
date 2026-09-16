@@ -1018,4 +1018,79 @@ describe('createAssistantDockController', () => {
 
     controller.dispose();
   });
+
+  // Finding 2 (#2904 review, fresh cycle): a rejecting/throwing actionClient
+  // must always reach a terminal 'failed' status, never leave the entry
+  // stuck at 'previewing'/'applying' or escape as an unhandled rejection.
+  it('previewAction reaches a terminal failed status when actionClient.preview rejects', async () => {
+    const { registry, identity } = realRegistryWithSurface('orders');
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async () => {
+          throw new Error('network error');
+        },
+        apply: async () => {
+          throw new Error('unreachable');
+        },
+      },
+    });
+
+    // await never rejects at the call site — the rejection is caught inside.
+    await expect(
+      controller.previewAction({
+        version: 1,
+        requestId: 'req-preview-rejects',
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      }),
+    ).resolves.toBeUndefined();
+
+    const state = controller.actions.get('req-preview-rejects');
+    expect(state?.status).toBe('failed');
+    expect(state?.error).toBe('network error');
+    controller.dispose();
+  });
+
+  it('applyAction reaches a terminal failed status when actionClient.apply rejects', async () => {
+    const { registry, identity } = realRegistryWithSurface('orders');
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async () => {
+          throw new Error('server 500');
+        },
+      },
+    });
+
+    const requestId = 'req-apply-rejects';
+    await controller.previewAction({
+      version: 1,
+      requestId,
+      identity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get(requestId)?.status).toBe('previewed');
+
+    await expect(controller.applyAction(requestId)).resolves.toBeUndefined();
+
+    const state = controller.actions.get(requestId);
+    expect(state?.status).toBe('failed');
+    expect(state?.error).toBe('server 500');
+    controller.dispose();
+  });
 });
