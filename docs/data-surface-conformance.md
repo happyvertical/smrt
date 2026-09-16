@@ -13,7 +13,34 @@ the framework owns normalization, bounds, and refusal behavior.
 1. Build a server-owned `DataSurfaceDefinition` for each readable resource.
    Keep tenant and principal scope in the executor context. `data.discover`
    and `data.query` are evaluated as the bound principal, and sensitive fields
-   are removed before a descriptor or row crosses the tool boundary.
+   are removed before a descriptor or row crosses the tool boundary. For any
+   registered `SmrtObject` collection that isn't `Content`, build this from
+   `createSmrtCollectionDataSurfaceDefinition()` (`@happyvertical/smrt-agents`,
+   `packages/agents/src/smrt-collection-data-surface.ts`, #2905) rather than
+   hand-writing schema/redaction/filter logic per collection: it derives the
+   bounded schema from `ObjectRegistry.getAllFields()`, applies the same
+   `sensitive`/`readPermission` redaction as the Content adapter, and executes
+   through `collection.list/count/facets` with tenant scope, an
+   application-supplied scope, offset and opaque-cursor paging, projection,
+   sort, filters (`all`/`any`/`not`/condition, lowered to bounded DNF), facets,
+   and freshness/total metadata. Tenant scoping is class-aware: a
+   `@TenantScoped()` class is scoped on its configured tenant field (which is
+   also excluded from the derived schema), and an unscoped class gets no
+   tenant condition at all. Opaque cursors are bound to the exact normalized
+   request and merged scope that produced them (via a `binding` fingerprint),
+   so a cursor is rejected if the filter, sort, or tenant changes, or if it is
+   forged or replayed against a different query. `facets` capability defaults
+   from the collection's own shape (`typeof collection.facets === 'function'`
+   for a static collection; a resolver-backed collection must set
+   `facets: false` explicitly if its resolved collection lacks `facets()`).
+   Because `SmrtCollectionQueryCollection` is structural, the adapter cannot
+   read a host collection's own row-limit cap — callers MUST keep
+   `maxPageLimit` at or below that cap, or a silently clamped page is
+   detected and reported via a result warning rather than corrected.
+   `@happyvertical/smrt-content`'s `createContentListDataSurfaceDefinition()`
+   remains its own adapter (see the module doc comment in
+   `smrt-collection-data-surface.ts`, and follow-up #2912, for why it is not
+   yet a thin wrapper over the generic one).
 2. Mount a `DataSurfaceDescriptor` on `DataTable` (or a ContentList/report
    adapter) using the same identity, row key, version, schema version, and
    column capabilities. Human header interactions and registry commands must
