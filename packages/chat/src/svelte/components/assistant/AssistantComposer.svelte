@@ -19,8 +19,14 @@ const { t } = useI18n();
 
 export interface Props {
   /** Called with the trimmed message text and any staged attachments when
-   * the user sends — via Enter or the Send button. */
-  onsend: (content: string, attachments: AssistantAttachmentRef[]) => void;
+   * the user sends — via Enter or the Send button. May return a Promise
+   * (or reject/throw): the draft text and staged attachments are kept until
+   * it settles, cleared only on success (#2904 review finding 4) — a
+   * rejection restores them and shows an inline error. */
+  onsend: (
+    content: string,
+    attachments: AssistantAttachmentRef[],
+  ) => void | Promise<void>;
   /** Called with the picked/dropped files; resolves to the uploaded
    * attachment refs to stage as removable chips above the input. */
   onupload: (files: FileList) => Promise<AssistantAttachmentRef[]>;
@@ -40,6 +46,8 @@ const {
 let content = $state('');
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
+let sending = $state(false);
+let sendError = $state<string | null>(null);
 let fileInputEl: HTMLInputElement | undefined;
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
@@ -73,14 +81,28 @@ async function handleDrop(event: DragEvent) {
   }
 }
 
-function handleSend() {
+async function handleSend() {
   const trimmed = content.trim();
-  if (!trimmed || disabled) return;
-  onsend(trimmed, stagedAttachments);
-  content = '';
-  stagedAttachments = [];
-  if (textareaEl) {
-    textareaEl.style.height = 'auto';
+  if (!trimmed || disabled || sending) return;
+  sendError = null;
+  sending = true;
+  // #2904 review finding 4: keep the draft text/attachments until onsend
+  // settles — clearing them synchronously (the previous behavior) lost the
+  // user's message forever on a transport failure, with no visible error.
+  try {
+    await onsend(trimmed, stagedAttachments);
+    content = '';
+    stagedAttachments = [];
+    if (textareaEl) {
+      textareaEl.style.height = 'auto';
+    }
+  } catch (error) {
+    sendError =
+      error instanceof Error
+        ? error.message
+        : t(M['chat.assistant_composer.send_failed']);
+  } finally {
+    sending = false;
   }
 }
 
@@ -108,6 +130,11 @@ function removeAttachment(id: string) {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="assistant-composer" ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
+  {#if sendError}
+    <p class="assistant-composer-error" role="alert">
+      {t(M['chat.assistant_composer.send_error'], { message: sendError })}
+    </p>
+  {/if}
   {#if stagedAttachments.length > 0}
     <ul class="assistant-composer-attachments">
       {#each stagedAttachments as attachment (attachment.id)}
@@ -176,7 +203,7 @@ function removeAttachment(id: string) {
       type="button"
       class="assistant-composer-send"
       onclick={handleSend}
-      disabled={disabled || uploading || !content.trim()}
+      disabled={disabled || uploading || sending || !content.trim()}
     >
       {t(M['chat.assistant_composer.send'])}
     </Button>
@@ -285,5 +312,14 @@ function removeAttachment(id: string) {
     cursor: pointer;
     line-height: 1;
     padding: 0;
+  }
+
+  .assistant-composer-error {
+    margin: 0 0 var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
   }
 </style>

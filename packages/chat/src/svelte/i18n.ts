@@ -47,6 +47,8 @@ export const M = defineMessages({
   'chat.assistant_composer.message_label': 'Message',
   'chat.assistant_composer.send': 'Send',
   'chat.assistant_composer.remove_attachment': 'Remove {name}',
+  'chat.assistant_composer.send_error': 'Could not send: {message}',
+  'chat.assistant_composer.send_failed': 'Send failed',
 
   // AssistantThreadList (#2904)
   'chat.assistant_thread_list.conversations_label': 'Assistant conversations',
@@ -59,6 +61,9 @@ export const M = defineMessages({
   'chat.assistant_dock.taking_longer':
     'The assistant is taking longer than expected.',
   'chat.assistant_dock.retry': 'Retry "{content}"',
+  'chat.assistant_dock.error': 'Something went wrong: {message}',
+  'chat.assistant_dock.send_failed':
+    'A message failed to send. You can retry it below.',
 
   // RoomCreateDialog
   'chat.room_create_dialog.close': 'Close room creation dialog',

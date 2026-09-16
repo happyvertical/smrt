@@ -203,4 +203,21 @@ describe('AssistantDock (mounted component)', () => {
       screen.queryByText(/No data surfaces are mounted on this route/i),
     ).not.toBeInTheDocument();
   });
+
+  // Finding 4 (#2904 review, fresh cycle): a failed mount-time listThreads
+  // must render as a dock-level error, not an empty, explanation-free
+  // thread list.
+  it('renders a dock-level error when the mount-time loadThreads() call rejects', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    transport.listThreads = async () => {
+      throw new Error('offline');
+    };
+
+    render(AssistantDock, { props: { transport, registry } });
+
+    expect(
+      await screen.findByText(/Something went wrong: offline/i),
+    ).toBeInTheDocument();
+  });
 });

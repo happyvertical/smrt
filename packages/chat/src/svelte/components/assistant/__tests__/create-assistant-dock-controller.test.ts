@@ -1167,4 +1167,36 @@ describe('createAssistantDockController', () => {
 
     controller.dispose();
   });
+
+  // Finding 4 (#2904 review, fresh cycle): a failed listThreads must be
+  // visible on controller.error, not swallowed as an empty thread list.
+  it('loadThreads() records a transport rejection on controller.error', async () => {
+    const transport = createInMemoryAssistantTransport();
+    transport.listThreads = async () => {
+      throw new Error('offline');
+    };
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+    expect(controller.error).toBeNull();
+
+    await controller.loadThreads();
+
+    expect(controller.error).toBe('offline');
+    expect(controller.threads).toEqual([]);
+    controller.dispose();
+  });
+
+  it('a successful loadThreads() clears a previously-recorded error', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+    controller.setError('stale error from something else');
+    await controller.loadThreads();
+    expect(controller.error).toBeNull();
+    controller.dispose();
+  });
 });

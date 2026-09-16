@@ -111,6 +111,11 @@ const controller: AssistantDockController = createAssistantDockController({
 // its cleanup firing exactly once, on unmount.
 $effect(() => {
   untrack(() => {
+    // Finding 4 (#2904 review, fresh cycle): loadThreads/loadModels already
+    // catch internally and record the failure on controller.error (see
+    // create-assistant-dock-controller.svelte.ts) — void-firing them here
+    // was never the source of an unhandled rejection, but nothing rendered
+    // the failure before this fix. No .catch() needed here now.
     void controller.loadThreads();
     void controller.loadModels();
     controller.startPolling();
@@ -145,7 +150,19 @@ async function handleSend(
   content: string,
   attachments: AssistantAttachmentRef[],
 ) {
-  await controller.send(content, attachments);
+  // Finding 4 (#2904 review, fresh cycle): controller.send()/doSend()
+  // already marks the pendingSend 'failed' and rethrows on a transport
+  // error. Catch here to ALSO record it on controller.error (rendered as a
+  // dock-level banner), then rethrow so AssistantComposer's own `await
+  // onsend(...)` still sees the rejection and restores the user's draft
+  // instead of discarding it.
+  try {
+    await controller.send(content, attachments);
+    controller.setError(null);
+  } catch (error) {
+    controller.setError(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
 }
 
 async function handleUpload(
@@ -177,6 +194,12 @@ async function handleConfirmAction(requestId: string) {
   />
 
   <div class="assistant-dock-main">
+    {#if controller.error}
+      <p class="assistant-dock-error" role="alert">
+        {t(M['chat.assistant_dock.error'], { message: controller.error })}
+      </p>
+    {/if}
+
     {#if controller.surfaces.length === 0}
       <p class="assistant-dock-empty">
         {t(M['chat.assistant_dock.no_surfaces'])}
@@ -235,6 +258,26 @@ async function handleConfirmAction(requestId: string) {
         <div class="assistant-dock-stale">
           <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
           {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
+            <Button
+              type="button"
+              size="sm"
+              onclick={() => controller.retry(pending.clientRequestId)}
+            >
+              {t(M['chat.assistant_dock.retry'], { content: pending.content })}
+            </Button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if controller.pendingSends.some((p) => p.status === 'failed')}
+        <!-- Finding 4 (#2904 review, fresh cycle): a send that failed
+             transport-side previously had no visible representation at
+             all — only 'stale' rendered above. retry(clientRequestId)
+             already exists and reuses the same id, so it's the same
+             affordance as the stale case. -->
+        <div class="assistant-dock-failed">
+          <p>{t(M['chat.assistant_dock.send_failed'])}</p>
+          {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
             <Button
               type="button"
               size="sm"
@@ -331,6 +374,27 @@ async function handleConfirmAction(requestId: string) {
 
   .assistant-dock-stale p {
     margin: 0 0 var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-failed {
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-failed p {
+    margin: 0 0 var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-error {
+    margin: 0;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-error-container, #410002);
+    background: var(--smrt-color-error-container, #ffdad6);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
   }
 
   .assistant-dock-composer-header {

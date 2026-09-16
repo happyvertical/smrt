@@ -128,6 +128,19 @@ export interface AssistantDockController {
   readonly actions: Map<string, AssistantActionState>;
   readonly models: ModelOption[];
   readonly selectedModel: string | undefined;
+  /** A background failure (e.g. a failed `loadThreads`/`loadModels` call the
+   * mount effect couldn't surface any other way) for the dock to render
+   * (#2904 review finding 4). `null` when nothing is wrong. Set via
+   * `setError`; a host or the dock's own `handleSend` can also report a
+   * failure here. */
+  readonly error: string | null;
+  /** Records (or clears, with `null`) a background failure for `error` to
+   * report. Distinct from a failed `AssistantPendingSend`/`AssistantActionState`,
+   * which already carry their own `error` field — this is for failures with
+   * no narrower place to live (a failed `loadThreads`/`loadModels`, or a
+   * `send()` rejection AssistantDock's `handleSend` wants surfaced at the
+   * dock level in addition to the pending send's own `'failed'` status). */
+  setError(message: string | null): void;
   loadThreads(): Promise<void>;
   loadModels(): Promise<void>;
   setSelectedModel(modelId: string | undefined): void;
@@ -191,6 +204,11 @@ export function createAssistantDockController(
   let surfaces = $state<DataSurfaceIdentity[]>(options.surfaces ?? []);
   let models = $state<ModelOption[]>([]);
   let selectedModel = $state<string | undefined>(undefined);
+  let error = $state<string | null>(null);
+
+  function setError(message: string | null) {
+    error = message;
+  }
   // SvelteMap (not a plain Map) so `.set()` mutations are reactive to
   // template reads of `controller.actions`, matching Svelte 5's `$state`
   // proxy behavior for built-in objects it doesn't already deep-proxy.
@@ -384,8 +402,21 @@ export function createAssistantDockController(
     }
   }
 
+  // Finding 4 (#2904 review, fresh cycle): loadThreads/loadModels are fired
+  // as `void controller.loadThreads()` from AssistantDock's mount effect —
+  // an unhandled rejection there previously escaped silently (an empty,
+  // explanation-free thread list, no error surfaced anywhere). Both now
+  // catch and record the failure on `error` rather than throwing; the
+  // effect's own call sites additionally forward to `setError` so the
+  // dock's rendered message stays in sync even if a future caller catches
+  // and reports the rejection itself (see AssistantDock.svelte).
   async function loadThreads() {
-    threads = await options.transport.listThreads();
+    try {
+      threads = await options.transport.listThreads();
+      error = null;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
   async function loadModels() {
@@ -393,7 +424,12 @@ export function createAssistantDockController(
       models = [];
       return;
     }
-    models = await options.transport.listModels();
+    try {
+      models = await options.transport.listModels();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      return;
+    }
     if (models.length > 0 && !selectedModel) {
       selectedModel = models[0].id;
     }
@@ -722,6 +758,10 @@ export function createAssistantDockController(
     get selectedModel() {
       return selectedModel;
     },
+    get error() {
+      return error;
+    },
+    setError,
     loadThreads,
     loadModels,
     setSelectedModel,
