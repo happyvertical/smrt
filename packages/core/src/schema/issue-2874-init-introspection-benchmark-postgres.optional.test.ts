@@ -229,10 +229,10 @@ postgresDescribe(
       // projects run on it continuously), best-case idle wall-clock medians
       // across 5 back-to-back runs were tight (662-677ms, ~2% spread). But
       // two other classes of sample on this same machine ran markedly
-      // higher with zero code change: (a) two runs with no *deliberate*
+      // higher with zero code change: (a) three runs with no *deliberate*
       // load applied, just ordinary incidental background activity (other
       // work happening on the same machine at the time), measured
-      // 1737-1774ms — ~2.6-2.7x the best-case idle band; and (b) two runs
+      // 1738-1923ms — ~2.6-2.9x the best-case idle band; and (b) two runs
       // under heavy *deliberate* concurrent CPU load (16 saturated cores)
       // measured 3725-3896ms, 5.5-5.9x the best-case idle band. (Idle
       // baseline is also environment-specific, not a portable constant: an
@@ -250,9 +250,9 @@ postgresDescribe(
       // well above the worst noise-only sample observed on this machine
       // under deliberate stress (3896ms, ~1.5x margin) and comfortably
       // above the worst *ordinary*, non-deliberately-stressed sample
-      // (1774ms, ~3.4x margin), so it should not fire on either contention
+      // (1923ms, ~3.1x margin), so it should not fire on either contention
       // level measured here — which means its real, defensible guarantee
-      // is that margin (~1.5-3.4x above measured noise, depending how hard
+      // is that margin (~1.5-3.1x above measured noise, depending how hard
       // the environment is contending), not a clean multiple of the
       // best-case idle baseline: "roughly 9x this session's idle baseline"
       // sounds precise but is calculated against the best sample this
