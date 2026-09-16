@@ -7,13 +7,17 @@
  * proves the pattern: mirror a headless `DataTableController` into the
  * registry, translate visible commands back into controller dispatches, and
  * bump a monotonic revision whenever the controller or app-owned context
- * state changes. That logic is package-specific to ContentList's view-mode
- * concept. This helper extracts the reusable core so any custom list markup
- * — a page that already owns its own status/sort/page/selection state and
- * only wants the registry wiring — can register in one call instead of
- * hand-mirroring the registry contract (the exact duplication that motivated
- * this issue: an application page manually driving a headless
- * `DataTableController` and calling `registry.register` itself).
+ * state changes. That logic is entangled with ContentList's view-mode
+ * concept and `packages/content` has no dependency on this package, so this
+ * module is a same-behavior PORT of that translation/registration logic —
+ * not a shared import — generalized off the view-mode concept so any custom
+ * list markup can register in one call instead of hand-mirroring the
+ * registry contract (the exact duplication that motivated this issue: an
+ * application page manually driving a headless `DataTableController` and
+ * calling `registry.register` itself). The two copies must be kept in sync
+ * by hand until they are unified behind a shared implementation in
+ * `@happyvertical/smrt-ui/data` (both packages already depend on it) —
+ * tracked as a follow-up.
  *
  * Call during component initialization (top level of `<script>`, or inside
  * an `$effect`); `destroy()` unregisters and unsubscribes, so tearing it down
@@ -39,7 +43,16 @@ import {
   dataTableRowIdKey,
 } from '@happyvertical/smrt-ui/data';
 
-/** Arbitrary, JSON-safe application state folded into every snapshot. */
+/**
+ * Arbitrary, JSON-safe application state folded into every snapshot.
+ *
+ * `table` is reserved: the mounted controller's own snapshot is always
+ * published under that key, so a context carrying it is rejected at mount
+ * and on every `update()` rather than silently discarded. The registry's own
+ * boundary-safe check further rejects transport-reserved keys such as
+ * `token`, `where`, or `tenantId` — see `boundarySafeObject` in
+ * `@happyvertical/smrt-ui/data`.
+ */
 export type ListDataSurfaceContext = Readonly<
   Record<string, DataSurfaceJsonValue>
 >;
@@ -72,9 +85,13 @@ export interface MountListDataSurfaceOptions {
   highlight?: () => void;
   /**
    * Escape hatch for custom controls beyond the fixed set above — a page can
-   * expose any additional `controlId` its markup understands. Returning
-   * `false`/`{ ok: false }` denies the command; anything else (including a
-   * thrown error, which propagates) is treated as success.
+   * expose any additional `controlId` its markup understands. Only invoked
+   * when the command's `controlId` is not one of the fixed controls (a fixed
+   * control with no matching callback is denied directly, never forwarded
+   * here). Returning `false`/`{ ok: false }` denies the command; returning
+   * `true`, `{ ok: true }`, or nothing (`void`) is treated as success. A
+   * thrown error propagates out of `execute` and the registry reports it as
+   * `execution_failed` — it is never silently treated as success.
    */
   onControl?: (
     controlId: string,
@@ -123,12 +140,16 @@ function selectionReference(
     : null;
 }
 
-function payloadObject(
-  value: DataSurfaceJsonValue | undefined,
-): Record<string, DataSurfaceJsonValue> | undefined {
-  return value && !Array.isArray(value) && typeof value === 'object'
-    ? value
-    : undefined;
+const RESERVED_CONTEXT_KEYS = ['table'] as const;
+
+function assertNoReservedContextKeys(context: DataSurfaceJsonObject): void {
+  for (const key of RESERVED_CONTEXT_KEYS) {
+    if (key in context) {
+      throw new TypeError(
+        `ListDataSurfaceContext must not use the reserved key "${key}" — the mounted controller's own snapshot is always published under it.`,
+      );
+    }
+  }
 }
 
 function allowsFilterOperator(
@@ -197,10 +218,11 @@ function commandAllowed(
   }
 }
 
+/** `undefined` (a `void` return) means the handler ran and succeeded. */
 function normalizeControlResult(
   result: boolean | void | ListDataSurfaceControlResult,
-): { ok: boolean } | undefined {
-  if (result === undefined) return undefined;
+): { ok: boolean } {
+  if (result === undefined) return { ok: true };
   if (typeof result === 'boolean') return { ok: result };
   return { ok: result.ok };
 }
@@ -233,9 +255,11 @@ export function mountListDataSurface(
     options.onRevision?.(revision);
   };
   let context: DataSurfaceJsonObject = { ...(options.context ?? {}) };
+  assertNoReservedContextKeys(context);
   let contextSignature = JSON.stringify(context);
   const updateContext = (next: ListDataSurfaceContext) => {
     const merged: DataSurfaceJsonObject = { ...next };
+    assertNoReservedContextKeys(merged);
     const signature = JSON.stringify(merged);
     if (signature !== contextSignature) {
       advanceRevision();
@@ -276,38 +300,33 @@ export function mountListDataSurface(
       }
       switch (command.controlId) {
         case 'refresh':
-          if (!options.refresh) break;
+          if (!options.refresh) return { ok: false };
           if ((await options.refresh()) === false) return { ok: false };
           return;
         case 'retry':
-          if (!options.retry) break;
+          if (!options.retry) return { ok: false };
           if ((await options.retry()) === false) return { ok: false };
           return;
         case 'focus':
-          if (!options.focus) break;
+          if (!options.focus) return { ok: false };
           options.focus();
           return;
         case 'reveal':
-          if (!options.reveal) break;
+          if (!options.reveal) return { ok: false };
           options.reveal();
           return;
         case 'highlight':
-          if (!options.highlight) break;
+          if (!options.highlight) return { ok: false };
           options.highlight();
           return;
-        default:
-          break;
+        default: {
+          if (!options.onControl) return { ok: false };
+          const result = normalizeControlResult(
+            await options.onControl(command.controlId, command.payload),
+          );
+          return result.ok ? undefined : { ok: false };
+        }
       }
-      if (options.onControl) {
-        const result = normalizeControlResult(
-          await options.onControl(
-            command.controlId,
-            payloadObject(command.payload) as DataSurfaceJsonValue | undefined,
-          ),
-        );
-        if (result) return result.ok ? undefined : { ok: false };
-      }
-      return { ok: false };
     },
   });
   options.onRevision?.(revision);

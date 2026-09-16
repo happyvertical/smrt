@@ -198,6 +198,88 @@ describe('mountListDataSurface', () => {
     noHandler.destroy();
   });
 
+  it('treats a void onControl return as success and passes the raw payload through', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    let received: unknown;
+    const onControl = vi.fn((_controlId: string, payload: unknown) => {
+      received = payload;
+      // Intentionally no return (void) — must still count as success.
+    });
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      onControl,
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'star-void',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'star',
+        payload: ['a', 'b'],
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(received).toEqual(['a', 'b']);
+
+    handle.destroy();
+  });
+
+  it('denies a fixed control with no page callback even when onControl is supplied', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const onControl = vi.fn().mockResolvedValue(true);
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      onControl,
+      // No `refresh` callback wired.
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'refresh-no-callback',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'refresh',
+      }),
+    ).resolves.toMatchObject({ ok: false });
+    expect(onControl).not.toHaveBeenCalled();
+
+    handle.destroy();
+  });
+
+  it('rejects the reserved "table" context key at mount and on update()', () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    expect(() =>
+      mountListDataSurface({
+        registry,
+        descriptor: descriptor(),
+        controller,
+        context: context({ table: 'nope' }),
+      }),
+    ).toThrow(/reserved key "table"/);
+
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+    });
+    expect(() => handle.update(context({ table: 'nope' }))).toThrow(
+      /reserved key "table"/,
+    );
+    handle.destroy();
+  });
+
   it('bumps the revision when app-owned context changes via update()', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createDataTableController();
