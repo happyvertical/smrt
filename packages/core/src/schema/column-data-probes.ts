@@ -214,3 +214,105 @@ async function allNonEmptyValuesUuidShapedSingle(
   );
   return (result?.rows?.length ?? 0) === 0;
 }
+
+/**
+ * One rename-data-pending candidate pairing: `targetName` (a declared
+ * column confirmed empty) might have had its data left behind in
+ * `sourceName` (an undeclared, populated, type-compatible column).
+ * `requiresShapeCheck` marks a UUID-cast pairing whose source still needs
+ * {@link columnsAllValuesUuidShapedBatch} before it can be trusted.
+ * `extra` carries whatever caller-specific payload (e.g. differ.ts's
+ * `isUuidCast` repair-SQL flag) needs to travel with a surviving candidate.
+ */
+export interface RenameDataPendingCandidate<Extra = undefined> {
+  targetName: string;
+  sourceName: string;
+  requiresShapeCheck: boolean;
+  extra: Extra;
+}
+
+/**
+ * Group rename-data-pending candidates by declared target column and
+ * resolve inference ambiguity (#2911: false positives that both blocked
+ * production deploys through `db:status:assert` and, worse, recommended
+ * copying data into the wrong column). Shared by every
+ * `detectRenameDataPending()` copy — `migrations/differ.ts`'s single-table
+ * and cross-table-batched variants, and `schema/live-parity.ts`'s — so this
+ * inference rule can never drift between them the way the #2874 regression
+ * drifted before column-data-probes.ts existed (#2878).
+ *
+ * "Ambiguity must suppress a finding, never multiply it" (#2911) covers two
+ * independent shapes:
+ *
+ *  - **Multiple sources, one target.** More than one undeclared column is a
+ *    compatible, populated candidate for the *same* target: which one is
+ *    the real rename origin cannot be inferred. This was already handled
+ *    pre-#2911 by emitting an ambiguous, no-suggested-SQL advisory instead
+ *    of guessing — preserved here as a returned list with more than one
+ *    entry. Two targets that each independently have several qualifying
+ *    sources — even the *same* several sources — each still get their own
+ *    ambiguous finding: every individual finding already discloses that it
+ *    could not pick a source, so this shape does not need the extra
+ *    cross-target check below.
+ *  - **One source, multiple targets (#2911's actual bug).** A source column
+ *    that would otherwise be the single, *unambiguous* match for a target
+ *    is simultaneously the single, unambiguous match for one or more
+ *    *other* targets too — e.g. `tenants.timezone` alone nominated as the
+ *    rename source for `hierarchy_path`, `repo_template`, and `github_org`
+ *    simultaneously. A single column cannot be the renamed predecessor of
+ *    three unrelated columns at once, so a source this heuristic was about
+ *    to trust as one target's sole candidate is disqualified the moment it
+ *    is also some other target's sole candidate — every one of those
+ *    targets is dropped from the result entirely, rather than emitting a
+ *    wrong recommendation for each. This check applies only to
+ *    would-be-unambiguous (single-candidate) targets: it must not reach
+ *    into an already-ambiguous target's candidate list, or two targets that
+ *    happen to share the same *pair* of ambiguous candidates (a
+ *    plausible, unrelated coincidence — see the batched-probe-fallback
+ *    regression in `migrations/__tests__/differ.test.ts`) would wrongly
+ *    lose their otherwise-correct ambiguous findings too.
+ *
+ * A target absent from the returned map produced no surviving, trustworthy
+ * candidate — emit nothing for it. A target present with exactly one
+ * candidate is an unambiguous match; more than one is the first
+ * (multiple-sources) ambiguity shape above.
+ */
+export function resolveRenameDataPendingCandidates<Extra = undefined>(
+  candidates: RenameDataPendingCandidate<Extra>[],
+  isShaped: (sourceName: string) => boolean,
+): Map<string, { sourceName: string; extra: Extra }[]> {
+  const survivors = candidates.filter(
+    (candidate) =>
+      !candidate.requiresShapeCheck || isShaped(candidate.sourceName),
+  );
+
+  const byTarget = new Map<string, { sourceName: string; extra: Extra }[]>();
+  for (const candidate of survivors) {
+    const list = byTarget.get(candidate.targetName) ?? [];
+    list.push({ sourceName: candidate.sourceName, extra: candidate.extra });
+    byTarget.set(candidate.targetName, list);
+  }
+
+  // One source, multiple targets (#2911): among targets that would
+  // otherwise resolve to exactly one candidate, count how many distinct
+  // targets each such sole source was the sole candidate for.
+  const soleTargetsBySource = new Map<string, Set<string>>();
+  for (const [targetName, list] of byTarget) {
+    if (list.length !== 1) continue;
+    const sourceName = list[0].sourceName;
+    const set = soleTargetsBySource.get(sourceName) ?? new Set<string>();
+    set.add(targetName);
+    soleTargetsBySource.set(sourceName, set);
+  }
+
+  const resolved = new Map<string, { sourceName: string; extra: Extra }[]>();
+  for (const [targetName, list] of byTarget) {
+    if (list.length === 1) {
+      const isSharedSoleSource =
+        (soleTargetsBySource.get(list[0].sourceName)?.size ?? 0) > 1;
+      if (isSharedSoleSource) continue;
+    }
+    resolved.set(targetName, list);
+  }
+  return resolved;
+}

@@ -36,6 +36,7 @@ import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
 import {
   columnsAllValuesUuidShapedBatch,
   columnsHaveNonEmptyValueBatch,
+  resolveRenameDataPendingCandidates,
 } from './column-data-probes.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
@@ -790,7 +791,11 @@ function buildRenameDataPendingFinding(
   const candidateList = candidates.map((name) => `\`${name}\``).join(', ');
   return {
     kind: 'rename_data_pending',
-    severity: 'warning',
+    // #2911: a suggestion about data, not a schema mismatch — kept at
+    // `info` for the same reason as the `differ.ts` advisory of the same
+    // name, so a wrong guess here cannot gate anything that treats
+    // `warning`/`error` findings as failing closed.
+    severity: 'info',
     table: table.name,
     target: declaredColumn,
     origin: table.origin,
@@ -931,26 +936,25 @@ async function detectRenameDataPending(
         ])
       : new Map();
 
-  const candidatesByColumn = new Map<string, string[]>();
-  for (const candidate of pending) {
-    if (
-      candidate.requiresShapeCheck &&
-      !(shaped.get(candidate.extraName) ?? false)
-    ) {
-      continue;
-    }
-    const list = candidatesByColumn.get(candidate.declaredName) ?? [];
-    list.push(candidate.extraName);
-    candidatesByColumn.set(candidate.declaredName, list);
-  }
+  // Group by target and resolve both ambiguity shapes (#2911): more than
+  // one source for the same target stays ambiguous (no recommended repair);
+  // the same source shared across more than one target is dropped from
+  // every target's list rather than reported for each — see
+  // {@link resolveRenameDataPendingCandidates}.
+  const candidatesByColumn = resolveRenameDataPendingCandidates(
+    pending.map((candidate) => ({
+      targetName: candidate.declaredName,
+      sourceName: candidate.extraName,
+      requiresShapeCheck: candidate.requiresShapeCheck,
+      extra: undefined,
+    })),
+    (sourceName) => shaped.get(sourceName) ?? false,
+  );
 
   const findings: LiveParityFinding[] = [];
   for (const [declaredName, candidates] of candidatesByColumn) {
-    if (candidates.length === 0) continue;
-    candidates.sort();
-    findings.push(
-      buildRenameDataPendingFinding(table, declaredName, candidates),
-    );
+    const names = candidates.map((c) => c.sourceName).sort();
+    findings.push(buildRenameDataPendingFinding(table, declaredName, names));
   }
 
   return findings;
