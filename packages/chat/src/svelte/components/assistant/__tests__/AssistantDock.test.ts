@@ -162,4 +162,45 @@ describe('AssistantDock (mounted component)', () => {
     // caused the SEPARATE mount effect to re-run.
     expect(listThreadsSpy).toHaveBeenCalledTimes(1);
   });
+
+  // Finding 1 (#2904 review, fresh cycle): the documented `surfaces` override
+  // prop did not exist on <AssistantDock> — only reachable by constructing
+  // the controller directly. Discovery half asserted here through the DOM:
+  // the override, not the registry's live contents, decides whether the
+  // "no surfaces" notice renders.
+  it("scopes discovery to the explicit `surfaces` override, ignoring the registry's live contents", async () => {
+    const registry = createDataSurfaceRegistry();
+    // Registry has ORDERS mounted, but the override is an explicit EMPTY
+    // list — the notice must still render "no surfaces" because the
+    // override, not the registry, is authoritative (surfaces is decoupled
+    // from what's actually registered once an override is set).
+    registry.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+    });
+    const transport = createInMemoryAssistantTransport();
+
+    render(AssistantDock, {
+      props: { transport, registry, surfaces: [] },
+    });
+
+    expect(
+      await screen.findByText(/No data surfaces are mounted on this route/i),
+    ).toBeInTheDocument();
+  });
+
+  it('the `surfaces` override alone makes discovery non-empty, even with nothing registered', async () => {
+    const registry = createDataSurfaceRegistry(); // nothing registered
+    const transport = createInMemoryAssistantTransport();
+
+    render(AssistantDock, {
+      props: { transport, registry, surfaces: [identity] },
+    });
+
+    // Registry alone would show the empty notice; the override must
+    // suppress it.
+    expect(
+      screen.queryByText(/No data surfaces are mounted on this route/i),
+    ).not.toBeInTheDocument();
+  });
 });

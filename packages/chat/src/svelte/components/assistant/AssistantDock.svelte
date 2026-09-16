@@ -9,7 +9,10 @@
  * `AssistantTransport`.
  */
 import { MessageBubble } from '@happyvertical/smrt-ui/chat';
-import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
+import type {
+  DataSurfaceIdentity,
+  DataSurfaceRegistry,
+} from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
@@ -54,11 +57,26 @@ export interface Props {
   /** Client-side seam to a server-hosted `DataSurfaceActionAdapter`; required
    * to preview/apply proposed actions, optional for plain chat. */
   actionClient?: AssistantActionClient;
+  /** Explicit surface override (#2904 review finding 1): when set, the dock
+   * scopes discovery AND the preview/apply mount gate to exactly this list
+   * instead of the registry's live contents — `registry` is still required
+   * (the action pathway needs it for `syncRegistry`'s swap handling), but
+   * `surfaces` takes over what `isSurfaceMounted` checks against. Documented
+   * in `docs/assistant-dock.md` "Tenant scoping"; previously only reachable
+   * by constructing `createAssistantDockController` directly, which this
+   * component itself does not expose. */
+  surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
 }
 
-const { transport, registry, actionClient, visible = true }: Props = $props();
+const {
+  transport,
+  registry,
+  actionClient,
+  surfaces,
+  visible = true,
+}: Props = $props();
 const { t } = useI18n();
 
 // Passed to the controller as getters (not direct values) so a later
@@ -75,6 +93,9 @@ const controller: AssistantDockController = createAssistantDockController({
   },
   get actionClient() {
     return actionClient;
+  },
+  get surfaces() {
+    return surfaces;
   },
   visible: () => visible,
 });

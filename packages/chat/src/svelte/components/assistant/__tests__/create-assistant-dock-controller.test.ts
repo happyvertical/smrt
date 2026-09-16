@@ -938,4 +938,84 @@ describe('createAssistantDockController', () => {
     expect(controller.surfaces).toHaveLength(1);
     controller.dispose();
   });
+
+  // Finding 1 (#2904 review, fresh cycle): the "gate" half of the `surfaces`
+  // override — a request against a surface NOT in the override is rejected
+  // even if it's genuinely registered on the live registry, and a request
+  // against a surface IN the override is accepted even if the registry
+  // knows nothing about it. Complements AssistantDock.test.ts's DOM-level
+  // discovery assertions for the same override, wired through the
+  // component's exact `get surfaces() { return surfaces; }` pattern.
+  it('the `surfaces` override gates previewAction/applyAction independently of registry contents', async () => {
+    const { registry, identity: ordersIdentity } =
+      realRegistryWithSurface('orders'); // registered, but NOT in the override
+    const overrideOnlyIdentity: DataSurfaceIdentity = {
+      surfaceId: 'products',
+      kind: 'table',
+      subject: { type: 'tenant', id: 'tenant-a' },
+    }; // in the override, but NOT registered anywhere
+    const applySpy = vi.fn();
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry,
+      surfaces: [overrideOnlyIdentity],
+      actionClient: {
+        preview: async (request) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: 'preview',
+          ok: true,
+        }),
+        apply: async (request) => {
+          applySpy();
+          return {
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'apply',
+            ok: true,
+          };
+        },
+      },
+    });
+
+    expect(controller.surfaces).toEqual([overrideOnlyIdentity]);
+
+    // Registered on the live registry, but NOT in the override: rejected.
+    await controller.previewAction({
+      version: 1,
+      requestId: 'req-registered-not-in-override',
+      identity: ordersIdentity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(
+      controller.actions.get('req-registered-not-in-override')?.status,
+    ).toBe('failed');
+    expect(
+      controller.actions.get('req-registered-not-in-override')?.error,
+    ).toMatch(/not mounted/);
+
+    // In the override, though never registered on the live registry: accepted.
+    await controller.previewAction({
+      version: 1,
+      requestId: 'req-override-only',
+      identity: overrideOnlyIdentity,
+      actionId: 'archive',
+      phase: 'preview',
+      selection: { scope: 'current-page' },
+    });
+    expect(controller.actions.get('req-override-only')?.status).toBe(
+      'previewed',
+    );
+    await controller.applyAction('req-override-only');
+    expect(applySpy).toHaveBeenCalledOnce();
+    expect(controller.actions.get('req-override-only')?.status).toBe('applied');
+
+    controller.dispose();
+  });
 });
