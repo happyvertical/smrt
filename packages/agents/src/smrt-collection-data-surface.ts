@@ -1,0 +1,956 @@
+/**
+ * Generic `SmrtObject` collection to `DataSurface` adapter (#2905).
+ *
+ * `@happyvertical/smrt-content`'s `content-list-data-surface.ts` proved the
+ * discover/inspect/query shape but is hard-wired to `ContentQueryCollection`
+ * and `executeContentQuery`. This module extracts the registry-driven schema
+ * building, field-policy redaction, and DNF filter/scope lowering into a
+ * generic adapter keyed off `ObjectRegistry.getAllFields()` /
+ * `ObjectRegistry.getAllSchemasAsDefinitions()`, so any registered
+ * `SmrtObject` collection (events, ad zones, schedules, social accounts, …)
+ * can mount a `DataSurfaceDefinition` without a bespoke, hand-written adapter.
+ *
+ * Placement: `@happyvertical/smrt-agents` already owns the `DataSurface*`
+ * contracts (`./data-surface.ts`) and already depends on
+ * `@happyvertical/smrt-core` (for `ObjectRegistry`) and
+ * `@happyvertical/smrt-tenancy`. `@happyvertical/smrt-content` depends on
+ * `@happyvertical/smrt-agents`, not the other way around, so putting this
+ * adapter in `content` (or in `core`, which nothing but framework primitives
+ * should own) would either create a dependency cycle or force every
+ * non-Content consumer (events, ad zones, schedules, …) to pull in
+ * `smrt-content`'s unrelated OCR/PDF/image/document dependencies just to
+ * mount a generic surface. `agents` is the only package that can depend on
+ * `core` for `ObjectRegistry` and expose the `DataSurfaceDefinition` contract
+ * without creating a cycle or forcing an unrelated dependency.
+ *
+ * Follow-up: this module intentionally does NOT port
+ * `executeContentQuery`'s per-value byte-shrinking/truncation engine (the
+ * "shrink each oversized string/JSON field until the page fits" behavior in
+ * `packages/content/src/content-query.ts`). That machinery is tightly coupled
+ * to Content's long-text columns and is high-risk to move verbatim; a result
+ * that would not fit `maxResultBytes` here fails normalization instead of
+ * being shrunk. `createContentListDataSurfaceDefinition` is therefore not
+ * reimplemented as a thin wrapper over this adapter in this change — doing so
+ * safely needs that engine ported first. Tracked as a follow-up (see PR body).
+ */
+
+import {
+  createDataQueryFingerprint,
+  DataQueryValidationError,
+  normalizeDataQueryRequest,
+  normalizeDataQueryResult,
+  normalizeDataQuerySchema,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
+import type {
+  DataQueryFacetResult,
+  DataQueryFieldDescriptor,
+  DataQueryFilter,
+  DataQueryFilterOperator,
+  DataQueryRequest,
+  DataQueryResult,
+  DataQueryRow,
+  DataQuerySchema,
+  DataQuerySort,
+} from '@happyvertical/smrt-types';
+import type {
+  DataSurfaceDefinition,
+  DataSurfaceExecutionContext,
+  DataSurfaceField,
+  DataSurfaceSchema,
+} from './data-surface.js';
+
+/** One AND-ed group of SMRT `where` conditions. */
+type WhereCondition = Record<string, unknown>;
+/** Bounded disjunctive-normal-form `where`: outer OR of inner AND groups. */
+type WhereDnf = WhereCondition[][];
+
+/**
+ * The subset of `SmrtCollection` a generic collection query needs. Structural
+ * so this module never imports a concrete collection class: any object
+ * exposing this shape (including a real `SmrtCollection<T>`) can back a
+ * surface.
+ */
+export interface SmrtCollectionQueryCollection {
+  list(options: {
+    select?: readonly string[];
+    where?: WhereCondition | WhereDnf;
+    offset?: number;
+    limit?: number;
+    orderBy?: string | string[];
+  }): Promise<Record<string, unknown>[]>;
+  count(options?: { where?: WhereCondition | WhereDnf }): Promise<number>;
+  facets?(options: {
+    fields: readonly { field: string; limit?: number }[];
+    where?: WhereCondition | WhereDnf;
+  }): Promise<{ field: string; values: { value: unknown; count: number }[] }[]>;
+}
+
+/** Trusted, server-derived narrowing conditions; never from request input. */
+export type SmrtCollectionQueryScope =
+  | WhereCondition
+  | readonly WhereCondition[];
+
+/** A declarative, non-authoritative row/bulk action a mounted surface exposes. */
+export interface SmrtCollectionDataSurfaceAction {
+  id: string;
+  label: string;
+  description?: string;
+  bulk?: boolean;
+  requiresConfirmation?: boolean;
+}
+
+export interface CreateSmrtCollectionDataSurfaceOptions {
+  /** Stable opaque id presented to the model. Defaults to the collection name. */
+  id?: string;
+  /** Registered `ObjectRegistry` qualified (or bare) class name to introspect. */
+  qualifiedName: string;
+  /** Permission-catalog collection checked by the generic agent tools. */
+  collectionName?: string;
+  label?: string;
+  description?: string;
+  metadata?: NonNullable<DataSurfaceDefinition['metadata']>;
+  /** Row identity field. Defaults to `id`. */
+  identityField?: string;
+  /** Extra field ids to exclude beyond the standard field-policy exclusions. */
+  exclude?: readonly string[];
+  defaultPageLimit?: number;
+  maxPageLimit?: number;
+  maxResultBytes?: number;
+  defaultSort?: DataQuerySort[];
+  /** Whether the surface advertises opaque cursor paging. Defaults to true. */
+  cursorPagination?: boolean;
+  /** Descriptive row/bulk action catalog, surfaced only via `metadata.actions`. */
+  actions?: readonly SmrtCollectionDataSurfaceAction[];
+  /** Resolve a collection from the live principal context, never model input. */
+  collection:
+    | SmrtCollectionQueryCollection
+    | ((
+        context: DataSurfaceExecutionContext,
+      ) =>
+        | SmrtCollectionQueryCollection
+        | Promise<SmrtCollectionQueryCollection>);
+  /** Trusted application narrowing applied in addition to tenant isolation. */
+  scope?:
+    | SmrtCollectionQueryScope
+    | ((
+        context: DataSurfaceExecutionContext,
+      ) =>
+        | SmrtCollectionQueryScope
+        | undefined
+        | Promise<SmrtCollectionQueryScope | undefined>);
+  /** Trusted policy override; defaults to the registry-derived schema. */
+  schema?: DataSurfaceSchema;
+}
+
+const DEFAULT_PAGE_LIMIT = 50;
+const DEFAULT_MAX_PAGE_LIMIT = 200;
+const DEFAULT_MAX_RESULT_BYTES = 1_000_000;
+const RESULT_ENVELOPE_RESERVE_BYTES = 4_096;
+const MIN_RESULT_ROW_BYTES = 512;
+const MIN_RESULT_BYTES = RESULT_ENVELOPE_RESERVE_BYTES + MIN_RESULT_ROW_BYTES;
+const MAX_OR_BRANCHES = 128;
+
+function requiredName(
+  value: string | undefined,
+  fallback: string,
+  label: string,
+): string {
+  const resolved = value ?? fallback;
+  if (resolved.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return resolved;
+}
+
+function queryFail(message: string, code = 'INVALID_DATA_QUERY'): never {
+  throw new DataQueryValidationError(message, code);
+}
+
+function isPlainRecord(value: unknown): value is WhereCondition {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function queryFieldType(
+  type: unknown,
+): DataQueryFieldDescriptor['type'] | undefined {
+  switch (type) {
+    case 'text':
+    case 'foreignKey':
+    case 'crossPackageRef':
+      return 'string';
+    case 'integer':
+    case 'decimal':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'datetime':
+      return 'datetime';
+    case 'json':
+      return 'json';
+    default:
+      return undefined;
+  }
+}
+
+function filterOperatorsFor(
+  type: DataQueryFieldDescriptor['type'],
+): DataQueryFilterOperator[] | undefined {
+  switch (type) {
+    case 'string':
+      return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn', 'like'];
+    case 'number':
+    case 'datetime':
+      return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn'];
+    case 'boolean':
+      return ['eq', 'ne', 'in', 'notIn'];
+    case 'json':
+      return undefined;
+  }
+}
+
+interface RegistryFieldLike {
+  type?: unknown;
+  sensitive?: unknown;
+  readPermission?: unknown;
+  transient?: unknown;
+  _meta?: Record<string, unknown>;
+  __tenancy?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+function meta(field: RegistryFieldLike): Record<string, unknown> {
+  return isPlainRecord(field._meta) ? field._meta : {};
+}
+
+/** `sensitive`/`readPermission` may be declared top-level or under `_meta`. */
+function isRestrictedField(field: RegistryFieldLike): boolean {
+  const fieldMeta = meta(field);
+  return (
+    field.sensitive === true ||
+    fieldMeta.sensitive === true ||
+    typeof field.readPermission === 'string' ||
+    typeof fieldMeta.readPermission === 'string'
+  );
+}
+
+function isTransientField(field: RegistryFieldLike): boolean {
+  return field.transient === true || meta(field).transient === true;
+}
+
+function isTenantField(name: string, field: RegistryFieldLike): boolean {
+  const fieldMeta = meta(field);
+  const tenancy = isPlainRecord(field.__tenancy)
+    ? field.__tenancy
+    : isPlainRecord(fieldMeta.__tenancy)
+      ? fieldMeta.__tenancy
+      : undefined;
+  return (
+    tenancy?.isTenantIdField === true ||
+    name === 'tenantId' ||
+    name === 'tenant_id'
+  );
+}
+
+/**
+ * Build a `DataQuerySchema` from `ObjectRegistry`-registered field metadata
+ * for an arbitrary `SmrtObject` class.
+ *
+ * Excluded, and therefore un-nameable by any caller:
+ * - `sensitive` and `readPermission`-gated fields (exposure boundary);
+ * - transient and non-column-backed fields (`meta`, `oneToMany`, `manyToMany`);
+ * - the tenant field — tenancy is enforced by the executor;
+ * - internal `_`-prefixed fields such as the STI discriminator;
+ * - caller-supplied `exclude` ids.
+ */
+async function buildQuerySchemaForClass(
+  qualifiedName: string,
+  options: {
+    exclude: ReadonlySet<string>;
+    identityField: string;
+    defaultPageLimit: number;
+    maxPageLimit: number;
+    maxResultBytes: number;
+    defaultSort?: DataQuerySort[];
+    cursorPagination: boolean;
+  },
+): Promise<DataQuerySchema> {
+  const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
+    string,
+    RegistryFieldLike
+  >;
+  const fields: DataQueryFieldDescriptor[] = [];
+  for (const [name, field] of registered) {
+    if (name.startsWith('_')) continue;
+    if (options.exclude.has(name)) continue;
+    if (isRestrictedField(field)) continue;
+    if (isTransientField(field)) continue;
+    if (isTenantField(name, field)) continue;
+    const type = queryFieldType(field.type);
+    if (!type) continue;
+    const filterOperators = filterOperatorsFor(type);
+    fields.push({
+      id: name,
+      type,
+      projectable: true,
+      sortable: type !== 'json',
+      facetable:
+        name !== options.identityField &&
+        (type === 'string' || type === 'boolean' || type === 'number'),
+      ...(filterOperators ? { filterOperators } : {}),
+    });
+  }
+
+  const identity = fields.find((field) => field.id === options.identityField);
+  if (!identity) {
+    throw new Error(
+      `${qualifiedName} does not declare a queryable '${options.identityField}' field`,
+    );
+  }
+
+  const declared = new Set(fields.map((field) => field.id));
+  const defaultSort = (options.defaultSort ?? []).filter((term) =>
+    declared.has(term.field),
+  );
+
+  return {
+    version: 1,
+    identityField: options.identityField,
+    fields,
+    defaultPageLimit: options.defaultPageLimit,
+    maxPageLimit: options.maxPageLimit,
+    maxResultBytes: options.maxResultBytes,
+    ...(defaultSort.length > 0 ? { defaultSort } : {}),
+    supports: {
+      cursorPagination: options.cursorPagination,
+      consistency: false,
+      facets: true,
+    },
+  };
+}
+
+const schemaCache = new Map<string, Promise<DataQuerySchema>>();
+
+/**
+ * Memoized query schema for one registered class. The schema is derived from
+ * immutable registration metadata, so it is built once per process rather
+ * than per request.
+ */
+export function buildDataQuerySchemaForClass(
+  qualifiedName: string,
+  options: {
+    exclude?: readonly string[];
+    identityField?: string;
+    defaultPageLimit?: number;
+    maxPageLimit?: number;
+    maxResultBytes?: number;
+    defaultSort?: DataQuerySort[];
+    cursorPagination?: boolean;
+  } = {},
+): Promise<DataQuerySchema> {
+  const identityField = options.identityField ?? 'id';
+  const excluded = [...new Set(options.exclude ?? [])].sort();
+  const key = `${qualifiedName}::${identityField}::${excluded.join(',')}`;
+  const cached = schemaCache.get(key);
+  if (cached) return cached;
+  const pending = buildQuerySchemaForClass(qualifiedName, {
+    exclude: new Set(excluded),
+    identityField,
+    defaultPageLimit: options.defaultPageLimit ?? DEFAULT_PAGE_LIMIT,
+    maxPageLimit: options.maxPageLimit ?? DEFAULT_MAX_PAGE_LIMIT,
+    maxResultBytes: options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
+    defaultSort: options.defaultSort,
+    cursorPagination: options.cursorPagination ?? true,
+  }).catch((cause) => {
+    schemaCache.delete(key);
+    throw cause;
+  });
+  schemaCache.set(key, pending);
+  return pending;
+}
+
+/** Testing seam: drop memoized schemas so a rebuild re-reads the registry. */
+export function clearSmrtCollectionQuerySchemaCache(): void {
+  schemaCache.clear();
+}
+
+/**
+ * Field-policy redaction boundary, mirroring the Content adapter's
+ * `querySchema()`: strip `sensitive`/`readPermission`/`metadata` annotations
+ * and drop any field they mark, so a host descriptor built from this schema
+ * never advertises — and a direct execution can never return — a restricted
+ * field, even if a caller supplies a schema override that tried to include
+ * one.
+ */
+function redactedQuerySchema(schema: DataSurfaceSchema): DataQuerySchema {
+  return {
+    ...schema,
+    fields: schema.fields
+      .filter(({ sensitive, readPermission }) => {
+        if (sensitive) return false;
+        return !readPermission;
+      })
+      .map(
+        ({
+          sensitive: _sensitive,
+          readPermission: _readPermission,
+          metadata: _metadata,
+          ...field
+        }) => field,
+      ),
+  };
+}
+
+function assertUsableResultBudget(schema: DataQuerySchema): void {
+  const budget = schema.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
+  if (budget >= MIN_RESULT_BYTES) return;
+  throw new Error(
+    `Data query schema maxResultBytes must be at least ${MIN_RESULT_BYTES} ` +
+      `(${RESULT_ENVELOPE_RESERVE_BYTES} reserved for the result envelope, ` +
+      `${MIN_RESULT_ROW_BYTES} for rows); received ${budget}.`,
+  );
+}
+
+/** Validate a host-supplied schema before anything depends on it. */
+export function assertSmrtCollectionQuerySchema(schema: DataQuerySchema): void {
+  normalizeDataQuerySchema(schema);
+  assertUsableResultBudget(schema);
+}
+
+/**
+ * Resolve the fail-closed tenant read scope, mirroring the generated route
+ * helpers: with tenancy enabled and no active tenant context, reads are
+ * restricted to NULL-tenant (global) rows rather than passing through
+ * unfiltered. `withSystemContext()` and super-admin bypass remain the
+ * explicit, deliberate cross-tenant paths.
+ */
+function resolveTenantReadScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled()) return undefined;
+  if (isSuperAdminBypass() || isSystemContext()) return undefined;
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
+}
+
+function inverseOperator(
+  operator: DataQueryFilterOperator,
+): DataQueryFilterOperator {
+  switch (operator) {
+    case 'eq':
+      return 'ne';
+    case 'ne':
+      return 'eq';
+    case 'gt':
+      return 'lte';
+    case 'gte':
+      return 'lt';
+    case 'lt':
+      return 'gte';
+    case 'lte':
+      return 'gt';
+    case 'in':
+      return 'notIn';
+    case 'notIn':
+      return 'in';
+    case 'like':
+      return queryFail(
+        'Data queries cannot negate a like predicate',
+        'DATA_QUERY_UNSUPPORTED',
+      );
+  }
+}
+
+/** Lower one condition to bounded DNF (see content-query.ts for the full rationale). */
+function conditionToDnf(
+  field: string,
+  operator: DataQueryFilterOperator,
+  value: unknown,
+  negated = false,
+): WhereDnf {
+  const key = (suffix: string) => (suffix ? `${field} ${suffix}` : field);
+  const single = (whereKey: string, whereValue: unknown): WhereDnf => [
+    [{ [whereKey]: whereValue }],
+  ];
+
+  if (operator === 'in') {
+    const values = (value as unknown[]) ?? [];
+    const nonNull = values.filter((entry) => entry !== null);
+    if (nonNull.length === 0) return single(field, null);
+    if (nonNull.length === values.length) return single(key('in'), nonNull);
+    return [[{ [field]: null }], [{ [key('in')]: nonNull }]];
+  }
+
+  if (operator === 'notIn') {
+    const values = (value as unknown[]) ?? [];
+    if (values.length === 0) {
+      return queryFail(
+        'Data query notIn requires at least one value',
+        'DATA_QUERY_UNSUPPORTED',
+      );
+    }
+    const inequalities = values
+      .filter((entry) => entry !== null)
+      .map((entry) => ({ [key('!=')]: entry }));
+    if (values.some((entry) => entry === null)) {
+      return [[...inequalities, { [key('!=')]: null }]];
+    }
+    return [[{ [field]: null }], inequalities];
+  }
+
+  if (operator === 'ne' && value !== null) {
+    return [[{ [field]: null }], [{ [key('!=')]: value }]];
+  }
+
+  const suffixes: Record<
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    string
+  > = {
+    eq: '',
+    ne: '!=',
+    gt: '>',
+    gte: '>=',
+    lt: '<',
+    lte: '<=',
+    like: 'like',
+  };
+
+  if (
+    negated &&
+    (operator === 'gt' ||
+      operator === 'gte' ||
+      operator === 'lt' ||
+      operator === 'lte')
+  ) {
+    return [[{ [field]: null }], [{ [key(suffixes[operator])]: value }]];
+  }
+
+  return single(key(suffixes[operator]), value);
+}
+
+function crossProduct(left: WhereDnf, right: WhereDnf): WhereDnf {
+  if (left.length * right.length > MAX_OR_BRANCHES) {
+    return queryFail(
+      `Data query filter expands beyond ${MAX_OR_BRANCHES} OR branches`,
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
+  return left.flatMap((leftGroup) =>
+    right.map((rightGroup) => [...leftGroup, ...rightGroup]),
+  );
+}
+
+function filterToDnf(
+  filter: DataQueryFilter,
+  declared: ReadonlySet<string>,
+  negate = false,
+): WhereDnf {
+  if (filter.kind === 'condition') {
+    if (!declared.has(filter.field)) {
+      return queryFail(
+        `Data query filter field is not declared: ${filter.field}`,
+        'DATA_QUERY_FILTER_NOT_ALLOWED',
+      );
+    }
+    return conditionToDnf(
+      filter.field,
+      negate ? inverseOperator(filter.operator) : filter.operator,
+      filter.value,
+      negate,
+    );
+  }
+
+  if (filter.kind === 'not') {
+    return filterToDnf(filter.filter, declared, !negate);
+  }
+
+  const combineWithAnd =
+    (filter.kind === 'all' && !negate) || (filter.kind === 'any' && negate);
+  if (combineWithAnd) {
+    return filter.filters.reduce<WhereDnf>(
+      (combined, child) =>
+        crossProduct(combined, filterToDnf(child, declared, negate)),
+      [[]],
+    );
+  }
+
+  const branches = filter.filters.flatMap((child) =>
+    filterToDnf(child, declared, negate),
+  );
+  if (branches.length > MAX_OR_BRANCHES) {
+    return queryFail(
+      `Data query filter expands beyond ${MAX_OR_BRANCHES} OR branches`,
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
+  return branches;
+}
+
+function normalizeScopeConditions(
+  scope: SmrtCollectionQueryScope | undefined,
+): WhereCondition[] {
+  if (scope === undefined) return [];
+  const candidates = Array.isArray(scope)
+    ? (scope as readonly unknown[])
+    : [scope];
+  return candidates.map((candidate) => {
+    if (!isPlainRecord(candidate) || Object.keys(candidate).length === 0) {
+      throw new Error(
+        'Data query scope conditions must be non-empty plain objects',
+      );
+    }
+    return { ...candidate };
+  });
+}
+
+function denyAllScopeCondition(identityField: string): WhereCondition {
+  return Object.freeze({ [identityField]: null });
+}
+
+function normalizeApplicationScope(
+  scope: SmrtCollectionQueryScope | undefined,
+  identityField: string,
+): WhereCondition[] {
+  if (scope === undefined) return [];
+  const conditions = normalizeScopeConditions(scope);
+  return conditions.length > 0
+    ? conditions
+    : [{ ...denyAllScopeCondition(identityField) }];
+}
+
+/**
+ * AND every trusted scope condition into every OR branch of the caller's
+ * filter. A caller predicate can never widen past the scope; see
+ * `mergeContentQueryScope` in `content-query.ts` for the full invariant.
+ */
+function mergeQueryScope(
+  scope: SmrtCollectionQueryScope | undefined,
+  callerWhere: WhereDnf | undefined,
+): WhereDnf | undefined {
+  const scopeConditions = normalizeScopeConditions(scope);
+  const branches: WhereDnf =
+    callerWhere && callerWhere.length > 0 ? callerWhere : [[]];
+  const merged = branches.map((branch) => [...scopeConditions, ...branch]);
+  if (merged.length === 1 && merged[0].length === 0) return undefined;
+  if (merged.some((branch) => branch.length === 0)) {
+    return queryFail(
+      'Data query filter produced an unbounded OR branch',
+      'DATA_QUERY_UNSUPPORTED',
+    );
+  }
+  return merged;
+}
+
+function orderByTerms(sort: DataQuerySort[] | undefined): string[] | undefined {
+  if (!sort || sort.length === 0) return undefined;
+  return sort.map((term) =>
+    term.direction === 'desc' ? `${term.field} desc` : term.field,
+  );
+}
+
+/** Opaque cursor: base64 of the row offset it resumes from. Never introspect. */
+function encodeCursor(offset: number): string {
+  return Buffer.from(String(offset), 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor: string | undefined): number {
+  if (!cursor) return 0;
+  const decoded = Number.parseInt(
+    Buffer.from(cursor, 'base64url').toString('utf8'),
+    10,
+  );
+  if (!Number.isFinite(decoded) || decoded < 0) {
+    return queryFail('Data query cursor is invalid', 'DATA_QUERY_UNSUPPORTED');
+  }
+  return decoded;
+}
+
+async function resolveCollection(
+  options: CreateSmrtCollectionDataSurfaceOptions,
+  context: DataSurfaceExecutionContext,
+): Promise<SmrtCollectionQueryCollection> {
+  return typeof options.collection === 'function'
+    ? options.collection(context)
+    : options.collection;
+}
+
+async function resolveScope(
+  options: CreateSmrtCollectionDataSurfaceOptions,
+  context: DataSurfaceExecutionContext,
+): Promise<SmrtCollectionQueryScope | undefined> {
+  return typeof options.scope === 'function'
+    ? options.scope(context)
+    : options.scope;
+}
+
+function assertNotAborted(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new DOMException('Data query was aborted', 'AbortError');
+  }
+}
+
+/**
+ * Execute one bounded `DataQueryRequest` against an arbitrary
+ * `SmrtCollectionQueryCollection`. Every projection, order term, and
+ * predicate still passes through `collection.list/count/facets` — never raw
+ * SQL, never a full collection hydration.
+ */
+export async function executeSmrtCollectionQuery(
+  collection: SmrtCollectionQueryCollection,
+  rawRequest: unknown,
+  options: {
+    schema: DataQuerySchema;
+    scope?: SmrtCollectionQueryScope;
+    signal?: AbortSignal;
+  },
+): Promise<DataQueryResult> {
+  const schema = options.schema;
+  assertUsableResultBudget(schema);
+  const request: DataQueryRequest = normalizeDataQueryRequest(
+    rawRequest,
+    schema,
+  );
+  const signal = options.signal;
+  if (signal) assertNotAborted(signal);
+  const queryFingerprint = createDataQueryFingerprint(request, schema);
+  const descriptors = new Map(schema.fields.map((field) => [field.id, field]));
+  const declared = new Set(descriptors.keys());
+
+  const callerWhere = request.filter
+    ? filterToDnf(request.filter, declared)
+    : undefined;
+  const scopeConditions = [
+    ...normalizeScopeConditions(resolveTenantReadScope()),
+    ...normalizeApplicationScope(options.scope, schema.identityField),
+  ];
+  const where = mergeQueryScope(
+    scopeConditions.length > 0 ? scopeConditions : undefined,
+    callerWhere,
+  );
+  const countOptions = where === undefined ? undefined : { where };
+
+  const warnings: string[] = [];
+
+  if (request.mode === 'rows') {
+    const projection = request.projection ?? [schema.identityField];
+    const isCursor = request.page?.kind === 'cursor';
+    const offset = isCursor
+      ? decodeCursor(
+          request.page?.kind === 'cursor' ? request.page.after : undefined,
+        )
+      : request.page?.kind === 'offset'
+        ? request.page.offset
+        : 0;
+    const limit =
+      request.page?.limit ?? schema.defaultPageLimit ?? DEFAULT_PAGE_LIMIT;
+    const orderBy = orderByTerms(request.sort);
+    if (signal) assertNotAborted(signal);
+    const listed = await collection.list({
+      select: projection,
+      offset,
+      limit,
+      ...(orderBy
+        ? { orderBy: orderBy.length === 1 ? orderBy[0] : orderBy }
+        : {}),
+      ...(where === undefined ? {} : { where }),
+    });
+    const rows: DataQueryRow[] = listed.map((row) => {
+      const out: DataQueryRow = {};
+      for (const field of projection) {
+        if (!descriptors.has(field)) {
+          return queryFail(
+            `Data query returned an undeclared field: ${field}`,
+            'DATA_QUERY_RESULT_NOT_ALLOWED',
+          );
+        }
+        out[field] = row[field] ?? null;
+      }
+      return out;
+    });
+    if (signal) assertNotAborted(signal);
+    const total = await collection.count(countOptions);
+    const hasMore = offset + rows.length < total;
+    const page: DataQueryResult['page'] = isCursor
+      ? {
+          kind: 'cursor',
+          limit,
+          hasMore,
+          ...(hasMore
+            ? { nextCursor: encodeCursor(offset + rows.length) }
+            : {}),
+        }
+      : { kind: 'offset', offset, limit, hasMore };
+    return normalizeDataQueryResult(
+      {
+        version: 1 as const,
+        requestId: request.requestId,
+        queryFingerprint,
+        identityField: schema.identityField,
+        rows,
+        page,
+        total: { kind: 'exact' as const, value: total },
+        freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
+        warnings,
+        truncated: false,
+      },
+      request,
+      schema,
+    );
+  }
+
+  if (signal) assertNotAborted(signal);
+  const total = await collection.count(countOptions);
+  let facets: DataQueryFacetResult[] | undefined;
+
+  if (request.mode === 'facets') {
+    if (!collection.facets) {
+      return queryFail(
+        'This collection does not support facet queries',
+        'DATA_QUERY_UNSUPPORTED',
+      );
+    }
+    const requested = request.facets ?? [];
+    if (signal) assertNotAborted(signal);
+    const sourceFacets = await collection.facets({
+      fields: requested.map((facet) => ({
+        field: facet.field,
+        limit: facet.limit,
+      })),
+      ...(where === undefined ? {} : { where }),
+    });
+    const byField = new Map(sourceFacets.map((facet) => [facet.field, facet]));
+    facets = requested.map((facet) => {
+      if (!descriptors.has(facet.field)) {
+        return queryFail(
+          `Data query returned an undeclared facet: ${facet.field}`,
+          'DATA_QUERY_RESULT_NOT_ALLOWED',
+        );
+      }
+      const values = (byField.get(facet.field)?.values ?? []).slice(
+        0,
+        facet.limit,
+      );
+      return {
+        field: facet.field,
+        values: values.map((entry) => ({
+          value: entry.value as string | number | boolean | null,
+          count: entry.count,
+        })),
+        truncated:
+          (byField.get(facet.field)?.values.length ?? 0) >= facet.limit,
+      };
+    });
+  }
+
+  return normalizeDataQueryResult(
+    {
+      version: 1 as const,
+      requestId: request.requestId,
+      queryFingerprint,
+      identityField: schema.identityField,
+      rows: [],
+      total: { kind: 'exact' as const, value: total },
+      ...(facets === undefined ? {} : { facets }),
+      freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
+      warnings,
+      truncated: false,
+    },
+    request,
+    schema,
+  );
+}
+
+/**
+ * Build one server-owned `DataSurfaceDefinition` for `data.discover`,
+ * `data.inspect`, and silent/background `data.query` calls, generic across
+ * any registered `SmrtObject` collection.
+ *
+ * The returned executor resolves its collection and application scope from
+ * the live principal context. The request can only narrow that trusted
+ * scope, and every projection/count/facet/page passes through the resolved
+ * collection's own `list`/`count`/`facets`, never raw SQL.
+ */
+export async function createSmrtCollectionDataSurfaceDefinition(
+  options: CreateSmrtCollectionDataSurfaceOptions,
+): Promise<DataSurfaceDefinition> {
+  const identityField = options.identityField ?? 'id';
+  const schema: DataSurfaceSchema =
+    options.schema ??
+    ((await buildDataQuerySchemaForClass(options.qualifiedName, {
+      exclude: options.exclude,
+      identityField,
+      defaultPageLimit: options.defaultPageLimit,
+      maxPageLimit: options.maxPageLimit,
+      maxResultBytes: options.maxResultBytes,
+      defaultSort: options.defaultSort,
+      cursorPagination: options.cursorPagination,
+    })) as DataSurfaceSchema);
+  const executableSchema = redactedQuerySchema(schema);
+  assertSmrtCollectionQuerySchema(executableSchema);
+
+  return {
+    id: requiredName(
+      options.id,
+      options.collectionName ?? options.qualifiedName,
+      'SmrtObject collection data surface id',
+    ),
+    collection: requiredName(
+      options.collectionName,
+      options.qualifiedName,
+      'SmrtObject collection permission collection',
+    ),
+    className: options.qualifiedName,
+    label: options.label ?? options.qualifiedName,
+    description:
+      options.description ??
+      'Bounded, tenant-safe rows, counts, facets, and continuations.',
+    metadata: {
+      domain: 'smrt-collection',
+      adapter: 'SmrtCollection',
+      queryModes: ['rows', 'count', 'facets'],
+      ...(options.actions
+        ? {
+            actions: options.actions.map((action) => action.id),
+            // Descriptive only (id/label/description/bulk/requiresConfirmation
+            // per entry); `DataSurfaceMetadataValue` has no object variant, so
+            // the catalog is carried as a JSON string rather than widening
+            // that shared contract type.
+            actionCatalog: JSON.stringify(options.actions),
+          }
+        : {}),
+      ...options.metadata,
+    },
+    schema: executableSchema,
+    execute: async (_surface, request, context) => {
+      normalizeDataQueryRequest(request, executableSchema);
+      const run = async () =>
+        executeSmrtCollectionQuery(
+          await resolveCollection(options, context),
+          request,
+          {
+            schema: executableSchema,
+            scope: await resolveScope(options, context),
+            signal: context.signal,
+          },
+        );
+      // Tenant-scoped collections (`@TenantScoped({ mode: 'required' })`)
+      // refuse `list()`/`count()` outside an active `TenantContext`, even
+      // though `resolveTenantReadScope()` already ANDs the tenant condition
+      // into the `where`. Establish that context from the same authenticated
+      // principal the scope is derived from, so a required-mode collection
+      // works out of the box.
+      if (isTenancyEnabled() && context.principal.tenantId) {
+        return withTenant({ tenantId: context.principal.tenantId }, run);
+      }
+      return run();
+    },
+  };
+}
+
+export type { DataSurfaceField };
