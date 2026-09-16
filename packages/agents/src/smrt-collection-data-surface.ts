@@ -279,6 +279,49 @@ function isTenantField(
   );
 }
 
+/** Shared field-policy predicate: registry `_`-prefixed/restricted/transient/tenant/caller-excluded. */
+function isPolicyExcludedField(
+  name: string,
+  field: RegistryFieldLike,
+  tenantField: string,
+  exclude: ReadonlySet<string>,
+): boolean {
+  return (
+    name.startsWith('_') ||
+    exclude.has(name) ||
+    isRestrictedField(field) ||
+    isTransientField(field) ||
+    isTenantField(name, field, tenantField)
+  );
+}
+
+/**
+ * The set of registry field ids a host-supplied `options.schema` override
+ * must never be able to re-advertise: restricted (`sensitive`/
+ * `readPermission`), transient, the configured tenant field, `_`-prefixed
+ * internal fields, and caller-supplied `exclude` ids. Used to intersect an
+ * override schema with the same policy the registry-derived schema enforces,
+ * so a host cannot widen exposure by supplying its own `schema` field list.
+ */
+async function registryFieldPolicyExclusionSet(
+  qualifiedName: string,
+  exclude: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
+    string,
+    RegistryFieldLike
+  >;
+  const tenantField =
+    getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
+  const excluded = new Set<string>();
+  for (const [name, field] of registered) {
+    if (isPolicyExcludedField(name, field, tenantField, exclude)) {
+      excluded.add(name);
+    }
+  }
+  return excluded;
+}
+
 /**
  * Build a `DataQuerySchema` from `ObjectRegistry`-registered field metadata
  * for an arbitrary `SmrtObject` class.
@@ -311,11 +354,8 @@ async function buildQuerySchemaForClass(
     getTenantScopedConfig(qualifiedName)?.field ?? 'tenantId';
   const fields: DataQueryFieldDescriptor[] = [];
   for (const [name, field] of registered) {
-    if (name.startsWith('_')) continue;
-    if (options.exclude.has(name)) continue;
-    if (isRestrictedField(field)) continue;
-    if (isTransientField(field)) continue;
-    if (isTenantField(name, field, tenantField)) continue;
+    if (isPolicyExcludedField(name, field, tenantField, options.exclude))
+      continue;
     const type = queryFieldType(field.type);
     if (!type) continue;
     const filterOperators = filterOperatorsFor(type);
@@ -1060,9 +1100,25 @@ export async function createSmrtCollectionDataSurfaceDefinition(
   options: CreateSmrtCollectionDataSurfaceOptions,
 ): Promise<DataSurfaceDefinition> {
   const identityField = options.identityField ?? 'id';
-  const schema: DataSurfaceSchema =
-    options.schema ??
-    ((await buildDataQuerySchemaForClass(options.qualifiedName, {
+  let schema: DataSurfaceSchema;
+  if (options.schema) {
+    // A host-supplied schema is a trusted override, but it must never be
+    // able to re-advertise a field the registry-derived schema would have
+    // excluded (e.g. re-adding a registry-sensitive field without its own
+    // `sensitive`/`readPermission` annotation). Intersect it with the same
+    // registry-derived exclusion set before redaction runs.
+    const excludedByRegistry = await registryFieldPolicyExclusionSet(
+      options.qualifiedName,
+      new Set(options.exclude ?? []),
+    );
+    schema = {
+      ...options.schema,
+      fields: options.schema.fields.filter(
+        (field) => !excludedByRegistry.has(field.id),
+      ),
+    };
+  } else {
+    schema = (await buildDataQuerySchemaForClass(options.qualifiedName, {
       exclude: options.exclude,
       identityField,
       defaultPageLimit: options.defaultPageLimit,
@@ -1075,7 +1131,8 @@ export async function createSmrtCollectionDataSurfaceDefinition(
         (typeof options.collection === 'function'
           ? true
           : typeof options.collection.facets === 'function'),
-    })) as DataSurfaceSchema);
+    })) as DataSurfaceSchema;
+  }
   const executableSchema = redactedQuerySchema(schema);
   assertSmrtCollectionQuerySchema(executableSchema);
 
