@@ -286,4 +286,30 @@ describe('AssistantDock (mounted component)', () => {
 
     expect(listThreadsSpy).toHaveBeenCalledTimes(1);
   });
+
+  // Cycle-2 second final finding 2: "+ New conversation" and thread
+  // selection previously produced an unhandled rejection with zero
+  // user-visible surface when the transport failed — the exact path a
+  // `createSmrtAssistantTransport` without `writeEndpoint` is documented to
+  // hit.
+  it('a rejecting createThread (clicking "+ New conversation") shows the dock-level error banner', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    transport.createThread = async () => {
+      throw new Error('no writeEndpoint configured');
+    };
+
+    render(AssistantDock, { props: { transport, registry } });
+    await screen.findByText(/No data surfaces are mounted on this route/i);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+
+    expect(
+      await screen.findByText(
+        /Something went wrong: no writeEndpoint configured/i,
+      ),
+    ).toBeInTheDocument();
+  });
 });

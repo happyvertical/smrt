@@ -152,12 +152,22 @@ $effect(() => {
 });
 
 async function handleSelectThread(threadId: string) {
+  // openThread() catches internally and records any failure on
+  // controller.error (cycle-2 second final finding 2) — never rejects.
   await controller.openThread(threadId);
 }
 
 async function handleCreateThread() {
-  const thread = await controller.createThread('New conversation');
-  await controller.openThread(thread.id);
+  // createThread() can still reject (its return value is the thing callers
+  // need); catch here so the un-awaited onclick in AssistantThreadList never
+  // produces an unhandled rejection. The failure is already recorded on
+  // controller.error by createThread itself (cycle-2 second final finding 2).
+  try {
+    const thread = await controller.createThread('New conversation');
+    await controller.openThread(thread.id);
+  } catch {
+    // Already surfaced via controller.error.
+  }
 }
 
 async function handleSend(

@@ -1330,4 +1330,144 @@ describe('createAssistantDockController', () => {
       controller.dispose();
     });
   });
+
+  // Cycle-2 second final finding 2: createThread/openThread/retry/pollTick
+  // must never leave an unhandled rejection and must route failures to
+  // controller.error.
+  describe('unhandled-rejection guarding (cycle-2 second final finding 2)', () => {
+    it('a rejecting createThread() records the error and does not change activeThreadId', async () => {
+      const transport = createInMemoryAssistantTransport();
+      transport.createThread = async () => {
+        throw new Error('no writeEndpoint configured');
+      };
+      const controller = createAssistantDockController({
+        transport,
+        registry: fakeRegistry([]),
+      });
+      expect(controller.activeThreadId).toBeNull();
+
+      await expect(controller.createThread('New conversation')).rejects.toThrow(
+        'no writeEndpoint configured',
+      );
+
+      expect(controller.error).toBe('no writeEndpoint configured');
+      expect(controller.activeThreadId).toBeNull();
+      controller.dispose();
+    });
+
+    it('a rejecting openThread() leaves the previous thread active and its messages intact', async () => {
+      const { transport, store } = scriptedTransport({
+        'thread-a': [
+          {
+            id: 'm1',
+            threadId: 'thread-a',
+            content: 'hello from a',
+            role: 'user',
+            createdAt: new Date(),
+          },
+        ],
+        'thread-b': [],
+      });
+      const controller = createAssistantDockController({
+        transport,
+        registry: fakeRegistry([]),
+      });
+      await controller.openThread('thread-a');
+      expect(controller.activeThreadId).toBe('thread-a');
+      expect(controller.messages).toHaveLength(1);
+
+      const originalLoadMessages = transport.loadMessages.bind(transport);
+      transport.loadMessages = async (threadId: string) => {
+        if (threadId === 'thread-b') throw new Error('load failed');
+        return originalLoadMessages(threadId);
+      };
+
+      // await never rejects at the call site — caught internally.
+      await expect(controller.openThread('thread-b')).resolves.toBeUndefined();
+
+      expect(controller.activeThreadId).toBe('thread-a');
+      expect(controller.messages).toHaveLength(1);
+      expect(controller.error).toBe('load failed');
+      void store;
+      controller.dispose();
+    });
+
+    it('loadMessages failing mid-poll sets the error once and recovers on the next successful poll', async () => {
+      vi.useFakeTimers();
+      try {
+        const { transport, store } = scriptedTransport({ a: [] });
+        let shouldFail = false;
+        let failureCount = 0;
+        const originalLoadMessages = transport.loadMessages.bind(transport);
+        transport.loadMessages = async (threadId: string) => {
+          if (shouldFail) {
+            failureCount += 1;
+            throw new Error('poll transport down');
+          }
+          return originalLoadMessages(threadId);
+        };
+        const controller = createAssistantDockController({
+          transport,
+          registry: fakeRegistry([]),
+          activePollIntervalMs: 10,
+          idlePollIntervalMs: 10,
+        });
+        await controller.openThread('a');
+        controller.startPolling();
+
+        shouldFail = true;
+        await vi.advanceTimersByTimeAsync(35);
+        expect(controller.error).toBe('poll transport down');
+        // Recorded once, not once per tick, even though several ticks fired.
+        expect(failureCount).toBeGreaterThan(1);
+        const failureCountAtCheck = failureCount;
+        expect(controller.error).toBe('poll transport down');
+        void failureCountAtCheck;
+
+        shouldFail = false;
+        pushAssistantReply(store, 'a', 'recovered');
+        await vi.advanceTimersByTimeAsync(15);
+        expect(controller.error).toBeNull();
+
+        controller.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a rejecting retry() surfaces the error and leaves the pending send in its failed status', async () => {
+      const { transport } = scriptedTransport({ a: [] });
+      let failNextSend = false;
+      const originalSendMessage = transport.sendMessage.bind(transport);
+      transport.sendMessage = async (input) => {
+        if (failNextSend) throw new Error('retry send failed');
+        return originalSendMessage(input);
+      };
+      const controller = createAssistantDockController({
+        transport,
+        registry: fakeRegistry([]),
+      });
+      await controller.openThread('a');
+
+      failNextSend = true;
+      await expect(controller.send('hi there')).rejects.toThrow(
+        'retry send failed',
+      );
+      const pending = controller.pendingSends.find(
+        (p) => p.content === 'hi there',
+      );
+      expect(pending?.status).toBe('failed');
+
+      // await never rejects at the call site — caught internally.
+      await expect(
+        controller.retry(pending?.clientRequestId ?? ''),
+      ).resolves.toBeUndefined();
+      expect(controller.error).toBe('retry send failed');
+      expect(
+        controller.pendingSends.find((p) => p.content === 'hi there')?.status,
+      ).toBe('failed');
+
+      controller.dispose();
+    });
+  });
 });

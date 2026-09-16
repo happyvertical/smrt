@@ -243,6 +243,13 @@ export function createAssistantDockController(
   // this flag lets it (and resetPollInterval) bail instead of re-arming a
   // timer past unmount.
   let disposed = false;
+  // Cycle-2 second final finding 2: tracks whether the CURRENT value of
+  // `error` was set by pollTick itself, so a failing poll records the
+  // failure once (not once per tick — `setInterval` would otherwise spam an
+  // identical assignment every 3-15s) and pollTick clears only an error it
+  // owns on the next successful poll, rather than clobbering an unrelated
+  // failure (e.g. a send or thread-open error) that hasn't been resolved.
+  let pollErrorActive = false;
 
   // Cycle-2 second final finding 1: `options.surfaces` is a getter (a live
   // prop passthrough from AssistantDock.svelte), so it must be RE-READ on
@@ -370,11 +377,30 @@ export function createAssistantDockController(
     if (disposed || !isVisible() || !activeThreadId) return;
     markStalePendingSends();
     const threadId = activeThreadId;
-    const fresh = await options.transport.loadMessages(threadId);
+    // Cycle-2 second final finding 2: `setInterval(() => void pollTick(), …)`
+    // means an unhandled rejection here previously fired once per poll
+    // interval, indefinitely, with the dock rendering a normal-looking, just
+    // stale conversation. Catch and record on `error` instead.
+    let fresh: AssistantMessage[];
+    try {
+      fresh = await options.transport.loadMessages(threadId);
+    } catch (err) {
+      // F3 (#2904 review): dispose() can run while this await is in flight.
+      if (disposed) return;
+      if (!pollErrorActive) {
+        pollErrorActive = true;
+        error = err instanceof Error ? err.message : String(err);
+      }
+      return;
+    }
     // F3 (#2904 review): dispose() can run while this await is in flight —
     // bail before touching state or re-arming the interval.
     if (disposed) return;
     if (activeThreadId !== threadId) return; // thread switched mid-flight
+    if (pollErrorActive) {
+      pollErrorActive = false;
+      error = null;
+    }
     messages = fresh;
     const hasProcessing = pendingSends.some((p) => p.status === 'processing');
     resetPollInterval(hasProcessing);
@@ -478,15 +504,41 @@ export function createAssistantDockController(
     selectedModel = modelId;
   }
 
+  // Cycle-2 second final finding 2: previously set `activeThreadId` BEFORE
+  // the await, so a rejecting `loadMessages` left the previous thread's
+  // messages rendered under the NEW thread id (composer enabled, sends
+  // routed to the new thread) while also escaping as an unhandled promise
+  // rejection from every un-awaited call site (AssistantThreadList's
+  // fire-and-forget `onclick`). Now: `activeThreadId` only advances on
+  // success, and any failure is caught and recorded on `error` rather than
+  // thrown.
   async function openThread(threadId: string) {
-    activeThreadId = threadId;
-    messages = await options.transport.loadMessages(threadId);
+    try {
+      const fresh = await options.transport.loadMessages(threadId);
+      activeThreadId = threadId;
+      messages = fresh;
+      error = null;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
+  // Cycle-2 second final finding 2: records a failure on `error` (mirroring
+  // loadThreads/loadModels) in addition to rethrowing — createThread's
+  // return value is load-bearing for its callers (AssistantDock.svelte
+  // chains `openThread(thread.id)` on it), so it keeps throwing; the
+  // rethrow is what AssistantDock's `handleCreateThread` catches to stop the
+  // un-awaited onclick from producing an unhandled rejection.
   async function createThread(title: string) {
-    const thread = await options.transport.createThread(title);
-    threads = [...threads, thread];
-    return thread;
+    try {
+      const thread = await options.transport.createThread(title);
+      threads = [...threads, thread];
+      error = null;
+      return thread;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      throw err;
+    }
   }
 
   async function doSend(
@@ -572,17 +624,29 @@ export function createAssistantDockController(
     await doSend(threadId, content, clientRequestId, attachments);
   }
 
+  // Cycle-2 second final finding 2: AssistantDock.svelte's Retry buttons call
+  // this from an un-awaited `onclick`, so a rejection here was previously
+  // unhandled. `doSend` already writes the pending send's `'failed'` status
+  // before rethrowing — that terminal UI state is preserved — but the reject
+  // must be caught here too so it never escapes as an unhandled promise
+  // rejection; also record it on `error` so a retry failure gets the same
+  // dock-level banner as a first-attempt send failure.
   async function retry(clientRequestId: string) {
     const pending = pendingSends.find(
       (p) => p.clientRequestId === clientRequestId,
     );
     if (!pending) return;
-    await doSend(
-      pending.threadId,
-      pending.content,
-      clientRequestId,
-      pending.attachments,
-    );
+    try {
+      await doSend(
+        pending.threadId,
+        pending.content,
+        clientRequestId,
+        pending.attachments,
+      );
+      error = null;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
   }
 
   function actionKey(request: DataSurfaceActionRequest): string {
