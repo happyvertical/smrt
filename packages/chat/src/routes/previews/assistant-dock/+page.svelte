@@ -14,6 +14,8 @@
  * logic would recognize a proposed tool call and call
  * `controller.previewAction(...)`.
  */
+
+import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import {
   createDataSurfaceRegistry,
   type DataSurfaceIdentity,
@@ -191,6 +193,9 @@ const actionClient = {
       phase: 'apply' as const,
       ok: result.ok,
       reason: result.ok ? undefined : result.reason,
+      details: result.ok
+        ? { revision: result.revision ?? revision }
+        : undefined,
     };
   },
 };
@@ -304,34 +309,43 @@ async function handleConfirmAction(requestId: string) {
             <p>No data surfaces mounted.</p>
           {/if}
 
-          <ul class="messages">
-            {#each controller.messages as message (message.id)}
-              <li class={`role-${message.role}`}>
-                <strong>{message.role}:</strong>
-                {message.content}
-              </li>
-            {/each}
-          </ul>
-
-          {#if controller.actions.size > 0}
-            <ul class="actions">
-              {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+          <div class="dock-scroll">
+            <ul class="messages">
+              {#each controller.messages as message (message.id)}
                 <li>
-                  <ToolCallDisplay
-                    toolCall={{
-                      toolName: action.request.actionId,
-                      toolCallId: requestId,
-                      status: action.status === 'failed' ? 'error' : 'success',
-                      error: action.error,
-                    }}
-                    actionResult={action.applyResult ?? action.previewResult}
-                    onconfirmaction={() => handleConfirmAction(requestId)}
-                    onrejectaction={() => controller.rejectAction(requestId)}
+                  <MessageBubble
+                    variant={message.role === 'system'
+                      ? 'system'
+                      : message.role === 'user'
+                        ? 'default'
+                        : 'agent'}
+                    own={message.role === 'user'}
+                    content={message.content}
                   />
                 </li>
               {/each}
             </ul>
-          {/if}
+
+            {#if controller.actions.size > 0}
+              <ul class="actions">
+                {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+                  <li>
+                    <ToolCallDisplay
+                      toolCall={{
+                        toolName: action.request.actionId,
+                        toolCallId: requestId,
+                        status: action.status === 'failed' ? 'error' : 'success',
+                        error: action.error,
+                      }}
+                      actionResult={action.applyResult ?? action.previewResult}
+                      onconfirmaction={() => handleConfirmAction(requestId)}
+                      onrejectaction={() => controller.rejectAction(requestId)}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
 
           <AssistantComposer
             onsend={handleSend}
@@ -351,12 +365,15 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    padding: 1rem;
+    padding: var(--smrt-spacing-4, 1rem);
     box-sizing: border-box;
+    font-family: var(--smrt-font-family, system-ui, sans-serif);
+    background: var(--smrt-color-surface, #ffffff);
+    color: var(--smrt-color-on-surface, #1a1c1e);
   }
   .workspace {
     display: flex;
-    gap: 1.5rem;
+    gap: var(--smrt-spacing-5, 1.5rem);
     flex: 1;
     min-height: 0;
   }
@@ -367,32 +384,47 @@ async function handleConfirmAction(requestId: string) {
   .dock-panel {
     flex: 1;
     min-width: 320px;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 8px;
-    padding: 0.75rem;
+    border-radius: var(--smrt-radius-medium, 8px);
+  }
+  .dock-panel > :global(*:first-child) {
+    flex-shrink: 0;
   }
   table {
     width: 100%;
     border-collapse: collapse;
+    font: var(--smrt-typography-body-medium-font, 0.875rem/1.4 sans-serif);
   }
   th,
   td {
     text-align: left;
-    padding: 0.35rem 0.5rem;
+    padding: var(--smrt-spacing-2, 0.35rem) var(--smrt-spacing-3, 0.5rem);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
   .status-shipped {
     color: var(--smrt-color-success, #1a7a3a);
     font-weight: 600;
   }
-  .messages {
+  .dock-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--smrt-spacing-3, 0.75rem);
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-3, 0.75rem);
+  }
+  .messages,
+  .actions {
     list-style: none;
     margin: 0;
     padding: 0;
-    flex: 1;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 </style>
