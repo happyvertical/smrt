@@ -10,9 +10,13 @@
  * `db:status`/`db:diff`/`db:migrate` do, run N times the way the downstream
  * test's seven `Agent initializing` lines suggested seven comparisons.
  *
- * Counts *statements issued*, not just wall time — wall time is noisy across
- * machines; round-trip count is the thing that regressed and is what this
- * suite pins going forward.
+ * Counts *statements issued* as its primary, portable ceiling — round-trip
+ * count is the thing #2874/#2878 regressed and is what this suite pins most
+ * precisely. It also pins a second, deliberately loose wall-time ceiling
+ * (see the `medianMs` assertion below): wall time is noisy across machines,
+ * so that ceiling only catches a gross, order-of-magnitude regression, not
+ * a precise multiple — it exists because #2890 showed a regression can hold
+ * statement count at baseline while wall time still gets much worse.
  *
  * PostgreSQL only, matches the original bisect's database engine. Skipped
  * without `SMRT_TEST_POSTGRES_URL` (see `scripts/run-with-ci-postgres.mjs`).
@@ -228,8 +232,8 @@ postgresDescribe(
       // what a 4x-regression-sized ceiling would need to allow. (Idle
       // baseline is environment-specific, not a portable constant: an
       // earlier measurement of this identical code on a different local
-      // setup recorded ~300-400ms/run — over 2x faster than this session's
-      // ~665ms idle median on the same fixture. Any "Nx baseline" framing
+      // setup recorded ~300-400ms/run — roughly 1.7-2.2x faster than this
+      // session's ~665ms idle median on the same fixture. Any "Nx baseline" framing
       // below is this machine's ratio, not a universal one.) That variance
       // rules out a tight absolute threshold: ordinary shared-runner
       // contention can produce swings larger than the regression class this
