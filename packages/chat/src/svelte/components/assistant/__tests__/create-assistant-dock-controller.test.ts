@@ -1234,8 +1234,11 @@ describe('createAssistantDockController', () => {
     controller.syncRegistry();
 
     expect(controller.surfaces).toHaveLength(0);
-    // The preview taken under R1 must not survive the swap to R2.
-    expect(controller.actions.get(outstandingRequestId)?.status).toBe('failed');
+    // Copilot PR #2919 jAwsd: a registry swap now fully clears the actions
+    // map (resetConversationStateForContextSwap()) rather than marking each
+    // entry 'failed' — the preview taken under R1 must not survive the swap
+    // to R2 in ANY form.
+    expect(controller.actions.has(outstandingRequestId)).toBe(false);
 
     // A preview against R1's surface must now be rejected — R1 is no longer
     // the registry this controller is watching.
@@ -1290,6 +1293,125 @@ describe('createAssistantDockController', () => {
     expect(controller.surfaces).toHaveLength(1);
     expect(controller.surfaces[0]?.surfaceId).toBe('products');
 
+    controller.dispose();
+  });
+
+  // Copilot PR #2919 jAwsd: a registry (and, via syncTransport(), a
+  // transport) swap now clears threads/activeThreadId/messages/pendingSends
+  // and reloads from the NEW transport, and discards an old in-flight
+  // openThread() load from the previous context (via the same
+  // `openThreadRequestId` guard openThread() itself uses for the
+  // overlapping-call race).
+  it('clears conversation state and reloads from the new transport on a registry swap, discarding an old in-flight load', async () => {
+    const { transport: transportA, store: storeA } = scriptedTransport({
+      't1-a': [
+        {
+          id: 'a1',
+          threadId: 't1-a',
+          content: 'hello from context A',
+          role: 'user',
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const transportB = createInMemoryAssistantTransport();
+    const threadB = await transportB.createThread('Context B thread');
+
+    let currentTransport: AssistantTransport = transportA;
+    let currentRegistry = realRegistryWithSurface('orders').registry;
+    const controller = createAssistantDockController({
+      get transport() {
+        return currentTransport;
+      },
+      get registry() {
+        return currentRegistry;
+      },
+    });
+
+    await controller.openThread('t1-a');
+    expect(controller.activeThreadId).toBe('t1-a');
+    expect(controller.messages).toHaveLength(1);
+
+    // Gate transportA's loadMessages so a SECOND openThread('t1-a') call is
+    // still in flight when the context swap happens.
+    let resolveGatedLoad: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      resolveGatedLoad = resolve;
+    });
+    const originalLoadMessages = transportA.loadMessages.bind(transportA);
+    transportA.loadMessages = async (threadId: string) => {
+      await gate;
+      return originalLoadMessages(threadId);
+    };
+    const staleOpenThread = controller.openThread('t1-a');
+
+    // The context swap (new registry AND new transport — a host switching
+    // tenant/workspace) happens WHILE that load is still gated.
+    currentTransport = transportB;
+    currentRegistry = realRegistryWithSurface('orders').registry;
+    controller.syncRegistry();
+
+    // Cleared immediately, and reloaded from transportB (which has NO
+    // threads named 't1-a' — only `threadB`).
+    expect(controller.activeThreadId).toBeNull();
+    expect(controller.messages).toHaveLength(0);
+    expect(controller.pendingSends).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+    // The stale load from context A now resolves — it must NOT write back
+    // messages/activeThreadId over the new context.
+    resolveGatedLoad?.();
+    await staleOpenThread;
+    expect(controller.activeThreadId).toBeNull();
+    expect(controller.messages).toHaveLength(0);
+
+    void storeA;
+    controller.dispose();
+  });
+
+  it('syncTransport() clears conversation state and reloads on a transport swap alone', async () => {
+    const transportA = createInMemoryAssistantTransport();
+    const threadA = await transportA.createThread('t-a');
+    const transportB = createInMemoryAssistantTransport();
+    const threadB = await transportB.createThread('t-b');
+
+    let currentTransport: AssistantTransport = transportA;
+    const controller = createAssistantDockController({
+      get transport() {
+        return currentTransport;
+      },
+      registry: fakeRegistry([]),
+    });
+    await controller.loadThreads();
+    await controller.openThread(threadA.id);
+    expect(controller.activeThreadId).toBe(threadA.id);
+
+    currentTransport = transportB;
+    controller.syncTransport();
+
+    expect(controller.activeThreadId).toBeNull();
+    expect(controller.messages).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.threads.map((t) => t.id)).toEqual([threadB.id]);
+
+    controller.dispose();
+  });
+
+  it('syncTransport() is a no-op when the transport has not changed', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const listThreadsSpy = vi.spyOn(transport, 'listThreads');
+    const controller = createAssistantDockController({
+      transport,
+      registry: fakeRegistry([]),
+    });
+    await controller.loadThreads();
+    listThreadsSpy.mockClear();
+
+    controller.syncTransport();
+    controller.syncTransport();
+
+    expect(listThreadsSpy).not.toHaveBeenCalled();
     controller.dispose();
   });
 
@@ -2052,17 +2174,19 @@ describe('createAssistantDockController', () => {
       expect(controller.actions.get(requestId)?.status).toBe('previewing');
 
       // The host swaps the registry instance (e.g. a route/tenant change)
-      // WHILE the preview call is in flight.
+      // WHILE the preview call is in flight. Copilot PR #2919 jAwsd: a
+      // registry swap now fully clears the actions map rather than marking
+      // each entry 'failed'.
       currentRegistry = r2.registry;
       controller.syncRegistry();
-      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.has(requestId)).toBe(false);
 
       resolvePreview();
       await previewPromise;
 
       // The stale success write must NOT resurrect the entry as 'previewed'
-      // under the OLD registry's trust boundary.
-      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      // under the OLD registry's trust boundary — it must stay gone.
+      expect(controller.actions.has(requestId)).toBe(false);
       controller.dispose();
     });
   });

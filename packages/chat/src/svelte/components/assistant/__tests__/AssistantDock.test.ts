@@ -164,8 +164,12 @@ describe('AssistantDock (mounted component)', () => {
     ).not.toBeInTheDocument();
 
     // F1 guarantee preserved: the registry-scoped effect must not have
-    // caused the SEPARATE mount effect to re-run.
-    expect(listThreadsSpy).toHaveBeenCalledTimes(1);
+    // caused the SEPARATE mount effect to re-run — but Copilot PR #2919
+    // jAwsd's fix means the swap ITSELF now legitimately triggers exactly
+    // one more loadThreads() call, via syncRegistry()'s
+    // resetConversationStateForContextSwap() reloading from the new
+    // context. Two total: one from the mount effect, one from the swap.
+    expect(listThreadsSpy).toHaveBeenCalledTimes(2);
   });
 
   // Finding 1 (#2904 review, fresh cycle): the documented `surfaces` override

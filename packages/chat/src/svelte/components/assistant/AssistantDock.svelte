@@ -165,6 +165,20 @@ $effect(() => {
   untrack(() => controller.syncSurfaces());
 });
 
+// Copilot PR #2919 jAwsd: a SEPARATE effect, scoped to only the `transport`
+// prop, mirroring the `registry` effect above — a host swapping the
+// transport instance (e.g. alongside a registry swap, for a full
+// tenant/workspace context change) previously left threads, messages, and
+// pending sends from the OLD context in place. `transport` is read directly
+// here (a tracked dependency) so this effect reruns on a prop swap; the body
+// stays `untrack`-ed so it does not also rerun on unrelated $state changes
+// elsewhere (preserving the F1 guarantee that the mount effect runs exactly
+// once per mount).
+$effect(() => {
+  void transport;
+  untrack(() => controller.syncTransport());
+});
+
 async function handleSelectThread(threadId: string) {
   // openThread() catches internally and records any failure on
   // controller.error (cycle-2 second final finding 2) — never rejects.

@@ -158,8 +158,10 @@ export interface AssistantDockController {
   startPolling(): void;
   stopPolling(): void;
   /** Re-checks whether the host has reassigned the `registry` prop to a
-   * different instance and, if so, re-subscribes and resyncs `surfaces`
-   * (#2904 review finding B). A no-op when unchanged. Call from a
+   * different instance and, if so, re-subscribes, resyncs `surfaces`
+   * (#2904 review finding B), and clears/reloads conversation state
+   * (threads, activeThreadId, messages, pendingSends, actions, error,
+   * draftIds — Copilot PR #2919 jAwsd). A no-op when unchanged. Call from a
    * `registry`-scoped effect, never from the mount effect (see
    * AssistantDock.svelte — F1 requires that one to run exactly once). */
   syncRegistry(): void;
@@ -171,6 +173,15 @@ export interface AssistantDockController {
    * effect (see AssistantDock.svelte — F1 requires that one to run exactly
    * once). */
   syncSurfaces(): void;
+  /** Re-checks whether the host has reassigned the `transport` prop to a
+   * different instance and, if so, clears conversation state (threads,
+   * activeThreadId, messages, pendingSends, actions, error, draftIds) and
+   * reloads threads/models from the new transport (Copilot PR #2919 jAwsd —
+   * mirrors `syncRegistry()`'s reset for the identical class of stale-context
+   * bug). A no-op when unchanged. Call from a `transport`-scoped effect,
+   * never from the mount effect (see AssistantDock.svelte — F1 requires that
+   * one to run exactly once). */
+  syncTransport(): void;
   dispose(): void;
 }
 
@@ -259,6 +270,12 @@ export function createAssistantDockController(
   // observed. `subscribedRegistry` is the instance we're CURRENTLY
   // subscribed to, so `syncRegistry()` (below) can detect a swap.
   let subscribedRegistry: DataSurfaceRegistry | null = null;
+  // Copilot PR #2919 jAwsd: the transport isn't subscribed to like the
+  // registry, but a host CAN reassign it (it's a getter, same as `registry`)
+  // — `subscribedTransport` is the instance last seen, so `syncTransport()`
+  // (below) can detect a swap the same way `syncRegistry()` detects a
+  // registry swap.
+  let subscribedTransport: AssistantTransport | null = null;
   // F3 (#2904 review): pollTick's loadMessages await can outlive dispose();
   // this flag lets it (and resetPollInterval) bail instead of re-arming a
   // timer past unmount.
@@ -340,14 +357,11 @@ export function createAssistantDockController(
   // Finding B: a whole-registry swap (e.g. a host switching tenant/workspace
   // context) invalidates every outstanding preview, not just one surface's —
   // the new registry instance is a different trust boundary, so a preview
-  // taken under the old one must never be confirmable against it.
-  function invalidateAllPreviewedActions(reason: string) {
-    for (const [requestId, state] of actions) {
-      if (state.status === 'previewed' || state.status === 'previewing') {
-        actions.set(requestId, { ...state, status: 'failed', error: reason });
-      }
-    }
-  }
+  // taken under the old one must never be confirmable against it. Copilot PR
+  // #2919 jAwsd: superseded by `resetConversationStateForContextSwap()`'s
+  // `actions.clear()` (called from `syncRegistry()`), which drops every
+  // action entry outright rather than marking it 'failed' — removed as dead
+  // code.
 
   function subscribeToRegistry(registry: DataSurfaceRegistry) {
     return registry.subscribe((event) => {
@@ -358,6 +372,31 @@ export function createAssistantDockController(
         invalidatePreviewedActionsFor(event.identity);
       }
     });
+  }
+
+  // Copilot PR #2919 jAwsd: a registry (or transport) swap is documented as
+  // covering tenant/workspace changes, but previously only invalidated
+  // action previews and resynced `surfaces` — it left `threads`,
+  // `activeThreadId`, `messages`, and pending sends from the OLD context in
+  // place, so the mounted dock could go on displaying the previous tenant's
+  // conversation after a context swap, and an old in-flight `loadMessages`
+  // could still write it back. Called from both `syncRegistry()` and
+  // `syncTransport()` below on an actual swap: clears every piece of
+  // conversation state and reloads threads/models from the (now-current)
+  // transport. Bumping `openThreadRequestId` here reuses `openThread()`'s
+  // own "most recently started call wins" guard to drop an in-flight load
+  // that was still in flight under the old context.
+  function resetConversationStateForContextSwap() {
+    threads = [];
+    activeThreadId = null;
+    messages = [];
+    pendingSends = [];
+    actions.clear();
+    error = null;
+    draftIds.clear();
+    openThreadRequestId += 1;
+    void loadThreads();
+    void loadModels();
   }
 
   // Finding B: re-checks whether `options.registry` (the getter) now returns
@@ -381,10 +420,26 @@ export function createAssistantDockController(
     unsubscribeRegistry?.();
     subscribedRegistry = current;
     unsubscribeRegistry = subscribeToRegistry(current);
-    invalidateAllPreviewedActions(
-      'AssistantDock: the registry changed — this preview was taken under a previous context',
-    );
+    // Copilot PR #2919 jAwsd: `invalidateAllPreviewedActions` is now
+    // superseded by `resetConversationStateForContextSwap`'s `actions.clear()`
+    // below — every action entry is dropped outright on a registry swap, not
+    // just marked 'failed'.
     syncSurfacesFromRegistry();
+    resetConversationStateForContextSwap();
+  }
+
+  // Copilot PR #2919 jAwsd: the transport counterpart of `syncRegistry()` —
+  // a host can reassign the `transport` prop too (e.g. switching tenant
+  // context via both a new registry AND a new transport instance), and that
+  // swap needs the identical conversation-state reset. `AssistantDock.svelte`
+  // calls this from a `transport`-scoped effect, mirroring the `registry`
+  // one. A no-op when the transport hasn't changed.
+  function syncTransport() {
+    if (disposed) return;
+    const current = options.transport;
+    if (current === subscribedTransport) return;
+    subscribedTransport = current;
+    resetConversationStateForContextSwap();
   }
 
   // Cycle-2 second final finding 1: re-reads the `surfaces` getter (and, when
@@ -412,6 +467,10 @@ export function createAssistantDockController(
   syncSurfacesFromRegistry();
   subscribedRegistry = options.registry;
   unsubscribeRegistry = subscribeToRegistry(subscribedRegistry);
+  // Copilot PR #2919 jAwsd: records the transport instance seen at
+  // construction so `syncTransport()` only resets conversation state on an
+  // ACTUAL later swap, not on this initial bind.
+  subscribedTransport = options.transport;
 
   function markStalePendingSends() {
     const cutoff = now() - staleAfterMs;
@@ -1068,6 +1127,7 @@ export function createAssistantDockController(
     stopPolling,
     syncRegistry,
     syncSurfaces,
+    syncTransport,
     dispose,
   };
 }
