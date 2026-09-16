@@ -8,6 +8,7 @@
  * `DataSurfaceRegistry` instance (already owned by the host shell) and an
  * `AssistantTransport`.
  */
+import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
@@ -15,6 +16,7 @@ import AssistantComposer from './AssistantComposer.svelte';
 import AssistantThreadList from './AssistantThreadList.svelte';
 import type {
   AssistantAttachmentRef,
+  AssistantMessage,
   AssistantTransport,
 } from './assistant-transport.js';
 import {
@@ -22,6 +24,21 @@ import {
   type AssistantDockController,
   createAssistantDockController,
 } from './create-assistant-dock-controller.svelte.js';
+
+// AssistantMessage.role is 'user' | 'assistant' | 'system' | 'tool'.
+// MessageBubble's canonical styling axes are `variant` ('default' | 'agent' |
+// 'system') + `own` — used directly (rather than its legacy `role` prop,
+// whose narrower type isn't exported from `@happyvertical/smrt-ui/chat`) so
+// messages render with the package's own bubble styling instead of raw
+// "role: content" text (#2904 review fix). Tool output renders with the
+// agent's tone.
+function bubbleVariant(
+  role: AssistantMessage['role'],
+): 'default' | 'agent' | 'system' {
+  if (role === 'system') return 'system';
+  if (role === 'user') return 'default';
+  return 'agent';
+}
 
 export interface Props {
   transport: AssistantTransport;
@@ -109,42 +126,50 @@ async function handleConfirmAction(requestId: string) {
       </p>
     {/if}
 
-    <ul class="assistant-dock-messages">
-      {#each controller.messages as message (message.id)}
-        <li class={`role-${message.role}`}>{message.content}</li>
-      {/each}
-    </ul>
-
-    {#if controller.actions.size > 0}
-      <ul class="assistant-dock-actions">
-        {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+    <div class="assistant-dock-scroll">
+      <ul class="assistant-dock-messages">
+        {#each controller.messages as message (message.id)}
           <li>
-            <ToolCallDisplay
-              toolCall={{
-                toolName: action.request.actionId,
-                toolCallId: requestId,
-                status: action.status === 'failed' ? 'error' : 'success',
-                error: action.error,
-              }}
-              actionResult={action.applyResult ?? action.previewResult}
-              onconfirmaction={() => handleConfirmAction(requestId)}
-              onrejectaction={() => controller.rejectAction(requestId)}
+            <MessageBubble
+              variant={bubbleVariant(message.role)}
+              own={message.role === 'user'}
+              content={message.content}
             />
           </li>
         {/each}
       </ul>
-    {/if}
 
-    {#if controller.pendingSends.some((p) => p.status === 'stale')}
-      <div class="assistant-dock-stale">
-        <p>The assistant is taking longer than expected.</p>
-        {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
-          <button type="button" onclick={() => controller.retry(pending.clientRequestId)}>
-            Retry "{pending.content}"
-          </button>
-        {/each}
-      </div>
-    {/if}
+      {#if controller.actions.size > 0}
+        <ul class="assistant-dock-actions">
+          {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+            <li>
+              <ToolCallDisplay
+                toolCall={{
+                  toolName: action.request.actionId,
+                  toolCallId: requestId,
+                  status: action.status === 'failed' ? 'error' : 'success',
+                  error: action.error,
+                }}
+                actionResult={action.applyResult ?? action.previewResult}
+                onconfirmaction={() => handleConfirmAction(requestId)}
+                onrejectaction={() => controller.rejectAction(requestId)}
+              />
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      {#if controller.pendingSends.some((p) => p.status === 'stale')}
+        <div class="assistant-dock-stale">
+          <p>The assistant is taking longer than expected.</p>
+          {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
+            <button type="button" onclick={() => controller.retry(pending.clientRequestId)}>
+              Retry "{pending.content}"
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
 
     <div class="assistant-dock-composer">
       {#if controller.models.length > 0}
@@ -169,17 +194,71 @@ async function handleConfirmAction(requestId: string) {
   .assistant-dock {
     display: flex;
     height: 100%;
+    min-height: 0;
+    font-family: var(--smrt-font-family, system-ui, sans-serif);
+    background: var(--smrt-color-surface, #ffffff);
+    color: var(--smrt-color-on-surface, #1a1c1e);
   }
+
   .assistant-dock-main {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    min-width: 0;
   }
-  .assistant-dock-messages {
+
+  .assistant-dock-empty {
+    margin: 0;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    background: var(--smrt-color-surface-container-low, #f7f7fb);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+  }
+
+  .assistant-dock-scroll {
     flex: 1;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-3, 12px);
+    min-height: 0;
+  }
+
+  .assistant-dock-messages {
     list-style: none;
     margin: 0;
-    padding: 0.5rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-actions {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-stale {
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-tertiary-container, #ffd8e4);
+    color: var(--smrt-color-on-tertiary-container, #31111d);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-stale p {
+    margin: 0 0 var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-composer-header {
+    padding: 0 var(--smrt-spacing-2, 8px);
+    padding-top: var(--smrt-spacing-2, 8px);
   }
 </style>
