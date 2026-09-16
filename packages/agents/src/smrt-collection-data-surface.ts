@@ -129,6 +129,14 @@ export interface CreateSmrtCollectionDataSurfaceOptions {
   defaultSort?: DataQuerySort[];
   /** Whether the surface advertises opaque cursor paging. Defaults to true. */
   cursorPagination?: boolean;
+  /**
+   * Whether the surface advertises facet queries. Defaults to
+   * `typeof collection.facets === 'function'` when `collection` is a static
+   * object; defaults to `true` when `collection` is a resolver function
+   * (its shape is unknown until called), so a resolver-backed surface whose
+   * collection lacks `facets()` MUST set this to `false` explicitly.
+   */
+  facets?: boolean;
   /** Descriptive row/bulk action catalog, surfaced only via `metadata.actions`. */
   actions?: readonly SmrtCollectionDataSurfaceAction[];
   /** Resolve a collection from the live principal context, never model input. */
@@ -289,6 +297,7 @@ async function buildQuerySchemaForClass(
     maxResultBytes: number;
     defaultSort?: DataQuerySort[];
     cursorPagination: boolean;
+    facets: boolean;
   },
 ): Promise<DataQuerySchema> {
   const registered = (await ObjectRegistry.getAllFields(qualifiedName)) as Map<
@@ -342,7 +351,7 @@ async function buildQuerySchemaForClass(
     supports: {
       cursorPagination: options.cursorPagination,
       consistency: false,
-      facets: true,
+      facets: options.facets,
     },
   };
 }
@@ -364,21 +373,42 @@ export function buildDataQuerySchemaForClass(
     maxResultBytes?: number;
     defaultSort?: DataQuerySort[];
     cursorPagination?: boolean;
+    facets?: boolean;
   } = {},
 ): Promise<DataQuerySchema> {
   const identityField = options.identityField ?? 'id';
   const excluded = [...new Set(options.exclude ?? [])].sort();
-  const key = `${qualifiedName}::${identityField}::${excluded.join(',')}`;
+  const maxPageLimit = options.maxPageLimit ?? DEFAULT_MAX_PAGE_LIMIT;
+  const defaultPageLimit =
+    options.defaultPageLimit ?? Math.min(DEFAULT_PAGE_LIMIT, maxPageLimit);
+  const maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
+  const cursorPagination = options.cursorPagination ?? true;
+  const facets = options.facets ?? true;
+  const canonicalDefaultSort = (options.defaultSort ?? [])
+    .map((term) => `${term.field}:${term.direction}`)
+    .join(',');
+  const key = [
+    qualifiedName,
+    identityField,
+    excluded.join(','),
+    defaultPageLimit,
+    maxPageLimit,
+    maxResultBytes,
+    canonicalDefaultSort,
+    cursorPagination,
+    facets,
+  ].join('::');
   const cached = schemaCache.get(key);
   if (cached) return cached;
   const pending = buildQuerySchemaForClass(qualifiedName, {
     exclude: new Set(excluded),
     identityField,
-    defaultPageLimit: options.defaultPageLimit ?? DEFAULT_PAGE_LIMIT,
-    maxPageLimit: options.maxPageLimit ?? DEFAULT_MAX_PAGE_LIMIT,
-    maxResultBytes: options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
+    defaultPageLimit,
+    maxPageLimit,
+    maxResultBytes,
     defaultSort: options.defaultSort,
-    cursorPagination: options.cursorPagination ?? true,
+    cursorPagination,
+    facets,
   }).catch((cause) => {
     schemaCache.delete(key);
     throw cause;
@@ -904,6 +934,11 @@ export async function createSmrtCollectionDataSurfaceDefinition(
       maxResultBytes: options.maxResultBytes,
       defaultSort: options.defaultSort,
       cursorPagination: options.cursorPagination,
+      facets:
+        options.facets ??
+        (typeof options.collection === 'function'
+          ? true
+          : typeof options.collection.facets === 'function'),
     })) as DataSurfaceSchema);
   const executableSchema = redactedQuerySchema(schema);
   assertSmrtCollectionQuerySchema(executableSchema);
