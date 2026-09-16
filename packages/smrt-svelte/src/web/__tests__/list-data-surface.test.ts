@@ -535,6 +535,222 @@ describe('mountListDataSurface', () => {
     second.destroy();
   });
 
+  describe('commandAllowed descriptor-driven refusal', () => {
+    async function expectDeniedUnchanged(
+      extra: Partial<Parameters<typeof mountListDataSurface>[0]> = {},
+      buildCommand: (
+        rev: number,
+      ) => Parameters<
+        ReturnType<typeof createDataSurfaceRegistry>['execute']
+      >[0],
+    ) {
+      const registry = createDataSurfaceRegistry();
+      const controller = createDataTableController();
+      const handle = mountListDataSurface({
+        registry,
+        descriptor: descriptor(),
+        controller,
+        context: context(),
+        ...extra,
+      });
+      const before = controller.snapshot();
+      const rev = registry.inspect(identity)?.revision ?? 0;
+      const result = await registry.execute(buildCommand(rev));
+      expect(result.ok).toBe(false);
+      expect(controller.snapshot()).toEqual(before);
+      handle.destroy();
+    }
+
+    it('denies set-filters on a column outside filterableColumnIds', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-1',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-filters',
+        payload: {
+          filters: [{ columnId: 'id', operator: 'contains', value: 'x' }],
+        },
+      }));
+    });
+
+    it('denies set-filters with an operator outside the column allowlist', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-2',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-filters',
+        payload: {
+          filters: [{ columnId: 'title', operator: 'notContains', value: 'x' }],
+        },
+      }));
+    });
+
+    it('denies set-sorting on a column outside sortableColumnIds', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-3',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-sorting',
+        payload: { sorting: [{ columnId: 'id', direction: 'asc' }] },
+      }));
+    });
+
+    it('denies toggle-sorting on a column outside sortableColumnIds', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-4',
+        identity,
+        expectedRevision: rev,
+        controlId: 'toggle-sorting',
+        payload: { columnId: 'id' },
+      }));
+    });
+
+    it('denies set-selected-rows over maxSelectionSize', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-5',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-selected-rows',
+        payload: { rowIds: ['a', 'b', 'c'] },
+      }));
+    });
+
+    it('denies toggle-row-selection that would exceed maxSelectionSize', async () => {
+      const registry = createDataSurfaceRegistry();
+      const controller = createDataTableController();
+      controller.dispatch({ type: 'setSelectedRows', rowIds: ['a', 'b'] });
+      const handle = mountListDataSurface({
+        registry,
+        descriptor: descriptor(),
+        controller,
+        context: context(),
+      });
+      const before = controller.snapshot();
+      await expect(
+        registry.execute({
+          version: 1,
+          commandId: 'deny-6',
+          identity,
+          expectedRevision: registry.inspect(identity)?.revision ?? 0,
+          controlId: 'toggle-row-selection',
+          payload: { rowId: 'c' },
+        }),
+      ).resolves.toMatchObject({ ok: false });
+      expect(controller.snapshot()).toEqual(before);
+      handle.destroy();
+    });
+
+    it('denies set-column-order naming an unreadable column', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-7',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-column-order',
+        payload: { columnIds: ['missing-column'] },
+      }));
+    });
+
+    it('denies set-column-visibility naming an unreadable column', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-8',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-column-visibility',
+        payload: { columns: [{ columnId: 'missing-column', visible: false }] },
+      }));
+    });
+
+    it('denies set-page-size of 0', async () => {
+      await expectDeniedUnchanged({}, (rev) => ({
+        version: 1,
+        commandId: 'deny-9',
+        identity,
+        expectedRevision: rev,
+        controlId: 'set-page-size',
+        payload: { pageSize: 0 },
+      }));
+    });
+
+    it('denies an otherwise-allowed table command when acceptsTableCommand refuses it', async () => {
+      await expectDeniedUnchanged(
+        { acceptsTableCommand: () => false },
+        (rev) => ({
+          version: 1,
+          commandId: 'deny-10',
+          identity,
+          expectedRevision: rev,
+          controlId: 'set-filters',
+          payload: {
+            filters: [{ columnId: 'title', operator: 'contains', value: 'x' }],
+          },
+        }),
+      );
+    });
+  });
+
+  it('routes reveal and highlight to their page callbacks', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const reveal = vi.fn();
+    const highlight = vi.fn();
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      reveal,
+      highlight,
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'do-reveal',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'reveal',
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(reveal).toHaveBeenCalledOnce();
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'do-highlight',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'highlight',
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(highlight).toHaveBeenCalledOnce();
+
+    handle.destroy();
+  });
+
+  it('seeds and reports the mounted revision via initialRevision/onRevision', () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createDataTableController();
+    const onRevision = vi.fn();
+    const handle = mountListDataSurface({
+      registry,
+      descriptor: descriptor(),
+      controller,
+      context: context(),
+      initialRevision: 41,
+      onRevision,
+    });
+    expect(registry.inspect(identity)?.revision).toBe(41);
+    expect(onRevision).toHaveBeenCalledWith(41);
+    handle.destroy();
+  });
+
   it('keeps two mounted lists independently addressable', async () => {
     const registry = createDataSurfaceRegistry();
     const first = mountListDataSurface({
