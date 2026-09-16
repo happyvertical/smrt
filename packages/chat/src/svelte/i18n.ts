@@ -38,6 +38,38 @@ export const M = defineMessages({
   // ToolCallDisplay
   'chat.tool_call_display.tool_call': 'Tool call: {toolName}',
   'chat.tool_call_display.running': 'Running',
+  'chat.tool_call_display.applied_successfully': 'Change applied successfully.',
+  'chat.tool_call_display.confirm': 'Confirm',
+  'chat.tool_call_display.reject': 'Reject',
+
+  // ModelPicker (#2904)
+  'chat.model_picker.label': 'Model',
+
+  // AssistantComposer (#2904)
+  'chat.assistant_composer.attach_files': 'Attach files',
+  'chat.assistant_composer.message_label': 'Message',
+  'chat.assistant_composer.send': 'Send',
+  'chat.assistant_composer.remove_attachment': 'Remove {name}',
+  'chat.assistant_composer.send_error': 'Could not send: {message}',
+  'chat.assistant_composer.send_failed': 'Send failed',
+  'chat.assistant_composer.upload_error': 'Could not attach file: {message}',
+  'chat.assistant_composer.upload_failed': 'Attachment failed',
+
+  // AssistantThreadList (#2904)
+  'chat.assistant_thread_list.conversations_label': 'Assistant conversations',
+  'chat.assistant_thread_list.new_conversation': '+ New conversation',
+  'chat.assistant_thread_list.untitled': 'Untitled',
+
+  // AssistantDock (#2904)
+  'chat.assistant_dock.no_surfaces':
+    'No data surfaces are mounted on this route — the assistant can chat but has no actions available here.',
+  'chat.assistant_dock.taking_longer':
+    'The assistant is taking longer than expected.',
+  'chat.assistant_dock.retry': 'Retry "{content}"',
+  'chat.assistant_dock.error': 'Something went wrong: {message}',
+  'chat.assistant_dock.send_failed':
+    'A message failed to send. You can retry it below.',
+  'chat.assistant_dock.attachments': 'Attachments',
 
   // RoomCreateDialog
   'chat.room_create_dialog.close': 'Close room creation dialog',

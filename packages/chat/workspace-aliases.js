@@ -14,6 +14,10 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-ui', '../smrt-ui/src/index.ts'],
   ['@happyvertical/smrt-ui/chat', '../smrt-ui/src/components/chat/index.ts'],
   [
+    '@happyvertical/smrt-ui/data-surface',
+    '../smrt-ui/src/components/data/data-surface.ts',
+  ],
+  [
     '@happyvertical/smrt-ui/feedback',
     '../smrt-ui/src/components/feedback/index.ts',
   ],

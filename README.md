@@ -298,6 +298,7 @@ The first command links a sibling HappyVertical SDK checkout; the second restore
 - [Core framework API and examples](./packages/core/README.md)
 - [Package standards](./docs/content/standards.md)
 - [UI surface conventions](./docs/ui-surfaces.md)
+- [AssistantDock (route-aware assistant surface)](./docs/assistant-dock.md)
 - [Documentation site](./docs/README.md)
 
 The documentation build discovers package READMEs from workspace `package.json` files. `pnpm check:readmes` prevents missing package docs, stale catalog entries, broken local README links, obsolete branding, and unsupported quick-start drift.

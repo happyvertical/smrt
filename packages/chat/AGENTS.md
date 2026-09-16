@@ -114,6 +114,25 @@ The gateway bearer token proves only "this request came from the gateway"; it ne
 - **Persona path reuses the harness's own gates unchanged** — persona principal, fail-closed `allowedTools` offer+execution gates, tenant binding. `onToken` is best-effort telemetry threaded through `runToolLoop`; it never changes what the loop persists or authorizes.
 - **Custom tools stream via `binding.extraTools`** — the persona binding threads an optional `extraTools?: PrincipalTool[]` down to `runPersonaConversationTurn`, so a *streamed* persona chat can offer non-manifest, service-backed tools (the persona messaging tool `messages.send`, or an assistance-request/lead-ticket tool wrapping a `@smrt({ api:false, mcp:false })` service) and thus *act*, not only answer — matching the non-streaming persona path. It is resolved server-side by `authorize` (trusted), never from request input, and stays fully gated: each tool is filtered by the persona's `allowedTools` (offer gate) and re-asserts the bound principal's authority in `execute` (execution gate). Offering a tool is not authorizing it.
 
+## AssistantDock (#2904)
+
+`AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`) is a
+shell-mounted, route-aware assistant surface: it discovers currently-mounted
+`DataSurfaceDescriptor`s from a host-supplied `DataSurfaceRegistry`
+(`@happyvertical/smrt-ui/data-surface`) and fails closed to plain chat when
+none are mounted. Action proposals flow through
+`normalizeDataSurfaceActionRequest` → a host-supplied `AssistantActionClient`
+(preview/apply against a server-hosted `DataSurfaceActionAdapter`, not through
+the `data-surface-bridge.ts` live-collaboration command channel) →
+`ToolCallDisplay`'s additive `actionResult` rendering. `AssistantTransport`
+(`assistant-transport.ts`) is a narrower, separate contract from
+`ChatClientBackend` (`client.ts`): `ChatThread`/`ChatMessage` only expose
+generated `list`/`get` REST (`api: { include: ['list', 'get'] }`,
+`models/ChatThread.ts:16`, `models/ChatMessage.ts:26`), so writes need a host-
+supplied `writeEndpoint`. See [`docs/assistant-dock.md`](../../docs/assistant-dock.md)
+for the full design, the anytown `PortalChatTool.svelte` polling/stale-send
+reconnaissance, and open gaps.
+
 ## Gotchas
 
 - **sessionContext, not context**: `context` is reserved for slug scoping. Use `getSessionContext()`/`updateSessionContext()` for agent memory.
