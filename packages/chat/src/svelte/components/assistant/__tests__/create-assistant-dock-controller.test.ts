@@ -531,18 +531,18 @@ describe('createAssistantDockController', () => {
     unregister();
     // Copilot PR #2919 jAwwg: unregister() invalidates the previewed entry
     // to 'failed' (via invalidatePreviewedActionsFor) with its request still
-    // at the PREVIEW phase — applyAction's new status/phase guard now
-    // refuses it at the top (before ever reaching the apply-time mount
-    // re-check below), since a preview-phase failure is never a valid apply
-    // retry target. The end result is the same fail-closed outcome, just
-    // caught one step earlier with a different message.
+    // at the PREVIEW phase — applyAction's status/`retryable` guard refuses
+    // it at the top (before ever reaching the apply-time mount re-check
+    // below), since a preview-phase failure is never a valid apply retry
+    // target. Cycle-4 final finding 2: the refusal is now non-mutating, so
+    // the entry's own status/error are left exactly as the invalidation set
+    // them; the refusal reason is recorded on controller.error instead.
     await controller.applyAction(requestId);
 
     expect(applySpy).not.toHaveBeenCalled();
     expect(controller.actions.get(requestId)?.status).toBe('failed');
-    expect(controller.actions.get(requestId)?.error).toMatch(
-      /applyAction refused/,
-    );
+    expect(controller.actions.get(requestId)?.error).toMatch(/unmounted/);
+    expect(controller.error).toMatch(/applyAction refused/);
   });
 
   // Copilot PR #2919 jAwwg: applyAction() previously only blocked a second
@@ -550,8 +550,14 @@ describe('createAssistantDockController', () => {
   // preview-phase 'failed' were all still callable, letting a failed
   // preview reach AssistantActionClient.apply without a successful
   // preview/confirmation, and letting an already-applied action be
-  // replayed outside the intended retry path.
-  describe('applyAction() status/phase guard (cycle-3 second final, jAwwg)', () => {
+  // replayed outside the intended retry path. Cycle-4 final finding 2:
+  // jAwwg's OWN fix mutated the refused entry (`status: 'failed'`), which
+  // downgraded an 'applied' entry and — on a SECOND applyAction call —
+  // satisfied its own retry condition, permitting the exact replay it was
+  // meant to prevent. The refusal is now non-mutating; retry eligibility
+  // comes from an explicit `retryable` marker set only by a genuine apply
+  // attempt.
+  describe('applyAction() status/phase guard (cycle-3 second final jAwwg, cycle-4 final finding 2)', () => {
     function makeActionClient(applySpy = vi.fn()) {
       return {
         preview: async (request: DataSurfaceActionRequest) => ({
@@ -601,10 +607,10 @@ describe('createAssistantDockController', () => {
       await controller.applyAction(requestId);
 
       expect(applySpy).not.toHaveBeenCalled();
-      expect(controller.actions.get(requestId)?.status).toBe('failed');
-      expect(controller.actions.get(requestId)?.error).toMatch(
-        /applyAction refused/,
-      );
+      // Cycle-4 final finding 2: non-mutating refusal — the entry stays
+      // exactly 'previewing', not downgraded to 'failed'.
+      expect(controller.actions.get(requestId)?.status).toBe('previewing');
+      expect(controller.error).toMatch(/applyAction refused/);
       controller.dispose();
     });
 
@@ -634,13 +640,18 @@ describe('createAssistantDockController', () => {
       await controller.applyAction(requestId);
 
       expect(applySpy).not.toHaveBeenCalled();
-      expect(controller.actions.get(requestId)?.error).toMatch(
-        /applyAction refused/,
+      // Cycle-4 final finding 2: non-mutating refusal — the entry's OWN
+      // error stays the original preview-rejection message; the refusal is
+      // recorded on controller.error instead.
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.error).toBe(
+        'preview rejected by the server',
       );
+      expect(controller.error).toMatch(/applyAction refused/);
       controller.dispose();
     });
 
-    it('refuses an already-"applied" action — no replay outside the intended retry path', async () => {
+    it('refuses an already-"applied" action on a second AND third call — no replay, entry stays applied', async () => {
       const { registry, identity } = realRegistryWithSurface('orders');
       const applySpy = vi.fn();
       const controller = createAssistantDockController({
@@ -649,6 +660,14 @@ describe('createAssistantDockController', () => {
         actionClient: makeActionClient(applySpy),
       });
       const requestId = 'req-already-applied';
+      const applyResult = {
+        version: 1 as const,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'apply' as const,
+        ok: true,
+      };
       controller.actions.set(requestId, {
         request: {
           version: 1,
@@ -659,24 +678,34 @@ describe('createAssistantDockController', () => {
           selection: { scope: 'current-page' },
         },
         status: 'applied',
-        applyResult: {
-          version: 1,
-          requestId,
-          identity,
-          actionId: 'archive',
-          phase: 'apply',
-          ok: true,
-        },
+        applyResult,
         idempotencyKey: 'idem-applied',
       });
 
+      // Cycle-4 final finding 2: jAwwg's original fix downgraded this entry
+      // to 'failed' on refusal, which itself satisfied the (then
+      // phase-based) retry condition — a SECOND applyAction call would
+      // proceed and replay the action against the server. Both the second
+      // AND a third call here must refuse without ever calling apply(), and
+      // the entry must stay 'applied' with its original applyResult intact
+      // throughout.
       await controller.applyAction(requestId);
-
       expect(applySpy).not.toHaveBeenCalled();
-      expect(controller.actions.get(requestId)?.status).toBe('failed');
-      expect(controller.actions.get(requestId)?.error).toMatch(
-        /applyAction refused/,
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+      expect(controller.actions.get(requestId)?.applyResult).toEqual(
+        applyResult,
       );
+      expect(controller.error).toMatch(/applyAction refused/);
+
+      controller.setError(null);
+      await controller.applyAction(requestId);
+      expect(applySpy).not.toHaveBeenCalled();
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+      expect(controller.actions.get(requestId)?.applyResult).toEqual(
+        applyResult,
+      );
+      expect(controller.error).toMatch(/applyAction refused/);
+
       controller.dispose();
     });
 
@@ -748,13 +777,128 @@ describe('createAssistantDockController', () => {
 
       await controller.applyAction(requestId);
       expect(controller.actions.get(requestId)?.status).toBe('failed');
-      expect(controller.actions.get(requestId)?.request.phase).toBe('apply');
+      // Cycle-4 final finding 2: this is the marker the retry guard actually
+      // consults now — a genuine apply attempt failed.
+      expect(controller.actions.get(requestId)?.retryable).toBe(true);
 
       shouldFail = false;
       await controller.applyAction(requestId);
 
       expect(applySpy).toHaveBeenCalledTimes(2);
       expect(controller.actions.get(requestId)?.status).toBe('applied');
+      // Cleared on a successful apply.
+      expect(controller.actions.get(requestId)?.retryable).toBe(false);
+      controller.dispose();
+    });
+
+    // Cycle-4 final finding 2: a preview-phase failure must never set
+    // `retryable` — only a genuine apply attempt does.
+    it('a preview-phase failure is not retryable', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: {
+          preview: async () => {
+            throw new Error('preview rejected');
+          },
+          apply: async (request) => {
+            applySpy();
+            return {
+              version: 1,
+              requestId: request.requestId,
+              identity: request.identity,
+              actionId: request.actionId,
+              phase: 'apply',
+              ok: true,
+            };
+          },
+        },
+      });
+      const requestId = 'req-preview-fails';
+      await controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.retryable).toBeFalsy();
+
+      await controller.applyAction(requestId);
+
+      expect(applySpy).not.toHaveBeenCalled();
+      expect(controller.error).toMatch(/applyAction refused/);
+      controller.dispose();
+    });
+
+    // Cycle-4 final finding 2: retryable only covers ONE retry attempt per
+    // failure — a second consecutive apply failure must still be retryable
+    // again (freshly re-set), but a failure must never carry over as
+    // retryable past a successful apply.
+    it('a failed apply is retryable, and a subsequent success clears it', async () => {
+      const { registry, identity } = realRegistryWithSurface('orders');
+      let attempt = 0;
+      const applySpy = vi.fn();
+      const controller = createAssistantDockController({
+        transport: createInMemoryAssistantTransport(),
+        registry,
+        actionClient: {
+          preview: async (request) => ({
+            version: 1,
+            requestId: request.requestId,
+            identity: request.identity,
+            actionId: request.actionId,
+            phase: 'preview',
+            ok: true,
+          }),
+          apply: async (request) => {
+            applySpy();
+            attempt += 1;
+            return {
+              version: 1,
+              requestId: request.requestId,
+              identity: request.identity,
+              actionId: request.actionId,
+              phase: 'apply',
+              ok: attempt >= 3,
+              reason: attempt < 3 ? 'transient' : undefined,
+            };
+          },
+        },
+      });
+      const requestId = 'req-multi-retry';
+      await controller.previewAction({
+        version: 1,
+        requestId,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      });
+
+      await controller.applyAction(requestId); // attempt 1: fails
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.retryable).toBe(true);
+
+      await controller.applyAction(requestId); // attempt 2: fails again — still retryable
+      expect(applySpy).toHaveBeenCalledTimes(2);
+      expect(controller.actions.get(requestId)?.status).toBe('failed');
+      expect(controller.actions.get(requestId)?.retryable).toBe(true);
+
+      await controller.applyAction(requestId); // attempt 3: succeeds
+      expect(applySpy).toHaveBeenCalledTimes(3);
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+      expect(controller.actions.get(requestId)?.retryable).toBe(false);
+
+      // A fourth call must now refuse (status is 'applied', not retryable).
+      await controller.applyAction(requestId);
+      expect(applySpy).toHaveBeenCalledTimes(3);
+      expect(controller.actions.get(requestId)?.status).toBe('applied');
+
       controller.dispose();
     });
   });

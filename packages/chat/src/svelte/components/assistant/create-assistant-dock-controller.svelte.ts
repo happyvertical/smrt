@@ -93,6 +93,17 @@ export interface AssistantActionState {
    * a retried Confirm click after a timeout where the server DID apply
    * dedups against that earlier attempt instead of re-executing. */
   idempotencyKey: string;
+  /** Cycle-4 final finding 2: true only when a genuine APPLY attempt itself
+   * failed (the apply-time mount re-check, `actionClient.apply` throwing, or
+   * resolving `{ ok: false }`) — never for a preview-phase failure. This is
+   * the ONLY thing `applyAction`'s guard consults to permit a retry on a
+   * `'failed'` entry; deriving retry eligibility from `status === 'failed'`
+   * plus a mutated `request.phase` (the earlier approach) let a refusal for
+   * an already-terminal state (e.g. `'applied'`) itself manufacture this
+   * condition by downgrading the entry to `'failed'`, permitting a SECOND
+   * `applyAction` call to replay an already-applied action. Cleared
+   * (`false`) whenever an apply attempt succeeds. */
+  retryable?: boolean;
 }
 
 export interface AssistantDockControllerOptions {
@@ -1011,30 +1022,28 @@ export function createAssistantDockController(
     // no-op (not an error): a duplicate click while genuinely busy, not a
     // caller mistake.
     if (state.status === 'applying') return;
-    // Copilot PR #2919 jAwwg: this guard previously only blocked a second
-    // CONCURRENT apply — 'previewing', 'applied', and 'failed' (from ANY
-    // phase, including a preview-time failure that never reached apply)
-    // were all still accepted here, so a failed preview (`ok: false`)
-    // remained callable through the public headless controller without a
-    // successful preview/confirmation, and an already-applied action could
-    // be replayed outside the intended retry path. Permit only a genuinely
-    // `previewed` action, or a `failed` action whose most recent attempt
-    // was already in the APPLY phase (`state.request.phase === 'apply'`,
-    // set by `previewAction`'s `normalizeDataSurfaceActionRequest` for a
-    // preview-phase entry and re-set below for an apply-phase one) — i.e. an
-    // apply retry after a transient failure, never a preview-phase failure.
+    // Cycle-4 final finding 2: Copilot PR #2919 jAwwg's original fix derived
+    // retry eligibility from `status === 'failed' && request.phase ===
+    // 'apply'` and, on refusal, WROTE `status: 'failed'` over the current
+    // entry — including an already-`'applied'` one. That downgrade itself
+    // satisfied the retry condition, so a SECOND `applyAction` call on an
+    // applied action would proceed and replay it against the server, and the
+    // controller reported `'failed'` for an action whose `applyResult` was
+    // `ok: true`. The refusal is now entirely NON-MUTATING for a terminal or
+    // not-yet-previewed state — the entry (status, applyResult, everything)
+    // is left exactly as it was — and retry eligibility comes from the
+    // explicit `retryable` marker (see `AssistantActionState.retryable`),
+    // set ONLY when a genuine apply attempt itself failed.
     const isApplyPhaseRetry =
-      state.status === 'failed' && state.request.phase === 'apply';
+      state.status === 'failed' && state.retryable === true;
     if (state.status !== 'previewed' && !isApplyPhaseRetry) {
-      actions.set(requestId, {
-        ...state,
-        status: 'failed',
-        error:
-          `AssistantDock: applyAction refused — action "${requestId}" is ` +
-          `"${state.status}"${
-            state.status === 'failed' ? ' from an unsuccessful preview' : ''
-          }, not a confirmed preview or a retryable apply failure.`,
-      });
+      error =
+        `AssistantDock: applyAction refused — action "${requestId}" is ` +
+        `"${state.status}"${
+          state.status === 'failed'
+            ? ' and not retryable (preview-phase failure)'
+            : ''
+        }, not a confirmed preview or a retryable apply failure.`;
       return;
     }
     // Cycle-4 final finding 1: a context swap during this call's own work
@@ -1046,11 +1055,11 @@ export function createAssistantDockController(
     if (!isSurfaceMounted(state.request.identity)) {
       actions.set(requestId, {
         ...state,
-        // Copilot PR #2919 jAwwg: mark this failure as an APPLY-phase one
-        // (the user had a valid preview and clicked Confirm) so a retry
-        // after the surface remounts is permitted by the guard above.
-        request: { ...state.request, phase: 'apply' },
         status: 'failed',
+        // Cycle-4 final finding 2: a genuine apply-time failure (the user
+        // had a valid preview and clicked Confirm) — retryable after the
+        // surface remounts.
+        retryable: true,
         error: `AssistantDock: surface "${surfaceKey(state.request.identity)}" is not mounted`,
       });
       return;
@@ -1107,6 +1116,9 @@ export function createAssistantDockController(
           status: result.ok ? 'applied' : 'failed',
           applyResult: result,
           error: result.ok ? undefined : result.reason,
+          // Cycle-4 final finding 2: this WAS a genuine apply attempt —
+          // retryable only when it failed, cleared on success.
+          retryable: !result.ok,
         });
       } else if (!current && result.ok) {
         // The user rejected while this apply was in flight, and the server
@@ -1138,6 +1150,9 @@ export function createAssistantDockController(
             caughtError instanceof Error
               ? caughtError.message
               : String(caughtError),
+          // Cycle-4 final finding 2: a genuine apply attempt failed —
+          // retryable.
+          retryable: true,
         });
       }
     }
