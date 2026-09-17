@@ -122,9 +122,8 @@ The `ObjectRegistry` type itself is unchanged; only the exported instance name h
 
 #### Additional Resources
 
-- [SMRT Registry Documentation](./docs/api/registry.md)
-- [Configuration vs Registry Guide](./docs/guides/configuration.md)
-- [Changelog](./CHANGELOG.md)
+- [Core framework README](https://github.com/happyvertical/smrt/blob/main/packages/core/README.md) — objects, collections, decorators, registry, configuration
+- [Changelog](https://github.com/happyvertical/smrt/blob/main/CHANGELOG.md)
 
 ---
 
@@ -154,7 +153,7 @@ smrt.configure({
 - Fire-and-forget error handling
 - Memory leak prevention with `destroy()` method
 
-**See:** [Signaling System Documentation](./docs/guides/signals.md)
+**See:** [Signals documentation in the core README](https://github.com/happyvertical/smrt/blob/main/packages/core/README.md#signals-observability)
 
 ### Memory Leak Prevention
 
@@ -175,12 +174,12 @@ bus.register(adapter2);
 bus.clear(); // Remove all adapters
 ```
 
-**See:** [Memory Management Guide](./docs/guides/memory-management.md)
+**See:** [Memory management in the core README](https://github.com/happyvertical/smrt/blob/main/packages/core/README.md#context-memory)
 
 ---
 
 ## Need Help?
 
-- [GitHub Issues](https://github.com/happyvertical/sdk/issues)
-- [Documentation](./docs/)
-- [Examples](./examples/)
+- [GitHub Issues](https://github.com/happyvertical/smrt/issues)
+- [Documentation](https://happyvertical.github.io/smrt/)
+- [Application template](https://github.com/happyvertical/smrt/tree/main/packages/template-sveltekit)
