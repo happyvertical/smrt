@@ -702,6 +702,105 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       expect(Object.keys(manifest.objects)).toContain(externalEntry);
     });
 
+    it('do not shield a local object whose project was renamed', async () => {
+      // The manifest on disk records the name the project wrote under last.
+      // Renaming package.json#name must not turn every entry stamped with the
+      // old name into someone else's, or a local object deleted in the same
+      // change would survive into the schema commands read from this file.
+      createConsumerProject();
+      createLocalSmrtObject(tmpDir);
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+
+      await producer.configResolved(viteConfig());
+      await aggregateConsumedPackages();
+      expect(Object.keys(readManifest().objects)).toContain(
+        'test-app:LocalThing',
+      );
+
+      rmSync(join(tmpDir, 'src', 'LocalThing.ts'));
+      writeFileSync(
+        join(tmpDir, 'package.json'),
+        JSON.stringify({
+          name: 'renamed-app',
+          version: '1.0.0',
+          dependencies: {
+            '@happyvertical/smrt-core': '*',
+            [externalPackage]: '1.0.0',
+          },
+        }),
+      );
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(Object.keys(manifest.objects)).not.toContain(
+        'test-app:LocalThing',
+      );
+      expect(Object.keys(manifest.objects)).toContain(externalEntry);
+    });
+
+    it('carry the consumed dependency list the aggregation recorded', async () => {
+      // smrtConsumer() owns smrtDependencies too (aggregateTypeManifests()
+      // seeds it from its explicit packages list), and the CLI's schema gate
+      // reads exactly that list to admit a zero-local-object project. A
+      // configured package the local dependency scan does not return must not
+      // lose its declaration on the next local write.
+      createConsumerProject();
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+      await producer.configResolved(viteConfig());
+      await aggregateConsumedPackages();
+
+      // A consumed package that the local scan's dependency discovery cannot
+      // see, because it is not declared in this project's package.json.
+      const manifestPath = join(tmpDir, '.smrt', 'manifest.json');
+      const seeded = readManifest();
+      seeded.smrtDependencies = [
+        ...(seeded.smrtDependencies ?? []),
+        '@fixture/undiscovered',
+      ];
+      writeFileSync(manifestPath, JSON.stringify(seeded, null, 2));
+
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(manifest.smrtDependencies).toContain('@fixture/undiscovered');
+      expect(manifest.smrtDependencies).toContain(externalPackage);
+    });
+
+    it('carry that dependency list even when no object entry is preserved', async () => {
+      // The early return for "nothing to preserve" must not skip the
+      // dependency merge: a project with no aggregated objects yet still
+      // needs its recorded packages to pass the schema gate.
+      createConsumerProject();
+      mkdirSync(join(tmpDir, '.smrt'), { recursive: true });
+      writeFileSync(
+        join(tmpDir, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          version: '1.0.0',
+          timestamp: 0,
+          packageName: 'test-app',
+          objects: {},
+          smrtDependencies: ['@fixture/undiscovered'],
+        }),
+      );
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(Object.keys(manifest.objects)).toEqual([]);
+      expect(manifest.smrtDependencies).toContain('@fixture/undiscovered');
+    });
+
     it('are described by the knowledge artifact the local write refreshes', async () => {
       // .smrt/smrt-knowledge.json hashes the manifest it was derived from, so
       // it has to be rebuilt from the merged manifest that is actually
