@@ -915,9 +915,22 @@ function jsonSafeValue(
       return value.map((entry) => jsonSafeValue(entry, fieldId, ancestors));
     }
     if (!isPlainRecord(value)) return value;
-    const mapped: Record<string, unknown> = {};
+    // A null prototype written through `defineProperty`, exactly as
+    // `canonicalJson` builds its own objects. `JSON.parse` of a stored JSON
+    // column creates an OWN `__proto__` key, and a plain `mapped[key] = ...`
+    // would invoke the inherited setter instead: the key would vanish (silently
+    // dropping data) or change this object's prototype. Keeping it an own
+    // property preserves the shared validator's fail-closed
+    // `FORBIDDEN_DATA_QUERY` rejection of `__proto__`/`constructor`/`prototype`,
+    // which is what happened before this boundary existed.
+    const mapped = Object.create(null) as Record<string, unknown>;
     for (const [key, entry] of Object.entries(value)) {
-      mapped[key] = jsonSafeValue(entry, fieldId, ancestors);
+      Object.defineProperty(mapped, key, {
+        value: jsonSafeValue(entry, fieldId, ancestors),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return mapped;
   } finally {

@@ -1306,6 +1306,30 @@ describe('executeSmrtCollectionQuery row serialization (#2933)', () => {
     });
   });
 
+  it('keeps a forbidden json key fail-closed instead of dropping it', async () => {
+    // `JSON.parse` of a stored json column creates an OWN `__proto__` key. The
+    // shared validator rejects it with FORBIDDEN_DATA_QUERY; the serializer
+    // must not swallow the key on the way there.
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"__proto__":1,"ok":true}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"__proto__":{"nested":1}}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"constructor":1}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+  });
+
   it('coerces a SQLite 0/1 boolean and a bigint integer', async () => {
     const result = await queryRows(
       [{ id: 'e1', active: 1, attendees: 42n }],
