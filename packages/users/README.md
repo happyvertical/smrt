@@ -666,7 +666,9 @@ export default defineConfig({
     users: {
       permissions: {
         ancestorRead: {
-          // Descendant role slugs allowed to contribute upward. Exact match.
+          // Descendant SYSTEM role slugs allowed to contribute upward.
+          // Exact match, and only `tenantId: null, isSystem: true` roles
+          // (what `seedSystemRoles()` creates) can match.
           roles: ['member', 'editor'],
           // Collections whose `read` may travel up. `'*'` and trailing
           // wildcards (`'site_*'`) are supported.
@@ -690,6 +692,7 @@ nothing else. The bounds are hard:
 | Default | Off. Undeclared, malformed, or empty-on-either-axis policies resolve exactly as before. |
 | Action | `read` only (`list`/`get` normalize to `read`). `create`/`update`/`delete`/custom actions can never travel upward. |
 | Escalation | Intersected with the permissions the descendant role already holds — never a grant the principal lacks in its own tenant. |
+| Role identity | Only a governed SYSTEM role (`tenantId` null, `isSystem: true`) can match a declared slug. Slugs are not unique across a hierarchy, so a tenant-scoped custom role named `member` contributes nothing — a descendant's administrator cannot mint its way into the allow-list. |
 | Direction | Strictly upward, to verified ancestors only. Siblings share no ancestor relationship and are unreachable. |
 | Precedence | Applies only when NO membership authorized the tenant. A direct membership (even inactive) still pins resolution; an ancestor tenant-level DENY still subtracts. |
 | Hierarchy | The materialized `hierarchyPath` is verified link-by-link against real `parentTenantId` rows; stale, over-deep, or inconsistent paths fail closed. |
@@ -720,7 +723,8 @@ This is additive and off by default — no migration is required, and no existin
 deployment changes behavior until `permissions.ancestorRead` is declared. When
 adopting it, declare the **narrowest** role and collection lists that make the
 ancestor-level list work, and keep `maxDepth` at the smallest value your
-hierarchy needs. Do not reach for it to grant an ancestor-level action: if a
+hierarchy needs. `roles` must name system-role slugs; a tenant-scoped role with
+the same slug is ignored by design. Do not reach for it to grant an ancestor-level action: if a
 principal needs to *act* at the root, give it a root membership or a role
 grant, not a read policy.
 

@@ -19,7 +19,12 @@
  *   exactly as before.
  * - **Declared, never inferred.** The application names the descendant role
  *   slugs and the collections. Nothing is derived from role names, catalog
- *   shape, or hierarchy position.
+ *   shape, or hierarchy position. Because a slug is not unique across a
+ *   hierarchy — tenant-scoped custom roles are created by whoever administers
+ *   that tenant — only a governed SYSTEM role (`tenantId` null and
+ *   `isSystem: true`, what `RoleCollection.seedSystemRoles()` creates) can
+ *   match a declared slug. A descendant cannot opt itself in by minting a
+ *   same-named custom role.
  * - **Read only.** Only `<collection>.read` is ever contributed (`list`/`get`
  *   normalize to `read`). No `create`/`update`/`delete`, no custom action.
  * - **Never an escalation.** The contribution is intersected with the
@@ -73,6 +78,11 @@ export interface AncestorReadPolicy {
    * Descendant role slugs whose memberships may contribute upward. Required
    * and non-empty: an omitted or empty list disables the policy entirely.
    * Matching is exact and case-insensitive on the role slug; no patterns.
+   *
+   * Only SYSTEM roles match — `tenantId` null and `isSystem: true`, as created
+   * by `RoleCollection.seedSystemRoles()`. A tenant-scoped custom role sharing
+   * the slug contributes nothing, so a descendant tenant's administrator
+   * cannot mint its way into an ancestor's allow-list.
    */
   roles: readonly string[];
   /**

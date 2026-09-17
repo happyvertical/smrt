@@ -673,6 +673,9 @@ export class PermissionResolver {
    * - It is never lateral: only a STRICT ANCESTOR of the membership's tenant,
    *   within `maxDepth` hops, is affected. A sibling shares no such
    *   relationship and is unreachable by construction.
+   * - Only a governed SYSTEM role (`tenantId` null, `isSystem: true`) can
+   *   contribute, so a descendant tenant cannot opt itself in by minting a
+   *   custom role whose slug collides with a declared one.
    *
    * A tenant-level DENY on the resolved tenant still subtracts, keeping the
    * tenant's own hard block authoritative over an inherited read.
@@ -708,9 +711,25 @@ export class PermissionResolver {
     const declaredRoleIds = new Set<string>();
     for (const role of roles) {
       const slug = typeof role.slug === 'string' ? role.slug.toLowerCase() : '';
-      if (role.id && slug && policy.roleSlugs.has(slug)) {
-        declaredRoleIds.add(role.id);
+      if (!role.id || !slug || !policy.roleSlugs.has(slug)) {
+        continue;
       }
+      // The declaration names a role SLUG, and slugs are not unique across a
+      // hierarchy: a tenant-scoped custom role is created by whoever
+      // administers that tenant, so a descendant could otherwise mint a role
+      // named `member` and opt ITSELF into the ancestor's allow-list. Only a
+      // governed SYSTEM role — `tenantId` null and `isSystem: true`, i.e. what
+      // `RoleCollection.seedSystemRoles()` creates and what tenant
+      // administration cannot forge or delete — can contribute upward. The
+      // downward `inheritsToDescendants` flow has no equivalent exposure
+      // because it flags the specific role row rather than matching a name.
+      if (role.isSystem !== true) {
+        continue;
+      }
+      if (role.tenantId !== null && role.tenantId !== undefined) {
+        continue;
+      }
+      declaredRoleIds.add(role.id);
     }
     if (declaredRoleIds.size === 0) {
       return result;

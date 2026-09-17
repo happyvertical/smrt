@@ -155,8 +155,14 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
     slug: string,
     name: string,
     slugs: string[],
+    roleOptions: { tenantId?: string | null; isSystem?: boolean } = {},
   ) {
-    const role = await roles.create({ name, slug });
+    const role = await roles.create({
+      name,
+      slug,
+      tenantId: roleOptions.tenantId ?? null,
+      isSystem: roleOptions.isSystem ?? true,
+    });
     await role.save();
     for (const permissionSlug of slugs) {
       const existing = await permissions.list({
@@ -336,6 +342,62 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
 
     expect(result.permissions.size).toBe(0);
     expect(result.ancestorReadFromTenantIds).toEqual([]);
+  });
+
+  it('ignores a tenant-scoped role that merely shares a declared slug', async () => {
+    const { network, publication } = await createNetwork();
+    // A descendant tenant's own administrator can create a custom role and
+    // choose its slug. Minting one named `member` must not opt that tenant
+    // into the ancestor's allow-list.
+    const mintedRole = await createRoleGranting(
+      'member',
+      'Member (tenant-local)',
+      ['publications.read', 'tenants.read'],
+      { tenantId: publication.id as string, isSystem: false },
+    );
+    const { user } = await createMember(
+      publication.id as string,
+      mintedRole.id as string,
+      'minted@example.com',
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+
+    expect(result.permissions.size).toBe(0);
+    expect(result.ancestorReadFromTenantIds).toEqual([]);
+  });
+
+  it('ignores a global role that is not flagged isSystem', async () => {
+    const { network, publication } = await createNetwork();
+    const unflagged = await createRoleGranting(
+      'member',
+      'Member (unflagged)',
+      ['publications.read'],
+      { tenantId: null, isSystem: false },
+    );
+    const { user } = await createMember(
+      publication.id as string,
+      unflagged.id as string,
+      'unflagged@example.com',
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+    expect(
+      (
+        await resolver.resolvePermissions(
+          user.id as string,
+          network.id as string,
+        )
+      ).permissions.size,
+    ).toBe(0);
   });
 
   it('is never lateral: a publication member gains nothing on a SIBLING publication', async () => {
