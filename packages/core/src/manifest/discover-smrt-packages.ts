@@ -127,21 +127,25 @@ interface DiscoveryCache {
   packages: string[];
 }
 
-function findManifestPath(pkgPath: string): string | null {
-  const candidates = [
+/**
+ * Every manifest file that exists for a package, in preference order.
+ *
+ * This returns ALL of them rather than just the first, because existing is not
+ * the same as being a manifest. An export target can exist and still be
+ * unusable here: `./manifest` is commonly a JS module (`@happyvertical/smrt-core`
+ * itself maps it to `dist/manifest.js`) and `./static-manifest` always is, and
+ * an exported JSON file can be stale or malformed. Stopping at the first
+ * existing path would let any of those hide a perfectly good
+ * `dist/manifest.json` and drop the package silently — the very #2923 failure
+ * mode this file is fixing.
+ */
+function manifestPathCandidates(pkgPath: string): string[] {
+  return [
     ...manifestExportCandidates(pkgPath),
     join(pkgPath, 'dist', 'manifest.json'),
     join(pkgPath, '.smrt', 'manifest.json'),
     join(pkgPath, 'src', 'manifest', 'manifest.json'),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
+  ].filter((candidate) => existsSync(candidate));
 }
 
 function normalizePackagePath(pkgPath: string): string {
@@ -207,20 +211,24 @@ export function resolveManifestPath(
     return null;
   }
 
-  const manifestPath = findManifestPath(pkgPath);
-  if (!manifestPath) {
-    return null;
+  // Take the first candidate that actually parses as a SMRT manifest. A
+  // candidate that exists but is a JS module, stale, or malformed must not end
+  // the search, or it would mask a valid conventional manifest behind it.
+  for (const manifestPath of manifestPathCandidates(pkgPath)) {
+    try {
+      const manifest = parse<{ moduleType?: string }>(
+        readFileSync(manifestPath, 'utf-8'),
+      );
+
+      if (manifest.moduleType === 'smrt') {
+        return manifestPath;
+      }
+    } catch {
+      // Not a readable JSON manifest; try the next candidate.
+    }
   }
 
-  try {
-    const manifest = parse<{ moduleType?: string }>(
-      readFileSync(manifestPath, 'utf-8'),
-    );
-
-    return manifest.moduleType === 'smrt' ? manifestPath : null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**

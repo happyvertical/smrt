@@ -2,6 +2,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -9,7 +10,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { discoverSmrtPackages } from '../discover-smrt-packages.js';
+import {
+  discoverSmrtPackages,
+  resolveManifestPath,
+} from '../discover-smrt-packages.js';
 
 describe('discoverSmrtPackages', () => {
   let testDir: string | null = null;
@@ -442,5 +446,143 @@ describe('discoverSmrtPackages', () => {
     );
 
     expect(discoverSmrtPackages({ baseDir: testDir })).toContain(packageName);
+  });
+  /**
+   * PR #2927 final review: an export target that EXISTS is not necessarily a
+   * manifest. `./manifest` is commonly a JS module (core maps it to
+   * `dist/manifest.js`) and `./static-manifest` always is, so stopping at the
+   * first existing candidate would drop a package that ships a perfectly good
+   * `dist/manifest.json` — reintroducing the #2923 silent skip on the
+   * build-time path.
+   */
+  it('skips exported candidates that are not manifests and keeps the conventional one', () => {
+    testDir = mkdtempSync(join(tmpdir(), 'smrt-discovery-nonjson-export-'));
+    const packageName = '@happyvertical/smrt-js-manifest-export';
+    const packageDir = join(
+      testDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-js-manifest-export',
+    );
+
+    mkdirSync(join(packageDir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: { [packageName]: '1.0.0' },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: packageName,
+          type: 'module',
+          main: './dist/index.js',
+          exports: {
+            '.': './dist/index.js',
+            // The JS shape @happyvertical/smrt-core itself publishes, without
+            // a './manifest.json' alias to rescue it.
+            './manifest': {
+              types: './dist/manifest.d.ts',
+              import: './dist/manifest.js',
+              default: './dist/manifest.js',
+            },
+            './static-manifest': './dist/static-manifest.js',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(packageDir, 'dist', 'index.js'), 'export {};\n');
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.js'),
+      'export const manifest = {};\n',
+    );
+    writeFileSync(
+      join(packageDir, 'dist', 'static-manifest.js'),
+      'export const staticManifest = {};\n',
+    );
+    // The only real manifest is at the conventional path.
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.json'),
+      JSON.stringify(
+        { moduleType: 'smrt', version: '1.0.0', packageName, objects: {} },
+        null,
+        2,
+      ),
+    );
+
+    // The package root is normalized through realpath, so compare against the
+    // same real path rather than the temp-dir alias (macOS /var -> /private/var).
+    expect(resolveManifestPath(packageName, testDir)).toBe(
+      join(realpathSync(packageDir), 'dist', 'manifest.json'),
+    );
+    expect(discoverSmrtPackages({ baseDir: testDir, noCache: true })).toContain(
+      packageName,
+    );
+  });
+
+  it('skips a stale or malformed exported manifest for the conventional one', () => {
+    testDir = mkdtempSync(join(tmpdir(), 'smrt-discovery-stale-export-'));
+    const packageName = '@happyvertical/smrt-stale-export';
+    const packageDir = join(
+      testDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-stale-export',
+    );
+
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: { [packageName]: '1.0.0' },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: packageName,
+          type: 'module',
+          main: './dist/index.js',
+          exports: {
+            '.': './dist/index.js',
+            './manifest': './dist/lib/manifest.json',
+            './manifest.json': './dist/lib/manifest.json',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(packageDir, 'dist', 'index.js'), 'export {};\n');
+    writeFileSync(join(packageDir, 'dist', 'lib', 'manifest.json'), '{ nope');
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.json'),
+      JSON.stringify(
+        { moduleType: 'smrt', version: '1.0.0', packageName, objects: {} },
+        null,
+        2,
+      ),
+    );
+
+    expect(discoverSmrtPackages({ baseDir: testDir, noCache: true })).toContain(
+      packageName,
+    );
   });
 });
