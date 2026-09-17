@@ -823,6 +823,264 @@ async function resolveScope(
     : options.scope;
 }
 
+/**
+ * Longest scalar string the shared `DataQueryResult` validator accepts
+ * (`dataQueryScalar` in `packages/core/src/data-query.ts`). Mirrors
+ * `@happyvertical/smrt-content`'s `DATA_QUERY_MAX_STRING_LENGTH`: the cap is
+ * part of the shared result contract, not a Content-specific policy.
+ */
+const DATA_QUERY_MAX_STRING_LENGTH = 4_096;
+
+/**
+ * Longest single warning the shared `DataQueryResult` validator accepts
+ * (`packages/core/src/data-query.ts`).
+ */
+const DATA_QUERY_MAX_WARNING_LENGTH = 512;
+
+/** A date-only column value, e.g. a `DATE` column read back as `2026-09-17`. */
+const DATE_ONLY_VALUE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * `YYYY-MM-DD[T ]HH:MM[:SS[.fff]]` with no zone designator — the shape SQLite's
+ * `CURRENT_TIMESTAMP` / `datetime('now')` persist. SQLite writes those in UTC,
+ * but `new Date('2026-09-17 12:00:00')` reads the space-separated form as
+ * *local* time, so the zone is appended explicitly instead of inferred.
+ */
+const NAIVE_TIMESTAMP_VALUE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/;
+
+/** ISO-8601/RFC 3339 instant in UTC, or `null` for an unrepresentable date. */
+function instantOrNull(value: Date): string | null {
+  return Number.isNaN(value.getTime()) ? null : value.toISOString();
+}
+
+function epochToInstant(value: number): string | null {
+  if (!Number.isFinite(value)) return null;
+  return instantOrNull(new Date(value));
+}
+
+/**
+ * Serialize one temporal row value to an RFC 3339 instant in UTC (#2933).
+ *
+ * `SmrtCollection.list()` hydrates a `datetime` field into a `Date`, and a raw
+ * driver row can hand back the stored string or an epoch number instead. The
+ * shared result validator only accepts JSON scalars, and normalizes a
+ * `datetime` descriptor's value through `normalizedInstant`, so every one of
+ * those forms has to reach it as an instant string.
+ *
+ * An unparseable string is returned unchanged on purpose: the shared validator
+ * owns that error, and its message names the field and the RFC 3339 contract.
+ */
+function temporalToInstant(value: unknown): unknown {
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'number') return epochToInstant(value);
+  if (typeof value === 'bigint') {
+    // An epoch outside the safe-integer range would round on the way through
+    // `Number`, producing a WRONG instant. For a temporal value a missing one
+    // is safer than a silently shifted one.
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) ? epochToInstant(numeric) : null;
+  }
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (text.length === 0) return null;
+  if (DATE_ONLY_VALUE.test(text)) return `${text}T00:00:00.000Z`;
+  if (NAIVE_TIMESTAMP_VALUE.test(text)) {
+    return epochToInstant(Date.parse(`${text.replace(' ', 'T')}Z`)) ?? value;
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) return value;
+  return epochToInstant(parsed) ?? value;
+}
+
+/** Widen a `bigint` to a number, or fail loudly rather than silently rounding. */
+function safeIntegerFromBigInt(value: bigint, fieldId: string): number {
+  const numeric = Number(value);
+  if (!Number.isSafeInteger(numeric)) {
+    return queryFail(
+      `Data query value for ${fieldId} exceeds the safe integer range`,
+      'DATA_QUERY_RESULT_INVALID',
+    );
+  }
+  return numeric;
+}
+
+/**
+ * Make a `json` column's document JSON-safe without changing its structure:
+ * a nested `Date` becomes an instant and a nested `bigint` a number, matching
+ * what `@happyvertical/smrt-content` and `@happyvertical/smrt-reports` already
+ * emit. Depth/size bounding stays with the shared validator.
+ */
+function jsonSafeValue(
+  value: unknown,
+  fieldId: string,
+  ancestors: WeakSet<object>,
+): unknown {
+  if (value === undefined) return null;
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'bigint') return safeIntegerFromBigInt(value, fieldId);
+  if (value === null || typeof value !== 'object') return value;
+  if (ancestors.has(value)) return null;
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry) => jsonSafeValue(entry, fieldId, ancestors));
+    }
+    if (!isPlainRecord(value)) return value;
+    // A null prototype written through `defineProperty`, exactly as
+    // `canonicalJson` builds its own objects. `JSON.parse` of a stored JSON
+    // column creates an OWN `__proto__` key, and a plain `mapped[key] = ...`
+    // would invoke the inherited setter instead: the key would vanish (silently
+    // dropping data) or change this object's prototype. Keeping it an own
+    // property preserves the shared validator's fail-closed
+    // `FORBIDDEN_DATA_QUERY` rejection of `__proto__`/`constructor`/`prototype`,
+    // which is what happened before this boundary existed.
+    const mapped = Object.create(null) as Record<string, unknown>;
+    for (const [key, entry] of Object.entries(value)) {
+      Object.defineProperty(mapped, key, {
+        value: jsonSafeValue(entry, fieldId, ancestors),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return mapped;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+/** Render a non-scalar hydrated value as the JSON string its descriptor declares. */
+function nonScalarToJsonString(value: unknown): string | null {
+  try {
+    const text = JSON.stringify(value, (_key, entry) =>
+      entry instanceof Date
+        ? instantOrNull(entry)
+        : typeof entry === 'bigint'
+          ? Number(entry)
+          : entry,
+    );
+    return typeof text === 'string' ? text : null;
+  } catch {
+    // Circular, or a `toJSON` that throws: drop the value rather than the page.
+    return null;
+  }
+}
+
+function capScalarString(
+  value: string,
+  fieldId: string,
+  truncated: Set<string>,
+): string {
+  if (value.length <= DATA_QUERY_MAX_STRING_LENGTH) return value;
+  truncated.add(fieldId);
+  return value.slice(0, DATA_QUERY_MAX_STRING_LENGTH);
+}
+
+/**
+ * One bounded warning naming the fields whose values were shortened. The
+ * shared result validator rejects any warning longer than 512 characters, so
+ * a page that shortened many long-named fields must not be able to fail the
+ * whole query on its own warning -- the failure mode this boundary exists to
+ * remove.
+ */
+function shortenedValuesWarning(fields: ReadonlySet<string>): string {
+  const prefix =
+    'Values longer than the result contract\u2019s scalar limit were shortened for: ';
+  const sorted = [...fields].sort();
+  const named: string[] = [];
+  // `- 1` reserves the trailing period.
+  let budget = DATA_QUERY_MAX_WARNING_LENGTH - prefix.length - 1;
+  for (const [index, field] of sorted.entries()) {
+    const remaining = sorted.length - index;
+    const cost = field.length + (index === 0 ? 0 : 2);
+    const overflow = `${index === 0 ? '' : ', '}and ${remaining} more`;
+    if (cost + (remaining > 1 ? overflow.length : 0) > budget) {
+      named.push(`and ${remaining} more`);
+      break;
+    }
+    named.push(field);
+    budget -= cost;
+  }
+  return `${prefix}${named.join(', ')}.`;
+}
+
+/**
+ * Serialize one hydrated collection value into the JSON scalar (or `json`
+ * document) the shared `DataQueryResult` validator accepts for its declared
+ * descriptor (#2933).
+ *
+ * The adapter is the side that knows a field's declared type — it derives the
+ * whole query schema from registration metadata in
+ * {@link buildDataQuerySchemaForClass} — so this boundary belongs here rather
+ * than in every host's `collection` wrapper.
+ */
+function toDataQueryRowValue(
+  value: unknown,
+  descriptor: DataQueryFieldDescriptor,
+  truncated: Set<string>,
+): unknown {
+  if (value === undefined || value === null) return null;
+  if (descriptor.type === 'json') {
+    return jsonSafeValue(value, descriptor.id, new WeakSet<object>());
+  }
+  if (descriptor.type === 'datetime') return temporalToInstant(value);
+  // A `Date` on a field the manifest does not type `datetime` is still an
+  // instant, not an opaque object; render it the same way.
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'bigint') {
+    return safeIntegerFromBigInt(value, descriptor.id);
+  }
+  // SQLite/DuckDB surface booleans as 0/1.
+  if (descriptor.type === 'boolean' && typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    return capScalarString(value, descriptor.id, truncated);
+  }
+  if (typeof value === 'boolean') return value;
+  // #2933: a manifest `text` column whose class hydrates it into an object
+  // (`TenantIntegration.lastCheckSummary` stores JSON and parses it on read)
+  // would otherwise fail the entire page. The manifest gives a host no way to
+  // predict that set, so render the value as its JSON string — the scalar the
+  // descriptor actually declares — instead of returning a 502.
+  const rendered = nonScalarToJsonString(value);
+  return rendered === null
+    ? null
+    : capScalarString(rendered, descriptor.id, truncated);
+}
+
+/**
+ * Facet buckets are scalars too: a temporal bucket arrives as a `Date`, and a
+ * bucket label can be as long as the column it came from. The shared validator
+ * applies the same 4096-character scalar cap to a facet value as to a row
+ * value, so an uncapped label would fail the whole facet query — the failure
+ * mode this boundary exists to remove, on the other path.
+ */
+function toDataQueryFacetValue(
+  value: unknown,
+  fieldId: string,
+  truncated: Set<string>,
+): string | number | boolean | null {
+  if (value === undefined || value === null) return null;
+  if (value instanceof Date) return instantOrNull(value);
+  if (typeof value === 'bigint') {
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) ? numeric : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return capScalarString(value, fieldId, truncated);
+  }
+  const rendered = nonScalarToJsonString(value);
+  return rendered === null
+    ? null
+    : capScalarString(rendered, fieldId, truncated);
+}
+
 function assertNotAborted(signal: AbortSignal): void {
   if (signal.aborted) {
     throw new DOMException('Data query was aborted', 'AbortError');
@@ -963,19 +1221,31 @@ export async function executeSmrtCollectionQuery(
         : {}),
       ...(where === undefined ? {} : { where }),
     });
+    // #2933: hydrated values are serialized to the JSON scalars the shared
+    // result validator accepts, driven by the derived schema's own field
+    // types, before normalization ever sees them.
+    const truncatedFields = new Set<string>();
     const rows: DataQueryRow[] = listed.map((row) => {
       const out: DataQueryRow = {};
       for (const field of projection) {
-        if (!descriptors.has(field)) {
+        const descriptor = descriptors.get(field);
+        if (!descriptor) {
           return queryFail(
             `Data query returned an undeclared field: ${field}`,
             'DATA_QUERY_RESULT_NOT_ALLOWED',
           );
         }
-        out[field] = row[field] ?? null;
+        out[field] = toDataQueryRowValue(
+          row[field],
+          descriptor,
+          truncatedFields,
+        );
       }
       return out;
     });
+    if (truncatedFields.size > 0) {
+      warnings.push(shortenedValuesWarning(truncatedFields));
+    }
     if (signal) assertNotAborted(signal);
     const total = await collection.count(countOptions);
     if (signal) assertNotAborted(signal);
@@ -1019,7 +1289,11 @@ export async function executeSmrtCollectionQuery(
         total: { kind: 'exact' as const, value: total },
         freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
         warnings,
-        truncated: false,
+        // A shortened value is a truncated page: the machine-readable flag
+        // has to agree with the rows, not only the prose warning, because the
+        // surface passes it to callers and stores it on the query audit
+        // record. Matches `executeContentQuery` in `@happyvertical/smrt-content`.
+        truncated: truncatedFields.size > 0,
       },
       request,
       schema,
@@ -1031,6 +1305,7 @@ export async function executeSmrtCollectionQuery(
   if (signal) assertNotAborted(signal);
   let facets: DataQueryFacetResult[] | undefined;
 
+  const truncatedFacetValues = new Set<string>();
   if (request.mode === 'facets') {
     if (!collection.facets) {
       return queryFail(
@@ -1066,13 +1341,21 @@ export async function executeSmrtCollectionQuery(
       return {
         field: facet.field,
         values: values.map((entry) => ({
-          value: entry.value as string | number | boolean | null,
+          value: toDataQueryFacetValue(
+            entry.value,
+            facet.field,
+            truncatedFacetValues,
+          ),
           count: entry.count,
         })),
         truncated:
           (byField.get(facet.field)?.values.length ?? 0) >= facet.limit,
       };
     });
+  }
+
+  if (truncatedFacetValues.size > 0) {
+    warnings.push(shortenedValuesWarning(truncatedFacetValues));
   }
 
   return normalizeDataQueryResult(
@@ -1086,7 +1369,7 @@ export async function executeSmrtCollectionQuery(
       ...(facets === undefined ? {} : { facets }),
       freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
       warnings,
-      truncated: false,
+      truncated: truncatedFacetValues.size > 0,
     },
     request,
     schema,
