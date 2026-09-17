@@ -15,6 +15,13 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Membership } from '../models/Membership.js';
 import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
+import {
+  type AncestorReadPolicy,
+  getConfiguredAncestorReadPolicy,
+  isAncestorReadableSlug,
+  type NormalizedAncestorReadPolicy,
+  normalizeAncestorReadPolicy,
+} from './AncestorReadPolicy.js';
 
 /**
  * Permission resolution result
@@ -37,6 +44,32 @@ export interface PermissionResolutionResult {
    * `inheritsToDescendants: true`). `null` for direct-membership resolution.
    */
   inheritedFromTenantId: string | null;
+  /**
+   * Descendant tenant ids whose memberships contributed declared, read-only
+   * permissions under the opt-in ancestor-read policy (smrt#2939). Empty for
+   * every resolution that did not use the policy — including every resolution
+   * in an application that declares none.
+   *
+   * These ids report WHY a read operation is authorized at this tenant. They
+   * are NOT a row-visibility grant for those tenants: the resolved permission
+   * is the operation at the tenant being resolved, and row scoping stays with
+   * the tenancy interceptor and RLS.
+   */
+  ancestorReadFromTenantIds: string[];
+}
+
+/**
+ * Construction-time options for {@link PermissionResolver}.
+ */
+export interface PermissionResolverOptions {
+  /**
+   * Declared ancestor-read policy. When omitted (the default), the resolver
+   * reads `packages.users.permissions.ancestorRead` from the application
+   * config; when explicitly `null`, the policy is forced OFF regardless of
+   * configuration. Pass a literal policy to bind one resolver without
+   * touching global config (tests, embedded runtimes).
+   */
+  ancestorReadPolicy?: AncestorReadPolicy | null;
 }
 
 export interface PermissionResolutionOptions {
@@ -113,6 +146,20 @@ export interface TenantPermissionInheritanceResult {
  * overrides still subtract from inherited grants, and with no flagged role
  * the resolver behaves exactly as before. See `resolvePermissions`.
  *
+ * ## Declared read-only ancestor visibility (opt-in, smrt#2939)
+ *
+ * Both flows above move authority DOWN. A membership held on a DESCENDANT
+ * contributes nothing at an ancestor, so a principal whose only membership is
+ * on a child tenant resolves to the empty set at the root. When an application
+ * declares `packages.users.permissions.ancestorRead`, such a principal
+ * additionally receives the declared `<collection>.read` slugs at the
+ * ancestor — read only, listed roles and collections only, bounded by
+ * `maxDepth`, intersected with what the descendant role already holds, and
+ * only when NO membership authorized the tenant at all. It is never lateral:
+ * it authorizes the operation at the ancestor, not visibility of a sibling
+ * tenant's rows, which the tenancy interceptor and RLS keep scoped. Off by
+ * default. See {@link AncestorReadPolicy}.
+ *
  * @example
  * ```typescript
  * const resolver = new PermissionResolver(options);
@@ -131,6 +178,10 @@ export interface TenantPermissionInheritanceResult {
  */
 export class PermissionResolver {
   private options: SmrtClassOptions;
+  private readonly ancestorReadPolicyOverride:
+    | AncestorReadPolicy
+    | null
+    | undefined;
   private membershipCollection!: MembershipCollection;
   private roleCollection!: RoleCollection;
   private rolePermissionCollection!: RolePermissionCollection;
@@ -141,8 +192,32 @@ export class PermissionResolver {
   private tenantCollection!: TenantCollection;
   private tenantPermissionOverrideCollection!: TenantPermissionOverrideCollection;
 
-  constructor(options: SmrtClassOptions) {
+  constructor(
+    options: SmrtClassOptions,
+    resolverOptions: PermissionResolverOptions = {},
+  ) {
     this.options = options;
+    this.ancestorReadPolicyOverride = resolverOptions.ancestorReadPolicy;
+  }
+
+  /**
+   * The effective ancestor-read policy, or `null` when the feature is off.
+   *
+   * Resolved per call rather than cached on the instance so a configuration
+   * change (or a test's `setConfig`) takes effect without rebuilding long-lived
+   * resolvers. Resolution itself is uncached — the resolver reads live rows on
+   * every call — so there is no permission cache to invalidate when a
+   * membership, role, or the policy itself changes; request-scoped contexts
+   * pick up the new answer on their next resolution.
+   */
+  private getAncestorReadPolicy(): NormalizedAncestorReadPolicy | null {
+    if (this.ancestorReadPolicyOverride === null) {
+      return null;
+    }
+    if (this.ancestorReadPolicyOverride !== undefined) {
+      return normalizeAncestorReadPolicy(this.ancestorReadPolicyOverride);
+    }
+    return getConfiguredAncestorReadPolicy();
   }
 
   /**
@@ -411,6 +486,7 @@ export class PermissionResolver {
       groupIds: [],
       deniedPermissionIds: [],
       inheritedFromTenantId: null,
+      ancestorReadFromTenantIds: [],
     };
 
     // 1. Get membership, reusing a request-scoped row when the caller already
@@ -435,7 +511,11 @@ export class PermissionResolver {
       // No direct membership row: opt-in nearest-ancestor inheritance.
       membership = await this.resolveInheritedMembership(userId, tenantId);
       if (!membership) {
-        return result;
+        // Last resort: the opt-in, declared, read-only ancestor-read policy.
+        // This runs ONLY when no membership authorized this tenant at all, so
+        // it can never widen, re-add, or override authority a direct or
+        // inherited membership already decided.
+        return await this.applyAncestorReadPolicy(userId, tenantId, result);
       }
       result.inheritedFromTenantId = membership.tenantId ?? null;
     }
@@ -567,6 +647,222 @@ export class PermissionResolver {
     }
 
     return result;
+  }
+
+  /**
+   * Contribute declared, read-only permissions from the user's memberships on
+   * DESCENDANTS of the tenant being resolved (smrt#2939).
+   *
+   * Reached only when the user has neither a direct membership in `tenantId`
+   * nor an inheritable ancestor membership — so this never competes with, or
+   * re-adds to, an authority decision already made. With no declared policy
+   * (the default) it returns the untouched empty result, which is exactly the
+   * pre-policy behavior.
+   *
+   * What it grants and what it does NOT:
+   *
+   * - It grants the `<collection>.read` OPERATION at `tenantId`, intersected
+   *   with the permissions the descendant membership's role already holds.
+   *   Nothing that is not a `read` on a declared collection can pass
+   *   ({@link isAncestorReadableSlug}).
+   * - It does NOT grant visibility of any tenant's rows. A principal reading a
+   *   tenant-scoped collection is still filtered by the tenancy interceptor and
+   *   Postgres RLS to the tenant its context is bound to, so a member of child
+   *   A authorized at the root still cannot read sibling child B's rows. Row
+   *   scoping is the executor's job; this is authorization only.
+   * - It is never lateral: only a STRICT ANCESTOR of the membership's tenant,
+   *   within `maxDepth` hops, is affected. A sibling shares no such
+   *   relationship and is unreachable by construction.
+   *
+   * A tenant-level DENY on the resolved tenant still subtracts, keeping the
+   * tenant's own hard block authoritative over an inherited read.
+   */
+  private async applyAncestorReadPolicy(
+    userId: string,
+    tenantId: string,
+    result: PermissionResolutionResult,
+  ): Promise<PermissionResolutionResult> {
+    const policy = this.getAncestorReadPolicy();
+    if (!policy) {
+      return result;
+    }
+
+    // Candidate memberships: the user's ACTIVE rows on some other tenant.
+    const activeMemberships =
+      await this.membershipCollection.findActiveByUser(userId);
+    const candidates = activeMemberships.filter(
+      (row) =>
+        row.userId === userId &&
+        !!row.roleId &&
+        !!row.tenantId &&
+        row.tenantId !== tenantId,
+    );
+    if (candidates.length === 0) {
+      return result;
+    }
+
+    // Keep only memberships whose role slug is explicitly declared. Doing this
+    // before any hierarchy work also bounds the tenant loads below.
+    const roleIds = [...new Set(candidates.map((row) => row.roleId as string))];
+    const roles = await this.roleCollection.listByIds(roleIds);
+    const declaredRoleIds = new Set<string>();
+    for (const role of roles) {
+      const slug = typeof role.slug === 'string' ? role.slug.toLowerCase() : '';
+      if (role.id && slug && policy.roleSlugs.has(slug)) {
+        declaredRoleIds.add(role.id);
+      }
+    }
+    if (declaredRoleIds.size === 0) {
+      return result;
+    }
+
+    const declaredCandidates = candidates.filter(
+      (row) => row.roleId && declaredRoleIds.has(row.roleId),
+    );
+    if (declaredCandidates.length === 0) {
+      return result;
+    }
+
+    // Verify each candidate tenant really is a descendant of `tenantId`,
+    // link-by-link against loaded `parentTenantId` rows. The materialized
+    // `hierarchyPath` is an authorization source here, so a stale, malformed,
+    // or over-deep path fails closed exactly as the downward walk does.
+    const candidateTenantIds = [
+      ...new Set(declaredCandidates.map((row) => row.tenantId as string)),
+    ];
+    const candidateTenants =
+      await this.tenantCollection.listByIds(candidateTenantIds);
+    const verifiedDescendantIds = new Set<string>();
+    for (const candidateTenant of candidateTenants) {
+      if (
+        await this.isVerifiedDescendantOf(
+          candidateTenant,
+          tenantId,
+          policy.maxDepth,
+        )
+      ) {
+        verifiedDescendantIds.add(candidateTenant.id as string);
+      }
+    }
+    if (verifiedDescendantIds.size === 0) {
+      return result;
+    }
+
+    const contributingMemberships = declaredCandidates.filter(
+      (row) => row.tenantId && verifiedDescendantIds.has(row.tenantId),
+    );
+    if (contributingMemberships.length === 0) {
+      return result;
+    }
+
+    // Intersect the declared read slugs with what each contributing role
+    // ALREADY holds: the policy can never grant a permission the principal does
+    // not hold in its own tenant.
+    const contributingRoleIds = [
+      ...new Set(contributingMemberships.map((row) => row.roleId as string)),
+    ];
+    const permissionIds = new Set<string>();
+    for (const roleId of contributingRoleIds) {
+      const ids = await this.rolePermissionCollection.getPermissionIds(roleId);
+      for (const id of ids) {
+        permissionIds.add(id);
+      }
+    }
+    if (permissionIds.size === 0) {
+      return result;
+    }
+
+    const permissionsMap = await this.permissionCollection.findByIds(
+      Array.from(permissionIds),
+    );
+    const granted = new Set<string>();
+    for (const permission of permissionsMap.values()) {
+      const slug = permission?.slug;
+      if (slug && isAncestorReadableSlug(slug, policy)) {
+        granted.add(slug);
+      }
+    }
+    if (granted.size === 0) {
+      return result;
+    }
+
+    // A tenant-level DENY on the tenant being resolved still wins.
+    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    for (const slug of tenantPermissions.deniedPermissions) {
+      granted.delete(slug);
+    }
+    if (granted.size === 0) {
+      return result;
+    }
+
+    for (const slug of granted) {
+      result.permissions.add(slug);
+    }
+    result.ancestorReadFromTenantIds = contributingMemberships
+      .map((row) => row.tenantId as string)
+      .filter((id, index, all) => all.indexOf(id) === index)
+      .sort();
+
+    return result;
+  }
+
+  /**
+   * True when `candidate` is a verified STRICT descendant of `ancestorId`,
+   * no more than `maxDepth` hops below it.
+   *
+   * Uses the materialized `hierarchyPath` to locate the relationship, then
+   * proves it by loading the whole chain and requiring an unbroken
+   * `parentTenantId` link root -> ... -> candidate. Over-deep, self-
+   * referential, duplicated, or inconsistent paths return false.
+   */
+  private async isVerifiedDescendantOf(
+    candidate: Tenant | undefined,
+    ancestorId: string,
+    maxDepth: number,
+  ): Promise<boolean> {
+    if (!candidate?.id || candidate.id === ancestorId) {
+      return false;
+    }
+
+    const ancestorIds = candidate.getAncestorIds();
+    if (
+      ancestorIds.length === 0 ||
+      ancestorIds.length >= MAX_TENANT_HIERARCHY_DEPTH ||
+      ancestorIds.includes(candidate.id) ||
+      new Set(ancestorIds).size !== ancestorIds.length
+    ) {
+      return false;
+    }
+
+    const position = ancestorIds.indexOf(ancestorId);
+    if (position < 0) {
+      return false;
+    }
+
+    // Hops from the candidate up to the named ancestor. The immediate parent
+    // is the last path entry, i.e. one hop.
+    const depth = ancestorIds.length - position;
+    if (depth > maxDepth) {
+      return false;
+    }
+
+    const ancestors = await this.tenantCollection.listByIds(ancestorIds);
+    const ancestorsById = new Map(
+      ancestors.map((ancestor) => [ancestor.id, ancestor]),
+    );
+    let expectedParentId: string | null = null;
+    for (const id of ancestorIds) {
+      const ancestor = ancestorsById.get(id);
+      if (!ancestor?.id) {
+        return false;
+      }
+      if ((ancestor.parentTenantId ?? null) !== expectedParentId) {
+        return false;
+      }
+      expectedParentId = ancestor.id;
+    }
+
+    return (candidate.parentTenantId ?? null) === expectedParentId;
   }
 
   /**
@@ -729,8 +1025,11 @@ export class PermissionResolver {
   /**
    * Static factory method
    */
-  static async create(options: SmrtClassOptions): Promise<PermissionResolver> {
-    const resolver = new PermissionResolver(options);
+  static async create(
+    options: SmrtClassOptions,
+    resolverOptions: PermissionResolverOptions = {},
+  ): Promise<PermissionResolver> {
+    const resolver = new PermissionResolver(options, resolverOptions);
     await resolver.initialize();
     return resolver;
   }

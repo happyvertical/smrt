@@ -25,6 +25,15 @@ request-scoped caches do not survive those requests.
 `loadSessionContext().tenantAuthorization` is authoritative for required-tenant
 consumers; membership null can mean inherited authority.
 
+4. If no membership resolved at all, apply the opt-in ancestor-read policy
+   (smrt#2939): the user's ACTIVE memberships on VERIFIED DESCENDANTS of the
+   target, whose role slug is declared in `permissions.ancestorRead.roles` and
+   within `maxDepth` hops, contribute `<collection>.read` for declared
+   collections, intersected with what that role already holds. Off by default;
+   read-only; never lateral; never reached when a direct or inherited
+   membership already decided. The target tenant's DENY still subtracts.
+   `ancestorReadFromTenantIds` reports the contributing descendants.
+
 ## Permission precedence
 
 Apply these layers in order, later layers overriding earlier ones:
@@ -48,6 +57,15 @@ membership or tenant DENY to attenuate inherited role authority.
 - Tenant override cascade requires parent cascadePermissions and child
   inheritPermissions. These flags do not gate the independent, per-role
   inheritsToDescendants membership flow.
+- `permissions.ancestorRead` in the `users` package config declares upward,
+  read-only visibility: `{ roles, collections, maxDepth? }`. Both lists are
+  required and non-empty and `maxDepth >= 1`, else the policy is OFF — there is
+  no partially valid declaration. `isAncestorReadableSlug()` is the single place
+  the read-only bound is enforced; only a two-segment `<collection>.<action>`
+  slug whose action normalizes to `read` on a declared collection passes.
+  `PermissionResolver.create(options, { ancestorReadPolicy })` binds one
+  resolver; `null` forces it off. It grants the OPERATION at the ancestor, never
+  row visibility — sibling rows stay scoped by the tenancy interceptor and RLS.
 - seedSystemRoles({ inheritsToDescendants: ['owner', 'admin'] }) flags listed
   slugs additively, never unflags omitted ones, and rejects unknown slugs.
   Default seeds are exact-tenant.

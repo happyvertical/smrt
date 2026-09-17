@@ -27,6 +27,16 @@ export {
   type ListAccessRequestsFilter,
 } from './AccessRequestService.js';
 export {
+  ANCESTOR_READ_ACTION,
+  type AncestorReadPackageConfig,
+  type AncestorReadPolicy,
+  DEFAULT_ANCESTOR_READ_MAX_DEPTH,
+  getConfiguredAncestorReadPolicy,
+  isAncestorReadableSlug,
+  type NormalizedAncestorReadPolicy,
+  normalizeAncestorReadPolicy,
+} from './AncestorReadPolicy.js';
+export {
   MagicLinkError,
   type MagicLinkResult,
   MagicLinkService,
@@ -99,6 +109,7 @@ export {
   type PermissionResolutionOptions,
   type PermissionResolutionResult,
   PermissionResolver,
+  type PermissionResolverOptions,
   type TenantPermissionInheritanceResult,
 } from './PermissionResolver.js';
 export {

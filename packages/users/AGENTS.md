@@ -27,6 +27,12 @@ are not prerequisites for unrelated user-package work.
   through `RoleCollection.seedSystemRoles()` at application initialization.
 - Group roles apply only in their own tenant. Use `getGroupIdsForTenant()`,
   never cross-tenant `getGroupIds()`, for authorization.
+- Upward visibility is opt-in and read-only: `permissions.ancestorRead`
+  ({ roles, collections, maxDepth? }) lets a DESCENDANT membership contribute
+  declared `<collection>.read` at an ancestor, only when no membership resolved
+  there, intersected with what the role already holds. Off by default, never
+  write, never lateral, and never row visibility — sibling rows stay scoped by
+  tenancy/RLS. Read the permissions module before changing it.
 - Membership DENY always wins. Direct inactive membership blocks inherited
   authority; a direct active membership pins resolution instead of unioning it
   with ancestors. Read the permissions module before changing these rules.
