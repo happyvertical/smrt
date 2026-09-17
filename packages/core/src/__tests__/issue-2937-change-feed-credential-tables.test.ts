@@ -238,6 +238,40 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       expect(isChangeFeedObservableTable(declaredTable)).toBe(false);
     });
 
+    it('treats an explicit sensitive: false as no opt-out, whichever config source carries it', async () => {
+      // The marker is documented as one-way. Ordinary spread precedence in
+      // `mergedConfig` would let a `sensitive: false` from a later-spread
+      // source erase a `true` from another — a stale manifest disagreeing with
+      // the class, say — which is a silent fail-OPEN in a control whose whole
+      // contract is that it cannot be turned off.
+      const { ObjectRegistry } = await import('../registry');
+      const table = 'issue2937_or_merge_secrets';
+
+      class Issue2937OrMergeSecret extends SmrtObject {
+        token: string = '';
+      }
+      ObjectRegistry.register(
+        Issue2937OrMergeSecret as unknown as typeof SmrtObject,
+        { tableName: table, sensitive: true },
+      );
+      expect(isChangeFeedSensitiveTable(table)).toBe(true);
+
+      // A re-registration explicitly saying `false` must not clear it, and must
+      // not leave `false` on the registered config either — the write path's
+      // class-level resolver reads exactly that value.
+      ObjectRegistry.register(
+        Issue2937OrMergeSecret as unknown as typeof SmrtObject,
+        { tableName: table, sensitive: false },
+      );
+      expect(isChangeFeedSensitiveTable(table)).toBe(true);
+      expect(isChangeFeedObservableTable(table)).toBe(false);
+      expect(
+        ObjectRegistry.getClassByConstructor(
+          Issue2937OrMergeSecret as unknown as typeof SmrtObject,
+        )?.config?.sensitive,
+      ).toBe(true);
+    });
+
     it('marks a table sensitive because its class declared it, and leaves ordinary tables observable', () => {
       expect(isChangeFeedSensitiveTable(SECRET_TABLE)).toBe(true);
       expect(isChangeFeedObservableTable(SECRET_TABLE)).toBe(false);

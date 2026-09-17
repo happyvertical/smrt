@@ -518,6 +518,17 @@ function validateIsolatedRegistrationManifest(
  * Only `true` is acted on: the sensitive set is one-way by design, so there is
  * nothing here to undo a previous declaration.
  */
+/**
+ * Whether any config source declares the object credential-bearing (#2937).
+ *
+ * `sensitive` is one-way, so it is combined across sources with OR rather than
+ * by spread precedence: only `=== true` carries meaning, and a `false` from any
+ * source must never erase a `true` from another.
+ */
+function anySensitive(...configs: (SmartObjectConfig | undefined)[]): boolean {
+  return configs.some((config) => config?.sensitive === true);
+}
+
 function declareSensitiveTable(
   config: SmartObjectConfig,
   ...tableNames: (string | undefined)[]
@@ -654,6 +665,11 @@ export function register(
       ...existing.config,
       ...config,
       tableName: nextTableName,
+      // OR, never last-wins — see `anySensitive` (#2937). A re-registration
+      // must not be able to clear a declaration a previous one made.
+      ...(anySensitive(existing.config, config)
+        ? { sensitive: true as const }
+        : {}),
     };
     if (!existing.schema) {
       existing.schema = {
@@ -1316,6 +1332,19 @@ export function register(
     ...manifestEntry?.decoratorConfig,
     ...config,
     tableName, // Override with correctly computed tableName
+    // `sensitive` is an OR across every source, not last-wins (#2937). Ordinary
+    // spread precedence would let an explicit `sensitive: false` from a
+    // lower-priority-but-later source erase a `true` — for instance a stale
+    // manifest disagreeing with the class — which is a silent fail-OPEN in a
+    // control documented as one-way ("`sensitive: false` is not an opt-out").
+    // Only `=== true` is meaningful anywhere, so OR is the whole rule.
+    ...(anySensitive(
+      promotedRuntimeConfig,
+      manifestEntry?.decoratorConfig,
+      config,
+    )
+      ? { sensitive: true as const }
+      : {}),
   };
 
   // Declare from the MERGED config, not the raw one: generated consumer
@@ -1787,6 +1816,10 @@ function mergeManifestIntoExistingRegistration(
     ...manifestConfig,
     ...existing.config,
     tableName: manifestTableName,
+    // OR, never last-wins — see `anySensitive` (#2937).
+    ...(anySensitive(manifestConfig, existing.config)
+      ? { sensitive: true as const }
+      : {}),
   };
 
   // The merge can move the recorded name onto the manifest's (#2937). Nothing

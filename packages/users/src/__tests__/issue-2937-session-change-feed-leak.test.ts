@@ -69,7 +69,12 @@ describe('session ids never reach the change feed (issue #2937)', () => {
     await ensureChangeFeedTable(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Close the handle before unlinking: an open SQLite handle can block the
+    // delete and leave temp files behind.
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
