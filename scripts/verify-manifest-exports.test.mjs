@@ -211,6 +211,87 @@ test('verify-manifest-exports (smrt#2924): still checks plain-Node loadability f
   assert.match(result.stderr, /Fix \(bundler-only subpath\)/);
 });
 
+test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object behind a non-root importPath fails on a NON-environment load error too', () => {
+  // The unparseable-file-type case is only one way a server entry stops being
+  // loadable. `ERR_MODULE_NOT_FOUND` (a mistyped or removed dependency
+  // specifier), a missing named export, and any other import-time failure
+  // break a consumer's `.smrt/register.js` under plain Node exactly the same
+  // way — and every real #2924 object is fully closed, so restricting the
+  // non-root check to ENVIRONMENT_LOAD_ERROR_CODES left that whole class
+  // silently passing the guard.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/server.js'),
+    "import './does-not-exist.js';\nexport class DataSurfaceActionIdempotencyState {}\n",
+  );
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /failed to load/);
+  assert.match(result.stderr, /Fix \(load error\)/);
+});
+
+test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object whose non-root importPath matches no exports entry still fails', () => {
+  // Same reachability, one step earlier: Node answers
+  // ERR_PACKAGE_PATH_NOT_EXPORTED for a subpath the package does not export,
+  // so the generated register.js cannot load it. An excluded object has no
+  // export name to verify, but the entry it names must still resolve.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/not-a-real-subpath',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not match any package.json "exports" entry/);
+});
+
+test('verify-manifest-exports (smrt#2924 F1): a fully-closed object at the ROOT importPath keeps its pre-existing tolerance', () => {
+  // The exclusion must survive for the ROOT barrel, which is legitimately
+  // bundler-only (the documented smrt-products case). A fully-closed root
+  // object whose entry fails to load is still not release-blocking.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['Unused'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/index.js'),
+    "import './does-not-exist.js';\nexport class RootThing {}\n",
+  );
+  writeManifest(packageDir, {
+    rootThing: {
+      className: 'RootThing',
+      exportName: 'RootThing',
+      filePath: 'src/root-thing.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 0);
+});
+
 test('verify-manifest-exports (smrt#2924): a fully-closed object behind a LOADABLE non-root importPath still skips export-name verification', () => {
   // The other half of the contract: moving the load attempt ahead of the
   // exclusion must not start enforcing export names on excluded objects. This

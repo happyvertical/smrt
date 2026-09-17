@@ -257,10 +257,12 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
   const distFile = resolveDistFile(importPath);
 
   if (!distFile) {
-    // An excluded object keeps its pre-#2924 treatment here: with no export
-    // name to verify, an unresolvable importPath is not independently
-    // actionable, so do not turn it into a new release-blocking failure.
-    if (excludedFromExportCheck) continue;
+    // A non-root importPath that resolves to no `exports` entry is unloadable
+    // for the same reason as the cases below: the consumer plugin emits the
+    // specifier verbatim, and Node answers `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+    // That breaks `.smrt/register.js` whether or not the object also has an
+    // export name worth verifying, so the exclusion does not apply.
+    if (excludedFromExportCheck && isBundlerOnlyImportPath(importPath)) continue;
     failures.push({
       kind: 'mismatch',
       message: `${objectKey}: importPath "${importPath}" does not match any package.json "exports" entry`,
@@ -299,7 +301,16 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
     // reason (an import-time side effect, a native/optional dependency
     // missing in this environment, or similar). Do not tell the operator to
     // "fix the importPath" for a load error.
-    if (excludedFromExportCheck) continue;
+    //
+    // For a non-root importPath the exclusion does NOT apply, for the same
+    // reason as the unparseable-file-type branch above: the entry is
+    // unloadable under plain Node, so `.smrt/register.js` breaks in a
+    // consuming app regardless of whether this object also has an export name
+    // worth verifying. Restricting that to `ENVIRONMENT_LOAD_ERROR_CODES`
+    // would leave `ERR_MODULE_NOT_FOUND`, a missing named export, and every
+    // other import-time failure silently passing the guard for exactly the
+    // fully-closed objects #2924 is about.
+    if (excludedFromExportCheck && isBundlerOnlyImportPath(importPath)) continue;
     failures.push({
       kind: 'load-error',
       message: `${objectKey}: failed to load "${distFile}" (${loadError.message})`,
