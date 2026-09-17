@@ -1181,6 +1181,95 @@ describe('smrtConsumer manifest resolution through package exports', () => {
     expect(Object.keys(manifest.objects)).toContain('ProductVariant');
   });
 
+  it('does not treat an unrelated dependency with a manifest.json as a SMRT package', async () => {
+    // `manifest.json` / `dist/manifest.json` are common artifacts of unrelated
+    // tooling (Vite build manifests, PWA and extension manifests). Discovery
+    // must not announce such a package, warn about it, or read it
+    // (PR #2927 final review).
+    writeConsumerProject({ 'unrelated-bundler': '1.0.0' });
+    const packageDir = writeProviderPackage({
+      packageName: 'unrelated-bundler',
+      exports: { '.': './dist/index.js' },
+    });
+    mkdirSync(join(packageDir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.json'),
+      JSON.stringify({ 'src/main.ts': { file: 'assets/main-abc123.js' } }),
+    );
+    writeFileSync(
+      join(packageDir, 'manifest.json'),
+      JSON.stringify({ manifest_version: 3, name: 'Some Extension' }),
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const plugin = smrtConsumer({
+        generateTypes: false,
+        projectRoot: tmpDir,
+      });
+
+      await plugin.buildStart?.call({} as any);
+
+      const announced = logSpy.mock.calls.map((call) => String(call[0]));
+      expect(
+        announced.some(
+          (line) =>
+            line.includes('Found SMRT packages') &&
+            line.includes('unrelated-bundler'),
+        ),
+      ).toBe(false);
+
+      const warnings = warnSpy.mock.calls.map((call) => String(call[0]));
+      expect(
+        warnings.some((warning) => warning.includes('unrelated-bundler')),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('discovers an unnamed dependency that ships a real SMRT manifest', async () => {
+    // The export-aware probe must still recognize a genuine provider whose
+    // name carries no `smrt` marker, confirmed by `moduleType: "smrt"`.
+    writeConsumerProject({ '@acme/widgets': '1.0.0' });
+    const packageDir = writeProviderPackage({
+      packageName: '@acme/widgets',
+      exports: {
+        '.': './dist/lib/index.js',
+        './manifest.json': './dist/lib/manifest.json',
+      },
+    });
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(packageDir, 'dist', 'lib', 'manifest.json'),
+      JSON.stringify({
+        moduleType: 'smrt',
+        packageName: '@acme/widgets',
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      generateTypes: false,
+      projectRoot: tmpDir,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('Widget');
+  });
+
   it('warns by name, without failing, for a discovered package with no manifest', async () => {
     writeConsumerProject({ '@test/smrt-discovered': '1.0.0' });
     writeProviderPackage({

@@ -927,29 +927,67 @@ async function discoverSmrtPackages(projectRoot: string): Promise<string[]> {
  * entirely (issue #2923). The conventional paths remain as a fallback for
  * packages that ship a manifest without exporting a subpath for it.
  */
+function legacyStaticManifestPath(packageDir: string): string {
+  return path.join(packageDir, 'dist', 'manifest', 'static-manifest.js');
+}
+
 function packageManifestCandidates(
   packageDir: string,
   packageJson?: ConsumerPackageJson,
 ): string[] {
   return [
     ...manifestExportCandidates(packageDir, packageJson),
-    path.join(packageDir, 'dist', 'manifest', 'static-manifest.js'),
+    legacyStaticManifestPath(packageDir),
     path.join(packageDir, 'dist', 'manifest.json'),
     path.join(packageDir, 'manifest.json'),
   ];
 }
 
 /**
- * Check if a package has SMRT manifest
+ * Whether a dependency looks like a SMRT package, for the name-heuristic
+ * discovery path only.
+ *
+ * This decides whether a package this framework knows nothing about is pulled
+ * into aggregation at all, so mere existence of a manifest-shaped file is not
+ * enough: `manifest.json` at a package root or `dist/manifest.json` is a
+ * common artifact of unrelated tooling (Vite build manifests, PWA and
+ * extension manifests). A false positive would announce a stranger under
+ * "Found SMRT packages", tell the user to publish a manifest for a package
+ * that has nothing to do with SMRT, and — for a JS candidate — evaluate that
+ * dependency's module inside the build.
+ *
+ * A JSON candidate is therefore confirmed by parsing it and requiring
+ * `moduleType: 'smrt'`, matching what build-time discovery requires. A JS
+ * candidate cannot be identified without importing it, which is the thing
+ * being avoided, so only the historical `dist/manifest/static-manifest.js`
+ * location counts — exactly the probe this function used before #2923.
  */
 async function hasSmrtManifest(
   nodeModulesPath: string,
   packageName: string,
 ): Promise<boolean> {
   const packagePath = path.join(nodeModulesPath, packageName);
-  return packageManifestCandidates(packagePath).some((manifestPath) =>
-    fs.existsSync(manifestPath),
-  );
+  const legacyStaticManifest = legacyStaticManifestPath(packagePath);
+
+  for (const manifestPath of packageManifestCandidates(packagePath)) {
+    if (!fs.existsSync(manifestPath)) continue;
+
+    if (!manifestPath.endsWith('.json')) {
+      if (manifestPath === legacyStaticManifest) return true;
+      continue;
+    }
+
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as {
+        moduleType?: string;
+      };
+      if (manifest?.moduleType === 'smrt') return true;
+    } catch {
+      // Not a readable SMRT manifest; keep probing the remaining candidates.
+    }
+  }
+
+  return false;
 }
 
 /**
