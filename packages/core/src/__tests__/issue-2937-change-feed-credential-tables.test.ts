@@ -29,7 +29,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendChange,
   appendChanges,
@@ -179,6 +179,33 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
         expect(isChangeFeedSensitiveTable(table)).toBe(true);
         expect(isChangeFeedObservableTable(table)).toBe(false);
       }
+    });
+
+    it('shares one set across module instances, so a reloaded or duplicated copy of core cannot lose a declaration', async () => {
+      // A dev server's HMR reload, or a build resolving two copies of
+      // @happyvertical/smrt-core, gives this module two instances. A
+      // module-scope Set would take the declaration in one and be read in the
+      // other — and the failure is silent and fails OPEN, which is the exact
+      // disclosure this issue closes. `vi.resetModules()` + a dynamic import is
+      // the documented way to obtain genuinely fresh module state.
+      const declaredTable = 'issue2937_second_instance_secrets';
+      vi.resetModules();
+      const first = await import('../change-feed-sensitivity');
+      first.declareChangeFeedSensitiveTable(declaredTable);
+
+      vi.resetModules();
+      const second = await import('../change-feed-sensitivity');
+      expect(second).not.toBe(first);
+      // The declaration made through the first instance is visible through the
+      // second, and the baseline is intact in both.
+      expect(second.isChangeFeedSensitiveTable(declaredTable)).toBe(true);
+      expect(second.getChangeFeedSensitiveTables()).toContain(declaredTable);
+      expect(second.isChangeFeedSensitiveTable('sessions')).toBe(true);
+      expect(first.isChangeFeedSensitiveTable('sessions')).toBe(true);
+
+      // And the live guards this file's other tests use agree with it.
+      expect(isChangeFeedSensitiveTable(declaredTable)).toBe(true);
+      expect(isChangeFeedObservableTable(declaredTable)).toBe(false);
     });
 
     it('marks a table sensitive because its class declared it, and leaves ordinary tables observable', () => {

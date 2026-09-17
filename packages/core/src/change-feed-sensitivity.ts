@@ -43,7 +43,26 @@
  * This module is a leaf on purpose — it imports nothing — so both
  * `change-feed.ts` and `change-signals.ts` can consult it, and the registry can
  * populate it at registration time, without an import cycle.
+ *
+ * ## Why the set lives on `globalThis`
+ *
+ * For the same reason `ObjectRegistry` does (see `packages/core/AGENTS.md`):
+ * this is a process-wide append-only registry written by one module (class
+ * registration) and read by others (the feed writer, the feed reader, the
+ * signal bus). A dev server's HMR reload, or a build that resolves two copies
+ * of `@happyvertical/smrt-core` (hoisting mismatch, dual ESM/CJS entry,
+ * bundler duplication), gives this file two module instances — and a
+ * module-scope `Set` would then take a class's declaration in one instance
+ * while the guards read the other's. The baseline names survive that, because
+ * every instance re-seeds them from the same static array; a
+ * **consumer-declared** table would not, and it would fail open silently, with
+ * nothing logged. One shared `globalThis` slot removes the divergence.
  */
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtChangeFeedSensitiveTables: Set<string> | undefined;
+}
 
 /**
  * Framework tables whose row id or stored payload is secret, by name.
@@ -77,7 +96,23 @@ export const CHANGE_FEED_CREDENTIAL_TABLES: readonly string[] = [
   'nostr_identities',
 ];
 
-const sensitiveTables = new Set<string>(CHANGE_FEED_CREDENTIAL_TABLES);
+/**
+ * The process-wide sensitive-table set, shared across every module instance.
+ *
+ * Seeded with the baseline on first access. A second module instance reaching
+ * the already-created set re-adds the baseline names, which is a no-op for a
+ * `Set` and keeps the invariant that the baseline is always present even if a
+ * future edit changes the array.
+ */
+function sensitiveTableSet(): Set<string> {
+  let set = globalThis.__smrtChangeFeedSensitiveTables;
+  if (!set) {
+    set = new Set<string>();
+    globalThis.__smrtChangeFeedSensitiveTables = set;
+  }
+  for (const table of CHANGE_FEED_CREDENTIAL_TABLES) set.add(table);
+  return set;
+}
 
 /**
  * Mark `tableName` credential-bearing for the rest of the process.
@@ -90,12 +125,12 @@ const sensitiveTables = new Set<string>(CHANGE_FEED_CREDENTIAL_TABLES);
 export function declareChangeFeedSensitiveTable(tableName: string): void {
   const name = tableName?.trim();
   if (!name) return;
-  sensitiveTables.add(name);
+  sensitiveTableSet().add(name);
 }
 
 /** Whether `tableName` is credential-bearing and must never reach the feed. */
 export function isChangeFeedSensitiveTable(tableName: string): boolean {
-  return Boolean(tableName) && sensitiveTables.has(tableName);
+  return Boolean(tableName) && sensitiveTableSet().has(tableName);
 }
 
 /**
@@ -105,5 +140,5 @@ export function isChangeFeedSensitiveTable(tableName: string): boolean {
  * that need to explain why a table reports no changes.
  */
 export function getChangeFeedSensitiveTables(): string[] {
-  return [...sensitiveTables].sort();
+  return [...sensitiveTableSet()].sort();
 }
