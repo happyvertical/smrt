@@ -7,6 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import { declareChangeFeedSensitiveTable } from '../change-feed-sensitivity.js';
 import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
@@ -497,6 +498,28 @@ function validateIsolatedRegistrationManifest(
   return objectDef;
 }
 
+/**
+ * Publish a `@smrt({ sensitive: true })` declaration to the change feed
+ * (issue #2937).
+ *
+ * The feed's write path only ever has a table NAME, so the registry pushes the
+ * resolved name across at registration time rather than the feed reaching back
+ * into the registry — which would close an import cycle
+ * (`class.ts` → `change-feed.ts` already runs the other way) and put a registry
+ * lookup on every save.
+ *
+ * Only `true` is acted on: the sensitive set is one-way by design, so there is
+ * nothing here to undo a previous declaration.
+ */
+function declareSensitiveTable(
+  config: SmartObjectConfig,
+  tableName: string,
+): void {
+  if (config.sensitive === true) {
+    declareChangeFeedSensitiveTable(tableName);
+  }
+}
+
 function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
   const existing = Object.getOwnPropertyDescriptor(ctor, 'SMRT_TABLE_NAME');
   if (existing?.value === tableName) {
@@ -628,6 +651,7 @@ export function register(
     existing.schema.tableName = nextTableName;
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
+    declareSensitiveTable(existing.config, nextTableName);
     setSmrtQualifiedName(ctor, existing.qualifiedName);
 
     if (existingKey !== nextKey) {
@@ -1270,6 +1294,11 @@ export function register(
     ...config,
     tableName, // Override with correctly computed tableName
   };
+
+  // Declare from the MERGED config, not the raw one: generated consumer
+  // registration passes the declaration through `manifestEntry.decoratorConfig`
+  // rather than the call's own `config` (#2937).
+  declareSensitiveTable(mergedConfig, tableName);
 
   // Generate qualified name if we have a package name
   // Format: "@package/name:ClassName"
@@ -1960,6 +1989,10 @@ export function registerFromManifest(
   // Get config from manifest
   const config = objectDef.decoratorConfig || {};
   const tableName = config.tableName || tableNameFromClass(stubConstructor);
+  // A manifest-only registration (a consumed package's stub) still carries the
+  // credential declaration, and is often the ONLY registration a consumer app
+  // performs for that class (#2937).
+  declareSensitiveTable(config, tableName);
 
   // Load pre-generated schema from manifest if available
   // This enables efficient external package consumption without runtime schema generation

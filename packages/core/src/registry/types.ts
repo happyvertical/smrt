@@ -434,6 +434,37 @@ export interface SmartObjectConfig {
   visibility?: SmrtVisibility;
 
   /**
+   * Declare this object's table credential-bearing (issue #2937).
+   *
+   * Set it when the row **id** is itself a secret — a session id used as a
+   * bearer token, a device-code row — or when the row's payload is key
+   * material. The change feed then records nothing for the table: no
+   * `_smrt_changes` entry, no live `_events` signal, and nothing already in
+   * the log is served, so the generated feed routes (which authenticate the
+   * caller but do not check per-table permission) cannot disclose the ids.
+   *
+   * The declaration is **one-way**. `sensitive: false` is not an opt-out, and
+   * re-registering the class without the flag does not clear it: a table that
+   * has ever been declared credential-bearing stays that way for the life of
+   * the process, so registration order or a racing re-register cannot reopen
+   * it. The framework's own credential tables are additionally covered by
+   * name (`CHANGE_FEED_CREDENTIAL_TABLES`), which is what makes the rule hold
+   * in a process where the owning package never registered.
+   *
+   * The cost is that the table gets no client sync through `/_changes`. A
+   * credential store is not client-syncable data, so that is the point.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ sensitive: true })
+   * class Session extends SmrtObject {
+   *   // `id` is the `sid` cookie value — the credential itself.
+   * }
+   * ```
+   */
+  sensitive?: boolean;
+
+  /**
    * Agent/developer knowledge metadata.
    *
    * Set to false to exclude this object from generated smrt-knowledge.json

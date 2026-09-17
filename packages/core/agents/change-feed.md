@@ -17,6 +17,55 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 - Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows?, dryRun? })` — scheduled since #2375 by `runRetentionSweep()` (30-day default), so nothing needs to call it directly; `dryRun` counts the same predicate instead of deleting. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable. The age bound is a **prefix** bound — everything below the oldest entry still inside the window — because `created_at` and `seq` are not co-monotonic (writer clocks skew, and a staged entry carries its stage-time stamp into a later-assigned sequence); deleting by timestamp alone could punch a hole in the middle of the retained run, where `since < floor - 1` cannot see it and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
 
 
+## Credential-bearing tables are never disclosed (#2937)
+
+`src/change-feed-sensitivity.ts` is a leaf module (it imports nothing, so
+`change-feed.ts`, `change-signals.ts` and the registry can all consult it
+without a cycle) holding the tables whose **row id or payload is a secret**. A
+table joins it two ways: by name, via the baseline
+`CHANGE_FEED_CREDENTIAL_TABLES` (`sessions`, `users_cli_auth_requests`,
+`users_magic_link_tokens`, `magic_link_tokens`, `api_keys`,
+`nostr_identities`), or because a class declared `@smrt({ sensitive: true })`
+and registration pushed its resolved table name across
+(`declareChangeFeedSensitiveTable`, called from both the decorator and the
+manifest-stub registration paths). Both are needed: the declaration is the
+package's own contract but only binds in a process where that package
+registered, while the name baseline is all the read path has when serving a
+database another process writes. The set is **monotonic** — `sensitive: false`
+is not an opt-out and nothing removes a name — so a consumer whose domain
+table is named `sessions` loses feed coverage for it and must rename it via
+`@smrt({ tableName })`.
+
+`isChangeFeedObservableTable()` ANDs the sensitivity check with
+`CHANGE_FEED_EXCLUDED_TABLES`, and the refusal is enforced at four points, not
+one: the interceptor write path; `appendChange`/`appendChanges`, the lowest
+write API, so `bumpChangeFeed()` and any other escape hatch are covered (a
+refused append returns `null`, indistinguishable from a staged one);
+`deliverLocally` in `change-signals.ts`, which also catches a signal broadcast
+by a peer replica running an older build; and **`getChangesSince()`**. The
+read-side refusal is what makes upgrading sufficient — rows an earlier version
+already wrote stay in the log but are never served. A caller-named sensitive
+table is dropped from the `tables` filter rather than erroring, so nothing
+confirms the table exists, and a request naming *only* sensitive tables gets
+an empty page rather than an unfiltered one. Filtered rows never hold the
+cursor back: an exhaustive page still advances to the served horizon.
+
+`pruneChangeFeed()` additionally deletes sensitive rows below the horizon on
+every sweep, ahead of either retention bound, so credentials do not sit at
+rest for the retention window. That deletes from the middle of the retained
+run, which the age bound goes to lengths to avoid — permissible only because
+these rows are unservable on every read path, so no page ever contained them
+and no cursor can fall into the gap, while `floor` and the horizon are
+untouched. The newest entry is left alone even when sensitive, preserving "a
+non-empty feed is never emptied" and sparing caught-up clients a spurious
+resync; one credential row can therefore linger until the next write moves the
+horizon past it.
+
+Scope note: the generated `_changes`/`_events` routes still gate on an
+authenticated principal only — there is no per-table permission check, and
+tenant scoping (`getTenantScopedChangesSince`, fail-closed) remains the sole
+row-level filter for ordinary tables.
+
 ## Compatible bulk mutations (#2818)
 
 `appendChanges(db, entries)` validates all inputs before writing and returns one

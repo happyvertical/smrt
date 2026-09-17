@@ -24,6 +24,9 @@ export type CliAuthRequestStatus =
 
 @smrt({
   tableName: 'users_cli_auth_requests',
+  // Device-code state: a plaintext `userCode`, a `deviceCodeHash`, and the
+  // session id minted on approval. Never in the change feed (#2937).
+  sensitive: true,
   api: { include: [] },
   cli: { include: [] },
   mcp: { include: [] },

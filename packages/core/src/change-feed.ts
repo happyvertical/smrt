@@ -132,6 +132,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  getChangeFeedSensitiveTables,
+  isChangeFeedSensitiveTable,
+} from './change-feed-sensitivity.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
@@ -180,6 +184,11 @@ export const CHANGE_FEED_TABLE = '_smrt_changes';
  * the feed's own table so it can never observe itself), the model-backed
  * operational plumbing ({@link FRAMEWORK_OPERATIONAL_TABLES}), and the retired
  * system tables that may still exist on older databases.
+ *
+ * Credential-bearing *application* tables are excluded separately, because
+ * that set grows at registration time rather than being fixed at module load
+ * — see {@link isChangeFeedSensitiveTable} and `change-feed-sensitivity.ts`
+ * (#2937).
  */
 export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
   ...SYSTEM_TABLE_NAMES,
@@ -194,11 +203,21 @@ export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
 /**
  * Whether framework writes to `tableName` are recorded in the change feed.
  *
+ * Two reasons a table is not observable: it is framework bookkeeping
+ * ({@link CHANGE_FEED_EXCLUDED_TABLES}), or it is credential-bearing
+ * ({@link isChangeFeedSensitiveTable}, #2937). The second is evaluated live
+ * rather than folded into the frozen set above, because a class declaring
+ * `@smrt({ sensitive: true })` registers after this module loads.
+ *
  * Exported so tooling and tests can reason about feed coverage without
- * re-deriving the rule. See {@link CHANGE_FEED_EXCLUDED_TABLES}.
+ * re-deriving the rule.
  */
 export function isChangeFeedObservableTable(tableName: string): boolean {
-  return Boolean(tableName) && !CHANGE_FEED_EXCLUDED_TABLES.has(tableName);
+  return (
+    Boolean(tableName) &&
+    !CHANGE_FEED_EXCLUDED_TABLES.has(tableName) &&
+    !isChangeFeedSensitiveTable(tableName)
+  );
 }
 
 /** Interceptor name of the framework's change-feed writer. */
@@ -817,6 +836,14 @@ export async function appendChange(
     );
   }
 
+  // Credential-bearing tables never enter the log (#2937). The interceptor
+  // already filters them, but this is the lowest write API in the module —
+  // `bumpChangeFeed()` and any caller reaching for the escape hatch arrive
+  // here — so the refusal belongs where nothing can route around it. Returning
+  // `null` rather than throwing keeps it indistinguishable from a staged
+  // append, which every caller already tolerates.
+  if (isChangeFeedSensitiveTable(table)) return null;
+
   const engine = getEngine(db);
   const p = placeholders(db);
   // The INSERT yields the ACTUAL sequence it allocated in the SAME statement
@@ -948,6 +975,31 @@ export async function appendChanges(
   inputs: AppendChangeBatch,
 ): Promise<Array<number | null>> {
   if (inputs.length === 0) return [];
+
+  // Credential-bearing entries are dropped before the batch is built (#2937),
+  // and their slots come back `null` — the same value a staged append returns,
+  // which every caller already handles. The recursion re-enters with the kept
+  // entries only, so they get the module's ordinary validation and one
+  // statement, exactly as if the sensitive entries had never been offered.
+  if (inputs.some((input) => isChangeFeedSensitiveTable(input.table?.trim()))) {
+    const kept: Array<{ input: AppendChangeInput; index: number }> = [];
+    inputs.forEach((input, index) => {
+      if (!isChangeFeedSensitiveTable(input.table?.trim())) {
+        kept.push({ input, index });
+      }
+    });
+    const result = Array<number | null>(inputs.length).fill(null);
+    if (kept.length === 0) return result;
+    const sequences = await appendChanges(
+      db,
+      kept.map(({ input }) => input),
+    );
+    kept.forEach(({ index }, position) => {
+      result[index] = sequences[position] ?? null;
+    });
+    return result;
+  }
+
   const entries = inputs.map((input) => {
     const table = input.table?.trim();
     if (!table)
@@ -1545,10 +1597,32 @@ export async function getChangesSince(
   conditions.push(`seq <= ${next()}`);
   params.push(servedHorizon);
 
-  const tables = options.tables?.filter((table) => table.trim().length > 0);
+  const tables = options.tables
+    ?.filter((table) => table.trim().length > 0)
+    // A caller-named sensitive table is dropped rather than refused: the
+    // request `?tables=sessions,orders` still gets its orders, and naming
+    // `sessions` alone yields an ordinary empty page instead of an error that
+    // would confirm the table exists (#2937).
+    .filter((table) => !isChangeFeedSensitiveTable(table.trim()));
   if (tables && tables.length > 0) {
     conditions.push(`table_name IN (${tables.map(() => next()).join(', ')})`);
     params.push(...tables);
+  } else if (options.tables && options.tables.length > 0) {
+    // Every table the caller asked for was sensitive. An unfiltered query here
+    // would widen the read to the whole feed, so answer with nothing.
+    return { changes: [], cursor: servedHorizon };
+  }
+
+  // Rows an older build wrote before this guard existed are still in the log
+  // (#2937). The write-side refusal alone would leave every session id issued
+  // before the upgrade readable for the whole retention window, so the read
+  // refuses them outright — upgrading is sufficient, with no operator step.
+  const sensitiveTables = getChangeFeedSensitiveTables();
+  if (sensitiveTables.length > 0) {
+    conditions.push(
+      `table_name NOT IN (${sensitiveTables.map(() => next()).join(', ')})`,
+    );
+    params.push(...sensitiveTables);
   }
 
   if (options.tenantId === null) {
@@ -1775,6 +1849,38 @@ export async function pruneChangeFeed(
 
   let pruned = 0;
   let prunedThrough = 0;
+
+  // Purge credential-bearing rows an older build wrote, ahead of either bound
+  // (#2937). The read path already refuses to serve them, so this is about the
+  // data at rest: without it a database upgraded into the fix keeps every
+  // session id issued before the upgrade sitting in `_smrt_changes` for the
+  // whole retention window, readable by anything with database access.
+  //
+  // This deletes out of the MIDDLE of the retained run, which the age bound
+  // above goes to some trouble to avoid — but the reasoning that forbids it
+  // there does not apply here. That hazard is a reader silently missing a
+  // committed change it should have seen; these rows are unservable on every
+  // read path, so no page ever contained them and no cursor can fall into the
+  // gap. `floor` and the horizon are untouched, so `resyncRequired` detection
+  // is unaffected.
+  //
+  // The newest entry is left alone even when it is sensitive, preserving the
+  // "a non-empty feed is never emptied" invariant and sparing every caught-up
+  // client a spurious resync from a retreating horizon. Residual: one
+  // credential row can linger until the next write moves the horizon past it,
+  // at which point the following sweep takes it.
+  const sensitiveTables = getChangeFeedSensitiveTables();
+  if (sensitiveTables.length > 0) {
+    const placeholderList = sensitiveTables
+      .map((_, offset) => p(offset + 2))
+      .join(', ');
+    pruned += await deleteCounted(
+      db,
+      `seq < ${p(1)} AND table_name IN (${placeholderList})`,
+      [horizon, ...sensitiveTables],
+      dryRun,
+    );
+  }
 
   if (maxRows != null) {
     const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);

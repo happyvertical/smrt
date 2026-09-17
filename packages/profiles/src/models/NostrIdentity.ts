@@ -35,6 +35,9 @@ export interface NostrIdentityOptions extends SmrtObjectOptions {
 
 @smrt({
   tableName: 'nostr_identities',
+  // Holds custodial private-key material (AES-256-GCM ciphertext, IV, auth
+  // tag). Never in the change feed (#2937).
+  sensitive: true,
   api: { include: ['list', 'get'] }, // No create/update via API - only internal
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },

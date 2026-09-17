@@ -66,6 +66,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { isChangeFeedSensitiveTable } from './change-feed-sensitivity.js';
 import {
   getNotifications,
   PROCESS_ID,
@@ -245,6 +246,12 @@ export function publishChangeSignal(
  * signals both flow through here — the single delivery path.
  */
 function deliverLocally(dbKey: string, signal: ChangeSignal): void {
+  // The SSE frame names `{table, operation, rowId}`, and for a credential
+  // table the rowId IS the credential (#2937). Every delivery — locally
+  // published and peer-received alike — passes through here, so this is the
+  // one place that also covers a peer replica still running a build whose
+  // write path had no such guard.
+  if (isChangeFeedSensitiveTable(signal.table)) return;
   const set = localListeners.get(dbKey);
   if (!set || set.size === 0) return;
   // Snapshot so a listener that unsubscribes during delivery can't mutate the
