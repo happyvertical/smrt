@@ -191,6 +191,32 @@ generates routes, types, registration, and virtual modules, but it disables
 source/package scans, watch rescans, and manifest writes. Omit
 `generationSnapshot` for normal local development.
 
+#### Where consumer manifests are resolved
+
+`smrtConsumer()` resolves each consumed package's manifest through that
+package's own `package.json#exports` map first — the `./manifest.json` entry
+(or its `./manifest` alias), which every s-m-r-t model package is required
+to publish — and only then falls back to the conventional
+`dist/manifest/static-manifest.js`, `dist/manifest.json`, and `manifest.json`
+paths. A package whose build emits elsewhere (for example a triple-purpose
+package that maps `"./manifest.json": "./dist/lib/manifest.json"`) therefore
+loads normally.
+
+Every declared target is a candidate, not a single choice: an export array is
+a fallback list and each recognized condition contributes its own target, so a
+missing first entry does not hide a valid later one. Candidates are probed in
+order and the first one that loads wins, so a candidate that exists but cannot
+be read, parsed, or imported is reported and skipped rather than ending the
+search — the conventional paths stay reachable behind a stale or malformed
+export target. Targets that resolve outside the package directory are dropped,
+both lexically and after following symlinks; the package root is itself
+resolved through symlinks first, so pnpm and workspace installs are unaffected.
+
+A package that yields no usable manifest is never skipped silently. An entry in
+an explicit `packages` list is an assertion, so it fails the build by name;
+a package found by dependency-name discovery only warns by name and contributes
+no objects.
+
 #### Consumer web collection definitions
 
 `smrtConsumer()` also resolves `@smrt/web` for browser collection consumers:

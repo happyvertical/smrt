@@ -13,6 +13,7 @@ import {
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type {
   SmartObjectDefinition,
@@ -541,21 +542,39 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     );
   }
 
+  /**
+   * Resolve the packages to aggregate, and whether that list was asserted by
+   * the consumer's config. An explicit list fails closed when a package
+   * yields no manifest; a heuristically discovered one only warns.
+   */
+  async function resolveConsumerPackages(): Promise<{
+    names: string[];
+    explicit: boolean;
+  }> {
+    if (packages.length === 0 && !disableScanning) {
+      return {
+        names: await discoverSmrtPackages(projectRoot),
+        explicit: false,
+      };
+    }
+    return { names: packages, explicit: packages.length > 0 };
+  }
+
   async function generateConfigTypes(
     manifest?: ConsumerManifest,
   ): Promise<void> {
     if (!generateTypes || typesGenerated) return;
 
-    typeManifest =
-      manifest ??
-      (generationSnapshot
-        ? loadGenerationSnapshot()
-        : await aggregateTypeManifests(
-            packages.length === 0 && !disableScanning
-              ? await discoverSmrtPackages(projectRoot)
-              : packages,
-            projectRoot,
-          ));
+    if (manifest) {
+      typeManifest = manifest;
+    } else if (generationSnapshot) {
+      typeManifest = loadGenerationSnapshot();
+    } else {
+      const resolved = await resolveConsumerPackages();
+      typeManifest = await aggregateTypeManifests(resolved.names, projectRoot, {
+        explicit: resolved.explicit,
+      });
+    }
     await generateProjectTypes(typeManifest, typesDir, projectRoot);
     typesGenerated = true;
   }
@@ -582,13 +601,12 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
             previousConsumerRouteRoots,
             env,
           );
-          const routePackages =
-            packages.length === 0 && !disableScanning
-              ? await discoverSmrtPackages(projectRoot)
-              : packages;
+          const routePackages = await resolveConsumerPackages();
           const routeManifest = generationSnapshot
             ? loadGenerationSnapshot()
-            : await aggregateTypeManifests(routePackages, projectRoot);
+            : await aggregateTypeManifests(routePackages.names, projectRoot, {
+                explicit: routePackages.explicit,
+              });
           const hostedManifest = selectConsumerRouteManifest(
             routeManifest,
             consumerSvelteKit,
@@ -725,11 +743,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
 
       // Discover SMRT packages if not explicitly specified
-      if (packages.length === 0 && !disableScanning) {
-        smrtPackages = await discoverSmrtPackages(projectRoot);
-      } else {
-        smrtPackages = packages;
-      }
+      const resolvedPackages = await resolveConsumerPackages();
+      smrtPackages = resolvedPackages.names;
 
       if (smrtPackages.length > 0) {
         console.log(
@@ -737,7 +752,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         );
 
         // Aggregate type manifests from discovered packages
-        typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot);
+        typeManifest = await aggregateTypeManifests(smrtPackages, projectRoot, {
+          explicit: resolvedPackages.explicit,
+        });
         // Wait before reading .smrt/manifest.json: a producer's parallel
         // buildStart writes its current local manifest after scanning. Reading
         // first could merge an older local manifest with a newer surface.
@@ -901,28 +918,96 @@ async function discoverSmrtPackages(projectRoot: string): Promise<string[]> {
 }
 
 /**
- * Check if a package has SMRT manifest
+ * Manifest locations probed for a consumed package, in preference order.
+ *
+ * The package's own `package.json#exports` map comes first: it is the
+ * published contract for where the manifest lives, and a package whose build
+ * emits outside this framework's conventional layout (for example
+ * `"./manifest.json": "./dist/lib/manifest.json"`) is otherwise skipped
+ * entirely (issue #2923). The conventional paths remain as a fallback for
+ * packages that ship a manifest without exporting a subpath for it.
+ */
+function legacyStaticManifestPath(packageDir: string): string {
+  return path.join(packageDir, 'dist', 'manifest', 'static-manifest.js');
+}
+
+function packageManifestCandidates(
+  packageDir: string,
+  packageJson?: ConsumerPackageJson,
+): string[] {
+  return [
+    ...manifestExportCandidates(packageDir, packageJson),
+    legacyStaticManifestPath(packageDir),
+    path.join(packageDir, 'dist', 'manifest.json'),
+    path.join(packageDir, 'manifest.json'),
+  ];
+}
+
+/**
+ * Whether a dependency looks like a SMRT package, for the name-heuristic
+ * discovery path only.
+ *
+ * This decides whether a package this framework knows nothing about is pulled
+ * into aggregation at all, so mere existence of a manifest-shaped file is not
+ * enough: `manifest.json` at a package root or `dist/manifest.json` is a
+ * common artifact of unrelated tooling (Vite build manifests, PWA and
+ * extension manifests). A false positive would announce a stranger under
+ * "Found SMRT packages", tell the user to publish a manifest for a package
+ * that has nothing to do with SMRT, and — for a JS candidate — evaluate that
+ * dependency's module inside the build.
+ *
+ * A JSON candidate is therefore confirmed by parsing it and requiring
+ * `moduleType: 'smrt'`, matching what build-time discovery requires. A JS
+ * candidate cannot be identified without importing it, which is the thing
+ * being avoided, so only the historical `dist/manifest/static-manifest.js`
+ * location counts — exactly the probe this function used before #2923.
  */
 async function hasSmrtManifest(
   nodeModulesPath: string,
   packageName: string,
 ): Promise<boolean> {
   const packagePath = path.join(nodeModulesPath, packageName);
-  const manifestPath = path.join(
-    packagePath,
-    'dist',
-    'manifest',
-    'static-manifest.js',
-  );
-  return fs.existsSync(manifestPath);
+  const legacyStaticManifest = legacyStaticManifestPath(packagePath);
+
+  for (const manifestPath of packageManifestCandidates(packagePath)) {
+    if (!fs.existsSync(manifestPath)) continue;
+
+    if (!manifestPath.endsWith('.json')) {
+      if (manifestPath === legacyStaticManifest) return true;
+      continue;
+    }
+
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as {
+        moduleType?: string;
+      };
+      if (manifest?.moduleType === 'smrt') return true;
+    } catch {
+      // Not a readable SMRT manifest; keep probing the remaining candidates.
+    }
+  }
+
+  return false;
 }
 
 /**
- * Aggregate type manifests from multiple packages
+ * Aggregate type manifests from multiple packages.
+ *
+ * A package that yields no usable manifest is never dropped silently
+ * (issue #2923): an explicitly listed package fails the build, and a
+ * heuristically discovered one warns by name. Silence here surfaces much
+ * later as missing tables, routes, and generated types with nothing in the
+ * build log to connect them to the package that was skipped.
+ *
+ * @param packages - Package names to aggregate.
+ * @param projectRoot - Consumer project root containing `node_modules`.
+ * @param options - `explicit` marks a caller-supplied `packages` list, whose
+ *   entries are assertions rather than guesses and therefore fail closed.
  */
 async function aggregateTypeManifests(
   packages: string[],
   projectRoot: string,
+  options: { explicit?: boolean } = {},
 ): Promise<ConsumerManifest> {
   const aggregatedManifest: ConsumerManifest = {
     version: '1.0.0',
@@ -931,7 +1016,10 @@ async function aggregateTypeManifests(
     objects: {},
   };
 
+  const unresolvedPackages: string[] = [];
+
   for (const packageName of packages) {
+    let loadedManifest = false;
     try {
       const packageDir = path.join(projectRoot, 'node_modules', packageName);
 
@@ -945,26 +1033,41 @@ async function aggregateTypeManifests(
         console.warn(
           `[smrt:consumer] Could not read package.json for ${packageName}`,
         );
+        unresolvedPackages.push(packageName);
         continue;
       }
 
-      // Try multiple manifest locations
-      const manifestCandidates = [
-        path.join(packageDir, 'dist', 'manifest', 'static-manifest.js'),
-        path.join(packageDir, 'dist', 'manifest.json'),
-        path.join(packageDir, 'manifest.json'),
-      ];
+      // Try the package's declared manifest export first, then convention.
+      const manifestCandidates = packageManifestCandidates(
+        packageDir,
+        packageJson,
+      );
 
       for (const manifestPath of manifestCandidates) {
         if (fs.existsSync(manifestPath)) {
-          // Import or read the manifest
+          // Import or read the manifest. A candidate that exists but cannot be
+          // read, parsed, or imported must not end the search: the export map
+          // is probed before the conventional paths, so letting one stale or
+          // malformed exported target throw out of this loop would take away
+          // the `dist/manifest.json` fallback a package used to load through.
           let manifest: Partial<ConsumerManifest> | undefined;
-          if (manifestPath.endsWith('.js')) {
-            const manifestModule = await import(manifestPath);
-            manifest = manifestModule.staticManifest || manifestModule.default;
-          } else {
-            const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
-            manifest = JSON.parse(manifestContent) as Partial<ConsumerManifest>;
+          try {
+            if (manifestPath.endsWith('.js')) {
+              const manifestModule = await import(manifestPath);
+              manifest =
+                manifestModule.staticManifest || manifestModule.default;
+            } else {
+              const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+              manifest = JSON.parse(
+                manifestContent,
+              ) as Partial<ConsumerManifest>;
+            }
+          } catch (error) {
+            console.warn(
+              `[smrt:consumer] Could not load manifest candidate ${manifestPath} for ${packageName}; trying the next location:`,
+              error,
+            );
+            continue;
           }
 
           if (manifest?.objects) {
@@ -996,6 +1099,7 @@ async function aggregateTypeManifests(
               };
             }
 
+            loadedManifest = true;
             break; // Use first found manifest for this package
           }
         }
@@ -1006,6 +1110,32 @@ async function aggregateTypeManifests(
         error,
       );
     }
+
+    if (!loadedManifest) {
+      unresolvedPackages.push(packageName);
+    }
+  }
+
+  if (unresolvedPackages.length > 0) {
+    const named = unresolvedPackages.join(', ');
+    if (options.explicit) {
+      throw new Error(
+        `[smrt:consumer] No SMRT manifest could be resolved for ${named}. ` +
+          'Listed packages must publish a manifest through ' +
+          'package.json#exports ("./manifest.json") or at dist/manifest.json, ' +
+          'dist/manifest/static-manifest.js, or manifest.json. Build the ' +
+          'package, or remove it from smrtConsumer({ packages }).',
+      );
+    }
+    // Discovery matches on dependency name, so a hit here is a guess: some
+    // matched packages (UI/runtime helpers) legitimately have no objects.
+    // Name them anyway — a missing manifest is otherwise invisible until the
+    // objects turn up absent from routes and schema.
+    console.warn(
+      `[smrt:consumer] No SMRT manifest could be resolved for ${named}; ` +
+        'contributing 0 objects. If the package provides SMRT objects, ' +
+        'publish its manifest through package.json#exports ("./manifest.json").',
+    );
   }
 
   return aggregatedManifest;
