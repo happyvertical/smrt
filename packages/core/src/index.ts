@@ -59,6 +59,16 @@ export {
   resetChangeFeedWarnings,
   unregisterChangeFeedWriter,
 } from './change-feed';
+// Credential-bearing tables the feed must never disclose (issue #2937). The
+// declaring API is `@smrt({ sensitive: true })`; these are exported so a
+// deployment can assert what it classifies, and so tooling can explain why a
+// table reports no changes.
+export {
+  CHANGE_FEED_CREDENTIAL_TABLES,
+  declareChangeFeedSensitiveTable,
+  getChangeFeedSensitiveTables,
+  isChangeFeedSensitiveTable,
+} from './change-feed-sensitivity';
 // Live change-signal bus — the push spine for the generated `_events` SSE
 // route (issue #1763). Coarse signals (no row payloads), in-process +
 // cross-replica via the adapter notification capability. Publish/broadcast/
