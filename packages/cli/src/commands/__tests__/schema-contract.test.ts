@@ -101,6 +101,77 @@ describe('schema contract', () => {
     );
   });
 
+  it('accepts a pure-consumer project whose manifest only records consumed packages (#2925)', async () => {
+    // 0 local objects is a supported project shape: every table comes from
+    // consumed package manifests, which the migration path discovers from
+    // node_modules on its own. The gate must not demand a local object.
+    const report = await evaluateSchemaContract({
+      discovered: [
+        {
+          path: '/repo/.smrt/manifest.json',
+          source: 'project',
+          packageName: '@app/consumer',
+          objectCount: 0,
+          objectNames: [],
+          smrtDependencies: ['@happyvertical/smrt-users'],
+        },
+        {
+          path: '/repo/node_modules/@happyvertical/smrt-users/dist/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/smrt-users',
+          objectCount: 1,
+          objectNames: ['@happyvertical/smrt-users:User'],
+        },
+      ],
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.localManifest).toEqual({
+      ok: true,
+      count: 1,
+      paths: ['/repo/.smrt/manifest.json'],
+    });
+  });
+
+  it('still fails when a project manifest records neither objects nor consumed packages', async () => {
+    const report = await evaluateSchemaContract({
+      discovered: [
+        {
+          path: '/repo/.smrt/manifest.json',
+          source: 'project',
+          packageName: '@app/consumer',
+          objectCount: 0,
+          objectNames: [],
+        },
+      ],
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.failures).toContainEqual(
+      expect.objectContaining({ code: 'missing_local_manifest' }),
+    );
+  });
+
+  it('does not accept consumed packages recorded at a legacy project manifest path', async () => {
+    const report = await evaluateSchemaContract({
+      discovered: [
+        {
+          path: '/repo/manifest.json',
+          source: 'project',
+          packageName: '@app/consumer',
+          objectCount: 0,
+          objectNames: [],
+          smrtDependencies: ['@happyvertical/smrt-users'],
+        },
+      ],
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.failures).toContainEqual(
+      expect.objectContaining({ code: 'missing_local_manifest' }),
+    );
+  });
+
   it('fails before migration when a required object is missing', async () => {
     getClassByQualifiedNameMock.mockReturnValue(undefined);
 

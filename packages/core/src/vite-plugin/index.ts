@@ -432,6 +432,79 @@ export function generateInlineRegisterModule(
   ].join('\n');
 }
 
+/**
+ * Decide whether a `.smrt/manifest.json` entry belongs to this project's own
+ * scan rather than to a consumed package aggregated into the same file by
+ * `smrtConsumer()`.
+ *
+ * Ownership is read from the entry's recorded `packageName`: the scanner
+ * stamps every locally scanned object with the project's own package name
+ * (issue #713), and the consumer plugin stamps every aggregated entry with
+ * its source package. An entry with no recorded owner can only have come from
+ * the local write, because the consumer always records one.
+ */
+function isLocallyOwnedManifestEntry(
+  entry: unknown,
+  localPackageName: string | undefined,
+): boolean {
+  const owner = (entry as { packageName?: unknown } | null | undefined)
+    ?.packageName;
+  if (typeof owner !== 'string' || owner.length === 0) {
+    return true;
+  }
+  return owner === localPackageName;
+}
+
+/**
+ * Union a freshly scanned local manifest with the consumed-package entries
+ * already present in `.smrt/manifest.json` (issue #2925).
+ *
+ * The local scan is authoritative for the objects it owns — a deleted local
+ * object must disappear from the file — so only entries owned by another
+ * package are carried forward, and a local entry wins any key collision. As
+ * with the consumer plugin's merge, `.smrt/` is a build cache: dropping a
+ * package from `smrtConsumer()` leaves its stale entries until the directory
+ * is removed and the project rebuilt.
+ */
+function mergeExternalManifestEntries(
+  manifest: SmartObjectManifest,
+  manifestPath: string,
+): SmartObjectManifest {
+  if (!existsSync(manifestPath)) {
+    return manifest;
+  }
+
+  let existing: Partial<SmartObjectManifest> | undefined;
+  try {
+    existing = JSON.parse(
+      readFileSync(manifestPath, 'utf-8'),
+    ) as Partial<SmartObjectManifest>;
+  } catch {
+    // Unreadable/corrupt existing file — fall back to a plain write.
+    return manifest;
+  }
+
+  if (!existing?.objects || typeof existing.objects !== 'object') {
+    return manifest;
+  }
+
+  const preserved: SmartObjectManifest['objects'] = {};
+  for (const [name, entry] of Object.entries(existing.objects)) {
+    if (!isLocallyOwnedManifestEntry(entry, manifest.packageName)) {
+      preserved[name] = entry;
+    }
+  }
+
+  if (Object.keys(preserved).length === 0) {
+    return manifest;
+  }
+
+  return {
+    ...manifest,
+    objects: { ...preserved, ...manifest.objects },
+  };
+}
+
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
     projectRoot: configuredProjectRoot,
@@ -581,6 +654,16 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
    * Write manifest to .smrt/manifest.json for CLI discovery.
    * This ensures `smrt db:migrate`, `smrt db:status`, etc. can find
    * locally-defined SMRT objects in non-library builds (Issue #963).
+   *
+   * Merge-preserving, symmetrically with `smrtConsumer()`'s
+   * `saveAggregatedManifest()` (issue #1760): both plugins write this one
+   * file, and neither owns all of it. This hook runs once per Vite build
+   * pass/environment, while the consumer's aggregation runs in `buildStart`
+   * and does not run on every pass — so a SvelteKit `adapter-node` build ends
+   * with this write, and a plain overwrite here drops every consumed
+   * package's objects from the file the CLI then reads (issue #2925). For a
+   * pure-consumer app (0 local objects, the shape `template-sveltekit`
+   * documents) that left `objects: {}` on disk and broke `smrt db:migrate`.
    */
   async function writeLocalManifest(
     m: SmartObjectManifest,
@@ -594,17 +677,21 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       mkdirSync(smrtDir, { recursive: true });
 
       const manifestPath = resolve(smrtDir, 'manifest.json');
-      writeFileSync(manifestPath, JSON.stringify(m, null, 2), 'utf-8');
+      const merged = mergeExternalManifestEntries(m, manifestPath);
+      writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
       await writeDomainKnowledgeArtifact(
-        m,
+        merged,
         rootDir,
         resolve(smrtDir, 'smrt-knowledge.json'),
         manifestPath,
       );
 
       const objectCount = Object.keys(m.objects).length;
+      const preservedCount = Object.keys(merged.objects).length - objectCount;
       console.log(
-        `[smrt] Wrote local manifest with ${objectCount} objects to .smrt/manifest.json`,
+        preservedCount > 0
+          ? `[smrt] Wrote local manifest with ${objectCount} objects to .smrt/manifest.json (preserved ${preservedCount} consumed package objects)`
+          : `[smrt] Wrote local manifest with ${objectCount} objects to .smrt/manifest.json`,
       );
     } catch (error) {
       console.error('[smrt] Error writing local manifest:', error);

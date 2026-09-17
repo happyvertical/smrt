@@ -24,6 +24,14 @@ export interface DiscoveredManifest {
   packageVersion?: string;
   objectCount: number;
   objectNames?: string[];
+  /**
+   * SMRT packages the manifest declares as consumed dependencies.
+   *
+   * A pure-consumer project has no objects of its own; this is what tells
+   * schema commands that its manifest is a real build output rather than an
+   * empty placeholder (issue #2925).
+   */
+  smrtDependencies?: string[];
 }
 
 /**
@@ -114,6 +122,23 @@ export async function discoverManifests(
 }
 
 /**
+ * Read a manifest's declared SMRT dependencies, tolerating the untrusted
+ * shape of a file loaded from disk.
+ */
+function readSmrtDependencies(
+  manifest: LoadedManifestFile,
+): string[] | undefined {
+  if (!Array.isArray(manifest.smrtDependencies)) {
+    return undefined;
+  }
+
+  const dependencies = manifest.smrtDependencies.filter(
+    (dependency): dependency is string => typeof dependency === 'string',
+  );
+  return dependencies.length > 0 ? dependencies : undefined;
+}
+
+/**
  * Find manifests in project root
  */
 async function findProjectManifests(
@@ -143,6 +168,7 @@ async function findProjectManifests(
           packageVersion: manifest.version,
           objectCount: objectNames.length,
           objectNames,
+          smrtDependencies: readSmrtDependencies(manifest),
         });
         break; // Use first found manifest
       }

@@ -15,6 +15,7 @@ import {
 import { join, resolve } from 'node:path';
 import { resolveConfig } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { smrtConsumer } from '../consumer-plugin/index.js';
 import {
   serializeSmrtGenerationSnapshot,
   sha256SmrtGenerationSnapshot,
@@ -61,6 +62,8 @@ function createExternalSmrtPackage(
           packageName,
           collection: 'fixture_externals',
           fields: {},
+          methods: {},
+          decoratorConfig: {},
         },
       },
     }),
@@ -604,6 +607,123 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         plugins: [{ name: 'smrt-auto-service' }],
       }),
     ).resolves.toBeUndefined();
+  });
+
+  describe('consumed package entries (#2925)', () => {
+    const externalPackage = '@fixture/messages';
+    const externalEntry = `${externalPackage}:FixtureExternal`;
+    const manifestPath = () => join(tmpDir, '.smrt', 'manifest.json');
+    const viteConfig = () => ({
+      root: tmpDir,
+      build: {},
+      plugins: [{ name: 'smrt-auto-service' }, { name: 'smrt-consumer' }],
+    });
+
+    function readManifest(): any {
+      return JSON.parse(readFileSync(manifestPath(), 'utf-8'));
+    }
+
+    function createConsumerProject(): void {
+      createExternalSmrtPackage(tmpDir, externalPackage);
+      writeFileSync(
+        join(tmpDir, 'package.json'),
+        JSON.stringify({
+          name: 'test-app',
+          version: '1.0.0',
+          dependencies: {
+            '@happyvertical/smrt-core': '*',
+            [externalPackage]: '1.0.0',
+          },
+        }),
+      );
+    }
+
+    async function aggregateConsumedPackages(): Promise<void> {
+      const consumer: any = smrtConsumer({
+        packages: [externalPackage],
+        generateTypes: false,
+        projectRoot: tmpDir,
+        disableScanning: true,
+      });
+      consumer.configResolved?.(viteConfig());
+      await consumer.buildStart?.call({});
+    }
+
+    it('survive a later build pass that only runs the local write', async () => {
+      // A SvelteKit adapter-node build runs several passes. smrtConsumer()
+      // aggregates on some of them; smrtPlugin() writes on every one, and the
+      // last pass to touch the file is a local write with no aggregation
+      // behind it. A pure-consumer app (0 local objects) was left with
+      // `objects: {}` and could not run `smrt db:migrate`.
+      createConsumerProject();
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+
+      await producer.configResolved(viteConfig());
+      await aggregateConsumedPackages();
+      expect(Object.keys(readManifest().objects)).toContain(externalEntry);
+
+      // The later pass runs the local hook alone.
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(Object.keys(manifest.objects)).toContain(externalEntry);
+      expect(manifest.objects[externalEntry].packageName).toBe(externalPackage);
+    });
+
+    it('do not keep a local object the scan no longer finds', async () => {
+      // The local scan stays authoritative for the entries it owns: merging
+      // must not turn .smrt/manifest.json into an append-only cache of
+      // deleted project objects.
+      createConsumerProject();
+      createLocalSmrtObject(tmpDir);
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+
+      await producer.configResolved(viteConfig());
+      await aggregateConsumedPackages();
+      expect(Object.keys(readManifest().objects)).toContain(
+        'test-app:LocalThing',
+      );
+
+      rmSync(join(tmpDir, 'src', 'LocalThing.ts'));
+      await producer.configResolved(viteConfig());
+
+      const manifest = readManifest();
+      expect(Object.keys(manifest.objects)).not.toContain(
+        'test-app:LocalThing',
+      );
+      expect(Object.keys(manifest.objects)).toContain(externalEntry);
+    });
+
+    it('are described by the knowledge artifact the local write refreshes', async () => {
+      // .smrt/smrt-knowledge.json hashes the manifest it was derived from, so
+      // it has to be rebuilt from the merged manifest that is actually
+      // written, not from the local-only scan result.
+      createConsumerProject();
+
+      const producer: any = smrtPlugin({
+        include: ['src/**/*.ts'],
+        generateTypes: false,
+      });
+
+      await producer.configResolved(viteConfig());
+      await aggregateConsumedPackages();
+      await producer.configResolved(viteConfig());
+
+      const knowledge = JSON.parse(
+        readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+      );
+      expect(knowledge.objects).toContainEqual(
+        expect.objectContaining({ name: 'FixtureExternal' }),
+      );
+    });
   });
 
   it('fails fast when a library build with SMRT objects enables minification', async () => {
