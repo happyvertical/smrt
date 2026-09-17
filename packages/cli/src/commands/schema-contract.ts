@@ -122,8 +122,30 @@ const SCHEMA_PROJECT_MANIFEST_SUFFIXES = [
   '/src/manifest/manifest.json',
 ];
 
+/**
+ * Decide whether a discovered manifest is the project-scoped build output
+ * schema commands require.
+ *
+ * Object count alone is the wrong test. A pure-consumer project — 0 local
+ * objects, every table coming from consumed package manifests, the shape
+ * `template-sveltekit` documents — legitimately builds a manifest whose only
+ * contribution is its `smrtDependencies` list, and the migration path creates
+ * those packages' tables from `findPackageManifests()` regardless. Refusing it
+ * with `missing_local_manifest` told the operator to define a local object,
+ * which is the opposite of what such a project wants (issue #2925). What the
+ * gate genuinely needs is evidence that the project itself was built: a
+ * manifest at a current project-scoped path carrying either its own objects or
+ * the consumed packages it aggregates.
+ */
 function isSchemaProjectManifest(manifest: DiscoveredManifest): boolean {
-  if (manifest.source !== 'project' || manifest.objectCount <= 0) {
+  if (manifest.source !== 'project') {
+    return false;
+  }
+
+  if (
+    manifest.objectCount <= 0 &&
+    (manifest.smrtDependencies?.length ?? 0) === 0
+  ) {
     return false;
   }
 
@@ -336,7 +358,7 @@ export async function evaluateSchemaContract(options: {
     failures.push({
       code: 'missing_local_manifest',
       message:
-        'No local SMRT project manifest was loaded from .smrt/manifest.json, dist/manifest.json, or src/manifest/manifest.json. Package manifests from node_modules and legacy project manifest locations are not sufficient for schema commands.',
+        'No local SMRT project manifest was loaded from .smrt/manifest.json, dist/manifest.json, or src/manifest/manifest.json. Package manifests from node_modules and legacy project manifest locations are not sufficient for schema commands. A project with no local objects still qualifies once its build records the SMRT packages it consumes, so build the project before running schema commands.',
     });
   }
 

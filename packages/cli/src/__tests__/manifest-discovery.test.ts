@@ -46,6 +46,28 @@ describe('manifest-discovery', () => {
       );
       expect(projectManifest?.objectNames).toEqual(['Current']);
     });
+
+    it('records the SMRT packages a project manifest consumes (#2925)', async () => {
+      await mkdir(join(tempDir, '.smrt'), { recursive: true });
+      await writeFile(
+        join(tempDir, '.smrt', 'manifest.json'),
+        JSON.stringify({
+          packageName: '@app/consumer',
+          objects: {},
+          smrtDependencies: ['@happyvertical/smrt-users', 42],
+        }),
+      );
+
+      const discovered = await discoverManifests(tempDir);
+      const projectManifest = discovered.find(
+        (manifest) => manifest.source === 'project',
+      );
+
+      expect(projectManifest?.objectCount).toBe(0);
+      expect(projectManifest?.smrtDependencies).toEqual([
+        '@happyvertical/smrt-users',
+      ]);
+    });
   });
 
   describe('deduplication', () => {
