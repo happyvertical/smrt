@@ -831,6 +831,12 @@ async function resolveScope(
  */
 const DATA_QUERY_MAX_STRING_LENGTH = 4_096;
 
+/**
+ * Longest single warning the shared `DataQueryResult` validator accepts
+ * (`packages/core/src/data-query.ts`).
+ */
+const DATA_QUERY_MAX_WARNING_LENGTH = 512;
+
 /** A date-only column value, e.g. a `DATE` column read back as `2026-09-17`. */
 const DATE_ONLY_VALUE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -963,6 +969,34 @@ function capScalarString(
   if (value.length <= DATA_QUERY_MAX_STRING_LENGTH) return value;
   truncated.add(fieldId);
   return value.slice(0, DATA_QUERY_MAX_STRING_LENGTH);
+}
+
+/**
+ * One bounded warning naming the fields whose values were shortened. The
+ * shared result validator rejects any warning longer than 512 characters, so
+ * a page that shortened many long-named fields must not be able to fail the
+ * whole query on its own warning -- the failure mode this boundary exists to
+ * remove.
+ */
+function shortenedValuesWarning(fields: ReadonlySet<string>): string {
+  const prefix =
+    'Values longer than the result contract\u2019s scalar limit were shortened for: ';
+  const sorted = [...fields].sort();
+  const named: string[] = [];
+  // `- 1` reserves the trailing period.
+  let budget = DATA_QUERY_MAX_WARNING_LENGTH - prefix.length - 1;
+  for (const [index, field] of sorted.entries()) {
+    const remaining = sorted.length - index;
+    const cost = field.length + (index === 0 ? 0 : 2);
+    const overflow = `${index === 0 ? '' : ', '}and ${remaining} more`;
+    if (cost + (remaining > 1 ? overflow.length : 0) > budget) {
+      named.push(`and ${remaining} more`);
+      break;
+    }
+    named.push(field);
+    budget -= cost;
+  }
+  return `${prefix}${named.join(', ')}.`;
 }
 
 /**
@@ -1196,10 +1230,7 @@ export async function executeSmrtCollectionQuery(
       return out;
     });
     if (truncatedFields.size > 0) {
-      warnings.push(
-        'Values longer than the result contract\u2019s scalar limit were ' +
-          `shortened for: ${[...truncatedFields].sort().join(', ')}.`,
-      );
+      warnings.push(shortenedValuesWarning(truncatedFields));
     }
     if (signal) assertNotAborted(signal);
     const total = await collection.count(countOptions);
@@ -1244,7 +1275,11 @@ export async function executeSmrtCollectionQuery(
         total: { kind: 'exact' as const, value: total },
         freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
         warnings,
-        truncated: false,
+        // A shortened value is a truncated page: the machine-readable flag
+        // has to agree with the rows, not only the prose warning, because the
+        // surface passes it to callers and stores it on the query audit
+        // record. Matches `executeContentQuery` in `@happyvertical/smrt-content`.
+        truncated: truncatedFields.size > 0,
       },
       request,
       schema,

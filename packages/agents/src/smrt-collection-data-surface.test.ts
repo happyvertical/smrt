@@ -1338,13 +1338,79 @@ describe('executeSmrtCollectionQuery row serialization (#2933)', () => {
     expect(result.rows[0]).toEqual({ id: 'e1', active: true, attendees: 42 });
   });
 
-  it('shortens an oversized scalar string and warns instead of failing', async () => {
+  it('shortens an oversized scalar string, warns, and reports truncated', async () => {
     const result = await queryRows(
       [{ id: 'e1', name: 'x'.repeat(5_000) }],
       ['id', 'name'],
     );
     expect(String(result.rows[0]?.name)).toHaveLength(4_096);
     expect(result.warnings?.join(' ')).toContain('name');
+    // The machine-readable flag must agree with the rows: a consumer that
+    // checks `truncated` instead of parsing warning text would otherwise treat
+    // a cut-off value as the whole value.
+    expect(result.truncated).toBe(true);
+  });
+
+  it('leaves truncated false when nothing was shortened', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', name: 'short' }],
+      ['id', 'name'],
+    );
+    expect(result.truncated).toBe(false);
+    expect(result.warnings ?? []).toEqual([]);
+  });
+
+  it('keeps the shortened-values warning inside the 512-character cap', async () => {
+    // Enough long field ids that a naive join would exceed the shared result
+    // validator's per-warning limit and fail the whole query.
+    const wide = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [
+        `field_with_a_very_long_name_${String(index).padStart(3, '0')}`,
+        { type: 'text' },
+      ]),
+    );
+    ObjectRegistry.clear();
+    clearSmrtCollectionQuerySchemaCache();
+    ObjectRegistry.registerFromManifest(
+      'SmrtSurfaceFixtureWideEvent',
+      {
+        className: 'SmrtSurfaceFixtureWideEvent',
+        fields: { id: { type: 'text' }, ...wide },
+        methods: {},
+        decoratorConfig: { tableName: 'smrt_surface_fixture_wide_events' },
+        schema: {
+          tableName: 'smrt_surface_fixture_wide_events',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test',
+        },
+      },
+      '@happyvertical/smrt-agents',
+    );
+    const name = '@happyvertical/smrt-agents:SmrtSurfaceFixtureWideEvent';
+    const projection = ['id', ...Object.keys(wide)];
+    const row: Record<string, unknown> = { id: 'e1' };
+    for (const key of Object.keys(wide)) row[key] = 'x'.repeat(5_000);
+
+    const result = await executeSmrtCollectionQuery(
+      fakeCollection([row]),
+      {
+        version: 1,
+        requestId: 'wide-truncation',
+        mode: 'rows',
+        projection,
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      },
+      {
+        schema: await buildDataQuerySchemaForClass(name, { exclude: EXCLUDED }),
+        qualifiedName: name,
+      },
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings?.[0]?.length).toBeLessThanOrEqual(512);
+    expect(result.warnings?.[0]).toMatch(/and \d+ more\.$/);
   });
 
   it('serializes a temporal facet bucket value', async () => {
