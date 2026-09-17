@@ -243,6 +243,28 @@ const tool = createInvokeAgentTool({
 - **`executeDelegatedInvocation()`** runs the worker via `executeAsPrincipal` under that same principal and emits a correlated `agent.completed` dispatch; **`surfaceAgentCompletions(bus, correlationId)`** reads it back into the conversation.
 - **Transports** (pluggable): the default `inlineInvokeAgentTransport` runs the worker in-process (completion surfaces in the same turn); `createDispatchInvokeTransport(bus)` emits an `agent.invoke` signal a worker processes via `processAgentInvocations()` (async). A job-queue transport (enqueue on the `agents` queue) is a consumer-supplied `InvokeAgentTransport` — orchestration never hard-depends on `@happyvertical/smrt-jobs`, which sits *below* agents in the dependency graph.
 
+## Server Entry Points Stay Svelte-Free (issue #2924)
+
+`SmrtDataSurfaceActionTask`, `DataSurfaceActionTokenState`, and
+`DataSurfaceActionIdempotencyState` stamp `@happyvertical/smrt-agents/server`
+as their manifest `importPath`, so core's consumer plugin emits that specifier
+verbatim into a consumer's generated `.smrt/register.js` — which the `smrt` CLI
+loads with a bare `import()` under plain Node for `db:migrate`. **No module
+reachable from `./server` (or from the package root, or `./vite`) may import a
+Svelte component barrel.** A Vite build of the same graph succeeds, so this
+regresses silently and then breaks `db:migrate` for every object in the
+consuming app, not just this package's.
+
+- Import shared data-surface protocol limits from the Svelte-free
+  `@happyvertical/smrt-ui/data-surface`, never `@happyvertical/smrt-ui/data`
+  (a component barrel that re-exports `.svelte` files).
+- `src/server/__tests__/node-entry-loadability.integration.test.ts` imports
+  every server-side subpath in a fresh plain-Node process; it needs a built
+  `dist/` (turbo's `test` task supplies it).
+- `scripts/verify-manifest-exports.mjs` fails a publish when any **non-root**
+  manifest `importPath` is unloadable under plain Node. A bundler-only *root*
+  barrel is still only a warning.
+
 ## Key Files
 
 | File | Purpose |

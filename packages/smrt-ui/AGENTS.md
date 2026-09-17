@@ -47,7 +47,8 @@ components are exempt — they *are* the primitives.
 | `./playground` | shared-host previews for the complete foundation catalog; rendered inside the active preset and color scheme |
 | `./ui` | `Button`, `Card`, `Badge`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`/`Menu`, `Popover`, `Disclosure`, `Accordion`, `Tree`, `Pagination`, … |
 | `./feedback` | `Alert`, `ToastViewport`, `Modal`, `Drawer`/`Sheet`, `ConfirmDialog`, `LoadingOverlay`, `Progress`, `Meter`, `Spinner` |
-| `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` and their types |
+| `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` and their types — a **component barrel**: it re-exports `.svelte` files, so a plain Node `import()` of it throws `ERR_UNKNOWN_FILE_EXTENSION` |
+| `./data-surface` | **Svelte-free**: registry contracts and shared protocol limits (`DATA_SURFACE_MAX_REQUEST_BYTES`, `DATA_SURFACE_IDENTIFIER_MAX_LENGTH`, …). Server adapters must import these from here, not from `./data` — a server entry that reaches the barrel breaks the `smrt` CLI's plain-Node `.smrt/register.js` load (issue #2924) |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
 | `./calendar` | `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |

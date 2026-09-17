@@ -131,6 +131,42 @@ test('verify-manifest-exports (smrt#2845): warns (does not fail) when the enviro
   assert.match(result.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
 });
 
+test('verify-manifest-exports (smrt#2924): fails (does not warn) when a non-root importPath cannot be loaded under plain Node', () => {
+  // The root barrel may legitimately be bundler-only (the test above), but a
+  // dedicated "./server" subpath is the specifier the consumer plugin emits
+  // verbatim into a generated .smrt/register.js that the smrt CLI loads with
+  // a bare import() for db:migrate. Mirrors
+  // @happyvertical/smrt-agents@0.51.6, whose ./server entry reached a .svelte
+  // component barrel through @happyvertical/smrt-ui/data.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/server.js'),
+    "import './CollectionList.svelte';\nexport class DataSurfaceActionIdempotencyState {}\n",
+  );
+  writeFileSync(join(packageDir, 'dist/CollectionList.svelte'), '<div></div>');
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /is not loadable under plain Node/);
+  assert.match(result.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
+  assert.match(result.stderr, /Fix \(bundler-only subpath\)/);
+  assert.doesNotMatch(
+    result.stderr,
+    /could not be verified in this environment/,
+  );
+});
+
 test('verify-manifest-exports (smrt#2845): does not verify a SmrtCollection companion class deliberately withheld from the public export surface', () => {
   // Mirrors @happyvertical/smrt-chat: AgentSessionCollection et al. are
   // auto-derived manifest objects (extends: "SmrtCollection") but are

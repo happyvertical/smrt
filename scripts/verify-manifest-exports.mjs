@@ -154,6 +154,22 @@ const ENVIRONMENT_LOAD_ERROR_CODES = new Set([
 ]);
 
 /**
+ * True only for the package *root* importPath. The root barrel of a UI-bearing
+ * package is legitimately bundler-only (the `smrt-products` case described
+ * above), so an environment load error there stays a warning. Any other
+ * `importPath` is a subpath the manifest deliberately stamped — `./server`
+ * above all — and the consumer plugin emits it verbatim into a generated
+ * `.smrt/register.js` that the `smrt` CLI imports under plain Node for
+ * `db:migrate`. A subpath that cannot be loaded that way is a real defect, not
+ * an environment limitation: `@happyvertical/smrt-agents/server` reached a
+ * `.svelte` component barrel through `@happyvertical/smrt-ui/data` and broke
+ * `db:migrate` for every object in the consuming app (issue #2924).
+ */
+function isBundlerOnlyImportPath(importPath) {
+  return importPath === packageName;
+}
+
+/**
  * True for a manifest object that is itself an auto-derived `SmrtCollection`
  * companion class (e.g. `AgentSessionCollection` for `AgentSession`), using
  * the same signal `consumer-plugin/index.ts`'s own `isCollectionClass` reads
@@ -242,9 +258,20 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
   if (moduleNamespace.__loadError) {
     const loadError = moduleNamespace.__loadError;
     if (ENVIRONMENT_LOAD_ERROR_CODES.has(loadError.code)) {
-      warnings.push(
-        `${objectKey}: could not verify — loading "${distFile}" hit an environment limitation (${loadError.code}: ${loadError.message}), not evaluated as a failure`,
-      );
+      if (isBundlerOnlyImportPath(importPath)) {
+        warnings.push(
+          `${objectKey}: could not verify — loading "${distFile}" hit an environment limitation (${loadError.code}: ${loadError.message}), not evaluated as a failure`,
+        );
+        continue;
+      }
+      // A dedicated non-root subpath is a deliberate "load me from here"
+      // declaration, and the specifier the consumer plugin emits verbatim
+      // into a plain-Node `.smrt/register.js`. Tolerating an unparseable
+      // file type there is how #2924 shipped.
+      failures.push({
+        kind: 'bundler-only-subpath',
+        message: `${objectKey}: "${importPath}" is not loadable under plain Node (${loadError.code}: ${loadError.message})`,
+      });
       continue;
     }
     // Distinct from a real export mismatch: the manifest's importPath may be
@@ -286,6 +313,9 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
 if (failures.length > 0) {
   const hasMismatch = failures.some((failure) => failure.kind === 'mismatch');
   const hasLoadError = failures.some((failure) => failure.kind === 'load-error');
+  const hasBundlerOnlySubpath = failures.some(
+    (failure) => failure.kind === 'bundler-only-subpath',
+  );
 
   console.error(
     `\n[verify-manifest-exports] ❌ ${packageName}: ${failures.length} manifest object(s) failed verification.`,
@@ -301,6 +331,11 @@ if (failures.length > 0) {
   if (hasLoadError) {
     console.error(
       '[verify-manifest-exports]    Fix (load error): the importPath may be correct — importing the target module itself failed. Check for an import-time side effect, a missing native/optional dependency in this environment, or a build issue unrelated to importPath.',
+    );
+  }
+  if (hasBundlerOnlySubpath) {
+    console.error(
+      '[verify-manifest-exports]    Fix (bundler-only subpath): a non-root importPath must import cleanly under plain Node, because the consumer plugin emits it verbatim into a generated .smrt/register.js that the smrt CLI loads with a bare import() for db:migrate. Route the entry at a Svelte-free module (e.g. @happyvertical/smrt-ui/data-surface rather than the @happyvertical/smrt-ui/data component barrel) — see issue #2924.',
     );
   }
   console.error(
