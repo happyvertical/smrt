@@ -71,10 +71,28 @@ Because a non-observable table appends nothing, it also has no ETag source:
 fall back to the global horizon, which moves only on unrelated traffic — so a
 conditional GET could answer `304` for a revoked API key or a rotated session.
 `getTableVersion()` therefore returns a deliberately **unrepeatable** value for
-such a table, making every derived ETag fresh and every conditional read a full
-200. It is the single point every ETag path goes through (the runtime
-`APIGenerator`, the generated `conditionalVersionedRead`, and route files an
-older generator already emitted), so no call site needs a special case.
+such a table — 48 bits of `crypto` randomness per call, not a per-process
+counter, because two replicas' clock-seeded counters drift through each other
+and the ETag carries no per-process entropy — so no *concrete* `If-None-Match`
+can match and every such read is a full 200. It is the single point every ETag
+path goes through (the runtime `APIGenerator`, the generated
+`conditionalVersionedRead`, and route files an older generator already
+emitted), so no call site needs a special case. A wildcard `If-None-Match: *`
+still 304s; the read paths evaluate it only after the payload is built, so it
+distinguishes nothing an unconditional request would not.
+
+Registration derives the declared name from config and manifest; the writer uses
+`instance.tableName`, which resolves through the STI base's schema and then the
+class's own. Where those two derivations disagree the declaration lands on a
+name nothing writes under, and the real table keeps appending. STI is *not* such
+a case today — `@smrt()` already resolves an STI child to its base's table, so a
+child declaring `sensitive` declares `<base>` (verified) — but the manifest-stub
+and manifest-merge paths derive the name differently again, so registration
+declares every candidate name. The authoritative check is at the write path:
+`isChangeFeedSensitiveWrite()` asks the registry about the instance's own class
+through a resolver hook on the leaf module (so `change-feed.ts` never imports
+the registry), sees the exact name being recorded with no derivation to keep in
+sync, and declares it — closing the read path and signal bus for that table.
 
 Scope note: the generated `_changes`/`_events` routes still gate on an
 authenticated principal only — there is no per-table permission check, and

@@ -130,11 +130,13 @@
  * @packageDocumentation
  */
 
+import { randomBytes } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   getChangeFeedSensitiveTables,
   isChangeFeedSensitiveTable,
+  isChangeFeedSensitiveWrite,
 } from './change-feed-sensitivity.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
@@ -219,14 +221,6 @@ export function isChangeFeedObservableTable(tableName: string): boolean {
     !isChangeFeedSensitiveTable(tableName)
   );
 }
-
-/**
- * Monotonic source for {@link getTableVersion}'s unobservable-table answer
- * (#2937). Seeded from the clock so a process restart cannot hand a client the
- * same validator it already holds, and incremented per call so no two reads of
- * such a table ever share an ETag.
- */
-let unobservableTableVersionCounter = Date.now();
 
 /** Interceptor name of the framework's change-feed writer. */
 export const CHANGE_FEED_INTERCEPTOR_NAME = 'smrt-change-feed';
@@ -1752,12 +1746,17 @@ export async function getTenantScopedChangesSince(
  * horizon — a silent stale read of security state.
  *
  * Such a table therefore gets a deliberately **unrepeatable** value, so every
- * ETag derived from it is fresh and no conditional GET can ever produce a
- * `304`. Those reads cost a full response every time, which is the correct
- * trade for a credential store, and the caller needs no special case: this is
- * the one place every ETag path (the runtime `APIGenerator`, the generated
- * SvelteKit `conditionalVersionedRead`, and route files already emitted by an
- * older generator) goes through.
+ * ETag derived from it is fresh and no *concrete* `If-None-Match` can match.
+ * Those reads cost a full response every time, which is the correct trade for
+ * a credential store, and the caller needs no special case: this is the one
+ * place every ETag path (the runtime `APIGenerator`, the generated SvelteKit
+ * `conditionalVersionedRead`, and route files already emitted by an older
+ * generator) goes through.
+ *
+ * A wildcard `If-None-Match: *` still yields `304`, and deliberately so: the
+ * read paths evaluate it only *after* the payload is built, so it distinguishes
+ * nothing beyond 200-versus-404 — which an unconditional request reveals too —
+ * and it carries no stale representation.
  *
  * Idempotently ensures the feed table exists first, so it is safe to call from
  * a read route on a raw handle that has never been written to.
@@ -1772,12 +1771,20 @@ export async function getTableVersion(
   }
 
   if (!isChangeFeedObservableTable(name)) {
-    // Never repeats, within this process or across replicas, so a concrete
-    // `If-None-Match` can never match and the read always returns a fresh 200.
-    // Deliberately NOT replica-stable: two replicas agreeing here is exactly
-    // what would let one serve a 304 against the other's stale validator.
-    unobservableTableVersionCounter += 1;
-    return unobservableTableVersionCounter;
+    // A fresh 48-bit random value per call, so a concrete `If-None-Match`
+    // cannot match and the read always returns a full 200.
+    //
+    // Deliberately random rather than a per-process counter. A counter seeded
+    // from the clock and incremented per call is NOT unique across processes:
+    // two replicas behind a load balancer start milliseconds apart and serve at
+    // different rates, so their counters drift through each other, and the ETag
+    // carries no per-process entropy. A client holding replica A's validator
+    // that lands on replica B exactly as B mints the same number gets a stale
+    // 304 — a revoked API key still shown. A restart after sustained traffic
+    // has the same overlap. 48 bits of `crypto` randomness makes a collision
+    // negligible and needs no cross-process coordination. Nothing consumes this
+    // value's ordering; only its unrepeatability matters.
+    return randomUnobservableTableVersion();
   }
 
   await ensureChangeFeedTable(db);
@@ -1821,6 +1828,23 @@ export async function getTableVersion(
   // all-pruned (or never-written) table never reports a resettable low value
   // that could false-304 a stale client. 0 only when the feed is empty.
   return toSeqNumber(row?.horizon) + staged;
+}
+
+/**
+ * A fresh, effectively-unique version for a table the feed does not observe
+ * (#2937). 48 bits keeps it inside `Number.MAX_SAFE_INTEGER` so it round-trips
+ * through the same numeric ETag path as a real sequence.
+ */
+function randomUnobservableTableVersion(): number {
+  const bytes = randomBytes(6);
+  return (
+    bytes[0] * 2 ** 40 +
+    bytes[1] * 2 ** 32 +
+    bytes[2] * 2 ** 24 +
+    bytes[3] * 2 ** 16 +
+    bytes[4] * 2 ** 8 +
+    bytes[5]
+  );
 }
 
 function toSeqNumber(value: unknown): number {
@@ -1934,27 +1958,54 @@ export async function pruneChangeFeed(
   // client a spurious resync from a retreating horizon. Residual: one
   // credential row can linger until the next write moves the horizon past it,
   // at which point the following sweep takes it.
+  //
+  // Under `dryRun` nothing is actually deleted, so the bounds below would count
+  // these same rows a second time. `sensitiveExclusion` is therefore appended
+  // to their predicates in that mode only — with a real delete the rows are
+  // already gone and the extra clause would be dead weight.
   const sensitiveTables = getChangeFeedSensitiveTables();
   if (sensitiveTables.length > 0) {
-    const placeholderList = sensitiveTables
-      .map((_, offset) => p(offset + 2))
-      .join(', ');
     pruned += await deleteCounted(
       db,
-      `seq < ${p(1)} AND table_name IN (${placeholderList})`,
+      `seq < ${p(1)} AND table_name IN (${sensitiveTables
+        .map((_, offset) => p(offset + 2))
+        .join(', ')})`,
       [horizon, ...sensitiveTables],
       dryRun,
     );
   }
 
+  /**
+   * Under `dryRun` nothing was actually deleted, so the bounds below would
+   * count the sensitive rows the purge already reported. Append an exclusion to
+   * their predicates in that mode only — after a real delete the rows are gone
+   * and the extra clause would be dead weight. `offset` is the number of
+   * placeholders the caller's own predicate already consumed, so the numbered
+   * dialects stay aligned.
+   */
+  const excludeSensitive = (
+    offset: number,
+  ): { sql: string; params: unknown[] } => {
+    if (!dryRun || sensitiveTables.length === 0) {
+      return { sql: '', params: [] };
+    }
+    return {
+      sql: ` AND table_name NOT IN (${sensitiveTables
+        .map((_, index) => p(offset + index + 1))
+        .join(', ')})`,
+      params: [...sensitiveTables],
+    };
+  };
+
   if (maxRows != null) {
     const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);
     if (pruneThrough > 0) {
       prunedThrough = pruneThrough;
+      const exclusion = excludeSensitive(1);
       pruned += await deleteCounted(
         db,
-        `seq <= ${p(1)}`,
-        [pruneThrough],
+        `seq <= ${p(1)}${exclusion.sql}`,
+        [pruneThrough, ...exclusion.params],
         dryRun,
       );
     }
@@ -1995,10 +2046,11 @@ export async function pruneChangeFeed(
     // `dryRun`, where nothing was — without it overlapping entries would be
     // counted by both bounds.
     if (ageThrough > prunedThrough) {
+      const exclusion = excludeSensitive(2);
       pruned += await deleteCounted(
         db,
-        `seq <= ${p(1)} AND seq > ${p(2)}`,
-        [ageThrough, prunedThrough],
+        `seq <= ${p(1)} AND seq > ${p(2)}${exclusion.sql}`,
+        [ageThrough, prunedThrough, ...exclusion.params],
         dryRun,
       );
     }
@@ -2145,6 +2197,13 @@ async function appendForInstance(
     // test is an allowlist, not the `_smrt_` prefix: ~25 domain tables carry
     // that prefix and must be observed (issue #2376).
     if (!isChangeFeedObservableTable(table)) return;
+    // Authoritative class-level check (#2937). `isChangeFeedObservableTable`
+    // can only test the NAME, and the name a class declared may not be the one
+    // its rows are recorded under — an STI child declaring `sensitive` writes
+    // to its base class's table. Here we hold the instance, so we can ask about
+    // its class and match the exact name being recorded; a hit also declares
+    // that name, closing the read path and the signal bus for it.
+    if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
@@ -2212,6 +2271,9 @@ export async function recordInstanceChanges(
     try {
       const table = entry.instance.tableName;
       if (!isChangeFeedObservableTable(table)) continue;
+      // Same authoritative class-level check as the single-instance writer.
+      if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
+        continue;
       const id = (entry.instance as { id?: unknown }).id;
       const tenantId = (entry.instance as unknown as Record<string, unknown>)
         .tenantId;

@@ -88,7 +88,36 @@ class Issue2937PublicNoteCollection extends SmrtCollection<Issue2937PublicNote> 
   static readonly _itemClass = Issue2937PublicNote;
 }
 
-const TEST_CLASSES = ['Issue2937SecretTicket', 'Issue2937PublicNote'];
+/**
+ * An STI base plus a child that declares itself sensitive. The child's rows land
+ * in the BASE class's table, so this pins that a `sensitive` declaration follows
+ * the rows rather than the declaring class's own name.
+ */
+@smrt({ tableStrategy: 'sti' })
+class Issue2937StiBase extends SmrtObject {
+  label: string = '';
+  tenantId: string = '';
+}
+
+class Issue2937StiBaseCollection extends SmrtCollection<Issue2937StiBase> {
+  static readonly _itemClass = Issue2937StiBase;
+}
+
+@smrt({ sensitive: true })
+class Issue2937StiSecretChild extends Issue2937StiBase {
+  token: string = '';
+}
+
+class Issue2937StiSecretChildCollection extends SmrtCollection<Issue2937StiSecretChild> {
+  static readonly _itemClass = Issue2937StiSecretChild;
+}
+
+const TEST_CLASSES = [
+  'Issue2937SecretTicket',
+  'Issue2937PublicNote',
+  'Issue2937StiBase',
+  'Issue2937StiSecretChild',
+];
 // Derived, not declared — `tableNameFromClass` does not insert a separator
 // between a trailing digit run and the next word.
 const SECRET_TABLE = 'issue2937secret_tickets';
@@ -425,6 +454,36 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
     });
   });
 
+  describe('the declared name and the recorded name can differ', () => {
+    it('records nothing for an STI child that declares itself sensitive, even though it writes to the base table', async () => {
+      // `@smrt()` resolves an STI child to its base's table at registration, so
+      // the declaration already lands on the right name — this pins that, since
+      // a future change to either derivation (registration's, or the writer's
+      // `instance.tableName`) would silently fail OPEN for the child. The
+      // write path's class-level check is the backstop that does not depend on
+      // the two derivations agreeing.
+      const children = await Issue2937StiSecretChildCollection.create({ db });
+      const child = await children.create({ label: 'sti', token: 'secret' });
+      expect(child.id).toBeTruthy();
+
+      const recordedTable = child.tableName;
+      expect(await feedRowCount(db, recordedTable)).toBe(0);
+
+      const { changes } = await getChangesSince(db, { since: 0 });
+      expect(JSON.stringify(changes)).not.toContain(String(child.id));
+
+      // The write-path hit declared the real table, so a name-only check now
+      // agrees and the read path refuses it as well.
+      expect(isChangeFeedSensitiveTable(recordedTable)).toBe(true);
+      await insertLegacyFeedRow(db, recordedTable, 'legacy-sti-row');
+      const after = await getChangesSince(db, {
+        since: 0,
+        tables: [recordedTable],
+      });
+      expect(after.changes).toEqual([]);
+    });
+  });
+
   describe('conditional GET cannot answer a stale 304 for a sensitive table', () => {
     it('gives a sensitive table an unrepeatable version, and an ordinary table a stable one', async () => {
       // A non-observable table appends nothing, so getTableVersion() would pin
@@ -439,15 +498,26 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       await insertLegacyFeedRow(db, 'sessions', 'owner-session-id');
 
       for (const table of ['sessions', 'api_keys', SECRET_TABLE]) {
-        const first = await getTableVersion(db, table);
-        const second = await getTableVersion(db, table);
-        const third = await getTableVersion(db, table);
-        expect(second).not.toBe(first);
-        expect(third).not.toBe(second);
-        expect(third).not.toBe(first);
-        // Strictly increasing, so a validator is never re-minted either.
-        expect(second).toBeGreaterThan(first);
-        expect(third).toBeGreaterThan(second);
+        // Unique, not merely increasing. A clock-seeded per-process counter
+        // would be monotonic here and still collide across replicas: two
+        // processes start milliseconds apart, serve at different rates, and the
+        // ETag carries no per-process entropy, so one replica can mint the
+        // exact validator a client holds from another and 304 a revoked key.
+        // 48 bits of randomness per call is what actually holds.
+        const versions = new Set<number>();
+        for (let i = 0; i < 64; i++) {
+          const version = await getTableVersion(db, table);
+          expect(Number.isSafeInteger(version)).toBe(true);
+          expect(version).toBeGreaterThan(0);
+          versions.add(version);
+        }
+        expect(versions.size).toBe(64);
+        // Not derived from a shared monotonic counter: a strictly increasing
+        // sequence over 64 draws is vanishingly unlikely from real randomness.
+        const ordered = [...versions];
+        expect(
+          ordered.every((value, i) => i === 0 || value > ordered[i - 1]),
+        ).toBe(false);
       }
 
       // An ordinary table keeps the documented replica-stable contract: two
@@ -482,6 +552,25 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       expect(await feedRowCount(db, 'api_keys')).toBe(0);
       expect(await feedRowCount(db, SECRET_TABLE)).toBe(0);
       expect(await feedRowCount(db, PUBLIC_TABLE)).toBe(2);
+    });
+
+    it('does not double-count purged credential rows under dryRun', async () => {
+      // Under dryRun nothing is deleted, so the maxRows/age bounds would count
+      // the same rows the sensitive purge already reported and overstate what a
+      // real sweep would remove.
+      await insertLegacyFeedRow(db, 'sessions', 's1');
+      await insertLegacyFeedRow(db, 'api_keys', 'k1');
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n1');
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n2');
+
+      const dry = await pruneChangeFeed(db, { maxRows: 1, dryRun: true });
+      // Nothing was actually removed by a dry run.
+      expect(await feedRowCount(db, 'sessions')).toBe(1);
+
+      const real = await pruneChangeFeed(db, { maxRows: 1 });
+      expect(real.pruned).toBe(dry.pruned);
+      // Sequences 1-3 go, the newest survives.
+      expect(real.pruned).toBe(3);
     });
 
     it('moves floor when the oldest rows were sensitive, and fails safe by asking for a resync', async () => {

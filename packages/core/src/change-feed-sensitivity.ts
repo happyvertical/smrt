@@ -142,3 +142,76 @@ export function isChangeFeedSensitiveTable(tableName: string): boolean {
 export function getChangeFeedSensitiveTables(): string[] {
   return [...sensitiveTableSet()].sort();
 }
+
+/**
+ * Resolves whether the class that produced an instance declared itself
+ * sensitive. Supplied by the registry; see
+ * {@link setChangeFeedSensitiveClassResolver}.
+ */
+export type ChangeFeedSensitiveClassResolver = (ctor: unknown) => boolean;
+
+let sensitiveClassResolver: ChangeFeedSensitiveClassResolver | undefined;
+
+/**
+ * Register the registry's class-level `sensitive` lookup (dependency
+ * inversion, exactly like the DispatchBus tenant resolver).
+ *
+ * ## Why the write path needs this and not just the name set
+ *
+ * Declaring by name at registration time assumes the name a class *declares*
+ * is the name its rows are *recorded* under. Registration derives that name
+ * from config and manifest, while the writer uses `instance.tableName`, which
+ * resolves through the STI base's schema and then the class's own. Those
+ * derivations are separate code, and where they disagree the declaration lands
+ * on a name nothing writes under while the real table keeps appending — a
+ * silent fail-open for exactly the consumer-declared tables the marker exists
+ * to protect.
+ *
+ * Measured, for the record: STI is **not** such a case today. `@smrt()`
+ * resolves an STI child to its base's table at registration, so a child
+ * declaring `sensitive: true` already declares `<base>` — verified against a
+ * real STI pair. The manifest-stub and manifest-merge paths derive the name
+ * differently again (`decoratorConfig` versus `objectDef.schema.tableName`),
+ * and registration now declares every candidate name to cover them.
+ *
+ * That list of candidates is still a list of guesses about someone else's
+ * derivation. This resolver is the authoritative check: the write path holds
+ * the instance, so it knows both the class and the exact `tableName` about to
+ * be recorded, with no derivation to keep in sync. It declares that name on the
+ * way past, which closes the read path and the signal bus for the same table.
+ *
+ * Kept in this leaf module so `change-feed.ts` never imports the registry —
+ * `class.ts` already imports `change-feed.ts`, so the reverse edge would be a
+ * cycle.
+ */
+export function setChangeFeedSensitiveClassResolver(
+  resolver: ChangeFeedSensitiveClassResolver | undefined,
+): void {
+  sensitiveClassResolver = resolver;
+}
+
+/**
+ * Whether `tableName`, about to be recorded for an instance of `constructor`,
+ * is credential-bearing — by name, or because the class declared it.
+ *
+ * A class-declared hit also adds `tableName` to the set, so the read path and
+ * the signal bus refuse the same table from then on.
+ */
+export function isChangeFeedSensitiveWrite(
+  tableName: string,
+  ctor: unknown,
+): boolean {
+  if (isChangeFeedSensitiveTable(tableName)) return true;
+  if (!ctor || !sensitiveClassResolver) return false;
+  let declared = false;
+  try {
+    declared = sensitiveClassResolver(ctor) === true;
+  } catch {
+    // A resolver failure must never fail the user's write; the name set still
+    // covers every framework credential table.
+    return false;
+  }
+  if (!declared) return false;
+  declareChangeFeedSensitiveTable(tableName);
+  return true;
+}
