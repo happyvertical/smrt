@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - serialize collection data-surface row values to JSON scalars (#2933) (#2935) (agents)
+  - @happyvertical/smrt-config@0.51.9
+  - @happyvertical/smrt-types@0.51.9
+  - @happyvertical/smrt-scanner@0.51.9
+
 ## 0.51.8
 
 ### Patch Changes
