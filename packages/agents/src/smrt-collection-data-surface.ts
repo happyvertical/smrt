@@ -874,7 +874,13 @@ function epochToInstant(value: number): string | null {
 function temporalToInstant(value: unknown): unknown {
   if (value instanceof Date) return instantOrNull(value);
   if (typeof value === 'number') return epochToInstant(value);
-  if (typeof value === 'bigint') return epochToInstant(Number(value));
+  if (typeof value === 'bigint') {
+    // An epoch outside the safe-integer range would round on the way through
+    // `Number`, producing a WRONG instant. For a temporal value a missing one
+    // is safer than a silently shifted one.
+    const numeric = Number(value);
+    return Number.isSafeInteger(numeric) ? epochToInstant(numeric) : null;
+  }
   if (typeof value !== 'string') return value;
   const text = value.trim();
   if (text.length === 0) return null;
@@ -1047,9 +1053,17 @@ function toDataQueryRowValue(
     : capScalarString(rendered, descriptor.id, truncated);
 }
 
-/** Facet buckets are scalars too, and a temporal bucket arrives as a `Date`. */
+/**
+ * Facet buckets are scalars too: a temporal bucket arrives as a `Date`, and a
+ * bucket label can be as long as the column it came from. The shared validator
+ * applies the same 4096-character scalar cap to a facet value as to a row
+ * value, so an uncapped label would fail the whole facet query — the failure
+ * mode this boundary exists to remove, on the other path.
+ */
 function toDataQueryFacetValue(
   value: unknown,
+  fieldId: string,
+  truncated: Set<string>,
 ): string | number | boolean | null {
   if (value === undefined || value === null) return null;
   if (value instanceof Date) return instantOrNull(value);
@@ -1057,14 +1071,14 @@ function toDataQueryFacetValue(
     const numeric = Number(value);
     return Number.isSafeInteger(numeric) ? numeric : null;
   }
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return capScalarString(value, fieldId, truncated);
   }
-  return nonScalarToJsonString(value);
+  const rendered = nonScalarToJsonString(value);
+  return rendered === null
+    ? null
+    : capScalarString(rendered, fieldId, truncated);
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -1291,6 +1305,7 @@ export async function executeSmrtCollectionQuery(
   if (signal) assertNotAborted(signal);
   let facets: DataQueryFacetResult[] | undefined;
 
+  const truncatedFacetValues = new Set<string>();
   if (request.mode === 'facets') {
     if (!collection.facets) {
       return queryFail(
@@ -1326,13 +1341,21 @@ export async function executeSmrtCollectionQuery(
       return {
         field: facet.field,
         values: values.map((entry) => ({
-          value: toDataQueryFacetValue(entry.value),
+          value: toDataQueryFacetValue(
+            entry.value,
+            facet.field,
+            truncatedFacetValues,
+          ),
           count: entry.count,
         })),
         truncated:
           (byField.get(facet.field)?.values.length ?? 0) >= facet.limit,
       };
     });
+  }
+
+  if (truncatedFacetValues.size > 0) {
+    warnings.push(shortenedValuesWarning(truncatedFacetValues));
   }
 
   return normalizeDataQueryResult(
@@ -1346,7 +1369,7 @@ export async function executeSmrtCollectionQuery(
       ...(facets === undefined ? {} : { facets }),
       freshness: { state: 'fresh' as const, asOf: new Date().toISOString() },
       warnings,
-      truncated: false,
+      truncated: truncatedFacetValues.size > 0,
     },
     request,
     schema,

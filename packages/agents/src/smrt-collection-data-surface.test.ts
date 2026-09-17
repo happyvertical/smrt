@@ -1413,6 +1413,39 @@ describe('executeSmrtCollectionQuery row serialization (#2933)', () => {
     expect(result.warnings?.[0]).toMatch(/and \d+ more\.$/);
   });
 
+  it('returns null for an unsafe bigint epoch rather than a wrong instant', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: 2n ** 70n }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBeNull();
+  });
+
+  it('caps an oversized facet bucket label and reports it', async () => {
+    const collection: SmrtCollectionQueryCollection = {
+      ...fakeCollection([{ id: 'e1' }]),
+      async facets({ fields }) {
+        return fields.map((field) => ({
+          field: field.field,
+          values: [{ value: 'y'.repeat(5_000), count: 1 }],
+        }));
+      },
+    };
+    const result = await executeSmrtCollectionQuery(
+      collection,
+      {
+        version: 1,
+        requestId: 'oversized-facet',
+        mode: 'facets',
+        facets: [{ field: 'name', limit: 5 }],
+      },
+      { schema: await temporalSchema(), qualifiedName: TEMPORAL_NAME },
+    );
+    expect(String(result.facets?.[0]?.values[0]?.value)).toHaveLength(4_096);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings?.join(' ')).toContain('name');
+  });
+
   it('serializes a temporal facet bucket value', async () => {
     const collection: SmrtCollectionQueryCollection = {
       ...fakeCollection([{ id: 'e1' }]),
