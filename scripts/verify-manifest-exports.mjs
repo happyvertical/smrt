@@ -241,12 +241,26 @@ const failures = [];
 const warnings = [];
 
 for (const [objectKey, objectDef] of Object.entries(objects)) {
-  if (isExcludedFromVerification(objectDef)) continue;
+  // `isExcludedFromVerification` governs EXPORT-NAME verification only. The
+  // plain-Node loadability of a non-root `importPath` is checked first, for
+  // every object, because the two questions are independent: an object can be
+  // legitimately absent from the public export surface while the entry it
+  // names still has to import under plain Node. The #2924 objects are exactly
+  // that shape — `SmrtDataSurfaceActionTask`, `DataSurfaceActionTokenState`,
+  // and `DataSurfaceActionIdempotencyState` all declare
+  // `api: false, cli: false, mcp: false`, so a check placed after the
+  // exclusion never even attempts the import and passes a broken
+  // `@happyvertical/smrt-agents/server` (verified against this repo).
+  const excludedFromExportCheck = isExcludedFromVerification(objectDef);
 
   const importPath = objectDef.importPath ?? packageName;
   const distFile = resolveDistFile(importPath);
 
   if (!distFile) {
+    // An excluded object keeps its pre-#2924 treatment here: with no export
+    // name to verify, an unresolvable importPath is not independently
+    // actionable, so do not turn it into a new release-blocking failure.
+    if (excludedFromExportCheck) continue;
     failures.push({
       kind: 'mismatch',
       message: `${objectKey}: importPath "${importPath}" does not match any package.json "exports" entry`,
@@ -258,20 +272,26 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
   if (moduleNamespace.__loadError) {
     const loadError = moduleNamespace.__loadError;
     if (ENVIRONMENT_LOAD_ERROR_CODES.has(loadError.code)) {
-      if (isBundlerOnlyImportPath(importPath)) {
-        warnings.push(
-          `${objectKey}: could not verify — loading "${distFile}" hit an environment limitation (${loadError.code}: ${loadError.message}), not evaluated as a failure`,
-        );
+      if (!isBundlerOnlyImportPath(importPath)) {
+        // A dedicated non-root subpath is a deliberate "load me from here"
+        // declaration, and the specifier the consumer plugin emits verbatim
+        // into a plain-Node `.smrt/register.js`. Tolerating an unparseable
+        // file type there is how #2924 shipped. This applies regardless of
+        // `excludedFromExportCheck`.
+        failures.push({
+          kind: 'bundler-only-subpath',
+          message: `${objectKey}: "${importPath}" is not loadable under plain Node (${loadError.code}: ${loadError.message})`,
+        });
         continue;
       }
-      // A dedicated non-root subpath is a deliberate "load me from here"
-      // declaration, and the specifier the consumer plugin emits verbatim
-      // into a plain-Node `.smrt/register.js`. Tolerating an unparseable
-      // file type there is how #2924 shipped.
-      failures.push({
-        kind: 'bundler-only-subpath',
-        message: `${objectKey}: "${importPath}" is not loadable under plain Node (${loadError.code}: ${loadError.message})`,
-      });
+      // A bundler-only ROOT barrel stays a warning (the documented
+      // smrt-products case). An excluded object contributes no warning
+      // because it was never going to be verified, and counting it would
+      // skew the summary's verified/unverifiable split.
+      if (excludedFromExportCheck) continue;
+      warnings.push(
+        `${objectKey}: could not verify — loading "${distFile}" hit an environment limitation (${loadError.code}: ${loadError.message}), not evaluated as a failure`,
+      );
       continue;
     }
     // Distinct from a real export mismatch: the manifest's importPath may be
@@ -279,12 +299,15 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
     // reason (an import-time side effect, a native/optional dependency
     // missing in this environment, or similar). Do not tell the operator to
     // "fix the importPath" for a load error.
+    if (excludedFromExportCheck) continue;
     failures.push({
       kind: 'load-error',
       message: `${objectKey}: failed to load "${distFile}" (${loadError.message})`,
     });
     continue;
   }
+
+  if (excludedFromExportCheck) continue;
 
   const exportName = objectDef.exportName ?? objectDef.className ?? objectKey;
   if (!(exportName in moduleNamespace)) {
