@@ -805,3 +805,249 @@ export class CurrentOrder extends SmrtObject {
     expect(readFileSync(join(smrtDir, 'manifest.json'), 'utf-8')).toBe(before);
   });
 });
+
+/**
+ * Issue #2923: a consumed package declares where its manifest lives through
+ * its own `package.json#exports` map (the repo's own model-package contract,
+ * enforced by `manifest/__tests__/workspace-package-manifest-exports.test.ts`).
+ * Probing only this framework's conventional paths skipped any package that
+ * builds elsewhere — `@happyvertical/smrt-products` maps
+ * `"./manifest.json": "./dist/lib/manifest.json"` — and did so with no log
+ * line at all, so the package simply contributed zero objects.
+ */
+describe('smrtConsumer manifest resolution through package exports', () => {
+  let tmpDir: string;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  function writeConsumerProject(dependencies: Record<string, string> = {}) {
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: 'consumer-app',
+        version: '1.0.0',
+        dependencies,
+      }),
+    );
+  }
+
+  function writeProviderPackage(options: {
+    packageName: string;
+    exports?: Record<string, unknown>;
+    manifestRelativePath?: string;
+    objectName?: string;
+  }) {
+    const packageDir = join(
+      tmpDir,
+      'node_modules',
+      ...options.packageName.split('/'),
+    );
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify({
+        name: options.packageName,
+        version: '9.9.9',
+        exports: options.exports ?? { '.': './dist/lib/index.js' },
+      }),
+    );
+
+    if (options.manifestRelativePath) {
+      const manifestPath = join(packageDir, options.manifestRelativePath);
+      mkdirSync(join(manifestPath, '..'), { recursive: true });
+      const objectName = options.objectName ?? 'Product';
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          moduleType: 'smrt',
+          packageName: options.packageName,
+          objects: {
+            [objectName]: {
+              className: objectName,
+              collection: 'products',
+              fields: {},
+              methods: {},
+              decoratorConfig: {},
+            },
+          },
+        }),
+      );
+    }
+
+    return packageDir;
+  }
+
+  beforeEach(() => {
+    tmpDir = resolve(
+      import.meta.dirname,
+      `__test-consumer-exports-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(tmpDir, { recursive: true });
+    writeConsumerProject();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    if (existsSync(tmpDir)) {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads a manifest published only through the exports map', async () => {
+    writeProviderPackage({
+      packageName: '@test/exported',
+      exports: {
+        '.': './dist/lib/index.js',
+        './manifest': './dist/lib/manifest.json',
+        './manifest.json': './dist/lib/manifest.json',
+      },
+      manifestRelativePath: 'dist/lib/manifest.json',
+    });
+
+    const plugin = smrtConsumer({
+      packages: ['@test/exported'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('Product');
+    expect(manifest.objects.Product).toMatchObject({
+      packageName: '@test/exported',
+      packageVersion: '9.9.9',
+      importPath: '@test/exported',
+    });
+
+    const register = readFileSync(
+      join(tmpDir, '.smrt', 'register.js'),
+      'utf-8',
+    );
+    expect(register).toContain(
+      "import * as __smrt_provider_0 from '@test/exported';",
+    );
+  });
+
+  it('follows conditional and array export targets', async () => {
+    writeProviderPackage({
+      packageName: '@test/conditional',
+      exports: {
+        '.': './dist/lib/index.js',
+        './manifest.json': [
+          { types: './dist/lib/manifest.d.ts' },
+          { default: './dist/lib/manifest.json' },
+        ],
+      },
+      manifestRelativePath: 'dist/lib/manifest.json',
+      objectName: 'Sku',
+    });
+
+    const plugin = smrtConsumer({
+      packages: ['@test/conditional'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('Sku');
+  });
+
+  it('fails the build for an explicitly listed package with no resolvable manifest', async () => {
+    writeProviderPackage({
+      packageName: '@test/manifestless',
+      exports: { '.': './dist/index.js' },
+    });
+
+    const plugin = smrtConsumer({
+      packages: ['@test/manifestless'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      /No SMRT manifest could be resolved for @test\/manifestless/,
+    );
+    expect(existsSync(join(tmpDir, '.smrt', 'manifest.json'))).toBe(false);
+  });
+
+  it('fails the build for an explicitly listed package that is not installed', async () => {
+    const plugin = smrtConsumer({
+      packages: ['@test/absent'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      /No SMRT manifest could be resolved for @test\/absent/,
+    );
+  });
+
+  it('ignores an exports target that escapes the package directory', async () => {
+    mkdirSync(join(tmpDir, 'node_modules', '@test'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'outside-manifest.json'),
+      JSON.stringify({
+        packageName: '@test/escaping',
+        objects: {
+          Smuggled: {
+            className: 'Smuggled',
+            collection: 'smuggled',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    writeProviderPackage({
+      packageName: '@test/escaping',
+      exports: { './manifest.json': '../outside-manifest.json' },
+    });
+
+    const plugin = smrtConsumer({
+      packages: ['@test/escaping'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      /No SMRT manifest could be resolved for @test\/escaping/,
+    );
+  });
+
+  it('warns by name, without failing, for a discovered package with no manifest', async () => {
+    writeConsumerProject({ '@test/smrt-discovered': '1.0.0' });
+    writeProviderPackage({
+      packageName: '@test/smrt-discovered',
+      exports: { '.': './dist/index.js' },
+    });
+
+    const plugin = smrtConsumer({
+      generateTypes: false,
+      projectRoot: tmpDir,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const warnings = warnSpy.mock.calls.map((call) => String(call[0]));
+    expect(
+      warnings.some(
+        (warning) =>
+          warning.includes('No SMRT manifest could be resolved') &&
+          warning.includes('@test/smrt-discovered'),
+      ),
+    ).toBe(true);
+  });
+});
