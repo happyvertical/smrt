@@ -63,6 +63,7 @@ import {
   registerFromManifest as _registerFromManifest,
   ensureTenantScopedField,
 } from './registry/class-registration';
+import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
   clearRegistryDiagnostics,
   flushRegistryDiagnostics,
@@ -511,6 +512,9 @@ export class ObjectRegistry {
   /**
    * WeakMap to assign unique IDs to database instances for cache keys
    * Prevents cache key collisions when different db instances are used
+   *
+   * Read sites live in `registry/db-cache-key.ts` (via shared-state) since
+   * #2306 moved the db-cache-key derivation out of `getCollection()`.
    */
   private static get dbInstanceIds(): WeakMap<object, number> {
     return getDbInstanceIds();
@@ -2071,23 +2075,13 @@ export class ObjectRegistry {
     // We use a simplified key that includes only persistence config
     // to avoid cache misses from transient options
 
-    // CRITICAL FIX for issue #384: Use unique db instance ID for cache key
-    // Without this, different tests with different db instances would share
-    // the same cached collection, causing queries to hit the wrong database
-    let dbCacheKey: string | undefined;
-    if (options.db && typeof options.db === 'object') {
-      // Get or assign unique ID for this db instance
-      if (!ObjectRegistry.dbInstanceIds.has(options.db)) {
-        ObjectRegistry.dbInstanceIds.set(options.db, ObjectRegistry.nextDbId++);
-      }
-      const dbId = ObjectRegistry.dbInstanceIds.get(options.db);
-      dbCacheKey = dbId === undefined ? undefined : `instance:${dbId}`;
-    } else if (typeof options.db === 'string') {
-      // String database URLs/paths are valid SmrtClassOptions too. They must
-      // participate in the key or two scoped callers can reuse a collection
-      // bound to the first caller's database.
-      dbCacheKey = `string:${options.db}`;
-    }
+    // CRITICAL FIX for issue #384: initialized db instances stay keyed by
+    // object identity so different tests with different db instances never
+    // share a cached collection and hit the wrong database. #2306: plain
+    // config objects are now value-keyed instead — equivalent fresh
+    // `{ type, url }` objects resolve to the same cached collection, with
+    // `:memory:` and live instances still isolated per call site.
+    const dbCacheKey = resolveCollectionDbCacheKey(options.db);
 
     const cacheKey = `${canonicalName}:${JSON.stringify({
       persistence: options.persistence,
