@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.51.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - keep server entry points free of Svelte imports (#2928) (agents)
+  - resolve consumer package manifests through package.json exports (#2927) (core)
+  - keep consumed package objects in .smrt/manifest.json (#2926) (core,cli)
+  - @happyvertical/smrt-config@0.51.8
+  - @happyvertical/smrt-types@0.51.8
+  - @happyvertical/smrt-scanner@0.51.8
+
 ## 0.51.7
 
 ### Patch Changes
