@@ -1414,6 +1414,12 @@ describe('executeSmrtCollectionQuery row serialization (#2933)', () => {
   });
 
   it('returns null for an unsafe bigint epoch rather than a wrong instant', async () => {
+    // Asserts the guarantee, not a behaviour change: `Number` only starts
+    // rounding past MAX_SAFE_INTEGER (9.007e15 ms), which is already beyond
+    // the largest representable `Date` (8.64e15 ms), so an unsafe epoch was
+    // going to become an invalid date anyway. The explicit safe-integer guard
+    // in `temporalToInstant` states the intent and matches the check used for
+    // every other `bigint` in this module.
     const result = await queryRows(
       [{ id: 'e1', startsAt: 2n ** 70n }],
       ['id', 'startsAt'],
