@@ -200,8 +200,17 @@ to publish — and only then falls back to the conventional
 `dist/manifest/static-manifest.js`, `dist/manifest.json`, and `manifest.json`
 paths. A package whose build emits elsewhere (for example a triple-purpose
 package that maps `"./manifest.json": "./dist/lib/manifest.json"`) therefore
-loads normally. Export targets that resolve outside the package directory are
-ignored.
+loads normally.
+
+Every declared target is a candidate, not a single choice: an export array is
+a fallback list and each recognized condition contributes its own target, so a
+missing first entry does not hide a valid later one. Candidates are probed in
+order and the first one that loads wins, so a candidate that exists but cannot
+be read, parsed, or imported is reported and skipped rather than ending the
+search — the conventional paths stay reachable behind a stale or malformed
+export target. Targets that resolve outside the package directory are dropped,
+both lexically and after following symlinks; the package root is itself
+resolved through symlinks first, so pnpm and workspace installs are unaffected.
 
 A package that yields no usable manifest is never skipped silently. An entry in
 an explicit `packages` list is an assertion, so it fails the build by name;

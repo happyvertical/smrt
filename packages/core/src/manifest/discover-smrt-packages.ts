@@ -32,7 +32,16 @@ import { manifestExportCandidates } from './package-manifest-exports.js';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
-const CACHE_VERSION = 4;
+/**
+ * Bump whenever what counts as a discoverable package changes, not only when
+ * the cache file's shape changes. Version 5 adds export-map manifest
+ * resolution (#2923): a version-4 cache can hold an EMPTY package list, and
+ * `getCachedDiscovery()` skips manifest rehashing in that case, so without
+ * this bump a project would keep replaying the pre-fix "no packages" answer
+ * and never re-probe a package whose manifest is only at, say,
+ * `dist/lib/manifest.json`.
+ */
+const CACHE_VERSION = 5;
 
 /** Timing data for --timing flag */
 interface TimingData {

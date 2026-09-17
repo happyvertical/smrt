@@ -372,4 +372,75 @@ describe('discoverSmrtPackages', () => {
       packageName,
     );
   });
+  /**
+   * PR #2927 review: the export-aware probe can be hidden by a cache written
+   * before it existed. A cached EMPTY package list skips manifest rehashing
+   * in `getCachedDiscovery()`, so only the cache version can invalidate it.
+   */
+  it('invalidates a pre-export-resolution discovery cache', () => {
+    testDir = mkdtempSync(join(tmpdir(), 'smrt-discovery-cache-version-'));
+    const packageName = '@happyvertical/smrt-cached-exported';
+    const packageDir = join(
+      testDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-cached-exported',
+    );
+    const cachePath = join(testDir, '.smrt', 'discovery-cache.json');
+
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: { [packageName]: '1.0.0' },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: packageName,
+          type: 'module',
+          main: 'dist/lib/index.js',
+          exports: {
+            '.': './dist/lib/index.js',
+            './manifest': './dist/lib/manifest.json',
+            './manifest.json': './dist/lib/manifest.json',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(packageDir, 'dist', 'lib', 'index.js'), 'export {};\n');
+
+    // Nothing to discover yet, so this writes a cache with an empty list.
+    expect(discoverSmrtPackages({ baseDir: testDir })).toEqual([]);
+
+    // Age that cache to the version in use before export resolution existed.
+    const staleCache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+    expect(staleCache.packages).toEqual([]);
+    writeFileSync(
+      cachePath,
+      JSON.stringify({ ...staleCache, version: 4 }, null, 2),
+    );
+
+    // The manifest only ever exists at the exported, non-conventional path.
+    writeFileSync(
+      join(packageDir, 'dist', 'lib', 'manifest.json'),
+      JSON.stringify(
+        { moduleType: 'smrt', version: '1.0.0', packageName, objects: {} },
+        null,
+        2,
+      ),
+    );
+
+    expect(discoverSmrtPackages({ baseDir: testDir })).toContain(packageName);
+  });
 });

@@ -6,6 +6,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -1025,6 +1026,159 @@ describe('smrtConsumer manifest resolution through package exports', () => {
     await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
       /No SMRT manifest could be resolved for @test\/escaping/,
     );
+  });
+
+  it('ignores an exported target that is a symlink out of the package', async () => {
+    // The containment check must hold against links, not just `../`: the
+    // resolved file is read, parsed, and for `.js` targets imported by the
+    // consumer build (PR #2927 review).
+    mkdirSync(join(tmpDir, 'node_modules', '@test'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'linked-manifest.json'),
+      JSON.stringify({
+        packageName: '@test/symlinked',
+        objects: {
+          Smuggled: {
+            className: 'Smuggled',
+            collection: 'smuggled',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    const packageDir = writeProviderPackage({
+      packageName: '@test/symlinked',
+      exports: { './manifest.json': './dist/lib/manifest.json' },
+    });
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    symlinkSync(
+      join(tmpDir, 'node_modules', '@test', 'linked-manifest.json'),
+      join(packageDir, 'dist', 'lib', 'manifest.json'),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/symlinked'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      /No SMRT manifest could be resolved for @test\/symlinked/,
+    );
+  });
+
+  it('loads an exported manifest reached through a symlinked package root', async () => {
+    // pnpm and workspace installs reach a package through a symlink, so the
+    // real-path containment check must compare real paths on BOTH sides.
+    const realDir = join(tmpDir, 'store', 'real-pkg');
+    mkdirSync(join(realDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(realDir, 'package.json'),
+      JSON.stringify({
+        name: '@test/linked-root',
+        version: '9.9.9',
+        exports: { './manifest.json': './dist/lib/manifest.json' },
+      }),
+    );
+    writeFileSync(
+      join(realDir, 'dist', 'lib', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/linked-root',
+        objects: {
+          Material: {
+            className: 'Material',
+            collection: 'materials',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    mkdirSync(join(tmpDir, 'node_modules', '@test'), { recursive: true });
+    symlinkSync(realDir, join(tmpDir, 'node_modules', '@test', 'linked-root'));
+
+    const plugin = smrtConsumer({
+      packages: ['@test/linked-root'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('Material');
+  });
+
+  it('falls back to a conventional path when an exported target is malformed', async () => {
+    // Export candidates are probed first, so a stale or malformed exported
+    // target must not take away the conventional fallback (PR #2927 review).
+    const packageDir = writeProviderPackage({
+      packageName: '@test/malformed-export',
+      exports: { './manifest.json': './dist/lib/manifest.json' },
+      manifestRelativePath: 'dist/manifest.json',
+      objectName: 'Category',
+    });
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(packageDir, 'dist', 'lib', 'manifest.json'),
+      '{ this is not json',
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/malformed-export'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('Category');
+    expect(
+      warnSpy.mock.calls.some((call) =>
+        String(call[0]).includes('Could not load manifest candidate'),
+      ),
+    ).toBe(true);
+  });
+
+  it('tries every target of an export array in order', async () => {
+    // An export array is a fallback list: a missing first entry must not hide
+    // a valid later one (PR #2927 review).
+    writeProviderPackage({
+      packageName: '@test/array-fallback',
+      exports: {
+        './manifest.json': [
+          './dist/missing-manifest.json',
+          './dist/lib/manifest.json',
+        ],
+      },
+      manifestRelativePath: 'dist/lib/manifest.json',
+      objectName: 'ProductVariant',
+    });
+
+    const plugin = smrtConsumer({
+      packages: ['@test/array-fallback'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(Object.keys(manifest.objects)).toContain('ProductVariant');
   });
 
   it('warns by name, without failing, for a discovered package with no manifest', async () => {

@@ -13,7 +13,7 @@
  * without exporting it.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /**
@@ -46,34 +46,36 @@ interface ManifestExportsPackageJson {
 }
 
 /**
- * Follow one export map entry to a relative target. Handles the three shapes
- * Node allows: a string target, a conditions object, and an array of
- * fallbacks. Returns the first target that is a relative path; `null`
- * (an explicitly blocked subpath) and unknown shapes yield `undefined`.
+ * Collect every relative target an export map entry can resolve to, in
+ * preference order, appending into `targets`.
+ *
+ * All three shapes Node allows are followed. An array is a FALLBACK list, not
+ * a single choice: `['./dist/missing.json', './dist/manifest.json']` must be
+ * able to reach the second entry when the first does not exist, so every
+ * branch is collected and the caller's existence probe picks the first that
+ * is really there. A conditions object contributes each recognized condition
+ * in `MANIFEST_EXPORT_CONDITIONS` order for the same reason. `null` (an
+ * explicitly blocked subpath) and non-relative specifiers contribute nothing.
  */
-function resolveExportTarget(entry: unknown): string | undefined {
+function collectExportTargets(entry: unknown, targets: string[]): void {
   if (typeof entry === 'string') {
-    return entry.startsWith('.') ? entry : undefined;
+    if (entry.startsWith('.')) targets.push(entry);
+    return;
   }
 
   if (Array.isArray(entry)) {
-    for (const candidate of entry) {
-      const target = resolveExportTarget(candidate);
-      if (target) return target;
-    }
-    return undefined;
+    for (const candidate of entry) collectExportTargets(candidate, targets);
+    return;
   }
 
   if (entry && typeof entry === 'object') {
     const conditions = entry as Record<string, unknown>;
     for (const condition of MANIFEST_EXPORT_CONDITIONS) {
-      if (!(condition in conditions)) continue;
-      const target = resolveExportTarget(conditions[condition]);
-      if (target) return target;
+      if (condition in conditions) {
+        collectExportTargets(conditions[condition], targets);
+      }
     }
   }
-
-  return undefined;
 }
 
 /**
@@ -94,13 +96,47 @@ function readPackageJson(
   }
 }
 
+/** Lexical containment: `candidate` is at or below `base`. */
+function isWithin(base: string, candidate: string): boolean {
+  const within = relative(base, candidate);
+  if (!within) return false;
+  if (within === '..' || within.startsWith(`..${sep}`)) return false;
+  return !isAbsolute(within);
+}
+
+/**
+ * True when `candidate` stays inside `packageDir` once symlinks are followed.
+ *
+ * `resolve()`/`relative()` are purely lexical, so `dist/manifest.json` can be
+ * a symlink pointing anywhere on disk and still pass a textual check. The
+ * resolved file is read, JSON-parsed, and for `.js` targets dynamically
+ * imported by the consumer build, so the package boundary has to hold against
+ * links, not just against `../`.
+ *
+ * `packageDir` is real-path'd too: a pnpm or workspace install reaches a
+ * package through a symlink (`node_modules/@scope/pkg` ->
+ * `node_modules/.pnpm/...`), so comparing a real target path against a
+ * symlinked base would reject every legitimate manifest in those layouts.
+ * A candidate that does not exist cannot be read and is left to the caller's
+ * existence probe.
+ */
+function resolvesWithinPackage(packageDir: string, candidate: string): boolean {
+  if (!existsSync(candidate)) return true;
+  try {
+    return isWithin(realpathSync(packageDir), realpathSync(candidate));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Absolute manifest paths declared by `packageDir`'s export map, in
  * preference order and de-duplicated.
  *
- * Targets that escape the package directory are dropped: an export map is
- * third-party input, and a manifest is imported/evaluated by the consumer
- * build, so a `../` target must never widen what this framework reads.
+ * Targets that escape the package directory are dropped, lexically and after
+ * following symlinks: an export map is third-party input, and a manifest is
+ * read and possibly imported by the consumer build, so no target may widen
+ * what this framework reads.
  *
  * @param packageDir - Installed package root.
  * @param packageJson - Already-parsed `package.json`, when the caller has it.
@@ -123,16 +159,17 @@ export function manifestExportCandidates(
   const candidates: string[] = [];
 
   for (const subpath of MANIFEST_EXPORT_SUBPATHS) {
-    const target = resolveExportTarget(entries[subpath]);
-    if (!target) continue;
+    const targets: string[] = [];
+    collectExportTargets(entries[subpath], targets);
 
-    const resolved = resolve(packageDir, target);
-    const within = relative(packageDir, resolved);
-    if (!within || within === '..' || within.startsWith(`..${sep}`)) continue;
-    if (isAbsolute(within)) continue;
-    if (candidates.includes(resolved)) continue;
+    for (const target of targets) {
+      const resolved = resolve(packageDir, target);
+      if (!isWithin(packageDir, resolved)) continue;
+      if (!resolvesWithinPackage(packageDir, resolved)) continue;
+      if (candidates.includes(resolved)) continue;
 
-    candidates.push(resolved);
+      candidates.push(resolved);
+    }
   }
 
   return candidates;

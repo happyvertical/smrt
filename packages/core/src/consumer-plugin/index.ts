@@ -1007,14 +1007,29 @@ async function aggregateTypeManifests(
 
       for (const manifestPath of manifestCandidates) {
         if (fs.existsSync(manifestPath)) {
-          // Import or read the manifest
+          // Import or read the manifest. A candidate that exists but cannot be
+          // read, parsed, or imported must not end the search: the export map
+          // is probed before the conventional paths, so letting one stale or
+          // malformed exported target throw out of this loop would take away
+          // the `dist/manifest.json` fallback a package used to load through.
           let manifest: Partial<ConsumerManifest> | undefined;
-          if (manifestPath.endsWith('.js')) {
-            const manifestModule = await import(manifestPath);
-            manifest = manifestModule.staticManifest || manifestModule.default;
-          } else {
-            const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
-            manifest = JSON.parse(manifestContent) as Partial<ConsumerManifest>;
+          try {
+            if (manifestPath.endsWith('.js')) {
+              const manifestModule = await import(manifestPath);
+              manifest =
+                manifestModule.staticManifest || manifestModule.default;
+            } else {
+              const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+              manifest = JSON.parse(
+                manifestContent,
+              ) as Partial<ConsumerManifest>;
+            }
+          } catch (error) {
+            console.warn(
+              `[smrt:consumer] Could not load manifest candidate ${manifestPath} for ${packageName}; trying the next location:`,
+              error,
+            );
+            continue;
           }
 
           if (manifest?.objects) {
