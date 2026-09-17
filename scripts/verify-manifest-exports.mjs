@@ -154,6 +154,22 @@ const ENVIRONMENT_LOAD_ERROR_CODES = new Set([
 ]);
 
 /**
+ * True only for the package *root* importPath. The root barrel of a UI-bearing
+ * package is legitimately bundler-only (the `smrt-products` case described
+ * above), so an environment load error there stays a warning. Any other
+ * `importPath` is a subpath the manifest deliberately stamped — `./server`
+ * above all — and the consumer plugin emits it verbatim into a generated
+ * `.smrt/register.js` that the `smrt` CLI imports under plain Node for
+ * `db:migrate`. A subpath that cannot be loaded that way is a real defect, not
+ * an environment limitation: `@happyvertical/smrt-agents/server` reached a
+ * `.svelte` component barrel through `@happyvertical/smrt-ui/data` and broke
+ * `db:migrate` for every object in the consuming app (issue #2924).
+ */
+function isBundlerOnlyImportPath(importPath) {
+  return importPath === packageName;
+}
+
+/**
  * True for a manifest object that is itself an auto-derived `SmrtCollection`
  * companion class (e.g. `AgentSessionCollection` for `AgentSession`), using
  * the same signal `consumer-plugin/index.ts`'s own `isCollectionClass` reads
@@ -225,12 +241,28 @@ const failures = [];
 const warnings = [];
 
 for (const [objectKey, objectDef] of Object.entries(objects)) {
-  if (isExcludedFromVerification(objectDef)) continue;
+  // `isExcludedFromVerification` governs EXPORT-NAME verification only. The
+  // plain-Node loadability of a non-root `importPath` is checked first, for
+  // every object, because the two questions are independent: an object can be
+  // legitimately absent from the public export surface while the entry it
+  // names still has to import under plain Node. The #2924 objects are exactly
+  // that shape — `SmrtDataSurfaceActionTask`, `DataSurfaceActionTokenState`,
+  // and `DataSurfaceActionIdempotencyState` all declare
+  // `api: false, cli: false, mcp: false`, so a check placed after the
+  // exclusion never even attempts the import and passes a broken
+  // `@happyvertical/smrt-agents/server` (verified against this repo).
+  const excludedFromExportCheck = isExcludedFromVerification(objectDef);
 
   const importPath = objectDef.importPath ?? packageName;
   const distFile = resolveDistFile(importPath);
 
   if (!distFile) {
+    // A non-root importPath that resolves to no `exports` entry is unloadable
+    // for the same reason as the cases below: the consumer plugin emits the
+    // specifier verbatim, and Node answers `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+    // That breaks `.smrt/register.js` whether or not the object also has an
+    // export name worth verifying, so the exclusion does not apply.
+    if (excludedFromExportCheck && isBundlerOnlyImportPath(importPath)) continue;
     failures.push({
       kind: 'mismatch',
       message: `${objectKey}: importPath "${importPath}" does not match any package.json "exports" entry`,
@@ -242,6 +274,23 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
   if (moduleNamespace.__loadError) {
     const loadError = moduleNamespace.__loadError;
     if (ENVIRONMENT_LOAD_ERROR_CODES.has(loadError.code)) {
+      if (!isBundlerOnlyImportPath(importPath)) {
+        // A dedicated non-root subpath is a deliberate "load me from here"
+        // declaration, and the specifier the consumer plugin emits verbatim
+        // into a plain-Node `.smrt/register.js`. Tolerating an unparseable
+        // file type there is how #2924 shipped. This applies regardless of
+        // `excludedFromExportCheck`.
+        failures.push({
+          kind: 'bundler-only-subpath',
+          message: `${objectKey}: "${importPath}" is not loadable under plain Node (${loadError.code}: ${loadError.message})`,
+        });
+        continue;
+      }
+      // A bundler-only ROOT barrel stays a warning (the documented
+      // smrt-products case). An excluded object contributes no warning
+      // because it was never going to be verified, and counting it would
+      // skew the summary's verified/unverifiable split.
+      if (excludedFromExportCheck) continue;
       warnings.push(
         `${objectKey}: could not verify — loading "${distFile}" hit an environment limitation (${loadError.code}: ${loadError.message}), not evaluated as a failure`,
       );
@@ -252,12 +301,24 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
     // reason (an import-time side effect, a native/optional dependency
     // missing in this environment, or similar). Do not tell the operator to
     // "fix the importPath" for a load error.
+    //
+    // For a non-root importPath the exclusion does NOT apply, for the same
+    // reason as the unparseable-file-type branch above: the entry is
+    // unloadable under plain Node, so `.smrt/register.js` breaks in a
+    // consuming app regardless of whether this object also has an export name
+    // worth verifying. Restricting that to `ENVIRONMENT_LOAD_ERROR_CODES`
+    // would leave `ERR_MODULE_NOT_FOUND`, a missing named export, and every
+    // other import-time failure silently passing the guard for exactly the
+    // fully-closed objects #2924 is about.
+    if (excludedFromExportCheck && isBundlerOnlyImportPath(importPath)) continue;
     failures.push({
       kind: 'load-error',
       message: `${objectKey}: failed to load "${distFile}" (${loadError.message})`,
     });
     continue;
   }
+
+  if (excludedFromExportCheck) continue;
 
   const exportName = objectDef.exportName ?? objectDef.className ?? objectKey;
   if (!(exportName in moduleNamespace)) {
@@ -286,6 +347,9 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
 if (failures.length > 0) {
   const hasMismatch = failures.some((failure) => failure.kind === 'mismatch');
   const hasLoadError = failures.some((failure) => failure.kind === 'load-error');
+  const hasBundlerOnlySubpath = failures.some(
+    (failure) => failure.kind === 'bundler-only-subpath',
+  );
 
   console.error(
     `\n[verify-manifest-exports] ❌ ${packageName}: ${failures.length} manifest object(s) failed verification.`,
@@ -301,6 +365,11 @@ if (failures.length > 0) {
   if (hasLoadError) {
     console.error(
       '[verify-manifest-exports]    Fix (load error): the importPath may be correct — importing the target module itself failed. Check for an import-time side effect, a missing native/optional dependency in this environment, or a build issue unrelated to importPath.',
+    );
+  }
+  if (hasBundlerOnlySubpath) {
+    console.error(
+      '[verify-manifest-exports]    Fix (bundler-only subpath): a non-root importPath must import cleanly under plain Node, because the consumer plugin emits it verbatim into a generated .smrt/register.js that the smrt CLI loads with a bare import() for db:migrate. Route the entry at a Svelte-free module (e.g. @happyvertical/smrt-ui/data-surface rather than the @happyvertical/smrt-ui/data component barrel) — see issue #2924.',
     );
   }
   console.error(
