@@ -27,6 +27,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
+import { MembershipOverrideCollection } from '../collections/MembershipOverrideCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
@@ -111,6 +112,7 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
   let memberships: MembershipCollection;
   let rolePermissions: RolePermissionCollection;
   let tenantOverrides: TenantPermissionOverrideCollection;
+  let membershipOverrides: MembershipOverrideCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-ancestor-read-${randomUUID()}.db`);
@@ -122,6 +124,7 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
     memberships = await MembershipCollection.create(options);
     rolePermissions = await RolePermissionCollection.create(options);
     tenantOverrides = await TenantPermissionOverrideCollection.create(options);
+    membershipOverrides = await MembershipOverrideCollection.create(options);
   });
 
   afterEach(() => {
@@ -567,6 +570,109 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
     expect(result.permissions.has('tenants.read')).toBe(true);
   });
 
+  it('a membership DENY in the descendant tenant removes the ancestor grant', async () => {
+    const { network, publication } = await createNetwork();
+    const memberRole = await createPublicationMemberRole();
+    const { user, membership } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'denied@example.com',
+    );
+
+    const denied = (
+      await permissions.list({ where: { slug: 'publications.read' }, limit: 1 })
+    )[0];
+    await membershipOverrides.denyPermission(
+      membership.id as string,
+      denied.id as string,
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+
+    // The DENY is effective at home...
+    const own = await resolver.resolvePermissions(
+      user.id as string,
+      publication.id as string,
+    );
+    expect(own.permissions.has('publications.read')).toBe(false);
+
+    // ...so it cannot come back at the ancestor.
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect(result.permissions.has('publications.read')).toBe(false);
+    expect(result.permissions.has('tenants.read')).toBe(true);
+  });
+
+  it("a DENY on the descendant's own tenant removes the ancestor grant", async () => {
+    const { network, publication } = await createNetwork();
+    const memberRole = await createPublicationMemberRole();
+    const { user } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'tenant-denied@example.com',
+    );
+
+    const denied = (
+      await permissions.list({ where: { slug: 'publications.read' }, limit: 1 })
+    )[0];
+    await tenantOverrides.denyPermission(
+      publication.id as string,
+      denied.id as string,
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect(result.permissions.has('publications.read')).toBe(false);
+    expect(result.permissions.has('tenants.read')).toBe(true);
+  });
+
+  it('reports only descendants that actually contributed', async () => {
+    const { network, publication, desk } = await createNetwork();
+    const memberRole = await createPublicationMemberRole();
+    // Two memberships for one user: the publication contributes, the desk's
+    // permissions are entirely denied at its tenant.
+    const { user } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'multi@example.com',
+    );
+    const deskMembership = await memberships.create({
+      userId: user.id,
+      tenantId: desk.id,
+      roleId: memberRole.id,
+      status: MembershipStatus.ACTIVE,
+    });
+    await deskMembership.save();
+    for (const slug of ['publications.read', 'tenants.read']) {
+      const permission = (
+        await permissions.list({ where: { slug }, limit: 1 })
+      )[0];
+      await tenantOverrides.denyPermission(
+        desk.id as string,
+        permission.id as string,
+      );
+    }
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: { ...NETWORK_POLICY, maxDepth: 2 },
+    });
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect(result.permissions.has('publications.read')).toBe(true);
+    expect(result.ancestorReadFromTenantIds).toEqual([publication.id]);
+  });
+
   it('an inactive descendant membership contributes nothing', async () => {
     const { network, publication } = await createNetwork();
     const memberRole = await createPublicationMemberRole();
@@ -663,72 +769,143 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
     ).toBe(false);
   });
 });
-
 describe('ancestor read authorizes the operation, never a sibling tenant rows', () => {
-  let dbPath: string;
+  let db: Awaited<ReturnType<typeof getTestDatabase>>;
 
-  beforeEach(() => {
-    dbPath = join(tmpdir(), `smrt-ancestor-rows-${randomUUID()}.db`);
+  beforeEach(async () => {
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [
+        'TenantIntegration',
+        'User',
+        'Tenant',
+        'Role',
+        'Permission',
+        'Membership',
+        'RolePermission',
+        'MembershipOverride',
+        'TenantPermissionOverride',
+        'GroupMember',
+        'GroupRole',
+      ],
+    });
     enableTenancy();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     disableTenancy();
-    if (existsSync(dbPath)) {
-      try {
-        rmSync(dbPath, { force: true });
-      } catch {
-        // best effort
-      }
+    if (typeof db.close === 'function') {
+      await db.close();
     }
   });
 
-  it('a publication member granted read at the network root still cannot read a sibling publication rows', async () => {
-    const db = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      classes: ['TenantIntegration'],
+  it('grants the read operation at the network root while rows stay tenant-scoped', async () => {
+    const options = { db };
+    const users = await UserCollection.create(options);
+    const tenants = await TenantCollection.create(options);
+    const roles = await RoleCollection.create(options);
+    const permissions = await PermissionCollection.create(options);
+    const memberships = await MembershipCollection.create(options);
+    const rolePermissions = await RolePermissionCollection.create(options);
+    const integrations = await TenantIntegrationCollection.create(options);
+
+    const network = await tenants.create({ name: 'Network Root' });
+    await network.save();
+    const publication = await tenants.createChild(network.id as string, {
+      name: 'Eckville Echo',
     });
-    const integrations = await TenantIntegrationCollection.create({ db });
+    const sibling = await tenants.createChild(network.id as string, {
+      name: 'Bentley Bulletin',
+    });
 
-    const publicationTenantId = randomUUID();
-    const siblingTenantId = randomUUID();
+    const memberRole = await roles.create({
+      name: 'Member',
+      slug: 'member',
+      tenantId: null,
+      isSystem: true,
+    });
+    await memberRole.save();
+    for (const slug of ['tenant_integrations.read', 'publications.read']) {
+      const permission = await permissions.create({ slug, name: slug });
+      await permission.save();
+      await rolePermissions.addPermission(
+        memberRole.id as string,
+        permission.id as string,
+      );
+    }
 
-    await withTenant({ tenantId: publicationTenantId }, async () => {
+    const user = await users.create({ email: 'pub-member@example.com' });
+    await user.save();
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: publication.id,
+      roleId: memberRole.id,
+      status: MembershipStatus.ACTIVE,
+    });
+    await membership.save();
+
+    // Rows belonging to each publication.
+    await withTenant({ tenantId: publication.id as string }, async () => {
       const row = await integrations.create({
-        tenantId: publicationTenantId,
+        tenantId: publication.id as string,
         provider: 'aws',
         status: 'active',
       });
       await row.save();
     });
-    await withTenant({ tenantId: siblingTenantId }, async () => {
+    await withTenant({ tenantId: sibling.id as string }, async () => {
       const row = await integrations.create({
-        tenantId: siblingTenantId,
+        tenantId: sibling.id as string,
         provider: 'gcp',
         status: 'active',
       });
       await row.save();
     });
 
-    // The ancestor-read policy grants the READ OPERATION at the network root.
-    // Row scoping is a separate, unaffected layer: reading as the publication
-    // returns only the publication's rows, and asking for the sibling's rows
-    // from the publication context is an isolation error.
-    const own = await withTenant({ tenantId: publicationTenantId }, () =>
-      integrations.list({}),
-    );
-    expect(own).toHaveLength(1);
-    expect(own[0].provider).toBe('aws');
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: {
+        roles: ['member'],
+        collections: ['tenant_integrations', 'publications'],
+      },
+    });
 
+    // The OPERATION is authorized at the network root...
+    const atRoot = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect(atRoot.permissions.has('tenant_integrations.read')).toBe(true);
+    expect(atRoot.ancestorReadFromTenantIds).toEqual([publication.id]);
+
+    // ...but the ROWS are not. Reading under the network-root tenant context
+    // (which is what that authorization binds to) returns the root's own rows
+    // -- none -- and never the children's.
+    const atRootRows = await withTenant(
+      { tenantId: network.id as string },
+      () => integrations.list({}),
+    );
+    expect(atRootRows).toHaveLength(0);
+
+    // The principal's own tenant still returns only its own row.
+    const ownRows = await withTenant(
+      { tenantId: publication.id as string },
+      () => integrations.list({}),
+    );
+    expect(ownRows).toHaveLength(1);
+    expect(ownRows[0].provider).toBe('aws');
+
+    // And asking for the sibling's rows from either context is an isolation
+    // error, not a filtered result.
     await expect(
-      withTenant({ tenantId: publicationTenantId }, () =>
-        integrations.list({ where: { tenantId: siblingTenantId } }),
+      withTenant({ tenantId: publication.id as string }, () =>
+        integrations.list({ where: { tenantId: sibling.id as string } }),
       ),
     ).rejects.toThrow();
-
-    if (typeof db.close === 'function') {
-      await db.close();
-    }
+    await expect(
+      withTenant({ tenantId: network.id as string }, () =>
+        integrations.list({ where: { tenantId: sibling.id as string } }),
+      ),
+    ).rejects.toThrow();
   });
 });

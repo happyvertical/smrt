@@ -662,7 +662,9 @@ export class PermissionResolver {
    * What it grants and what it does NOT:
    *
    * - It grants the `<collection>.read` OPERATION at `tenantId`, intersected
-   *   with the permissions the descendant membership's role already holds.
+   *   with the principal's EFFECTIVE permissions in the contributing tenant —
+   *   that tenant's fully resolved set, so a membership DENY or a descendant
+   *   tenant DENY that removed the permission at home removes it here too.
    *   Nothing that is not a `read` on a declared collection can pass
    *   ({@link isAncestorReadableSlug}).
    * - It does NOT grant visibility of any tenant's rows. A principal reading a
@@ -774,31 +776,34 @@ export class PermissionResolver {
       return result;
     }
 
-    // Intersect the declared read slugs with what each contributing role
-    // ALREADY holds: the policy can never grant a permission the principal does
-    // not hold in its own tenant.
-    const contributingRoleIds = [
-      ...new Set(contributingMemberships.map((row) => row.roleId as string)),
-    ];
-    const permissionIds = new Set<string>();
-    for (const roleId of contributingRoleIds) {
-      const ids = await this.rolePermissionCollection.getPermissionIds(roleId);
-      for (const id of ids) {
-        permissionIds.add(id);
-      }
-    }
-    if (permissionIds.size === 0) {
-      return result;
-    }
-
-    const permissionsMap = await this.permissionCollection.findByIds(
-      Array.from(permissionIds),
-    );
+    // Intersect the declared read slugs with what the principal EFFECTIVELY
+    // holds in the contributing tenant — its fully resolved permission set
+    // there, not merely its role's catalog grants. Resolving the descendant
+    // applies every layer that can take a permission away: the descendant
+    // tenant's own DENY cascade, group roles, and the membership GRANT/DENY
+    // overrides whose DENY "always wins". Intersecting with the role alone
+    // would resurrect at the ancestor exactly what an administrator removed
+    // from this user at home.
+    //
+    // This cannot recurse: the contributing membership is passed explicitly,
+    // so resolving the descendant takes the direct-membership branch and never
+    // re-enters this policy.
     const granted = new Set<string>();
-    for (const permission of permissionsMap.values()) {
-      const slug = permission?.slug;
-      if (slug && isAncestorReadableSlug(slug, policy)) {
-        granted.add(slug);
+    const contributingTenantIds: string[] = [];
+    for (const contributing of contributingMemberships) {
+      const contributingTenantId = contributing.tenantId as string;
+      const own = await this.resolvePermissions(userId, contributingTenantId, {
+        membership: contributing,
+      });
+      let contributed = false;
+      for (const slug of own.permissions) {
+        if (isAncestorReadableSlug(slug, policy)) {
+          granted.add(slug);
+          contributed = true;
+        }
+      }
+      if (contributed) {
+        contributingTenantIds.push(contributingTenantId);
       }
     }
     if (granted.size === 0) {
@@ -817,8 +822,7 @@ export class PermissionResolver {
     for (const slug of granted) {
       result.permissions.add(slug);
     }
-    result.ancestorReadFromTenantIds = contributingMemberships
-      .map((row) => row.tenantId as string)
+    result.ancestorReadFromTenantIds = contributingTenantIds
       .filter((id, index, all) => all.indexOf(id) === index)
       .sort();
 

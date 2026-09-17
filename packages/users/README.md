@@ -691,7 +691,7 @@ nothing else. The bounds are hard:
 |---|---|
 | Default | Off. Undeclared, malformed, or empty-on-either-axis policies resolve exactly as before. |
 | Action | `read` only (`list`/`get` normalize to `read`). `create`/`update`/`delete`/custom actions can never travel upward. |
-| Escalation | Intersected with the permissions the descendant role already holds — never a grant the principal lacks in its own tenant. |
+| Escalation | Intersected with the principal's **effective** permissions in the contributing tenant — its fully resolved set there, so the descendant tenant's DENY cascade and the membership GRANT/DENY overrides all apply. A membership DENY that removed the permission at home removes it at the ancestor too. |
 | Role identity | Only a governed SYSTEM role (`tenantId` null, `isSystem: true`) can match a declared slug. Slugs are not unique across a hierarchy, so a tenant-scoped custom role named `member` contributes nothing — a descendant's administrator cannot mint its way into the allow-list. |
 | Direction | Strictly upward, to verified ancestors only. Siblings share no ancestor relationship and are unreachable. |
 | Precedence | Applies only when NO membership authorized the tenant. A direct membership (even inactive) still pins resolution; an ancestor tenant-level DENY still subtracts. |
@@ -712,6 +712,17 @@ generated REST/MCP surfaces, and the published `smrt.permissions` RLS variable
 all flow through — so every consumer sees one answer. Resolution is uncached:
 a membership, role, or policy change takes effect on the next resolution, and
 there is no permission cache to invalidate.
+
+**Known limitation.** The grant carries no membership, so
+`PermissionResolutionResult.membershipId` and
+`loadSessionContext().tenantAuthorization.membershipId` stay `null`. A surface
+that requires a non-empty `membershipId` for a required-tenant session — such as
+`@happyvertical/smrt-app-runtime`'s deployed runtime — therefore still refuses
+an ancestor-read-only principal (it fails closed, with
+`tenant_context_unauthorized`). Consume the grant through
+`withPrincipalPermissionContext()` / `assertOperationPermission()`, which read
+the resolved permission set. Carrying `ancestorReadFromTenantIds` into
+`tenantAuthorization` is tracked in #2947.
 
 Bind a policy to one resolver instead of the global config (tests, embedded
 runtimes) with `PermissionResolver.create(options, { ancestorReadPolicy })`;

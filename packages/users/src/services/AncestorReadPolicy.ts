@@ -28,8 +28,11 @@
  * - **Read only.** Only `<collection>.read` is ever contributed (`list`/`get`
  *   normalize to `read`). No `create`/`update`/`delete`, no custom action.
  * - **Never an escalation.** The contribution is intersected with the
- *   permissions the descendant membership's role already holds, so a principal
- *   can never gain at an ancestor something it does not hold at its own tenant.
+ *   principal's EFFECTIVE permissions in the contributing tenant — that
+ *   tenant's fully resolved set, including its DENY cascade and the
+ *   membership GRANT/DENY overrides — so a principal can never gain at an
+ *   ancestor something it does not hold at its own tenant, and a DENY that
+ *   removed a permission at home removes it at the ancestor too.
  * - **Never lateral.** The policy grants the OPERATION at the ancestor. It is
  *   NOT visibility of a sibling tenant's rows — row scoping remains the
  *   executor's job (the `@happyvertical/smrt-tenancy` interceptor and the
