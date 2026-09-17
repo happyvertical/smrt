@@ -4,8 +4,9 @@
  * Discovers all SMRT packages in node_modules by:
  * 1. Scanning node_modules directory for installed packages
  * 2. Following symlinks for workspace: dependencies
- * 3. Checking for a package manifest (`dist/manifest.json`,
- *    `.smrt/manifest.json`, or `src/manifest/manifest.json`) with moduleType: "smrt"
+ * 3. Checking for a package manifest — the location declared by the package's
+ *    own `package.json#exports` map, else `dist/manifest.json`,
+ *    `.smrt/manifest.json`, or `src/manifest/manifest.json` — with moduleType: "smrt"
  * 4. Caching results based on lockfile hash and manifest timestamps
  *
  * Cache Strategy:
@@ -27,6 +28,7 @@ import {
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { parse } from '../utils/json.js';
+import { manifestExportCandidates } from './package-manifest-exports.js';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
@@ -118,6 +120,7 @@ interface DiscoveryCache {
 
 function findManifestPath(pkgPath: string): string | null {
   const candidates = [
+    ...manifestExportCandidates(pkgPath),
     join(pkgPath, 'dist', 'manifest.json'),
     join(pkgPath, '.smrt', 'manifest.json'),
     join(pkgPath, 'src', 'manifest', 'manifest.json'),

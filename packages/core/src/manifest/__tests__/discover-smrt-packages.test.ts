@@ -307,4 +307,69 @@ describe('discoverSmrtPackages', () => {
     expect(secondPackages).toContain(packageA);
     expect(secondPackages).toContain(packageB);
   });
+  /**
+   * Issue #2923 drive-by: build-time discovery shares the consumer plugin's
+   * defect — it probed only conventional manifest paths, so a package whose
+   * export map points elsewhere (`@happyvertical/smrt-products` builds its
+   * library into `dist/lib`) was not discovered as a SMRT package at all.
+   */
+  it('discovers a package whose manifest export points outside the conventional paths', () => {
+    testDir = mkdtempSync(join(tmpdir(), 'smrt-discovery-exports-'));
+    const packageName = '@happyvertical/smrt-exported';
+    const packageDir = join(
+      testDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-exported',
+    );
+
+    mkdirSync(join(packageDir, 'dist', 'lib'), { recursive: true });
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: { [packageName]: '1.0.0' },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: packageName,
+          type: 'module',
+          main: 'dist/lib/index.js',
+          exports: {
+            '.': './dist/lib/index.js',
+            './manifest': './dist/lib/manifest.json',
+            './manifest.json': './dist/lib/manifest.json',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    writeFileSync(join(packageDir, 'dist', 'lib', 'index.js'), 'export {};\n');
+    writeFileSync(
+      join(packageDir, 'dist', 'lib', 'manifest.json'),
+      JSON.stringify(
+        {
+          moduleType: 'smrt',
+          version: '1.0.0',
+          packageName,
+          objects: {},
+        },
+        null,
+        2,
+      ),
+    );
+
+    expect(discoverSmrtPackages({ baseDir: testDir, noCache: true })).toContain(
+      packageName,
+    );
+  });
 });
