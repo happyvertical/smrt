@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop rename_data_pending false positives from blocking deploys or guessing wrong (#2914)
+  - @happyvertical/smrt-config@0.51.7
+  - @happyvertical/smrt-types@0.51.7
+  - @happyvertical/smrt-scanner@0.51.7
+
 ## 0.51.6
 
 ### Patch Changes

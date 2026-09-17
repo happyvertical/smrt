@@ -1,5 +1,14 @@
 # @happyvertical/smrt-mcp-conformance-fixture
 
+## 0.0.63
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.7
+  - @happyvertical/smrt-jobs@0.51.7
+  - @happyvertical/smrt-config@0.51.7
+
 ## 0.0.62
 
 ### Patch Changes
