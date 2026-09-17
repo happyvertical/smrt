@@ -51,15 +51,30 @@ an empty page rather than an unfiltered one. Filtered rows never hold the
 cursor back: an exhaustive page still advances to the served horizon.
 
 `pruneChangeFeed()` additionally deletes sensitive rows below the horizon on
-every sweep, ahead of either retention bound, so credentials do not sit at
-rest for the retention window. That deletes from the middle of the retained
-run, which the age bound goes to lengths to avoid — permissible only because
-these rows are unservable on every read path, so no page ever contained them
-and no cursor can fall into the gap, while `floor` and the horizon are
-untouched. The newest entry is left alone even when sensitive, preserving "a
-non-empty feed is never emptied" and sparing caught-up clients a spurious
-resync; one credential row can therefore linger until the next write moves the
-horizon past it.
+every sweep, ahead of either retention bound, so credentials do not sit at rest
+for the retention window. That deletes from the middle of the retained run,
+which the age bound goes to lengths to avoid — permissible only because these
+rows are unservable on every read path, so no page ever contained them and no
+cursor can fall into the gap. It **does** move `floor`, and usually will: a
+session is created before the first domain write and re-saved on every request,
+so the lowest retained sequences are typically credential rows. `floor` is read
+live (`MIN(seq)`) on every `getChangesSince` and never cached, so the only
+consequence is that a cursor below the new floor is answered `resyncRequired`
+and refetches — including a `since=0` client on a never-pruned feed. Extra
+resyncs, never a missed change. The horizon does not move, because the newest
+entry is retained even when it is sensitive; that preserves "a non-empty feed
+is never emptied" and means one credential row can linger until the next write
+moves the horizon past it.
+
+Because a non-observable table appends nothing, it also has no ETag source:
+`getTableVersion()` would pin at whatever an older build last wrote and then
+fall back to the global horizon, which moves only on unrelated traffic — so a
+conditional GET could answer `304` for a revoked API key or a rotated session.
+`getTableVersion()` therefore returns a deliberately **unrepeatable** value for
+such a table, making every derived ETag fresh and every conditional read a full
+200. It is the single point every ETag path goes through (the runtime
+`APIGenerator`, the generated `conditionalVersionedRead`, and route files an
+older generator already emitted), so no call site needs a special case.
 
 Scope note: the generated `_changes`/`_events` routes still gate on an
 authenticated principal only — there is no per-table permission check, and

@@ -233,6 +233,13 @@ export function publishChangeSignal(
   db: DatabaseInterface,
   signal: ChangeSignal,
 ): void {
+  // Refuse before the broadcast too, not only inside `deliverLocally` (#2937).
+  // A process on this build can drain PostgreSQL rows an OLDER build staged,
+  // and would then NOTIFY `{table: 'sessions', rowId}` onto the shared channel
+  // — putting the credential on the wire and handing it to old-build peers
+  // that forward it to their SSE clients. Those peers leak on their own
+  // account; this build must not be what feeds them.
+  if (isChangeFeedSensitiveTable(signal.table)) return;
   const dbKey = resolveDbCacheKey(db);
   deliverLocally(dbKey, signal);
   // Fire-and-forget: broadcast failures are swallowed inside broadcast.

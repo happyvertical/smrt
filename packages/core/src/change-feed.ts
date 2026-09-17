@@ -220,6 +220,14 @@ export function isChangeFeedObservableTable(tableName: string): boolean {
   );
 }
 
+/**
+ * Monotonic source for {@link getTableVersion}'s unobservable-table answer
+ * (#2937). Seeded from the clock so a process restart cannot hand a client the
+ * same validator it already holds, and incremented per call so no two reads of
+ * such a table ever share an ETag.
+ */
+let unobservableTableVersionCounter = Date.now();
+
 /** Interceptor name of the framework's change-feed writer. */
 export const CHANGE_FEED_INTERCEPTOR_NAME = 'smrt-change-feed';
 
@@ -970,6 +978,26 @@ export async function appendChange(
  * entry, preserves rollback/failure isolation, and never waits on the feed
  * head.  Direct batches allocate contiguous sequences in input order.
  */
+/**
+ * Validate one {@link appendChanges} entry, returning its normalized table and
+ * operation. Shared by the sensitive-entry filter and the batch builder so both
+ * apply exactly the same rules (#2937).
+ */
+function validateAppendChangesInput(input: AppendChangeInput): {
+  table: string;
+  operation: ChangeOperation;
+} {
+  const table = input.table?.trim();
+  if (!table) throw new Error('appendChanges requires a non-empty table name');
+  const operation = input.operation ?? 'update';
+  if (!VALID_OPERATIONS.has(operation)) {
+    throw new Error(
+      `appendChanges operation must be one of create/update/delete, got '${String(input.operation)}'`,
+    );
+  }
+  return { table, operation };
+}
+
 export async function appendChanges(
   db: DatabaseInterface,
   inputs: AppendChangeBatch,
@@ -979,9 +1007,15 @@ export async function appendChanges(
   // Credential-bearing entries are dropped before the batch is built (#2937),
   // and their slots come back `null` — the same value a staged append returns,
   // which every caller already handles. The recursion re-enters with the kept
-  // entries only, so they get the module's ordinary validation and one
-  // statement, exactly as if the sensitive entries had never been offered.
+  // entries only, so they get one statement, exactly as if the sensitive
+  // entries had never been offered.
+  //
+  // Validation of the WHOLE batch runs first, so the documented contract
+  // ("validates all inputs before writing") still holds: a malformed entry
+  // stays a thrown programming error even when it names a sensitive table, and
+  // the filter cannot absorb it into a silent `null`.
   if (inputs.some((input) => isChangeFeedSensitiveTable(input.table?.trim()))) {
+    for (const input of inputs) validateAppendChangesInput(input);
     const kept: Array<{ input: AppendChangeInput; index: number }> = [];
     inputs.forEach((input, index) => {
       if (!isChangeFeedSensitiveTable(input.table?.trim())) {
@@ -1001,15 +1035,7 @@ export async function appendChanges(
   }
 
   const entries = inputs.map((input) => {
-    const table = input.table?.trim();
-    if (!table)
-      throw new Error('appendChanges requires a non-empty table name');
-    const operation = input.operation ?? 'update';
-    if (!VALID_OPERATIONS.has(operation)) {
-      throw new Error(
-        `appendChanges operation must be one of create/update/delete, got '${String(input.operation)}'`,
-      );
-    }
+    const { table, operation } = validateAppendChangesInput(input);
     return {
       table,
       rowId: input.rowId ?? null,
@@ -1713,6 +1739,26 @@ export async function getTenantScopedChangesSince(
  * high-water mark that survives pruning would remove even that cost; it is a
  * deliberate follow-up, out of scope for this slice.
  *
+ * ## Tables the feed does not observe (#2937)
+ *
+ * The whole contract above — "any write to the table appends a new sequence
+ * strictly greater than every previously-observed value" — rests on the table
+ * being recorded at all. For a credential-bearing table it is not, so there is
+ * no version to compute: the value would pin at whatever an older build last
+ * wrote, then fall back to the global horizon, which only moves when some
+ * *other* table writes. A client revalidating with `If-None-Match` would be
+ * answered `304` for a revoked API key, a rotated session or a changed
+ * identity, and stay stale until unrelated traffic happened to bump the
+ * horizon — a silent stale read of security state.
+ *
+ * Such a table therefore gets a deliberately **unrepeatable** value, so every
+ * ETag derived from it is fresh and no conditional GET can ever produce a
+ * `304`. Those reads cost a full response every time, which is the correct
+ * trade for a credential store, and the caller needs no special case: this is
+ * the one place every ETag path (the runtime `APIGenerator`, the generated
+ * SvelteKit `conditionalVersionedRead`, and route files already emitted by an
+ * older generator) goes through.
+ *
  * Idempotently ensures the feed table exists first, so it is safe to call from
  * a read route on a raw handle that has never been written to.
  */
@@ -1724,6 +1770,16 @@ export async function getTableVersion(
   if (!name) {
     throw new Error('getTableVersion requires a non-empty table name');
   }
+
+  if (!isChangeFeedObservableTable(name)) {
+    // Never repeats, within this process or across replicas, so a concrete
+    // `If-None-Match` can never match and the read always returns a fresh 200.
+    // Deliberately NOT replica-stable: two replicas agreeing here is exactly
+    // what would let one serve a 304 against the other's stale validator.
+    unobservableTableVersionCounter += 1;
+    return unobservableTableVersionCounter;
+  }
+
   await ensureChangeFeedTable(db);
 
   const p = placeholders(db);
@@ -1861,8 +1917,17 @@ export async function pruneChangeFeed(
   // there does not apply here. That hazard is a reader silently missing a
   // committed change it should have seen; these rows are unservable on every
   // read path, so no page ever contained them and no cursor can fall into the
-  // gap. `floor` and the horizon are untouched, so `resyncRequired` detection
-  // is unaffected.
+  // gap.
+  //
+  // It CAN move `floor`, and on a real database it usually will: a session is
+  // created before the first domain write and re-saved on every request, so
+  // the lowest retained sequences are often credential rows. `floor` is read
+  // live (`MIN(seq)`) on every `getChangesSince`, never cached, so the effect
+  // is bounded and one-directional — a cursor below the new floor is told
+  // `resyncRequired` and refetches, including a `since=0` client on a
+  // never-pruned feed. That is the fail-safe direction: an extra resync, never
+  // a missed change. The horizon does not move, because the newest entry is
+  // retained.
   //
   // The newest entry is left alone even when it is sensitive, preserving the
   // "a non-empty feed is never emptied" invariant and sparing every caught-up

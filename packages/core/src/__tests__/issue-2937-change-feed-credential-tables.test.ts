@@ -37,6 +37,7 @@ import {
   CHANGE_FEED_TABLE,
   ensureChangeFeedTable,
   getChangesSince,
+  getTableVersion,
   getTenantScopedChangesSince,
   isChangeFeedObservableTable,
   pruneChangeFeed,
@@ -292,6 +293,50 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       }
       expect(seen.map((signal) => signal.table)).toEqual([PUBLIC_TABLE]);
     });
+
+    it('does not broadcast a sensitive signal to peer replicas either', async () => {
+      // `deliverLocally` alone is not enough: a process on this build can drain
+      // PostgreSQL rows an OLDER build staged, and would then NOTIFY
+      // {table:'sessions', rowId} onto the shared channel — putting the
+      // credential on the wire and handing it to old-build peers that forward
+      // it to their SSE clients.
+      const notified: unknown[] = [];
+      const notifications = {
+        notify: async (_channel: string, payload: unknown) => {
+          notified.push(payload);
+        },
+        listen: async () => ({
+          [Symbol.asyncIterator]: () => ({
+            next: async () => ({ done: true }),
+          }),
+        }),
+      };
+      (db as unknown as Record<string, unknown>).notifications = notifications;
+
+      publishChangeSignal(db, {
+        table: 'sessions',
+        operation: 'update',
+        rowId: 'owner-session-id',
+        tenantId: null,
+        seq: 1,
+      });
+      publishChangeSignal(db, {
+        table: PUBLIC_TABLE,
+        operation: 'update',
+        rowId: 'n1',
+        tenantId: null,
+        seq: 2,
+      });
+      // The broadcast is fire-and-forget; let its microtasks settle.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(JSON.stringify(notified)).not.toContain('owner-session-id');
+      expect(
+        notified.every(
+          (payload) => (payload as { table?: string }).table !== 'sessions',
+        ),
+      ).toBe(true);
+    });
   });
 
   describe('read side: rows an older build already wrote', () => {
@@ -380,6 +425,41 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
     });
   });
 
+  describe('conditional GET cannot answer a stale 304 for a sensitive table', () => {
+    it('gives a sensitive table an unrepeatable version, and an ordinary table a stable one', async () => {
+      // A non-observable table appends nothing, so getTableVersion() would pin
+      // at whatever an older build last wrote and then fall back to the global
+      // horizon, which moves only when some OTHER table writes. Every ETag path
+      // — the runtime APIGenerator, the generated conditionalVersionedRead, and
+      // route files an older generator already emitted — derives its validator
+      // from this one call, so a repeated value is a 304 for a revoked API key
+      // or a rotated session.
+      await ensureChangeFeedTable(db);
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n1');
+      await insertLegacyFeedRow(db, 'sessions', 'owner-session-id');
+
+      for (const table of ['sessions', 'api_keys', SECRET_TABLE]) {
+        const first = await getTableVersion(db, table);
+        const second = await getTableVersion(db, table);
+        const third = await getTableVersion(db, table);
+        expect(second).not.toBe(first);
+        expect(third).not.toBe(second);
+        expect(third).not.toBe(first);
+        // Strictly increasing, so a validator is never re-minted either.
+        expect(second).toBeGreaterThan(first);
+        expect(third).toBeGreaterThan(second);
+      }
+
+      // An ordinary table keeps the documented replica-stable contract: two
+      // reads with no write in between agree, and a write advances it.
+      const before = await getTableVersion(db, PUBLIC_TABLE);
+      expect(await getTableVersion(db, PUBLIC_TABLE)).toBe(before);
+      const notes = await Issue2937PublicNoteCollection.create({ db });
+      await notes.create({ body: 'moves the version' });
+      expect(await getTableVersion(db, PUBLIC_TABLE)).toBeGreaterThan(before);
+    });
+  });
+
   describe('retention purges credential rows at rest', () => {
     it('deletes them regardless of age or row budget', async () => {
       await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n1');
@@ -402,6 +482,39 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       expect(await feedRowCount(db, 'api_keys')).toBe(0);
       expect(await feedRowCount(db, SECRET_TABLE)).toBe(0);
       expect(await feedRowCount(db, PUBLIC_TABLE)).toBe(2);
+    });
+
+    it('moves floor when the oldest rows were sensitive, and fails safe by asking for a resync', async () => {
+      // The realistic shape: a session exists before the first domain write and
+      // is re-saved on every request, so the LOWEST retained sequences are
+      // credential rows. Purging them raises MIN(seq). That is a deliberate
+      // departure from the age bound's prefix-only rule; what it must never do
+      // is lose a change silently, so pin the fail-safe direction.
+      await insertLegacyFeedRow(db, 'sessions', 'oldest-session');
+      await insertLegacyFeedRow(db, 'sessions', 'second-session');
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n1');
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n2');
+
+      await pruneChangeFeed(db, { maxAgeMs: 30 * 24 * 60 * 60 * 1000 });
+      expect(await feedRowCount(db, 'sessions')).toBe(0);
+
+      // floor is now 3, so a since=0 client is told to resync rather than being
+      // served a page that silently omits sequences 1-2.
+      const page = await getChangesSince(db, { since: 0 });
+      expect(page.resyncRequired).toBe(true);
+      expect(page.changes).toEqual([]);
+      expect(page.cursor).toBe(0);
+      expect(page.resyncCursor).toBe(4);
+
+      // Resuming from the advertised resyncCursor works normally.
+      const resumed = await getChangesSince(db, { since: page.resyncCursor! });
+      expect(resumed.resyncRequired).toBeUndefined();
+      expect(resumed.changes).toEqual([]);
+
+      // A cursor already inside the retained run is still served incrementally.
+      const inWindow = await getChangesSince(db, { since: 3 });
+      expect(inWindow.resyncRequired).toBeUndefined();
+      expect(inWindow.changes.map((change) => change.rowId)).toEqual(['n2']);
     });
   });
 });
