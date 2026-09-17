@@ -27,11 +27,12 @@
  *   same-named custom role.
  * - **Read only.** Only `<collection>.read` is ever contributed (`list`/`get`
  *   normalize to `read`). No `create`/`update`/`delete`, no custom action.
- * - **Never an escalation.** The contribution is intersected with the
- *   principal's EFFECTIVE permissions in the contributing tenant — that
- *   tenant's fully resolved set, including its DENY cascade and the
- *   membership GRANT/DENY overrides — so a principal can never gain at an
- *   ancestor something it does not hold at its own tenant, and a DENY that
+ * - **Never an escalation, in either direction.** The contribution is
+ *   intersected with BOTH the declared role's own catalog grants AND the
+ *   principal's effective permissions in the contributing tenant. The role
+ *   bound keeps the contribution inside what the ancestor declared, so a
+ *   descendant tenant's administrator cannot widen it with a tenant GRANT, a
+ *   group role, or a membership GRANT. The effective bound means a DENY that
  *   removed a permission at home removes it at the ancestor too.
  * - **Never lateral.** The policy grants the OPERATION at the ancestor. It is
  *   NOT visibility of a sibling tenant's rows — row scoping remains the
@@ -90,8 +91,10 @@ export interface AncestorReadPolicy {
   roles: readonly string[];
   /**
    * Collection slugs whose `read` permission may travel upward. Required and
-   * non-empty. A trailing `*` wildcard is supported (`'site_*'`); `'*'` alone
-   * means every collection the descendant role can already read.
+   * non-empty. `*` is a wildcard matching any run of characters and may appear
+   * anywhere in the pattern (`'site_*'`, `'*_pages'`, `'a*b'`); `'*'` alone
+   * means every collection the declared role can already read. Matching is
+   * case-insensitive and applies to the collection segment only.
    */
   collections: readonly string[];
   /**
@@ -194,14 +197,17 @@ function matchesCollectionPattern(
 }
 
 /**
- * Decide whether a permission slug the descendant role already holds may
- * travel upward under this policy.
+ * Decide whether a permission slug offered by the caller may travel upward
+ * under this policy.
  *
  * A slug qualifies only when it is a `<collection>.<action>` pair whose action
  * normalizes to `read` and whose collection matches a declared pattern. A slug
  * with no action segment, extra segments, or any non-read action is rejected —
  * this is the single place the read-only invariant is enforced, so a write
- * permission cannot reach an ancestor through any declaration.
+ * permission cannot reach an ancestor through any declaration. The caller is
+ * responsible for the separate bounds on WHICH slugs are offered here (the
+ * declared role's own grants, intersected with what the principal effectively
+ * holds in the contributing tenant).
  */
 export function isAncestorReadableSlug(
   slug: string,

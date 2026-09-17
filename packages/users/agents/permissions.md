@@ -29,9 +29,10 @@ consumers; membership null can mean inherited authority.
    (smrt#2939): the user's ACTIVE memberships on VERIFIED DESCENDANTS of the
    target, whose role slug is declared in `permissions.ancestorRead.roles` and
    within `maxDepth` hops, contribute `<collection>.read` for declared
-   collections, intersected with the principal's EFFECTIVE permissions in that
-   descendant (its fully resolved set, so its DENY cascade and membership
-   DENY apply). Only a SYSTEM
+   collections, intersected with BOTH that role's own catalog grants (so a
+   descendant-side tenant GRANT, group role, or membership GRANT cannot widen
+   it) AND the principal's effective permissions in that descendant (so its
+   DENY cascade and membership DENY apply). Only a SYSTEM
    role (`tenantId` null, `isSystem: true`) matches a declared slug: slugs are
    not unique across a hierarchy, so a tenant-scoped custom role of the same
    name must not opt its tenant in. Off by default;

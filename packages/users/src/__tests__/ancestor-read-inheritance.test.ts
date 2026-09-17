@@ -26,6 +26,9 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { GroupCollection } from '../collections/GroupCollection.js';
+import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
+import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { MembershipOverrideCollection } from '../collections/MembershipOverrideCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
@@ -113,6 +116,9 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
   let rolePermissions: RolePermissionCollection;
   let tenantOverrides: TenantPermissionOverrideCollection;
   let membershipOverrides: MembershipOverrideCollection;
+  let groups: GroupCollection;
+  let groupMembers: GroupMemberCollection;
+  let groupRoles: GroupRoleCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-ancestor-read-${randomUUID()}.db`);
@@ -125,6 +131,9 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
     rolePermissions = await RolePermissionCollection.create(options);
     tenantOverrides = await TenantPermissionOverrideCollection.create(options);
     membershipOverrides = await MembershipOverrideCollection.create(options);
+    groups = await GroupCollection.create(options);
+    groupMembers = await GroupMemberCollection.create(options);
+    groupRoles = await GroupRoleCollection.create(options);
   });
 
   afterEach(() => {
@@ -319,6 +328,127 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
       network.id as string,
     );
 
+    expect([...result.permissions]).toEqual(['publications.read']);
+  });
+
+  it('a descendant tenant GRANT cannot widen what travels upward', async () => {
+    const { network, publication } = await createNetwork();
+    // The declared system role grants publications.read but NOT tenants.read.
+    const memberRole = await createRoleGranting('member', 'Member', [
+      'publications.read',
+    ]);
+    const { user } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'granted@example.com',
+    );
+
+    // The descendant tenant's own administrator adds tenants.read there.
+    const extra = await permissions.create({
+      slug: 'tenants.read',
+      name: 'tenants.read',
+    });
+    await extra.save();
+    await tenantOverrides.grantPermission(
+      publication.id as string,
+      extra.id as string,
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+
+    // It IS effective at home...
+    const own = await resolver.resolvePermissions(
+      user.id as string,
+      publication.id as string,
+    );
+    expect(own.permissions.has('tenants.read')).toBe(true);
+
+    // ...but it is not what the ancestor declared, so it stays there.
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect([...result.permissions]).toEqual(['publications.read']);
+  });
+
+  it('a membership GRANT cannot widen what travels upward', async () => {
+    const { network, publication } = await createNetwork();
+    const memberRole = await createRoleGranting('member', 'Member', [
+      'publications.read',
+    ]);
+    const { user, membership } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'mgrant@example.com',
+    );
+
+    const extra = await permissions.create({
+      slug: 'tenants.read',
+      name: 'tenants.read',
+    });
+    await extra.save();
+    await membershipOverrides.grantPermission(
+      membership.id as string,
+      extra.id as string,
+    );
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+    const own = await resolver.resolvePermissions(
+      user.id as string,
+      publication.id as string,
+    );
+    expect(own.permissions.has('tenants.read')).toBe(true);
+
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
+    expect([...result.permissions]).toEqual(['publications.read']);
+  });
+
+  it('a group role cannot widen what travels upward', async () => {
+    const { network, publication } = await createNetwork();
+    const memberRole = await createRoleGranting('member', 'Member', [
+      'publications.read',
+    ]);
+    const { user } = await createMember(
+      publication.id as string,
+      memberRole.id as string,
+      'grouped@example.com',
+    );
+
+    // A tenant-scoped custom role, carried by a group in the descendant.
+    const groupRole = await createRoleGranting(
+      'editors',
+      'Editors (tenant-local)',
+      ['tenants.read'],
+      { tenantId: publication.id as string, isSystem: false },
+    );
+    const group = await groups.create({
+      name: 'Desk',
+      tenantId: publication.id,
+    });
+    await group.save();
+    await groupRoles.addRole(group.id as string, groupRole.id as string);
+    await groupMembers.addMember(group.id as string, user.id as string);
+
+    const resolver = await PermissionResolver.create(options, {
+      ancestorReadPolicy: NETWORK_POLICY,
+    });
+    const own = await resolver.resolvePermissions(
+      user.id as string,
+      publication.id as string,
+    );
+    expect(own.permissions.has('tenants.read')).toBe(true);
+
+    const result = await resolver.resolvePermissions(
+      user.id as string,
+      network.id as string,
+    );
     expect([...result.permissions]).toEqual(['publications.read']);
   });
 

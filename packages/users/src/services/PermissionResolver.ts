@@ -650,6 +650,30 @@ export class PermissionResolver {
   }
 
   /**
+   * The permission slugs a role grants through the role-permission catalog,
+   * excluding every per-tenant, per-group, and per-membership override.
+   */
+  private async getRolePermissionSlugs(roleId: string): Promise<Set<string>> {
+    const slugs = new Set<string>();
+    if (!roleId) {
+      return slugs;
+    }
+    const permissionIds =
+      await this.rolePermissionCollection.getPermissionIds(roleId);
+    if (permissionIds.length === 0) {
+      return slugs;
+    }
+    const permissionsMap =
+      await this.permissionCollection.findByIds(permissionIds);
+    for (const permission of permissionsMap.values()) {
+      if (permission?.slug) {
+        slugs.add(permission.slug);
+      }
+    }
+    return slugs;
+  }
+
+  /**
    * Contribute declared, read-only permissions from the user's memberships on
    * DESCENDANTS of the tenant being resolved (smrt#2939).
    *
@@ -662,11 +686,13 @@ export class PermissionResolver {
    * What it grants and what it does NOT:
    *
    * - It grants the `<collection>.read` OPERATION at `tenantId`, intersected
-   *   with the principal's EFFECTIVE permissions in the contributing tenant —
-   *   that tenant's fully resolved set, so a membership DENY or a descendant
-   *   tenant DENY that removed the permission at home removes it here too.
-   *   Nothing that is not a `read` on a declared collection can pass
-   *   ({@link isAncestorReadableSlug}).
+   *   with BOTH the declared role's own catalog grants AND the principal's
+   *   effective permissions in the contributing tenant. The role bound keeps
+   *   the contribution inside what the ancestor declared, so a descendant
+   *   administrator cannot widen it with a tenant GRANT, a group role, or a
+   *   membership GRANT; the effective bound makes a membership DENY or a
+   *   descendant-tenant DENY effective here too. Nothing that is not a `read`
+   *   on a declared collection can pass ({@link isAncestorReadableSlug}).
    * - It does NOT grant visibility of any tenant's rows. A principal reading a
    *   tenant-scoped collection is still filtered by the tenancy interceptor and
    *   Postgres RLS to the tenant its context is bound to, so a member of child
@@ -776,27 +802,49 @@ export class PermissionResolver {
       return result;
     }
 
-    // Intersect the declared read slugs with what the principal EFFECTIVELY
-    // holds in the contributing tenant — its fully resolved permission set
-    // there, not merely its role's catalog grants. Resolving the descendant
-    // applies every layer that can take a permission away: the descendant
-    // tenant's own DENY cascade, group roles, and the membership GRANT/DENY
-    // overrides whose DENY "always wins". Intersecting with the role alone
-    // would resurrect at the ancestor exactly what an administrator removed
-    // from this user at home.
-    //
-    // This cannot recurse: the contributing membership is passed explicitly,
-    // so resolving the descendant takes the direct-membership branch and never
-    // re-enters this policy.
+    // A slug travels upward only if it survives BOTH bounds: the declared
+    // role's own catalog grants, and the principal's effective permissions in
+    // the contributing tenant. The first keeps the contribution inside what
+    // the ancestor declared; the second makes every DENY at home effective
+    // here. Either alone is exploitable by the descendant tenant's own
+    // administrator, in opposite directions.
     const granted = new Set<string>();
     const contributingTenantIds: string[] = [];
     for (const contributing of contributingMemberships) {
       const contributingTenantId = contributing.tenantId as string;
+
+      // The DECLARED bound: the catalog grants of the declared system role
+      // itself. The effective set below is a union of four sources, three of
+      // which a descendant tenant's own administrator controls — that tenant's
+      // TenantPermissionOverride GRANTs, its group roles (which may be bound
+      // to tenant-scoped custom roles), and membership GRANT overrides. Taking
+      // the effective set alone would let that administrator widen what
+      // travels upward beyond the role the ancestor actually declared, which
+      // is the same escalation the system-role requirement above closes for
+      // slug collisions.
+      const roleGrantSlugs = await this.getRolePermissionSlugs(
+        contributing.roleId as string,
+      );
+      if (roleGrantSlugs.size === 0) {
+        continue;
+      }
+
+      // The EFFECTIVE bound: what the principal actually holds in that tenant,
+      // so a membership DENY or a descendant-tenant DENY that removed the
+      // permission at home removes it here too.
+      //
+      // This cannot recurse: the contributing membership is passed explicitly,
+      // so resolving the descendant takes the direct-membership branch and
+      // never re-enters this policy.
       const own = await this.resolvePermissions(userId, contributingTenantId, {
         membership: contributing,
       });
+
       let contributed = false;
       for (const slug of own.permissions) {
+        if (!roleGrantSlugs.has(slug)) {
+          continue;
+        }
         if (isAncestorReadableSlug(slug, policy)) {
           granted.add(slug);
           contributed = true;
