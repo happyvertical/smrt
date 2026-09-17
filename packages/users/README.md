@@ -646,6 +646,100 @@ returned by `resolvePermissions()` and `SessionService.loadSessionContext()`.
 
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 
+### Read-only ancestor visibility (opt-in, off by default)
+
+Membership authority travels DOWN the hierarchy: a direct membership in the
+tenant being resolved, or — per role, via `inheritsToDescendants` — the nearest
+active ancestor membership. Nothing a user holds on a DESCENDANT contributes
+anything at an ancestor, so a principal whose only membership is on a child
+tenant resolves to **no permissions** at the root. That is the safe default and
+it stays the default.
+
+Some hierarchies legitimately need the other direction for *reading*: a
+network-level list that members of the network's child publications are meant
+to see. Declare it explicitly:
+
+```typescript
+// smrt.config.ts
+export default defineConfig({
+  packages: {
+    users: {
+      permissions: {
+        ancestorRead: {
+          // Descendant SYSTEM role slugs allowed to contribute upward.
+          // Exact match, and only `tenantId: null, isSystem: true` roles
+          // (what `seedSystemRoles()` creates) can match.
+          roles: ['member', 'editor'],
+          // Collections whose `read` may travel up. `*` matches any run of
+          // characters and may appear anywhere (`'site_*'`, `'*_pages'`);
+          // `'*'` alone means every collection the declared role can read.
+          collections: ['publications', 'tenants'],
+          // Hierarchy hops from the membership up to the tenant being
+          // resolved. Default 1 (immediate parent only).
+          maxDepth: 2,
+        },
+      },
+    },
+  },
+});
+```
+
+With that declared, `resolvePermissions(user, networkRootId)` for a
+publication-only `member` returns `publications.read` and `tenants.read` — and
+nothing else. The bounds are hard:
+
+| Rule | Behavior |
+|---|---|
+| Default | Off. Undeclared, malformed, or empty-on-either-axis policies resolve exactly as before. |
+| Action | `read` only (`list`/`get` normalize to `read`). `create`/`update`/`delete`/custom actions can never travel upward. |
+| Escalation | Intersected with **both** the declared role's own catalog grants **and** the principal's effective permissions in the contributing tenant. The role bound means a descendant administrator cannot widen the contribution with a tenant GRANT, a group role, or a membership GRANT; the effective bound means a DENY that removed the permission at home removes it at the ancestor too. |
+| Role identity | Only a governed SYSTEM role (`tenantId` null, `isSystem: true`) can match a declared slug. Slugs are not unique across a hierarchy, so a tenant-scoped custom role named `member` contributes nothing — a descendant's administrator cannot mint its way into the allow-list. |
+| Direction | Strictly upward, to verified ancestors only. Siblings share no ancestor relationship and are unreachable. |
+| Precedence | Applies only when NO membership authorized the tenant. A direct membership (even inactive) still pins resolution; an ancestor tenant-level DENY still subtracts. |
+| Hierarchy | The materialized `hierarchyPath` is verified link-by-link against real `parentTenantId` rows; stale, over-deep, or inconsistent paths fail closed. |
+| Bypass | Super-admin and system-context bypass are unchanged. |
+
+**This grants the operation, not the rows.** An ancestor-read grant authorizes
+`publications.read` *at the ancestor*. It is not visibility of any sibling
+tenant's rows: row scoping remains with the `@happyvertical/smrt-tenancy`
+interceptor and the generated Postgres RLS policies, which still bind reads to
+the tenant the context is entered with. A member of publication A authorized at
+the network root still cannot read publication B's rows.
+
+Resolution happens inside `PermissionResolver.resolvePermissions()`, the single
+point `SessionService.loadSessionContext()`,
+`withPrincipalPermissionContext()`, `assertOperationPermission()`, the
+generated REST/MCP surfaces, and the published `smrt.permissions` RLS variable
+all flow through — so every consumer sees one answer. Resolution is uncached:
+a membership, role, or policy change takes effect on the next resolution, and
+there is no permission cache to invalidate.
+
+**Known limitation.** The grant carries no membership, so
+`PermissionResolutionResult.membershipId` and
+`loadSessionContext().tenantAuthorization.membershipId` stay `null`. A surface
+that requires a non-empty `membershipId` for a required-tenant session — such as
+`@happyvertical/smrt-app-runtime`'s deployed runtime — therefore still refuses
+an ancestor-read-only principal (it fails closed, with
+`tenant_context_unauthorized`). Consume the grant through
+`withPrincipalPermissionContext()` / `assertOperationPermission()`, which read
+the resolved permission set. Carrying `ancestorReadFromTenantIds` into
+`tenantAuthorization` is tracked in #2947.
+
+Bind a policy to one resolver instead of the global config (tests, embedded
+runtimes) with `PermissionResolver.create(options, { ancestorReadPolicy })`;
+pass `null` to force it off regardless of configuration.
+
+#### Adoption note
+
+This is additive and off by default — no migration is required, and no existing
+deployment changes behavior until `permissions.ancestorRead` is declared. When
+adopting it, declare the **narrowest** role and collection lists that make the
+ancestor-level list work, and keep `maxDepth` at the smallest value your
+hierarchy needs. `roles` must name system-role slugs; a tenant-scoped role with
+the same slug is ignored by design. Do not reach for it to grant an ancestor-level action: if a
+principal needs to *act* at the root, give it a root membership or a role
+grant, not a read policy.
+
 ### Tenant policies
 
 TenantService supports three modes: `flexible` (no auto-create), `personal` (auto-create on first login, deletable), `required` (auto-create, must keep at least one).
@@ -683,7 +777,8 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 
 | Export | Description |
 |--------|-------------|
-| `PermissionResolver` | Resolves effective permissions via 4-level cascade. `hasPermission()`, `resolvePermissions()`. |
+| `PermissionResolver` | Resolves effective permissions via 4-level cascade. `hasPermission()`, `resolvePermissions()`. Honors the opt-in `permissions.ancestorRead` policy. |
+| `normalizeAncestorReadPolicy()`, `getConfiguredAncestorReadPolicy()`, `isAncestorReadableSlug()` | Validate and apply the declared read-only ancestor-visibility policy. |
 | `PermissionCatalogService`, `syncPermissionCatalog()` | Discovers manifest/config/runtime permissions and upserts them into `Permission` rows. |
 | `registerPermissionDefinitions()` | Register app or integration permissions at runtime and receive an unregister cleanup function. |
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
