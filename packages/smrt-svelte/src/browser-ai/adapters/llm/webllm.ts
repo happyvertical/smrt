@@ -196,12 +196,24 @@ export class WebLLMAdapter implements LLMAdapter {
   }
 
   private async importWebLLM(): Promise<WebLLMModule> {
+    // A host-supplied loader is the only form that works in a browser: the
+    // default resolves a VARIABLE specifier (so this module never hard-depends
+    // on an optional peer), which the browser cannot resolve on its own.
+    const { loadModule } = this.options;
     try {
-      return await importOptional<WebLLMModule>('@mlc-ai/web-llm');
+      return (
+        loadModule
+          ? await loadModule()
+          : await importOptional<WebLLMModule>('@mlc-ai/web-llm')
+      ) as WebLLMModule;
     } catch {
       throw new InitializationError(
         'webllm',
-        '@mlc-ai/web-llm not installed. Run: npm install @mlc-ai/web-llm',
+        loadModule
+          ? 'The supplied WebLLM loader rejected while loading @mlc-ai/web-llm.'
+          : '@mlc-ai/web-llm could not be loaded. Install it, or pass a ' +
+              '`loadModule` that imports it statically: ' +
+              '`() => import("@mlc-ai/web-llm")`.',
       );
     }
   }

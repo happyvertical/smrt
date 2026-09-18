@@ -1,28 +1,48 @@
 <script lang="ts">
-import { Select } from '@happyvertical/smrt-ui/forms';
+import { useViewIntent } from '@happyvertical/smrt-svelte';
+import {
+  createBitGpuInferenceBackend,
+  createWebLlmInferenceBackend,
+} from '@happyvertical/smrt-svelte/browser-ai';
+import { ModelStatusControl } from '@happyvertical/smrt-svelte/browser-ai/svelte';
+import {
+  createControlInteractionRegistry,
+  Form,
+  Input,
+  Select,
+  StagedControlReview,
+} from '@happyvertical/smrt-ui/forms';
 import {
   ColorSchemeToggle,
   ThemeProvider,
 } from '@happyvertical/smrt-ui/themes';
+// `ThemeProvider` for a BUILT-IN preset only sets `data-theme` /
+// `data-color-scheme` on its wrapper — it deliberately emits no inline
+// variables, because built-ins ship their palette as static CSS. Without these
+// imports the attributes are present but no `--smrt-color-*` variable exists,
+// so every themed surface paints transparent. `all.css` (every preset) matches
+// `smrt-workbench/host`, which is the pattern for a host that can switch presets.
+import '@happyvertical/smrt-ui/themes/styles/all.css';
+import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import {
+  createInferencePath,
+  createRouteInferenceBackend,
+  type InferenceBackend,
+  InferencePathError,
+} from '@happyvertical/smrt-web/ai';
 import { onMount } from 'svelte';
 import ChatLayout from '../svelte/components/layout/ChatLayout.svelte';
 import RoomHeader from '../svelte/components/layout/RoomHeader.svelte';
 import MessageInput from '../svelte/components/messages/MessageInput.svelte';
 import MessageList from '../svelte/components/messages/MessageList.svelte';
 import type { ChatMessageData, ChatRoomData } from '../svelte/types.js';
+import { stageDraftSubjectIntent } from './chat-dev.intents.js';
 
 type DevChatMode = 'ai' | 'local';
 type WorkbenchMode = 'text' | 'voice';
-
-interface DevChatResponse {
-  mode: DevChatMode;
-  provider?: string;
-  model?: string;
-  content: string;
-  configured: boolean;
-  warning?: string;
-}
+/** Which inference backend this workbench pins, or `auto` to let the path pick. */
+type InferencePreference = 'auto' | 'bitgpu' | 'local' | 'route';
 
 interface DevVoiceConfig {
   configured: boolean;
@@ -51,6 +71,16 @@ interface VoiceControlFrame {
 
 const currentProfileId = 'profile-dev-user';
 const assistantProfileId = 'agent-dev-assistant';
+// `bitgpu` publishes a per-model manifest + aux index in its own repo; the Bonsai
+// weights stream from the Hub and the tokenizer from the matching ONNX repo.
+const BITGPU_MODELS =
+  'https://cdn.jsdelivr.net/gh/stfurkan/bitgpu@v0.19.1/models/bonsai-1.7b-gguf';
+const BITGPU_TOKENS =
+  'https://huggingface.co/onnx-community/Bonsai-1.7B-ONNX/resolve/main';
+// The dev draft form, and the control an agent may STAGE into. `useViewIntent`
+// needs both spelled out, and the intent's declaration names them too.
+const DRAFT_FORM_ID = 'chat-dev-draft';
+const DRAFT_CONTROL_ID = 'draft-subject';
 const VOICE_CAPTURE_WORKLET_NAME = 'smrt-voice-capture';
 const VOICE_CAPTURE_WORKLET_SOURCE = `
 class SmrtVoiceCaptureProcessor extends AudioWorkletProcessor {
@@ -164,6 +194,7 @@ let pendingRoomId = $state<string | null>(null);
 let statusText = $state('Local endpoint ready');
 let backendMode = $state<DevChatMode>('local');
 let backendDetail = $state('No AI response yet');
+let inferencePreference = $state<InferencePreference>('auto');
 let warning = $state<string | null>(null);
 let workbenchMode = $state<WorkbenchMode>('text');
 let voiceConfig = $state<DevVoiceConfig | null>(null);
@@ -183,6 +214,83 @@ let voiceSource: MediaStreamAudioSourceNode | null = null;
 let voiceProcessor: AudioWorkletNode | null = null;
 let activeVoiceAudio: HTMLAudioElement | null = null;
 let activeVoiceAudioUrl: string | null = null;
+
+// --- Agent-addressable draft form (#2588) ------------------------------------
+//
+// The workbench has no <Provider>, so the intent binds against an EXPLICIT
+// registry rather than resolving one from context — without either, `useViewIntent`
+// is a documented silent no-op. `effects: ['read', 'write']` supplies the exposure
+// policy the same way: the default is read-only, which would exclude a `stage`.
+const draftRegistry = createControlInteractionRegistry();
+let draftSubject = $state('');
+
+useViewIntent(stageDraftSubjectIntent, {
+  identity: { formId: DRAFT_FORM_ID, controlId: DRAFT_CONTROL_ID },
+  controlRegistry: draftRegistry,
+  effects: ['read', 'write'],
+});
+
+// The workbench's single path to inference. The local backends are listed
+// FIRST, so `auto` prefers one whenever it is usable; the route backend is
+// always ready, so `auto` always has somewhere to land.
+//
+// bitgpu leads because its model (Bonsai 1.7B, ~237 MB) is both the better
+// answer and the one whose weights are small enough to load repeatedly.
+const bitgpuBackend: InferenceBackend = createBitGpuInferenceBackend({
+  id: 'bitgpu',
+  // `bitgpu` ships a manifest + aux index per model; the GGUF itself streams
+  // from the Hub, and the tokenizer comes from the matching ONNX repo (the GGUF
+  // repo has no tokenizer.json).
+  manifestUrl: `${BITGPU_MODELS}/manifest.json`,
+  auxUrl: `${BITGPU_MODELS}/Bonsai-1.7B-Q1_0.aux.bin`,
+  dataUrl:
+    'https://huggingface.co/prism-ml/Bonsai-1.7B-gguf/resolve/main/Bonsai-1.7B-Q1_0.gguf',
+  tokenizerJsonUrl: `${BITGPU_TOKENS}/tokenizer.json`,
+  tokenizerConfigUrl: `${BITGPU_TOKENS}/tokenizer_config.json`,
+  // A browser cannot resolve a bare specifier, so both optional peers are loaded
+  // with STATIC imports here, in app code, where the bundler can rewrite them.
+  loadBitGpu: () => import('bitgpu'),
+  loadChat: () => import('bitgpu/chat'),
+});
+const localBackend: InferenceBackend = createWebLlmInferenceBackend({
+  id: 'local',
+  loadModule: () => import('@mlc-ai/web-llm'),
+});
+const routeBackend: InferenceBackend = createRouteInferenceBackend({
+  id: 'route',
+  endpoint: '/api/dev-chat-stream',
+});
+const inference = createInferencePath({
+  backends: [bitgpuBackend, localBackend, routeBackend],
+});
+
+/** Reflect the path's current routing in the status panel. */
+function describeActiveBackend() {
+  try {
+    const { backend, reason, requested, skipped } = inference.resolve();
+    backendMode = backend.kind === 'local' ? 'local' : 'ai';
+    const fallbackNote =
+      reason === 'fallback'
+        ? ` (pinned "${requested}" unavailable; skipped: ${skipped.join(', ')})`
+        : '';
+    backendDetail = `${backend.id} / ${backend.status}${fallbackNote}`;
+  } catch (error) {
+    backendMode = 'local';
+    backendDetail =
+      error instanceof InferencePathError
+        ? `no usable backend (${error.code})`
+        : 'no usable backend';
+  }
+}
+
+// Keep the panel in step with the path. The preference writes through on
+// change, and a backend status transition (model finishes loading, the route
+// fails) is what can move `auto` from one backend to the other mid-session.
+$effect(() => {
+  inference.select(inferencePreference);
+  describeActiveBackend();
+  return inference.subscribe(describeActiveBackend);
+});
 
 const messages = $derived(messagesByRoom[currentRoomId] ?? []);
 const pending = $derived(pendingRoomId === currentRoomId);
@@ -266,6 +374,30 @@ function appendAssistantMessage(
   });
 }
 
+/** Replace one message's content, for a streamed reply arriving in pieces. */
+function replaceMessageContent(
+  roomId: string,
+  messageId: string,
+  content: string,
+) {
+  messagesByRoom = {
+    ...messagesByRoom,
+    [roomId]: (messagesByRoom[roomId] ?? []).map((message) =>
+      message.id === messageId ? { ...message, content } : message,
+    ),
+  };
+}
+
+/** Drop a message entirely — used to remove a placeholder whose turn failed. */
+function removeMessage(roomId: string, messageId: string) {
+  messagesByRoom = {
+    ...messagesByRoom,
+    [roomId]: (messagesByRoom[roomId] ?? []).filter(
+      (message) => message.id !== messageId,
+    ),
+  };
+}
+
 async function requestAssistantReply(
   roomId: string,
   userMessage: ChatMessageData,
@@ -273,44 +405,48 @@ async function requestAssistantReply(
   pendingRoomId = roomId;
   statusText = 'Assistant replying';
   warning = null;
+  describeActiveBackend();
+
+  const history = chatHistoryFor(roomId, userMessage);
+  // The reply is rendered as it arrives, so the placeholder is appended before
+  // the first token rather than after the last one.
+  const placeholderId = createMessageId('assistant');
+  appendMessage(roomId, {
+    id: placeholderId,
+    roomId,
+    senderProfileId: assistantProfileId,
+    senderName: 'Dev Assistant',
+    content: '',
+    messageType: 'text',
+    role: 'assistant',
+    isEdited: false,
+    isDeleted: false,
+    reactions: [],
+    attachments: [],
+    createdAt: new Date().toISOString(),
+  });
 
   try {
-    const response = await fetch('/api/dev-chat', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        messages: chatHistoryFor(roomId, userMessage),
-      }),
-    });
-    const result = (await response.json()) as DevChatResponse;
-
-    if (!response.ok) {
-      throw new Error(result.content || 'Dev chat request failed.');
+    let streamed = '';
+    for await (const chunk of inference.stream(history)) {
+      streamed += chunk;
+      replaceMessageContent(roomId, placeholderId, streamed);
     }
-
-    backendMode = result.mode;
-    backendDetail =
-      result.mode === 'ai'
-        ? [result.provider, result.model].filter(Boolean).join(' / ') ||
-          'AI provider'
-        : result.configured
-          ? 'AI configured, fallback response'
-          : 'Local fallback';
-    statusText =
-      result.mode === 'ai' ? 'AI response received' : 'Local response received';
-    warning = result.warning ?? null;
-    appendAssistantMessage(roomId, result.content);
+    // A backend that answered with nothing is a backend failure, not an empty
+    // reply — do not leave a blank assistant bubble behind.
+    if (streamed.length === 0) {
+      throw new Error('Inference returned an empty reply.');
+    }
+    describeActiveBackend();
+    statusText = 'Assistant response received';
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Inference request failed.';
     statusText = 'Request failed';
-    backendMode = 'local';
-    backendDetail = 'Error state';
-    warning =
-      error instanceof Error ? error.message : 'Dev chat request failed.';
-    appendAssistantMessage(
-      roomId,
-      error instanceof Error ? error.message : 'Dev chat request failed.',
-      'system',
-    );
+    describeActiveBackend();
+    warning = message;
+    removeMessage(roomId, placeholderId);
+    appendAssistantMessage(roomId, message, 'system');
   } finally {
     pendingRoomId = null;
   }
@@ -347,8 +483,7 @@ function resetConversation() {
   currentRoomId = 'room-agent-lab';
   pendingRoomId = null;
   statusText = 'Local endpoint ready';
-  backendMode = 'local';
-  backendDetail = 'No AI response yet';
+  describeActiveBackend();
   warning = null;
   voiceTurnState = 'Idle';
   voiceTranscript = 'No voice transcript yet';
@@ -837,9 +972,46 @@ onMount(() => {
           <strong>{totalMessages}</strong>
         </div>
 
+        {#if workbenchMode === 'text'}
+          <section class="side-panel" aria-label="Inference backend controls">
+            <label class="side-field">
+              <span class="status-label">Inference</span>
+              <Select bind:value={inferencePreference} class="voice-select">
+                <option value="auto">Auto</option>
+                <option value="bitgpu">Bonsai 1.7B (bitgpu)</option>
+                <option value="local">On-device model</option>
+                <option value="route">Server route</option>
+              </Select>
+            </label>
+            <ModelStatusControl backend={bitgpuBackend} label="Bonsai 1.7B — bitgpu" />
+            <ModelStatusControl backend={localBackend} label="On-device model — WebLLM" />
+          </section>
+
+          <section class="side-panel" aria-label="Agent-addressable draft form">
+            <span class="status-label">Draft form — agent addressable</span>
+            <Form formId={DRAFT_FORM_ID} interactionRegistry={draftRegistry}>
+              <label class="side-field">
+                <span class="status-label">Draft subject</span>
+                <Input
+                  id={DRAFT_CONTROL_ID}
+                  bind:value={draftSubject}
+                  placeholder="Nothing staged yet"
+                  interaction={{
+                    id: DRAFT_CONTROL_ID,
+                    writable: true,
+                    sensitivity: 'public',
+                    description: 'Subject line for the dev draft',
+                  }}
+                />
+              </label>
+            </Form>
+            <StagedControlReview registry={draftRegistry} formId={DRAFT_FORM_ID} />
+          </section>
+        {/if}
+
         {#if workbenchMode === 'voice'}
-          <section class="voice-panel" aria-label="Voice conversation controls">
-            <label class="voice-field">
+          <section class="side-panel" aria-label="Voice conversation controls">
+            <label class="side-field">
               <span class="status-label">Voice target</span>
               <Select bind:value={voiceTarget} disabled={voiceConnected} class="voice-select">
                 {#each voiceTargetNames as target (target)}
@@ -1060,18 +1232,18 @@ onMount(() => {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
-  .voice-panel {
+  .side-panel {
     display: grid;
     gap: 0.75rem;
     padding-top: 0.15rem;
   }
 
-  .voice-field {
+  .side-field {
     display: grid;
     gap: 0.35rem;
   }
 
-  .voice-field :global(.voice-select) {
+  .side-field :global(.voice-select) {
     min-height: 2.2rem;
     background-color: var(--smrt-color-surface-container-lowest);
   }

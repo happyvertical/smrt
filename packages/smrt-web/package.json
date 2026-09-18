@@ -25,6 +25,10 @@
       "types": "./dist/intents.d.ts",
       "import": "./dist/intents.js"
     },
+    "./ai": {
+      "types": "./dist/ai.d.ts",
+      "import": "./dist/ai.js"
+    },
     "./webmcp-tool-names": {
       "types": "./dist/webmcp-tool-names.d.ts",
       "import": "./dist/webmcp-tool-names.js"
