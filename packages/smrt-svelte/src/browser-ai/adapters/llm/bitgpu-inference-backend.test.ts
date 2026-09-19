@@ -371,6 +371,29 @@ describe('createBitGpuInferenceBackend', () => {
     expect(backend.status).toBe('ready');
   });
 
+  it('disposes the engine it created when createChat fails', async () => {
+    withWebGpu();
+    const { options, d } = makeModules();
+    const backend = createBitGpuInferenceBackend({
+      ...options,
+      // The tokenizer comes from a different host than the manifest, so a
+      // failing `createChat` is the documented real failure after the engine
+      // already exists.
+      loadChat: async () => ({
+        async createChat() {
+          throw new Error('tokenizer 404');
+        },
+      }),
+    });
+
+    await expect(backend.load()).rejects.toThrow('tokenizer 404');
+
+    // Nothing else holds the engine, so the abandoned attempt must release it —
+    // otherwise every retry allocates another GPU device over the leaked one.
+    expect(d.disposed).toBe(1);
+    expect(backend.status).toBe('error');
+  });
+
   it('refuses a turn before load, naming what is missing', async () => {
     withWebGpu();
     const { options, d } = makeModules();

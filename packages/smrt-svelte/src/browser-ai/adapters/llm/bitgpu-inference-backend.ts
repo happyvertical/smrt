@@ -302,12 +302,16 @@ export function createBitGpuInferenceBackend(
       // state re-checks it, because `unload()` may run while this is in flight.
       const epoch = loadEpoch;
       const pending = (async () => {
+        // Hoisted: an engine created here is owned by this attempt until it is
+        // published, and anything that abandons the attempt must dispose it —
+        // nothing else holds a reference to it.
+        let created: BitGpuEngine | undefined;
         try {
           const [bitgpu, chatModule] = await Promise.all([
             options.loadBitGpu(),
             options.loadChat(),
           ]);
-          const created = await bitgpu.createEngine({
+          created = await bitgpu.createEngine({
             ...(options.modelUrl ? { modelUrl: options.modelUrl } : {}),
             ...(options.manifestUrl
               ? { manifestUrl: options.manifestUrl }
@@ -343,12 +347,22 @@ export function createBitGpuInferenceBackend(
             // would report `ready` with a live GPU device nothing disposes, and
             // a later `load()` would no-op on it.
             created.dispose();
+            created = undefined;
             return;
           }
           engine = created;
           chat = createdChat;
+          // Ownership moves to the backend, so the failure path below must not
+          // dispose it.
+          created = undefined;
           progress = undefined;
         } catch (error) {
+          // A failure AFTER the engine exists (the tokenizer comes from a
+          // different host than the manifest, so `createChat` failing here is
+          // the documented real case) would otherwise orphan a live GPU device
+          // and its weights — and every retry would allocate another.
+          created?.dispose();
+          created = undefined;
           const err = error instanceof Error ? error : new Error(String(error));
           // A failure that overlaps an `unload()` leaves the backend idle
           // rather than reporting an error for work the caller cancelled.
@@ -419,6 +433,12 @@ export function createBitGpuInferenceBackend(
         // bitgpu also reports `'abort'`, which `AIResponse.finishReason` has no
         // member for: an aborted turn carries no finish reason here rather than
         // inventing one.
+        //
+        // The consequence is worth knowing before wiring `timeout`/`signal`: an
+        // aborted generation returns its PARTIAL text and is therefore not
+        // distinguishable from a short reply. The route backend fails closed for
+        // the same deadline (a coded `InferencePathError`), so matching that here
+        // would need a code this mirrored vocabulary does not have yet.
         ...(result.finishReason === 'stop' ||
         result.finishReason === 'length' ||
         result.finishReason === 'tool_calls'

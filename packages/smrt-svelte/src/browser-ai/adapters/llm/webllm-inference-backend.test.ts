@@ -416,6 +416,24 @@ describe('createWebLlmInferenceBackend', () => {
     expect(backend.status).toBe('idle');
   });
 
+  it('is a no-op when the adapter is already ready', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    await backend.load();
+    const ensures = adapter.calls.ensure.length;
+
+    const again = backend.load();
+    // Read in the same tick: a second load must not toggle the backend through
+    // `loading`, the state auto-selection is told to skip.
+    expect(backend.status).toBe('ready');
+    await again;
+
+    expect(adapter.calls.ensure.length).toBe(ensures);
+    expect(backend.status).toBe('ready');
+  });
+
   it('releases a load that overlaps an unload', async () => {
     withWebGpu();
     const adapter = makeAdapter();
@@ -430,6 +448,38 @@ describe('createWebLlmInferenceBackend', () => {
     expect(adapter.calls.unload).toBe(2);
     expect(backend.status).toBe('idle');
     expect(progressOf(backend)).toBeUndefined();
+  });
+
+  it('keeps the model a later load published when an earlier one is superseded', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const inner = adapter.ensureInitialized.bind(adapter);
+    let releaseFirst: () => void = () => {};
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    adapter.ensureInitialized = async (
+      modelId?: string,
+      onProgress?: OnProgress,
+    ) => {
+      calls += 1;
+      // Hold the FIRST attempt open so the second finishes ahead of it. Both
+      // attempts share one adapter, so that is the ordering in which a stale
+      // attempt's cleanup would destroy the model the newer attempt published.
+      if (calls === 1) await firstGate;
+      return inner(modelId, onProgress);
+    };
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    const discarded = backend.load();
+    await backend.unload();
+    const second = backend.load();
+    await second;
+    releaseFirst();
+    await discarded;
+
+    expect(backend.status).toBe('ready');
   });
 
   it('notifies subscribers on a load transition', async () => {

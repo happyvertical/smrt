@@ -142,6 +142,10 @@ export function createWebLlmInferenceBackend(
   // what it loaded instead of publishing `ready` for a backend the caller has
   // already released.
   let loadEpoch = 0;
+  // The highest epoch whose initialization has COMPLETED. A superseded attempt
+  // consults it (with `loadInFlight`) before releasing the adapter's model:
+  // releasing when a newer attempt already owns that model would destroy it.
+  let lastPublishedEpoch = -1;
 
   function broadcast(): void {
     for (const listener of [...listeners]) listener();
@@ -198,6 +202,13 @@ export function createWebLlmInferenceBackend(
           'no_usable_backend',
         );
       }
+      // No-op when already ready — the contract `InferenceBackend.load`
+      // documents, and the one bitgpu's `load` honors. Without it, a host that
+      // follows the documented "call `load()` before a turn" pattern toggles
+      // this backend through `loading`, the state auto-selection skips, so a
+      // turn issued in that window silently routes to the server instead of the
+      // model that is already resident.
+      if (currentStatus() === 'ready') return;
       // Marked before the first `await`: a caller that reads `status`
       // immediately after calling `load()` must not see `'idle'`, which is
       // exactly the state auto-selection is told to skip.
@@ -217,12 +228,17 @@ export function createWebLlmInferenceBackend(
           broadcast();
         });
         if (epoch !== loadEpoch) {
-          // `unload()` ran while the model was loading. The adapter cannot
-          // cancel the download, but it can release what finished loading —
-          // which is what the caller asked for.
-          await target.unloadModel();
+          // `unload()` ran while this attempt was loading, so it must not
+          // publish. It may only release the model it established when nothing
+          // newer owns it — a later `load()` that is still in flight, or one
+          // that has already completed, would otherwise have the model it
+          // published destroyed underneath it.
+          if (!loadInFlight && lastPublishedEpoch < epoch) {
+            await target.unloadModel();
+          }
           return;
         }
+        lastPublishedEpoch = epoch;
         progress = undefined;
       } finally {
         // A superseded attempt must not clear the flag for the load that
