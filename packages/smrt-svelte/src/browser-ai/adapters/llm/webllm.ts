@@ -125,11 +125,20 @@ export class WebLLMAdapter implements LLMAdapter {
     }
 
     if (this._initState === 'initializing') {
+      // The executor form is required here: `Promise.withResolvers` is not in
+      // the `lib` this package's typecheck resolves against.
       return new Promise((resolve, reject) => {
         const check = () => {
           if (this._initState === 'ready') resolve();
           else if (this._initState === 'error')
             reject(new Error('Initialization failed'));
+          else if (this._initState !== 'initializing')
+            // A concurrent `unloadModel()` reset the state under this waiter.
+            // It settles only on `ready` or `error`, so without this branch the
+            // poll waits forever — and `unload()` is reachable at any time.
+            reject(
+              new Error('Initialization was released before it completed'),
+            );
           else setTimeout(check, 100);
         };
         check();

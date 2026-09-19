@@ -146,6 +146,10 @@ export function createWebLlmInferenceBackend(
   // consults it (with `loadInFlight`) before releasing the adapter's model:
   // releasing when a newer attempt already owns that model would destroy it.
   let lastPublishedEpoch = -1;
+  // The single in-flight load, stamped with the epoch that created it: concurrent
+  // callers share one attempt (as bitgpu's memo does), and a caller never joins
+  // an attempt from a superseded epoch.
+  let loadPromise: { promise: Promise<void>; epoch: number } | null = null;
 
   function broadcast(): void {
     for (const listener of [...listeners]) listener();
@@ -195,11 +199,13 @@ export function createWebLlmInferenceBackend(
       return progress;
     },
 
-    async load(onProgress) {
+    load(onProgress) {
       if (currentStatus() === 'unavailable') {
-        throw new InferencePathError(
-          'WebLLM requires WebGPU, which this browser does not expose.',
-          'no_usable_backend',
+        return Promise.reject(
+          new InferencePathError(
+            'WebLLM requires WebGPU, which this browser does not expose.',
+            'no_usable_backend',
+          ),
         );
       }
       // No-op when already ready — the contract `InferenceBackend.load`
@@ -208,7 +214,15 @@ export function createWebLlmInferenceBackend(
       // this backend through `loading`, the state auto-selection skips, so a
       // turn issued in that window silently routes to the server instead of the
       // model that is already resident.
-      if (currentStatus() === 'ready') return;
+      if (currentStatus() === 'ready') return Promise.resolve();
+      // One attempt per epoch, shared by concurrent callers — the single-flight
+      // bitgpu applies. Without it a second caller reaches the adapter's own
+      // `'initializing'` poll, which settles only on `ready` or `error`, so a
+      // release landing in between would leave that caller waiting.
+      if (loadPromise && loadPromise.epoch === loadEpoch) {
+        return loadPromise.promise;
+      }
+
       // Marked before the first `await`: a caller that reads `status`
       // immediately after calling `load()` must not see `'idle'`, which is
       // exactly the state auto-selection is told to skip.
@@ -217,47 +231,56 @@ export function createWebLlmInferenceBackend(
       // Captured before the first `await`; every step that publishes state
       // re-checks it, because `unload()` may run while this is in flight.
       const epoch = loadEpoch;
-      try {
-        const target = await ensureAdapter();
-        await target.ensureInitialized(options.model, (next) => {
-          // A download that outlives an `unload()` must not resurrect progress
-          // on a backend the caller has just released.
-          if (epoch !== loadEpoch) return;
-          progress = next;
-          onProgress?.(next);
-          broadcast();
-        });
-        if (epoch !== loadEpoch) {
-          // `unload()` ran while this attempt was loading, so it must not
-          // publish. It may only release the model it established when nothing
-          // newer owns it — a later `load()` that is still in flight, or one
-          // that has already completed, would otherwise have the model it
-          // published destroyed underneath it.
-          if (!loadInFlight && lastPublishedEpoch < epoch) {
-            await target.unloadModel();
+      const pending = (async () => {
+        try {
+          const target = await ensureAdapter();
+          await target.ensureInitialized(options.model, (next) => {
+            // A download that outlives an `unload()` must not resurrect progress
+            // on a backend the caller has just released.
+            if (epoch !== loadEpoch) return;
+            progress = next;
+            onProgress?.(next);
+            broadcast();
+          });
+          if (epoch !== loadEpoch) {
+            // `unload()` ran while this attempt was loading, so it must not
+            // publish. It may only release the model it established when nothing
+            // newer owns it — a later `load()` that is still in flight, or one
+            // that has already completed, would otherwise have the model it
+            // published destroyed underneath it.
+            if (!loadInFlight && lastPublishedEpoch < epoch) {
+              await target.unloadModel();
+            }
+            return;
           }
-          return;
+          lastPublishedEpoch = epoch;
+          progress = undefined;
+        } catch (error) {
+          // Nothing published for this epoch, so any model still resident
+          // belongs to a superseded attempt that deferred its release to protect
+          // this one. Discharge it here — otherwise the deferral is never
+          // re-evaluated and a fully initialized model survives both the
+          // caller's `unload()` and this failure with no owner.
+          if (lastPublishedEpoch < epoch) {
+            // Best-effort: this path is already failing, and the cleanup must
+            // not replace the caller's error with its own.
+            await adapter?.unloadModel().catch(() => undefined);
+          }
+          throw error;
+        } finally {
+          // A superseded attempt must not clear the flag for the load that
+          // replaced it.
+          if (epoch === loadEpoch) loadInFlight = false;
+          broadcast();
         }
-        lastPublishedEpoch = epoch;
-        progress = undefined;
-      } catch (error) {
-        // Nothing published for this epoch, so any model still resident belongs
-        // to a superseded attempt that deferred its release to protect this one.
-        // Discharge it here — otherwise the deferral is never re-evaluated and a
-        // fully initialized model survives both the caller's `unload()` and this
-        // failure with nobody holding a release obligation.
-        if (lastPublishedEpoch < epoch) {
-          // Best-effort: this path is already failing, and the cleanup must not
-          // replace the caller's error with its own.
-          await adapter?.unloadModel().catch(() => undefined);
-        }
-        throw error;
-      } finally {
-        // A superseded attempt must not clear the flag for the load that
-        // replaced it.
-        if (epoch === loadEpoch) loadInFlight = false;
-        broadcast();
-      }
+      })();
+
+      loadPromise = { promise: pending, epoch };
+      const releaseLoad = () => {
+        if (loadPromise?.promise === pending) loadPromise = null;
+      };
+      void pending.then(releaseLoad, releaseLoad);
+      return pending;
     },
 
     async unload() {
@@ -267,6 +290,7 @@ export function createWebLlmInferenceBackend(
       // clear it, and `'loading'` is the state auto-selection must skip.
       loadEpoch += 1;
       loadInFlight = false;
+      loadPromise = null;
       // Ownership does not survive a release: an attempt from an older epoch
       // that finishes later must not read a newer attempt's completion as
       // "someone else owns this model", or it would skip releasing what it

@@ -416,6 +416,20 @@ describe('createWebLlmInferenceBackend', () => {
     expect(backend.status).toBe('idle');
   });
 
+  it('shares one load between concurrent callers', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    // Two concurrent callers must join one attempt. A second attempt would
+    // reach the adapter's own `initializing` poll, which settles only on
+    // `ready` or `error` — so a release landing in between strands it.
+    await Promise.all([backend.load(), backend.load(), backend.load()]);
+
+    expect(adapter.calls.ensure.length).toBe(1);
+    expect(backend.status).toBe('ready');
+  });
+
   it('is a no-op when the adapter is already ready', async () => {
     withWebGpu();
     const adapter = makeAdapter();
