@@ -304,6 +304,9 @@ export function createWebLlmInferenceBackend(
             return;
           }
           lastPublishedEpoch = epoch;
+          // A published model is owned by this epoch, so nothing is orphaned
+          // and no later failure may release it as if it were.
+          orphanedModel = false;
           loadError = null;
           progress = undefined;
         } catch (error) {
@@ -313,7 +316,12 @@ export function createWebLlmInferenceBackend(
           // that case — an unconditional `unloadModel()` here would wipe the
           // adapter's own `error` state and report `idle` for a load that
           // failed.
-          if (orphanedModel) {
+          // Only a CURRENT-epoch failure may discharge it. A superseded
+          // attempt's failure says nothing about which attempt owns the adapter
+          // now, and releasing on it would destroy the model the current epoch
+          // published — with no error recorded and the next turn downloading
+          // behind the message.
+          if (orphanedModel && epoch === loadEpoch) {
             orphanedModel = false;
             // Best-effort: this path is already failing, and the cleanup must
             // not replace the caller's error with its own.

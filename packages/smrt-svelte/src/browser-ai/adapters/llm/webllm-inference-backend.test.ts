@@ -681,6 +681,54 @@ describe('createWebLlmInferenceBackend adapter construction', () => {
     });
   });
 
+  it('does not let a superseded failure release the current model', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const inner = adapter.ensureInitialized.bind(adapter);
+    const gates: Array<() => void> = [];
+    let calls = 0;
+    adapter.ensureInitialized = async (
+      modelId?: string,
+      onProgress?: OnProgress,
+    ) => {
+      calls += 1;
+      const attempt = calls;
+      await new Promise<void>((resolve) => {
+        gates[attempt] = resolve;
+      });
+      // The middle attempt fails AFTER the third one has published.
+      if (attempt === 2) throw new Error('second init failed');
+      return inner(modelId, onProgress);
+    };
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    const first = backend.load();
+    await backend.unload();
+    const second = backend.load();
+    await backend.unload();
+    const third = backend.load();
+    // Microtask-driven (no wall clock): wait until each attempt has reached its
+    // await before releasing any gate.
+    const until = async (ready: () => boolean) => {
+      for (let i = 0; i < 100 && !ready(); i += 1) await Promise.resolve();
+    };
+    await until(() => typeof gates[3] === 'function');
+
+    // The oldest attempt finishes while the third is in flight, so it defers.
+    gates[1]();
+    await until(() => typeof gates[3] === 'function');
+    // The third publishes the model this backend now owns.
+    gates[3]();
+    await third;
+    // The middle attempt then fails: its epoch is superseded, so it says
+    // nothing about who owns the adapter now.
+    gates[2]();
+    await second.catch(() => undefined);
+    await first.catch(() => undefined);
+
+    expect(backend.status).toBe('ready');
+  });
+
   it('still loads when the shared adapter is ready on another model', async () => {
     withWebGpu();
     const adapter = makeAdapter();
