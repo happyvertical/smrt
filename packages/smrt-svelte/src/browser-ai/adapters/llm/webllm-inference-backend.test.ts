@@ -482,6 +482,84 @@ describe('createWebLlmInferenceBackend', () => {
     expect(backend.status).toBe('ready');
   });
 
+  it('releases a superseded model when the newer load then fails', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const inner = adapter.ensureInitialized.bind(adapter);
+    let releaseFirst: () => void = () => {};
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let failSecond: (error: Error) => void = () => {};
+    const secondGate = new Promise<void>((_resolve, reject) => {
+      failSecond = reject;
+    });
+    let calls = 0;
+    adapter.ensureInitialized = async (
+      modelId?: string,
+      onProgress?: OnProgress,
+    ) => {
+      calls += 1;
+      if (calls === 1) {
+        await firstGate;
+        return inner(modelId, onProgress);
+      }
+      await secondGate;
+      return inner(modelId, onProgress);
+    };
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    const discarded = backend.load();
+    await backend.unload();
+    const second = backend.load();
+    const secondSettled = expect(second).rejects.toThrow('second init failed');
+
+    // The first attempt finishes while the second is in flight, so it must NOT
+    // release then — the second owns the adapter.
+    releaseFirst();
+    await discarded;
+
+    // Now the second fails: nothing else can discharge the deferred release, so
+    // a fully initialized model would stay resident with no owner.
+    failSecond(new Error('second init failed'));
+    await secondSettled;
+
+    expect(adapter.calls.unload).toBe(2);
+  });
+
+  it('does not resurrect a model a later unload released', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const inner = adapter.ensureInitialized.bind(adapter);
+    let releaseCold: () => void = () => {};
+    const coldGate = new Promise<void>((resolve) => {
+      releaseCold = resolve;
+    });
+    let calls = 0;
+    adapter.ensureInitialized = async (
+      modelId?: string,
+      onProgress?: OnProgress,
+    ) => {
+      calls += 1;
+      // The first attempt stays cold, so it finishes after everything else.
+      if (calls === 1) await coldGate;
+      return inner(modelId, onProgress);
+    };
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    const cold = backend.load();
+    await backend.unload();
+    await backend.load();
+    await backend.unload();
+
+    releaseCold();
+    await cold;
+
+    // The cold attempt re-established the model on the shared adapter; since
+    // the caller released it again, it must not be left resident and `ready`.
+    expect(backend.status).toBe('idle');
+  });
+
   it('notifies subscribers on a load transition', async () => {
     withWebGpu();
     const backend = createWebLlmInferenceBackend({ adapter: makeAdapter() });

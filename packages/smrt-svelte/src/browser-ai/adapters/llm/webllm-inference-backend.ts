@@ -240,6 +240,18 @@ export function createWebLlmInferenceBackend(
         }
         lastPublishedEpoch = epoch;
         progress = undefined;
+      } catch (error) {
+        // Nothing published for this epoch, so any model still resident belongs
+        // to a superseded attempt that deferred its release to protect this one.
+        // Discharge it here — otherwise the deferral is never re-evaluated and a
+        // fully initialized model survives both the caller's `unload()` and this
+        // failure with nobody holding a release obligation.
+        if (lastPublishedEpoch < epoch) {
+          // Best-effort: this path is already failing, and the cleanup must not
+          // replace the caller's error with its own.
+          await adapter?.unloadModel().catch(() => undefined);
+        }
+        throw error;
       } finally {
         // A superseded attempt must not clear the flag for the load that
         // replaced it.
@@ -255,6 +267,11 @@ export function createWebLlmInferenceBackend(
       // clear it, and `'loading'` is the state auto-selection must skip.
       loadEpoch += 1;
       loadInFlight = false;
+      // Ownership does not survive a release: an attempt from an older epoch
+      // that finishes later must not read a newer attempt's completion as
+      // "someone else owns this model", or it would skip releasing what it
+      // re-established and silently undo the caller's `unload()`.
+      lastPublishedEpoch = -1;
       await adapter?.unloadModel();
       progress = undefined;
       broadcast();
