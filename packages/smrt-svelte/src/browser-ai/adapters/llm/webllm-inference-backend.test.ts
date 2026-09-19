@@ -416,6 +416,22 @@ describe('createWebLlmInferenceBackend', () => {
     expect(backend.status).toBe('idle');
   });
 
+  it('releases a load that overlaps an unload', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    const pending = backend.load();
+    await backend.unload();
+    await pending;
+
+    // The model finished loading after the caller released it, so it must be
+    // released again rather than reporting `ready` on a released backend.
+    expect(adapter.calls.unload).toBe(2);
+    expect(backend.status).toBe('idle');
+    expect(progressOf(backend)).toBeUndefined();
+  });
+
   it('notifies subscribers on a load transition', async () => {
     withWebGpu();
     const backend = createWebLlmInferenceBackend({ adapter: makeAdapter() });

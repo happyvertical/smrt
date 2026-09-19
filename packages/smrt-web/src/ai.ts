@@ -129,14 +129,16 @@ export interface InferenceChatOptions {
   /** Token sink for a streamed reply. Backends that cannot stream ignore it. */
   onProgress?: (chunk: string) => void;
   /**
-   * Caller cancellation. Honored by the route backend (composed with
-   * `timeout`); the local WebLLM backend cannot cancel a generation already
-   * running on the GPU and does not read it.
+   * Caller cancellation. Honored by the route backend and by bitgpu, which
+   * aborts a live generation; both compose it with `timeout`. The WebLLM
+   * adapter cannot cancel a generation already running on the GPU and does not
+   * read it.
    */
   signal?: AbortSignal;
   /**
    * Deadline in milliseconds for one call. Honored by the route backend, which
-   * aborts the request when it elapses. Not honored by the local backend.
+   * aborts the request when it elapses, and by bitgpu, which aborts the
+   * generation. The WebLLM adapter has no cancellation seam and ignores it.
    */
   timeout?: number;
 }
@@ -706,8 +708,12 @@ async function* readRouteEvents(
 /**
  * Compose the caller's cancellation signal with this call's deadline, so a
  * request with a `timeout` cannot outlive it even when no signal was passed.
+ *
+ * Exported so every backend that CAN cancel enforces `timeout` the same way: a
+ * deadline the route backend would have enforced must not be quietly ignored
+ * by a local one.
  */
-function requestSignal(
+export function requestSignal(
   chatOptions?: InferenceChatOptions,
 ): AbortSignal | undefined {
   const { signal, timeout } = chatOptions ?? {};

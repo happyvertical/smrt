@@ -137,6 +137,11 @@ export function createWebLlmInferenceBackend(
   // awaits, so relying on that alone would report `'idle'` while a load is
   // genuinely in flight — and `'idle'` is the state auto-selection must skip.
   let loadInFlight = false;
+  // Bumped by `unload()`. A load captures it before its first `await` and
+  // re-checks it afterwards, so a load that overlaps an `unload()` releases
+  // what it loaded instead of publishing `ready` for a backend the caller has
+  // already released.
+  let loadEpoch = 0;
 
   function broadcast(): void {
     for (const listener of [...listeners]) listener();
@@ -198,21 +203,42 @@ export function createWebLlmInferenceBackend(
       // exactly the state auto-selection is told to skip.
       loadInFlight = true;
       broadcast();
+      // Captured before the first `await`; every step that publishes state
+      // re-checks it, because `unload()` may run while this is in flight.
+      const epoch = loadEpoch;
       try {
         const target = await ensureAdapter();
         await target.ensureInitialized(options.model, (next) => {
+          // A download that outlives an `unload()` must not resurrect progress
+          // on a backend the caller has just released.
+          if (epoch !== loadEpoch) return;
           progress = next;
           onProgress?.(next);
           broadcast();
         });
+        if (epoch !== loadEpoch) {
+          // `unload()` ran while the model was loading. The adapter cannot
+          // cancel the download, but it can release what finished loading —
+          // which is what the caller asked for.
+          await target.unloadModel();
+          return;
+        }
         progress = undefined;
       } finally {
-        loadInFlight = false;
+        // A superseded attempt must not clear the flag for the load that
+        // replaced it.
+        if (epoch === loadEpoch) loadInFlight = false;
         broadcast();
       }
     },
 
     async unload() {
+      // Invalidate any load in flight: it re-checks the epoch before
+      // publishing and releases what it loaded instead of reporting `ready`.
+      // The flag is cleared here because that superseded load will no longer
+      // clear it, and `'loading'` is the state auto-selection must skip.
+      loadEpoch += 1;
+      loadInFlight = false;
       await adapter?.unloadModel();
       progress = undefined;
       broadcast();

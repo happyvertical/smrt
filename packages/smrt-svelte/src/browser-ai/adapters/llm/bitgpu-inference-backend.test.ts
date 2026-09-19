@@ -355,6 +355,22 @@ describe('createBitGpuInferenceBackend', () => {
     expect(backend.progress).toBeUndefined();
   });
 
+  it('starts real work when load() follows an unload', async () => {
+    withWebGpu();
+    const { options, d } = makeModules();
+    const backend = createBitGpuInferenceBackend(options);
+
+    const discarded = backend.load();
+    await backend.unload();
+    // Issued while the discarded attempt is still pending: handing back that
+    // attempt's promise would resolve this call without loading anything.
+    const second = backend.load();
+    await Promise.all([discarded, second]);
+
+    expect(d.engineCalls).toBe(2);
+    expect(backend.status).toBe('ready');
+  });
+
   it('refuses a turn before load, naming what is missing', async () => {
     withWebGpu();
     const { options, d } = makeModules();
@@ -416,6 +432,20 @@ describe('createBitGpuInferenceBackend', () => {
     }
 
     expect(d.streams[0].options).toMatchObject({ signal: controller.signal });
+  });
+
+  it('turns a timeout into a signal the engine can abort on', async () => {
+    withWebGpu();
+    const { options, d } = makeModules();
+    const backend = createBitGpuInferenceBackend(options);
+    await backend.load();
+
+    // bitgpu is the only local backend that can cancel, so a deadline must
+    // reach the engine rather than being silently dropped.
+    await backend.chat([...USER], { timeout: 5_000 });
+
+    const sent = d.sends.at(-1)?.options as { signal?: unknown } | undefined;
+    expect(sent?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('streams deltas in order and reports each to onProgress', async () => {

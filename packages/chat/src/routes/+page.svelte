@@ -73,6 +73,10 @@ const currentProfileId = 'profile-dev-user';
 const assistantProfileId = 'agent-dev-assistant';
 // `bitgpu` publishes a per-model manifest + aux index in its own repo; the Bonsai
 // weights stream from the Hub and the tokenizer from the matching ONNX repo.
+// The tag here is COUPLED to the installed `bitgpu` version — the engine parses
+// this manifest and its offset-based aux tables — which is why chat pins that
+// devDependency EXACTLY instead of with a caret: a floating range could fetch a
+// newer engine that reads an older tag's layout. Bump both together.
 const BITGPU_MODELS =
   'https://cdn.jsdelivr.net/gh/stfurkan/bitgpu@v0.19.1/models/bonsai-1.7b-gguf';
 const BITGPU_TOKENS =

@@ -42,6 +42,7 @@ import {
   InferencePathError,
   type InferenceProgress,
   type InferenceResponse,
+  requestSignal,
 } from '@happyvertical/smrt-web/ai';
 import { detectCapabilities } from '../../capabilities/detector.js';
 
@@ -194,6 +195,10 @@ function toProgress(report: BitGpuLoadProgress): InferenceProgress {
 /** Forward only the options the engine can honor. */
 function toSendOptions(options?: InferenceChatOptions): BitGpuSendOptions {
   const stop = options?.stop;
+  // bitgpu aborts a live generation, so it is the one local backend that can
+  // honor a deadline: compose it the same way the route backend does rather
+  // than silently dropping the caller's `timeout`.
+  const signal = requestSignal(options);
   return {
     ...(options?.maxTokens !== undefined
       ? { maxTokens: options.maxTokens }
@@ -203,8 +208,7 @@ function toSendOptions(options?: InferenceChatOptions): BitGpuSendOptions {
       : {}),
     ...(options?.topP !== undefined ? { topP: options.topP } : {}),
     ...(stop ? { stopSequences: Array.isArray(stop) ? stop : [stop] } : {}),
-    // The one option WebLLM cannot honor: bitgpu aborts a live generation.
-    ...(options?.signal ? { signal: options.signal } : {}),
+    ...(signal ? { signal } : {}),
   };
 }
 
@@ -223,7 +227,10 @@ export function createBitGpuInferenceBackend(
   let progress: InferenceProgress | undefined;
   let loadError: Error | null = null;
   let loadInFlight = false;
-  let loading: Promise<void> | null = null;
+  // Memoized so concurrent callers share one load. Stamped with the epoch that
+  // created it: once `unload()` invalidates an attempt, a later `load()` must
+  // start real work rather than be handed the discarded attempt's promise.
+  let loading: { promise: Promise<void>; epoch: number } | null = null;
   // Bumped by `unload()`. A load captures it before its first `await` and
   // re-checks it afterwards, so a load that overlaps an `unload()` discards the
   // engine it built instead of publishing it and reporting `ready`.
@@ -282,7 +289,10 @@ export function createBitGpuInferenceBackend(
       // engines, while `status` flickers through `loading` and an `auto` path
       // stops selecting this backend.
       if (engine && chat) return Promise.resolve();
-      if (loading) return loading;
+      // Reuse only a load from the CURRENT epoch: after `unload()` the memo
+      // belongs to a discarded attempt, and returning it would resolve a fresh
+      // `load()` without loading anything.
+      if (loading && loading.epoch === loadEpoch) return loading.promise;
 
       loadInFlight = true;
       loadError = null;
@@ -356,12 +366,14 @@ export function createBitGpuInferenceBackend(
           }
           throw err;
         } finally {
-          loadInFlight = false;
+          // A superseded attempt must not clear the flag for the load that
+          // replaced it.
+          if (epoch === loadEpoch) loadInFlight = false;
           broadcast();
         }
       })();
 
-      loading = pending;
+      loading = { promise: pending, epoch };
       // Cleared here, never inside the body above: the body runs synchronously
       // up to its first `await`, so a host loader that throws synchronously (a
       // legal `() => Promise<T>` callback) settles it BEFORE the assignment
@@ -369,7 +381,9 @@ export function createBitGpuInferenceBackend(
       // settled promise, and every later `load()` would replay its rejection —
       // the documented retry path dead for the life of the backend.
       const releaseLoading = () => {
-        loading = null;
+        // Only clear the memo while it still points at THIS attempt: a later
+        // `load()` may already own it.
+        if (loading?.promise === pending) loading = null;
       };
       void pending.then(releaseLoading, releaseLoading);
 
@@ -377,9 +391,13 @@ export function createBitGpuInferenceBackend(
     },
 
     async unload() {
-      // Invalidate any load in flight: it re-checks the epoch after every
-      // `await` and disposes what it built rather than publishing it.
+      // Invalidate anything in flight: a load re-checks the epoch after every
+      // `await` and disposes what it built rather than publishing it, and the
+      // memoized promise is dropped so a later `load()` starts real work
+      // instead of being handed the discarded attempt.
       loadEpoch += 1;
+      loading = null;
+      loadInFlight = false;
       // `dispose()` tears down the GPU device; the chat layer holds KV state
       // bound to it, so both references go together.
       engine?.dispose();
