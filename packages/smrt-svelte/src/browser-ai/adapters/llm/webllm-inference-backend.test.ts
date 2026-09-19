@@ -230,6 +230,25 @@ describe('createWebLlmInferenceBackend', () => {
     expect(createWebLlmInferenceBackend({ adapter }).status).toBe('error');
   });
 
+  it('keeps a failed load visible as an error, not as idle', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    adapter.ensureInitialized = async () => {
+      // The real adapter records the failure in `initState` before rethrowing.
+      adapter.setInitState('error');
+      throw new Error('no WebGPU device');
+    };
+    const backend = createWebLlmInferenceBackend({ adapter });
+
+    await expect(backend.load()).rejects.toThrow('no WebGPU device');
+
+    // `idle` would read as "never loaded", so a control would offer Load rather
+    // than Retry for a load that just failed, and the failure would be visible
+    // only to the one caller holding the rejected promise.
+    expect(backend.status).toBe('error');
+    expect(progressOf(backend)).toMatchObject({ state: 'error' });
+  });
+
   it('refuses tool definitions on both chat and stream', async () => {
     withWebGpu();
     const adapter = makeAdapter();

@@ -150,6 +150,11 @@ export function createWebLlmInferenceBackend(
   // callers share one attempt (as bitgpu's memo does), and a caller never joins
   // an attempt from a superseded epoch.
   let loadPromise: { promise: Promise<void>; epoch: number } | null = null;
+  // Set when a superseded attempt establishes a model it cannot release because
+  // a newer attempt owns the adapter. That newer attempt's failure discharges
+  // it — which is the ONLY case where the failure path may call `unloadModel()`
+  // without erasing the adapter's own `error` state.
+  let orphanedModel = false;
 
   function broadcast(): void {
     for (const listener of [...listeners]) listener();
@@ -250,21 +255,42 @@ export function createWebLlmInferenceBackend(
             // published destroyed underneath it.
             if (!loadInFlight && lastPublishedEpoch < epoch) {
               await target.unloadModel();
+            } else {
+              // A newer attempt owns the adapter, so the model this one
+              // established stays resident for now; that newer attempt's
+              // failure discharges it.
+              orphanedModel = true;
             }
             return;
           }
           lastPublishedEpoch = epoch;
           progress = undefined;
         } catch (error) {
-          // Nothing published for this epoch, so any model still resident
-          // belongs to a superseded attempt that deferred its release to protect
-          // this one. Discharge it here — otherwise the deferral is never
-          // re-evaluated and a fully initialized model survives both the
-          // caller's `unload()` and this failure with no owner.
-          if (lastPublishedEpoch < epoch) {
+          // Discharge a release a SUPERSEDED attempt deferred: it left a model
+          // resident because this attempt owned the adapter, and this attempt
+          // then failed, so nothing would ever release it. Scoped to exactly
+          // that case — an unconditional `unloadModel()` here would wipe the
+          // adapter's own `error` state and report `idle` for a load that
+          // failed.
+          if (orphanedModel) {
+            orphanedModel = false;
             // Best-effort: this path is already failing, and the cleanup must
             // not replace the caller's error with its own.
             await adapter?.unloadModel().catch(() => undefined);
+          }
+          if (epoch === loadEpoch) {
+            // Mirror bitgpu: keep a snapshot of how far the load got, marked as
+            // failed rather than left reading `downloading` on an `idle`
+            // backend.
+            const err =
+              error instanceof Error ? error : new Error(String(error));
+            progress = {
+              bytesLoaded: progress?.bytesLoaded ?? 0,
+              bytesTotal: progress?.bytesTotal ?? 0,
+              percent: progress?.percent ?? 0,
+              state: 'error',
+              error: err.message,
+            };
           }
           throw error;
         } finally {
@@ -296,6 +322,7 @@ export function createWebLlmInferenceBackend(
       // "someone else owns this model", or it would skip releasing what it
       // re-established and silently undo the caller's `unload()`.
       lastPublishedEpoch = -1;
+      orphanedModel = false;
       await adapter?.unloadModel();
       progress = undefined;
       broadcast();
