@@ -558,6 +558,11 @@ describe('createWebLlmInferenceBackend', () => {
     await secondSettled;
 
     expect(adapter.calls.unload).toBe(2);
+    // The release above resets the adapter's own state, so the failure has to be
+    // durable in the backend or this reads `idle` — "never loaded" — and the
+    // control offers Load instead of Retry.
+    expect(backend.status).toBe('error');
+    expect(progressOf(backend)).toMatchObject({ state: 'error' });
   });
 
   it('does not resurrect a model a later unload released', async () => {

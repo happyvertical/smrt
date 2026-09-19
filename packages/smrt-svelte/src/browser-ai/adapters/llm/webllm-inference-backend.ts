@@ -155,6 +155,10 @@ export function createWebLlmInferenceBackend(
   // it — which is the ONLY case where the failure path may call `unloadModel()`
   // without erasing the adapter's own `error` state.
   let orphanedModel = false;
+  // Durable copy of the last load failure. It is read from HERE rather than from
+  // the adapter's mutable `initState`, because the release that follows a
+  // failure resets that state — and `'idle'` would read as "never loaded".
+  let loadError: Error | null = null;
 
   function broadcast(): void {
     for (const listener of [...listeners]) listener();
@@ -168,6 +172,9 @@ export function createWebLlmInferenceBackend(
     if (effectiveType === 'webllm' && !detectCapabilities().llm.webgpu) {
       return 'unavailable';
     }
+    // Checked before the adapter so a failure survives the release that follows
+    // it, and before `loadInFlight` so a retry in flight does not hide it.
+    if (loadError) return 'error';
     if (loadInFlight) return 'loading';
     return toBackendStatus(adapter);
   }
@@ -228,6 +235,8 @@ export function createWebLlmInferenceBackend(
         return loadPromise.promise;
       }
 
+      // A new attempt supersedes the previous failure.
+      loadError = null;
       // Marked before the first `await`: a caller that reads `status`
       // immediately after calling `load()` must not see `'idle'`, which is
       // exactly the state auto-selection is told to skip.
@@ -264,6 +273,7 @@ export function createWebLlmInferenceBackend(
             return;
           }
           lastPublishedEpoch = epoch;
+          loadError = null;
           progress = undefined;
         } catch (error) {
           // Discharge a release a SUPERSEDED attempt deferred: it left a model
@@ -281,9 +291,11 @@ export function createWebLlmInferenceBackend(
           if (epoch === loadEpoch) {
             // Mirror bitgpu: keep a snapshot of how far the load got, marked as
             // failed rather than left reading `downloading` on an `idle`
-            // backend.
+            // backend — and record the failure so it survives the release that
+            // follows it.
             const err =
               error instanceof Error ? error : new Error(String(error));
+            loadError = err;
             progress = {
               bytesLoaded: progress?.bytesLoaded ?? 0,
               bytesTotal: progress?.bytesTotal ?? 0,
@@ -323,6 +335,7 @@ export function createWebLlmInferenceBackend(
       // re-established and silently undo the caller's `unload()`.
       lastPublishedEpoch = -1;
       orphanedModel = false;
+      loadError = null;
       await adapter?.unloadModel();
       progress = undefined;
       broadcast();
