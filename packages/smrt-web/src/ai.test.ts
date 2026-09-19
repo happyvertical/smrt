@@ -23,6 +23,7 @@ import {
   type InferenceMessage,
   InferencePathError,
   type InferenceResponse,
+  MAX_INFERENCE_REPLY_UNITS,
   MAX_INFERENCE_STREAM_BYTES,
   MAX_INFERENCE_STREAM_LINE_UNITS,
 } from './ai.js';
@@ -449,20 +450,44 @@ describe('createRouteInferenceBackend', () => {
     });
   });
 
-  it('ignores a frame whose JSON is not an object', async () => {
-    // `null`, `3` and `"x"` are all valid JSON. Reading `.type` off them used
-    // to throw a raw TypeError past this module's error contract.
+  it('fails on a frame whose JSON is not an object', async () => {
+    // `null`, `3`, `"x"` and arrays are all valid JSON and none of them is a
+    // frame. Accepting one and completing on a later `done` would report a
+    // successful answer for a response that was never well formed.
     const { backend } = backendOver(
       sseResponse([
         'data: null\n\n',
-        'data: 3\n\n',
-        'data: "x"\n\n',
         frame({ type: 'token', text: 'a' }),
         frame({ type: 'done', message: { content: 'a' } }),
       ]),
     );
 
-    await expect(collect(backend.stream(USER))).resolves.toEqual(['a']);
+    await expect(collect(backend.stream(USER))).rejects.toMatchObject({
+      name: 'InferencePathError',
+      code: 'route_stream_error',
+    });
+  });
+
+  it('fails on an array frame', async () => {
+    const { backend } = backendOver(sseResponse(['data: [1,2]\n\n']));
+
+    await expect(collect(backend.stream(USER))).rejects.toMatchObject({
+      code: 'route_stream_error',
+    });
+  });
+
+  it('fails on a valid frame over the line cap before decoding it', async () => {
+    // Terminated, so the unterminated-buffer guard never sees it — and valid
+    // JSON, so a post-parse check would already have materialized it.
+    const oversized = frame({
+      type: 'token',
+      text: 'x'.repeat(MAX_INFERENCE_STREAM_LINE_UNITS + 10),
+    });
+    const { backend } = backendOver(sseResponse([oversized]));
+
+    await expect(collect(backend.stream(USER))).rejects.toMatchObject({
+      code: 'route_stream_error',
+    });
   });
 
   it('fails on an unterminated frame larger than the line cap', async () => {
@@ -478,6 +503,87 @@ describe('createRouteInferenceBackend', () => {
       () => collect(backend.stream(USER)),
       'route_stream_error',
     );
+  });
+
+  it('yields the remainder when the authoritative reply extends the preview', async () => {
+    const { backend } = backendOver(
+      sseResponse([
+        frame({ type: 'token', text: 'Hel' }),
+        frame({ type: 'done', message: { content: 'Hello' } }),
+      ]),
+    );
+
+    // A consumer concatenates deltas, so the terminal reply has to arrive as
+    // the part it has not seen rather than as a duplicate of it.
+    await expect(collect(backend.stream(USER))).resolves.toEqual(['Hel', 'lo']);
+  });
+
+  it('yields the authoritative reply when no token was streamed', async () => {
+    const { backend } = backendOver(
+      sseResponse([frame({ type: 'done', message: { content: 'Reply' } })]),
+    );
+
+    // Dropping it would leave an empty delta stream, which a consumer reads as
+    // a failed, empty reply.
+    await expect(collect(backend.stream(USER))).resolves.toEqual(['Reply']);
+  });
+
+  it('surfaces the authoritative reply when it does not extend the preview', async () => {
+    const { backend } = backendOver(
+      sseResponse([
+        frame({ type: 'token', text: 'narration ' }),
+        frame({ type: 'done', message: { content: 'The answer.' } }),
+      ]),
+    );
+
+    // The preview may have narrated past a tool-call round. A delta stream
+    // cannot retract it, so the answer is surfaced rather than dropped.
+    await expect(collect(backend.stream(USER))).resolves.toEqual([
+      'narration ',
+      'The answer.',
+    ]);
+  });
+
+  it('fails when the terminal reply exceeds the reply cap', async () => {
+    const { backend } = backendOver(
+      sseResponse([
+        frame({
+          type: 'done',
+          message: { content: 'x'.repeat(MAX_INFERENCE_REPLY_UNITS + 1) },
+        }),
+      ]),
+    );
+
+    // The cap is enforced on the authoritative content too, not only on the
+    // tokens it replaces.
+    await expectPathError(() => backend.chat(USER), 'route_stream_error');
+  });
+
+  it('stops reading a failed response body at the excerpt', async () => {
+    // A body the reader must stop pulling from: `response.text()` would consume
+    // every chunk before any excerpt could bound the result.
+    let pulled = 0;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        if (pulled > 100) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encoder.encode('e'.repeat(1_000)));
+      },
+    });
+    const { backend } = backendOver(new Response(body, { status: 500 }));
+
+    const error = await backend.chat(USER).catch((thrown: unknown) => thrown);
+
+    expect(error).toMatchObject({
+      name: 'InferencePathError',
+      code: 'route_request_failed',
+    });
+    // Enough for the 200-character excerpt, nowhere near the whole body.
+    expect(pulled).toBeLessThan(5);
   });
 
   it('fails when the stream exceeds the total byte cap', async () => {

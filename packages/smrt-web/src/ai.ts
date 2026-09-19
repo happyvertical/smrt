@@ -588,12 +588,16 @@ function decodeRouteFrame(
     };
   }
 
-  // `null`, a number and a bare string are all valid JSON and none of them is
-  // a frame; reading a property off them would throw a raw TypeError past this
-  // module's error contract. Treated as unrecognized (forward compatibility),
-  // the same as an unknown `type`.
-  if (parsed === null || typeof parsed !== 'object') {
-    return { kind: 'ignored' };
+  // `null`, a number, a bare string and an array are all valid JSON and none of
+  // them is a frame. The route contract is fail-closed for malformed frames, so
+  // this is a coded error rather than an ignored one: accepting a primitive and
+  // then completing on a later `done` would report a successful answer for a
+  // response that was never well formed.
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      kind: 'error',
+      message: `Inference route sent a frame that is not an object: ${line.slice(0, 80)}`,
+    };
   }
   const frame = parsed as RouteFrame;
 
@@ -669,6 +673,15 @@ async function* readRouteEvents(
         newline = buffer.indexOf('\n');
         // Blank lines and `: heartbeat` comments carry no frame.
         if (!line.startsWith('data:')) continue;
+        // Enforced BEFORE decoding: a peer can put one complete oversized frame
+        // in a single chunk, and `JSON.parse` would materialize it in full
+        // before any post-parse guard could see it.
+        if (line.length > MAX_INFERENCE_STREAM_LINE_UNITS) {
+          throw new InferencePathError(
+            `Inference route stream sent a frame over ${MAX_INFERENCE_STREAM_LINE_UNITS} units`,
+            'route_stream_error',
+          );
+        }
 
         const decoded = decodeRouteFrame(line);
         if (decoded.kind === 'error') {
@@ -720,6 +733,36 @@ export function requestSignal(
   if (timeout === undefined) return signal;
   const deadline = AbortSignal.timeout(timeout);
   return signal ? AbortSignal.any([signal, deadline]) : deadline;
+}
+
+/**
+ * Read at most `limit` characters of a response body.
+ *
+ * A non-2xx response is untrusted too: `response.text()` materializes the whole
+ * body before any excerpt could bound it, so the bound has to be applied while
+ * reading rather than after.
+ */
+async function readBoundedBody(
+  response: Response,
+  limit: number,
+): Promise<string> {
+  const body = response.body;
+  if (!body) return '';
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  try {
+    while (text.length < limit) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } finally {
+    reader.cancel().catch(() => {
+      /* already closed — nothing to release */
+    });
+  }
+  return text.slice(0, limit);
 }
 
 /**
@@ -781,7 +824,7 @@ export function createRouteInferenceBackend(
       // an auth failure is distinguishable from a bad request.
       let detail = '';
       try {
-        detail = (await response.text()).slice(0, 200);
+        detail = await readBoundedBody(response, 200);
       } catch {
         /* body unreadable — the status alone will have to do */
       }
@@ -816,8 +859,17 @@ export function createRouteInferenceBackend(
         }
         // `done.message.content` is the server's persisted, authoritative
         // reply; the assembled tokens are a live preview that a tool-call
-        // round may have narrated past.
-        else if (event.content !== undefined) assembled = event.content;
+        // round may have narrated past. Bounded by the same cap: replacing the
+        // accumulator with a larger terminal frame would otherwise bypass it.
+        else if (event.content !== undefined) {
+          if (event.content.length > MAX_INFERENCE_REPLY_UNITS) {
+            throw new InferencePathError(
+              `Inference route reply exceeded ${MAX_INFERENCE_REPLY_UNITS} units`,
+              'route_stream_error',
+            );
+          }
+          assembled = event.content;
+        }
       }
       return {
         content: assembled,
@@ -827,10 +879,29 @@ export function createRouteInferenceBackend(
 
     async *stream(messages, chatOptions) {
       const events = await openStream(messages, chatOptions);
+      let emitted = '';
       for await (const event of events) {
-        if (event.kind === 'done') return;
-        chatOptions?.onProgress?.(event.text);
-        yield event.text;
+        if (event.kind === 'token') {
+          emitted += event.text;
+          chatOptions?.onProgress?.(event.text);
+          yield event.text;
+          continue;
+        }
+        // `done.message.content` is the server's persisted, authoritative
+        // reply; the tokens are a live preview that a tool-call round may have
+        // narrated past. A delta stream cannot retract what it already yielded,
+        // so reconcile against what the consumer has: yield the REMAINDER when
+        // the authoritative reply extends the preview, and the whole reply when
+        // it does not (or when no token arrived at all, which would otherwise
+        // read as an empty reply).
+        if (event.content === undefined || event.content === emitted) return;
+        const remainder = event.content.startsWith(emitted)
+          ? event.content.slice(emitted.length)
+          : event.content;
+        if (remainder.length === 0) return;
+        chatOptions?.onProgress?.(remainder);
+        yield remainder;
+        return;
       }
     },
   };
