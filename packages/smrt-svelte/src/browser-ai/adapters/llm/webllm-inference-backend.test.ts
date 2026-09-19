@@ -729,6 +729,53 @@ describe('createWebLlmInferenceBackend adapter construction', () => {
     expect(backend.status).toBe('ready');
   });
 
+  it('does not orphan a model a newer attempt already published', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    const inner = adapter.ensureInitialized.bind(adapter);
+    const gates: Array<() => void> = [];
+    let calls = 0;
+    adapter.ensureInitialized = async (
+      modelId?: string,
+      onProgress?: OnProgress,
+    ) => {
+      calls += 1;
+      const attempt = calls;
+      if (attempt === 3) throw new Error('third init failed');
+      await new Promise<void>((resolve) => {
+        gates[attempt] = resolve;
+      });
+      return inner(modelId, onProgress);
+    };
+    // A configured model the adapter does not hold keeps `load()` from
+    // short-circuiting on `ready`, so the third attempt really runs.
+    const backend = createWebLlmInferenceBackend({
+      adapter,
+      model: 'wanted',
+    });
+    const until = async (ready: () => boolean) => {
+      for (let i = 0; i < 100 && !ready(); i += 1) await Promise.resolve();
+    };
+
+    const first = backend.load();
+    await backend.unload();
+    const second = backend.load();
+    await until(() => typeof gates[2] === 'function');
+    // The newer attempt publishes first, so the adapter's ONE model is its own.
+    gates[2]();
+    await second;
+    // The stale attempt then completes — it must not claim that model.
+    gates[1]();
+    await first.catch(() => undefined);
+
+    const unloads = adapter.calls.unload;
+    await backend.load().catch(() => undefined);
+
+    // Only the explicit unload released anything: the failed load must not
+    // dispose the model the second attempt still owns.
+    expect(adapter.calls.unload).toBe(unloads);
+  });
+
   it('still loads when the shared adapter is ready on another model', async () => {
     withWebGpu();
     const adapter = makeAdapter();

@@ -295,10 +295,12 @@ export function createWebLlmInferenceBackend(
             // published destroyed underneath it.
             if (!loadInFlight && lastPublishedEpoch < epoch) {
               await target.unloadModel();
-            } else {
-              // A newer attempt owns the adapter, so the model this one
-              // established stays resident for now; that newer attempt's
-              // failure discharges it.
+            } else if (loadInFlight) {
+              // A newer attempt owns the adapter right now, so the model this
+              // one established stays resident for now; that newer attempt's
+              // failure discharges it. Anything else — a newer attempt that has
+              // already PUBLISHED — owns the adapter's one model, so nothing is
+              // orphaned and this attempt must not mark it so.
               orphanedModel = true;
             }
             return;
