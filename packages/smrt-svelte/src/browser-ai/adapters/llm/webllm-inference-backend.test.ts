@@ -650,6 +650,35 @@ describe('createWebLlmInferenceBackend adapter construction', () => {
     expect(getLLMMock).toHaveBeenCalledWith({ loadModule });
   });
 
+  it('pins the configured model as the adapter default', async () => {
+    const adapter = makeAdapter();
+    getLLMMock.mockResolvedValue(adapter);
+
+    // A turn that names no model resolves the adapter's DEFAULT, so the model
+    // `load()` ensures has to be that default — otherwise the first turn unloads
+    // it and downloads another behind the message.
+    await createWebLlmInferenceBackend({ model: 'wanted' }).chat([
+      { role: 'user', content: 'hi' },
+    ]);
+
+    expect(getLLMMock).toHaveBeenCalledWith({ defaultModel: 'wanted' });
+  });
+
+  it('still loads when the shared adapter is ready on another model', async () => {
+    withWebGpu();
+    const adapter = makeAdapter();
+    adapter.setInitState('ready');
+    adapter.currentModel = 'other-model';
+    const backend = createWebLlmInferenceBackend({ adapter, model: 'wanted' });
+
+    await backend.load();
+
+    // `ready` on a DIFFERENT model must not short-circuit: the caller asked for
+    // this backend's model, and skipping would hand the turn to the model the
+    // adapter happens to hold.
+    expect(adapter.calls.ensure).toEqual(['wanted']);
+  });
+
   it('constructs the adapter once for concurrent callers', async () => {
     const adapter = makeAdapter();
     getLLMMock.mockResolvedValue(adapter);

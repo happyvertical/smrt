@@ -179,15 +179,31 @@ export function createWebLlmInferenceBackend(
     return toBackendStatus(adapter);
   }
 
+  /**
+   * True when the adapter already holds the model this backend ensures. A shared
+   * adapter may be `ready` on a DIFFERENT one — the warm-cache case that
+   * `options.adapter` exists for — and short-circuiting then would skip a load
+   * the caller asked for and hand the turn to the wrong model.
+   */
+  function holdsRequestedModel(): boolean {
+    if (!options.model) return true;
+    return adapter?.currentModel === options.model;
+  }
+
   async function ensureAdapter(): Promise<LLMAdapter> {
     if (adapter) return adapter;
     // Concurrent `load()`/`chat()` calls share one construction, so two
     // callers cannot each start an unshared adapter (and its download).
     loading ??= (async () => {
-      const { appConfig, loadModule } = options;
+      const { appConfig, loadModule, model } = options;
       const created = await getLLM({
         ...(appConfig ? { appConfig } : {}),
         ...(loadModule ? { loadModule } : {}),
+        // Pin the configured model as the adapter's DEFAULT, not merely the one
+        // `load()` names. A turn that does not name one resolves the adapter's
+        // default, so without this the adapter would unload the model `load()`
+        // ensured and download its own default behind the first message.
+        ...(model ? { defaultModel: model } : {}),
       } as WebLLMOptions);
       adapter = created;
       return created;
@@ -226,7 +242,9 @@ export function createWebLlmInferenceBackend(
       // this backend through `loading`, the state auto-selection skips, so a
       // turn issued in that window silently routes to the server instead of the
       // model that is already resident.
-      if (currentStatus() === 'ready') return Promise.resolve();
+      if (currentStatus() === 'ready' && holdsRequestedModel()) {
+        return Promise.resolve();
+      }
       // One attempt per epoch, shared by concurrent callers — the single-flight
       // bitgpu applies. Without it a second caller reaches the adapter's own
       // `'initializing'` poll, which settles only on `ready` or `error`, so a
