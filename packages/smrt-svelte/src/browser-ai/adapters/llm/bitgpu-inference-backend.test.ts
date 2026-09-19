@@ -394,6 +394,34 @@ describe('createBitGpuInferenceBackend', () => {
     expect(backend.status).toBe('error');
   });
 
+  it('keeps the load failure when the teardown throws', async () => {
+    withWebGpu();
+    const { options } = makeModules();
+    const backend = createBitGpuInferenceBackend({
+      ...options,
+      loadBitGpu: async () => ({
+        async createEngine() {
+          return {
+            dispose() {
+              throw new Error('device lost');
+            },
+          };
+        },
+        WebGPUUnavailableError: class extends Error {},
+      }),
+      loadChat: async () => ({
+        async createChat() {
+          throw new Error('tokenizer 404');
+        },
+      }),
+    });
+
+    // The teardown runs while abandoning the attempt; its own error must not
+    // replace the failure the caller is owed, nor skip recording it.
+    await expect(backend.load()).rejects.toThrow('tokenizer 404');
+    expect(backend.status).toBe('error');
+  });
+
   it('refuses a turn before load, naming what is missing', async () => {
     withWebGpu();
     const { options, d } = makeModules();

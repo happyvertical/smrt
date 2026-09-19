@@ -346,7 +346,12 @@ export function createBitGpuInferenceBackend(
             // `unload()` ran while these were being created. Publishing them
             // would report `ready` with a live GPU device nothing disposes, and
             // a later `load()` would no-op on it.
-            created.dispose();
+            try {
+              created.dispose();
+            } catch {
+              // Abandoning the attempt, not reporting its failure: a teardown
+              // error must not become the caller's error.
+            }
             created = undefined;
             return;
           }
@@ -361,7 +366,12 @@ export function createBitGpuInferenceBackend(
           // different host than the manifest, so `createChat` failing here is
           // the documented real case) would otherwise orphan a live GPU device
           // and its weights — and every retry would allocate another.
-          created?.dispose();
+          try {
+            created?.dispose();
+          } catch {
+            // A teardown error must not replace the load failure the caller is
+            // about to see, nor skip recording it.
+          }
           created = undefined;
           const err = error instanceof Error ? error : new Error(String(error));
           // A failure that overlaps an `unload()` leaves the backend idle

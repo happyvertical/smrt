@@ -602,12 +602,30 @@ function decodeRouteFrame(
   const frame = parsed as RouteFrame;
 
   if (frame.type === 'token') {
+    // A frame that CARRIES the field with the wrong type is malformed; dropping
+    // it would truncate the reply indistinguishably from a short answer. An
+    // absent field or an empty string stays the documented no-op.
+    if (frame.text !== undefined && typeof frame.text !== 'string') {
+      return {
+        kind: 'error',
+        message: `Inference route sent a token frame with a non-string text: ${line.slice(0, 80)}`,
+      };
+    }
     return typeof frame.text === 'string' && frame.text.length > 0
       ? { kind: 'token', text: frame.text }
       : { kind: 'ignored' };
   }
   if (frame.type === 'done') {
     const content = frame.message?.content;
+    // Same rule: a `done` carrying a non-string content is malformed, and
+    // folding it into "carries no content" would report a successful answer
+    // assembled from the preview of a response that was never well formed.
+    if (content !== undefined && typeof content !== 'string') {
+      return {
+        kind: 'error',
+        message: `Inference route sent a done frame with a non-string content: ${line.slice(0, 80)}`,
+      };
+    }
     return {
       kind: 'done',
       content: typeof content === 'string' ? content : undefined,
@@ -890,18 +908,29 @@ export function createRouteInferenceBackend(
         // `done.message.content` is the server's persisted, authoritative
         // reply; the tokens are a live preview that a tool-call round may have
         // narrated past. A delta stream cannot retract what it already yielded,
-        // so reconcile against what the consumer has: yield the REMAINDER when
-        // the authoritative reply extends the preview, and the whole reply when
-        // it does not (or when no token arrived at all, which would otherwise
-        // read as an empty reply).
-        if (event.content === undefined || event.content === emitted) return;
-        const remainder = event.content.startsWith(emitted)
-          ? event.content.slice(emitted.length)
-          : event.content;
-        if (remainder.length === 0) return;
-        chatOptions?.onProgress?.(remainder);
-        yield remainder;
-        return;
+        // so reconcile against what THIS consumer has seen: it either already
+        // carries the reply, or the reply extends it and only the remainder is
+        // owed. Anything else is a contradiction, not a reply.
+        if (event.content === undefined) return;
+        // The preview already carries the reply — it IS it, or it starts with
+        // it — so there is nothing the consumer has not seen.
+        if (emitted.startsWith(event.content)) return;
+        // The reply extends the preview: yield only the unseen remainder, so a
+        // concatenating consumer reconstructs the authoritative text exactly.
+        if (event.content.startsWith(emitted)) {
+          const remainder = event.content.slice(emitted.length);
+          if (remainder.length === 0) return;
+          chatOptions?.onProgress?.(remainder);
+          yield remainder;
+          return;
+        }
+        // Neither extends nor is contained: the terminal reply contradicts what
+        // was already yielded. A delta stream cannot retract it, so fail closed
+        // rather than render text the server never sent.
+        throw new InferencePathError(
+          'Inference route sent a terminal reply that contradicts the streamed preview',
+          'route_stream_error',
+        );
       }
     },
   };

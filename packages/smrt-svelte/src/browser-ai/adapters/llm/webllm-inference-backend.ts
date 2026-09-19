@@ -100,10 +100,23 @@ function toAdapterMessages(messages: InferenceTextMessage[]): LLMMessage[] {
   return messages.map(({ role, content }) => ({ role, content }));
 }
 
-/** Forward only the options the adapter can honor. */
-function toAdapterOptions(options?: InferenceChatOptions): LLMChatOptions {
+/**
+ * Forward only the options the adapter can honor.
+ *
+ * `ensuredModel` is the model this backend exists to serve. It WINS over a
+ * per-call one, because one engine binds one model: passing a different id
+ * would make the adapter unload the model `load()` ensured and download that
+ * one behind the first message, answering from a model the caller never chose.
+ * A per-call `model` therefore only reaches the adapter when this backend was
+ * configured with none — the same constraint bitgpu documents.
+ */
+function toAdapterOptions(
+  options: InferenceChatOptions | undefined,
+  ensuredModel: string | undefined,
+): LLMChatOptions {
+  const model = ensuredModel ?? options?.model;
   return {
-    ...(options?.model ? { model: options.model } : {}),
+    ...(model ? { model } : {}),
     ...(options?.maxTokens !== undefined
       ? { maxTokens: options.maxTokens }
       : {}),
@@ -364,7 +377,7 @@ export function createWebLlmInferenceBackend(
       const target = await ensureAdapter();
       const response = await target.chat(
         toAdapterMessages(messages),
-        toAdapterOptions(chatOptions),
+        toAdapterOptions(chatOptions, options.model),
       );
       return {
         content: response.content,
@@ -385,7 +398,7 @@ export function createWebLlmInferenceBackend(
       const target = await ensureAdapter();
       yield* target.stream(
         toAdapterMessages(messages),
-        toAdapterOptions(chatOptions),
+        toAdapterOptions(chatOptions, options.model),
       );
     },
 

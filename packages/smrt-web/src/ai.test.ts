@@ -528,7 +528,19 @@ describe('createRouteInferenceBackend', () => {
     await expect(collect(backend.stream(USER))).resolves.toEqual(['Reply']);
   });
 
-  it('surfaces the authoritative reply when it does not extend the preview', async () => {
+  it('yields nothing when the preview already carries the terminal reply', async () => {
+    const { backend } = backendOver(
+      sseResponse([
+        frame({ type: 'token', text: 'Hello' }),
+        frame({ type: 'done', message: { content: 'Hel' } }),
+      ]),
+    );
+
+    // Appending it would render 'HelloHel' — text the server never sent.
+    await expect(collect(backend.stream(USER))).resolves.toEqual(['Hello']);
+  });
+
+  it('fails when the terminal reply contradicts the preview', async () => {
     const { backend } = backendOver(
       sseResponse([
         frame({ type: 'token', text: 'narration ' }),
@@ -537,11 +549,33 @@ describe('createRouteInferenceBackend', () => {
     );
 
     // The preview may have narrated past a tool-call round. A delta stream
-    // cannot retract it, so the answer is surfaced rather than dropped.
-    await expect(collect(backend.stream(USER))).resolves.toEqual([
-      'narration ',
-      'The answer.',
-    ]);
+    // cannot retract what it yielded, so a contradiction is a coded failure
+    // rather than text the server never sent.
+    await expectPathError(
+      () => collect(backend.stream(USER)),
+      'route_stream_error',
+    );
+  });
+
+  it('fails on a token frame whose text is not a string', async () => {
+    const { backend } = backendOver(
+      sseResponse([frame({ type: 'token', text: 3 })]),
+    );
+
+    // Dropping it would truncate the reply indistinguishably from a short
+    // answer, which is a fabricated success for a malformed response.
+    await expectPathError(
+      () => collect(backend.stream(USER)),
+      'route_stream_error',
+    );
+  });
+
+  it('fails on a done frame whose content is not a string', async () => {
+    const { backend } = backendOver(
+      sseResponse([frame({ type: 'done', message: { content: 3 } })]),
+    );
+
+    await expectPathError(() => backend.chat(USER), 'route_stream_error');
   });
 
   it('fails when the terminal reply exceeds the reply cap', async () => {
