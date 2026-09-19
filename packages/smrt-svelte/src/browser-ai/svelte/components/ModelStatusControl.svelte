@@ -14,12 +14,14 @@
  * without WebGPU is expected to fall through to the route backend, and the
  * message says so rather than offering a Load button that cannot succeed.
  */
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   InferenceBackend,
   InferenceBackendStatus,
   InferenceProgress,
 } from '@happyvertical/smrt-web/ai';
+import { M } from '../../../i18n/strings.browser-ai.js';
 import DownloadProgress from './DownloadProgress.svelte';
 
 export interface Props {
@@ -42,6 +44,8 @@ let {
   class: className = '',
   onerror,
 }: Props = $props();
+
+const { t } = useI18n();
 
 const STATUS_LABEL: Record<InferenceBackendStatus, string> = {
   unavailable: 'Not available on this device',
@@ -101,8 +105,7 @@ async function run(
 
   {#if snapshot.status === 'unavailable'}
     <p class="hint">
-      This browser does not expose WebGPU, so the model cannot run here.
-      Inference will use the server route instead.
+      {t(M['ui.model_status.webgpu_unavailable'])}
     </p>
   {:else if snapshot.status === 'loading'}
     <DownloadProgress
