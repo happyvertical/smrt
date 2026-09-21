@@ -10,11 +10,13 @@
  * path a downstream app's integration tests take, and it is the path this
  * fixture runs end to end:
  *
- * 1. a local manifest write sets the file's `packageName` (what `smrtPlugin()`
+ * 1. `ManifestBuilder` scans the fixture's own source into
+ *    `.smrt/manifest.json` and sets its `packageName` (what `smrtPlugin()`
  *    does in an app build);
  * 2. `smrtConsumer()` merges `@happyvertical/smrt-core`'s manifest — resolved
  *    through its `package.json#exports` map, the #2923 discovery path — into
- *    that same file and generates `.smrt/register.js`;
+ *    that same file and generates `.smrt/register.js`, making it a mixed
+ *    aggregate: the fixture's own `TreeNode` beside smrt-core's bases;
  * 3. `smrtVitestPlugin()` loads the merged file, passing the CONSUMER's package
  *    name for every entry in it;
  * 4. the fixture's spec dynamically imports the generated `.smrt/register.js`,
@@ -24,7 +26,8 @@
  * Before the fix, step 3 produced `@smrt-fixtures/issue-2970-consumer:SmrtHierarchical`
  * next to step 4's `@happyvertical/smrt-core:SmrtHierarchical`, and simple-name
  * resolution went ambiguous. The fixture spec fails on the pre-fix revision
- * with exactly that pair.
+ * with exactly that pair, and also pins the other direction: the fixture's own
+ * `TreeNode` stays registered once, under the fixture's package.
  *
  * Structure mirrors `issue-2750-registry-shared-across-worker.test.ts`: a
  * nested, real `vitest run` against a fixture package, asserted on its JSON

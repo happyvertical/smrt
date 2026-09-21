@@ -25,6 +25,11 @@ describe('issue #2970 aggregated-manifest attribution probe', () => {
     // fixture's package, which declares no class of that name.
     expect(hierarchical).toEqual(['@happyvertical/smrt-core:SmrtHierarchical']);
 
+    // The consumer's own class in the same aggregate keeps ITS package, once.
+    expect(qualified.filter((name) => name.endsWith(':TreeNode'))).toEqual([
+      '@smrt-fixtures/issue-2970-consumer:TreeNode',
+    ]);
+
     // Simple-name resolution must stay unambiguous for it, and the reported
     // failing surface must complete.
     expect(() => ObjectRegistry.resolveType('SmrtHierarchical')).not.toThrow();
