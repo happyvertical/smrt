@@ -10,12 +10,14 @@
  */
 import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import type {
+  DataSurfaceActionRequest,
+  DataSurfaceActionResult,
   DataSurfaceIdentity,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { tick, untrack } from 'svelte';
+import { type Snippet, tick, untrack } from 'svelte';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
@@ -82,6 +84,23 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /** Renders a message's own `toolCallData` (#2988), inside that message's
+   * bubble below its text. Called only for messages whose `toolCallData` is
+   * set. Without it the dock renders no tool-call region at all: the payload
+   * is host-defined, so the dock never stringifies it or injects it as HTML.
+   * Render it with ordinary Svelte markup in the host's own snippet. */
+  toolCall?: Snippet<[AssistantMessage]>;
+  /** Hands the host this dock's own controller once, on mount (#2989), so it
+   * can propose an action with `controller.previewAction(request)`. The
+   * proposal renders with Confirm/Reject like any other; everything else
+   * (apply, the idempotency key, mount checks) stays with the dock. */
+  oncontroller?: (controller: AssistantDockController) => void;
+  /** Called after the server accepts an apply (#2989). See
+   * `AssistantDockControllerOptions.onActionApplied`. */
+  onactionapplied?: (
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) => void;
 }
 
 const {
@@ -90,6 +109,9 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  toolCall,
+  oncontroller,
+  onactionapplied,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -112,6 +134,7 @@ const controller: AssistantDockController = createAssistantDockController({
     return surfaces;
   },
   visible: () => visible,
+  onActionApplied: (request, result) => onactionapplied?.(request, result),
 });
 
 // F1 (#2904 review): the whole body runs under `untrack` so the effect takes
@@ -133,6 +156,7 @@ $effect(() => {
     void controller.loadThreads();
     void controller.loadModels();
     controller.startPolling();
+    oncontroller?.(controller);
   });
   return () => controller.dispose();
 });
@@ -335,6 +359,11 @@ async function handleConfirmAction(requestId: string) {
               >
                 {#snippet children()}
                   <p class="assistant-dock-message-content">{message.content}</p>
+                {#if toolCall && message.toolCallData != null}
+                  <div class="assistant-dock-tool-call">
+                    {@render toolCall(message)}
+                  </div>
+                {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -397,6 +426,23 @@ async function handleConfirmAction(requestId: string) {
                   onconfirmaction={() => handleConfirmAction(requestId)}
                   onrejectaction={() => controller.rejectAction(requestId)}
                 />
+                {#if action.outcomeUnknown}
+                  <!-- #2990: no decision was reached, so the change may have
+                       landed. Reject is withdrawn (ToolCallDisplay only
+                       offers it for a live preview); the only affordance is a
+                       same-key retry. -->
+                  <div class="assistant-dock-action-unknown" role="status">
+                    <p>{t(M['chat.assistant_dock.action_outcome_unknown'])}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={action.status === 'applying'}
+                      onclick={() => handleConfirmAction(requestId)}
+                    >
+                      {t(M['chat.assistant_dock.action_check_again'])}
+                    </Button>
+                  </div>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -579,6 +625,11 @@ async function handleConfirmAction(requestId: string) {
     gap: var(--smrt-spacing-2, 8px);
   }
 
+  .assistant-dock-tool-call {
+    margin-top: var(--smrt-spacing-2, 8px);
+    min-width: 0;
+  }
+
   .assistant-dock-message-content {
     margin: 0;
     white-space: pre-wrap;
@@ -623,6 +674,19 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-action-unknown {
+    margin-top: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-tertiary-container, #ffd8e4);
+    color: var(--smrt-color-on-tertiary-container, #31111d);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-action-unknown p {
+    margin: 0 0 var(--smrt-spacing-2, 8px);
   }
 
   .assistant-dock-stale {

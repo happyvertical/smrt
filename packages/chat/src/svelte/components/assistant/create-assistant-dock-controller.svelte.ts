@@ -104,6 +104,34 @@ export interface AssistantActionState {
    * `applyAction` call to replay an already-applied action. Cleared
    * (`false`) whenever an apply attempt succeeds. */
   retryable?: boolean;
+  /** #2990: true when an apply attempt reached no server decision, so the
+   * mutation may or may not have committed: `actionClient.apply` rejected
+   * (transport failure, 5xx, timeout), or it resolved `ok: false` with a
+   * reason in `ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS` (for example
+   * `idempotency_in_progress`). Distinct from a refusal, where the server
+   * decided and said no. While it is set, the entry keeps its
+   * `idempotencyKey`: `applyAction` retries with that same key (a replay,
+   * never a second mutation), and neither `rejectAction` nor a new
+   * `previewAction` for the same request id can discard it. Cleared once an
+   * apply attempt gets a decision (applied or refused). The entry's
+   * `status` stays `'failed'` and `retryable` stays `true`. */
+  outcomeUnknown?: boolean;
+}
+
+/** `DataSurfaceActionResult.reason` values that mean an apply reached no
+ * decision (#2990). An `AssistantActionClient` reports "no decision" by
+ * rejecting, or by resolving `{ ok: false, reason }` with one of these, for
+ * example mapping an HTTP 5xx to `'outcome_unknown'`. The server's own
+ * adapter returns `idempotency_in_progress` while an earlier attempt with the
+ * same key is still running. */
+export const ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS: readonly string[] =
+  Object.freeze(['idempotency_in_progress', 'outcome_unknown']);
+
+function isUnknownOutcomeReason(reason: string | undefined): boolean {
+  return (
+    reason !== undefined &&
+    ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS.includes(reason)
+  );
 }
 
 export interface AssistantDockControllerOptions {
@@ -130,6 +158,17 @@ export interface AssistantDockControllerOptions {
   staleAfterMs?: number;
   /** Whether the dock is currently visible; polling pauses when false. */
   visible?: () => boolean;
+  /** Called once per apply that the server accepted (`result.ok`) in the
+   * current context (#2989), so a host can refresh whatever the action
+   * changed. `result` is the server's own apply result: read ids and
+   * details from it, never from the request you sent. Not called for a
+   * refusal, a failed or unknown outcome, or an apply whose context was
+   * swapped (registry/transport change) while it was in flight. A throw
+   * from the callback is caught and never changes the action's state. */
+  onActionApplied?: (
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) => void;
 }
 
 export interface AssistantDockController {
@@ -165,6 +204,9 @@ export interface AssistantDockController {
   /** Applies the action using the idempotency key minted at preview time
    * (`AssistantActionState.idempotencyKey`) — never a fresh key per call. */
   applyAction(requestId: string): Promise<void>;
+  /** Discards a proposed action. Refused, with `error` set, while an apply
+   * is in flight or its outcome is unknown (#2990): the entry holds the only
+   * idempotency key that keeps a retry from applying twice. */
   rejectAction(requestId: string): void;
   startPolling(): void;
   stopPolling(): void;
@@ -945,6 +987,21 @@ export function createAssistantDockController(
     // Binding decision #2904 (build phase 2): a fresh key per Confirm click
     // would defeat apply dedup when a retried click follows a timeout where
     // the server had actually already applied the first attempt.
+    // #2990: a new proposal must never replace an entry whose apply is in
+    // flight or whose outcome is unknown. That entry holds the only
+    // idempotency key that makes a retry a replay; a fresh key would let
+    // the same action apply twice.
+    const existing = actions.get(actionKey(request));
+    if (
+      existing &&
+      (existing.status === 'applying' || existing.outcomeUnknown === true)
+    ) {
+      error =
+        `AssistantDock: previewAction refused — action "${actionKey(request)}" ` +
+        'has an apply in flight or an unknown outcome; retry it with ' +
+        'applyAction instead.';
+      return;
+    }
     const idempotencyKey =
       options.createIdempotencyKey?.() ?? defaultIdempotencyKey();
     if (!isSurfaceMounted(request.identity)) {
@@ -1164,7 +1221,11 @@ export function createAssistantDockController(
           // Cycle-4 final finding 2: this WAS a genuine apply attempt —
           // retryable only when it failed, cleared on success.
           retryable: !result.ok,
+          // #2990: a decision (applied or refused) clears an earlier
+          // unknown outcome; "no decision" keeps the key held.
+          outcomeUnknown: !result.ok && isUnknownOutcomeReason(result.reason),
         });
+        if (result.ok) notifyActionApplied(applyRequest, result);
       } else if (!current && result.ok && epoch === contextEpoch) {
         // The user rejected while this apply was in flight, and the server
         // mutation landed anyway — the rejection cannot undo a real server
@@ -1190,6 +1251,7 @@ export function createAssistantDockController(
             },
           ];
         }
+        notifyActionApplied(applyRequest, result);
       }
     } catch (caughtError) {
       const current = actions.get(requestId);
@@ -1205,12 +1267,38 @@ export function createAssistantDockController(
           // Cycle-4 final finding 2: a genuine apply attempt failed —
           // retryable.
           retryable: true,
+          // #2990: a rejected apply reached no known decision (transport
+          // failure, 5xx, timeout, or a client bug); the mutation may have
+          // committed, so the key stays held for a same-key retry.
+          outcomeUnknown: true,
         });
       }
     }
   }
 
+  function notifyActionApplied(
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) {
+    try {
+      options.onActionApplied?.(request, result);
+    } catch {
+      // A host callback failure must never corrupt action state.
+    }
+  }
+
   function rejectAction(requestId: string) {
+    const state = actions.get(requestId);
+    if (!state) return;
+    // #2990: never drop a key whose apply may have landed.
+    if (state.status === 'applying' || state.outcomeUnknown === true) {
+      error =
+        `AssistantDock: rejectAction refused — action "${requestId}" ` +
+        (state.status === 'applying'
+          ? 'is still applying.'
+          : 'has an unknown outcome; retry it to learn whether it applied.');
+      return;
+    }
     actions.delete(requestId);
   }
 

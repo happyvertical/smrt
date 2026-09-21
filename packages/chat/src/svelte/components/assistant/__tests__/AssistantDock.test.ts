@@ -22,9 +22,13 @@ import {
   screen,
   userEvent,
 } from '@happyvertical/smrt-vitest/svelte';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssistantDock from '../AssistantDock.svelte';
-import { createInMemoryAssistantTransport } from '../assistant-transport.js';
+import {
+  type AssistantMessage,
+  createInMemoryAssistantTransport,
+} from '../assistant-transport.js';
 
 const identity: DataSurfaceIdentity = {
   surfaceId: 'orders',
@@ -576,5 +580,88 @@ describe('AssistantDock (mounted component)', () => {
     );
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
+  });
+
+  // #2988: a host renders a message's own toolCallData through the
+  // `toolCall` snippet; without one the dock never renders the payload.
+  describe('toolCall snippet (#2988)', () => {
+    const hostile = '<img src=x onerror="window.__pwned=1">';
+    function transportWithToolCall() {
+      return createInMemoryAssistantTransport({
+        respond: (threadId, userMessage) => ({
+          id: `assistant-${userMessage.id}`,
+          threadId,
+          content: userMessage.content === 'plain' ? 'no tool' : 'with tool',
+          role: 'assistant',
+          createdAt: new Date(),
+          toolCallData:
+            userMessage.content === 'plain'
+              ? undefined
+              : { kind: 'imageEditCandidate', label: hostile },
+        }),
+      });
+    }
+
+    async function sendThroughDock(text: string) {
+      const textarea = await screen.findByLabelText('Message');
+      await userEvent.type(textarea, text);
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    }
+
+    it('renders the host snippet inside the bubble only for messages with toolCallData', async () => {
+      const seen: AssistantMessage[] = [];
+      const toolCall = createRawSnippet((message: () => AssistantMessage) => ({
+        render: () => '<span class="host-tool-call"></span>',
+        setup(node: Element) {
+          const m = message();
+          seen.push(m);
+          const data = m.toolCallData as { kind: string; label: string };
+          node.textContent = `${data.kind}: ${data.label}`;
+        },
+      }));
+      const { container } = render(AssistantDock, {
+        props: {
+          transport: transportWithToolCall(),
+          registry: createDataSurfaceRegistry(),
+          toolCall,
+        },
+      });
+      await userEvent.click(
+        screen.getByRole('button', { name: /New conversation/i }),
+      );
+      await sendThroughDock('plain');
+      expect(await screen.findByText('no tool')).toBeInTheDocument();
+      await sendThroughDock('tool');
+      expect(await screen.findByText('with tool')).toBeInTheDocument();
+
+      const regions = container.querySelectorAll('.assistant-dock-tool-call');
+      expect(regions).toHaveLength(1);
+      expect(regions[0].textContent).toBe(`imageEditCandidate: ${hostile}`);
+      // Rendered as text, never parsed as markup.
+      expect(container.querySelector('img')).toBeNull();
+      expect(
+        regions[0]
+          .closest('li')
+          ?.querySelector('.assistant-dock-message-content')?.textContent,
+      ).toBe('with tool');
+      expect(seen.every((m) => m.toolCallData != null)).toBe(true);
+    });
+
+    it('renders no tool-call region and never the raw payload without a snippet', async () => {
+      const { container } = render(AssistantDock, {
+        props: {
+          transport: transportWithToolCall(),
+          registry: createDataSurfaceRegistry(),
+        },
+      });
+      await userEvent.click(
+        screen.getByRole('button', { name: /New conversation/i }),
+      );
+      await sendThroughDock('tool');
+      expect(await screen.findByText('with tool')).toBeInTheDocument();
+      expect(container.querySelector('.assistant-dock-tool-call')).toBeNull();
+      expect(container.innerHTML).not.toContain('imageEditCandidate');
+      expect(container.querySelector('img')).toBeNull();
+    });
   });
 });
