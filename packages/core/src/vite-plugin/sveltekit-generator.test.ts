@@ -412,6 +412,68 @@ describe('SvelteKit Route Generator', () => {
       const content = route?.[1] as string;
       expectGetCollectionCall(content, 'Widget', 'Widget');
       expect(content).not.toContain("getCollection('SpecialWidget')");
+      // The inherited collection's write action is gated on the resolved
+      // item's collection, matching the permission catalog (#2977).
+      expect(content).toContain('const PERMISSION_COLLECTION = "widgets";');
+      expect(content).toContain(
+        'requireRoutePermission(locals, "restoreSpecial");',
+      );
+    });
+
+    it('gates collection-class write actions on the item collection permission (#2977)', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false, collection: 'gadgets' },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            collection: 'widget_collections',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {
+              importBatch: {
+                name: 'importBatch',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['importBatch'],
+                routes: { importBatch: { method: 'POST' } },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes('/importBatch/+server.ts'),
+        );
+      expect(route).toBeDefined();
+      const content = route?.[1] as string;
+      expect(content).toContain('const PERMISSION_COLLECTION = "gadgets";');
+      expect(content).toContain(
+        'requireRoutePermission(locals, "importBatch");',
+      );
     });
 
     it('keeps an inherited item type name when a partial manifest omits the item', async () => {

@@ -264,6 +264,146 @@ export function deriveOperationPermissionSlug(
   return `${collectionName}.${normalizedAction}`;
 }
 
+type RegisteredCatalogClass = NonNullable<
+  ReturnType<typeof ObjectRegistry.getClass>
+>;
+
+function resolveCatalogCollectionName(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): string {
+  const objectConfig = manifestEntry?.decoratorConfig ?? registered.config;
+  const rawCollection = (objectConfig as { collection?: unknown } | undefined)
+    ?.collection;
+  if (typeof rawCollection === 'string' && rawCollection.length > 0) {
+    return rawCollection;
+  }
+  return manifestEntry?.collection ?? deriveCollectionName(registered.name);
+}
+
+interface CatalogAncestor {
+  entry: SmartObjectDefinition;
+  registered: RegisteredCatalogClass;
+}
+
+function packagePrefix(qualifiedName: string | undefined): string | undefined {
+  const separator = qualifiedName?.lastIndexOf(':') ?? -1;
+  return qualifiedName && separator > 0
+    ? qualifiedName.slice(0, separator)
+    : undefined;
+}
+
+function findCatalogClass(
+  name: string,
+  nearQualifiedName: string | undefined,
+): RegisteredCatalogClass | undefined {
+  if (name.includes(':')) return ObjectRegistry.getClassByQualifiedName(name);
+  const prefix = packagePrefix(nearQualifiedName);
+  return (
+    (prefix
+      ? ObjectRegistry.getClassByQualifiedName(`${prefix}:${name}`)
+      : undefined) ?? ObjectRegistry.getClass(name)
+  );
+}
+
+/**
+ * The class and its manifest ancestors, nearest first — mirroring the route
+ * generator's collection-ancestry walk so an inherited collection class (one
+ * that extends another collection without its own type argument) is detected
+ * and resolved to the same item.
+ */
+function collectCatalogAncestry(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): CatalogAncestor[] {
+  const chain: CatalogAncestor[] = [];
+  const seen = new Set<string>();
+  let current: CatalogAncestor | undefined = manifestEntry
+    ? { entry: manifestEntry, registered }
+    : undefined;
+  while (current && chain.length < 32) {
+    const key = current.registered.qualifiedName ?? current.registered.name;
+    if (seen.has(key)) break;
+    seen.add(key);
+    chain.push(current);
+    const parentName =
+      current.entry.extendsQualified || current.entry.extends || undefined;
+    if (!parentName || parentName === 'SmrtCollection') break;
+    const parent = findCatalogClass(
+      parentName,
+      current.registered.qualifiedName,
+    );
+    const parentEntry = parent?.qualifiedName
+      ? findManifestEntryByQualifiedName(parent.qualifiedName)
+      : undefined;
+    current =
+      parent && parentEntry
+        ? { entry: parentEntry, registered: parent }
+        : undefined;
+  }
+  return chain;
+}
+
+function isCollectionClass(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): boolean {
+  return collectCatalogAncestry(registered, manifestEntry).some(({ entry }) =>
+    isCollectionManifestEntry(entry),
+  );
+}
+
+function resolveCollectionItemRegistration(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition,
+): RegisteredCatalogClass | undefined {
+  const ancestry = collectCatalogAncestry(registered, manifestEntry);
+  for (const { entry, registered: ancestor } of ancestry) {
+    const typeArg = entry.extendsTypeArg;
+    if (typeof typeArg === 'string' && typeArg.length > 0) {
+      return findCatalogClass(typeArg, ancestor.qualifiedName);
+    }
+  }
+  for (const { registered: ancestor } of ancestry) {
+    if (!ancestor.name.endsWith('Collection')) continue;
+    const item = findCatalogClass(
+      ancestor.name.slice(0, -'Collection'.length),
+      ancestor.qualifiedName,
+    );
+    if (item) return item;
+  }
+  return undefined;
+}
+
+function getCollectionClassActionDefinitions(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+  standardActions: readonly string[],
+): PermissionDefinition[] {
+  if (!manifestEntry) return [];
+  const item = resolveCollectionItemRegistration(registered, manifestEntry);
+  if (!item) return [];
+  const itemEntry = item.qualifiedName
+    ? findManifestEntryByQualifiedName(item.qualifiedName)
+    : undefined;
+  if (isCollectionClass(item, itemEntry)) return [];
+  const collection = resolveCatalogCollectionName(item, itemEntry);
+  const objectConfig = manifestEntry.decoratorConfig ?? registered.config;
+  const methodEntries = manifestEntry.methods
+    ? Object.values(manifestEntry.methods)
+    : Array.from(registered.methods.entries());
+  return getPublicCustomMethodNames(methodEntries, standardActions)
+    .filter((methodName) => isOperationEnabled(objectConfig?.api, methodName))
+    .map((methodName) => ({
+      className: item.name,
+      collection,
+      description: `Allows ${methodName} on ${humanizeResource(collection).toLowerCase()}`,
+      name: `${capitalize(methodName)} ${humanizeResource(collection)}`,
+      qualifiedName: item.qualifiedName,
+      slug: `${collection}.${methodName}`,
+    }));
+}
+
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
   return (
     objectDef?.extends === 'SmrtCollection' ||
@@ -672,7 +812,17 @@ export class PermissionCatalogService {
         ? findManifestEntryByQualifiedName(registered.qualifiedName)
         : undefined;
 
-      if (isCollectionManifestEntry(manifestEntry)) {
+      if (isCollectionClass(registered, manifestEntry)) {
+        // Mutating custom API actions hosted on a collection class are
+        // generated at the item collection's route and gated on
+        // `<itemCollection>.<method>` (#2977), so catalog that slug here.
+        for (const definition of getCollectionClassActionDefinitions(
+          registered,
+          manifestEntry,
+          standardActions,
+        )) {
+          definitions.set(definition.slug, definition);
+        }
         continue;
       }
 
