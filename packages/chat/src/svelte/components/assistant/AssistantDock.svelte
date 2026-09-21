@@ -15,7 +15,7 @@ import type {
 } from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { untrack } from 'svelte';
+import { tick, untrack } from 'svelte';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
@@ -187,9 +187,29 @@ $effect(() => {
 let threadsOpen = $state(false);
 const uid = $props.id();
 const threadsId = `assistant-dock-threads-${uid}`;
+let threadsEl: HTMLDivElement | undefined = $state();
+let threadsToggleEl: HTMLButtonElement | undefined = $state();
+
+// Closing the narrow list hides the element that holds focus (the thread row
+// or "New conversation" button just activated). Hand focus back to the
+// toggle so keyboard and screen-reader users keep their place. In wide
+// layouts the list stays visible, so focus is left alone.
+function closeThreads() {
+  if (!threadsOpen) return;
+  const focusWasInside =
+    typeof document !== 'undefined' &&
+    !!threadsEl?.contains(document.activeElement);
+  threadsOpen = false;
+  if (!focusWasInside) return;
+  void tick().then(() => {
+    if (threadsEl && threadsEl.offsetParent === null) {
+      threadsToggleEl?.focus();
+    }
+  });
+}
 
 async function handleSelectThread(threadId: string) {
-  threadsOpen = false;
+  closeThreads();
   // openThread() catches internally and records any failure on
   // controller.error (cycle-2 second final finding 2) — never rejects.
   await controller.openThread(threadId);
@@ -200,7 +220,7 @@ async function handleCreateThread() {
   // need); catch here so the un-awaited onclick in AssistantThreadList never
   // produces an unhandled rejection. The failure is already recorded on
   // controller.error by createThread itself (cycle-2 second final finding 2).
-  threadsOpen = false;
+  closeThreads();
   try {
     const thread = await controller.createThread('New conversation');
     await controller.openThread(thread.id);
@@ -268,6 +288,7 @@ async function handleConfirmAction(requestId: string) {
     <button
       type="button"
       class="assistant-dock-threads-toggle"
+      bind:this={threadsToggleEl}
       aria-expanded={threadsOpen}
       aria-controls={threadsId}
       onclick={() => (threadsOpen = !threadsOpen)}
@@ -275,7 +296,11 @@ async function handleConfirmAction(requestId: string) {
       {t(M['chat.assistant_dock.conversations_toggle'])}
     </button>
 
-    <div class="assistant-dock-threads" id={threadsId}>
+    <div
+      class="assistant-dock-threads"
+      id={threadsId}
+      bind:this={threadsEl}
+    >
       <AssistantThreadList
         threads={controller.threads}
         activeThreadId={controller.activeThreadId}

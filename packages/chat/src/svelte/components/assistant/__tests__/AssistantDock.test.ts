@@ -555,6 +555,9 @@ describe('AssistantDock (mounted component)', () => {
     );
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(layout).not.toHaveAttribute('data-threads-open');
+    // The activated button is now inside a hidden region; focus returns to
+    // the toggle instead of falling back to <body>.
+    await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
     await expectNoA11yViolations(container);
   });
 });
