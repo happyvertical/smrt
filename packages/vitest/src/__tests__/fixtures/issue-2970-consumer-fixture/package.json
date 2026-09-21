@@ -1,0 +1,9 @@
+{
+  "name": "@smrt-fixtures/issue-2970-consumer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  }
+}
