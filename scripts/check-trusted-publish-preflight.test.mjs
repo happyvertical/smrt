@@ -89,7 +89,7 @@ test('every package is exchanged with the GitHub ID token, as the npm CLI does',
 
   assert.deepEqual(
     await findUntrustedPackages({ names, env: readyEnv, fetchImpl }),
-    { untrusted: [], unreachable: [] },
+    { untrusted: [], unreachable: [], unrecognized: [] },
   );
   assert.equal(
     calls[0].url,
@@ -124,6 +124,7 @@ test('an unregistered package is reported without stopping at the first one', as
         '@happyvertical/smrt-new (HTTP 404: no trusted publisher)',
       ],
       unreachable: [],
+      unrecognized: [],
     },
   );
 });
@@ -164,7 +165,11 @@ test('a transient registry error is retried, then reported as unreachable, never
       sleep: async (ms) => delays.push(ms),
       retryDelayMs: 10,
     }),
-    { untrusted: [], unreachable: ['@happyvertical/smrt-down (HTTP 500)'] },
+    {
+      untrusted: [],
+      unreachable: ['@happyvertical/smrt-down (HTTP 500)'],
+      unrecognized: [],
+    },
   );
   assert.deepEqual(delays, [10, 10, 20]);
 });
@@ -180,7 +185,7 @@ test('failure messages separate availability, run identity, and missing registra
   const [identity] = describeExchangeFailures({
     untrusted: ['a (HTTP 404)', 'b (HTTP 404)'], unreachable: [], total: 2, env,
   });
-  assert.match(identity, /ALL 2 packages/);
+  assert.match(identity, /ALL 2 packages it answered for/);
   assert.match(identity, /workflows\/publish\.yml@refs\/heads\/main/);
   assert.doesNotMatch(identity, /register happyvertical\/smrt \+/);
 
@@ -193,4 +198,63 @@ test('failure messages separate availability, run identity, and missing registra
     describeExchangeFailures({ untrusted: [], unreachable: [], total: 2, env }),
     [],
   );
+});
+
+test('a thrown network error is retried and reported as unreachable', async () => {
+  let exchangeCalls = 0;
+  const fetchImpl = async (url) => {
+    if (url.startsWith(readyEnv.ACTIONS_ID_TOKEN_REQUEST_URL)) {
+      return { ok: true, status: 200, json: async () => ({ value: 'id' }) };
+    }
+    exchangeCalls += 1;
+    throw new Error('getaddrinfo EAI_AGAIN registry.npmjs.org');
+  };
+
+  assert.deepEqual(
+    await findUntrustedPackages({
+      names: ['@happyvertical/smrt-core'],
+      env: readyEnv,
+      fetchImpl,
+      sleep: async () => {},
+    }),
+    {
+      untrusted: [],
+      unreachable: [
+        '@happyvertical/smrt-core (getaddrinfo EAI_AGAIN registry.npmjs.org)',
+      ],
+      unrecognized: [],
+    },
+  );
+  assert.equal(exchangeCalls, 3);
+});
+
+test('a success without a token blames the preflight, not the registration', async () => {
+  const fetchImpl = async (url) =>
+    url.startsWith(readyEnv.ACTIONS_ID_TOKEN_REQUEST_URL)
+      ? { ok: true, status: 200, json: async () => ({ value: 'id' }) }
+      : { ok: true, status: 200, json: async () => ({ access_token: 'x' }) };
+  const names = ['@happyvertical/smrt-ads', '@happyvertical/smrt-core'];
+  const failures = await findUntrustedPackages({
+    names,
+    env: readyEnv,
+    fetchImpl,
+  });
+
+  assert.deepEqual(failures.untrusted, []);
+  assert.equal(failures.unrecognized.length, 2);
+  const problems = describeExchangeFailures({ ...failures, total: 2, env: {} });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /expected response shape is probably wrong/);
+  assert.doesNotMatch(problems[0], /refused/);
+});
+
+test('an unreachable package does not mask an all-refused run identity', () => {
+  const [availability, identity] = describeExchangeFailures({
+    untrusted: ['a (HTTP 404)', 'b (HTTP 404)'],
+    unreachable: ['c (HTTP 503)'],
+    total: 3,
+    env: {},
+  });
+  assert.match(availability, /not a registration problem/);
+  assert.match(identity, /ALL 2 packages it answered for/);
 });

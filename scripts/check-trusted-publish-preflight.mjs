@@ -84,6 +84,7 @@ export async function findUntrustedPackages({
 
   const untrusted = [];
   const unreachable = [];
+  const unrecognized = [];
   for (const name of names) {
     const url = new URL(
       `/-/npm/v1/oidc/token/exchange/package/${name.replace('/', '%2f')}`,
@@ -91,42 +92,70 @@ export async function findUntrustedPackages({
     ).href;
     let response;
     let body = {};
-    // A 5xx/429 says nothing about whether the package is registered, so it
-    // is retried and then reported as its own condition, never as "register
-    // this package" — a wrong remedy is what made the original E404 costly.
+    let thrown;
+    // A 5xx/429 or a network error says nothing about whether the package is
+    // registered, so it is retried and then reported as its own condition,
+    // never as "register this package" — a wrong remedy is what made the
+    // original E404 costly.
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      response = await fetchImpl(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-      });
-      body = await response.json().catch(() => ({}));
-      const transient = response.status >= 500 || response.status === 429;
+      thrown = undefined;
+      try {
+        response = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+        body = await response.json().catch(() => ({}));
+      } catch (error) {
+        thrown = error;
+      }
+      const transient =
+        thrown || response.status >= 500 || response.status === 429;
       if (!transient || attempt === attempts) break;
       await sleep(retryDelayMs * attempt);
+    }
+    if (thrown) {
+      unreachable.push(`${name} (${thrown.message})`);
+      continue;
     }
     const detail = `${name} (HTTP ${response.status}${body.message ? `: ${body.message}` : ''})`;
     if (response.status >= 500 || response.status === 429) {
       unreachable.push(detail);
-    } else if (!response.ok || !body.token) {
+    } else if (!response.ok) {
       untrusted.push(detail);
+    } else if (!body.token) {
+      unrecognized.push(detail);
     }
   }
-  return { untrusted, unreachable };
+  return { untrusted, unreachable, unrecognized };
 }
 
-export function describeExchangeFailures({ untrusted, unreachable, total, env }) {
+export function describeExchangeFailures({
+  untrusted,
+  unreachable,
+  unrecognized = [],
+  total,
+  env,
+}) {
   const problems = [];
+  // Only packages npm actually answered for can tell identity from
+  // registration; an unreachable one must not mask an all-refused run.
+  const answered = total - unreachable.length - unrecognized.length;
+  if (unrecognized.length > 0) {
+    problems.push(
+      `npm answered the trusted-publisher exchange successfully for ${unrecognized.length} of ${total} packages but without an exchange token, so this preflight's expected response shape is probably wrong — compare it with lib/utils/oidc.js in the installed npm before touching any npmjs registration: ${unrecognized[0]}`,
+    );
+  }
   if (unreachable.length > 0) {
     problems.push(
       `npm did not answer the trusted-publisher exchange for ${unreachable.length} of ${total} packages after retries; this is a registry availability problem, not a registration problem — re-run the job: ${unreachable.join(', ')}`,
     );
   }
-  if (untrusted.length === total && total > 1) {
+  if (untrusted.length === answered && answered > 1) {
     problems.push(
-      `npm refused the trusted-publisher exchange for ALL ${total} packages. That points at this run's identity rather than ${total} missing registrations: npm matches the CALLING workflow (this run: ${env.GITHUB_WORKFLOW_REF || 'unknown'}) against each package's registered publisher, so dispatching publish.yml directly fails unless it is registered too. First refusal: ${untrusted[0]}`,
+      `npm refused the trusted-publisher exchange for ALL ${answered} packages it answered for. That points at this run's identity rather than ${answered} missing registrations: npm matches the CALLING workflow (this run: ${env.GITHUB_WORKFLOW_REF || 'unknown'}) against each package's registered publisher, so dispatching publish.yml directly fails unless it is registered too. First refusal: ${untrusted[0]}`,
     );
   } else if (untrusted.length > 0) {
     problems.push(
