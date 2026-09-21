@@ -130,6 +130,17 @@ export interface AssistantDockControllerOptions {
   staleAfterMs?: number;
   /** Whether the dock is currently visible; polling pauses when false. */
   visible?: () => boolean;
+  /** Called once per apply that the server accepted (`result.ok`) in the
+   * current context (#2989), so a host can refresh whatever the action
+   * changed. `result` is the server's own apply result: read ids and
+   * details from it, never from the request you sent. Not called for a
+   * refusal, a failed or unknown outcome, or an apply whose context was
+   * swapped (registry/transport change) while it was in flight. A throw
+   * from the callback is caught and never changes the action's state. */
+  onActionApplied?: (
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) => void;
 }
 
 export interface AssistantDockController {
@@ -1165,6 +1176,7 @@ export function createAssistantDockController(
           // retryable only when it failed, cleared on success.
           retryable: !result.ok,
         });
+        if (result.ok) notifyActionApplied(applyRequest, result);
       } else if (!current && result.ok && epoch === contextEpoch) {
         // The user rejected while this apply was in flight, and the server
         // mutation landed anyway — the rejection cannot undo a real server
@@ -1190,6 +1202,7 @@ export function createAssistantDockController(
             },
           ];
         }
+        notifyActionApplied(applyRequest, result);
       }
     } catch (caughtError) {
       const current = actions.get(requestId);
@@ -1207,6 +1220,17 @@ export function createAssistantDockController(
           retryable: true,
         });
       }
+    }
+  }
+
+  function notifyActionApplied(
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) {
+    try {
+      options.onActionApplied?.(request, result);
+    } catch {
+      // A host callback failure must never corrupt action state.
     }
   }
 

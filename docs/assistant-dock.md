@@ -350,6 +350,33 @@ the output inside that message's own `MessageBubble`, below its text:
 Validate the payload's shape in the snippet, and render it with ordinary
 Svelte markup, never `{@html}`.
 
+### Proposing an action and observing the result (#2989)
+
+The dock creates its own controller. `oncontroller` hands that controller
+to the host once, on mount. The host proposes an action with
+`controller.previewAction(request)`. The proposal renders with
+Confirm/Reject, and the dock still owns apply, the idempotency key, and the
+mount checks. `onactionapplied(request, result)` fires once for each apply
+the server accepts. Read ids and details from `result`, the server's own
+apply result, never from the request you sent:
+
+```svelte
+<AssistantDock
+  {transport}
+  {registry}
+  {actionClient}
+  oncontroller={(c) => (dock = c)}
+  onactionapplied={(_request, result) => refreshPanel(result.details)}
+/>
+```
+
+`onactionapplied` doesn't fire for a refusal, a failed or unknown outcome,
+or an apply whose registry or transport was swapped while it was in flight.
+A throw from it is caught. Hosts that build the controller themselves pass
+the same callback as `onActionApplied` to `createAssistantDockController`.
+The dock doesn't derive proposals from `toolCallData` on its own. The host
+decides which assistant turns become proposals.
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The

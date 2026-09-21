@@ -10,6 +10,8 @@
  */
 import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import type {
+  DataSurfaceActionRequest,
+  DataSurfaceActionResult,
   DataSurfaceIdentity,
   DataSurfaceRegistry,
 } from '@happyvertical/smrt-ui/data-surface';
@@ -88,6 +90,17 @@ export interface Props {
    * is host-defined, so the dock never stringifies it or injects it as HTML.
    * Render it with ordinary Svelte markup in the host's own snippet. */
   toolCall?: Snippet<[AssistantMessage]>;
+  /** Hands the host this dock's own controller once, on mount (#2989), so it
+   * can propose an action with `controller.previewAction(request)`. The
+   * proposal renders with Confirm/Reject like any other; everything else
+   * (apply, the idempotency key, mount checks) stays with the dock. */
+  oncontroller?: (controller: AssistantDockController) => void;
+  /** Called after the server accepts an apply (#2989). See
+   * `AssistantDockControllerOptions.onActionApplied`. */
+  onactionapplied?: (
+    request: DataSurfaceActionRequest,
+    result: DataSurfaceActionResult,
+  ) => void;
 }
 
 const {
@@ -97,6 +110,8 @@ const {
   surfaces,
   visible = true,
   toolCall,
+  oncontroller,
+  onactionapplied,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -119,6 +134,7 @@ const controller: AssistantDockController = createAssistantDockController({
     return surfaces;
   },
   visible: () => visible,
+  onActionApplied: (request, result) => onactionapplied?.(request, result),
 });
 
 // F1 (#2904 review): the whole body runs under `untrack` so the effect takes
@@ -140,6 +156,7 @@ $effect(() => {
     void controller.loadThreads();
     void controller.loadModels();
     controller.startPolling();
+    oncontroller?.(controller);
   });
   return () => controller.dispose();
 });
