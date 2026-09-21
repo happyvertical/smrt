@@ -1170,7 +1170,8 @@ describe('POST /api/v1/contents/query (generated route)', () => {
         headers: new Headers(),
         text: async () => JSON.stringify(body),
       },
-      locals: { smrtAuth: true },
+      // POST custom actions require `<collection>.<method>` (#2977).
+      locals: { permissions: ['contents.queryAction'], smrtAuth: true },
     } as never) as Promise<Response>;
 
   it('returns { action, result } with the normalized envelope', async () => {
