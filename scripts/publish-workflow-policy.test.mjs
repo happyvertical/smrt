@@ -113,5 +113,18 @@ test('final publisher authenticates to npm as a trusted publisher', () => {
     publisher,
     /(auth-token|NODE_AUTH_TOKEN|NPM_TOKEN): \$\{\{ secrets\.NPM_TOKEN \}\}/,
   );
-  assert.doesNotMatch(workflow, /NPM_TOKEN secret is required/);
+  // The preflight is handed the artifacts so it can prove npm accepts the
+  // exchange for every package, not only that the runner supports OIDC.
+  assert.match(
+    publisher,
+    /check-trusted-publish-preflight\.mjs publish-pack-output$/m,
+  );
+  // prepare-release never publishes and must not hard-require the secret; the
+  // Changesets fallback still does, before its irreversible phase.
+  assert.doesNotMatch(job('prepare-release'), /NPM_TOKEN secret is required/);
+  const tokenCheck = publisher.indexOf(
+    "if: inputs.publish-mode == 'changesets'\n        env:\n          NPM_TOKEN:",
+  );
+  assert.ok(tokenCheck > 0 && tokenCheck < publisher.indexOf('git commit -m'));
+  assert.match(publisher, /^      CI_ONNX_DEPS_READY: 'true'$/m);
 });

@@ -293,6 +293,10 @@ jobs:
     # this job cannot follow the ARC pool the other release jobs use (#2998).
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # install-deps is false here: nothing consumes the ONNX toolchain, so
+      # skip setup-environment's apt-get rather than add it to the release path.
+      CI_ONNX_DEPS_READY: 'true'
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
@@ -359,9 +363,23 @@ jobs:
       # Fails in seconds, before anything irreversible, when this job could
       # not publish as the trusted publisher registered on npmjs for the
       # calling workflow (on-merge-main.yml). See CHANGESETS.md.
+      # It also performs npm's per-package OIDC exchange for every artifact,
+      # so one unregistered package cannot strand a half-published batch.
       - name: Verify npm trusted publishing
         if: inputs.publish-mode != 'changesets'
-        run: node scripts/check-trusted-publish-preflight.mjs
+        run: node scripts/check-trusted-publish-preflight.mjs publish-pack-output
+
+      # The emergency fallback still publishes with NPM_TOKEN, so it keeps the
+      # early presence check: that secret must stay alive for this lane to work.
+      - name: Verify npm publish token for the Changesets fallback
+        if: inputs.publish-mode == 'changesets'
+        env:
+          NPM_TOKEN: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "❌ NPM_TOKEN secret is required by the changesets publish mode"
+            exit 1
+          fi
 
       - name: Configure Git
         run: |

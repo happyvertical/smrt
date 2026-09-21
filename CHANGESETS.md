@@ -33,13 +33,16 @@ and stopped every release with a misleading `E404` on the first package
 - npm accepts OIDC only from GitHub-hosted runners, so that one job is pinned
   to `ubuntu-latest` while the other release jobs keep the ARC pool.
   `scripts/check-trusted-publish-preflight.mjs` fails the job before anything
-  irreversible when the runner, OIDC endpoint, or npm version is wrong.
+  irreversible when the runner, OIDC endpoint, or npm version is wrong, or
+  when npm refuses the trusted-publisher exchange for any package in the batch.
 - A trusted publisher can only be added to a package that already exists. A
   **new** publishable package needs one manual first publish by an org owner,
   then its trusted publisher, before its first batched release — alongside
   adding it to the fixed group in `.changeset/config.json`.
 
-Only the emergency `changesets` publish mode still receives `NPM_TOKEN`.
+Only the emergency `changesets` publish mode still receives `NPM_TOKEN`, and
+it works only while that secret holds a live write token: deleting or letting
+it expire disarms the fallback, which the job reports before publishing.
 
 ## Contributor input
 
