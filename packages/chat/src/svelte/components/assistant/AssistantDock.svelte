@@ -15,7 +15,7 @@ import type {
 } from '@happyvertical/smrt-ui/data-surface';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
-import { tick, untrack } from 'svelte';
+import { type Snippet, tick, untrack } from 'svelte';
 import { M } from '../../i18n.js';
 import ToolCallDisplay from '../agent/ToolCallDisplay.svelte';
 import ModelPicker from '../shared/ModelPicker.svelte';
@@ -82,6 +82,12 @@ export interface Props {
   surfaces?: DataSurfaceIdentity[];
   /** Whether the dock is currently visible; polling pauses while false. */
   visible?: boolean;
+  /** Renders a message's own `toolCallData` (#2988), inside that message's
+   * bubble below its text. Called only for messages whose `toolCallData` is
+   * set. Without it the dock renders no tool-call region at all: the payload
+   * is host-defined, so the dock never stringifies it or injects it as HTML.
+   * Render it with ordinary Svelte markup in the host's own snippet. */
+  toolCall?: Snippet<[AssistantMessage]>;
 }
 
 const {
@@ -90,6 +96,7 @@ const {
   actionClient,
   surfaces,
   visible = true,
+  toolCall,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -335,6 +342,11 @@ async function handleConfirmAction(requestId: string) {
               >
                 {#snippet children()}
                   <p class="assistant-dock-message-content">{message.content}</p>
+                {#if toolCall && message.toolCallData != null}
+                  <div class="assistant-dock-tool-call">
+                    {@render toolCall(message)}
+                  </div>
+                {/if}
                   {#if message.attachments && message.attachments.length > 0}
                     <ul
                       class="assistant-dock-attachments"
@@ -577,6 +589,11 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-tool-call {
+    margin-top: var(--smrt-spacing-2, 8px);
+    min-width: 0;
   }
 
   .assistant-dock-message-content {

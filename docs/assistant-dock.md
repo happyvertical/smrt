@@ -329,6 +329,27 @@ This file, plus the shell-mounting recipe in
 `packages/chat/AGENTS.md`. Linked from the root `README.md` documentation
 index, next to `ui-surfaces.md`.
 
+## Host extension points
+
+### Rendering a message's `toolCallData` (#2988)
+
+`AssistantMessage.toolCallData` is host-defined, so the dock doesn't render
+it by default. There is no tool-call region, and the payload is never
+stringified or injected as HTML. To render it, pass a `toolCall` snippet.
+The dock calls it only for messages whose `toolCallData` is set, and puts
+the output inside that message's own `MessageBubble`, below its text:
+
+```svelte
+<AssistantDock {transport} {registry}>
+  {#snippet toolCall(message)}
+    <CandidateCard data={message.toolCallData} />
+  {/snippet}
+</AssistantDock>
+```
+
+Validate the payload's shape in the snippet, and render it with ordinary
+Svelte markup, never `{@html}`.
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
