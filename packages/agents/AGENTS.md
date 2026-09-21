@@ -140,7 +140,7 @@ The **`default` persona reuses the singleton identity** (a `null` key), which is
 
 ## Principal Execution (issue #1888)
 
-`executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade with no snapshotting. It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
+`executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade: permissions resolve live unless the caller passes an explicit `permissions` snapshot, which the run then carries as `run.permissionSnapshot`. `agents.invoke` propagates that snapshot as the `DelegationEnvelope.permissions` ceiling, and `executeDelegatedInvocation` runs the worker with ceiling ∩ live grants, so a narrowed run cannot widen through delegation and a tampered persisted ceiling cannot exceed live RBAC (#2978). It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
 
 ## Data Surface Read Tools (issue #2447)
 
