@@ -348,6 +348,19 @@ export interface SmartObjectConfig {
    *   profileId = '';
    * }
    * ```
+   *
+   * **NULL semantics (#2979).** `conflictColumns` is an upsert *identity*,
+   * not a general uniqueness constraint. `save()` matches it with
+   * `IS NOT DISTINCT FROM` on every engine, so NULL equals NULL: a new object
+   * whose nullable conflict column is NULL resolves to (and updates) the
+   * existing row with the same NULL key. On PostgreSQL 15+ the generated
+   * unique index over a nullable conflict column is therefore emitted
+   * `NULLS NOT DISTINCT` so the index agrees with the upsert; SQLite has no
+   * such clause, but the upsert still dedups NULL keys. To allow any number
+   * of NULLs while keeping non-NULL values unique, do not put the column in
+   * `conflictColumns` — declare a unique index instead:
+   * `indexes: [{ name: '…', columns: ['amendsId'], unique: true }]`
+   * (NULLs distinct on every engine).
    */
   conflictColumns?: string[];
 
