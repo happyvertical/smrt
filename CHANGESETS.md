@@ -18,6 +18,29 @@ prepares versioned artifacts, validates the release package set, publishes it,
 and updates release refs and the GitHub release. Consult those workflows for
 current gates, publishing modes, and documentation-deployment conditions.
 
+## npm authentication
+
+The final `Publish Release` job publishes by npm
+[trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub OIDC),
+not a stored write token: a 90-day granular `NPM_TOKEN` expired on 2026-09-21
+and stopped every release with a misleading `E404` on the first package
+(#2998). Three constraints follow.
+
+- Each package's trusted publisher on npmjs names `happyvertical/smrt` and
+  `on-merge-main.yml`. npm validates the *calling* workflow, so dispatching
+  `publish.yml` directly cannot publish unless it is registered as a second
+  publisher.
+- npm accepts OIDC only from GitHub-hosted runners, so that one job is pinned
+  to `ubuntu-latest` while the other release jobs keep the ARC pool.
+  `scripts/check-trusted-publish-preflight.mjs` fails the job before anything
+  irreversible when the runner, OIDC endpoint, or npm version is wrong.
+- A trusted publisher can only be added to a package that already exists. A
+  **new** publishable package needs one manual first publish by an org owner,
+  then its trusted publisher, before its first batched release — alongside
+  adding it to the fixed group in `.changeset/config.json`.
+
+Only the emergency `changesets` publish mode still receives `NPM_TOKEN`.
+
 ## Contributor input
 
 Use conventional commits and a clear PR description. The

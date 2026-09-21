@@ -90,3 +90,28 @@ test('routine releases batch instead of publishing after every main push', () =>
       publisher.indexOf('node scripts/publish-validated-artifacts.mjs'),
   );
 });
+
+test('final publisher authenticates to npm as a trusted publisher', () => {
+  const publisher = job('publish-release');
+
+  // npm OIDC rejects self-hosted runners, so this job must not follow ARC.
+  assert.match(publisher, /^    runs-on: ubuntu-latest$/m);
+  assert.doesNotMatch(publisher, /arc-happyvertical/);
+  assert.match(workflow, /^  id-token: write$/m);
+  assert.match(batchWorkflow, /^      id-token: write$/m);
+
+  // The preflight runs once npm is installed and before anything irreversible.
+  const preflight = publisher.indexOf(
+    'node scripts/check-trusted-publish-preflight.mjs',
+  );
+  assert.ok(preflight > publisher.indexOf('- name: Setup Environment'));
+  assert.ok(preflight < publisher.indexOf('git commit -m'));
+
+  // Only the emergency Changesets fallback may receive the long-lived token;
+  // an unconditional one lets npm fall back silently when OIDC is broken.
+  assert.doesNotMatch(
+    publisher,
+    /(auth-token|NODE_AUTH_TOKEN|NPM_TOKEN): \$\{\{ secrets\.NPM_TOKEN \}\}/,
+  );
+  assert.doesNotMatch(workflow, /NPM_TOKEN secret is required/);
+});

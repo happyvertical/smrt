@@ -77,15 +77,6 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
 
-      - name: Verify npm publish token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "❌ NPM_TOKEN secret is required to publish to registry.npmjs.org"
-            exit 1
-          fi
-
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
@@ -298,7 +289,9 @@ jobs:
     if: |
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    # npm trusted publishing (OIDC) only accepts GitHub-hosted runners, so
+    # this job cannot follow the ARC pool the other release jobs use (#2998).
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
@@ -346,15 +339,6 @@ jobs:
           path: publish-pack-output
           merge-multiple: true
 
-      - name: Verify npm publish token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "❌ NPM_TOKEN secret is required to publish to registry.npmjs.org"
-            exit 1
-          fi
-
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
@@ -365,8 +349,19 @@ jobs:
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
-          auth-token: ${{ secrets.NPM_TOKEN }}
+          # Artifact publishing authenticates by OIDC. npm falls back to a
+          # token when the OIDC exchange fails, which would hide a broken
+          # trusted-publisher setup behind a credential that expires, so only
+          # the emergency Changesets fallback is handed NPM_TOKEN.
+          auth-token: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fails in seconds, before anything irreversible, when this job could
+      # not publish as the trusted publisher registered on npmjs for the
+      # calling workflow (on-merge-main.yml). See CHANGESETS.md.
+      - name: Verify npm trusted publishing
+        if: inputs.publish-mode != 'changesets'
+        run: node scripts/check-trusted-publish-preflight.mjs
 
       - name: Configure Git
         run: |
@@ -408,8 +403,8 @@ jobs:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
+          NPM_TOKEN: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
           PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
           RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
