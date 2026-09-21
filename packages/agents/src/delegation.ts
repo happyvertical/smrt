@@ -71,6 +71,13 @@ export interface DelegationEnvelope {
    * normalizes to "no tools" at `executeAsPrincipal` — it never widens.
    */
   allowedTools?: string[];
+  /**
+   * Permission ceiling inherited from a snapshot-narrowed originating run
+   * (#2978). Copied verbatim parent to child. When present, a worker runs with
+   * the intersection of this ceiling and the principal's live permissions, so
+   * it can never exceed either. `undefined` means live resolution.
+   */
+  permissions?: string[];
 }
 
 /**
@@ -218,6 +225,8 @@ export interface RootDelegationEnvelopeOptions {
    * (`resolveWorkerAllowedTools`) and is fail-closed (no tools) when absent.
    */
   allowedTools?: string[];
+  /** Permission ceiling for the chain (see {@link DelegationEnvelope.permissions}). */
+  permissions?: string[];
 }
 
 /**
@@ -236,6 +245,7 @@ export function rootDelegationEnvelope(
     depth: 0,
     correlationId: options.correlationId ?? crypto.randomUUID(),
     allowedTools: options.allowedTools,
+    ...(options.permissions ? { permissions: [...options.permissions] } : {}),
   };
 }
 
@@ -290,5 +300,7 @@ export function deriveDelegationEnvelope(
     depth,
     correlationId: options.correlationId ?? crypto.randomUUID(),
     allowedTools: options.allowedTools,
+    // The permission ceiling is inherited verbatim — it can only narrow.
+    ...(parent.permissions ? { permissions: [...parent.permissions] } : {}),
   };
 }
