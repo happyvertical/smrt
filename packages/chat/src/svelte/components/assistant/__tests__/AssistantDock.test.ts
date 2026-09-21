@@ -515,4 +515,46 @@ describe('AssistantDock (mounted component)', () => {
     const attachmentText = await screen.findByText('evil.txt');
     expect(attachmentText.closest('a')).toBeNull();
   });
+
+  // #3000: in a narrow container the thread list collapses behind a
+  // "Conversations" disclosure (the `@container` rule decides visibility;
+  // jsdom has no layout, so this pins the state + ARIA contract the CSS
+  // keys off). Widths are measured in a real browser, see the PR.
+  it('exposes a labelled Conversations disclosure that controls the thread list and closes on selection (#3000)', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    const { container } = render(AssistantDock, {
+      props: { transport, registry },
+    });
+
+    const toggle = screen.getByRole('button', { name: 'Conversations' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const controlsId = toggle.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    const region = container.querySelector(`#${CSS.escape(controlsId ?? '')}`);
+    expect(region).not.toBeNull();
+    expect(
+      region?.querySelector('nav[aria-label="Assistant conversations"]'),
+    ).not.toBeNull();
+    const layout = container.querySelector('.assistant-dock-layout');
+    expect(layout).not.toHaveAttribute('data-threads-open');
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(layout).toHaveAttribute('data-threads-open');
+
+    toggle.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.keyboard(' ');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // Starting a conversation from the open list hands the width back.
+    await userEvent.click(
+      screen.getByRole('button', { name: /New conversation/i }),
+    );
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(layout).not.toHaveAttribute('data-threads-open');
+    await expectNoA11yViolations(container);
+  });
 });

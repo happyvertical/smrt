@@ -288,6 +288,8 @@ function removeAttachment(id: string) {
   :global(.assistant-composer-textarea) {
     flex: 1;
     resize: none;
+    /* #3000: form controls don't inherit font; use the theme's family. */
+    font-family: var(--smrt-font-family, inherit);
   }
 
   :global(.assistant-composer-send) {

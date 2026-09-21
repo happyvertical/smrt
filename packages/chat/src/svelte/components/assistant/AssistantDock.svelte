@@ -179,7 +179,17 @@ $effect(() => {
   untrack(() => controller.syncTransport());
 });
 
+// #3000: in a narrow container (below the `@container` breakpoint in the
+// styles) the thread list collapses behind a "Conversations" toggle so the
+// conversation keeps the full dock width. Wide layouts ignore this state —
+// the toggle is hidden there and the list always sits beside the
+// conversation. Picking or creating a thread closes the narrow list again.
+let threadsOpen = $state(false);
+const uid = $props.id();
+const threadsId = `assistant-dock-threads-${uid}`;
+
 async function handleSelectThread(threadId: string) {
+  threadsOpen = false;
   // openThread() catches internally and records any failure on
   // controller.error (cycle-2 second final finding 2) — never rejects.
   await controller.openThread(threadId);
@@ -190,6 +200,7 @@ async function handleCreateThread() {
   // need); catch here so the un-awaited onclick in AssistantThreadList never
   // produces an unhandled rejection. The failure is already recorded on
   // controller.error by createThread itself (cycle-2 second final finding 2).
+  threadsOpen = false;
   try {
     const thread = await controller.createThread('New conversation');
     await controller.openThread(thread.id);
@@ -250,166 +261,255 @@ async function handleConfirmAction(requestId: string) {
 </script>
 
 <div class="assistant-dock">
-  <AssistantThreadList
-    threads={controller.threads}
-    activeThreadId={controller.activeThreadId}
-    onselect={handleSelectThread}
-    oncreate={handleCreateThread}
-  />
+  <div
+    class="assistant-dock-layout"
+    data-threads-open={threadsOpen || undefined}
+  >
+    <button
+      type="button"
+      class="assistant-dock-threads-toggle"
+      aria-expanded={threadsOpen}
+      aria-controls={threadsId}
+      onclick={() => (threadsOpen = !threadsOpen)}
+    >
+      {t(M['chat.assistant_dock.conversations_toggle'])}
+    </button>
 
-  <div class="assistant-dock-main">
-    {#if controller.error}
-      <p class="assistant-dock-error" role="alert">
-        {t(M['chat.assistant_dock.error'], { message: controller.error })}
-      </p>
-    {/if}
+    <div class="assistant-dock-threads" id={threadsId}>
+      <AssistantThreadList
+        threads={controller.threads}
+        activeThreadId={controller.activeThreadId}
+        onselect={handleSelectThread}
+        oncreate={handleCreateThread}
+      />
+    </div>
 
-    {#if controller.surfaces.length === 0}
-      <p class="assistant-dock-empty">
-        {t(M['chat.assistant_dock.no_surfaces'])}
-      </p>
-    {/if}
+    <div class="assistant-dock-main">
+      {#if controller.error}
+        <p class="assistant-dock-error" role="alert">
+          {t(M['chat.assistant_dock.error'], { message: controller.error })}
+        </p>
+      {/if}
 
-    <div class="assistant-dock-scroll">
-      <ul class="assistant-dock-messages">
-        {#each controller.messages as message (message.id)}
-          <li>
-            <MessageBubble
-              variant={bubbleVariant(message.role)}
-              own={message.role === 'user'}
-            >
-              {#snippet children()}
-                <p class="assistant-dock-message-content">{message.content}</p>
-                {#if message.attachments && message.attachments.length > 0}
-                  <ul
-                    class="assistant-dock-attachments"
-                    aria-label={t(M['chat.assistant_dock.attachments'])}
-                  >
-                    {#each message.attachments as attachment (attachment.id)}
-                      {@const href = safeAttachmentHref(attachment.url)}
-                      <li class="assistant-dock-attachment">
-                        {#if href}
-                          <a
-                            {href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="assistant-dock-attachment-link"
-                          >
-                            {attachment.name}
-                          </a>
-                        {:else}
-                          <span class="assistant-dock-attachment-name">
-                            {attachment.name}
-                          </span>
-                        {/if}
-                        {#if attachment.size !== undefined}
-                          <span class="assistant-dock-attachment-size">
-                            {formatAttachmentSize(attachment.size)}
-                          </span>
-                        {/if}
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              {/snippet}
-            </MessageBubble>
-          </li>
-        {/each}
-      </ul>
+      {#if controller.surfaces.length === 0}
+        <p class="assistant-dock-empty">
+          {t(M['chat.assistant_dock.no_surfaces'])}
+        </p>
+      {/if}
 
-      {#if controller.actions.size > 0}
-        <ul class="assistant-dock-actions">
-          {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+      <div class="assistant-dock-scroll">
+        <ul class="assistant-dock-messages">
+          {#each controller.messages as message (message.id)}
             <li>
-              <ToolCallDisplay
-                toolCall={{
-                  toolName: action.request.actionId,
-                  toolCallId: requestId,
-                  status: toolCallStatusForAction(action.status),
-                  error: action.error,
-                }}
-                actionResult={action.applyResult ??
-                  // Finding 3 (#2904 review, fresh cycle): only surface the
-                  // preview result — and its live Confirm/Reject — while the
-                  // action is actually AWAITING confirmation. Once Confirm
-                  // has been clicked ('applying'), the preview's phase:
-                  // 'preview' result must stop rendering those buttons; the
-                  // toolCall.status 'running' mapping above shows the
-                  // existing spinner/"Executing..." state instead.
-                  (action.status === 'previewed'
-                    ? action.previewResult
-                    : undefined)}
-                onconfirmaction={() => handleConfirmAction(requestId)}
-                onrejectaction={() => controller.rejectAction(requestId)}
-              />
+              <MessageBubble
+                variant={bubbleVariant(message.role)}
+                own={message.role === 'user'}
+              >
+                {#snippet children()}
+                  <p class="assistant-dock-message-content">{message.content}</p>
+                  {#if message.attachments && message.attachments.length > 0}
+                    <ul
+                      class="assistant-dock-attachments"
+                      aria-label={t(M['chat.assistant_dock.attachments'])}
+                    >
+                      {#each message.attachments as attachment (attachment.id)}
+                        {@const href = safeAttachmentHref(attachment.url)}
+                        <li class="assistant-dock-attachment">
+                          {#if href}
+                            <a
+                              {href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="assistant-dock-attachment-link"
+                            >
+                              {attachment.name}
+                            </a>
+                          {:else}
+                            <span class="assistant-dock-attachment-name">
+                              {attachment.name}
+                            </span>
+                          {/if}
+                          {#if attachment.size !== undefined}
+                            <span class="assistant-dock-attachment-size">
+                              {formatAttachmentSize(attachment.size)}
+                            </span>
+                          {/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                {/snippet}
+              </MessageBubble>
             </li>
           {/each}
         </ul>
-      {/if}
 
-      {#if controller.pendingSends.some((p) => p.status === 'stale')}
-        <div class="assistant-dock-stale">
-          <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
-          {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
-            <Button
-              type="button"
-              size="sm"
-              onclick={() => controller.retry(pending.clientRequestId)}
-            >
-              {t(M['chat.assistant_dock.retry'], { content: pending.content })}
-            </Button>
-          {/each}
-        </div>
-      {/if}
+        {#if controller.actions.size > 0}
+          <ul class="assistant-dock-actions">
+            {#each [...controller.actions.entries()] as [requestId, action] (requestId)}
+              <li>
+                <ToolCallDisplay
+                  toolCall={{
+                    toolName: action.request.actionId,
+                    toolCallId: requestId,
+                    status: toolCallStatusForAction(action.status),
+                    error: action.error,
+                  }}
+                  actionResult={action.applyResult ??
+                    // Finding 3 (#2904 review, fresh cycle): only surface the
+                    // preview result — and its live Confirm/Reject — while the
+                    // action is actually AWAITING confirmation. Once Confirm
+                    // has been clicked ('applying'), the preview's phase:
+                    // 'preview' result must stop rendering those buttons; the
+                    // toolCall.status 'running' mapping above shows the
+                    // existing spinner/"Executing..." state instead.
+                    (action.status === 'previewed'
+                      ? action.previewResult
+                      : undefined)}
+                  onconfirmaction={() => handleConfirmAction(requestId)}
+                  onrejectaction={() => controller.rejectAction(requestId)}
+                />
+              </li>
+            {/each}
+          </ul>
+        {/if}
 
-      {#if controller.pendingSends.some((p) => p.status === 'failed')}
-        <!-- Finding 4 (#2904 review, fresh cycle): a send that failed
-             transport-side previously had no visible representation at
-             all — only 'stale' rendered above. retry(clientRequestId)
-             already exists and reuses the same id, so it's the same
-             affordance as the stale case. -->
-        <div class="assistant-dock-failed">
-          <p>{t(M['chat.assistant_dock.send_failed'])}</p>
-          {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
-            <Button
-              type="button"
-              size="sm"
-              onclick={() => controller.retry(pending.clientRequestId)}
-            >
-              {t(M['chat.assistant_dock.retry'], { content: pending.content })}
-            </Button>
-          {/each}
-        </div>
-      {/if}
-    </div>
+        {#if controller.pendingSends.some((p) => p.status === 'stale')}
+          <div class="assistant-dock-stale">
+            <p>{t(M['chat.assistant_dock.taking_longer'])}</p>
+            {#each controller.pendingSends.filter((p) => p.status === 'stale') as pending (pending.clientRequestId)}
+              <Button
+                type="button"
+                size="sm"
+                onclick={() => controller.retry(pending.clientRequestId)}
+              >
+                {t(M['chat.assistant_dock.retry'], { content: pending.content })}
+              </Button>
+            {/each}
+          </div>
+        {/if}
 
-    <div class="assistant-dock-composer">
-      {#if controller.models.length > 0}
-        <div class="assistant-dock-composer-header">
-          <ModelPicker
-            models={controller.models}
-            value={controller.selectedModel ?? controller.models[0].id}
-            onchange={(modelId) => controller.setSelectedModel(modelId)}
-          />
-        </div>
-      {/if}
-      <AssistantComposer
-        onsend={handleSend}
-        onupload={handleUpload}
-        disabled={!controller.activeThreadId}
-      />
+        {#if controller.pendingSends.some((p) => p.status === 'failed')}
+          <!-- Finding 4 (#2904 review, fresh cycle): a send that failed
+               transport-side previously had no visible representation at
+               all — only 'stale' rendered above. retry(clientRequestId)
+               already exists and reuses the same id, so it's the same
+               affordance as the stale case. -->
+          <div class="assistant-dock-failed">
+            <p>{t(M['chat.assistant_dock.send_failed'])}</p>
+            {#each controller.pendingSends.filter((p) => p.status === 'failed') as pending (pending.clientRequestId)}
+              <Button
+                type="button"
+                size="sm"
+                onclick={() => controller.retry(pending.clientRequestId)}
+              >
+                {t(M['chat.assistant_dock.retry'], { content: pending.content })}
+              </Button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="assistant-dock-composer">
+        {#if controller.models.length > 0}
+          <div class="assistant-dock-composer-header">
+            <ModelPicker
+              models={controller.models}
+              value={controller.selectedModel ?? controller.models[0].id}
+              onchange={(modelId) => controller.setSelectedModel(modelId)}
+            />
+          </div>
+        {/if}
+        <AssistantComposer
+          onsend={handleSend}
+          onupload={handleUpload}
+          disabled={!controller.activeThreadId}
+        />
+      </div>
     </div>
   </div>
 </div>
 
 <style>
+  /* #3000: the dock sizes itself against its own container (a shell dock
+   * edge can be ~250px wide) rather than the viewport. A container cannot
+   * query itself, so the flex layout lives on an inner wrapper. */
   .assistant-dock {
-    display: flex;
+    container-type: inline-size;
     height: 100%;
     min-height: 0;
     font-family: var(--smrt-font-family, system-ui, sans-serif);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #1a1c1e);
+  }
+
+  .assistant-dock-layout {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .assistant-dock-threads {
+    display: flex;
+    flex-shrink: 0;
+    min-height: 0;
+  }
+
+  .assistant-dock-threads-toggle {
+    display: none;
+  }
+
+  @container (max-width: 479px) {
+    .assistant-dock-layout {
+      flex-direction: column;
+    }
+
+    .assistant-dock-threads-toggle {
+      display: flex;
+      align-items: center;
+      gap: var(--smrt-spacing-2, 8px);
+      flex-shrink: 0;
+      width: 100%;
+      padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+      border: none;
+      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+      background: var(--smrt-color-surface-container-low, #f7f7fb);
+      color: var(--smrt-color-on-surface, #1a1c1e);
+      font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .assistant-dock-threads-toggle::before {
+      content: '▸' / '';
+      color: var(--smrt-color-on-surface-variant, #43474e);
+    }
+
+    .assistant-dock-layout[data-threads-open] .assistant-dock-threads-toggle::before {
+      content: '▾' / '';
+    }
+
+    .assistant-dock-threads-toggle:focus-visible {
+      outline: 2px solid var(--smrt-color-primary, #005ac1);
+      outline-offset: -2px;
+    }
+
+    .assistant-dock-threads {
+      display: none;
+    }
+
+    .assistant-dock-layout[data-threads-open] .assistant-dock-threads {
+      display: flex;
+      max-height: 40%;
+      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    }
+
+    .assistant-dock-threads > :global(.assistant-thread-list) {
+      flex: 1;
+      min-width: 0;
+      border-right: none;
+    }
   }
 
   .assistant-dock-main {
