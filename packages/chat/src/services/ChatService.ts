@@ -2,6 +2,10 @@ import {
   ObjectRegistry,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
+import {
+  ProfileCollection,
+  resolveAgentProfileId,
+} from '@happyvertical/smrt-profiles';
 import { AgentSessionCollection } from '../collections/AgentSessionCollection.js';
 import { ChatMessageCollection } from '../collections/ChatMessageCollection.js';
 import { ChatParticipantCollection } from '../collections/ChatParticipantCollection.js';
@@ -99,6 +103,12 @@ export class ChatService {
   readonly #agentSessions: AgentSessionCollection;
   readonly #reactions: ChatReactionCollection;
   readonly #voiceSessions: VoiceSessionCollection;
+  /**
+   * Profiles of the OWNING package (`@happyvertical/smrt-profiles`), used only
+   * to resolve the `bot` Profile an agent authors as (#2995). Private for the
+   * same reason as the chat collections: it can mint/read profile rows.
+   */
+  readonly #profiles: ProfileCollection;
 
   private constructor(
     rooms: ChatRoomCollection,
@@ -108,6 +118,7 @@ export class ChatService {
     agentSessions: AgentSessionCollection,
     reactions: ChatReactionCollection,
     voiceSessions: VoiceSessionCollection,
+    profiles: ProfileCollection,
   ) {
     this.#rooms = rooms;
     this.#messages = messages;
@@ -116,6 +127,7 @@ export class ChatService {
     this.#agentSessions = agentSessions;
     this.#reactions = reactions;
     this.#voiceSessions = voiceSessions;
+    this.#profiles = profiles;
   }
 
   static async create(options: SmrtObjectOptions): Promise<ChatService> {
@@ -176,6 +188,7 @@ export class ChatService {
       '@happyvertical/smrt-chat:VoiceSession',
       options,
     )) as VoiceSessionCollection;
+    const profiles = await ProfileCollection.create(options);
 
     return new ChatService(
       rooms,
@@ -185,6 +198,7 @@ export class ChatService {
       agentSessions,
       reactions,
       voiceSessions,
+      profiles,
     );
   }
 
@@ -723,9 +737,25 @@ export class ChatService {
     maxTokens?: number;
     maxMessages?: number;
     sessionKey?: string | null;
+    /**
+     * Profile the agent authors as (#2995). Optional: when omitted the agent's
+     * `bot` Profile is resolved (created on first use) from `agentId`. Supply
+     * it when the consumer already holds one — e.g. a persona's
+     * `actsAsProfileId`.
+     */
+    agentProfileId?: string | null;
   }) {
     const participantProfileId = params.actorProfileId;
     const sessionKey = params.sessionKey ?? null;
+    // Resolve the agent's authoring Profile up front: the `agentId` slug is not
+    // a representable author for the uuid `profileId`/`senderProfileId` columns
+    // this method and the reply path write (#2995).
+    const agentProfileId =
+      params.agentProfileId ??
+      (await resolveAgentProfileId(this.#profiles, {
+        agentId: params.agentId,
+        tenantId: params.tenantId,
+      }));
     // Check for existing active session first to avoid orphaned rooms. When a
     // sessionKey is supplied the reuse lookup is narrowed to a matching key so a
     // session opened for a different subject is never reused/rewritten here.
@@ -757,9 +787,13 @@ export class ChatService {
           await this.#enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
-            profileId: params.agentId,
+            profileId: agentProfileId,
             role: 'member',
           });
+          if (existingSession.agentProfileId !== agentProfileId) {
+            existingSession.agentProfileId = agentProfileId;
+            await existingSession.save();
+          }
           return { session: existingSession, room: existingRoom };
         }
       }
@@ -790,7 +824,7 @@ export class ChatService {
     await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
-      profileId: params.agentId,
+      profileId: agentProfileId,
       role: 'member',
     });
 
@@ -798,6 +832,7 @@ export class ChatService {
     // is persisted on the new session and future reuse lookups stay scoped).
     const session = await this.#agentSessions.findOrCreate({
       agentId: params.agentId,
+      agentProfileId,
       participantProfileId,
       tenantId: params.tenantId,
       allowedTools: params.allowedTools,
@@ -899,10 +934,23 @@ export class ChatService {
       }
     }
 
+    // The author is the agent's resolved `bot` Profile uuid, never the
+    // `agentId` slug: `senderProfileId` is a uuid column (#2995). Enrolment is
+    // idempotent and repeated here so a session created before #2995 — whose
+    // room enrolled the slug, not the profile — still satisfies #writeMessage's
+    // membership check on its first agent turn after the upgrade.
+    const agentProfileId = await this.#resolveAgentProfileId(session);
+    await this.#enrollParticipant({
+      tenantId: params.tenantId,
+      roomId: session.chatRoomId as string,
+      profileId: agentProfileId,
+      role: 'member',
+    });
+
     return this.#writeMessage({
       tenantId: params.tenantId,
       roomId: session.chatRoomId as string,
-      senderProfileId: session.agentId,
+      senderProfileId: agentProfileId,
       content: params.content,
       role,
       messageType: params.messageType ?? 'text',
@@ -910,6 +958,30 @@ export class ChatService {
       agentSessionId: params.agentSessionId,
       toolCallData: params.toolCallData ?? null,
     });
+  }
+
+  /**
+   * Resolve the Profile uuid an agent session's agent authors as (#2995).
+   *
+   * `agentId` is an application slug; every authoring seam is a uuid column
+   * referencing `Profile`, so the slug can never be the author. The agent's
+   * `bot` Profile is resolved — created on first use, tenant-bound — through
+   * the owning package's `resolveAgentProfile()` API.
+   *
+   * Sessions created before #2995 carry no `agentProfileId`. They are backfilled
+   * lazily here, on the first agent turn after the upgrade, so an existing
+   * conversation keeps working without an offline migration.
+   */
+  async #resolveAgentProfileId(session: AgentSession): Promise<string> {
+    if (session.agentProfileId) return session.agentProfileId;
+
+    const agentProfileId = await resolveAgentProfileId(this.#profiles, {
+      agentId: session.agentId,
+      tenantId: session.tenantId,
+    });
+    session.agentProfileId = agentProfileId;
+    await session.save();
+    return agentProfileId;
   }
 
   /** Load an active agent session by id, tenant-bound, or throw. */

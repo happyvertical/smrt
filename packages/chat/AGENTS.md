@@ -37,7 +37,7 @@ by the module-local `sendAgentReply` function.
 - **ChatParticipant**: `role` (owner/admin/member/viewer), `onlineStatus`, `lastReadMessageId`, `isMuted`. Tenant-scoped (required).
 - **ChatThread**: `rootMessageId`, `isResolved`, `messageCount`. Created via `ChatService.startThread()` (member-checked). Tenant-scoped (required).
 - **ChatReaction**: `messageId`, `profileId`, `emoji`. Added/removed via `ChatService.addReaction()`/`removeReaction()` (member-checked, self-keyed). Tenant-scoped (required).
-- **AgentSession**: `agentId` (string ref, not FK), `allowedTools` (JSON string array), `sessionContext` (JSON), `systemPrompt`, limits (`maxTokens`/`maxMessages`/`expiresAt`). Optional tenancy.
+- **AgentSession**: `agentId` (application slug, string ref, not FK), `agentProfileId` (nullable `crossPackageRef` to `Profile` — the `bot` profile the agent AUTHORS as, #2995), `allowedTools` (JSON string array), `sessionContext` (JSON), `systemPrompt`, limits (`maxTokens`/`maxMessages`/`expiresAt`). Optional tenancy.
 - **VoiceSession**: short-lived voice-gateway binding over `(tenant, actorProfileId, personaId, room/thread/agentSession)` plus a persona snapshot, gateway `session_id`, expiry, replay tracking, and metadata. Tenant-scoped (required). Generated surface is read-only; creation and turns go through `createVoiceChatSession()` / `handleVoiceGatewayTurn()`.
 
 ## ChatService
@@ -69,7 +69,8 @@ membership of the server-supplied actor, not a caller-selected subject.
 
 Trusted agent runtime imports `sendAgentReply(service, params)` only from
 `@happyvertical/smrt-chat/internal/agent-runtime`. It is not a `ChatService`
-method or package-index export. It authors as `session.agentId`, accepts a
+method or package-index export. It authors as `session.agentProfileId` — the
+agent's resolved `bot` Profile, NEVER the `agentId` slug (#2995) — accepts a
 same-room/tenant thread, and enforces `allowedTools` fail-closed.
 
 Private `#writeMessage` alone can select arbitrary authors/roles or bypass
@@ -137,6 +138,8 @@ reconnaissance, and open gaps.
 
 - **sessionContext, not context**: `context` is reserved for slug scoping. Use `getSessionContext()`/`updateSessionContext()` for agent memory.
 - **Agent rooms auto-created**: `roomType: 'agent'`, `maxParticipants` defaults to 2; the agent is enrolled as a member so its replies pass the membership check. `createAgentSession()` re-enrolls the participant AND the agent on the existing-session path, so legacy sessions created before the agent was enrolled self-heal.
+- **The agent's author is a Profile, not `agentId` (#2995)**: `senderProfileId`/`profileId` are `crossPackageRef`s to `Profile` and therefore uuid columns on PostgreSQL, so the slug fails the cast (`22P02`) and no agent reply can persist. `createAgentSession()` resolves the agent's `bot` Profile through `resolveAgentProfile()` in `@happyvertical/smrt-profiles` (created on first use, tenant-bound) and records it as `AgentSession.agentProfileId`; both enrolment and `sendAgentReply` use that uuid. Consumers that already hold a bot profile (e.g. a persona's `actsAsProfileId`) may pass `agentProfileId` to skip resolution. **Migration**: the column is nullable and needs no offline backfill — a session created before #2995 resolves and persists its `agentProfileId`, and re-enrols the agent, on its first agent turn after the upgrade. On PostgreSQL there is no stale data to repair, because the old slug write could never commit; SQLite/DuckDB deployments may hold `chat_messages`/`chat_participants` rows whose id column holds the slug, which stay readable but are not joinable to `profiles`.
+- **Only SQLite-backed tests would miss this class of bug**: uuid columns accept any text on SQLite. `src/__tests__/agent-reply-postgres.test.ts` (`pnpm --filter @happyvertical/smrt-chat test:postgres`) pins the agent-reply path against real PostgreSQL. That suite is NOT part of required PR CI — it runs in `postgres-tests.yml`, gated on `vars.CI_POSTGRES_ENABLED` / manual dispatch — so keep a cheap SQLite assertion alongside it (`chat-service.test.ts` asserts the author is the profile uuid, not the slug).
 - **Per-subject sessions need `sessionKey`**: `createAgentSession()` reuses ANY active session for the same `(agentId, participantProfileId, tenantId)`. Callers that open separate conversations per subject (e.g. one content-editor session per content id) MUST pass a stable `sessionKey` (stored in `sessionContext.__sessionKey`, read via `AgentSession.getSessionKey()`); otherwise a session opened for one subject is reused and its context overwritten for another, surfacing the wrong room/threads (S5 #1392). A keyed create never reuses a keyless/legacy session.
 - **Session expiry**: check `isActive()` before allowing messages (expiresAt or limit-based)
 - **DM identity**: derived from the deterministic per-tenant `canonicalDmRoomId()` and the authoritative `chat_participants` join, not client metadata; concurrent creates upsert onto one row.

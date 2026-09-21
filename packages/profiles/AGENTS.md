@@ -39,6 +39,27 @@ Auth helpers in `src/auth/` build profiles from external identity claims:
   canonical Profile changes.
 - `createProfileFromNostr(email, nostrData)` — creates `Profile` + `NostrIdentity` for Nostr-authenticated users.
 
+## Agent (bot) profiles (#2995)
+
+An automated agent is an author, and every authoring seam in the framework
+(`ChatMessage.senderProfileId`, `ChatParticipant.profileId`, a persona's
+`actsAsProfileId`) is a `crossPackageRef` to `Profile` — a native uuid column on
+PostgreSQL/DuckDB. A slug-style agent id is therefore not a representable author
+(`22P02`). `src/agent-profile.ts` is the owning-package API that turns one into
+a real Profile so no consumer mints bot profiles itself and no uuid column is
+weakened to text:
+
+- `resolveAgentProfile(profiles, { agentId, tenantId, name? })` /
+  `resolveAgentProfileId(...)` — resolve, creating on first use, the `bot`
+  Profile an agent authors as. Idempotent and tenant-bound: identity is keyed on
+  `(tenantId, slug = agentId, context = AGENT_PROFILE_CONTEXT)`, matching the
+  model's `(tenant_id, slug, context, _meta_type)` unique key, so an agent id
+  resolves to a distinct profile per tenant and never collides with a
+  person/organization sharing the slug. Classification is the `bot` ProfileType
+  (`AGENT_PROFILE_TYPE_SLUG`), created on demand.
+
+First consumer: `@happyvertical/smrt-chat`'s `ChatService`.
+
 ## Key Methods
 
 - `Profile.getAssets()` / `addAsset()` / `removeAsset()` and the matching `ProfileCollection` wrappers — canonical owned asset helpers backed by `profile_assets`.
