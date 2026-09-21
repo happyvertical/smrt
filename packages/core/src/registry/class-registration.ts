@@ -1858,8 +1858,25 @@ function mergeManifestIntoExistingRegistration(
 export function registerFromManifest(
   name: string,
   objectDef: SmartObjectDefinition,
-  packageName?: string,
+  manifestPackageName?: string,
 ): void {
+  // Issue #2970: `manifestPackageName` identifies the package that owns the
+  // manifest FILE this entry was read from, which is not always the package
+  // that declares the class. A consumer app's generated `.smrt/manifest.json`
+  // is an aggregate: it carries every consumed package's objects verbatim,
+  // each keyed by its qualified name and each stating its own `packageName`.
+  // Deriving identity from the file's owner re-attributed all of them to the
+  // consumer, so a class reached through both that aggregate and its own
+  // package's manifest became two registry entries under two packages and its
+  // simple name went ambiguous in `findClassStrict()` — reported for
+  // `SmrtHierarchical`, but true of any aggregated object.
+  //
+  // The entry's own declaration therefore wins; the caller's value stays as
+  // the fallback for a local manifest whose entries name no package. This is
+  // identity-based, so two packages genuinely declaring the same class name
+  // still produce two entries and are still reported as ambiguous.
+  const packageName = objectDef.packageName || manifestPackageName;
+
   // Issue #951: Compute simple class name and registration key early
   // `name` may be a qualified key from manifest (e.g., '@happyvertical/smrt-events:Event')
   // `simpleClassName` is always the plain class name (e.g., 'Event')
