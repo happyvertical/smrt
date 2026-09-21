@@ -72,6 +72,23 @@ function listVersions(name, registry, runNpm) {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
+// npm's responses for a version number that was published and later removed.
+function isPermanentlyRejected(message) {
+  return /cannot publish over (the )?previously published version|cannot be republished|previously published version/i.test(
+    message,
+  );
+}
+
+function shasumOn(name, version, registry, runNpm) {
+  return runNpm([
+    'view',
+    `${name}@${version}`,
+    'dist.shasum',
+    ...registryArgs(registry),
+    '--prefer-online',
+  ]);
+}
+
 async function downloadTarball({ name, version, primary, runNpm, fetchImpl }) {
   const meta = JSON.parse(
     runNpm([
@@ -126,7 +143,7 @@ export async function mirrorRelease({
     return result;
   }
 
-  for (const { name } of packages) {
+  for (const { name, version: current } of packages) {
     let onPrimary;
     let onMirror;
     try {
@@ -141,6 +158,30 @@ export async function mirrorRelease({
 
     const have = new Set(onMirror);
     const missing = onPrimary.filter((version) => !have.has(version));
+
+    // The version lists alone cannot show that one version holds DIFFERENT
+    // bytes on the two registries, which the primary's union view makes
+    // possible: a version published straight to npmjs (the emergency
+    // changesets mode) is "already there" to a later artifacts run, whose
+    // content check then fails and publishes its own build to the primary.
+    // Lockfiles resolved against one registry would break on the other, so
+    // say so loudly for the version this checkout is at.
+    if (current && have.has(current) && onPrimary.includes(current)) {
+      try {
+        const [primarySha, mirrorSha] = [source, target].map((registry) =>
+          shasumOn(name, current, registry, runNpm),
+        );
+        if (primarySha !== mirrorSha) {
+          result.failed.push(
+            `${name}@${current}: DIVERGED — primary sha1 ${primarySha}, npmjs sha1 ${mirrorSha}. Same version, different bytes; bump a new version, this one cannot be reconciled`,
+          );
+        }
+      } catch (error) {
+        result.failed.push(
+          `${name}@${current}: could not compare checksums (${error.message.split('\n')[0]})`,
+        );
+      }
+    }
     const mirrorReleases = onMirror.filter(parseVersion).sort(compareVersions);
     let highestOnMirror = mirrorReleases.at(-1);
 
@@ -194,9 +235,23 @@ export async function mirrorRelease({
         result.mirrored.push(spec);
         log(`🪞 Mirrored ${spec} to ${target}`);
       } catch (error) {
-        result.failed.push(`${spec}: ${error.message.split('\n')[0]}`);
-        // Later versions of this package would publish out of order and move
-        // `latest` past a version that is still missing; stop this package.
+        const message = error instanceof Error ? error.message : String(error);
+        // npmjs reserves an unpublished version forever. The primary still
+        // lists it (it keeps what it cached), so this is what a security
+        // takedown of a release looks like from here. It can never succeed:
+        // record it as a permanent skip and carry on, otherwise the same
+        // rejection would stop every later version of this package on every
+        // run.
+        if (isPermanentlyRejected(message)) {
+          result.skipped.push(
+            `${spec}: npmjs permanently refuses this version (it was published there before and removed); not retried`,
+          );
+          continue;
+        }
+        result.failed.push(`${spec}: ${message.split('\n')[0]}`);
+        // A transient failure: later versions of this package would publish
+        // out of order and move `latest` past a version that is still
+        // missing, so stop this package until the next run.
         break;
       }
     }
@@ -215,7 +270,7 @@ export function reportMirror(
   );
   if (result.failed.length > 0) {
     log(
-      `::warning::npmjs mirror incomplete for ${result.failed.length} item(s). The release is complete on the primary registry; the next mirror run retries these without a version bump.`,
+      `::warning::npmjs mirror incomplete for ${result.failed.length} item(s). The release is complete on the primary registry; the next mirror run retries transient failures without a version bump. A DIVERGED item is never retried and needs a new version.`,
     );
   }
   if (!env.GITHUB_STEP_SUMMARY) return;

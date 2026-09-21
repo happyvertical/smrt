@@ -95,11 +95,15 @@ test('releases are published to the primary registry, with npmjs as a mirror', (
   const publisher = job('publish-release');
   const mirror = job('mirror-npmjs');
 
-  // One definition of the primary, overridable without a code change.
+  // A literal: the publish token is sent to this host, so it must not come
+  // from an unreviewed repository variable or input.
   assert.match(
     workflow,
-    /^  RELEASE_PRIMARY_REGISTRY: \$\{\{ vars\.RELEASE_PRIMARY_REGISTRY \|\| 'https:\/\/npm\.happyvertical\.com\/' \}\}$/m,
+    /^  RELEASE_PRIMARY_REGISTRY: 'https:\/\/npm\.happyvertical\.com\/'$/m,
   );
+  assert.doesNotMatch(workflow, /RELEASE_PRIMARY_REGISTRY:.*(vars\.|inputs\.|secrets\.)/);
+  // The release record must not claim a mirror that has not run yet.
+  assert.doesNotMatch(publisher, /and mirrored to npmjs/);
 
   // The token is proven valid against the primary before anything
   // irreversible; a non-empty check is what let an expired token through.
@@ -107,6 +111,10 @@ test('releases are published to the primary registry, with npmjs as a mirror', (
   assert.ok(auth > publisher.indexOf('- name: Setup Environment'));
   assert.ok(auth < publisher.indexOf('git commit -m'));
   assert.match(publisher, /npm whoami --registry "\$RELEASE_PRIMARY_REGISTRY" \\\n\s+"--@happyvertical:registry=\$RELEASE_PRIMARY_REGISTRY"/);
+  // The host is checked against the reviewed allowlist before the token is
+  // written for it or sent to it.
+  const allowlist = publisher.indexOf("primaryRegistry();");
+  assert.ok(allowlist > auth && allowlist < publisher.indexOf('_authToken=%s'));
   // setup-node redirects npm's userconfig; the credential must follow it.
   assert.match(publisher, /rc="\$\{NPM_CONFIG_USERCONFIG:-\$HOME\/\.npmrc\}"/);
 

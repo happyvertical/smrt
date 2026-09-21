@@ -49,3 +49,24 @@ test('a registry URL cannot smuggle credentials, a query, or a fragment', () => 
     (error) => !error.message.includes('secret'),
   );
 });
+
+test('the primary can only be one of the reviewed registry hosts', () => {
+  // The publish token is written for and sent to this host, so an arbitrary
+  // https URL from configuration must be refused, not normalized.
+  assert.throws(
+    () => primaryRegistry({ RELEASE_PRIMARY_REGISTRY: 'https://registry.evil.example/' }),
+    /registry\.evil\.example, which is not an allowed release registry/,
+  );
+  assert.throws(
+    () => primaryRegistry({ RELEASE_PRIMARY_REGISTRY: 'https://npm.happyvertical.com.evil.example/' }),
+    /not an allowed release registry/,
+  );
+  assert.throws(
+    () => primaryRegistry({ RELEASE_PRIMARY_REGISTRY: 'https://npm.happyvertical.com:8443/' }),
+    /not an allowed release registry/,
+  );
+  assert.equal(
+    primaryRegistry({ RELEASE_PRIMARY_REGISTRY: 'http://127.0.0.1:4873' }),
+    'http://127.0.0.1:4873/',
+  );
+});

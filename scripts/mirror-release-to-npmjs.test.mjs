@@ -17,7 +17,13 @@ function registryOf(args) {
 }
 
 // A fake pair of registries: `primary`/`npmjs` map package name -> versions.
-function fakeRegistries({ primary, npmjs, publishFails = () => false, unreadable = [] }) {
+function fakeRegistries({
+  primary,
+  npmjs,
+  publishFails = () => false,
+  unreadable = [],
+  shasumOnNpmjs,
+}) {
   const calls = [];
   const published = [];
   const runNpm = (args, options = {}) => {
@@ -33,6 +39,9 @@ function fakeRegistries({ primary, npmjs, publishFails = () => false, unreadable
         return null;
       }
       return JSON.stringify(versions.length === 1 ? versions[0] : versions);
+    }
+    if (args[0] === 'view' && args[2] === 'dist.shasum') {
+      return registry === PRIMARY ? SHA1 : (shasumOnNpmjs ?? SHA1);
     }
     if (args[0] === 'view' && args[2] === 'dist') {
       assert.equal(registry, PRIMARY);
@@ -211,4 +220,64 @@ test('the report warns on failures and never throws on an unwritable summary', (
   );
   assert.match(lines[0], /1 mirrored, 0 skipped, 1 failed/);
   assert.match(lines[1], /^::warning::npmjs mirror incomplete/);
+});
+
+test('the same version with different bytes on the two registries is reported', async () => {
+  const registries = {
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10', '0.51.11'] },
+  };
+  const same = fakeRegistries(registries);
+  assert.deepEqual(
+    (await run(same, { packages: [{ name: NAME, version: '0.51.11' }] })).failed,
+    [],
+  );
+
+  const diverged = fakeRegistries({ ...registries, shasumOnNpmjs: 'a'.repeat(40) });
+  const result = await run(diverged, { packages: [{ name: NAME, version: '0.51.11' }] });
+  assert.equal(diverged.published.length, 0);
+  assert.equal(result.failed.length, 1);
+  assert.match(result.failed[0], /0\.51\.11: DIVERGED — primary sha1 .* npmjs sha1 a{40}/);
+});
+
+test('the checksum comparison is skipped for a version npmjs does not have yet', async () => {
+  const fakes = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10'] },
+    shasumOnNpmjs: 'must-not-be-read',
+  });
+  const result = await run(fakes, { packages: [{ name: NAME, version: '0.51.11' }] });
+  assert.deepEqual(result.failed, []);
+  assert.ok(!fakes.calls.some((args) => args[2] === 'dist.shasum'));
+});
+
+test('a version npmjs permanently refuses is skipped so later versions still mirror', async () => {
+  // A takedown of npmjs's newest release: the primary still lists 0.51.11,
+  // npmjs has reserved the number, and 0.51.12 must not be held hostage.
+  const fakes = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11', '0.51.12'] },
+    npmjs: { [NAME]: ['0.51.10'] },
+    publishFails: (args) => args[1].endsWith('0.51.11.tgz'),
+  });
+  const inner = fakes.runNpm;
+  const result = await run(fakes, {
+    runNpm: (args, options) => {
+      try {
+        return inner(args, options);
+      } catch (error) {
+        if (args[0] === 'publish') {
+          throw new Error(
+            'npm error code E403\nnpm error 403 You cannot publish over the previously published versions: 0.51.11.',
+          );
+        }
+        throw error;
+      }
+    },
+  });
+
+  assert.deepEqual(result.mirrored, [`${NAME}@0.51.12`]);
+  assert.deepEqual(result.failed, []);
+  assert.equal(result.skipped.length, 1);
+  assert.match(result.skipped[0], /0\.51\.11: npmjs permanently refuses this version/);
+  assert.equal(fakes.published.at(-1).tag, 'latest');
 });

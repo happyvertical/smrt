@@ -26,8 +26,11 @@ expired and npm then placed a 72-hour security hold on the one account that
 owns the scope, so no release could ship and nothing in our control could
 shorten it (#2998, #3002). Four rules follow.
 
-- The primary is `RELEASE_PRIMARY_REGISTRY` (a repository variable; defaults to
-  `https://npm.happyvertical.com/`). `Publish Release` authenticates with
+- The primary is the literal `RELEASE_PRIMARY_REGISTRY` in `publish.yml`, and
+  `scripts/release-registry.mjs` refuses any host outside its
+  `ALLOWED_PRIMARY_HOSTS`. It is deliberately **not** a repository variable:
+  the publish token is written for and sent to that host, so changing it must
+  be a reviewed change. `Publish Release` authenticates with
   `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` and proves it with `npm whoami` before
   anything irreversible.
 - **Every npm call that names a registry must use `registryArgs()`** from
@@ -42,8 +45,13 @@ shorten it (#2998, #3002). Four rules follow.
   lockfiles pin a tarball integrity hash and a rebuilt tarball would not match.
   It is forward-only (versions newer than npmjs's newest), runs even when no
   release was cut, and never fails the workflow, so a missed mirror is repaired
-  by the next batch without a version bump. `MIRROR_BACKFILL=true` fills older
-  gaps deliberately; `MIRROR_STRICT=true` makes a manual repair run fail loudly.
+  by the next batch without a version bump. A version npmjs permanently
+  refuses (published there before and removed) is recorded as skipped and does
+  not hold back later versions. If the release version exists on both
+  registries with different checksums it is reported as `DIVERGED`; that
+  cannot be reconciled and needs a new version. `MIRROR_BACKFILL=true` fills
+  older gaps deliberately; `MIRROR_STRICT=true` makes a manual repair run fail
+  loudly.
 - The emergency `changesets` publish mode still publishes straight to npmjs
   with `NPM_TOKEN`. The primary proxies npmjs for the scope, so versions
   published that way remain installable from it.

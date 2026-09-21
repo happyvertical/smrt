@@ -46,7 +46,10 @@ env:
   # Releases are published to, and recorded against, our own registry; npmjs
   # is a best-effort mirror (#3002). An npmjs outage, an expired token, or a
   # hold on the npm account that owns the scope must not stop a release.
-  RELEASE_PRIMARY_REGISTRY: ${{ vars.RELEASE_PRIMARY_REGISTRY || 'https://npm.happyvertical.com/' }}
+  # A literal, not a repository variable: the publish token is written for and
+  # sent to this host, so changing it must be a reviewed workflow change. The
+  # scripts also refuse any host outside their own allowlist.
+  RELEASE_PRIMARY_REGISTRY: 'https://npm.happyvertical.com/'
 
 permissions:
   actions: read
@@ -378,6 +381,9 @@ jobs:
             echo "❌ NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required to publish to $RELEASE_PRIMARY_REGISTRY"
             exit 1
           fi
+          # Refuse any host outside the scripts' reviewed allowlist BEFORE the
+          # token is written for it or sent to it.
+          node --input-type=module -e "import { primaryRegistry } from './scripts/release-registry.mjs'; primaryRegistry();"
           host="${RELEASE_PRIMARY_REGISTRY#https://}"
           host="${host%/}"
           rc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
@@ -499,8 +505,11 @@ jobs:
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
           RELEASE_NOTES="${RELEASE_NOTES} ${RELEASE_PRIMARY_REGISTRY}"
-          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION"
-          RELEASE_NOTES="${RELEASE_NOTES} and mirrored to npmjs.org."
+          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION."
+          RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Mirroring to npmjs.org is a"
+          RELEASE_NOTES="${RELEASE_NOTES} separate best-effort follow-up; see"
+          RELEASE_NOTES="${RELEASE_NOTES} the Mirror Release to npmjs job of"
+          RELEASE_NOTES="${RELEASE_NOTES} this run for its result."
           RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
           RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
           RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
