@@ -188,7 +188,9 @@ let threadsOpen = $state(false);
 const uid = $props.id();
 const threadsId = `assistant-dock-threads-${uid}`;
 let threadsEl: HTMLDivElement | undefined = $state();
-let threadsToggleEl: HTMLButtonElement | undefined = $state();
+// The shared Button primitive exposes no element ref, so the toggle is
+// found by id when focus has to move back to it.
+const threadsToggleId = `${threadsId}-toggle`;
 
 // Closing the narrow list hides the element that holds focus (the thread row
 // or "New conversation" button just activated). Hand focus back to the
@@ -203,7 +205,7 @@ function closeThreads() {
   if (!focusWasInside) return;
   void tick().then(() => {
     if (threadsEl && threadsEl.offsetParent === null) {
-      threadsToggleEl?.focus();
+      document.getElementById(threadsToggleId)?.focus();
     }
   });
 }
@@ -285,16 +287,17 @@ async function handleConfirmAction(requestId: string) {
     class="assistant-dock-layout"
     data-threads-open={threadsOpen || undefined}
   >
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      id={threadsToggleId}
       class="assistant-dock-threads-toggle"
-      bind:this={threadsToggleEl}
       aria-expanded={threadsOpen}
       aria-controls={threadsId}
       onclick={() => (threadsOpen = !threadsOpen)}
     >
       {t(M['chat.assistant_dock.conversations_toggle'])}
-    </button>
+    </Button>
 
     <div
       class="assistant-dock-threads"
@@ -480,7 +483,7 @@ async function handleConfirmAction(requestId: string) {
     min-height: 0;
   }
 
-  .assistant-dock-threads-toggle {
+  .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
     display: none;
   }
 
@@ -489,8 +492,9 @@ async function handleConfirmAction(requestId: string) {
       flex-direction: column;
     }
 
-    .assistant-dock-threads-toggle {
+    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle) {
       display: flex;
+      justify-content: flex-start;
       align-items: center;
       gap: var(--smrt-spacing-2, 8px);
       flex-shrink: 0;
@@ -502,20 +506,22 @@ async function handleConfirmAction(requestId: string) {
       color: var(--smrt-color-on-surface, #1a1c1e);
       font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
       font-family: inherit;
+      border-radius: 0;
       text-align: left;
       cursor: pointer;
     }
 
-    .assistant-dock-threads-toggle::before {
+    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle::before) {
       content: '▸' / '';
       color: var(--smrt-color-on-surface-variant, #43474e);
     }
 
-    .assistant-dock-layout[data-threads-open] .assistant-dock-threads-toggle::before {
+    .assistant-dock .assistant-dock-layout[data-threads-open]
+      > :global(.assistant-dock-threads-toggle::before) {
       content: '▾' / '';
     }
 
-    .assistant-dock-threads-toggle:focus-visible {
+    .assistant-dock .assistant-dock-layout > :global(.assistant-dock-threads-toggle:focus-visible) {
       outline: 2px solid var(--smrt-color-primary, #005ac1);
       outline-offset: -2px;
     }
