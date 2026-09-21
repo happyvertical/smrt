@@ -412,6 +412,12 @@ describe('SvelteKit Route Generator', () => {
       const content = route?.[1] as string;
       expectGetCollectionCall(content, 'Widget', 'Widget');
       expect(content).not.toContain("getCollection('SpecialWidget')");
+      // The inherited collection's write action is gated on the resolved
+      // item's collection, matching the permission catalog (#2977).
+      expect(content).toContain('const PERMISSION_COLLECTION = "widgets";');
+      expect(content).toContain(
+        'requireRoutePermission(locals, "restoreSpecial");',
+      );
     });
 
     it('gates collection-class write actions on the item collection permission (#2977)', async () => {

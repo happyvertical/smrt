@@ -334,6 +334,17 @@ describe('PermissionCatalogService', () => {
         methods: {},
         qualifiedName: `${packageName}:Gizmo2977`,
       },
+      SpecialGizmo2977Collection: {
+        className: 'SpecialGizmo2977Collection',
+        collection: 'gizmo2977s',
+        decoratorConfig: { api: { include: ['restoreSpecial'] } },
+        extends: 'Gizmo2977Collection',
+        fields: {},
+        methods: {
+          restoreSpecial: { isPublic: true, name: 'restoreSpecial' },
+        },
+        qualifiedName: `${packageName}:SpecialGizmo2977Collection`,
+      },
       Gizmo2977Collection: {
         className: 'Gizmo2977Collection',
         collection: 'gizmo2977_collections',
@@ -366,6 +377,11 @@ describe('PermissionCatalogService', () => {
         .getCatalog()
         .permissions.map((permission) => permission.slug);
       expect(slugs).toContain('gizmos_2977.importBatch');
+      // An inherited collection class (no own type argument) resolves the
+      // same item through its ancestry, as the route generator does.
+      expect(slugs).toContain('gizmos_2977.restoreSpecial');
+      expect(slugs).not.toContain('gizmo2977s.restoreSpecial');
+      expect(slugs).not.toContain('gizmo2977s.read');
       expect(slugs).not.toContain('gizmos_2977.internalSweep');
       expect(slugs).not.toContain('gizmos_2977.hidden');
       expect(
