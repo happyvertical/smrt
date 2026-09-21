@@ -426,6 +426,23 @@ async function handleConfirmAction(requestId: string) {
                   onconfirmaction={() => handleConfirmAction(requestId)}
                   onrejectaction={() => controller.rejectAction(requestId)}
                 />
+                {#if action.outcomeUnknown}
+                  <!-- #2990: no decision was reached, so the change may have
+                       landed. Reject is withdrawn (ToolCallDisplay only
+                       offers it for a live preview); the only affordance is a
+                       same-key retry. -->
+                  <div class="assistant-dock-action-unknown" role="status">
+                    <p>{t(M['chat.assistant_dock.action_outcome_unknown'])}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={action.status === 'applying'}
+                      onclick={() => handleConfirmAction(requestId)}
+                    >
+                      {t(M['chat.assistant_dock.action_check_again'])}
+                    </Button>
+                  </div>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -657,6 +674,19 @@ async function handleConfirmAction(requestId: string) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
+  }
+
+  .assistant-dock-action-unknown {
+    margin-top: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-medium, 8px);
+    background: var(--smrt-color-tertiary-container, #ffd8e4);
+    color: var(--smrt-color-on-tertiary-container, #31111d);
+    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
+  }
+
+  .assistant-dock-action-unknown p {
+    margin: 0 0 var(--smrt-spacing-2, 8px);
   }
 
   .assistant-dock-stale {

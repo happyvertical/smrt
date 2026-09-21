@@ -71,6 +71,9 @@ export const M = defineMessages({
     'A message failed to send. You can retry it below.',
   'chat.assistant_dock.attachments': 'Attachments',
   'chat.assistant_dock.conversations_toggle': 'Conversations',
+  'chat.assistant_dock.action_outcome_unknown':
+    "We couldn't confirm whether this change was applied. Checking again is safe: it resends the same request, so the change can't be applied twice.",
+  'chat.assistant_dock.action_check_again': 'Check again',
 
   // RoomCreateDialog
   'chat.room_create_dialog.close': 'Close room creation dialog',

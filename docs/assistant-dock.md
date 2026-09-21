@@ -377,6 +377,37 @@ the same callback as `onActionApplied` to `createAssistantDockController`.
 The dock doesn't derive proposals from `toolCallData` on its own. The host
 decides which assistant turns become proposals.
 
+### Refused vs. unknown apply outcomes (#2990)
+
+An apply can end in two ways:
+
+- **Refused.** The server decided and said no. `status: 'failed'` and
+  `outcomeUnknown: false`. Examples: `denied`, `not_found`,
+  `stale_revision`, `idempotency_conflict`, or any `confirmation_*` reason.
+  This is terminal, and `rejectAction` may discard it.
+- **Unknown.** No decision was reached, so the mutation may have committed.
+  `status: 'failed'`, `outcomeUnknown: true`, `retryable: true`. This
+  happens when `actionClient.apply` rejects (transport failure, 5xx,
+  timeout), or when it resolves `{ ok: false, reason }` with a reason in
+  `ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS` (`idempotency_in_progress`,
+  `outcome_unknown`). An action client reports "no decision" in either of
+  those two ways. For example, it can map an HTTP 5xx to
+  `'outcome_unknown'`.
+
+Until an apply gets a decision, the entry keeps its idempotency key.
+`applyAction` retries it with that same key, so the server replays the
+earlier attempt and can't mutate twice. Duplicate retries in flight at once
+collapse into one call. `rejectAction` is refused while an apply is in
+flight or its outcome is unknown, and so is a new `previewAction` for the
+same request id. Either one would drop the only key that keeps a retry
+safe. In this state the dock shows a notice and a **Check again** button,
+and no Reject. A decision on a later attempt clears `outcomeUnknown`.
+
+A registry or transport swap, such as a tenant change, still clears every
+action, including unknown ones. A key taken under the old context is never
+valid against the new one. Reconciling it after switching back is not
+handled (see Gaps).
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
@@ -419,3 +450,10 @@ decides which assistant turns become proposals.
    already-documented `writeEndpoint` gap above (item 1) for the identical
    reason: neither model exposes a generated route safe to call unscoped
    from the browser.
+8. **Unknown apply outcomes don't survive a context swap (#2990).** A
+   registry or transport swap clears `actions`, including entries with
+   `outcomeUnknown`, because old-context state must never render in the
+   new context. If the host switches back and proposes the same action
+   again, it gets a fresh idempotency key. Retaining unknown outcomes per
+   context without leaking them across the swap boundary needs its own
+   design.
