@@ -105,6 +105,15 @@ test('final publisher authenticates to npm as a trusted publisher', () => {
     'node scripts/check-trusted-publish-preflight.mjs',
   );
   assert.ok(preflight > publisher.indexOf('- name: Setup Environment'));
+  // Below the guard and gated on it, so a rerun that only needs to create a
+  // missing GitHub release (#2879) is never stopped by a credential check.
+  assert.ok(preflight > publisher.indexOf('- name: Guard release publish target'));
+  assert.equal(
+    publisher.match(
+      /if: steps\.guard\.outputs\.already-recorded != 'true' && inputs\.publish-mode [!=]= 'changesets'/g,
+    )?.length,
+    2,
+  );
   assert.ok(preflight < publisher.indexOf('git commit -m'));
 
   // Only the emergency Changesets fallback may receive the long-lived token;
@@ -123,7 +132,7 @@ test('final publisher authenticates to npm as a trusted publisher', () => {
   // Changesets fallback still does, before its irreversible phase.
   assert.doesNotMatch(job('prepare-release'), /NPM_TOKEN secret is required/);
   const tokenCheck = publisher.indexOf(
-    "if: inputs.publish-mode == 'changesets'\n        env:\n          NPM_TOKEN:",
+    "inputs.publish-mode == 'changesets'\n        env:\n          NPM_TOKEN:",
   );
   assert.ok(tokenCheck > 0 && tokenCheck < publisher.indexOf('git commit -m'));
   assert.match(publisher, /^      CI_ONNX_DEPS_READY: 'true'$/m);

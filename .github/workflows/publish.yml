@@ -360,27 +360,6 @@ jobs:
           auth-token: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Fails in seconds, before anything irreversible, when this job could
-      # not publish as the trusted publisher registered on npmjs for the
-      # calling workflow (on-merge-main.yml). See CHANGESETS.md.
-      # It also performs npm's per-package OIDC exchange for every artifact,
-      # so one unregistered package cannot strand a half-published batch.
-      - name: Verify npm trusted publishing
-        if: inputs.publish-mode != 'changesets'
-        run: node scripts/check-trusted-publish-preflight.mjs publish-pack-output
-
-      # The emergency fallback still publishes with NPM_TOKEN, so it keeps the
-      # early presence check: that secret must stay alive for this lane to work.
-      - name: Verify npm publish token for the Changesets fallback
-        if: inputs.publish-mode == 'changesets'
-        env:
-          NPM_TOKEN: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
-        run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "❌ NPM_TOKEN secret is required by the changesets publish mode"
-            exit 1
-          fi
-
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -400,6 +379,30 @@ jobs:
           RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/guard-release-publish.js
+
+      # Gated on the guard like the other pre-publication checks: a rerun of an
+      # already-recorded release exists only to create a missing GitHub release
+      # (#2879) and must not be stopped by a credential check it does not need.
+      # Fails in seconds, before anything irreversible, when this job could
+      # not publish as the trusted publisher registered on npmjs for the
+      # calling workflow (on-merge-main.yml). See CHANGESETS.md.
+      # It also performs npm's per-package OIDC exchange for every artifact,
+      # so one unregistered package cannot strand a half-published batch.
+      - name: Verify npm trusted publishing
+        if: steps.guard.outputs.already-recorded != 'true' && inputs.publish-mode != 'changesets'
+        run: node scripts/check-trusted-publish-preflight.mjs publish-pack-output
+
+      # The emergency fallback still publishes with NPM_TOKEN, so it keeps the
+      # early presence check: that secret must stay alive for this lane to work.
+      - name: Verify npm publish token for the Changesets fallback
+        if: steps.guard.outputs.already-recorded != 'true' && inputs.publish-mode == 'changesets'
+        env:
+          NPM_TOKEN: ${{ inputs.publish-mode == 'changesets' && secrets.NPM_TOKEN || '' }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "❌ NPM_TOKEN secret is required by the changesets publish mode"
+            exit 1
+          fi
 
       - name: Verify complete release artifact set
         if: steps.guard.outputs.already-recorded != 'true'

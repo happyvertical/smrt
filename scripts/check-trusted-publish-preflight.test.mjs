@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  describeExchangeFailures,
   findTrustedPublishProblems,
   findUntrustedPackages,
   MIN_NPM_VERSION,
@@ -88,7 +89,7 @@ test('every package is exchanged with the GitHub ID token, as the npm CLI does',
 
   assert.deepEqual(
     await findUntrustedPackages({ names, env: readyEnv, fetchImpl }),
-    [],
+    { untrusted: [], unreachable: [] },
   );
   assert.equal(
     calls[0].url,
@@ -117,10 +118,13 @@ test('an unregistered package is reported without stopping at the first one', as
       env: readyEnv,
       fetchImpl,
     }),
-    [
-      '@happyvertical/smrt-ads (HTTP 404: no trusted publisher)',
-      '@happyvertical/smrt-new (HTTP 404: no trusted publisher)',
-    ],
+    {
+      untrusted: [
+        '@happyvertical/smrt-ads (HTTP 404: no trusted publisher)',
+        '@happyvertical/smrt-new (HTTP 404: no trusted publisher)',
+      ],
+      unreachable: [],
+    },
   );
 });
 
@@ -134,5 +138,59 @@ test('a refused GitHub ID token fails instead of reporting every package', async
       fetchImpl,
     }),
     /did not issue an OIDC ID token \(HTTP 403\)/,
+  );
+});
+
+test('a transient registry error is retried, then reported as unreachable, never as unregistered', async () => {
+  const statuses = { '@happyvertical/smrt-flaky': [502, 201], '@happyvertical/smrt-down': [503, 429, 500] };
+  const delays = [];
+  const fetchImpl = async (url) => {
+    if (url.startsWith(readyEnv.ACTIONS_ID_TOKEN_REQUEST_URL)) {
+      return { ok: true, status: 200, json: async () => ({ value: 'id' }) };
+    }
+    const status = statuses[decodeURIComponent(url.split('/package/')[1])].shift();
+    return {
+      ok: status < 300,
+      status,
+      json: async () => (status < 300 ? { token: 'npm_short' } : {}),
+    };
+  };
+
+  assert.deepEqual(
+    await findUntrustedPackages({
+      names: Object.keys(statuses),
+      env: readyEnv,
+      fetchImpl,
+      sleep: async (ms) => delays.push(ms),
+      retryDelayMs: 10,
+    }),
+    { untrusted: [], unreachable: ['@happyvertical/smrt-down (HTTP 500)'] },
+  );
+  assert.deepEqual(delays, [10, 10, 20]);
+});
+
+test('failure messages separate availability, run identity, and missing registration', () => {
+  const env = { GITHUB_WORKFLOW_REF: 'happyvertical/smrt/.github/workflows/publish.yml@refs/heads/main' };
+
+  const [availability] = describeExchangeFailures({
+    untrusted: [], unreachable: ['a (HTTP 503)'], total: 3, env,
+  });
+  assert.match(availability, /not a registration problem/);
+
+  const [identity] = describeExchangeFailures({
+    untrusted: ['a (HTTP 404)', 'b (HTTP 404)'], unreachable: [], total: 2, env,
+  });
+  assert.match(identity, /ALL 2 packages/);
+  assert.match(identity, /workflows\/publish\.yml@refs\/heads\/main/);
+  assert.doesNotMatch(identity, /register happyvertical\/smrt \+/);
+
+  const [registration] = describeExchangeFailures({
+    untrusted: ['a (HTTP 404)'], unreachable: [], total: 2, env,
+  });
+  assert.match(registration, /1 of 2 packages; register happyvertical\/smrt/);
+
+  assert.deepEqual(
+    describeExchangeFailures({ untrusted: [], unreachable: [], total: 2, env }),
+    [],
   );
 });

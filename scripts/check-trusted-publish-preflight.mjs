@@ -61,6 +61,9 @@ export async function findUntrustedPackages({
   names,
   env,
   fetchImpl = fetch,
+  attempts = 3,
+  retryDelayMs = 2_000,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   const idTokenUrl = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   idTokenUrl.searchParams.append('audience', `npm:${new URL(registry).hostname}`);
@@ -80,28 +83,57 @@ export async function findUntrustedPackages({
   }
 
   const untrusted = [];
+  const unreachable = [];
   for (const name of names) {
-    const response = await fetchImpl(
-      new URL(
-        `/-/npm/v1/oidc/token/exchange/package/${name.replace('/', '%2f')}`,
-        registry,
-      ).href,
-      {
+    const url = new URL(
+      `/-/npm/v1/oidc/token/exchange/package/${name.replace('/', '%2f')}`,
+      registry,
+    ).href;
+    let response;
+    let body = {};
+    // A 5xx/429 says nothing about whether the package is registered, so it
+    // is retried and then reported as its own condition, never as "register
+    // this package" — a wrong remedy is what made the original E404 costly.
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      response = await fetchImpl(url, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-      },
-    );
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.token) {
-      untrusted.push(
-        `${name} (HTTP ${response.status}${body.message ? `: ${body.message}` : ''})`,
-      );
+      });
+      body = await response.json().catch(() => ({}));
+      const transient = response.status >= 500 || response.status === 429;
+      if (!transient || attempt === attempts) break;
+      await sleep(retryDelayMs * attempt);
+    }
+    const detail = `${name} (HTTP ${response.status}${body.message ? `: ${body.message}` : ''})`;
+    if (response.status >= 500 || response.status === 429) {
+      unreachable.push(detail);
+    } else if (!response.ok || !body.token) {
+      untrusted.push(detail);
     }
   }
-  return untrusted;
+  return { untrusted, unreachable };
+}
+
+export function describeExchangeFailures({ untrusted, unreachable, total, env }) {
+  const problems = [];
+  if (unreachable.length > 0) {
+    problems.push(
+      `npm did not answer the trusted-publisher exchange for ${unreachable.length} of ${total} packages after retries; this is a registry availability problem, not a registration problem — re-run the job: ${unreachable.join(', ')}`,
+    );
+  }
+  if (untrusted.length === total && total > 1) {
+    problems.push(
+      `npm refused the trusted-publisher exchange for ALL ${total} packages. That points at this run's identity rather than ${total} missing registrations: npm matches the CALLING workflow (this run: ${env.GITHUB_WORKFLOW_REF || 'unknown'}) against each package's registered publisher, so dispatching publish.yml directly fails unless it is registered too. First refusal: ${untrusted[0]}`,
+    );
+  } else if (untrusted.length > 0) {
+    problems.push(
+      `npm refused the trusted-publisher exchange for ${untrusted.length} of ${total} packages; register happyvertical/smrt + the calling workflow for each on npmjs (a new package needs one manual first publish): ${untrusted.join(', ')}`,
+    );
+  }
+  return problems;
 }
 
 async function main() {
@@ -117,12 +149,14 @@ async function main() {
     const names = verifyPublishArtifacts(artifactDir).packages.map(
       (artifact) => artifact.name,
     );
-    const untrusted = await findUntrustedPackages({ names, env: process.env });
-    if (untrusted.length > 0) {
-      problems.push(
-        `npm refused the trusted-publisher exchange for ${untrusted.length} of ${names.length} packages; register happyvertical/smrt + the calling workflow for each on npmjs (a new package needs one manual first publish): ${untrusted.join(', ')}`,
-      );
-    }
+    const failures = await findUntrustedPackages({ names, env: process.env });
+    problems.push(
+      ...describeExchangeFailures({
+        ...failures,
+        total: names.length,
+        env: process.env,
+      }),
+    );
   }
 
   if (problems.length > 0) {
