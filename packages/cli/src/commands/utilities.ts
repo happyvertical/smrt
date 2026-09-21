@@ -1276,7 +1276,9 @@ export default testManifest;
                 console.log(`  ✓ Dropped ${tableName}`);
               } catch (error) {
                 if (options.verbose) {
-                  console.log(`  ⚠️  Could not drop ${tableName}: ${error}`);
+                  console.log(
+                    `  ⚠️  Could not drop ${tableName}: ${redactConnectionStringsInText(String(error))}`,
+                  );
                 }
                 throw new Error(
                   `Refusing to continue after failing to drop ${tableName}; dependency or foreign-key constraints may still be active.`,
