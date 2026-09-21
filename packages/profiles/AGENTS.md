@@ -56,7 +56,13 @@ weakened to text:
   model's `(tenant_id, slug, context, _meta_type)` unique key, so an agent id
   resolves to a distinct profile per tenant and never collides with a
   person/organization sharing the slug. Classification is the `bot` ProfileType
-  (`AGENT_PROFILE_TYPE_SLUG`), created on demand.
+  (`AGENT_PROFILE_TYPE_SLUG`), created on demand. Parallel first use converges
+  on the natural key rather than on whoever's INSERT won (each attempt re-reads
+  before and after writing), which matters because NULLs are distinct in the
+  `(tenant_id, slug, context)` unique index, so an untenanted agent is not
+  arbitrated by the database (smrt#2360). Pinned against real PostgreSQL by
+  `src/__tests__/agent-profile-postgres.test.ts`
+  (`pnpm --filter @happyvertical/smrt-profiles test:postgres`).
 
 First consumer: `@happyvertical/smrt-chat`'s `ChatService`.
 

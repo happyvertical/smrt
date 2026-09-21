@@ -71,32 +71,48 @@ export async function resolveAgentProfile(
     throw new Error('resolveAgentProfile requires a non-empty agentId');
   }
   const tenantId = params.tenantId ?? null;
+  const key = { slug: agentId, context: AGENT_PROFILE_CONTEXT, tenantId };
 
-  const existing = await profiles.get({
-    slug: agentId,
-    context: AGENT_PROFILE_CONTEXT,
-    tenantId,
-  });
-  if (existing) return existing;
+  // First use races (two simultaneous first turns for one agent) are resolved by
+  // converging on the natural key rather than by whoever's INSERT won: each
+  // attempt re-reads before and after writing, so a racer whose own write lost
+  // to a revision conflict or to the `(tenant_id, slug, context)` upsert still
+  // returns the surviving row instead of a dangling id. Two attempts suffice —
+  // the loser of the first is a plain read on the second.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await profiles.get(key);
+    if (existing) return existing;
 
-  const profileTypes = await ProfileTypeCollection.create(profiles.options);
-  const agentType = await profileTypes.getOrCreateBySlug(
-    AGENT_PROFILE_TYPE_SLUG,
-    {
-      name: 'Bot',
-      description: 'Automated agents, bots, and AI entities',
-    },
+    try {
+      const profileTypes = await ProfileTypeCollection.create(profiles.options);
+      const agentType = await profileTypes.getOrCreateBySlug(
+        AGENT_PROFILE_TYPE_SLUG,
+        {
+          name: 'Bot',
+          description: 'Automated agents, bots, and AI entities',
+        },
+      );
+
+      const profile = await profiles.create({
+        ...key,
+        typeId: agentType.id as string,
+        name: params.name?.trim() || agentId,
+      });
+      await profile.save();
+    } catch (error) {
+      lastError = error;
+    }
+
+    const settled = await profiles.get(key);
+    if (settled) return settled;
+  }
+
+  throw new Error(
+    `Could not resolve an agent profile for '${agentId}'${
+      lastError instanceof Error ? `: ${lastError.message}` : ''
+    }`,
   );
-
-  const profile = await profiles.create({
-    slug: agentId,
-    context: AGENT_PROFILE_CONTEXT,
-    tenantId,
-    typeId: agentType.id as string,
-    name: params.name?.trim() || agentId,
-  });
-  await profile.save();
-  return profile;
 }
 
 /**

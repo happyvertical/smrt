@@ -15,6 +15,10 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  ProfileCollection,
+  ProfileTypeCollection,
+} from '@happyvertical/smrt-profiles';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as chatPackageIndex from '../index.js';
 import { ChatService, sendAgentReply } from '../services/ChatService.js';
@@ -1396,6 +1400,130 @@ describe('chat security (S5 #1392)', () => {
       });
       expect(second.room.id).not.toBe(roomId);
       expect(second.room.tenantId).toBe('tenant-2');
+    });
+  });
+
+  describe('server-supplied agentProfileId is validated (#2995)', () => {
+    async function makeProfile(
+      tenantId: string | null,
+      name: string,
+    ): Promise<string> {
+      const profileTypes = await ProfileTypeCollection.create({
+        db: { type: 'sqlite' as const, url: dbPath },
+      });
+      const type = await profileTypes.getOrCreateBySlug('person', {
+        name: 'Person',
+      });
+      const profiles = await ProfileCollection.create({
+        db: { type: 'sqlite' as const, url: dbPath },
+      });
+      const profile = await profiles.create({
+        tenantId,
+        typeId: type.id as string,
+        name,
+      });
+      await profile.save();
+      return profile.id as string;
+    }
+
+    it('rejects an agent profile owned by another tenant', async () => {
+      const foreign = await makeProfile('tenant-2', 'Foreign');
+
+      await expect(
+        chat.createAgentSession({
+          tenantId: 'tenant-1',
+          agentId: 'agent-1',
+          actorProfileId: 'owner',
+          agentProfileId: foreign,
+        }),
+      ).rejects.toThrow('another tenant');
+    });
+
+    it('rejects an agent profile that does not exist', async () => {
+      await expect(
+        chat.createAgentSession({
+          tenantId: 'tenant-1',
+          agentId: 'agent-1',
+          actorProfileId: 'owner',
+          agentProfileId: '11111111-1111-4111-8111-111111111111',
+        }),
+      ).rejects.toThrow('does not resolve to a profile');
+    });
+
+    it('refuses to make the acting participant the agent author', async () => {
+      const actor = await makeProfile('tenant-1', 'Actor');
+
+      await expect(
+        chat.createAgentSession({
+          tenantId: 'tenant-1',
+          agentId: 'agent-1',
+          actorProfileId: actor,
+          agentProfileId: actor,
+        }),
+      ).rejects.toThrow('must not be the acting participant');
+    });
+
+    it('never re-points an existing session to a different agent profile', async () => {
+      const first = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+      const originalAuthor = first.session.agentProfileId;
+      expect(originalAuthor).toBeTruthy();
+
+      const impostor = await makeProfile('tenant-1', 'Impostor');
+      const second = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+        agentProfileId: impostor,
+      });
+
+      expect(second.session.id).toBe(first.session.id);
+      expect(second.session.agentProfileId).toBe(originalAuthor);
+
+      const reply = await sendAgentReply(chat, {
+        tenantId: 'tenant-1',
+        agentSessionId: second.session.id as string,
+        content: 'still me',
+      });
+      expect(reply.senderProfileId).toBe(originalAuthor);
+
+      // The impostor was never enrolled in the room.
+      const membership = await raw.participants.findMembership(
+        second.room.id as string,
+        impostor,
+        'tenant-1',
+      );
+      expect(membership).toBeNull();
+    });
+
+    it('accepts a server-resolved acting profile in the same tenant', async () => {
+      const acting = await makeProfile('tenant-1', 'Acting bot');
+
+      const { session, room } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+        agentProfileId: acting,
+      });
+
+      expect(session.agentProfileId).toBe(acting);
+
+      const reply = await sendAgentReply(chat, {
+        tenantId: 'tenant-1',
+        agentSessionId: session.id as string,
+        content: 'hi',
+      });
+      expect(reply.senderProfileId).toBe(acting);
+
+      const membership = await raw.participants.findMembership(
+        room.id as string,
+        acting,
+        'tenant-1',
+      );
+      expect(membership?.status).toBe('active');
     });
   });
 });

@@ -740,8 +740,15 @@ export class ChatService {
     /**
      * Profile the agent authors as (#2995). Optional: when omitted the agent's
      * `bot` Profile is resolved (created on first use) from `agentId`. Supply
-     * it when the consumer already holds one — e.g. a persona's
-     * `actsAsProfileId`.
+     * it when the SERVER already holds the agent's acting identity — e.g. a
+     * persona's `actsAsProfileId`.
+     *
+     * Like `actorProfileId`, this is a SERVER-supplied value and must never be
+     * request input: it selects the author of every later assistant message in
+     * the session. It is validated in {@link ChatService.requireAgentProfile}
+     * (must exist, must be visible in this tenant, must not be the acting
+     * participant) and can never re-point a session that already resolved a
+     * different agent profile.
      */
     agentProfileId?: string | null;
   }) {
@@ -750,12 +757,16 @@ export class ChatService {
     // Resolve the agent's authoring Profile up front: the `agentId` slug is not
     // a representable author for the uuid `profileId`/`senderProfileId` columns
     // this method and the reply path write (#2995).
-    const agentProfileId =
-      params.agentProfileId ??
-      (await resolveAgentProfileId(this.#profiles, {
-        agentId: params.agentId,
-        tenantId: params.tenantId,
-      }));
+    const agentProfileId = params.agentProfileId
+      ? await this.#requireAgentProfile(
+          params.agentProfileId,
+          params.tenantId,
+          participantProfileId,
+        )
+      : await resolveAgentProfileId(this.#profiles, {
+          agentId: params.agentId,
+          tenantId: params.tenantId,
+        });
     // Check for existing active session first to avoid orphaned rooms. When a
     // sessionKey is supplied the reuse lookup is narrowed to a matching key so a
     // session opened for a different subject is never reused/rewritten here.
@@ -787,10 +798,15 @@ export class ChatService {
           await this.#enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
-            profileId: agentProfileId,
+            profileId: existingSession.agentProfileId ?? agentProfileId,
             role: 'member',
           });
-          if (existingSession.agentProfileId !== agentProfileId) {
+          // Never RE-POINT a session that already resolved an agent profile
+          // (S5 #1392, #2995): a second create with a different
+          // `agentProfileId` would silently re-author the rest of an existing
+          // conversation and leave the previous agent enrolled. Only a session
+          // that has none — i.e. one created before #2995 — is backfilled.
+          if (!existingSession.agentProfileId) {
             existingSession.agentProfileId = agentProfileId;
             await existingSession.save();
           }
@@ -892,7 +908,8 @@ export class ChatService {
    *
    * INTERNAL authority: this is the only path that authors a message as the
    * agent, and it is not reachable with a caller-supplied `senderProfileId`/
-   * `role`. The author is always `session.agentId`. Tool calls are gated
+   * `role`. The author is always the session's resolved agent Profile
+   * (`session.agentProfileId`), never the `agentId` slug (#2995). Tool calls are gated
    * fail-closed against the session's allow-list. Intended for the trusted
    * agent-runtime, never a per-tenant request handler driven by client-supplied
    * role/sender.
@@ -958,6 +975,45 @@ export class ChatService {
       agentSessionId: params.agentSessionId,
       toolCallData: params.toolCallData ?? null,
     });
+  }
+
+  /**
+   * Validate a SERVER-supplied agent authoring Profile (S5 #1392, #2995).
+   *
+   * `agentProfileId` selects the author of every later assistant message in the
+   * session and is enrolled as a room member, so it is held to the same
+   * standard as `actorProfileId`: it must resolve to a Profile that is VISIBLE
+   * IN THIS TENANT (the model uses optional tenancy, so an untenanted profile
+   * is legitimate and a profile owned by another tenant is not), and it must
+   * not be the acting participant — an agent room has exactly two identities.
+   *
+   * The `bot` profile type is deliberately NOT required: a persona's
+   * `actsAsProfileId` is an ordinary `crossPackageRef` to `Profile` with no
+   * type constraint anywhere in the framework, and demanding one here would
+   * reject the framework's own acting identities.
+   */
+  async #requireAgentProfile(
+    agentProfileId: string,
+    tenantId: string,
+    actorProfileId: string,
+  ): Promise<string> {
+    if (agentProfileId === actorProfileId) {
+      throw new Error(
+        'agentProfileId must not be the acting participant (authorization denied)',
+      );
+    }
+    const profile = await this.#profiles.get({ id: agentProfileId });
+    if (!profile) {
+      throw new Error(
+        'agentProfileId does not resolve to a profile (authorization denied)',
+      );
+    }
+    if (profile.tenantId !== null && profile.tenantId !== tenantId) {
+      throw new Error(
+        'agentProfileId belongs to another tenant (authorization denied)',
+      );
+    }
+    return agentProfileId;
   }
 
   /**
@@ -1296,7 +1352,8 @@ export type AgentReplyService = Pick<ChatService, 'initialize'>;
  * NOT re-exported from `src/index.ts`. Only in-process, trusted agent-runtime
  * code that imports this module path directly can author messages as the agent;
  * route handlers and package consumers (which import from the package index)
- * cannot. The author is always `session.agentId`, never a caller-supplied
+ * cannot. The author is always the session's resolved agent Profile
+ * (`session.agentProfileId`), never a caller-supplied
  * sender/role, and tool calls are gated fail-closed against `allowedTools`.
  *
  * Because this lives in the same module as {@link ChatService}, reaching the
