@@ -139,6 +139,33 @@ describe('issue #2970: aggregated manifest entries keep their own package', () =
     );
   });
 
+  it('still reports a collision between two entries of ONE aggregated manifest', () => {
+    // The case above passes the declaring package as the caller value too, so
+    // it reads the same on either precedence. This one is the shape
+    // `registerManifestObjects()` actually produces: every entry of a single
+    // aggregated file registered with that FILE's package name. On caller
+    // precedence both entries collapse to `@anytown/dashboard:Invoice`, the
+    // second hits the exact-key `samePackage` merge, and two unrelated classes
+    // silently fold into one registration whose fields are both classes'.
+    // Nothing would ever report an ambiguity. Entry precedence keeps them two.
+    ObjectRegistry.registerFromManifest(
+      `${OTHER_PKG}:Invoice`,
+      objectDef('Invoice', OTHER_PKG),
+      CONSUMER_PKG,
+    );
+    ObjectRegistry.registerFromManifest(
+      `${CONSUMER_PKG}:Invoice`,
+      objectDef('Invoice', CONSUMER_PKG),
+      CONSUMER_PKG,
+    );
+
+    expect(ObjectRegistry.getClass(`${OTHER_PKG}:Invoice`)).toBeDefined();
+    expect(ObjectRegistry.getClass(`${CONSUMER_PKG}:Invoice`)).toBeDefined();
+    expect(() => findClassStrict('Invoice')).toThrow(
+      /Ambiguous class name "Invoice"/,
+    );
+  });
+
   it('falls back to the caller package when an entry declares none', () => {
     const def = objectDef('LocalWidget', CONSUMER_PKG);
     def.packageName = undefined;
