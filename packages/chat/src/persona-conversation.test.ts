@@ -35,6 +35,12 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  createDataSurfaceTools,
+  DATA_INSPECT_FUNCTION_NAME,
+  DATA_INSPECT_TOOL_SLUG,
+  type DataSurfaceDefinition,
+} from './data-surface-tools.js';
+import {
   bindPersonaToSession,
   type ConversationPersona,
   runPersonaConversationTurn,
@@ -337,5 +343,112 @@ describe('persona-bound conversation', () => {
       (m) => m.role === 'assistant' && m.content === 'Done and cited.',
     );
     expect(assistant).toBeTruthy();
+  });
+  describe('permission snapshot (#2978)', () => {
+    const GATED = 'conv_notes.update';
+    const surface: DataSurfaceDefinition = {
+      id: 'conv-notes',
+      collection: 'conv_notes',
+      schema: {
+        version: 1,
+        identityField: 'id',
+        fields: [
+          { id: 'id', type: 'string', projectable: true },
+          { id: 'title', type: 'string', projectable: true },
+          {
+            id: 'price',
+            type: 'number',
+            projectable: true,
+            readPermission: GATED,
+          },
+        ],
+        defaultPageLimit: 10,
+        maxPageLimit: 10,
+        maxResultBytes: 10_000,
+      },
+    };
+
+    async function grantLive(slugs: string[]): Promise<void> {
+      const options = { db };
+      const permissions = await PermissionCollection.create(options);
+      const rolePermissions = await RolePermissionCollection.create(options);
+      const memberships = await MembershipCollection.create(options);
+      const [membership] = await memberships.list({ where: { userId } });
+      for (const slug of slugs) {
+        const permission = await permissions.create({ slug, name: slug });
+        await permission.save();
+        await rolePermissions.addPermission(
+          membership?.roleId as string,
+          permission.id as string,
+        );
+      }
+    }
+
+    async function inspectFields(
+      permissions?: string[],
+    ): Promise<{ fields: string[]; seen: string[] }> {
+      const seen: string[] = [];
+      const [inspect] = createDataSurfaceTools({ surfaces: [surface] }).filter(
+        (tool) => tool.slug === DATA_INSPECT_TOOL_SLUG,
+      );
+      if (!inspect) throw new Error('inspect tool missing');
+      const spy = {
+        ...inspect,
+        execute: async (ctx: Parameters<typeof inspect.execute>[0]) => {
+          seen.push(...ctx.run.permissions);
+          return inspect.execute(ctx);
+        },
+      };
+      const { ai } = makeAI((call, offered) =>
+        call === 0 && offered
+          ? toolCall(DATA_INSPECT_FUNCTION_NAME, { surfaceId: surface.id })
+          : ({ content: 'done', finishReason: 'stop' } as AIResponse),
+      );
+      const turn = await runPersonaConversationTurn({
+        ai,
+        db,
+        persona: {
+          ...persona,
+          allowedTools: [...CONV_TOOLS, DATA_INSPECT_TOOL_SLUG],
+        },
+        tenantId,
+        userMessage: 'what fields do notes have?',
+        extraTools: [spy],
+        ...(permissions ? { permissions } : {}),
+      });
+      const invocation = turn.result.invocations.find(
+        (i) => i.slug === DATA_INSPECT_TOOL_SLUG,
+      );
+      expect(invocation?.ok).toBe(true);
+      const observation = invocation?.observation as {
+        fields?: Array<{ id: string }>;
+      };
+      return {
+        fields: (observation.fields ?? []).map((field) => field.id),
+        seen,
+      };
+    }
+
+    beforeEach(async () => {
+      await grantLive([DATA_INSPECT_TOOL_SLUG, GATED]);
+    });
+
+    it('resolves live permissions when no snapshot is passed', async () => {
+      const { fields, seen } = await inspectFields();
+      expect(seen).toContain(GATED);
+      expect(fields).toContain('price');
+    });
+
+    it('runs tools with the narrowed snapshot, hiding a gated field the live user could read', async () => {
+      const { fields, seen } = await inspectFields([
+        'conv_notes.read',
+        DATA_INSPECT_TOOL_SLUG,
+      ]);
+      expect([...seen].sort()).toEqual(
+        ['conv_notes.read', DATA_INSPECT_TOOL_SLUG].sort(),
+      );
+      expect(fields).not.toContain('price');
+      expect(fields).toEqual(expect.arrayContaining(['id', 'title']));
+    });
   });
 });
