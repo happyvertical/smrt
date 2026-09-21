@@ -101,6 +101,12 @@ keeps the full dock width. Hosts don't need to widen the edge for the dock
 to be usable. The composer textarea uses `--smrt-font-family`, the same
 font as the rest of the dock.
 
+jsdom ignores `@container`, so the widths are checked in Chromium by
+`packages/chat/e2e/assistant-dock-narrow.spec.ts` against the
+`/previews/assistant-dock-narrow` fixture. Run it with
+`pnpm --filter @happyvertical/smrt-chat test:e2e`. It is not wired into CI
+yet.
+
 ## Architecture
 
 Sequence: `send → poll → render → action preview → confirm → apply`.

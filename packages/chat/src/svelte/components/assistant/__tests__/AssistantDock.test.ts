@@ -520,7 +520,7 @@ describe('AssistantDock (mounted component)', () => {
   // "Conversations" disclosure (the `@container` rule decides visibility;
   // jsdom has no layout, so this pins the state + ARIA contract the CSS
   // keys off). Widths are measured in a real browser, see the PR.
-  it('exposes a labelled Conversations disclosure that controls the thread list and closes on selection (#3000)', async () => {
+  it('exposes a labelled Conversations disclosure that controls the thread list and closes when a conversation starts (#3000)', async () => {
     const registry = createDataSurfaceRegistry();
     const transport = createInMemoryAssistantTransport();
     const { container } = render(AssistantDock, {
@@ -559,5 +559,22 @@ describe('AssistantDock (mounted component)', () => {
     // the toggle instead of falling back to <body>.
     await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
     await expectNoA11yViolations(container);
+  });
+
+  it('closes the narrow list and returns focus to the toggle when an existing thread is selected (#3000)', async () => {
+    const registry = createDataSurfaceRegistry();
+    const transport = createInMemoryAssistantTransport();
+    await transport.createThread('Existing chat');
+    render(AssistantDock, { props: { transport, registry } });
+
+    const toggle = screen.getByRole('button', { name: 'Conversations' });
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Existing chat/ }),
+    );
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await vi.waitFor(() => expect(document.activeElement).toBe(toggle));
   });
 });
