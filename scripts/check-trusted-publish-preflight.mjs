@@ -63,11 +63,13 @@ export async function findUntrustedPackages({
   fetchImpl = fetch,
   attempts = 3,
   retryDelayMs = 2_000,
+  requestTimeoutMs = 10_000,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   const idTokenUrl = new URL(env.ACTIONS_ID_TOKEN_REQUEST_URL);
   idTokenUrl.searchParams.append('audience', `npm:${new URL(registry).hostname}`);
   const idTokenResponse = await fetchImpl(idTokenUrl.href, {
+    signal: AbortSignal.timeout(requestTimeoutMs),
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`,
@@ -102,6 +104,9 @@ export async function findUntrustedPackages({
       try {
         response = await fetchImpl(url, {
           method: 'POST',
+          // Without this a stalled connection waits out undici's 300s default
+          // per attempt and the step burns the job timeout instead of failing.
+          signal: AbortSignal.timeout(requestTimeoutMs),
           headers: {
             Accept: 'application/json',
             Authorization: `Bearer ${idToken}`,
@@ -117,7 +122,9 @@ export async function findUntrustedPackages({
       await sleep(retryDelayMs * attempt);
     }
     if (thrown) {
-      unreachable.push(`${name} (${thrown.message})`);
+      // fetch rejects with a bare "fetch failed"; the DNS/TLS/socket reason
+      // that tells "npm is down" from "this runner cannot reach npm" is on cause.
+      unreachable.push(`${name} (${thrown.cause?.message ?? thrown.message})`);
       continue;
     }
     const detail = `${name} (HTTP ${response.status}${body.message ? `: ${body.message}` : ''})`;

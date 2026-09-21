@@ -207,7 +207,9 @@ test('a thrown network error is retried and reported as unreachable', async () =
       return { ok: true, status: 200, json: async () => ({ value: 'id' }) };
     }
     exchangeCalls += 1;
-    throw new Error('getaddrinfo EAI_AGAIN registry.npmjs.org');
+    throw new TypeError('fetch failed', {
+      cause: new Error('getaddrinfo EAI_AGAIN registry.npmjs.org'),
+    });
   };
 
   assert.deepEqual(
@@ -226,6 +228,19 @@ test('a thrown network error is retried and reported as unreachable', async () =
     },
   );
   assert.equal(exchangeCalls, 3);
+});
+
+test('every request carries a timeout so a stalled registry cannot hang the job', async () => {
+  const { calls, fetchImpl } = fakeRegistry({
+    trusted: ['@happyvertical/smrt-core'],
+  });
+  await findUntrustedPackages({
+    names: ['@happyvertical/smrt-core'],
+    env: readyEnv,
+    fetchImpl,
+  });
+  assert.equal(calls.length, 2);
+  for (const call of calls) assert.ok(call.init.signal instanceof AbortSignal);
 });
 
 test('a success without a token blames the preflight, not the registration', async () => {
