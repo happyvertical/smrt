@@ -204,6 +204,8 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
         'magic_link_tokens',
         'api_keys',
         'nostr_identities',
+        'secrets',
+        'tenant_keys',
       ]) {
         expect(CHANGE_FEED_CREDENTIAL_TABLES).toContain(table);
         expect(isChangeFeedSensitiveTable(table)).toBe(true);

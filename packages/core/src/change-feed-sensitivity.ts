@@ -80,6 +80,8 @@ declare global {
  * - `api_keys` — the API-key store (`keyHash`, `keyPrefix`, scopes).
  * - `nostr_identities` — custodial private-key material (AES-256-GCM
  *   ciphertext, IV and auth tag).
+ * - `secrets` / `tenant_keys` (`@happyvertical/smrt-secrets`) — tenant secret
+ *   ciphertext and the wrapped per-tenant data-encryption keys.
  *
  * The feed never carries column values, so for the hash-bearing tables what
  * this withholds is the row id and the write timing — an enumeration handle
@@ -94,6 +96,8 @@ export const CHANGE_FEED_CREDENTIAL_TABLES: readonly string[] = [
   'magic_link_tokens',
   'api_keys',
   'nostr_identities',
+  'secrets',
+  'tenant_keys',
 ];
 
 /**
