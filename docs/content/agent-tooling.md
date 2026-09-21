@@ -114,8 +114,9 @@ booted view; the stdio server remains the default.
 
 ## 6. Optional: the dev-plane inside your dev server
 
-In a SvelteKit app, `smrtPlugin({ sveltekit: { devPlaneRoute: { enabled: true } } })`
-with `@happyvertical/smrt-dev-mcp` as a devDependency generates
+In a SvelteKit app,
+`smrtPlugin({ svelteKit: { enabled: true, devPlaneRoute: { enabled: true } } })`
+(note the capital K; route generation needs `svelteKit.enabled`) with `@happyvertical/smrt-dev-mcp` as a devDependency generates
 `/api/_dev/[...tool]`: the same read-only runtime tools over JSON
 (`GET|POST /api/_dev/<tool>`) and MCP (`POST /api/_dev/mcp`), plus
 `registry-live`, which snapshots the app's *live* registry (provenance
