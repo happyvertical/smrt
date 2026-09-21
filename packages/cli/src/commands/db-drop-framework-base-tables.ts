@@ -193,11 +193,9 @@ export const dbDropFrameworkBaseTablesCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ Framework base-table remediation failed: ${
-          error instanceof Error
-            ? redactConnectionStringsInText(error.message)
-            : String(error)
-        }\n`,
+        `\n❌ Framework base-table remediation failed: ${redactConnectionStringsInText(
+          error instanceof Error ? error.message : String(error),
+        )}\n`,
       );
       process.exitCode = 1;
     } finally {

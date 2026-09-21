@@ -264,9 +264,9 @@ async function settleDeferredCompatibilityAfterMigrate(
     }
   } catch (error) {
     console.warn(
-      `⚠️  Deferred system-table compatibility did not complete: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `⚠️  Deferred system-table compatibility did not complete: ${redactConnectionStringsInText(
+        error instanceof Error ? error.message : String(error),
+      )}`,
     );
     console.warn('   It will be retried the next time the framework starts.\n');
   }
@@ -1384,7 +1384,7 @@ export default testManifest;
             console.error(redactConnectionStringsInText(error.stack));
           }
         } else {
-          console.error(error);
+          console.error(redactConnectionStringsInText(String(error)));
         }
         process.exitCode = 1;
         return;
@@ -1628,10 +1628,9 @@ export default testManifest;
             JSON.stringify(
               {
                 timestamp: new Date().toISOString(),
-                error:
-                  error instanceof Error
-                    ? redactConnectionStringsInText(error.message)
-                    : String(error),
+                error: redactConnectionStringsInText(
+                  error instanceof Error ? error.message : String(error),
+                ),
                 duration: Date.now() - startTime,
               },
               null,
@@ -1647,7 +1646,7 @@ export default testManifest;
               console.error(redactConnectionStringsInText(error.stack));
             }
           } else {
-            console.error(error);
+            console.error(redactConnectionStringsInText(String(error)));
           }
         }
         process.exit(1);
@@ -3070,7 +3069,7 @@ export default testManifest;
             console.error(redactConnectionStringsInText(error.stack));
           }
         } else {
-          console.error(error);
+          console.error(redactConnectionStringsInText(String(error)));
         }
         process.exitCode = 1;
         return;

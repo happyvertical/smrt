@@ -624,10 +624,9 @@ export const dbStatusCommand: CLICommand = {
               engineHint: dbType,
             });
           } catch (error) {
-            status.parityError =
-              error instanceof Error
-                ? redactConnectionStringsInText(error.message)
-                : String(error);
+            status.parityError = redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            );
           }
         }
       } else if (options.parity) {
@@ -659,10 +658,9 @@ export const dbStatusCommand: CLICommand = {
           (skip) => skip.kind === 'probe_failed',
         );
       } catch (error) {
-        status.orphansError =
-          error instanceof Error
-            ? redactConnectionStringsInText(error.message)
-            : String(error);
+        status.orphansError = redactConnectionStringsInText(
+          error instanceof Error ? error.message : String(error),
+        );
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -900,10 +898,9 @@ export const dbStatusCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error:
-              error instanceof Error
-                ? redactConnectionStringsInText(error.message)
-                : String(error),
+            error: redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            ),
           }),
         );
       } else {

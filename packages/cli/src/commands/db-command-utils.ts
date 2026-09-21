@@ -11,8 +11,18 @@ const SENSITIVE_QUERY_PARAMS = new Set([
 // Matches the userinfo segment of a connection-string-shaped substring
 // (`scheme://user:PASSWORD@`), wherever it appears — a standalone URL or
 // embedded inside a larger message such as a thrown error's text or stack.
+//
+// The username is `*` (not `+`) so an empty-username form
+// (`postgres://:secret@host/db`) still matches. The password class is
+// unbounded (`[^\s]*`, not `[^@\s]+`) and greedy: a password containing a
+// literal unescaped `@` (invalid per RFC 3986, but not guaranteed absent
+// from free-form error text) still gets fully redacted, because regex
+// backtracking makes a greedy `[^\s]*@` match up to the LAST `@` before
+// whitespace rather than the first. Bounding the whole match at whitespace
+// keeps this from spanning past one connection-string-shaped token into
+// unrelated later text.
 const CONNECTION_STRING_USERINFO_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)[^@\s]+(@)/gi;
+  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)[^\s]*@/gi;
 
 const SENSITIVE_QUERY_PARAM_PATTERN =
   /([?&](?:access_token|apikey|api_key|auth|auth_token|password|token)=)[^&\s]+/gi;
@@ -43,7 +53,7 @@ export function redactConnectionString(value: string): string {
 
     redacted = url.toString();
   } catch {
-    redacted = value.replace(CONNECTION_STRING_USERINFO_PATTERN, '$1***$2');
+    redacted = value.replace(CONNECTION_STRING_USERINFO_PATTERN, '$1***@');
   }
 
   return redacted.replace(SENSITIVE_QUERY_PARAM_PATTERN, '$1***');
@@ -67,7 +77,7 @@ export function redactConnectionStringsInText(text: string): string {
   }
 
   return text
-    .replace(CONNECTION_STRING_USERINFO_PATTERN, '$1***$2')
+    .replace(CONNECTION_STRING_USERINFO_PATTERN, '$1***@')
     .replace(SENSITIVE_QUERY_PARAM_PATTERN, '$1***');
 }
 

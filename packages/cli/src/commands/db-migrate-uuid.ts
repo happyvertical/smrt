@@ -550,11 +550,9 @@ export const dbMigrateUuidCommand: CLICommand = {
       });
     } catch (error) {
       console.error(
-        `\n❌ uuid migration failed: ${
-          error instanceof Error
-            ? redactConnectionStringsInText(error.message)
-            : String(error)
-        }\n`,
+        `\n❌ uuid migration failed: ${redactConnectionStringsInText(
+          error instanceof Error ? error.message : String(error),
+        )}\n`,
       );
       process.exitCode = 1;
     } finally {

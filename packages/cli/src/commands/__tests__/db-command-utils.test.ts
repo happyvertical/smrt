@@ -58,6 +58,28 @@ describe('db command utilities', () => {
     it('leaves a plain non-connection-string value unchanged', () => {
       expect(redactConnectionString('./data/dev.db')).toBe('./data/dev.db');
     });
+
+    it('redacts a password with an empty username, via the fallback regex', () => {
+      // Forcing the fallback path (WHATWG `URL` already handles this
+      // correctly on its own via url.password): an unencoded '#' inside the
+      // userinfo breaks URL parsing, exercising CONNECTION_STRING_USERINFO_
+      // PATTERN directly. No `+` on the username class — it must still
+      // match (and redact) when the username segment is empty.
+      expect(redactConnectionString('postgres://:sec#ret@host/db')).toBe(
+        'postgres://:***@host/db',
+      );
+    });
+
+    it('redacts the whole password when it contains a literal unescaped "@", via the fallback regex', () => {
+      // Same fallback-forcing trick as above. A password containing a
+      // literal '@' is invalid per RFC 3986 (it must be percent-encoded),
+      // but this is free-form error text, not a URL a client actually
+      // connected with — the regex must not stop redacting at the first '@'
+      // and leave the password's tail exposed.
+      expect(
+        redactConnectionString('postgres://user:pa#rt@secret@host/db'),
+      ).toBe('postgres://user:***@host/db');
+    });
   });
 
   describe('redactConnectionStringsInText', () => {
@@ -98,6 +120,22 @@ describe('db command utilities', () => {
       expect(() =>
         redactConnectionStringsInText('://not a url at all:::'),
       ).not.toThrow();
+    });
+
+    it('redacts an empty-username connection string embedded in error text', () => {
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://:secret@host:5432/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://:***@host:5432/db');
+    });
+
+    it('redacts the whole password, including a literal "@", embedded in error text', () => {
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://user:part@secret@host/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
     });
   });
 

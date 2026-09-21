@@ -376,10 +376,9 @@ export const dbHistoryCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error:
-              error instanceof Error
-                ? redactConnectionStringsInText(error.message)
-                : String(error),
+            error: redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            ),
           }),
         );
       } else {

@@ -157,10 +157,9 @@ export async function runLiveSchemaParity(
     return {
       report: null,
       database: null,
-      error:
-        error instanceof Error
-          ? redactConnectionStringsInText(error.message)
-          : String(error),
+      error: redactConnectionStringsInText(
+        error instanceof Error ? error.message : String(error),
+      ),
     };
   } finally {
     await closeDatabaseConnection(db);
