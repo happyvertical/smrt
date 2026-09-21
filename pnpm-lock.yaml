@@ -585,6 +585,9 @@ importers:
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -604,9 +607,6 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
-      '@happyvertical/smrt-profiles':
-        specifier: workspace:*
-        version: link:../profiles
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

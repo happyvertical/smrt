@@ -14,6 +14,10 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import {
+  ProfileCollection,
+  ProfileTypeCollection,
+} from '@happyvertical/smrt-profiles';
+import {
   MembershipCollection,
   RoleCollection,
   TenantCollection,
@@ -104,6 +108,7 @@ describe('voice gateway chat integration', () => {
   let chat: ChatService;
   let tenantId: string;
   let runAsUserId: string;
+  let actsAsProfileId: string;
   let persona: ConversationPersona;
 
   beforeEach(async () => {
@@ -134,12 +139,29 @@ describe('voice gateway chat integration', () => {
 
     tenantId = tenant.id as string;
     runAsUserId = user.id as string;
+
+    // The persona's acting profile is a real Profile row (#2995): it is a
+    // `crossPackageRef` to `@happyvertical/smrt-profiles:Profile` and is what
+    // the persona's voice replies are AUTHORED as, so ChatService validates it.
+    const profileTypes = await ProfileTypeCollection.create({ db });
+    const botType = await profileTypes.getOrCreateBySlug('bot', {
+      name: 'Bot',
+    });
+    const profiles = await ProfileCollection.create({ db });
+    const actingProfile = await profiles.create({
+      tenantId,
+      typeId: botType.id as string,
+      name: 'Voice persona',
+    });
+    await actingProfile.save();
+    actsAsProfileId = actingProfile.id as string;
+
     persona = {
       id: 'persona-voice',
       tenantId,
       agentClass: '@happyvertical/smrt-agents:Praeco',
       runAsUserId,
-      actsAsProfileId: 'voice-agent-profile',
+      actsAsProfileId,
       allowedTools: [],
       instructions: 'Answer voice chat turns plainly.',
       memoryScope: `voice:${tenantId}`,
@@ -224,6 +246,10 @@ describe('voice gateway chat integration', () => {
 
     expect(transcript?.content).toBe('hello from voice');
     expect(transcript?.agentSessionId).toBe(voiceSession.agentSessionId);
+    // The persona's reply is authored as its configured acting profile, not a
+    // profile synthesized from the agent id (#2995 regression guard).
+    expect(assistant?.senderProfileId).toBe(actsAsProfileId);
+    expect(transcript?.senderProfileId).toBe('speaker-profile');
     expect(transcript?.getMetadata()).toMatchObject({
       source: 'voice-gateway',
       voiceSessionId: voiceSession.voiceSessionId,

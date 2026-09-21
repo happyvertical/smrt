@@ -90,6 +90,8 @@ export interface ChatReactionOptions extends SmrtObjectOptions {
 export interface AgentSessionOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   agentId?: string;
+  /** Resolved `bot` Profile uuid the agent authors as (#2995). */
+  agentProfileId?: string | null;
   participantProfileId?: string;
   chatRoomId?: string | null;
   status?: AgentSessionStatus;
