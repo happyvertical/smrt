@@ -384,7 +384,10 @@ An apply can end in two ways:
 - **Refused.** The server decided and said no. `status: 'failed'` and
   `outcomeUnknown: false`. Examples: `denied`, `not_found`,
   `stale_revision`, `idempotency_conflict`, or any `confirmation_*` reason.
-  This is terminal, and `rejectAction` may discard it.
+  A decision was reached, so `rejectAction` may discard it. `retryable`
+  keeps its existing meaning ("an apply attempt failed"). A same-key
+  retry of a refusal can't mutate; it only gets the refusal again or
+  `idempotency_conflict`. The dock doesn't offer that retry.
 - **Unknown.** No decision was reached, so the mutation may have committed.
   `status: 'failed'`, `outcomeUnknown: true`, `retryable: true`. This
   happens when `actionClient.apply` rejects (transport failure, 5xx,
