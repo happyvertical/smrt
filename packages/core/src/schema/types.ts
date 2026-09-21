@@ -96,7 +96,14 @@ export interface DeclaredIndexDefinition {
    * hard error.
    */
   columns: string[];
-  /** Emit as a UNIQUE index. */
+  /**
+   * Emit as a UNIQUE index (or, on DuckDB/JSON, an inline `UNIQUE(...)`
+   * constraint). NULLs are distinct on every engine (never
+   * `NULLS NOT DISTINCT`), so this is how to
+   * constrain a nullable column: many NULL rows, one row per non-NULL value.
+   * Contrast `conflictColumns`, whose index is NULL-equal on PostgreSQL 15+
+   * (#2979).
+   */
   unique?: boolean;
   /**
    * Partial-index predicate, rendered verbatim into `CREATE INDEX ... WHERE`.

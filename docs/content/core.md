@@ -2071,6 +2071,35 @@ class DocumentCollection extends SmrtCollection<Document> {
 }
 ```
 
+### Nullable Columns in `conflictColumns`
+
+**Issue**: on PostgreSQL a second row with a NULL value in a nullable
+`conflictColumns` column is merged into (or refused against) the first, while
+the same design appears to work on SQLite.
+
+**Cause**: `conflictColumns` is the upsert identity. `save()` matches it with
+`IS NOT DISTINCT FROM` on every engine (NULL equals NULL), and on PostgreSQL
+15+ its unique index over a nullable column is emitted `NULLS NOT DISTINCT` so
+the index agrees with the upsert. SQLite has no such index clause, so a raw
+insert that bypasses the upsert is not refused there — the engines differ at
+the index, not at `save()`.
+
+**Solution**: keep `conflictColumns` for identity keys. To constrain a nullable
+column — any number of NULLs, at most one row per non-NULL value — declare a
+unique index, which is NULLs-distinct on every engine (#2979):
+
+```typescript
+@smrt({
+  indexes: [
+    { name: 'submissions_amends_id_uidx', columns: ['amendsId'], unique: true },
+  ],
+})
+class Submission extends SmrtObject {
+  @field({ required: false, nullable: true })
+  amendsId: string | null = null;
+}
+```
+
 ### Slug and Context Uniqueness
 
 **Issue**: UNIQUE constraint violation when saving objects.
