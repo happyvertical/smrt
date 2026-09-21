@@ -571,10 +571,11 @@ function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
 function generateAuthGuardHelper(
   objectDef: SmartObjectDefinition,
   manifest?: SmartObjectManifest,
+  permissionObjectDef: SmartObjectDefinition = objectDef,
 ): string {
   const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
   const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
-  const permissionCollection = resolvePermissionCollection(objectDef);
+  const permissionCollection = resolvePermissionCollection(permissionObjectDef);
 
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
@@ -3675,7 +3676,17 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
+${generateAuthGuardHelper(
+  objectDef,
+  semanticManifest,
+  // Collection-class hosted actions are gated on the item collection's slug,
+  // matching the smrt-users permission catalog (#2977).
+  hostType === 'collection' &&
+    firstSpec.lookupObjectDef &&
+    isCollectionManifestClass(semanticManifest, objectDef)
+    ? firstSpec.lookupObjectDef
+    : objectDef,
+)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }

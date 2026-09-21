@@ -264,6 +264,75 @@ export function deriveOperationPermissionSlug(
   return `${collectionName}.${normalizedAction}`;
 }
 
+type RegisteredCatalogClass = NonNullable<
+  ReturnType<typeof ObjectRegistry.getClass>
+>;
+
+function resolveCatalogCollectionName(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): string {
+  const objectConfig = manifestEntry?.decoratorConfig ?? registered.config;
+  const rawCollection = (objectConfig as { collection?: unknown } | undefined)
+    ?.collection;
+  if (typeof rawCollection === 'string' && rawCollection.length > 0) {
+    return rawCollection;
+  }
+  return manifestEntry?.collection ?? deriveCollectionName(registered.name);
+}
+
+function resolveCollectionItemRegistration(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition,
+): RegisteredCatalogClass | undefined {
+  const typeArg = manifestEntry.extendsTypeArg;
+  const itemName =
+    typeof typeArg === 'string' && typeArg.length > 0
+      ? typeArg
+      : registered.name.endsWith('Collection')
+        ? registered.name.slice(0, -'Collection'.length)
+        : undefined;
+  if (!itemName) return undefined;
+  const qualifiedName = registered.qualifiedName;
+  const separator = qualifiedName?.lastIndexOf(':') ?? -1;
+  if (qualifiedName && separator > 0) {
+    const sibling = ObjectRegistry.getClassByQualifiedName(
+      `${qualifiedName.slice(0, separator)}:${itemName}`,
+    );
+    if (sibling) return sibling;
+  }
+  return ObjectRegistry.getClass(itemName);
+}
+
+function getCollectionClassActionDefinitions(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+  standardActions: readonly string[],
+): PermissionDefinition[] {
+  if (!manifestEntry) return [];
+  const item = resolveCollectionItemRegistration(registered, manifestEntry);
+  if (!item) return [];
+  const itemEntry = item.qualifiedName
+    ? findManifestEntryByQualifiedName(item.qualifiedName)
+    : undefined;
+  if (isCollectionManifestEntry(itemEntry)) return [];
+  const collection = resolveCatalogCollectionName(item, itemEntry);
+  const objectConfig = manifestEntry.decoratorConfig ?? registered.config;
+  const methodEntries = manifestEntry.methods
+    ? Object.values(manifestEntry.methods)
+    : Array.from(registered.methods.entries());
+  return getPublicCustomMethodNames(methodEntries, standardActions)
+    .filter((methodName) => isOperationEnabled(objectConfig?.api, methodName))
+    .map((methodName) => ({
+      className: item.name,
+      collection,
+      description: `Allows ${methodName} on ${humanizeResource(collection).toLowerCase()}`,
+      name: `${capitalize(methodName)} ${humanizeResource(collection)}`,
+      qualifiedName: item.qualifiedName,
+      slug: `${collection}.${methodName}`,
+    }));
+}
+
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
   return (
     objectDef?.extends === 'SmrtCollection' ||
@@ -673,6 +742,16 @@ export class PermissionCatalogService {
         : undefined;
 
       if (isCollectionManifestEntry(manifestEntry)) {
+        // Mutating custom API actions hosted on a collection class are
+        // generated at the item collection's route and gated on
+        // `<itemCollection>.<method>` (#2977), so catalog that slug here.
+        for (const definition of getCollectionClassActionDefinitions(
+          registered,
+          manifestEntry,
+          standardActions,
+        )) {
+          definitions.set(definition.slug, definition);
+        }
         continue;
       }
 
