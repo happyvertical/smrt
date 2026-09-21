@@ -50,6 +50,12 @@ export function findTrustedPublishProblems({ env, npmVersion }) {
   return problems;
 }
 
+// Statuses that describe the request or the registry, never the package's
+// registration: one predicate so the retry and the diagnosis cannot disagree.
+function isTransientStatus(status) {
+  return status >= 500 || status === 429 || status === 408;
+}
+
 // The checks above prove the runner CAN publish by OIDC, not that npm will
 // accept it for each package: trusted publishers are registered per package,
 // and npm exchanges the GitHub ID token per package name at publish time. One
@@ -116,8 +122,7 @@ export async function findUntrustedPackages({
       } catch (error) {
         thrown = error;
       }
-      const transient =
-        thrown || response.status >= 500 || response.status === 429;
+      const transient = thrown || isTransientStatus(response.status);
       if (!transient || attempt === attempts) break;
       await sleep(retryDelayMs * attempt);
     }
@@ -128,7 +133,7 @@ export async function findUntrustedPackages({
       continue;
     }
     const detail = `${name} (HTTP ${response.status}${body.message ? `: ${body.message}` : ''})`;
-    if (response.status >= 500 || response.status === 429) {
+    if (isTransientStatus(response.status)) {
       unreachable.push(detail);
     } else if (!response.ok) {
       untrusted.push(detail);

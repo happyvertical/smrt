@@ -143,7 +143,11 @@ test('a refused GitHub ID token fails instead of reporting every package', async
 });
 
 test('a transient registry error is retried, then reported as unreachable, never as unregistered', async () => {
-  const statuses = { '@happyvertical/smrt-flaky': [502, 201], '@happyvertical/smrt-down': [503, 429, 500] };
+  const statuses = {
+    '@happyvertical/smrt-flaky': [502, 201],
+    '@happyvertical/smrt-slow': [408, 201],
+    '@happyvertical/smrt-down': [503, 429, 500],
+  };
   const delays = [];
   const fetchImpl = async (url) => {
     if (url.startsWith(readyEnv.ACTIONS_ID_TOKEN_REQUEST_URL)) {
@@ -171,7 +175,7 @@ test('a transient registry error is retried, then reported as unreachable, never
       unrecognized: [],
     },
   );
-  assert.deepEqual(delays, [10, 10, 20]);
+  assert.deepEqual(delays, [10, 10, 10, 20]);
 });
 
 test('failure messages separate availability, run identity, and missing registration', () => {
