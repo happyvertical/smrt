@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { primaryRegistry, registryArgs } from './release-registry.mjs';
 
 function fail(message) {
   throw new Error(message);
@@ -235,6 +236,7 @@ export function releaseTagExistsOnOrigin({
 export function npmVersionExists({
   packageName,
   version,
+  registry = primaryRegistry(),
   repoRoot = process.cwd(),
   spawn = spawnSync,
 } = {}) {
@@ -245,7 +247,9 @@ export function npmVersionExists({
       'view',
       spec,
       'version',
-      '--registry=https://registry.npmjs.org',
+      // The registry this release is recorded against (#3002), with the scope
+      // flag that stops the repo's .npmrc from redirecting the read to npmjs.
+      ...registryArgs(registry),
       '--prefer-online',
       '--json',
     ],

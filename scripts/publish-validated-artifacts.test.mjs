@@ -46,6 +46,7 @@ test('skips existing versions with matching content, publishes the missing tarba
       '/artifacts/b.tgz',
       '--registry',
       'https://registry.npmjs.org/',
+      '--@happyvertical:registry=https://registry.npmjs.org/',
       '--access',
       'public',
     ]);
@@ -106,6 +107,7 @@ test('republishes instead of skipping when an existing version has different con
       '/artifacts/a.tgz',
       '--registry',
       'https://registry.npmjs.org/',
+      '--@happyvertical:registry=https://registry.npmjs.org/',
       '--access',
       'public',
     ],
@@ -410,6 +412,7 @@ test('tolerates a transient registry error during the pre-publish existence chec
       '/artifacts/a.tgz',
       '--registry',
       'https://registry.npmjs.org/',
+      '--@happyvertical:registry=https://registry.npmjs.org/',
       '--access',
       'public',
     ],
