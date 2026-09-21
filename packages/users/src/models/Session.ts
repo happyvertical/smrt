@@ -60,6 +60,10 @@ export function generateSessionId(): string {
  * ```
  */
 @smrt({
+  // The row id IS the bearer credential (the `sid` cookie value, and the
+  // terminal-auth `accessToken`), so the change feed must never record or
+  // serve it — see smrt-core's `change-feed-sensitivity` (#2937).
+  sensitive: true,
   // Sessions should not be exposed via public API for security
   api: { include: ['get', 'delete'] },
   mcp: { include: [] },

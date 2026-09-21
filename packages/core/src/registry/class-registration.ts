@@ -7,6 +7,10 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import {
+  declareChangeFeedSensitiveTable,
+  setChangeFeedSensitiveClassResolver,
+} from '../change-feed-sensitivity.js';
 import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
@@ -497,6 +501,55 @@ function validateIsolatedRegistrationManifest(
   return objectDef;
 }
 
+/**
+ * Publish a `@smrt({ sensitive: true })` declaration to the change feed
+ * (issue #2937).
+ *
+ * Declares **every candidate name**, not just one. The name a class declares
+ * and the name its rows are recorded under can diverge: a manifest stub
+ * derives the name from `decoratorConfig` but installs
+ * `objectDef.schema.tableName`, and the merge path can overwrite
+ * `existing.schema.tableName`. A declaration landing on a name nothing writes
+ * under is a silent fail-open, and the set is monotonic, so a superset is the
+ * safe direction. (The STI case — a child declaring `sensitive` while writing
+ * to its base class's table — is closed authoritatively at the write path by
+ * `isChangeFeedSensitiveWrite`, which sees the real name.)
+ *
+ * Only `true` is acted on: the sensitive set is one-way by design, so there is
+ * nothing here to undo a previous declaration.
+ */
+/**
+ * Whether any config source declares the object credential-bearing (#2937).
+ *
+ * `sensitive` is one-way, so it is combined across sources with OR rather than
+ * by spread precedence: only `=== true` carries meaning, and a `false` from any
+ * source must never erase a `true` from another.
+ */
+function anySensitive(...configs: (SmartObjectConfig | undefined)[]): boolean {
+  return configs.some((config) => config?.sensitive === true);
+}
+
+function declareSensitiveTable(
+  config: SmartObjectConfig,
+  ...tableNames: (string | undefined)[]
+): void {
+  if (config.sensitive !== true) return;
+  for (const tableName of tableNames) {
+    if (tableName) declareChangeFeedSensitiveTable(tableName);
+  }
+}
+
+// The registry's class-level `sensitive` lookup, handed to the change feed so
+// its write path can ask about an instance's class without importing the
+// registry — `class.ts` already imports `change-feed.ts`, so the reverse edge
+// would be a cycle. Installed once at module load (#2937).
+setChangeFeedSensitiveClassResolver((ctor) => {
+  if (typeof ctor !== 'function') return false;
+  const key = getConstructorIndex().get(ctor as typeof SmrtObject);
+  if (!key) return false;
+  return getClasses().get(key)?.config?.sensitive === true;
+});
+
 function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
   const existing = Object.getOwnPropertyDescriptor(ctor, 'SMRT_TABLE_NAME');
   if (existing?.value === tableName) {
@@ -612,6 +665,11 @@ export function register(
       ...existing.config,
       ...config,
       tableName: nextTableName,
+      // OR, never last-wins — see `anySensitive` (#2937). A re-registration
+      // must not be able to clear a declaration a previous one made.
+      ...(anySensitive(existing.config, config)
+        ? { sensitive: true as const }
+        : {}),
     };
     if (!existing.schema) {
       existing.schema = {
@@ -628,6 +686,11 @@ export function register(
     existing.schema.tableName = nextTableName;
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
+    declareSensitiveTable(
+      existing.config,
+      nextTableName,
+      existing.schema?.tableName,
+    );
     setSmrtQualifiedName(ctor, existing.qualifiedName);
 
     if (existingKey !== nextKey) {
@@ -1269,7 +1332,31 @@ export function register(
     ...manifestEntry?.decoratorConfig,
     ...config,
     tableName, // Override with correctly computed tableName
+    // `sensitive` is an OR across every source, not last-wins (#2937). Ordinary
+    // spread precedence would let an explicit `sensitive: false` from a
+    // lower-priority-but-later source erase a `true` — for instance a stale
+    // manifest disagreeing with the class — which is a silent fail-OPEN in a
+    // control documented as one-way ("`sensitive: false` is not an opt-out").
+    // Only `=== true` is meaningful anywhere, so OR is the whole rule.
+    ...(anySensitive(
+      promotedRuntimeConfig,
+      manifestEntry?.decoratorConfig,
+      config,
+    )
+      ? { sensitive: true as const }
+      : {}),
   };
+
+  // Declare from the MERGED config, not the raw one: generated consumer
+  // registration passes the declaration through `manifestEntry.decoratorConfig`
+  // rather than the call's own `config` (#2937). Both the resolved name and the
+  // schema's own, which can differ.
+  declareSensitiveTable(
+    mergedConfig,
+    tableName,
+    schema?.tableName,
+    manifestEntry?.schema?.tableName,
+  );
 
   // Generate qualified name if we have a package name
   // Format: "@package/name:ClassName"
@@ -1729,7 +1816,21 @@ function mergeManifestIntoExistingRegistration(
     ...manifestConfig,
     ...existing.config,
     tableName: manifestTableName,
+    // OR, never last-wins — see `anySensitive` (#2937).
+    ...(anySensitive(manifestConfig, existing.config)
+      ? { sensitive: true as const }
+      : {}),
   };
+
+  // The merge can move the recorded name onto the manifest's (#2937). Nothing
+  // else on this path re-declares, so a sensitive class merged here would
+  // otherwise keep its declaration on the pre-merge name only.
+  declareSensitiveTable(
+    existing.config,
+    manifestTableName,
+    objectDef.schema?.tableName,
+    existing.schema?.tableName,
+  );
 
   if (objectDef.fields) {
     for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
@@ -1977,6 +2078,12 @@ export function registerFromManifest(
   // Get config from manifest
   const config = objectDef.decoratorConfig || {};
   const tableName = config.tableName || tableNameFromClass(stubConstructor);
+  // A manifest-only registration (a consumed package's stub) still carries the
+  // credential declaration, and is often the ONLY registration a consumer app
+  // performs for that class (#2937). `tableName` here is derived from
+  // `decoratorConfig`, while the schema installed below uses
+  // `objectDef.schema.tableName` — declare both.
+  declareSensitiveTable(config, tableName, objectDef.schema?.tableName);
 
   // Load pre-generated schema from manifest if available
   // This enables efficient external package consumption without runtime schema generation
