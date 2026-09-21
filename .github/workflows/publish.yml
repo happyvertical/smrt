@@ -44,8 +44,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   PUBLISH_PACK_SHARD_COUNT: '2'
   # Releases are published to, and recorded against, our own registry; npmjs
-  # is a best-effort mirror (#3002). An npmjs outage, an expired token, or a
-  # hold on the npm account that owns the scope must not stop a release.
+  # is a best-effort mirror (#3002). An expired npmjs token, a hold on the npm
+  # account that owns the scope, or npmjs refusing writes must not stop a
+  # release. Building one still READS third-party dependencies from npmjs
+  # (pnpm install); only publishing is independent of it.
   # A literal, not a repository variable: the publish token is written for and
   # sent to this host, so changing it must be a reviewed workflow change. The
   # scripts also refuse any host outside their own allowlist.
@@ -528,7 +530,7 @@ jobs:
   # version bump. It never fails the workflow (#3002).
   mirror-npmjs:
     name: Mirror Release to npmjs
-    needs: publish-release
+    needs: [prepare-release, publish-release]
     if: |
       always() && !cancelled() &&
       (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
@@ -556,6 +558,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # This job's checkout is the workflow's original commit, so the
+          # workspace still says the previous version; name the one this run
+          # released so its checksums are compared across the registries too.
+          MIRROR_RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/mirror-release-to-npmjs.mjs
 
   # Note: Downstream dependency updates are handled by Renovate CE.

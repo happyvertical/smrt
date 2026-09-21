@@ -24,7 +24,8 @@ A release is published to **our own registry, `https://npm.happyvertical.com/`**
 and recorded against it; npmjs is a mirror. On 2026-09-21 the npmjs token
 expired and npm then placed a 72-hour security hold on the one account that
 owns the scope, so no release could ship and nothing in our control could
-shorten it (#2998, #3002). Four rules follow.
+shorten it (#2998, #3002). Publishing no longer depends on npmjs; building a
+release still reads third-party dependencies from it. Four rules follow.
 
 - The primary is the literal `RELEASE_PRIMARY_REGISTRY` in `publish.yml`, and
   `scripts/release-registry.mjs` refuses any host outside its

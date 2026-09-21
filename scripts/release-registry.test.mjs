@@ -35,6 +35,20 @@ test('a registry must be https, except a loopback test registry', () => {
   assert.throws(() => normalizeRegistry('not a url'), /Invalid registry URL/);
 });
 
+test('no refusal path echoes a credential from the input into a log', () => {
+  for (const url of [
+    'https://user:secret@', // unparseable
+    'http://user:secret@npm.happyvertical.com/', // wrong protocol
+    'https://user:secret@npm.happyvertical.com/', // credentials
+  ]) {
+    assert.throws(
+      () => normalizeRegistry(url),
+      (error) => !error.message.includes('secret') && !error.message.includes('user:'),
+      url.replace('secret', '***'),
+    );
+  }
+});
+
 test('a registry URL cannot smuggle credentials, a query, or a fragment', () => {
   for (const url of [
     'https://user:secret@npm.happyvertical.com/',

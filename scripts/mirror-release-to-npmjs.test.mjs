@@ -281,3 +281,38 @@ test('a version npmjs permanently refuses is skipped so later versions still mir
   assert.match(result.skipped[0], /0\.51\.11: npmjs permanently refuses this version/);
   assert.equal(fakes.published.at(-1).tag, 'latest');
 });
+
+test('a redirected tarball download is refused, not followed', async () => {
+  const fakes = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10'] },
+  });
+  let init;
+  const result = await run(fakes, {
+    fetchImpl: async (url, options) => {
+      init = options;
+      return { ok: false, status: 302, arrayBuffer: async () => Buffer.from('elsewhere') };
+    },
+  });
+  assert.equal(init.redirect, 'manual');
+  assert.equal(fakes.published.length, 0);
+  assert.match(result.failed[0], /redirected the download .* \(HTTP 302\); refusing to follow it/);
+});
+
+test('the version this run released is compared, not only the checkout version', async () => {
+  // In a release run the mirror job's checkout is still the previous version.
+  const diverged = fakeRegistries({
+    primary: { [NAME]: ['0.51.10', '0.51.11'] },
+    npmjs: { [NAME]: ['0.51.10', '0.51.11'] },
+    shasumOnNpmjs: 'b'.repeat(40),
+  });
+  const onlyCheckout = await run(diverged, { packages: [{ name: NAME, version: '0.51.9' }] });
+  assert.deepEqual(onlyCheckout.failed, []);
+
+  const withRelease = await run(diverged, {
+    packages: [{ name: NAME, version: '0.51.9' }],
+    releaseVersion: '0.51.11',
+  });
+  assert.equal(withRelease.failed.length, 1);
+  assert.match(withRelease.failed[0], /0\.51\.11: DIVERGED/);
+});

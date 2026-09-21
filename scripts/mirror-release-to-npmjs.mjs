@@ -107,9 +107,18 @@ async function downloadTarball({ name, version, primary, runNpm, fetchImpl }) {
       `primary reports a tarball outside itself for ${name}@${version}: ${meta.tarball}`,
     );
   }
+  // The origin check above covers only the URL we asked for. fetch follows
+  // redirects by default, which would let the primary (or anything in front
+  // of it) hand back bytes from another host; refuse to follow any.
   const response = await fetchImpl(meta.tarball, {
+    redirect: 'manual',
     signal: AbortSignal.timeout(120_000),
   });
+  if (response.status >= 300 && response.status < 400) {
+    throw new Error(
+      `the primary redirected the download of ${name}@${version} (HTTP ${response.status}); refusing to follow it`,
+    );
+  }
   if (!response.ok) {
     throw new Error(
       `downloading ${name}@${version} from the primary failed: HTTP ${response.status}`,
@@ -130,6 +139,7 @@ export async function mirrorRelease({
   primary = primaryRegistry(),
   mirror = NPMJS_REGISTRY,
   backfill = process.env.MIRROR_BACKFILL === 'true',
+  releaseVersion = process.env.MIRROR_RELEASE_VERSION || undefined,
   runNpm = npm,
   fetchImpl = fetch,
   log = console.log,
@@ -166,19 +176,26 @@ export async function mirrorRelease({
     // content check then fails and publishes its own build to the primary.
     // Lockfiles resolved against one registry would break on the other, so
     // say so loudly for the version this checkout is at.
-    if (current && have.has(current) && onPrimary.includes(current)) {
+    // `current` is the checkout's version. In a release run the job is still
+    // on the workflow's original commit, so that is the PREVIOUS release;
+    // `releaseVersion` is the one this run just published and the one most
+    // likely to have been published to npmjs separately. Check both.
+    const toCompare = [...new Set([current, releaseVersion])].filter(
+      (version) => version && have.has(version) && onPrimary.includes(version),
+    );
+    for (const version of toCompare) {
       try {
         const [primarySha, mirrorSha] = [source, target].map((registry) =>
-          shasumOn(name, current, registry, runNpm),
+          shasumOn(name, version, registry, runNpm),
         );
         if (primarySha !== mirrorSha) {
           result.failed.push(
-            `${name}@${current}: DIVERGED — primary sha1 ${primarySha}, npmjs sha1 ${mirrorSha}. Same version, different bytes; bump a new version, this one cannot be reconciled`,
+            `${name}@${version}: DIVERGED — primary sha1 ${primarySha}, npmjs sha1 ${mirrorSha}. Same version, different bytes; bump a new version, this one cannot be reconciled`,
           );
         }
       } catch (error) {
         result.failed.push(
-          `${name}@${current}: could not compare checksums (${error.message.split('\n')[0]})`,
+          `${name}@${version}: could not compare checksums (${error.message.split('\n')[0]})`,
         );
       }
     }

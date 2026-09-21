@@ -13,13 +13,15 @@ export function normalizeRegistry(url) {
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`Invalid registry URL: ${JSON.stringify(url)}`);
+    // Never echo the input: a malformed value can still carry a credential
+    // (`https://user:secret@`), and this message lands in CI logs.
+    throw new Error('Invalid registry URL (value withheld: it may carry a credential)');
   }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(
     parsed.hostname,
   );
   if (parsed.protocol !== 'https:' && !(loopback && parsed.protocol === 'http:')) {
-    throw new Error(`Registry URL must be https: ${url}`);
+    throw new Error(`Registry URL must be https (got ${parsed.protocol}//${parsed.host})`);
   }
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error(

@@ -126,7 +126,11 @@ test('releases are published to the primary registry, with npmjs as a mirror', (
   // The mirror can never fail the release, never holds the primary's
   // credential, and also runs when no release was cut so it self-heals.
   assert.match(mirror, /^    continue-on-error: true$/m);
-  assert.match(mirror, /^    needs: publish-release$/m);
+  assert.match(mirror, /^    needs: \[prepare-release, publish-release\]$/m);
+  assert.match(
+    mirror,
+    /MIRROR_RELEASE_VERSION: \$\{\{ needs\.prepare-release\.outputs\.version \}\}/,
+  );
   assert.match(mirror, /needs\.publish-release\.result == 'skipped'/);
   assert.match(mirror, /run: node scripts\/mirror-release-to-npmjs\.mjs/);
   assert.doesNotMatch(mirror, /NPM_HAPPYVERTICAL_PUBLISH_TOKEN/);
