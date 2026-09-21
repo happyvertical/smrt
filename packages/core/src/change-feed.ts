@@ -1659,13 +1659,20 @@ export async function getChangesSince(
   params.push(limit);
 
   const rows = getQueryRows(await db.query(sql, ...params));
-  const changes = rows.map(rowToEntry);
+  const entries = rows.map(rowToEntry);
+  // Re-check against the live set: a table declared sensitive while the query
+  // was in flight is not in the NOT IN list above, and its rows must still not
+  // be served (#2937). Pagination below uses the unfiltered page so the cursor
+  // still advances past them.
+  const changes = entries.filter(
+    (entry) => !isChangeFeedSensitiveTable(entry.table),
+  );
 
   // Page limited → resume after the last returned row. Page exhaustive →
   // everything up to the horizon (matching or filtered out) has been
   // observed, so advance all the way.
   const cursor =
-    changes.length === limit ? changes[changes.length - 1].seq : servedHorizon;
+    entries.length === limit ? entries[entries.length - 1].seq : servedHorizon;
 
   return { changes, cursor };
 }

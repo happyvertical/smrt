@@ -46,6 +46,7 @@ import {
 } from '../change-feed';
 import {
   CHANGE_FEED_CREDENTIAL_TABLES,
+  declareChangeFeedSensitiveTable,
   isChangeFeedSensitiveTable,
 } from '../change-feed-sensitivity';
 import type { ChangeSignal } from '../change-signals';
@@ -487,6 +488,32 @@ describe('change feed never discloses credential-bearing tables (issue #2937)', 
       const next = await getChangesSince(db, { since: page.cursor });
       expect(next.changes).toEqual([]);
       expect(next.resyncRequired).toBeUndefined();
+    });
+
+    it('does not serve a table declared sensitive while the read was in flight', async () => {
+      const racedTable = 'issue2937_raced_credentials';
+      await insertLegacyFeedRow(db, PUBLIC_TABLE, 'n1');
+      await insertLegacyFeedRow(db, racedTable, 'raced-credential-row');
+
+      // Declare the table between building the NOT IN list and receiving the
+      // rows, exactly as a racing class registration would.
+      const realQuery = db.query.bind(db);
+      const spy = vi
+        .spyOn(db, 'query')
+        .mockImplementation(async (sql: string, ...params: unknown[]) => {
+          const result = await realQuery(sql, ...params);
+          if (sql.includes('ORDER BY seq ASC LIMIT')) {
+            declareChangeFeedSensitiveTable(racedTable);
+          }
+          return result;
+        });
+      try {
+        const page = await getChangesSince(db, { since: 0 });
+        expect(page.changes.map((change) => change.rowId)).toEqual(['n1']);
+        expect(page.cursor).toBe(2);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 
