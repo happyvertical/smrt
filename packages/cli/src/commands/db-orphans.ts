@@ -29,6 +29,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 interface DbOrphansOptions {
@@ -192,13 +193,16 @@ export const dbOrphansCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error),
           }),
         );
       } else {
         console.error('\n❌ Failed to collect the orphan report:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

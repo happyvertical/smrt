@@ -9,7 +9,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
-import { closeDatabaseConnection } from './db-command-utils.js';
+import {
+  closeDatabaseConnection,
+  redactConnectionStringsInText,
+} from './db-command-utils.js';
 
 /**
  * Parsed option bag for the config:export handler. The CLI parser produces
@@ -213,13 +216,16 @@ export const configExportCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error),
           }),
         );
       } else {
         console.error('\n❌ Failed to export configuration:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

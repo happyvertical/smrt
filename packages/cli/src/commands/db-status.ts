@@ -23,6 +23,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
@@ -624,7 +625,9 @@ export const dbStatusCommand: CLICommand = {
             });
           } catch (error) {
             status.parityError =
-              error instanceof Error ? error.message : String(error);
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error);
           }
         }
       } else if (options.parity) {
@@ -657,7 +660,9 @@ export const dbStatusCommand: CLICommand = {
         );
       } catch (error) {
         status.orphansError =
-          error instanceof Error ? error.message : String(error);
+          error instanceof Error
+            ? redactConnectionStringsInText(error.message)
+            : String(error);
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -895,13 +900,16 @@ export const dbStatusCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error),
           }),
         );
       } else {
         console.error('\n❌ Failed to get migration status:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

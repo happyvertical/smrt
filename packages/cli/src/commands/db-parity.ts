@@ -26,6 +26,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 /** Options accepted by {@link runLiveSchemaParity}. */
@@ -156,7 +157,10 @@ export async function runLiveSchemaParity(
     return {
       report: null,
       database: null,
-      error: error instanceof Error ? error.message : String(error),
+      error:
+        error instanceof Error
+          ? redactConnectionStringsInText(error.message)
+          : String(error),
     };
   } finally {
     await closeDatabaseConnection(db);

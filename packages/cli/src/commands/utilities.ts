@@ -33,6 +33,7 @@ import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
   quoteIdentifier,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
@@ -1310,9 +1311,11 @@ export default testManifest;
           // discover an unsupported shape only after destructive mutation.
           await schemaManager.ensureTables(schemas);
         } catch (error) {
-          console.error(`  ✗ Schema creation failed: ${error}`);
+          console.error(
+            `  ✗ Schema creation failed: ${redactConnectionStringsInText(String(error))}`,
+          );
           if (options.verbose && error instanceof Error && error.stack) {
-            console.error(`\n${error.stack}\n`);
+            console.error(`\n${redactConnectionStringsInText(error.stack)}\n`);
           }
           throw new Error(
             'Refusing to report database setup success after schema creation failed.',
@@ -1375,10 +1378,10 @@ export default testManifest;
           ),
         );
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
           if (options.verbose && error.stack) {
             console.error('\nStack trace:');
-            console.error(error.stack);
+            console.error(redactConnectionStringsInText(error.stack));
           }
         } else {
           console.error(error);
@@ -1423,7 +1426,7 @@ export default testManifest;
       } catch (error) {
         console.error('❌ Failed to clear cache:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
         process.exit(1);
       }
@@ -1625,7 +1628,10 @@ export default testManifest;
             JSON.stringify(
               {
                 timestamp: new Date().toISOString(),
-                error: error instanceof Error ? error.message : String(error),
+                error:
+                  error instanceof Error
+                    ? redactConnectionStringsInText(error.message)
+                    : String(error),
                 duration: Date.now() - startTime,
               },
               null,
@@ -1635,10 +1641,10 @@ export default testManifest;
         } else {
           console.error('\n❌ Validation failed:');
           if (error instanceof Error) {
-            console.error(`   ${error.message}`);
+            console.error(`   ${redactConnectionStringsInText(error.message)}`);
             if (options.verbose && error.stack) {
               console.error('\nStack trace:');
-              console.error(error.stack);
+              console.error(redactConnectionStringsInText(error.stack));
             }
           } else {
             console.error(error);
@@ -2098,7 +2104,7 @@ export default testManifest;
                 beforeCount = await countOrphanRows(db, countSql);
               } catch (error) {
                 console.log(
-                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${error instanceof Error ? error.message : String(error)}`,
+                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${redactConnectionStringsInText(error instanceof Error ? error.message : String(error))}`,
                 );
                 continue;
               }
@@ -2727,8 +2733,9 @@ export default testManifest;
             ).length;
           } catch (error) {
             errorCount++;
-            const errorMsg =
-              error instanceof Error ? error.message : String(error);
+            const errorMsg = redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            );
             console.error(`  ✗ atomic schema migration failed: ${errorMsg}`);
             // Show underlying database error if available
             if (
@@ -2736,11 +2743,13 @@ export default testManifest;
               getErrorContext(error)?.originalError
             ) {
               console.error(
-                `     Cause: ${getErrorContext(error)?.originalError}`,
+                `     Cause: ${redactConnectionStringsInText(String(getErrorContext(error)?.originalError))}`,
               );
             }
             if (options.verbose && error instanceof Error && error.stack) {
-              console.error(`\n${error.stack}\n`);
+              console.error(
+                `\n${redactConnectionStringsInText(error.stack)}\n`,
+              );
             }
             console.error(
               deferredIndexMigrations > 0
@@ -2794,7 +2803,7 @@ export default testManifest;
               );
             } catch (error) {
               console.log(
-                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${error instanceof Error ? error.message : String(error)})`,
+                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${redactConnectionStringsInText(error instanceof Error ? error.message : String(error))})`,
               );
             }
           }
@@ -2925,9 +2934,14 @@ export default testManifest;
                   }
                 } catch (error: unknown) {
                   const qualifiedName = resolution.currentQualifiedName;
-                  const errorMsg =
-                    error instanceof Error ? error.message : String(error);
-                  const originalError = getErrorContext(error)?.originalError;
+                  const errorMsg = redactConnectionStringsInText(
+                    error instanceof Error ? error.message : String(error),
+                  );
+                  const originalError = getErrorContext(error)?.originalError
+                    ? redactConnectionStringsInText(
+                        String(getErrorContext(error)?.originalError),
+                      )
+                    : undefined;
                   console.error(
                     `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${originalError || errorMsg}`,
                   );
@@ -3039,11 +3053,13 @@ export default testManifest;
           formatSchemaCommandFailureHeader(error, '\n❌ Migration failed:'),
         );
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
           const ctx = getErrorContext(error);
           if (ctx) {
             if (ctx.originalError) {
-              console.error(`   Database error: ${ctx.originalError}`);
+              console.error(
+                `   Database error: ${redactConnectionStringsInText(String(ctx.originalError))}`,
+              );
             }
             if (ctx.sql) {
               console.error(`   Failed SQL: ${ctx.sql}`);
@@ -3051,7 +3067,7 @@ export default testManifest;
           }
           if (options.verbose && error.stack) {
             console.error('\nStack trace:');
-            console.error(error.stack);
+            console.error(redactConnectionStringsInText(error.stack));
           }
         } else {
           console.error(error);

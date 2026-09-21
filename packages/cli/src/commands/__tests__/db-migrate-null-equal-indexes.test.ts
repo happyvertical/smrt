@@ -30,6 +30,7 @@ vi.mock('../../discovery/index.js', () => ({
 vi.mock('../db-command-utils.js', () => ({
   closeDatabaseConnection: mocks.close,
   formatDatabaseDisplayUrl: () => 'test database',
+  redactConnectionStringsInText: (text: string) => text,
 }));
 
 import { dbMigrateNullEqualIndexesCommand } from '../db-migrate-null-equal-indexes.js';

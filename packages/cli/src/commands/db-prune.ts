@@ -24,6 +24,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 /** Parsed CLI options for the `db:prune` command. */
@@ -298,7 +299,9 @@ export const dbPruneCommand: CLICommand = {
         process.exitCode = 1;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = redactConnectionStringsInText(
+        error instanceof Error ? error.message : String(error),
+      );
       if (options.json) {
         console.log(JSON.stringify({ error: message }));
       } else {

@@ -8,7 +8,10 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import { closeDatabaseConnection } from './db-command-utils.js';
+import {
+  closeDatabaseConnection,
+  redactConnectionStringsInText,
+} from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
   partitionSchemaChanges,
@@ -460,13 +463,16 @@ export const dbDiffCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error),
           }),
         );
       } else {
         console.error('\n❌ Failed to generate diff:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

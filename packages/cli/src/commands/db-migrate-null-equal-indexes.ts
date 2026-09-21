@@ -11,6 +11,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 export const dbMigrateNullEqualIndexesCommand: CLICommand = {
@@ -82,7 +83,11 @@ export const dbMigrateNullEqualIndexesCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `NULL-equal conflict-index migration failed: ${error instanceof Error ? error.message : String(error)}`,
+        `NULL-equal conflict-index migration failed: ${
+          error instanceof Error
+            ? redactConnectionStringsInText(error.message)
+            : String(error)
+        }`,
       );
       process.exitCode = 1;
     } finally {

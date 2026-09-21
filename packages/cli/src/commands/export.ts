@@ -16,7 +16,10 @@ import type {
 } from '@happyvertical/smrt-config';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
-import { closeDatabaseConnection } from './db-command-utils.js';
+import {
+  closeDatabaseConnection,
+  redactConnectionStringsInText,
+} from './db-command-utils.js';
 
 /**
  * Minimal structural view of a registry field definition, covering only the
@@ -722,15 +725,18 @@ export const exportCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error:
+              error instanceof Error
+                ? redactConnectionStringsInText(error.message)
+                : String(error),
           }),
         );
       } else {
         console.error('\n❌ Export failed:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
-          if (options.verbose) {
-            console.error(error.stack);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
+          if (options.verbose && error.stack) {
+            console.error(redactConnectionStringsInText(error.stack));
           }
         }
       }
