@@ -764,19 +764,17 @@ export class ChatService {
   }) {
     const participantProfileId = params.actorProfileId;
     const sessionKey = params.sessionKey ?? null;
-    // Resolve the agent's authoring Profile up front: the `agentId` slug is not
-    // a representable author for the uuid `profileId`/`senderProfileId` columns
-    // this method and the reply path write (#2995).
-    const agentProfileId = params.agentProfileId
+    // Validate a supplied authoring Profile now (cheap, no writes); resolution
+    // is deferred until we know whether a session is being reused, so reuse
+    // never mints a `bot` profile it will not use and never bypasses the
+    // adoption rule in #resolveAgentProfileId (#2995).
+    const suppliedAgentProfileId = params.agentProfileId
       ? await this.#requireAgentProfile(
           params.agentProfileId,
           params.tenantId,
           participantProfileId,
         )
-      : await resolveAgentProfileId(this.#profiles, {
-          agentId: params.agentId,
-          tenantId: params.tenantId,
-        });
+      : null;
     // Check for existing active session first to avoid orphaned rooms. When a
     // sessionKey is supplied the reuse lookup is narrowed to a matching key so a
     // session opened for a different subject is never reused/rewritten here.
@@ -805,27 +803,42 @@ export class ChatService {
             profileId: participantProfileId,
             role: 'owner',
           });
-          await this.#enrollParticipant({
-            tenantId: params.tenantId,
-            roomId: existingRoom.id as string,
-            profileId: existingSession.agentProfileId ?? agentProfileId,
-            role: 'member',
-          });
           // Never RE-POINT a session that already resolved an agent profile
           // (S5 #1392, #2995): a second create with a different
           // `agentProfileId` would silently re-author the rest of an existing
           // conversation and leave the previous agent enrolled. Only a session
-          // that has none — i.e. one created before #2995 — is backfilled.
+          // that has none — i.e. one created before #2995 — is settled here,
+          // through the SAME path the reply takes, so a legacy uuid `agentId`
+          // is adopted rather than replaced by a synthetic profile.
           if (!existingSession.agentProfileId) {
-            existingSession.agentProfileId = agentProfileId;
-            await existingSession.save();
+            if (suppliedAgentProfileId) {
+              existingSession.agentProfileId = suppliedAgentProfileId;
+              await existingSession.save();
+            } else {
+              await this.#resolveAgentProfileId(existingSession);
+            }
           }
+          await this.#enrollParticipant({
+            tenantId: params.tenantId,
+            roomId: existingRoom.id as string,
+            profileId: existingSession.agentProfileId as string,
+            role: 'member',
+          });
           return { session: existingSession, room: existingRoom };
         }
       }
       // Session exists but room is missing/orphaned — expire it so we create fresh
       await existingSession.expire();
     }
+
+    // No session is being reused, so an authoring Profile is now actually
+    // needed: resolve (creating on first use) unless one was supplied (#2995).
+    const agentProfileId =
+      suppliedAgentProfileId ??
+      (await resolveAgentProfileId(this.#profiles, {
+        agentId: params.agentId,
+        tenantId: params.tenantId,
+      }));
 
     // Create an agent-type room for this session
     const room = await this.#rooms.create({

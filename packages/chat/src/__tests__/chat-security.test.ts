@@ -1535,6 +1535,36 @@ describe('chat security (S5 #1392)', () => {
       expect(participants).toHaveLength(2);
     });
 
+    it('adopts a legacy uuid agentId on the createAgentSession reuse path too', async () => {
+      // The reuse branch must settle a legacy session through the same path the
+      // reply takes; resolving up front would mint a synthetic profile, re-point
+      // the author permanently, and put a third identity in a two-seat room.
+      const acting = await makeProfile('tenant-1', 'Legacy acting profile');
+      const first = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: acting,
+        actorProfileId: 'owner',
+        agentProfileId: acting,
+      });
+      first.session.agentProfileId = null;
+      await first.session.save();
+
+      const reused = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: acting,
+        actorProfileId: 'owner',
+      });
+
+      expect(reused.session.id).toBe(first.session.id);
+      expect(reused.room.id).toBe(first.room.id);
+      expect(reused.session.agentProfileId).toBe(acting);
+
+      const participants = await raw.participants.list({
+        where: { roomId: reused.room.id as string, tenantId: 'tenant-1' },
+      });
+      expect(participants).toHaveLength(2);
+    });
+
     it('does not adopt a uuid agentId that is the session participant', async () => {
       const actor = await makeProfile('tenant-1', 'Actor');
       const { session } = await chat.createAgentSession({
