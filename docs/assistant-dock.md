@@ -88,6 +88,25 @@ smrt-svelte→smrt-chat runtime edge" binding decision. See also
 `packages/smrt-svelte/src/components/workspace/README.md` for the general
 `ShellDockTool` recipe pattern this follows.
 
+### Narrow docks (#3000)
+
+The dock is a size container (`container-type: inline-size`), so its layout
+follows the width it is given, not the viewport. At 480px and wider the
+thread list sits beside the conversation. Below that, for example the
+default ~250px `AdminShell` right edge or a portrait-tablet overlay, the
+list collapses behind a "Conversations" disclosure button (`aria-expanded`,
+`aria-controls`). When opened, the list stacks above the conversation, and
+picking or starting a thread closes it again, so the conversation always
+keeps the full dock width. Hosts don't need to widen the edge for the dock
+to be usable. The composer textarea uses `--smrt-font-family`, the same
+font as the rest of the dock.
+
+jsdom ignores `@container`, so the widths are checked in Chromium by
+`packages/chat/e2e/assistant-dock-narrow.spec.ts` against the
+`/previews/assistant-dock-narrow` fixture. Run it with
+`pnpm --filter @happyvertical/smrt-chat test:e2e`. It is not wired into CI
+yet.
+
 ## Architecture
 
 Sequence: `send → poll → render → action preview → confirm → apply`.
