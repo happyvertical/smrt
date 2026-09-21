@@ -18,7 +18,11 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ProfileCollection, resolveAgentProfileId } from '../index.js';
+import {
+  ProfileCollection,
+  ProfileTypeCollection,
+  resolveAgentProfileId,
+} from '../index.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -34,6 +38,15 @@ describePostgres('resolveAgentProfile concurrency (#2995)', () => {
       ],
     });
     profiles = await ProfileCollection.create({ db: isolated.db });
+
+    // Pre-seed the `bot` ProfileType. Without this the racers collide on the
+    // TYPE create and are serialized before any of them reaches the Profile
+    // insert — which is the race that actually matters, and which is what
+    // production looks like once any agent has resolved once.
+    const profileTypes = await ProfileTypeCollection.create({
+      db: isolated.db,
+    });
+    await profileTypes.getOrCreateBySlug('bot', { name: 'Bot' });
   });
 
   afterEach(async () => {
@@ -41,25 +54,30 @@ describePostgres('resolveAgentProfile concurrency (#2995)', () => {
     isolated = undefined;
   });
 
-  async function agentProfileRows(slug: string): Promise<number> {
+  async function agentProfileIds(slug: string): Promise<string[]> {
     const result = await isolated?.db.query(
       `SELECT CAST(id AS VARCHAR) AS id FROM profiles
         WHERE slug = ? AND context = 'smrt:agent'`,
       slug,
     );
-    return result?.rows.length ?? -1;
+    return (result?.rows ?? []).map((row) => String(row.id));
   }
 
   it('converges on one profile for parallel first use in a tenant', async () => {
     const tenantId = crypto.randomUUID();
     const ids = await Promise.all(
-      Array.from({ length: 5 }, () =>
+      Array.from({ length: 10 }, () =>
         resolveAgentProfileId(profiles, { agentId: 'race_agent', tenantId }),
       ),
     );
 
     expect(new Set(ids).size).toBe(1);
-    expect(await agentProfileRows('race_agent')).toBe(1);
+    const surviving = await agentProfileIds('race_agent');
+    expect(surviving).toHaveLength(1);
+    // The returned id must be the id of the row that actually survived — an
+    // upsert that replaced the winner's id would leave every caller holding a
+    // dangling reference.
+    expect(ids[0]).toBe(surviving[0]);
   });
 
   it('converges on one profile for parallel first use of an untenanted agent', async () => {
@@ -67,7 +85,7 @@ describePostgres('resolveAgentProfile concurrency (#2995)', () => {
     // it (smrt#2360), so this case is NOT arbitrated by the database — it is the
     // resolver's re-read that has to converge it.
     const ids = await Promise.all(
-      Array.from({ length: 5 }, () =>
+      Array.from({ length: 10 }, () =>
         resolveAgentProfileId(profiles, {
           agentId: 'race_global',
           tenantId: null,
@@ -76,6 +94,8 @@ describePostgres('resolveAgentProfile concurrency (#2995)', () => {
     );
 
     expect(new Set(ids).size).toBe(1);
-    expect(await agentProfileRows('race_global')).toBe(1);
+    const surviving = await agentProfileIds('race_global');
+    expect(surviving).toHaveLength(1);
+    expect(ids[0]).toBe(surviving[0]);
   });
 });

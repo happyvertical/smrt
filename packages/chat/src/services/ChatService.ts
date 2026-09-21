@@ -90,6 +90,16 @@ export interface ThreadLookup {
  */
 const RUN_AGENT_REPLY = Symbol('smrt-chat.runAgentReply');
 
+/**
+ * Shape test for an `agentId` that is really a Profile uuid (#2995).
+ *
+ * Used only to decide whether a pre-#2995 session's `agentId` is worth looking
+ * up as a Profile; it is a cheap filter, never an authorization decision — the
+ * lookup that follows is tenant-bound and the result is validated.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export class ChatService {
   // Raw persistence collections are PRIVATE (S5 #1392). They can author/mutate
   // any row with no actor/membership check, so they must NOT appear on the
@@ -1027,17 +1037,52 @@ export class ChatService {
    * Sessions created before #2995 carry no `agentProfileId`. They are backfilled
    * lazily here, on the first agent turn after the upgrade, so an existing
    * conversation keeps working without an offline migration.
+   *
+   * One pre-#2995 cohort must be ADOPTED rather than resolved: the voice path
+   * used to collapse a persona's `actsAsProfileId` into `agentId`, so those
+   * sessions carry a real Profile uuid there — and on PostgreSQL those rows
+   * committed, because the uuid cast succeeded. Minting a fresh `bot` profile
+   * for them would change the author mid-conversation, permanently (the
+   * no-re-point rule), and enrol a third identity in a two-seat room. When
+   * `agentId` already names a Profile visible in this tenant that is not the
+   * session participant, that Profile IS the author and is adopted as-is.
    */
   async #resolveAgentProfileId(session: AgentSession): Promise<string> {
     if (session.agentProfileId) return session.agentProfileId;
 
-    const agentProfileId = await resolveAgentProfileId(this.#profiles, {
-      agentId: session.agentId,
-      tenantId: session.tenantId,
-    });
+    const agentProfileId =
+      (await this.#adoptLegacyAgentIdProfile(session)) ??
+      (await resolveAgentProfileId(this.#profiles, {
+        agentId: session.agentId,
+        tenantId: session.tenantId,
+      }));
     session.agentProfileId = agentProfileId;
     await session.save();
     return agentProfileId;
+  }
+
+  /**
+   * Adopt a pre-#2995 session whose `agentId` is already a Profile uuid, or
+   * return `null` when it is an ordinary agent slug.
+   *
+   * Held to the same standard as a caller-supplied `agentProfileId`: the
+   * Profile must be visible in the session's tenant and must not be the session
+   * participant, so an `agentId` that happens to collide with a human profile
+   * cannot make that human the author.
+   */
+  async #adoptLegacyAgentIdProfile(
+    session: AgentSession,
+  ): Promise<string | null> {
+    const candidate = session.agentId;
+    if (!UUID_PATTERN.test(candidate)) return null;
+    if (candidate === session.participantProfileId) return null;
+
+    const profile = await this.#profiles.get({ id: candidate });
+    if (!profile) return null;
+    if (profile.tenantId !== null && profile.tenantId !== session.tenantId) {
+      return null;
+    }
+    return candidate;
   }
 
   /** Load an active agent session by id, tenant-bound, or throw. */

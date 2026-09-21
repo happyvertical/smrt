@@ -1499,6 +1499,61 @@ describe('chat security (S5 #1392)', () => {
       expect(membership).toBeNull();
     });
 
+    it('adopts a pre-#2995 session whose agentId is already a Profile uuid', async () => {
+      // The voice path used to collapse a persona's `actsAsProfileId` into
+      // `agentId`, and on PostgreSQL those rows committed. Such a session must
+      // keep authoring as that profile, not mint a synthetic one (#2995 R1).
+      const acting = await makeProfile('tenant-1', 'Legacy acting profile');
+      const { session, room } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: acting,
+        actorProfileId: 'owner',
+        agentProfileId: acting,
+      });
+      // Simulate the legacy row: the resolved column did not exist yet.
+      session.agentProfileId = null;
+      await session.save();
+
+      const reply = await sendAgentReply(chat, {
+        tenantId: 'tenant-1',
+        agentSessionId: session.id as string,
+        content: 'resumed',
+      });
+
+      expect(reply.senderProfileId).toBe(acting);
+      const reloaded = await chat.getAgentSession({
+        agentSessionId: session.id as string,
+        tenantId: 'tenant-1',
+      });
+      expect(reloaded?.agentProfileId).toBe(acting);
+
+      // No synthetic bot profile was minted for that uuid, so the two-seat room
+      // did not gain a third identity.
+      const participants = await raw.participants.list({
+        where: { roomId: room.id as string, tenantId: 'tenant-1' },
+      });
+      expect(participants).toHaveLength(2);
+    });
+
+    it('does not adopt a uuid agentId that is the session participant', async () => {
+      const actor = await makeProfile('tenant-1', 'Actor');
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: actor,
+        actorProfileId: actor,
+      });
+      session.agentProfileId = null;
+      await session.save();
+
+      const reply = await sendAgentReply(chat, {
+        tenantId: 'tenant-1',
+        agentSessionId: session.id as string,
+        content: 'not you',
+      });
+
+      expect(reply.senderProfileId).not.toBe(actor);
+    });
+
     it('accepts a server-resolved acting profile in the same tenant', async () => {
       const acting = await makeProfile('tenant-1', 'Acting bot');
 
