@@ -49,10 +49,9 @@ cannot answer says why, and never fabricates.
    record per object: class, file, `extends`, table, field count, relationship
    summary, MCP operations. Pass `detail: "full"` for fields, schema, and
    methods. A large project reports a `truncated` block instead of being
-   silently cut; raise `maxChars` deliberately, or, from the release that
-   includes [#2786](https://github.com/happyvertical/smrt/pull/2786), pass
-   the returned `nextCursor` back as `cursor` to read the next page. This is
-   the cheapest map of the app an agent can get.
+   silently cut; pass the returned `nextCursor` back as `cursor` (optionally
+   with `limit`) to read the next alphabetical page, or raise `maxChars`
+   deliberately. This is the cheapest map of the app an agent can get.
 2. **`check-knowledge-freshness`** lists concrete, fixable defects in the
    agent-facing docs and generated knowledge: a stale artifact, a missing
    `AGENTS.md`, a `CLAUDE.md` that is not the required shim. Pass
@@ -67,14 +66,12 @@ cannot answer says why, and never fabricates.
 5. **`generate-smrt-class`** scaffolds an idiomatic `@smrt()` class from a
    field list. The output is source text meant to be pasted, not an envelope.
 
-For a change review or a design question, **`smrt-review`** (changed files,
-focus) and **`smrt-architecture`** (an idea) return the package experts to
-consult, deterministic findings, and a prompt bundle. From the release that
-includes [#2787](https://github.com/happyvertical/smrt/pull/2787) both are
-one tool, **`build-context`** with `task: "review"` or
-`task: "architecture"`, findings are file-anchored, package-level reminders
-move to `reviewHints`, and the two old names remain for one release as
-deprecated aliases.
+For a change review or a design question, **`build-context`** with
+`task: "review"` (changed files, focus) or `task: "architecture"` (an idea)
+returns the package experts to consult, file-anchored deterministic findings,
+package-level `reviewHints`, and a prompt bundle; architecture ranks packages
+by the idea text. `smrt-review` and `smrt-architecture` are deprecated aliases
+for the same call.
 
 ## 3. Read the provenance label
 
@@ -115,15 +112,29 @@ once at start). The static catalog, generated CRUD, custom actions, and `do()`
 are never mounted. Use it when several agents or a browser tab need the same
 booted view; the stdio server remains the default.
 
-## 6. CLI equivalents
+## 6. Optional: the dev-plane inside your dev server
+
+In a SvelteKit app, `smrtPlugin({ sveltekit: { devPlaneRoute: { enabled: true } } })`
+with `@happyvertical/smrt-dev-mcp` as a devDependency generates
+`/api/_dev/[...tool]`: the same read-only runtime tools over JSON
+(`GET|POST /api/_dev/<tool>`) and MCP (`POST /api/_dev/mcp`), plus
+`registry-live`, which snapshots the app's *live* registry (provenance
+`live (app registry)`) with no manifest boot and follows HMR. It is dev mode
+only, needs `SMRT_DEV_MCP_TOKEN` as a bearer token from loopback, and shares
+the app's own database connection. Projects that are not SvelteKit apps keep
+using the standalone `--http` host above.
+
+## 7. CLI equivalents
 
 The same knowledge and checks are available without an MCP client:
 
 - `smrt dev:knowledge-index` and `smrt dev:knowledge-check --strict` mirror
   `reflect-knowledge` and `check-knowledge-freshness`.
 - `smrt dev:knowledge-review-context` and
-  `smrt dev:knowledge-architecture-context` mirror `smrt-review` and
-  `smrt-architecture` (`build-context` once #2787 lands).
+  `smrt dev:knowledge-architecture-context` mirror `build-context`.
+- `smrt dev:runtime <tool>` calls the runtime tools from a terminal: against
+  a running dev server's in-app plane when `SMRT_DEV_PLANE_URL` is set, and
+  the local boot otherwise.
 - `smrt db:diff` and `smrt runtime:check` cover the schema diff and the
   manifest/registry consistency check from the developer's terminal.
 
