@@ -476,7 +476,7 @@ describe('generated SvelteKit helper runtime', () => {
     };
 
     const denied = await route.POST({
-      locals: { user: { id: 'user-1' } },
+      locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
       request: new Request('http://localhost/api/widgets', {
         body: JSON.stringify({ name: 'Widget' }),
         method: 'POST',
@@ -501,7 +501,7 @@ describe('generated SvelteKit helper runtime', () => {
       },
     };
     const failed = await route.POST({
-      locals: { user: { id: 'user-1' } },
+      locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
       request: new Request('http://localhost/api/widgets', {
         body: JSON.stringify({ name: 'Widget' }),
         method: 'POST',
@@ -532,7 +532,7 @@ describe('generated SvelteKit helper runtime', () => {
     };
 
     const response = await route.POST({
-      locals: { user: { id: 'user-1' } },
+      locals: { permissions: ['widgets.inspect'], user: { id: 'user-1' } },
       params: { id: 'widget-1' },
       request: new Request('http://localhost/api/widgets/widget-1/inspect', {
         ...(rawBody === undefined
@@ -563,7 +563,7 @@ describe('generated SvelteKit helper runtime', () => {
     };
 
     const denied = await route.DELETE({
-      locals: { user: { id: 'user-1' } },
+      locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
     });
     expect(denied.status).toBe(403);
@@ -587,7 +587,7 @@ describe('generated SvelteKit helper runtime', () => {
       }),
     };
     const failed = await route.DELETE({
-      locals: { user: { id: 'user-1' } },
+      locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
       params: { id: 'foreign-policy' },
     });
     expect(failed.status).toBe(500);
@@ -607,7 +607,7 @@ describe('generated SvelteKit helper runtime', () => {
 
     const response = await route.POST({
       locals: {
-        permissions: ['fields.policy.manage'],
+        permissions: ['fields.policy.manage', 'widgets.create'],
         tenantId: 'trusted-tenant',
         user: { id: 'trusted-user' },
       },
@@ -629,8 +629,248 @@ describe('generated SvelteKit helper runtime', () => {
     expect(contexts).toHaveLength(1);
     expect(contexts[0].tenantId).toBe('trusted-tenant');
     expect(contexts[0].userId).toBe('trusted-user');
-    expect([...contexts[0].permissions]).toEqual(['fields.policy.manage']);
+    expect([...contexts[0].permissions]).toEqual([
+      'fields.policy.manage',
+      'widgets.create',
+    ]);
     expect(JSON.stringify(contexts[0])).not.toContain('forged');
+  });
+
+  describe('generated write routes enforce operation permissions (#2977)', () => {
+    async function importGeneratedWrite(
+      include: string[],
+      routeFile: string,
+      outputFile: string,
+      decoratorConfig?: Record<string, unknown>,
+    ) {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      const manifest = createManifest(projectRoot, objectFilePath, include);
+      if (decoratorConfig) {
+        manifest.objects.Widget.decoratorConfig = decoratorConfig;
+      }
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      return await bundleGeneratedRoute(routeFile, outputFile);
+    }
+
+    function trackCreate() {
+      const calls: unknown[] = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        create: async (data: unknown) => {
+          calls.push(data);
+          return { toPublicJSON: () => ({ id: 'created' }) };
+        },
+      };
+      return calls;
+    }
+
+    function postRequest() {
+      return new Request('http://localhost/api/widgets', {
+        body: JSON.stringify({ name: 'Widget' }),
+        method: 'POST',
+      });
+    }
+
+    it('rejects an authenticated principal without the create permission with 403', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-route.mjs',
+      );
+      const calls = trackCreate();
+      for (const locals of [
+        { user: { id: 'user-1' } },
+        { permissions: [], user: { id: 'user-1' } },
+        {
+          permissions: ['widgets.read', 'widgets.update'],
+          user: { id: 'user-1' },
+        },
+        { permissions: 'widgets.create', user: { id: 'user-1' } },
+        { smrtAuth: true },
+        {
+          tenantContext: { permissions: new Set(['widgets.read']) },
+          user: { id: 'user-1' },
+        },
+      ]) {
+        await expect(
+          route.POST({ locals, request: postRequest() }),
+        ).rejects.toMatchObject({ status: 403 });
+      }
+      expect(calls).toHaveLength(0);
+    });
+
+    it('checks authentication before permission (401 for anonymous callers)', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-anon-route.mjs',
+      );
+      const calls = trackCreate();
+      await expect(
+        route.POST({ locals: {}, request: postRequest() }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('allows the create permission from every supported session snapshot', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-granted-route.mjs',
+      );
+      const calls = trackCreate();
+      for (const locals of [
+        { permissions: ['widgets.create'], user: { id: 'user-1' } },
+        { permissions: new Set(['widgets.create']), user: { id: 'user-1' } },
+        { permissionSet: ['widgets.create'], user: { id: 'user-1' } },
+        { smrtPermissions: new Set(['widgets.create']), smrtAuth: true },
+        {
+          tenantContext: { permissions: new Set(['widgets.create']) },
+          user: { id: 'user-1' },
+        },
+        { tenantContext: { superAdminBypass: true }, user: { id: 'admin-1' } },
+      ]) {
+        const response = await route.POST({ locals, request: postRequest() });
+        expect(response.status).toBe(201);
+      }
+      expect(calls).toHaveLength(6);
+    });
+
+    it('requires update for PUT and delete for DELETE', async () => {
+      const route = await importGeneratedWrite(
+        ['update', 'delete'],
+        'src/routes/api/widgets/[id]/+server.ts',
+        'perm-item-route.mjs',
+      );
+      const saved: string[] = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        get: async () => ({
+          delete: async () => {
+            saved.push('delete');
+          },
+          save: async () => {
+            saved.push('save');
+          },
+          toPublicJSON: () => ({ id: 'widget-1' }),
+        }),
+      };
+      const putRequest = () =>
+        new Request('http://localhost/api/widgets/widget-1', {
+          body: JSON.stringify({ name: 'Renamed' }),
+          method: 'PUT',
+        });
+
+      await expect(
+        route.PUT({
+          locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
+          params: { id: 'widget-1' },
+          request: putRequest(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        route.DELETE({
+          locals: { permissions: ['widgets.update'], user: { id: 'user-1' } },
+          params: { id: 'widget-1' },
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(saved).toEqual([]);
+
+      const updated = await route.PUT({
+        locals: { permissions: ['widgets.update'], user: { id: 'user-1' } },
+        params: { id: 'widget-1' },
+        request: putRequest(),
+      });
+      expect(updated.status).toBe(200);
+      const deleted = await route.DELETE({
+        locals: { permissions: ['widgets.delete'], user: { id: 'user-1' } },
+        params: { id: 'widget-1' },
+      });
+      expect(deleted.status).toBeLessThan(300);
+      expect(saved).toEqual(['save', 'delete']);
+    });
+
+    it('requires <collection>.<method> for mutating custom actions', async () => {
+      const route = await importGeneratedItemActionPost();
+      let invoked = 0;
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        get: async () => ({
+          inspect: async () => {
+            invoked += 1;
+            return { ok: true };
+          },
+        }),
+      };
+      const request = () =>
+        new Request('http://localhost/api/widgets/widget-1/inspect', {
+          method: 'POST',
+        });
+      await expect(
+        route.POST({
+          locals: { permissions: ['widgets.update'], user: { id: 'user-1' } },
+          params: { id: 'widget-1' },
+          request: request(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(invoked).toBe(0);
+      const response = await route.POST({
+        locals: { permissions: ['widgets.inspect'], user: { id: 'user-1' } },
+        params: { id: 'widget-1' },
+        request: request(),
+      });
+      expect(response.status).toBe(200);
+      expect(invoked).toBe(1);
+    });
+
+    it('uses an explicit @smrt collection in the permission slug', async () => {
+      const route = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-collection-route.mjs',
+        { api: { include: ['create'] }, collection: 'gadgets' },
+      );
+      trackCreate();
+      await expect(
+        route.POST({
+          locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
+          request: postRequest(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+      const response = await route.POST({
+        locals: { permissions: ['gadgets.create'], user: { id: 'user-1' } },
+        request: postRequest(),
+      });
+      expect(response.status).toBe(201);
+    });
+
+    it('keeps public: true writes open and public: read writes permission-gated', async () => {
+      const open = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-public-route.mjs',
+        { api: { include: ['create'], public: true } },
+      );
+      trackCreate();
+      const response = await open.POST({ locals: {}, request: postRequest() });
+      expect(response.status).toBe(201);
+
+      const readOnly = await importGeneratedWrite(
+        ['create'],
+        'src/routes/api/widgets/+server.ts',
+        'perm-post-public-read-route.mjs',
+        { api: { include: ['create'], public: 'read' } },
+      );
+      await expect(
+        readOnly.POST({
+          locals: { user: { id: 'user-1' } },
+          request: postRequest(),
+        }),
+      ).rejects.toMatchObject({ status: 403 });
+    });
   });
 
   it('migrates the default route directory without ignoring handwritten handlers', async () => {

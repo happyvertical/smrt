@@ -237,3 +237,5 @@ delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
 from the generated `$lib/server/smrt` so the plane shares the app's connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
+
+Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`.
