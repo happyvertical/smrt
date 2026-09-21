@@ -626,7 +626,7 @@ app's own database configuration is at hand. Enable the generated route in
 the Vite plugin and install this package as a devDependency of the app:
 
 ```ts
-smrtPlugin({ sveltekit: { enabled: true, devPlaneRoute: { enabled: true } } })
+smrtPlugin({ svelteKit: { enabled: true, devPlaneRoute: { enabled: true } } })
 ```
 
 The generator writes `src/routes/api/_dev/[...tool]/+server.ts` (marked
