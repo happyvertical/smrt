@@ -18,6 +18,42 @@ prepares versioned artifacts, validates the release package set, publishes it,
 and updates release refs and the GitHub release. Consult those workflows for
 current gates, publishing modes, and documentation-deployment conditions.
 
+## Where releases go
+
+A release is published to **our own registry, `https://npm.happyvertical.com/`**,
+and recorded against it; npmjs is a mirror. On 2026-09-21 the npmjs token
+expired and npm then placed a 72-hour security hold on the one account that
+owns the scope, so no release could ship and nothing in our control could
+shorten it (#2998, #3002). Four rules follow.
+
+- The primary is `RELEASE_PRIMARY_REGISTRY` (a repository variable; defaults to
+  `https://npm.happyvertical.com/`). `Publish Release` authenticates with
+  `NPM_HAPPYVERTICAL_PUBLISH_TOKEN` and proves it with `npm whoami` before
+  anything irreversible.
+- **Every npm call that names a registry must use `registryArgs()`** from
+  `scripts/release-registry.mjs`, which passes `--registry` *and*
+  `--@happyvertical:registry=`. `--registry` alone is not enough: this repo's
+  `.npmrc` and every package's `publishConfig.registry` point the scope at
+  npmjs, and npm lets those override `--registry`, so the publish would go to
+  npmjs while reporting success. Only the scope flag on the command line
+  outranks them.
+- `Mirror Release to npmjs` is a separate, best-effort job. It downloads each
+  tarball **from the primary** and publishes that exact file, because consumer
+  lockfiles pin a tarball integrity hash and a rebuilt tarball would not match.
+  It is forward-only (versions newer than npmjs's newest), runs even when no
+  release was cut, and never fails the workflow, so a missed mirror is repaired
+  by the next batch without a version bump. `MIRROR_BACKFILL=true` fills older
+  gaps deliberately; `MIRROR_STRICT=true` makes a manual repair run fail loudly.
+- The emergency `changesets` publish mode still publishes straight to npmjs
+  with `NPM_TOKEN`. The primary proxies npmjs for the scope, so versions
+  published that way remain installable from it.
+
+Consumers point the scope at the primary with one line and need no token:
+
+```ini
+@happyvertical:registry=https://npm.happyvertical.com/
+```
+
 ## Contributor input
 
 Use conventional commits and a clear PR description. The

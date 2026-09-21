@@ -43,6 +43,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   PUBLISH_PACK_SHARD_COUNT: '2'
+  # Releases are published to, and recorded against, our own registry; npmjs
+  # is a best-effort mirror (#3002). An npmjs outage, an expired token, or a
+  # hold on the npm account that owns the scope must not stop a release.
+  RELEASE_PRIMARY_REGISTRY: ${{ vars.RELEASE_PRIMARY_REGISTRY || 'https://npm.happyvertical.com/' }}
 
 permissions:
   actions: read
@@ -77,12 +81,14 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
 
-      - name: Verify npm publish token
+      # The release needs the primary registry's credential, not npmjs's:
+      # fail here, in seconds, rather than after the build and validation.
+      - name: Verify primary registry publish token
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
         run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "❌ NPM_TOKEN secret is required to publish to registry.npmjs.org"
+          if [ -z "${PRIMARY_TOKEN:-}" ]; then
+            echo "❌ NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required to publish to $RELEASE_PRIMARY_REGISTRY"
             exit 1
           fi
 
@@ -346,15 +352,6 @@ jobs:
           path: publish-pack-output
           merge-multiple: true
 
-      - name: Verify npm publish token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "❌ NPM_TOKEN secret is required to publish to registry.npmjs.org"
-            exit 1
-          fi
-
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
@@ -367,6 +364,27 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           auth-token: ${{ secrets.NPM_TOKEN }}
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # setup-node points NPM_CONFIG_USERCONFIG at its own temporary npmrc, so
+      # the credential has to go into whichever file npm will actually read.
+      # `npm whoami` then proves the token is valid against the primary before
+      # anything irreversible: an empty-string check is what let an expired
+      # token reach the publish step in #2998.
+      - name: Authenticate to the primary registry
+        env:
+          PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "${PRIMARY_TOKEN:-}" ]; then
+            echo "❌ NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required to publish to $RELEASE_PRIMARY_REGISTRY"
+            exit 1
+          fi
+          host="${RELEASE_PRIMARY_REGISTRY#https://}"
+          host="${host%/}"
+          rc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          printf '//%s/:_authToken=%s\n' "$host" "$PRIMARY_TOKEN" >> "$rc"
+          who=$(npm whoami --registry "$RELEASE_PRIMARY_REGISTRY" \
+            "--@happyvertical:registry=$RELEASE_PRIMARY_REGISTRY")
+          echo "✓ Authenticated to $RELEASE_PRIMARY_REGISTRY as $who"
 
       - name: Configure Git
         run: |
@@ -480,8 +498,9 @@ jobs:
 
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
-          RELEASE_NOTES="${RELEASE_NOTES} npmjs.org"
-          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION."
+          RELEASE_NOTES="${RELEASE_NOTES} ${RELEASE_PRIMARY_REGISTRY}"
+          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION"
+          RELEASE_NOTES="${RELEASE_NOTES} and mirrored to npmjs.org."
           RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
           RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
           RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
@@ -491,6 +510,44 @@ jobs:
             --title "v$RELEASE_VERSION" \
             --notes "$RELEASE_NOTES" \
             --latest
+
+  # A release is complete once it is on the primary. Mirroring it to npmjs is
+  # a separate, best-effort, idempotent job: it publishes the exact tarballs
+  # the primary serves (so lockfile integrity matches across registries) for
+  # every version newer than npmjs has, and it also runs when no release was
+  # cut, so a mirror that failed is repaired by the next batch without a
+  # version bump. It never fails the workflow (#3002).
+  mirror-npmjs:
+    name: Mirror Release to npmjs
+    needs: publish-release
+    if: |
+      always() && !cancelled() &&
+      (needs.publish-release.result == 'success' || needs.publish-release.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'false'
+          setup-playwright: 'false'
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Mirror to npmjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/mirror-release-to-npmjs.mjs
 
   # Note: Downstream dependency updates are handled by Renovate CE.
   # When SMRT publishes, Renovate detects the new version and creates
