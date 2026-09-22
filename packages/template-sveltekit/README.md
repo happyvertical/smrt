@@ -20,8 +20,9 @@ Run the copy command from the monorepo root. The public 0.43.10 CLI advertises
 `gnode create`, but its command dispatcher currently rejects `gnode`; this
 package's tested `copyTemplate()` export is the working scaffold path.
 
-Generated projects require Node.js 24.18.0 or newer and pnpm 10.34.4. They pin
-all directly used `@happyvertical/smrt-*` packages to 0.43.10.
+Generated projects require Node.js 24.18.0 or newer and pnpm 11.11.0. They pin
+all directly used `@happyvertical/smrt-*` packages to the current monorepo
+release (synced at publish by `scripts/sync-template-versions.mjs`).
 
 For programmatic scaffolding:
 
