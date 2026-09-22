@@ -248,7 +248,7 @@ postgresDescribe(
       ).toEqual([]);
     });
 
-    it('adds a required column without a default nullable on a populated table and reports the follow-up', async () => {
+    it('refuses a required column without a default or backfill on a populated table and adds nothing (#3008)', async () => {
       const table = T('req');
       await create(`CREATE TABLE "${table}" (id TEXT PRIMARY KEY)`, table);
       await db.query(`INSERT INTO "${table}" (id) VALUES ('a')`);
@@ -265,19 +265,138 @@ postgresDescribe(
       const diff = await compare(manifest);
       expect(
         diff.changes.map((c) => `${c.type}:${c.alteration ?? ''}`),
-      ).toEqual(['add_column:', 'alter_column:set_not_null']);
-      const executable = getSQLFromDiff(diff).filter(
-        (s) => !s.startsWith('--'),
+      ).toEqual(['alter_column:set_not_null']);
+      expect(diff.changes[0].advisory?.severity).toBe('warning');
+      expect(diff.changes[0].advisory?.message).toContain(
+        `${table}.owner_id was not added`,
       );
-      expect(executable).toEqual([
-        `ALTER TABLE "${table}" ADD COLUMN "owner_id" uuid`,
+      expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
+        [],
+      );
+    });
+
+    it('adds a required unique column to a populated table from a per-row backfill (#3008)', async () => {
+      const table = T('claim');
+      await create(
+        `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, name TEXT)`,
+        table,
+      );
+      await db.query(`CREATE INDEX "${table}_name_idx" ON "${table}" (name)`);
+      await db.query(
+        `INSERT INTO "${table}" (id, name) VALUES ('a', 'x'), ('b', 'y')`,
+      );
+      const manifest = {
+        [table]: schema(
+          table,
+          {
+            id: { type: 'TEXT', primaryKey: true, notNull: true },
+            name: { type: 'TEXT' },
+            claim_key: {
+              type: 'TEXT',
+              notNull: true,
+              unique: true,
+              // A constant default alone would collide with the unique
+              // constraint; the backfill fills existing rows first.
+              defaultValue: '',
+              backfill: "'closed:' || id",
+            },
+          },
+          [{ name: `${table}_name_idx`, columns: ['name'] }],
+        ),
+      };
+      const diff = await compare(manifest);
+      const statements = getSQLFromDiff(diff);
+      expect(statements[0]).toBe(
+        `ALTER TABLE "${table}" ADD COLUMN "claim_key" TEXT UNIQUE`,
+      );
+      await db.query('BEGIN');
+      try {
+        await apply(statements);
+        await db.query('COMMIT');
+      } catch (error) {
+        await db.query('ROLLBACK');
+        throw error;
+      }
+      expect(
+        (await db.query(`SELECT id, claim_key FROM "${table}" ORDER BY id`))
+          .rows,
+      ).toEqual([
+        { id: 'a', claim_key: 'closed:a' },
+        { id: 'b', claim_key: 'closed:b' },
       ]);
-      await apply(executable);
-      // Still insertable through the model layer; the NOT NULL is reported until backfilled.
-      await db.query(`INSERT INTO "${table}" (id) VALUES ('b')`);
-      const after = await compare(manifest);
-      expect(after.changes.map((c) => c.type)).toEqual(['alter_column']);
-      expect(after.changes[0].advisory?.severity).toBe('warning');
+      // The default applies to future inserts only.
+      await db.query(`INSERT INTO "${table}" (id) VALUES ('c')`);
+      await expect(
+        db.query(`INSERT INTO "${table}" (id) VALUES ('d')`),
+      ).rejects.toThrow();
+      await expect(
+        db.query(`INSERT INTO "${table}" (id, claim_key) VALUES ('e', NULL)`),
+      ).rejects.toThrow();
+      expect(
+        (await compare(manifest, { includeDroppedIndexes: true })).changes,
+      ).toEqual([]);
+    });
+
+    it('tightens a nullable column holding NULLs from its backfill (#3008 recovery)', async () => {
+      const table = T('tighten');
+      await create(
+        `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, claim_key TEXT)`,
+        table,
+      );
+      await db.query(
+        `INSERT INTO "${table}" (id, claim_key) VALUES ('a', NULL), ('b', 'open:x')`,
+      );
+      const manifest = {
+        [table]: schema(table, {
+          id: { type: 'TEXT', primaryKey: true, notNull: true },
+          claim_key: {
+            type: 'TEXT',
+            notNull: true,
+            backfill: "'closed:' || id",
+          },
+        }),
+      };
+      await apply(getSQLFromDiff(await compare(manifest)));
+      expect(
+        (await db.query(`SELECT id, claim_key FROM "${table}" ORDER BY id`))
+          .rows,
+      ).toEqual([
+        { id: 'a', claim_key: 'closed:a' },
+        { id: 'b', claim_key: 'open:x' },
+      ]);
+      expect((await compare(manifest)).changes).toEqual([]);
+    });
+
+    it('refuses the column at plan time when the backfill yields NULL (#3008)', async () => {
+      const table = T('nullish');
+      await create(
+        `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, worker TEXT)`,
+        table,
+      );
+      await db.query(
+        `INSERT INTO "${table}" (id, worker) VALUES ('a', 'ann'), ('b', NULL)`,
+      );
+      const manifest = {
+        [table]: schema(table, {
+          id: { type: 'TEXT', primaryKey: true, notNull: true },
+          worker: { type: 'TEXT' },
+          claim_key: {
+            type: 'TEXT',
+            notNull: true,
+            backfill: "'open:' || worker",
+          },
+        }),
+      };
+      const diff = await compare(manifest);
+      expect(diff.changes).toHaveLength(1);
+      expect(diff.changes[0].advisory?.message).toMatch(
+        new RegExp(`^${table}\\.claim_key was not added: .*yields NULL`),
+      );
+      expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
+        [],
+      );
+      const live = await db.getTableSchema?.(table);
+      expect(Object.keys(live?.columns ?? {})).not.toContain('claim_key');
     });
 
     it('rename-required-field scenario: orphan NOT NULL is warned, relaxed with relaxColumns, and inserts keep working', async () => {

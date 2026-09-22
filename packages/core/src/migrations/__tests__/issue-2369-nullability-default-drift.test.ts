@@ -20,6 +20,7 @@ import {
   getSQLFromDiff,
   hasActionableChanges,
   isAdvisoryOnlyChange,
+  REQUIRED_COLUMN_NOT_ADDED,
   SchemaComparer,
 } from '../differ.js';
 import { getPendingSchemaStatements } from '../orchestrate.js';
@@ -378,54 +379,184 @@ for (const { name, type, engine } of engines) {
       expect(after.changes).toEqual([]);
     });
 
-    it('adds a required column WITHOUT a default nullable on a populated table and reports the NOT NULL as a manual follow-up', async () => {
+    it('refuses a required column WITHOUT a default or backfill on a populated table, naming table and column, and adds nothing (#3008)', async () => {
       await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
       await db.query("INSERT INTO items (id, name) VALUES ('i1', 'a')");
+      const manifest = {
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            owner_id: { type: 'TEXT', notNull: true },
+          },
+          [
+            {
+              name: 'items_owner_id_key',
+              columns: ['owner_id'],
+              unique: true,
+            },
+          ],
+        ),
+      };
+
+      const diff = await comparer().compare(manifest);
+      expect(diff.changes.map((c) => c.type)).toEqual(['alter_column']);
+      const [blocked] = diff.changes;
+      expect(blocked.alteration).toBe('set_not_null');
+      expect(blocked.mismatch?.actual).toBe(REQUIRED_COLUMN_NOT_ADDED);
+      expect(blocked.advisory?.severity).toBe('warning');
+      expect(blocked.sql).toMatch(/^-- items\.owner_id was not added: /);
+      expect(blocked.advisory?.message).toContain('backfill');
+      // The dependent unique index is withheld and named, not emitted.
+      expect(blocked.advisory?.message).toContain('index items_owner_id_key');
+
+      expect(isAdvisoryOnlyChange(blocked)).toBe(false);
+      expect(hasActionableChanges(diff)).toBe(false);
+      expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
+        [],
+      );
+      const cols = await db.getTableSchema?.('items');
+      expect(Object.keys(cols?.columns ?? {})).not.toContain('owner_id');
+    });
+
+    it('adds a required unique column to a populated table from a per-row backfill, then enforces NOT NULL (#3008)', async () => {
+      await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+      await db.query(
+        "INSERT INTO items (id, name) VALUES ('i1', 'a'), ('i2', 'b')",
+      );
+      await db.query('CREATE INDEX items_name_idx ON items (name)');
+      const manifest = {
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            claim_key: {
+              type: 'TEXT',
+              notNull: true,
+              backfill: "'closed:' || id",
+            },
+          },
+          [
+            { name: 'items_name_idx', columns: ['name'] },
+            {
+              name: 'items_claim_key_idx',
+              columns: ['claim_key'],
+              unique: true,
+            },
+          ],
+        ),
+      };
+
+      const diff = await comparer().compare(manifest);
+      expect(hasActionableChanges(diff)).toBe(true);
+      await applyStatements(db, getSQLFromDiff(diff));
+
+      const rows = (
+        await db.query('SELECT id, claim_key FROM items ORDER BY id')
+      ).rows as Array<Record<string, unknown>>;
+      expect(rows).toEqual([
+        { id: 'i1', claim_key: 'closed:i1' },
+        { id: 'i2', claim_key: 'closed:i2' },
+      ]);
+      // NOT NULL is really enforced...
+      await expect(
+        db.query("INSERT INTO items (id, name) VALUES ('i3', 'c')"),
+      ).rejects.toThrow();
+      // ...and so is the unique index built after the backfill.
+      await expect(
+        db.query(
+          "INSERT INTO items (id, name, claim_key) VALUES ('i4', 'd', 'closed:i1')",
+        ),
+      ).rejects.toThrow();
+      await db.query(
+        "INSERT INTO items (id, name, claim_key) VALUES ('i5', 'e', 'open:o1')",
+      );
+      // Converged. (DuckDB's index introspection re-diffs its indexes every
+      // run — the pre-existing limitation noted in the round-trip test.)
+      const after = await comparer().compare(manifest);
+      expect(
+        after.changes.filter(
+          (c) =>
+            engine !== 'duckdb' ||
+            (c.type !== 'add_index' && c.type !== 'drop_index'),
+        ),
+      ).toEqual([]);
+      const names = (
+        await db.query(
+          engine === 'duckdb'
+            ? "SELECT index_name AS name FROM duckdb_indexes() WHERE table_name = 'items'"
+            : "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'items'",
+        )
+      ).rows.map((row) => (row as { name: string }).name);
+      expect(names).toEqual(
+        expect.arrayContaining(['items_name_idx', 'items_claim_key_idx']),
+      );
+    });
+
+    it('tightens an already-added nullable column holding NULLs from its backfill (#3008 recovery)', async () => {
+      await db.query(
+        'CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT, claim_key TEXT)',
+      );
+      await db.query(
+        "INSERT INTO items (id, name, claim_key) VALUES ('i1', 'a', NULL), ('i2', 'b', 'open:x')",
+      );
       const manifest = {
         items: schema('items', {
           id: { type: 'TEXT', primaryKey: true },
           name: { type: 'TEXT' },
-          owner_id: { type: 'TEXT', notNull: true },
+          claim_key: {
+            type: 'TEXT',
+            notNull: true,
+            backfill: "'closed:' || id",
+          },
         }),
       };
-
       const diff = await comparer().compare(manifest);
-      expect(diff.changes.map((c) => c.type)).toEqual([
-        'add_column',
-        'alter_column',
+      expect(hasActionableChanges(diff)).toBe(true);
+      await applyStatements(db, getSQLFromDiff(diff));
+      const rows = (
+        await db.query('SELECT id, claim_key FROM items ORDER BY id')
+      ).rows as Array<Record<string, unknown>>;
+      expect(rows).toEqual([
+        { id: 'i1', claim_key: 'closed:i1' },
+        { id: 'i2', claim_key: 'open:x' },
       ]);
-      const [add, followUp] = diff.changes;
-      expect(add.sqlStatements).toBeUndefined();
-      expect(add.sql).toBe('ALTER TABLE "items" ADD COLUMN "owner_id" TEXT');
-      expect(followUp.alteration).toBe('set_not_null');
-      expect(followUp.advisory?.severity).toBe('warning');
-      expect(followUp.sql).toMatch(/^-- items\.owner_id is required/);
-      expect(followUp.advisory?.suggestedSql?.[0]).toContain(
-        'UPDATE "items" SET "owner_id"',
-      );
+      await expect(
+        db.query("INSERT INTO items (id, name) VALUES ('i3', 'c')"),
+      ).rejects.toThrow();
+      expect((await comparer().compare(manifest)).changes).toEqual([]);
+    });
 
-      // A change carrying both an advisory and comment-only SQL is manual,
-      // not actionable: hasActionableChanges must not report it as work.
-      expect(isAdvisoryOnlyChange(followUp)).toBe(false);
-      expect(
-        hasActionableChanges({
-          added_tables: [],
-          dropped_tables: [],
-          changes: [followUp],
-          has_changes: true,
-        }),
-      ).toBe(false);
-
-      // Only the ADD COLUMN executes; the comment is filtered by the
-      // orchestrator and classified as manual by the CLI.
-      const executable = getSQLFromDiff(diff).filter(
-        (s) => !s.startsWith('--'),
+    it('refuses the column at plan time when its backfill yields NULL or does not evaluate (#3008)', async () => {
+      await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, worker TEXT)');
+      await db.query(
+        "INSERT INTO items (id, worker) VALUES ('i1', 'ann'), ('i2', NULL)",
       );
-      expect(executable).toEqual([
-        'ALTER TABLE "items" ADD COLUMN "owner_id" TEXT',
-      ]);
-      await applyStatements(db, executable);
-      await db.query("INSERT INTO items (id, name) VALUES ('i2', 'b')"); // still insertable
+      for (const [backfill, reason] of [
+        ["'open:' || worker", /yields NULL for at least one existing row/],
+        ['no_such_column', /does not evaluate on this database/],
+      ] as const) {
+        const diff = await comparer().compare({
+          items: schema('items', {
+            id: { type: 'TEXT', primaryKey: true },
+            worker: { type: 'TEXT' },
+            claim_key: { type: 'TEXT', notNull: true, backfill },
+          }),
+        });
+        expect(diff.changes).toHaveLength(1);
+        expect(diff.changes[0].mismatch?.actual).toBe(
+          REQUIRED_COLUMN_NOT_ADDED,
+        );
+        expect(diff.changes[0].advisory?.message).toMatch(
+          /^items\.claim_key was not added: /,
+        );
+        expect(diff.changes[0].advisory?.message).toMatch(reason);
+        expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
+          [],
+        );
+      }
     });
 
     it('enforces NOT NULL on a required column without a default when the table is empty', async () => {
@@ -565,6 +696,102 @@ for (const { name, type, engine } of engines) {
     });
 
     if (engine === 'sqlite') {
+      it('adds several backfilled required columns in ONE SQLite rebuild, keeping unique follow-ups after it (#3008)', async () => {
+        await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+        await db.query(
+          "INSERT INTO items (id, name) VALUES ('i1', 'a'), ('i2', 'b')",
+        );
+        const manifest = {
+          items: schema('items', {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            claim_key: {
+              type: 'TEXT',
+              notNull: true,
+              unique: true,
+              backfill: "'closed:' || id",
+            },
+            label: {
+              type: 'TEXT',
+              notNull: true,
+              defaultValue: 'x',
+              backfill: 'upper(name)',
+            },
+          }),
+        };
+        const diff = await comparer().compare(manifest);
+        expect(diff.changes.map((c) => `${c.type}:${c.name}`)).toEqual([
+          'add_column:claim_key',
+        ]);
+        const statements = getSQLFromDiff(diff);
+        expect(
+          statements.filter((sql) => sql.startsWith('CREATE TABLE')),
+        ).toHaveLength(1);
+        expect(statements.at(-1)).toBe(
+          'CREATE UNIQUE INDEX "items_claim_key_key" ON "items" ("claim_key")',
+        );
+        await applyStatements(db, statements);
+        expect(
+          (await db.query('SELECT id, claim_key, label FROM items ORDER BY id'))
+            .rows,
+        ).toEqual([
+          { id: 'i1', claim_key: 'closed:i1', label: 'A' },
+          { id: 'i2', claim_key: 'closed:i2', label: 'B' },
+        ]);
+        // The declared default applies to new rows only.
+        await db.query(
+          "INSERT INTO items (id, name, claim_key) VALUES ('i3', 'c', 'open:1')",
+        );
+        expect(
+          (await db.query("SELECT label FROM items WHERE id = 'i3'")).rows,
+        ).toEqual([{ label: 'x' }]);
+        expect((await comparer().compare(manifest)).changes).toEqual([]);
+      });
+
+      it('refuses the column, with the reason, when the SQLite rebuild is unsafe (inbound foreign keys) (#3008)', async () => {
+        await db.query('PRAGMA foreign_keys = ON');
+        await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+        await db.query(
+          'CREATE TABLE lines (id TEXT PRIMARY KEY, item_id TEXT REFERENCES items(id) ON DELETE CASCADE)',
+        );
+        await db.query("INSERT INTO items (id, name) VALUES ('i1', 'a')");
+        await db.query("INSERT INTO lines (id, item_id) VALUES ('l1', 'i1')");
+        const diff = await comparer().compare({
+          items: schema(
+            'items',
+            {
+              id: { type: 'TEXT', primaryKey: true },
+              name: { type: 'TEXT' },
+              claim_key: {
+                type: 'TEXT',
+                notNull: true,
+                backfill: "'closed:' || id",
+              },
+            },
+            [
+              {
+                name: 'items_claim_key_idx',
+                columns: ['claim_key'],
+                unique: true,
+              },
+            ],
+          ),
+        });
+        expect(diff.changes).toHaveLength(1);
+        expect(diff.changes[0].mismatch?.actual).toBe(
+          REQUIRED_COLUMN_NOT_ADDED,
+        );
+        expect(diff.changes[0].advisory?.message).toMatch(
+          /^items\.claim_key was not added: .*"lines" declare a foreign key/,
+        );
+        expect(diff.changes[0].advisory?.message).toContain(
+          'index items_claim_key_idx',
+        );
+        expect(getSQLFromDiff(diff).filter((s) => !s.startsWith('--'))).toEqual(
+          [],
+        );
+      });
+
       it('reports nullability and default drift as manual on SQLite (no ALTER COLUMN) and leaves the rebuild seam for #2370', async () => {
         await db.query(
           "CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT, note TEXT NOT NULL, kind TEXT DEFAULT 'a')",
@@ -942,17 +1169,54 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
         'SELECT 1 AS present FROM "items" LIMIT 1': [{ present: 1 }],
       },
     ).compare(manifest);
+    // #3008: without a default or backfill the column is refused, not
+    // added nullable; only the defaulted column runs.
     expect(populated.changes.map((c) => `${c.type}:${c.name}`)).toEqual([
-      'add_column:email',
       'alter_column:email',
       'add_column:status',
     ]);
+    expect(populated.changes[0].mismatch?.actual).toBe(
+      REQUIRED_COLUMN_NOT_ADDED,
+    );
     expect(
       getSQLFromDiff(populated).filter((s) => !s.startsWith('--')),
     ).toEqual([
-      `ALTER TABLE "items" ADD COLUMN "email" TEXT UNIQUE`,
       `ALTER TABLE "items" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'draft'`,
     ]);
+
+    // With a per-row backfill: add nullable (inline UNIQUE), fill, then
+    // SET NOT NULL — one unit.
+    const backfilled = await pgComparer(
+      columns,
+      {},
+      {
+        'SELECT 1 AS present FROM "items" LIMIT 1': [{ present: 1 }],
+      },
+    ).compare({
+      items: schema('items', {
+        id: { type: 'TEXT', primaryKey: true, notNull: true },
+        email: {
+          type: 'TEXT',
+          unique: true,
+          notNull: true,
+          backfill: "'row:' || id",
+        },
+      }),
+    });
+    expect(backfilled.changes.map((c) => `${c.type}:${c.name}`)).toEqual([
+      'add_column:email',
+    ]);
+    const statements = getSQLFromDiff(backfilled);
+    expect(statements[0]).toBe(
+      `ALTER TABLE "items" ADD COLUMN "email" TEXT UNIQUE`,
+    );
+    expect(statements[1]).toBe(
+      `UPDATE "items" SET "email" = ('row:' || id) WHERE "email" IS NULL`,
+    );
+    expect(statements[2]).toBe(
+      `ALTER TABLE "items" ALTER COLUMN "email" SET NOT NULL`,
+    );
+    expect(statements).toHaveLength(3);
   });
 
   it('skips constraint drift on a column whose type is also drifting', async () => {
