@@ -34,7 +34,7 @@ Codegen companion: [`@happyvertical/smrt-mobile-contract`](../smrt-mobile-contra
    dedup) is part of the foundation: s-m-r-t ships reusable handlers in
    `smrt-users` (issue #1748); app-owned bootstrap data is nested under the
    contract's `extras` field.
-6. **Toolchain** — Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1 / compileSdk 36 /
+6. **Toolchain** — Kotlin 2.4.20 / AGP 9.4.1 / Gradle 9.7.1 / compileSdk 36 /
    minSdk 26 / JVM 21 / iOS deployment target 17.0. The Compose package pins
    Compose BOM 2026.06.01 and Activity Compose 1.13.0.
 
@@ -48,7 +48,7 @@ pnpm validate:shell     # structure checks (what CI runs on every PR)
 ```
 
 Toolchain requirements: run Gradle on a JDK between 17 and 24 (the module's
-language/toolchain level is 21 -- `jvmToolchain(21)`); Gradle 9.6.1 ships via
+language/toolchain level is 21 -- `jvmToolchain(21)`); Gradle 9.7.1 ships via
 the checked-in wrapper, so always invoke `./gradlew`. `androidTarget` needs an
 Android SDK (`ANDROID_HOME`); the `jvm` target exists precisely so common
 logic tests run without one. iOS targets require a macOS host with Xcode.

@@ -9,7 +9,7 @@
       "enabled": false
     },
     {
-      "description": "androidx.core 1.18+ and androidx.lifecycle 2.11+ require compileSdk 37, and both seed apps are pinned to compileSdk 36 (packages/smrt-android/AGENTS.md, and android-compile-sdk in each gradle/libs.versions.toml). The catalogs record that coupling in comments, which Renovate cannot read, so every weekly update bumped straight past it and left :sample:checkDebugAarMetadata failing on the whole PR (#2234). Remove these two rules in the same change that moves the toolchain to compileSdk 37.",
+      "description": "androidx.core 1.18+ and androidx.lifecycle 2.11+ require compileSdk 37, and both seed apps are pinned to compileSdk 36 (packages/smrt-android/AGENTS.md, and android-compile-sdk in each gradle/libs.versions.toml). The catalogs record that coupling in comments, which Renovate cannot read, so every weekly update bumped straight past it and left :sample:checkDebugAarMetadata failing on the whole PR (#2234). Remove these rules in the same change that moves the toolchain to compileSdk 37.",
       "matchManagers": ["gradle"],
       "matchPackageNames": ["androidx.core:core-ktx"],
       "allowedVersions": "<1.18"
@@ -19,6 +19,12 @@
       "matchManagers": ["gradle"],
       "matchPackageNames": ["androidx.lifecycle:lifecycle-runtime-compose"],
       "allowedVersions": "<2.11"
+    },
+    {
+      "description": "See the androidx.core rule above — same compileSdk 36 coupling: compose-bom 2026.08.00+ ships Compose 1.12, whose AARs require compileSdk 37 (#3007).",
+      "matchManagers": ["gradle"],
+      "matchPackageNames": ["androidx.compose:compose-bom"],
+      "allowedVersions": "<2026.08.00"
     }
   ]
 }

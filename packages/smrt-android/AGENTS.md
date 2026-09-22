@@ -81,8 +81,8 @@ smrt-mobile). The Gradle wrapper is checked in — always invoke `./gradlew`.
 
 ## Conventions
 
-- Toolchain pinned to smrt-mobile's set: Kotlin 2.4.0 / AGP 9.2.1 /
-  Gradle 9.6.1 / compileSdk 36 / minSdk 26 / JVM 21 — renovate keeps both
+- Toolchain pinned to smrt-mobile's set: Kotlin 2.4.20 / AGP 9.4.1 /
+  Gradle 9.7.1 / compileSdk 36 / minSdk 26 / JVM 21 — renovate keeps both
   catalogs current; bump deliberately in `gradle/libs.versions.toml`.
 - **AGP 9 built-in Kotlin**: do NOT apply `org.jetbrains.kotlin.android` —
   AGP owns Kotlin compilation; only the compose compiler plugin

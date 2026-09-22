@@ -1,5 +1,5 @@
 # Toolchain pinned to smrt-mobile's set (ADR 0001 Phase 0, renovate keeps
-# both catalogs current): Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1,
+# both catalogs current): Kotlin 2.4.20 / AGP 9.4.1 / Gradle 9.7.1,
 # compileSdk 36 / minSdk 26 / JVM 21. UI/adapter artifacts are this
 # package's own surface (Compose BOM, CameraX, ML Kit).
 [versions]
@@ -11,7 +11,8 @@ kotlin = "2.4.20"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0-0.6.x-compat"
 sqldelight = "2.4.0"
-compose-bom = "2026.09.00"
+# 2026.08.00+ (Compose 1.12) requires compileSdk 37; the toolchain pin is compileSdk 36.
+compose-bom = "2026.06.01"
 activity-compose = "1.13.0"
 camerax = "1.6.2"
 # 1.18+ requires compileSdk 37; the toolchain pin is compileSdk 36.

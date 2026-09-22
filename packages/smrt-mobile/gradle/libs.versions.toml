@@ -1,5 +1,5 @@
 # Toolchain set locked by the Phase 0 decision record (ADR 0001): reporter's
-# current versions (Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1) with amaru's
+# current versions (Kotlin 2.4.20 / AGP 9.4.1 / Gradle 9.7.1) with amaru's
 # catalog structure.
 # compileSdk 36 / minSdk 26 / JVM 21 are shared by both seed apps.
 [versions]
