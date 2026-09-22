@@ -1596,10 +1596,26 @@ export class SchemaComparer {
         // unavailable probe (missing table mid-run, a test double without a
         // realistic response) preserves the pre-existing silent tolerance —
         // this feature never invents a new finding it cannot back with data.
+        //
+        // #3041: `json` and `jsonb` share the 'JSON' bucket above, so a live
+        // native `json` column behind a manifest JSON field (always `jsonb`
+        // on PostgreSQL) never reached the equality gate below. That drift
+        // is not cosmetic -- `json` has no equality operator, so DISTINCT /
+        // GROUP BY / `=` over it fail with SQLSTATE 42883 -- and it takes the
+        // same probed conversion path: `json` -> `jsonb` can still fail on
+        // values `jsonb` rejects (a `\u0000` escape), so the probe decides
+        // between an executable upgrade and a fail-closed advisory, and an
+        // unavailable probe stays silent exactly like the text case.
+        const nativeJsonToJsonb =
+          this.engine === 'postgres' &&
+          normalizedExpected === 'JSON' &&
+          normalizedActual === 'JSON' &&
+          isNativeJsonType(dbCol.type) &&
+          !isNativeJsonType(expectedEngineType);
         const jsonUpgradeCandidate =
           this.engine === 'postgres' &&
           normalizedExpected === 'JSON' &&
-          normalizedActual === 'TEXT';
+          (normalizedActual === 'TEXT' || nativeJsonToJsonb);
         let jsonProbe: ShapeProbeResult | undefined;
         if (jsonUpgradeCandidate) {
           jsonProbe = await this.probeTextCastShape(
@@ -1657,8 +1673,12 @@ export class SchemaComparer {
           );
         }
 
+        const nativeJsonDrift =
+          nativeJsonToJsonb &&
+          (jsonProbe?.status === 'clean' || jsonProbe?.status === 'dirty');
+
         if (
-          normalizedExpected !== normalizedActual &&
+          (normalizedExpected !== normalizedActual || nativeJsonDrift) &&
           !isUuidTextEquivalent &&
           !isJsonTextEquivalent
         ) {
@@ -1745,7 +1765,11 @@ export class SchemaComparer {
                 severity: 'warning',
                 message:
                   `blocked: ${tableName}.${colName} is declared JSON but ${jsonProbe.count} ` +
-                  `live value(s) are not valid JSON (sample: ${
+                  `live value(s) ${
+                    nativeJsonToJsonb
+                      ? 'cannot be stored as jsonb (e.g. a \\u0000 escape)'
+                      : 'are not valid JSON'
+                  } (sample: ${
                     jsonProbe.sample
                       ? maskSampleValue(jsonProbe.sample)
                       : 'unavailable'
@@ -4589,6 +4613,14 @@ export function hasActionableChanges(diff: SchemaDiff): boolean {
   if (diff.added_tables.length > 0) return true;
   if (diff.dropped_tables.length > 0) return true;
   return diff.changes.some((c) => !isManualOrAdvisoryChange(c));
+}
+
+/**
+ * Whether a live PostgreSQL column type is native `json` (not `jsonb`) --
+ * the two share one comparison bucket in `normalizeType` (#3041).
+ */
+function isNativeJsonType(type: string): boolean {
+  return /^json$/i.test(type.trim());
 }
 
 /**

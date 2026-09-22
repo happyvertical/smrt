@@ -506,6 +506,30 @@ function compareColumns(
         });
       } else if (
         engine === 'postgres' &&
+        expectedBucket === 'JSON' &&
+        actualBucket === 'JSON' &&
+        /^json$/i.test(live.type.trim()) &&
+        !/^json$/i.test(column.type.trim())
+      ) {
+        // #3041: `json` and `jsonb` share the 'JSON' bucket, so a live
+        // native `json` column behind a declared `jsonb` one never reached
+        // `typesAreEquivalent`. It is real drift -- `json` has no equality
+        // operator, so DISTINCT/GROUP BY over it fail with SQLSTATE 42883 --
+        // and `db:migrate` converges it through the same probed conversion
+        // as the text case above, so it is the same repairable `warning`.
+        findings.push({
+          kind: 'column_type_drift',
+          severity: 'warning',
+          table: table.name,
+          target: column.name,
+          origin: table.origin,
+          message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` in the live database but declared \`${column.type}\`; native json has no equality operator (DISTINCT/GROUP BY fail with 42883).`,
+          recommendation:
+            'Run `smrt db:migrate` to converge this column to native jsonb.',
+          details: { expected: column.type, actual: live.type },
+        });
+      } else if (
+        engine === 'postgres' &&
         expectedBucket === 'UUID' &&
         actualBucket === 'TEXT' &&
         isStructuralReference(column)
