@@ -226,7 +226,8 @@ export interface AssistantDockController {
   readonly error: string | null;
   /** The composer's current draft text (#2991). Two-way: it follows what
    * the user types, and `setDraft` replaces it. Cleared after a send the
-   * transport accepted. */
+   * transport accepted when the draft is still the text that was sent;
+   * text changed while the send was in flight is kept. */
   readonly draft: string;
   /** Replaces the composer draft (#2991) so a host can seed a prompt for the
    * user to edit. Never sends. Survives registry/transport swaps: it is the
@@ -991,7 +992,12 @@ export function createAssistantDockController(
         options.createClientRequestId?.() ?? defaultClientRequestId(threadId);
       draftIds.set(key, clientRequestId);
     }
+    // #2991: the draft this send was taken from, so a successful send clears
+    // it for a headless caller too. Text changed while the send was in
+    // flight is newer than what was sent and is kept.
+    const draftAtSend = draft;
     await doSend(threadId, content, clientRequestId, attachments);
+    if (draft === draftAtSend && draft.trim() === content.trim()) draft = '';
   }
 
   // Cycle-2 second final finding 2: AssistantDock.svelte's Retry buttons call

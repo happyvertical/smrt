@@ -161,6 +161,35 @@ describe('controller draft (#2991)', () => {
     controller.dispose();
   });
 
+  it('clears the draft after a headless send of that draft', async () => {
+    const controller = createAssistantDockController({
+      transport: createInMemoryAssistantTransport(),
+      registry: registryWithSurface(),
+    });
+    const thread = await controller.createThread('t');
+    await controller.openThread(thread.id);
+    controller.setDraft('hello');
+    await controller.send('hello');
+    expect(controller.draft).toBe('');
+    controller.dispose();
+  });
+
+  it('keeps a draft changed while the send was in flight', async () => {
+    const transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      transport,
+      registry: registryWithSurface(),
+    });
+    const thread = await controller.createThread('t');
+    await controller.openThread(thread.id);
+    controller.setDraft('hello');
+    const sending = controller.send('hello');
+    controller.setDraft('next message');
+    await sending;
+    expect(controller.draft).toBe('next message');
+    controller.dispose();
+  });
+
   it('defaults to an empty draft', () => {
     const controller = createAssistantDockController({
       transport: createInMemoryAssistantTransport(),
