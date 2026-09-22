@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.15
+
+### Patch Changes
+
+- ### Features
+  
+  - AssistantDock draft seeding, composer placeholder, settled outcomes (#2991) (#3038) (chat)
+- @happyvertical/smrt-config@0.51.15
+  - @happyvertical/smrt-scanner@0.51.15
+  - @happyvertical/smrt-types@0.51.15
+
 ## 0.51.14
 
 ### Patch Changes
