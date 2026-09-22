@@ -258,9 +258,8 @@ Two related constraints are deliberately not per-job settings:
   timeout at the queue, not by shrinking job ceilings back toward the queue
   wait.
 
-`agent-policy.yml` is synced from the shared policy source rather than authored
-here; its timeout belongs to the policy control plane, so it is not changed in
-this repository.
+The former synced `agent-policy.yml` lifecycle check was retired in
+happyvertical/have-config#758 and no longer exists in this repository.
 
 ## Pull requests and merge groups
 

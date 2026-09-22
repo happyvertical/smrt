@@ -440,9 +440,10 @@ jobs:
   publish-dry-run:
     name: Publish Dry Run
     # This gate is the canonical trusted-base self-hosted admission expression
-    # and must stay byte-identical — `hv-agent check-pr` requires every reusable
-    # or self-hosted job in this workflow to carry it, so the merge-queue-only
-    # narrowing for #2214 item 4 lives inside publish-dry-run.yml instead.
+    # and stays byte-identical across every reusable or self-hosted job in this
+    # workflow (the former `hv-agent check-pr` rule was retired in
+    # happyvertical/have-config#758), so the merge-queue-only narrowing for
+    # #2214 item 4 lives inside publish-dry-run.yml instead.
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request_target' &&
