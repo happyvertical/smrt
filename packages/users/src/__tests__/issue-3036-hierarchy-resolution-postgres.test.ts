@@ -297,6 +297,18 @@ describePostgres(
     });
 
     it('the display chain reports an unreadable ancestor as an access error, not a broken chain', async () => {
+      const [readPerm] = await permissions.list({
+        where: { slug: 'tenants.read' },
+        limit: 1,
+      });
+      if (!readPerm?.id) throw new Error('catalog gap');
+      await (
+        await tenantOverrides.create({
+          tenantId: network.id,
+          permissionId: readPerm.id,
+          effect: TenantPermissionEffect.DENY,
+        })
+      ).save();
       turnTenancyOn();
       registerTenantScopedClass('Tenant', {
         field: 'id',
@@ -312,12 +324,15 @@ describePostgres(
         ).catch((caught: unknown) => caught);
         expect((error as Error).name).toBe('TenantIsolationError');
         expect((error as { code?: string }).code).not.toBe('PARENT_NOT_FOUND');
-        // Authorization is unaffected: the cascade reads outside the filter.
+        // Authorization is unaffected: the cascade reads outside the filter,
+        // so the ROOT's DENY still reaches the desk two hops down.
         const tenantPermissions = await withTenant(
           { tenantId: desk.id as string },
           () => resolver.resolveTenantPermissions(desk.id as string),
         );
-        expect(tenantPermissions.permissions).toBeInstanceOf(Set);
+        expect([...tenantPermissions.deniedPermissions]).toEqual([
+          'tenants.read',
+        ]);
       } finally {
         unregisterTenantScopedClass('Tenant');
       }

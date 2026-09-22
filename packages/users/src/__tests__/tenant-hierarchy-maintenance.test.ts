@@ -14,12 +14,13 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getChangesSince, getTableVersion } from '@happyvertical/smrt-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   TenantCollection,
   TenantHierarchyError,
 } from '../collections/TenantCollection.js';
 import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
+import { PermissionResolver } from '../services/PermissionResolver.js';
 
 describe('Tenant hierarchy is maintained on save', () => {
   let dbPath: string;
@@ -230,5 +231,48 @@ describe('Tenant hierarchy is maintained on save', () => {
     expect((await stored(chain[chain.length - 1])).level).toBe(
       MAX_TENANT_HIERARCHY_DEPTH - 1,
     );
+  });
+});
+
+describe('PermissionResolver chain when an ancestor read returns nothing', () => {
+  let dbPath: string;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (existsSync(dbPath)) rmSync(dbPath, { force: true });
+  });
+
+  it('display truncates root-first at the nearest readable ancestor; authorization fails closed', async () => {
+    dbPath = join(tmpdir(), `smrt-tenant-chain-${randomUUID()}.db`);
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    const tenants = await TenantCollection.create(options);
+    const root = await tenants.create({ name: 'Root' });
+    const mid = await tenants.createChild(root.id as string, { name: 'Mid' });
+    const leaf = await tenants.createChild(mid.id as string, { name: 'Leaf' });
+    // Force the parent-link walk (a never-materialized leaf).
+    await tenants.db.query(
+      'UPDATE tenants SET hierarchy_path = ?, hierarchy_level = 0 WHERE id = ?',
+      '',
+      leaf.id,
+    );
+    const resolver = await PermissionResolver.create(options);
+
+    // A filter that silently hides the root row (as RLS would): no
+    // interceptor registration can produce this, so stub the read.
+    const realGet = TenantCollection.prototype.get;
+    vi.spyOn(TenantCollection.prototype, 'get').mockImplementation(
+      async function (this: TenantCollection, filter) {
+        const id = (filter as { id?: string }).id;
+        if (id === root.id) return null;
+        return await realGet.call(this, filter);
+      },
+    );
+
+    const chain = await resolver.getTenantInheritanceChain(leaf.id as string);
+    expect(chain.map((link) => link.tenant.id)).toEqual([mid.id, leaf.id]);
+
+    await expect(
+      resolver.resolveTenantPermissions(leaf.id as string),
+    ).rejects.toMatchObject({ code: 'PARENT_NOT_FOUND' });
   });
 });
