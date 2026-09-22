@@ -31,6 +31,11 @@
       "matchPackageNames": ["@tanstack/db", "@tanstack/query-db-collection", "@tanstack/svelte-db"],
       "matchFileNames": ["packages/smrt-web/package.json", "packages/smrt-svelte/package.json"],
       "enabled": false
+    },
+    {
+      "description": "jsdom 30 moved event internals to private fields, and smrt-ui's trusted-gesture tests forge isTrusted/eventPhase through them (#3019). Hold jsdom below 30 until those tests are redesigned; remove this rule with #3019.",
+      "matchPackageNames": ["jsdom"],
+      "allowedVersions": "<30"
     }
   ]
 }
