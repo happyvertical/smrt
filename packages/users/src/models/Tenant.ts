@@ -19,6 +19,7 @@ import {
   planDescendantHierarchy,
   recordTenantHierarchyChanges,
   type TenantHierarchyDatabase,
+  TenantHierarchyError,
 } from './tenant-hierarchy.js';
 
 /**
@@ -235,6 +236,7 @@ export class Tenant extends SmrtObject implements TenantContract {
   override async save(options: SmrtSaveOptions = {}): Promise<this> {
     const db: TenantHierarchyDatabase = this.db;
     const table = this.tableName;
+    await this.assertNewParentVisible(db, table);
     const fields = await computeTenantHierarchyFields(
       db,
       table,
@@ -268,6 +270,58 @@ export class Tenant extends SmrtObject implements TenantContract {
       );
     }
     return this;
+  }
+
+  /**
+   * Refuse to link this tenant under a parent the caller cannot see.
+   *
+   * A parent link is authority-bearing: ancestor tenant overrides cascade down
+   * it and `inheritsToDescendants` roles flow along it. The chain itself is
+   * resolved with raw reads (so paths can be derived for any row), so this is
+   * the check that keeps a NEW or CHANGED link subject to the caller's own
+   * tenancy scope, whichever path made it — `createChild`, `moveToParent`,
+   * `create({ parentTenantId })`, or a plain `parentTenantId` assignment and
+   * `save()`. The parent is loaded through `TenantCollection`, i.e. through
+   * the tenancy interceptor: a refused or filtered read fails the save before
+   * anything is written. System context (migrations, backfills, platform
+   * administration) bypasses the interceptor as everywhere else. An unchanged
+   * link is not re-checked, so a tenant can still save itself under its own
+   * scope when its parent is not visible there.
+   */
+  private async assertNewParentVisible(
+    db: TenantHierarchyDatabase,
+    table: string,
+  ): Promise<void> {
+    const parentId = this.parentTenantId ?? null;
+    if (!parentId) {
+      return;
+    }
+    if (this.id) {
+      const { rows } = await db.query(
+        `SELECT parent_tenant_id FROM ${table} WHERE id = ?`,
+        this.id,
+      );
+      const stored = rows[0]?.parent_tenant_id;
+      if (
+        rows[0] &&
+        stored !== null &&
+        stored !== undefined &&
+        String(stored) === parentId
+      ) {
+        return;
+      }
+    }
+    const { TenantCollection } = await import(
+      '../collections/TenantCollection.js'
+    );
+    const tenants = await TenantCollection.create({ db: this.db });
+    const parent = await tenants.get({ id: parentId });
+    if (!parent?.id) {
+      throw new TenantHierarchyError(
+        `Parent tenant not found: ${parentId}`,
+        'PARENT_NOT_FOUND',
+      );
+    }
   }
 
   /**

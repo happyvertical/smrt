@@ -356,12 +356,39 @@ describePostgres(
             tenants.createChild(sibling.id as string, { name: 'Smuggled' }),
           ),
         ).rejects.toThrow();
+        // The same link made through a plain save or a create input.
+        await expect(
+          withTenant({ tenantId: desk.id as string }, async () => {
+            const own = await tenants.get({ id: desk.id as string });
+            if (!own) throw new Error('desk not visible to itself');
+            own.parentTenantId = sibling.id;
+            await own.save();
+          }),
+        ).rejects.toThrow();
+        await expect(
+          withTenant({ tenantId: desk.id as string }, () =>
+            tenants.create({ name: 'Smuggled 2', parentTenantId: sibling.id }),
+          ),
+        ).rejects.toThrow();
+        // An UNCHANGED link is not re-checked: the desk can still save itself
+        // under its own scope although its parent is not visible there.
+        await withTenant({ tenantId: desk.id as string }, async () => {
+          const own = await tenants.get({ id: desk.id as string });
+          if (!own) throw new Error('desk not visible to itself');
+          own.description = 'still saves';
+          await own.save();
+        });
       } finally {
         disableTenancy();
         unregisterTenantScopedClass('Tenant');
       }
       const reloaded = await tenants.get({ id: desk.id as string });
       expect(reloaded?.parentTenantId).toBe(publication.id);
+      expect(reloaded?.description).toBe('still saves');
+      const smuggled = await tenants.list({
+        where: { 'name like': 'Smuggled%' },
+      });
+      expect(smuggled).toHaveLength(0);
     });
 
     it('fails closed when the real parent chain is broken', async () => {

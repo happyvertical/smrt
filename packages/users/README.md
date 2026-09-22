@@ -670,6 +670,10 @@ chain on every save — through the collection helpers, a plain
 re-materializes every descendant when they change. A missing parent, a cycle,
 or a move that would push any descendant past the depth limit throws
 `TenantHierarchyError` before anything is written. Never set them by hand.
+Because a parent link carries authority down the tree, a new or changed
+`parentTenantId` must also be visible under the caller's own tenancy scope
+(the save loads it through `TenantCollection`); run platform-level reparenting
+in `withSystemContext()`.
 
 Both hierarchy features — `inheritsToDescendants` and the ancestor-read policy
 below — walk that path and fail closed without it. Rows written before the

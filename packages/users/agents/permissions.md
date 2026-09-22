@@ -67,7 +67,12 @@ membership or tenant DENY to attenuate inherited role authority.
   are never clobbered). createChild/moveToParent/makeRoot are thin wrappers.
   `materializeTenantHierarchy(db, { dryRun })` / `smrt
   db:materialize-tenant-hierarchy` backfills legacy rows: idempotent, one
-  transaction, refuses a broken chain without writing (#3036). getTree(rootId?)
+  transaction, refuses a broken chain without writing (#3036). A NEW or
+  CHANGED parent link is authority-bearing, so `Tenant.save()` first loads the
+  parent through TenantCollection (the caller's tenancy scope) and refuses an
+  invisible one on every path — helpers, `create({ parentTenantId })`, or a
+  plain assignment + save; system context bypasses as usual, and an unchanged
+  link is never re-checked. getTree(rootId?)
   returns UI structure. Maximum depth is 10.
 - Tenant override cascade requires parent cascadePermissions and child
   inheritPermissions. These flags do not gate the independent, per-role
