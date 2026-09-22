@@ -13,21 +13,19 @@ const SENSITIVE_QUERY_PARAMS = new Set([
 // embedded inside a larger message such as a thrown error's text or stack.
 //
 // The username is `*` (not `+`) so an empty-username form
-// (`postgres://:secret@host/db`) still matches. The password has two
-// alternatives, tried in order:
-//
-// 1. `\S*@` — greedy within one whitespace-free token. A password containing
-//    a literal unescaped `@` (invalid per RFC 3986, but not guaranteed absent
-//    from free-form error text) still gets fully redacted, because regex
-//    backtracking matches up to the LAST `@` in the token, not the first.
-// 2. `[^\n@]*@` — only when the token has no `@` at all: a malformed
-//    password containing raw whitespace (`postgres://user:secret pass@host`,
-//    exactly the input that makes URL parsing fail) is redacted through the
-//    next `@` on the same line. That can over-redact a credential-free URL
-//    followed later on the line by an unrelated `@`; hiding too much text is
-//    the safe failure for a secret scrubber, and it never crosses a newline.
+// (`postgres://:secret@host/db`) still matches. The password is greedy, so
+// regex backtracking matches through the LAST `@` in its span. Free-form
+// error text is exactly where a malformed password shows up — a literal
+// unescaped `@`, raw whitespace (`user:secret pass@host`, the input that
+// makes URL parsing fail), or both (`user:sec ret@pa ss@host`) — and the
+// scrubber cannot tell where such a password ends, so it redacts up to the
+// last possible credential delimiter. The span is bounded by the end of the
+// line and by the start of the next `scheme://`, so a second connection
+// string keeps its own match and a stack trace's other frames survive. It
+// can still over-redact a DSN followed on the same line by an unrelated `@`
+// (an email); hiding too much text is the safe failure for a secret scrubber.
 const CONNECTION_STRING_USERINFO_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)(?:\S*@|[^\n@]*@)/gi;
+  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)(?:(?![a-z][a-z0-9+.-]*:\/\/)[^\n])*@/gi;
 
 const SENSITIVE_QUERY_PARAM_PATTERN =
   /([?&](?:access_token|apikey|api_key|auth|auth_token|password|token)=)[^&\s]+/gi;
