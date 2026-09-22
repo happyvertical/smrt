@@ -1596,10 +1596,26 @@ export class SchemaComparer {
         // unavailable probe (missing table mid-run, a test double without a
         // realistic response) preserves the pre-existing silent tolerance —
         // this feature never invents a new finding it cannot back with data.
+        //
+        // #3041: `json` and `jsonb` share the 'JSON' bucket above, so a live
+        // native `json` column behind a manifest JSON field (always `jsonb`
+        // on PostgreSQL) never reached the equality gate below. That drift
+        // is not cosmetic -- `json` has no equality operator, so DISTINCT /
+        // GROUP BY / `=` over it fail with SQLSTATE 42883 -- and it takes the
+        // same probed conversion path: `json` -> `jsonb` can still fail on
+        // values `jsonb` rejects (a `\u0000` escape), so the probe decides
+        // between an executable upgrade and a fail-closed advisory, and an
+        // unavailable probe stays silent exactly like the text case.
+        const nativeJsonToJsonb =
+          this.engine === 'postgres' &&
+          normalizedExpected === 'JSON' &&
+          normalizedActual === 'JSON' &&
+          isNativeJsonType(dbCol.type) &&
+          !isNativeJsonType(expectedEngineType);
         const jsonUpgradeCandidate =
           this.engine === 'postgres' &&
           normalizedExpected === 'JSON' &&
-          normalizedActual === 'TEXT';
+          (normalizedActual === 'TEXT' || nativeJsonToJsonb);
         let jsonProbe: ShapeProbeResult | undefined;
         if (jsonUpgradeCandidate) {
           jsonProbe = await this.probeTextCastShape(
@@ -1657,12 +1673,21 @@ export class SchemaComparer {
           );
         }
 
+        const nativeJsonDrift =
+          nativeJsonToJsonb &&
+          (jsonProbe?.status === 'clean' || jsonProbe?.status === 'dirty');
+
         if (
-          normalizedExpected !== normalizedActual &&
+          (normalizedExpected !== normalizedActual || nativeJsonDrift) &&
           !isUuidTextEquivalent &&
           !isJsonTextEquivalent
         ) {
-          typeDrifted = true;
+          // #3041 review finding: a native `json` column whose probe is
+          // dirty never converges, so deferring its constraint drift behind
+          // the type repair (see `!typeDrifted` below) would hide default
+          // drift that was reported before json/jsonb became visible. Keep
+          // comparing constraints for that blocked case only.
+          typeDrifted = !(nativeJsonToJsonb && jsonProbe?.status === 'dirty');
 
           // #2771/#2772 review finding: PostgreSQL rejects `ALTER COLUMN
           // ... TYPE` outright whenever the column has ANY existing default
@@ -1694,6 +1719,15 @@ export class SchemaComparer {
             colDef.defaultValue === undefined &&
             !this.options.relaxColumns;
 
+          // #3041 review finding: `colDef.type` is the abstract 'JSON', which
+          // for a live `json` column would preview as `json -> JSON` -- a
+          // case-only change hiding a full-table rewrite. Report the engine
+          // type ('JSONB'), as the #2770 float-width branch does.
+          const jsonMismatch = {
+            expected: nativeJsonToJsonb ? expectedEngineType : colDef.type,
+            actual: dbCol.type,
+          };
+
           if (
             jsonUpgradeCandidate &&
             jsonProbe?.status === 'clean' &&
@@ -1704,7 +1738,7 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               advisory: {
                 severity: 'warning',
                 message:
@@ -1730,9 +1764,30 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               sql: statements[statements.length - 1],
               sqlStatements: statements,
+            });
+          } else if (
+            jsonUpgradeCandidate &&
+            jsonProbe?.status === 'dirty' &&
+            jsonProbe.reason === 'preservation_unverified'
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: jsonMismatch,
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} casts to jsonb, but the check that ` +
+                  'no object carries duplicate keys (which jsonb would silently collapse) ' +
+                  `did not finish (${(jsonProbe.detail ?? 'unknown').slice(0, 200)}). ` +
+                  'No conversion is offered until it can be verified; rerun when the ' +
+                  'table is idle, or confirm the data has no duplicate keys and convert it manually.',
+              },
             });
           } else if (jsonUpgradeCandidate && jsonProbe?.status === 'dirty') {
             changes.push({
@@ -1740,22 +1795,42 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               advisory: {
                 severity: 'warning',
                 message:
                   `blocked: ${tableName}.${colName} is declared JSON but ${jsonProbe.count} ` +
-                  `live value(s) are not valid JSON (sample: ${
+                  `${
+                    jsonProbe.reason === 'duplicate_keys'
+                      ? 'JSON object(s) carry duplicate keys that jsonb would silently collapse'
+                      : `live value(s) ${
+                          nativeJsonToJsonb
+                            ? 'cannot be stored as jsonb (e.g. a \\u0000 escape)'
+                            : 'are not valid JSON'
+                        }`
+                  } (sample: ${
                     jsonProbe.sample
                       ? maskSampleValue(jsonProbe.sample)
                       : 'unavailable'
-                  }). Repair or clear the offending value(s), then rerun ` +
+                  }). ${
+                    jsonProbe.reason === 'duplicate_keys'
+                      ? 'Converting keeps only the last value of each duplicated key; ' +
+                        'deduplicate the keys (deciding which value to keep), then rerun '
+                      : 'Repair or clear the offending value(s), then rerun '
+                  }` +
                   '`smrt db:migrate`.',
-                suggestedSql: renderJsonbColumnConversion(
-                  tableName,
-                  colName,
-                  conversionOptions,
-                ),
+                // #3041 review finding: for duplicate keys the conversion
+                // itself *succeeds* and performs the loss, so it is never
+                // offered as the remedy.
+                ...(jsonProbe.reason === 'duplicate_keys'
+                  ? {}
+                  : {
+                      suggestedSql: renderJsonbColumnConversion(
+                        tableName,
+                        colName,
+                        conversionOptions,
+                      ),
+                    }),
               },
             });
           } else if (
@@ -4589,6 +4664,14 @@ export function hasActionableChanges(diff: SchemaDiff): boolean {
   if (diff.added_tables.length > 0) return true;
   if (diff.dropped_tables.length > 0) return true;
   return diff.changes.some((c) => !isManualOrAdvisoryChange(c));
+}
+
+/**
+ * Whether a live PostgreSQL column type is native `json` (not `jsonb`) --
+ * the two share one comparison bucket in `normalizeType` (#3041).
+ */
+function isNativeJsonType(type: string): boolean {
+  return /^json$/i.test(type.trim());
 }
 
 /**

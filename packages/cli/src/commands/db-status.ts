@@ -310,8 +310,13 @@ export function summarizeSchemaDiff(diff: {
             drift.push({
               name: `${change.table}.${change.name ?? '(unknown)'}`,
               type: 'type_upgrade',
-              recommendation:
-                'Manual intervention required: this live column needs a type upgrade that the current database engine cannot auto-apply.',
+              // #3041 review finding: a probe-blocked conversion carries its
+              // own diagnosis (invalid values, duplicate keys jsonb would
+              // collapse); the engine-limitation text is only for changes
+              // with no advisory.
+              recommendation: change.advisory?.message
+                ? `Manual intervention required: ${change.advisory.message}`
+                : 'Manual intervention required: this live column needs a type upgrade that the current database engine cannot auto-apply.',
             });
             break;
 
