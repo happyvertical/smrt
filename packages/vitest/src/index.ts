@@ -637,6 +637,16 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-web/intents',
         join(packageRoot, 'src/intents.ts'),
       );
+      // The browser inference path is dependency-free for the same reason, and
+      // has the same stale-dist hazard: without this, a consumer test (e.g.
+      // smrt-svelte's `webllm-inference-backend.test.ts`) exercises the LAST BUILT
+      // `dist/ai.js` instead of the source under test, so edits to the path
+      // keep passing until someone rebuilds smrt-web.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-web/ai',
+        join(packageRoot, 'src/ai.ts'),
+      );
     }
 
     if (packageName === '@happyvertical/smrt-svelte') {
@@ -654,6 +664,22 @@ export function getWorkspaceViteAliases(
         aliases,
         '@happyvertical/smrt-svelte/web',
         join(packageRoot, 'src/web/index.ts'),
+      );
+      // The browser inference backends (#2957). Same stale-dist hazard as
+      // `/web`: a consumer test that imports these must exercise the source
+      // under test, not the last built `dist`. Chat no longer declares
+      // smrt-svelte as a dependency (declaring it closes the chat -> svelte ->
+      // content -> chat build cycle), so an unaliased subpath is unresolvable
+      // for its tests rather than merely stale.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/browser-ai/svelte',
+        join(packageRoot, 'src/browser-ai/svelte/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/browser-ai',
+        join(packageRoot, 'src/browser-ai/index.ts'),
       );
     }
   }

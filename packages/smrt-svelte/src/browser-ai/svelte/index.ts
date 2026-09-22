@@ -14,6 +14,7 @@ import { BROWSER_AI_MODULE_META } from '../ui.js';
 import AILoadingOverlay from './components/AILoadingOverlay.svelte';
 import CapabilityGate from './components/CapabilityGate.svelte';
 import DownloadProgress from './components/DownloadProgress.svelte';
+import ModelStatusControl from './components/ModelStatusControl.svelte';
 import STTTest from './components/STTTest.svelte';
 import VoiceInput from './components/VoiceInput.svelte';
 
@@ -22,6 +23,7 @@ export {
   AILoadingOverlay,
   CapabilityGate,
   DownloadProgress,
+  ModelStatusControl,
   STTTest,
   VoiceInput,
 };
@@ -46,6 +48,11 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-svelte/browser-ai',
   'download-progress',
   DownloadProgress,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-svelte/browser-ai',
+  'model-status-control',
+  ModelStatusControl,
 );
 ModuleUIRegistry.register(
   '@happyvertical/smrt-svelte/browser-ai',
