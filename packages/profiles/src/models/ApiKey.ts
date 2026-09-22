@@ -29,6 +29,8 @@ export interface GenerateKeyResult {
 
 @smrt({
   tableName: 'api_keys',
+  // The API-key store. Never in the change feed (#2937).
+  sensitive: true,
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   // create/revoke are admin operations invoked in-process via the CLI; only

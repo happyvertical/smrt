@@ -130,8 +130,14 @@
  * @packageDocumentation
  */
 
+import { randomBytes } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  getChangeFeedSensitiveTables,
+  isChangeFeedSensitiveTable,
+  isChangeFeedSensitiveWrite,
+} from './change-feed-sensitivity.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
@@ -180,6 +186,11 @@ export const CHANGE_FEED_TABLE = '_smrt_changes';
  * the feed's own table so it can never observe itself), the model-backed
  * operational plumbing ({@link FRAMEWORK_OPERATIONAL_TABLES}), and the retired
  * system tables that may still exist on older databases.
+ *
+ * Credential-bearing *application* tables are excluded separately, because
+ * that set grows at registration time rather than being fixed at module load
+ * — see {@link isChangeFeedSensitiveTable} and `change-feed-sensitivity.ts`
+ * (#2937).
  */
 export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
   ...SYSTEM_TABLE_NAMES,
@@ -194,11 +205,21 @@ export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
 /**
  * Whether framework writes to `tableName` are recorded in the change feed.
  *
+ * Two reasons a table is not observable: it is framework bookkeeping
+ * ({@link CHANGE_FEED_EXCLUDED_TABLES}), or it is credential-bearing
+ * ({@link isChangeFeedSensitiveTable}, #2937). The second is evaluated live
+ * rather than folded into the frozen set above, because a class declaring
+ * `@smrt({ sensitive: true })` registers after this module loads.
+ *
  * Exported so tooling and tests can reason about feed coverage without
- * re-deriving the rule. See {@link CHANGE_FEED_EXCLUDED_TABLES}.
+ * re-deriving the rule.
  */
 export function isChangeFeedObservableTable(tableName: string): boolean {
-  return Boolean(tableName) && !CHANGE_FEED_EXCLUDED_TABLES.has(tableName);
+  return (
+    Boolean(tableName) &&
+    !CHANGE_FEED_EXCLUDED_TABLES.has(tableName) &&
+    !isChangeFeedSensitiveTable(tableName)
+  );
 }
 
 /** Interceptor name of the framework's change-feed writer. */
@@ -817,6 +838,14 @@ export async function appendChange(
     );
   }
 
+  // Credential-bearing tables never enter the log (#2937). The interceptor
+  // already filters them, but this is the lowest write API in the module —
+  // `bumpChangeFeed()` and any caller reaching for the escape hatch arrive
+  // here — so the refusal belongs where nothing can route around it. Returning
+  // `null` rather than throwing keeps it indistinguishable from a staged
+  // append, which every caller already tolerates.
+  if (isChangeFeedSensitiveTable(table)) return null;
+
   const engine = getEngine(db);
   const p = placeholders(db);
   // The INSERT yields the ACTUAL sequence it allocated in the SAME statement
@@ -943,21 +972,64 @@ export async function appendChange(
  * entry, preserves rollback/failure isolation, and never waits on the feed
  * head.  Direct batches allocate contiguous sequences in input order.
  */
+/**
+ * Validate one {@link appendChanges} entry, returning its normalized table and
+ * operation. Shared by the sensitive-entry filter and the batch builder so both
+ * apply exactly the same rules (#2937).
+ */
+function validateAppendChangesInput(input: AppendChangeInput): {
+  table: string;
+  operation: ChangeOperation;
+} {
+  const table = input.table?.trim();
+  if (!table) throw new Error('appendChanges requires a non-empty table name');
+  const operation = input.operation ?? 'update';
+  if (!VALID_OPERATIONS.has(operation)) {
+    throw new Error(
+      `appendChanges operation must be one of create/update/delete, got '${String(input.operation)}'`,
+    );
+  }
+  return { table, operation };
+}
+
 export async function appendChanges(
   db: DatabaseInterface,
   inputs: AppendChangeBatch,
 ): Promise<Array<number | null>> {
   if (inputs.length === 0) return [];
+
+  // Credential-bearing entries are dropped before the batch is built (#2937),
+  // and their slots come back `null` — the same value a staged append returns,
+  // which every caller already handles. The recursion re-enters with the kept
+  // entries only, so they get one statement, exactly as if the sensitive
+  // entries had never been offered.
+  //
+  // Validation of the WHOLE batch runs first, so the documented contract
+  // ("validates all inputs before writing") still holds: a malformed entry
+  // stays a thrown programming error even when it names a sensitive table, and
+  // the filter cannot absorb it into a silent `null`.
+  if (inputs.some((input) => isChangeFeedSensitiveTable(input.table?.trim()))) {
+    for (const input of inputs) validateAppendChangesInput(input);
+    const kept: Array<{ input: AppendChangeInput; index: number }> = [];
+    inputs.forEach((input, index) => {
+      if (!isChangeFeedSensitiveTable(input.table?.trim())) {
+        kept.push({ input, index });
+      }
+    });
+    const result = Array<number | null>(inputs.length).fill(null);
+    if (kept.length === 0) return result;
+    const sequences = await appendChanges(
+      db,
+      kept.map(({ input }) => input),
+    );
+    kept.forEach(({ index }, position) => {
+      result[index] = sequences[position] ?? null;
+    });
+    return result;
+  }
+
   const entries = inputs.map((input) => {
-    const table = input.table?.trim();
-    if (!table)
-      throw new Error('appendChanges requires a non-empty table name');
-    const operation = input.operation ?? 'update';
-    if (!VALID_OPERATIONS.has(operation)) {
-      throw new Error(
-        `appendChanges operation must be one of create/update/delete, got '${String(input.operation)}'`,
-      );
-    }
+    const { table, operation } = validateAppendChangesInput(input);
     return {
       table,
       rowId: input.rowId ?? null,
@@ -1545,10 +1617,32 @@ export async function getChangesSince(
   conditions.push(`seq <= ${next()}`);
   params.push(servedHorizon);
 
-  const tables = options.tables?.filter((table) => table.trim().length > 0);
+  const tables = options.tables
+    ?.filter((table) => table.trim().length > 0)
+    // A caller-named sensitive table is dropped rather than refused: the
+    // request `?tables=sessions,orders` still gets its orders, and naming
+    // `sessions` alone yields an ordinary empty page instead of an error that
+    // would confirm the table exists (#2937).
+    .filter((table) => !isChangeFeedSensitiveTable(table.trim()));
   if (tables && tables.length > 0) {
     conditions.push(`table_name IN (${tables.map(() => next()).join(', ')})`);
     params.push(...tables);
+  } else if (options.tables && options.tables.length > 0) {
+    // Every table the caller asked for was sensitive. An unfiltered query here
+    // would widen the read to the whole feed, so answer with nothing.
+    return { changes: [], cursor: servedHorizon };
+  }
+
+  // Rows an older build wrote before this guard existed are still in the log
+  // (#2937). The write-side refusal alone would leave every session id issued
+  // before the upgrade readable for the whole retention window, so the read
+  // refuses them outright — upgrading is sufficient, with no operator step.
+  const sensitiveTables = getChangeFeedSensitiveTables();
+  if (sensitiveTables.length > 0) {
+    conditions.push(
+      `table_name NOT IN (${sensitiveTables.map(() => next()).join(', ')})`,
+    );
+    params.push(...sensitiveTables);
   }
 
   if (options.tenantId === null) {
@@ -1565,13 +1659,20 @@ export async function getChangesSince(
   params.push(limit);
 
   const rows = getQueryRows(await db.query(sql, ...params));
-  const changes = rows.map(rowToEntry);
+  const entries = rows.map(rowToEntry);
+  // Re-check against the live set: a table declared sensitive while the query
+  // was in flight is not in the NOT IN list above, and its rows must still not
+  // be served (#2937). Pagination below uses the unfiltered page so the cursor
+  // still advances past them.
+  const changes = entries.filter(
+    (entry) => !isChangeFeedSensitiveTable(entry.table),
+  );
 
   // Page limited → resume after the last returned row. Page exhaustive →
   // everything up to the horizon (matching or filtered out) has been
   // observed, so advance all the way.
   const cursor =
-    changes.length === limit ? changes[changes.length - 1].seq : servedHorizon;
+    entries.length === limit ? entries[entries.length - 1].seq : servedHorizon;
 
   return { changes, cursor };
 }
@@ -1639,6 +1740,31 @@ export async function getTenantScopedChangesSince(
  * high-water mark that survives pruning would remove even that cost; it is a
  * deliberate follow-up, out of scope for this slice.
  *
+ * ## Tables the feed does not observe (#2937)
+ *
+ * The whole contract above — "any write to the table appends a new sequence
+ * strictly greater than every previously-observed value" — rests on the table
+ * being recorded at all. For a credential-bearing table it is not, so there is
+ * no version to compute: the value would pin at whatever an older build last
+ * wrote, then fall back to the global horizon, which only moves when some
+ * *other* table writes. A client revalidating with `If-None-Match` would be
+ * answered `304` for a revoked API key, a rotated session or a changed
+ * identity, and stay stale until unrelated traffic happened to bump the
+ * horizon — a silent stale read of security state.
+ *
+ * Such a table therefore gets a deliberately **unrepeatable** value, so every
+ * ETag derived from it is fresh and no *concrete* `If-None-Match` can match.
+ * Those reads cost a full response every time, which is the correct trade for
+ * a credential store, and the caller needs no special case: this is the one
+ * place every ETag path (the runtime `APIGenerator`, the generated SvelteKit
+ * `conditionalVersionedRead`, and route files already emitted by an older
+ * generator) goes through.
+ *
+ * A wildcard `If-None-Match: *` still yields `304`, and deliberately so: the
+ * read paths evaluate it only *after* the payload is built, so it distinguishes
+ * nothing beyond 200-versus-404 — which an unconditional request reveals too —
+ * and it carries no stale representation.
+ *
  * Idempotently ensures the feed table exists first, so it is safe to call from
  * a read route on a raw handle that has never been written to.
  */
@@ -1650,6 +1776,24 @@ export async function getTableVersion(
   if (!name) {
     throw new Error('getTableVersion requires a non-empty table name');
   }
+
+  if (!isChangeFeedObservableTable(name)) {
+    // A fresh 48-bit random value per call, so a concrete `If-None-Match`
+    // cannot match and the read always returns a full 200.
+    //
+    // Deliberately random rather than a per-process counter. A counter seeded
+    // from the clock and incremented per call is NOT unique across processes:
+    // two replicas behind a load balancer start milliseconds apart and serve at
+    // different rates, so their counters drift through each other, and the ETag
+    // carries no per-process entropy. A client holding replica A's validator
+    // that lands on replica B exactly as B mints the same number gets a stale
+    // 304 — a revoked API key still shown. A restart after sustained traffic
+    // has the same overlap. 48 bits of `crypto` randomness makes a collision
+    // negligible and needs no cross-process coordination. Nothing consumes this
+    // value's ordering; only its unrepeatability matters.
+    return randomUnobservableTableVersion();
+  }
+
   await ensureChangeFeedTable(db);
 
   const p = placeholders(db);
@@ -1691,6 +1835,23 @@ export async function getTableVersion(
   // all-pruned (or never-written) table never reports a resettable low value
   // that could false-304 a stale client. 0 only when the feed is empty.
   return toSeqNumber(row?.horizon) + staged;
+}
+
+/**
+ * A fresh, effectively-unique version for a table the feed does not observe
+ * (#2937). 48 bits keeps it inside `Number.MAX_SAFE_INTEGER` so it round-trips
+ * through the same numeric ETag path as a real sequence.
+ */
+function randomUnobservableTableVersion(): number {
+  const bytes = randomBytes(6);
+  return (
+    bytes[0] * 2 ** 40 +
+    bytes[1] * 2 ** 32 +
+    bytes[2] * 2 ** 24 +
+    bytes[3] * 2 ** 16 +
+    bytes[4] * 2 ** 8 +
+    bytes[5]
+  );
 }
 
 function toSeqNumber(value: unknown): number {
@@ -1776,14 +1937,82 @@ export async function pruneChangeFeed(
   let pruned = 0;
   let prunedThrough = 0;
 
+  // Purge credential-bearing rows an older build wrote, ahead of either bound
+  // (#2937). The read path already refuses to serve them, so this is about the
+  // data at rest: without it a database upgraded into the fix keeps every
+  // session id issued before the upgrade sitting in `_smrt_changes` for the
+  // whole retention window, readable by anything with database access.
+  //
+  // This deletes out of the MIDDLE of the retained run, which the age bound
+  // above goes to some trouble to avoid — but the reasoning that forbids it
+  // there does not apply here. That hazard is a reader silently missing a
+  // committed change it should have seen; these rows are unservable on every
+  // read path, so no page ever contained them and no cursor can fall into the
+  // gap.
+  //
+  // It CAN move `floor`, and on a real database it usually will: a session is
+  // created before the first domain write and re-saved on every request, so
+  // the lowest retained sequences are often credential rows. `floor` is read
+  // live (`MIN(seq)`) on every `getChangesSince`, never cached, so the effect
+  // is bounded and one-directional — a cursor below the new floor is told
+  // `resyncRequired` and refetches, including a `since=0` client on a
+  // never-pruned feed. That is the fail-safe direction: an extra resync, never
+  // a missed change. The horizon does not move, because the newest entry is
+  // retained.
+  //
+  // The newest entry is left alone even when it is sensitive, preserving the
+  // "a non-empty feed is never emptied" invariant and sparing every caught-up
+  // client a spurious resync from a retreating horizon. Residual: one
+  // credential row can linger until the next write moves the horizon past it,
+  // at which point the following sweep takes it.
+  //
+  // Under `dryRun` nothing is actually deleted, so the bounds below would count
+  // these same rows a second time. `sensitiveExclusion` is therefore appended
+  // to their predicates in that mode only — with a real delete the rows are
+  // already gone and the extra clause would be dead weight.
+  const sensitiveTables = getChangeFeedSensitiveTables();
+  if (sensitiveTables.length > 0) {
+    pruned += await deleteCounted(
+      db,
+      `seq < ${p(1)} AND table_name IN (${sensitiveTables
+        .map((_, offset) => p(offset + 2))
+        .join(', ')})`,
+      [horizon, ...sensitiveTables],
+      dryRun,
+    );
+  }
+
+  /**
+   * Under `dryRun` nothing was actually deleted, so the bounds below would
+   * count the sensitive rows the purge already reported. Append an exclusion to
+   * their predicates in that mode only — after a real delete the rows are gone
+   * and the extra clause would be dead weight. `offset` is the number of
+   * placeholders the caller's own predicate already consumed, so the numbered
+   * dialects stay aligned.
+   */
+  const excludeSensitive = (
+    offset: number,
+  ): { sql: string; params: unknown[] } => {
+    if (!dryRun || sensitiveTables.length === 0) {
+      return { sql: '', params: [] };
+    }
+    return {
+      sql: ` AND table_name NOT IN (${sensitiveTables
+        .map((_, index) => p(offset + index + 1))
+        .join(', ')})`,
+      params: [...sensitiveTables],
+    };
+  };
+
   if (maxRows != null) {
     const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);
     if (pruneThrough > 0) {
       prunedThrough = pruneThrough;
+      const exclusion = excludeSensitive(1);
       pruned += await deleteCounted(
         db,
-        `seq <= ${p(1)}`,
-        [pruneThrough],
+        `seq <= ${p(1)}${exclusion.sql}`,
+        [pruneThrough, ...exclusion.params],
         dryRun,
       );
     }
@@ -1824,10 +2053,11 @@ export async function pruneChangeFeed(
     // `dryRun`, where nothing was — without it overlapping entries would be
     // counted by both bounds.
     if (ageThrough > prunedThrough) {
+      const exclusion = excludeSensitive(2);
       pruned += await deleteCounted(
         db,
-        `seq <= ${p(1)} AND seq > ${p(2)}`,
-        [ageThrough, prunedThrough],
+        `seq <= ${p(1)} AND seq > ${p(2)}${exclusion.sql}`,
+        [ageThrough, prunedThrough, ...exclusion.params],
         dryRun,
       );
     }
@@ -1974,6 +2204,13 @@ async function appendForInstance(
     // test is an allowlist, not the `_smrt_` prefix: ~25 domain tables carry
     // that prefix and must be observed (issue #2376).
     if (!isChangeFeedObservableTable(table)) return;
+    // Authoritative class-level check (#2937). `isChangeFeedObservableTable`
+    // can only test the NAME, and the name a class declared may not be the one
+    // its rows are recorded under — an STI child declaring `sensitive` writes
+    // to its base class's table. Here we hold the instance, so we can ask about
+    // its class and match the exact name being recorded; a hit also declares
+    // that name, closing the read path and the signal bus for it.
+    if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
@@ -2041,6 +2278,9 @@ export async function recordInstanceChanges(
     try {
       const table = entry.instance.tableName;
       if (!isChangeFeedObservableTable(table)) continue;
+      // Same authoritative class-level check as the single-instance writer.
+      if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
+        continue;
       const id = (entry.instance as { id?: unknown }).id;
       const tenantId = (entry.instance as unknown as Record<string, unknown>)
         .tenantId;

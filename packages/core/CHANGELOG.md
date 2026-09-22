@@ -1,5 +1,51 @@
 # @happyvertical/smrt-core
 
+## 0.51.10
+
+### Patch Changes
+
+- ### Features
+
+  - declared read-only ancestor visibility for descendant memberships (#2945) (users)
+  - @happyvertical/smrt-config@0.51.10
+  - @happyvertical/smrt-types@0.51.10
+  - @happyvertical/smrt-scanner@0.51.10
+
+## 0.51.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - serialize collection data-surface row values to JSON scalars (#2933) (#2935) (agents)
+  - @happyvertical/smrt-config@0.51.9
+  - @happyvertical/smrt-types@0.51.9
+  - @happyvertical/smrt-scanner@0.51.9
+
+## 0.51.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - keep server entry points free of Svelte imports (#2928) (agents)
+  - resolve consumer package manifests through package.json exports (#2927) (core)
+  - keep consumed package objects in .smrt/manifest.json (#2926) (core,cli)
+  - @happyvertical/smrt-config@0.51.8
+  - @happyvertical/smrt-types@0.51.8
+  - @happyvertical/smrt-scanner@0.51.8
+
+## 0.51.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop rename_data_pending false positives from blocking deploys or guessing wrong (#2914)
+  - @happyvertical/smrt-config@0.51.7
+  - @happyvertical/smrt-types@0.51.7
+  - @happyvertical/smrt-scanner@0.51.7
+
 ## 0.51.6
 
 ### Patch Changes

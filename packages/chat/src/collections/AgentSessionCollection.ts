@@ -54,6 +54,8 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
 
   async findOrCreate(params: {
     agentId: string;
+    /** Resolved `bot` Profile uuid the agent authors as (#2995). */
+    agentProfileId?: string | null;
     participantProfileId: string;
     tenantId: string | null;
     allowedTools?: string[];
@@ -83,6 +85,7 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
 
     const session = await this.create({
       agentId: params.agentId,
+      agentProfileId: params.agentProfileId ?? null,
       participantProfileId: params.participantProfileId,
       tenantId: params.tenantId ?? null,
       allowedTools: JSON.stringify(params.allowedTools ?? []),

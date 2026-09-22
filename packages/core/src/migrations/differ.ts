@@ -10,6 +10,7 @@ import {
   columnsAllValuesUuidShapedBatch,
   columnsHaveNonEmptyValueBatch,
   nonEmptyValuePredicate,
+  resolveRenameDataPendingCandidates,
   uuidInvalidShapePredicate,
 } from '../schema/column-data-probes.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
@@ -1998,24 +1999,20 @@ export class SchemaComparer {
           )
         : new Map();
 
-    const candidatesByColumn = new Map<
-      string,
-      { orphanName: string; isUuidCast: boolean }[]
-    >();
-    for (const candidate of pending) {
-      if (
-        candidate.requiresShapeCheck &&
-        !(shaped.get(candidate.orphanName) ?? false)
-      ) {
-        continue;
-      }
-      const list = candidatesByColumn.get(candidate.colName) ?? [];
-      list.push({
-        orphanName: candidate.orphanName,
-        isUuidCast: candidate.isUuidCast,
-      });
-      candidatesByColumn.set(candidate.colName, list);
-    }
+    // Group by target and resolve both ambiguity shapes (#2911): more than
+    // one source for the same target stays ambiguous (no suggested SQL);
+    // the same source shared across more than one target is dropped from
+    // every target's list rather than emitted for each — see
+    // {@link resolveRenameDataPendingCandidates}.
+    const candidatesByColumn = resolveRenameDataPendingCandidates(
+      pending.map((candidate) => ({
+        targetName: candidate.colName,
+        sourceName: candidate.orphanName,
+        requiresShapeCheck: candidate.requiresShapeCheck,
+        extra: candidate.isUuidCast,
+      })),
+      (sourceName) => shaped.get(sourceName) ?? false,
+    );
 
     for (const [colName, candidates] of candidatesByColumn) {
       if (candidates.length === 1) {
@@ -2023,16 +2020,16 @@ export class SchemaComparer {
           this.describeRenameDataPending(
             tableName,
             colName,
-            candidates[0].orphanName,
-            candidates[0].isUuidCast,
+            candidates[0].sourceName,
+            candidates[0].extra,
           ),
         );
-      } else if (candidates.length > 1) {
+      } else {
         changes.push(
           this.describeRenameDataPendingAmbiguous(
             tableName,
             colName,
-            candidates.map((c) => c.orphanName),
+            candidates.map((c) => c.sourceName),
           ),
         );
       }
@@ -2263,24 +2260,17 @@ export class SchemaComparer {
     for (const [tableName, pending] of pendingByTable) {
       const shaped = shapedByTable.get(tableName) ?? new Map<string, boolean>();
       const changes: SchemaChange[] = [];
-      const candidatesByColumn = new Map<
-        string,
-        { orphanName: string; isUuidCast: boolean }[]
-      >();
-      for (const candidate of pending) {
-        if (
-          candidate.requiresShapeCheck &&
-          !(shaped.get(candidate.orphanName) ?? false)
-        ) {
-          continue;
-        }
-        const list = candidatesByColumn.get(candidate.colName) ?? [];
-        list.push({
-          orphanName: candidate.orphanName,
-          isUuidCast: candidate.isUuidCast,
-        });
-        candidatesByColumn.set(candidate.colName, list);
-      }
+      // Same two-shape ambiguity resolution as the single-table method
+      // (#2911) — see {@link resolveRenameDataPendingCandidates}.
+      const candidatesByColumn = resolveRenameDataPendingCandidates(
+        pending.map((candidate) => ({
+          targetName: candidate.colName,
+          sourceName: candidate.orphanName,
+          requiresShapeCheck: candidate.requiresShapeCheck,
+          extra: candidate.isUuidCast,
+        })),
+        (sourceName) => shaped.get(sourceName) ?? false,
+      );
 
       for (const [colName, candidates] of candidatesByColumn) {
         if (candidates.length === 1) {
@@ -2288,16 +2278,16 @@ export class SchemaComparer {
             this.describeRenameDataPending(
               tableName,
               colName,
-              candidates[0].orphanName,
-              candidates[0].isUuidCast,
+              candidates[0].sourceName,
+              candidates[0].extra,
             ),
           );
-        } else if (candidates.length > 1) {
+        } else {
           changes.push(
             this.describeRenameDataPendingAmbiguous(
               tableName,
               colName,
-              candidates.map((c) => c.orphanName),
+              candidates.map((c) => c.sourceName),
             ),
           );
         }
@@ -2594,7 +2584,16 @@ export class SchemaComparer {
         actual: `data appears to still be in ${oldColumn}`,
       },
       advisory: {
-        severity: 'warning',
+        // #2911: this is a suggestion *about data*, not a schema mismatch
+        // — the live schema matches the manifest column-for-column. A
+        // heuristic guess that turns out wrong recommends copying data
+        // into the wrong column, which corrupts state rather than failing
+        // closed; that is the opposite of what a blocking check should do.
+        // `info` keeps this fully visible (`db:status`/`db:diff` still
+        // surface it, now as a note rather than drift) without letting it
+        // gate `db:status:assert` the way real schema drift correctly
+        // does.
+        severity: 'info',
         message:
           `${tableName}.${newColumn} is declared but empty, while undeclared column ${tableName}.${oldColumn} ` +
           'holds data of a compatible type. This looks like a framework field rename whose data was never ' +
@@ -2630,7 +2629,9 @@ export class SchemaComparer {
         actual: `data appears to still be in one of several columns: ${candidateList}`,
       },
       advisory: {
-        severity: 'warning',
+        // #2911: see the non-ambiguous advisory above — a data suggestion,
+        // not schema drift, so it must not gate `db:status:assert`.
+        severity: 'info',
         message:
           `${tableName}.${newColumn} is declared but empty, while ${candidateColumns.length} undeclared ` +
           `columns of a compatible type hold data (${candidateList}). This looks like a framework field ` +

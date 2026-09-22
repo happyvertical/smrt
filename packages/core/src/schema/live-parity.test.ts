@@ -530,7 +530,9 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
 
     const finding = find(report.findings, 'rename_data_pending', 'new_slug');
     expect(finding).toBeDefined();
-    expect(finding?.severity).toBe('warning');
+    // #2911: a data suggestion, not schema drift — kept visible but no
+    // longer able to fail closed the way `warning`/`error` severity does.
+    expect(finding?.severity).toBe('info');
     expect(finding?.details).toEqual({ candidates: ['old_slug'] });
     expect(finding?.message).toContain('old_slug');
   });
@@ -629,6 +631,51 @@ describe('checkLiveSchemaParity rename_data_pending (#2752)', () => {
     });
     expect(finding?.message).toContain('ambiguous');
     expect(finding?.recommendation).toContain('will not guess');
+  });
+
+  it('suppresses every finding when one undeclared column is nominated as the rename source for several unrelated targets (#2911)', async () => {
+    // #2911: the same undeclared column matched as the rename source for
+    // three unrelated empty declared columns simultaneously — one column
+    // cannot be the renamed predecessor of three others at once, so no
+    // finding should be emitted for any of them.
+    const database = await openDatabase();
+    await database.query(`
+      CREATE TABLE tenants (
+        id TEXT PRIMARY KEY,
+        hierarchy_path TEXT,
+        repo_template TEXT,
+        github_org TEXT,
+        timezone TEXT
+      )
+    `);
+    await database.query(
+      `INSERT INTO tenants (id, hierarchy_path, repo_template, github_org, timezone) ` +
+        `VALUES ('1', NULL, NULL, NULL, 'America/Edmonton')`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        tenants: {
+          tableName: 'tenants',
+          columns: {
+            id: { type: 'UUID', primaryKey: true },
+            hierarchy_path: { type: 'TEXT' },
+            repo_template: { type: 'TEXT' },
+            github_org: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+      reportExtraTables: false,
+    });
+
+    expect(find(report.findings, 'rename_data_pending')).toBeUndefined();
   });
 
   it('does not flag an incompatible type as a rename candidate', async () => {

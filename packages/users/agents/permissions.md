@@ -25,6 +25,23 @@ request-scoped caches do not survive those requests.
 `loadSessionContext().tenantAuthorization` is authoritative for required-tenant
 consumers; membership null can mean inherited authority.
 
+4. If no membership resolved at all, apply the opt-in ancestor-read policy
+   (smrt#2939): the user's ACTIVE memberships on VERIFIED DESCENDANTS of the
+   target, whose role slug is declared in `permissions.ancestorRead.roles` and
+   within `maxDepth` hops, contribute `<collection>.read` for declared
+   collections, intersected with BOTH that role's own catalog grants (so a
+   descendant-side tenant GRANT, group role, or membership GRANT cannot widen
+   it) AND the principal's effective permissions in that descendant (so its
+   DENY cascade and membership DENY apply). Only a SYSTEM
+   role (`tenantId` null, `isSystem: true`) matches a declared slug: slugs are
+   not unique across a hierarchy, so a tenant-scoped custom role of the same
+   name must not opt its tenant in. Off by default;
+   read-only; never lateral; never reached when a direct or inherited
+   membership already decided. The target tenant's DENY still subtracts.
+   `ancestorReadFromTenantIds` reports the contributing descendants. The grant
+   carries no membership, so `membershipId`/`tenantAuthorization.membershipId`
+   stay null and a consumer requiring a non-empty membership still refuses.
+
 ## Permission precedence
 
 Apply these layers in order, later layers overriding earlier ones:
@@ -48,6 +65,15 @@ membership or tenant DENY to attenuate inherited role authority.
 - Tenant override cascade requires parent cascadePermissions and child
   inheritPermissions. These flags do not gate the independent, per-role
   inheritsToDescendants membership flow.
+- `permissions.ancestorRead` in the `users` package config declares upward,
+  read-only visibility: `{ roles, collections, maxDepth? }`. Both lists are
+  required and non-empty and `maxDepth >= 1`, else the policy is OFF — there is
+  no partially valid declaration. `isAncestorReadableSlug()` is the single place
+  the read-only bound is enforced; only a two-segment `<collection>.<action>`
+  slug whose action normalizes to `read` on a declared collection passes.
+  `PermissionResolver.create(options, { ancestorReadPolicy })` binds one
+  resolver; `null` forces it off. It grants the OPERATION at the ancestor, never
+  row visibility — sibling rows stay scoped by the tenancy interceptor and RLS.
 - seedSystemRoles({ inheritsToDescendants: ['owner', 'admin'] }) flags listed
   slugs additively, never unflags omitted ones, and rejects unknown slugs.
   Default seeds are exact-tenant.
@@ -68,6 +94,13 @@ handlers, endpoints, CLI and jobs use assertOperationPermission(). It requires
 catalog presence then resolves permissions, throwing fail-closed by default.
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
+
+Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
+custom actions) enforce the same `collection.action` slug (custom actions use
+`collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's
+session permission snapshot (`locals.permissions`/`permissionSet`/
+`smrtPermissions` or `locals.tenantContext.permissions`), otherwise 403. Only
+`locals.tenantContext.superAdminBypass` skips it; `api.public: true` stays open.
 
 Resource-anchored guards receive the resource tenant ID. When it differs from
 the session tenant, omit the session membership so the resolver selects the

@@ -1106,3 +1106,376 @@ describe('review findings (#2910)', () => {
     });
   });
 });
+
+const TEMPORAL_NAME =
+  '@happyvertical/smrt-agents:SmrtSurfaceFixtureTemporalEvent';
+
+function registerTemporalFixture(): void {
+  ObjectRegistry.registerFromManifest(
+    'SmrtSurfaceFixtureTemporalEvent',
+    {
+      className: 'SmrtSurfaceFixtureTemporalEvent',
+      fields: {
+        id: { type: 'text' },
+        name: { type: 'text' },
+        startsAt: { type: 'datetime' },
+        endsAt: { type: 'datetime' },
+        // Manifest type is `text`, but the class hydrates the stored JSON into
+        // an object — the second facet reported on #2933.
+        lastCheckSummary: { type: 'text' },
+        payload: { type: 'json' },
+        attendees: { type: 'integer' },
+        active: { type: 'boolean' },
+      },
+      methods: {},
+      decoratorConfig: { tableName: 'smrt_surface_fixture_temporal_events' },
+      schema: {
+        tableName: 'smrt_surface_fixture_temporal_events',
+        ddl: '',
+        columns: {},
+        indexes: [],
+        version: 'test',
+      },
+    },
+    '@happyvertical/smrt-agents',
+  );
+}
+
+describe('executeSmrtCollectionQuery row serialization (#2933)', () => {
+  const EXCLUDED = ['context', 'created_at', 'updated_at', 'slug'];
+
+  beforeEach(() => {
+    ObjectRegistry.clear();
+    clearSmrtCollectionQuerySchemaCache();
+    registerTemporalFixture();
+  });
+  afterEach(() => {
+    ObjectRegistry.clear();
+    clearSmrtCollectionQuerySchemaCache();
+  });
+
+  async function temporalSchema(exclude: string[] = EXCLUDED) {
+    return buildDataQuerySchemaForClass(TEMPORAL_NAME, { exclude });
+  }
+
+  async function queryRows(
+    rows: Record<string, unknown>[],
+    projection: string[],
+    options: { page?: unknown; exclude?: string[] } = {},
+  ) {
+    return executeSmrtCollectionQuery(
+      fakeCollection(rows),
+      {
+        version: 1,
+        requestId: 'temporal',
+        mode: 'rows',
+        projection,
+        page: options.page ?? { kind: 'offset', offset: 0, limit: 10 },
+      },
+      {
+        schema: await temporalSchema(options.exclude),
+        qualifiedName: TEMPORAL_NAME,
+      },
+    );
+  }
+
+  it('advertises datetime columns as datetime descriptors', async () => {
+    const schema = await temporalSchema();
+    const byId = new Map(schema.fields.map((field) => [field.id, field]));
+    expect(byId.get('startsAt')?.type).toBe('datetime');
+    expect(byId.get('endsAt')?.type).toBe('datetime');
+    expect(byId.get('payload')?.type).toBe('json');
+    expect(byId.get('lastCheckSummary')?.type).toBe('string');
+  });
+
+  it('serializes a hydrated Date to an ISO-8601 UTC instant', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: new Date('2026-09-17T12:34:56.789Z') }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]).toEqual({
+      id: 'e1',
+      startsAt: '2026-09-17T12:34:56.789Z',
+    });
+  });
+
+  it('keeps a null datetime null and never invents an instant', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: null, endsAt: undefined }],
+      ['id', 'startsAt', 'endsAt'],
+    );
+    expect(result.rows[0]).toEqual({ id: 'e1', startsAt: null, endsAt: null });
+  });
+
+  it('widens a date-only value to UTC midnight', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: '2026-09-17' }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBe('2026-09-17T00:00:00.000Z');
+  });
+
+  it('reads a zoneless SQLite timestamp as UTC, not local time', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: '2026-09-17 12:34:56' }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBe('2026-09-17T12:34:56.000Z');
+  });
+
+  it('normalizes an offset instant to UTC', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: '2026-09-17T09:00:00-04:00' }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBe('2026-09-17T13:00:00.000Z');
+  });
+
+  it('serializes an epoch-millisecond datetime', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: Date.UTC(2026, 8, 17, 12, 0, 0) }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBe('2026-09-17T12:00:00.000Z');
+  });
+
+  it('renders an invalid Date as null rather than failing the page', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: new Date('nonsense') }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBeNull();
+  });
+
+  it('serializes datetimes on the cursor page path too', async () => {
+    const result = await queryRows(
+      [
+        { id: 'e1', startsAt: new Date('2026-09-17T00:00:00.000Z') },
+        { id: 'e2', startsAt: new Date('2026-09-18T00:00:00.000Z') },
+      ],
+      ['id', 'startsAt'],
+      { page: { kind: 'cursor', limit: 1 } },
+    );
+    expect(result.page).toMatchObject({ kind: 'cursor', hasMore: true });
+    expect(result.rows[0]?.startsAt).toBe('2026-09-17T00:00:00.000Z');
+  });
+
+  it('serializes the implicit created_at/updated_at datetimes', async () => {
+    const result = await queryRows(
+      [
+        {
+          id: 'e1',
+          created_at: new Date('2026-09-01T00:00:00.000Z'),
+          updated_at: new Date('2026-09-02T00:00:00.000Z'),
+        },
+      ],
+      ['id', 'created_at', 'updated_at'],
+      { exclude: ['context', 'slug'] },
+    );
+    expect(result.rows[0]).toEqual({
+      id: 'e1',
+      created_at: '2026-09-01T00:00:00.000Z',
+      updated_at: '2026-09-02T00:00:00.000Z',
+    });
+  });
+
+  it('renders a text column the class hydrates into an object as JSON', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', lastCheckSummary: { ok: false, checkedAt: 3 } }],
+      ['id', 'lastCheckSummary'],
+    );
+    expect(result.rows[0]?.lastCheckSummary).toBe('{"ok":false,"checkedAt":3}');
+  });
+
+  it('serializes a nested Date inside a json column', async () => {
+    const result = await queryRows(
+      [
+        {
+          id: 'e1',
+          payload: {
+            runAt: new Date('2026-09-17T00:00:00.000Z'),
+            tags: ['a'],
+          },
+        },
+      ],
+      ['id', 'payload'],
+    );
+    expect(result.rows[0]?.payload).toEqual({
+      runAt: '2026-09-17T00:00:00.000Z',
+      tags: ['a'],
+    });
+  });
+
+  it('keeps a forbidden json key fail-closed instead of dropping it', async () => {
+    // `JSON.parse` of a stored json column creates an OWN `__proto__` key. The
+    // shared validator rejects it with FORBIDDEN_DATA_QUERY; the serializer
+    // must not swallow the key on the way there.
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"__proto__":1,"ok":true}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"__proto__":{"nested":1}}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+    await expect(
+      queryRows(
+        [{ id: 'e1', payload: JSON.parse('{"constructor":1}') }],
+        ['id', 'payload'],
+      ),
+    ).rejects.toThrow(/forbidden key/);
+  });
+
+  it('coerces a SQLite 0/1 boolean and a bigint integer', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', active: 1, attendees: 42n }],
+      ['id', 'active', 'attendees'],
+    );
+    expect(result.rows[0]).toEqual({ id: 'e1', active: true, attendees: 42 });
+  });
+
+  it('shortens an oversized scalar string, warns, and reports truncated', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', name: 'x'.repeat(5_000) }],
+      ['id', 'name'],
+    );
+    expect(String(result.rows[0]?.name)).toHaveLength(4_096);
+    expect(result.warnings?.join(' ')).toContain('name');
+    // The machine-readable flag must agree with the rows: a consumer that
+    // checks `truncated` instead of parsing warning text would otherwise treat
+    // a cut-off value as the whole value.
+    expect(result.truncated).toBe(true);
+  });
+
+  it('leaves truncated false when nothing was shortened', async () => {
+    const result = await queryRows(
+      [{ id: 'e1', name: 'short' }],
+      ['id', 'name'],
+    );
+    expect(result.truncated).toBe(false);
+    expect(result.warnings ?? []).toEqual([]);
+  });
+
+  it('keeps the shortened-values warning inside the 512-character cap', async () => {
+    // Enough long field ids that a naive join would exceed the shared result
+    // validator's per-warning limit and fail the whole query.
+    const wide = Object.fromEntries(
+      Array.from({ length: 40 }, (_, index) => [
+        `field_with_a_very_long_name_${String(index).padStart(3, '0')}`,
+        { type: 'text' },
+      ]),
+    );
+    ObjectRegistry.clear();
+    clearSmrtCollectionQuerySchemaCache();
+    ObjectRegistry.registerFromManifest(
+      'SmrtSurfaceFixtureWideEvent',
+      {
+        className: 'SmrtSurfaceFixtureWideEvent',
+        fields: { id: { type: 'text' }, ...wide },
+        methods: {},
+        decoratorConfig: { tableName: 'smrt_surface_fixture_wide_events' },
+        schema: {
+          tableName: 'smrt_surface_fixture_wide_events',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test',
+        },
+      },
+      '@happyvertical/smrt-agents',
+    );
+    const name = '@happyvertical/smrt-agents:SmrtSurfaceFixtureWideEvent';
+    const projection = ['id', ...Object.keys(wide)];
+    const row: Record<string, unknown> = { id: 'e1' };
+    for (const key of Object.keys(wide)) row[key] = 'x'.repeat(5_000);
+
+    const result = await executeSmrtCollectionQuery(
+      fakeCollection([row]),
+      {
+        version: 1,
+        requestId: 'wide-truncation',
+        mode: 'rows',
+        projection,
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      },
+      {
+        schema: await buildDataQuerySchemaForClass(name, { exclude: EXCLUDED }),
+        qualifiedName: name,
+      },
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings?.[0]?.length).toBeLessThanOrEqual(512);
+    expect(result.warnings?.[0]).toMatch(/and \d+ more\.$/);
+  });
+
+  it('returns null for an unsafe bigint epoch rather than a wrong instant', async () => {
+    // Asserts the guarantee, not a behaviour change: `Number` only starts
+    // rounding past MAX_SAFE_INTEGER (9.007e15 ms), which is already beyond
+    // the largest representable `Date` (8.64e15 ms), so an unsafe epoch was
+    // going to become an invalid date anyway. The explicit safe-integer guard
+    // in `temporalToInstant` states the intent and matches the check used for
+    // every other `bigint` in this module.
+    const result = await queryRows(
+      [{ id: 'e1', startsAt: 2n ** 70n }],
+      ['id', 'startsAt'],
+    );
+    expect(result.rows[0]?.startsAt).toBeNull();
+  });
+
+  it('caps an oversized facet bucket label and reports it', async () => {
+    const collection: SmrtCollectionQueryCollection = {
+      ...fakeCollection([{ id: 'e1' }]),
+      async facets({ fields }) {
+        return fields.map((field) => ({
+          field: field.field,
+          values: [{ value: 'y'.repeat(5_000), count: 1 }],
+        }));
+      },
+    };
+    const result = await executeSmrtCollectionQuery(
+      collection,
+      {
+        version: 1,
+        requestId: 'oversized-facet',
+        mode: 'facets',
+        facets: [{ field: 'name', limit: 5 }],
+      },
+      { schema: await temporalSchema(), qualifiedName: TEMPORAL_NAME },
+    );
+    expect(String(result.facets?.[0]?.values[0]?.value)).toHaveLength(4_096);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings?.join(' ')).toContain('name');
+  });
+
+  it('serializes a temporal facet bucket value', async () => {
+    const collection: SmrtCollectionQueryCollection = {
+      ...fakeCollection([{ id: 'e1' }]),
+      async facets({ fields }) {
+        return fields.map((field) => ({
+          field: field.field,
+          values: [
+            { value: new Date('2026-09-17T00:00:00.000Z') as never, count: 1 },
+          ],
+        }));
+      },
+    };
+    const result = await executeSmrtCollectionQuery(
+      collection,
+      {
+        version: 1,
+        requestId: 'temporal-facets',
+        mode: 'facets',
+        facets: [{ field: 'name', limit: 5 }],
+      },
+      { schema: await temporalSchema(), qualifiedName: TEMPORAL_NAME },
+    );
+    expect(result.facets?.[0]?.values[0]?.value).toBe(
+      '2026-09-17T00:00:00.000Z',
+    );
+  });
+});

@@ -157,6 +157,12 @@ export interface PrincipalRun {
   /** The principal's published (snapshot) permission slugs. */
   permissions: string[];
   /**
+   * Present only when the caller bound this run to an explicit `permissions`
+   * snapshot (rather than live resolution). Delegation carries it forward as a
+   * ceiling so a narrowed run cannot widen through a worker (#2978).
+   */
+  permissionSnapshot?: readonly string[];
+  /**
    * The effective, fail-closed tool allow-list — always a concrete array (an
    * absent binding allow-list normalizes to `[]`, i.e. no tools).
    */
@@ -285,6 +291,9 @@ export async function executeAsPrincipal<T>(
       const run: PrincipalRun = {
         context,
         permissions: context.permissions,
+        ...(permissions !== undefined
+          ? { permissionSnapshot: [...context.permissions] }
+          : {}),
         allowedTools: toolWhitelist,
         isToolAllowed,
         assertToolAllowed(tool: string): void {

@@ -140,7 +140,7 @@ The **`default` persona reuses the singleton identity** (a `null` key), which is
 
 ## Principal Execution (issue #1888)
 
-`executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade with no snapshotting. It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
+`executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade: permissions resolve live unless the caller passes an explicit `permissions` snapshot, which the run then carries as `run.permissionSnapshot`. `agents.invoke` propagates that snapshot as the `DelegationEnvelope.permissions` ceiling, and `executeDelegatedInvocation` runs the worker with ceiling ∩ live grants, so a narrowed run cannot widen through delegation and a tampered persisted ceiling cannot exceed live RBAC (#2978). It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
 
 ## Data Surface Read Tools (issue #2447)
 
@@ -243,6 +243,28 @@ const tool = createInvokeAgentTool({
 - **`executeDelegatedInvocation()`** runs the worker via `executeAsPrincipal` under that same principal and emits a correlated `agent.completed` dispatch; **`surfaceAgentCompletions(bus, correlationId)`** reads it back into the conversation.
 - **Transports** (pluggable): the default `inlineInvokeAgentTransport` runs the worker in-process (completion surfaces in the same turn); `createDispatchInvokeTransport(bus)` emits an `agent.invoke` signal a worker processes via `processAgentInvocations()` (async). A job-queue transport (enqueue on the `agents` queue) is a consumer-supplied `InvokeAgentTransport` — orchestration never hard-depends on `@happyvertical/smrt-jobs`, which sits *below* agents in the dependency graph.
 
+## Server Entry Points Stay Svelte-Free (issue #2924)
+
+`SmrtDataSurfaceActionTask`, `DataSurfaceActionTokenState`, and
+`DataSurfaceActionIdempotencyState` stamp `@happyvertical/smrt-agents/server`
+as their manifest `importPath`, so core's consumer plugin emits that specifier
+verbatim into a consumer's generated `.smrt/register.js` — which the `smrt` CLI
+loads with a bare `import()` under plain Node for `db:migrate`. **No module
+reachable from `./server` (or from the package root, or `./vite`) may import a
+Svelte component barrel.** A Vite build of the same graph succeeds, so this
+regresses silently and then breaks `db:migrate` for every object in the
+consuming app, not just this package's.
+
+- Import shared data-surface protocol limits from the Svelte-free
+  `@happyvertical/smrt-ui/data-surface`, never `@happyvertical/smrt-ui/data`
+  (a component barrel that re-exports `.svelte` files).
+- `src/server/__tests__/node-entry-loadability.integration.test.ts` imports
+  every server-side subpath in a fresh plain-Node process; it needs a built
+  `dist/` (turbo's `test` task supplies it).
+- `scripts/verify-manifest-exports.mjs` fails a publish when any **non-root**
+  manifest `importPath` is unloadable under plain Node. A bundler-only *root*
+  barrel is still only a warning.
+
 ## Key Files
 
 | File | Purpose |
@@ -250,7 +272,7 @@ const tool = createInvokeAgentTool({
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
 | `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
-| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912) |
+| `src/smrt-collection-data-surface.ts` | `createSmrtCollectionDataSurfaceDefinition()` — generic registry-driven `SmrtObject` collection to `DataSurfaceDefinition` adapter, with field-policy redaction (schema overrides included), class-aware tenant scope, DNF filter/scope lowering, deny-all short-circuit, query-bound opaque cursors, and offset/cursor paging; hydrated row values are serialized to JSON scalars at the adapter boundary — a `Date`/date-only/zoneless-UTC `datetime` becomes an ISO-8601 UTC instant, a `bigint` a safe number, and a non-scalar value on a scalar descriptor its JSON string — so a populated datetime column no longer fails the whole result; callers must keep `maxPageLimit` <= the collection's own row-limit cap (#2905, follow-up #2912, #2933) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/playbook-preflight.ts` | `playbooks.preflight` PrincipalTool — advisory per-step verdicts, never a grant (#2590) |

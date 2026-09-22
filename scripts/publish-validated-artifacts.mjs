@@ -5,8 +5,8 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { verifyPublishArtifacts } from './publish-artifacts-lib.mjs';
+import { primaryRegistry, registryArgs } from './release-registry.mjs';
 
-const registry = 'https://registry.npmjs.org/';
 const defaultVerificationAttempts = 6;
 const defaultInitialVerificationDelayMs = 5_000;
 const defaultMaxVerificationDelayMs = 30_000;
@@ -25,15 +25,14 @@ function npm(args, { allowNotFound = false } = {}) {
   return result.stdout.trim();
 }
 
-function existsOnRegistry(name, version, runNpm) {
+function existsOnRegistry(name, version, runNpm, registry) {
   return (
     runNpm(
       [
         'view',
         `${name}@${version}`,
         'version',
-        '--registry',
-        registry,
+        ...registryArgs(registry),
         '--prefer-online',
       ],
       {
@@ -53,9 +52,9 @@ function existsOnRegistry(name, version, runNpm) {
 // isAlreadyPublishedConflict below), and it still runs the content-identity
 // check before accepting the conflict as "already published" — so a real
 // different-content collision keeps aborting instead of silently skipping.
-function existsOnRegistryTolerant(name, version, runNpm, log) {
+function existsOnRegistryTolerant(name, version, runNpm, log, registry) {
   try {
-    return existsOnRegistry(name, version, runNpm);
+    return existsOnRegistry(name, version, runNpm, registry);
   } catch (error) {
     log(
       `⚠️ Pre-publish existence check for ${name}@${version} errored (${error instanceof Error ? error.message : error}); treating as not yet published. If it is already published, the publish attempt's own conflict response will be verified and recorded as complete instead of failing the run.`,
@@ -93,14 +92,13 @@ function isConfirmedContentMismatch(message) {
 // #2871 warned about). Compare the registry tarball's shasum against the
 // already-verified local artifact before trusting "already exists" as
 // "already exists with our content" and skipping it.
-function defaultVerifyExistingContentMatches(artifact, runNpm) {
+function defaultVerifyExistingContentMatches(artifact, runNpm, registry) {
   const registryShasum = runNpm(
     [
       'view',
       `${artifact.name}@${artifact.version}`,
       'dist.shasum',
-      '--registry',
-      registry,
+      ...registryArgs(registry),
       '--prefer-online',
     ],
     { allowNotFound: true },
@@ -132,6 +130,7 @@ export function publishRelease(
     initialVerificationDelayMs = defaultInitialVerificationDelayMs,
     log = console.log,
     maxVerificationDelayMs = defaultMaxVerificationDelayMs,
+    registry = primaryRegistry(),
     runNpm = npm,
     verificationAttempts = defaultVerificationAttempts,
     verifyExistingContentMatches = defaultVerifyExistingContentMatches,
@@ -147,8 +146,14 @@ export function publishRelease(
   const alreadyPublished = new Set();
   for (const artifact of release.packages) {
     if (
-      existsOnRegistryTolerant(artifact.name, artifact.version, runNpm, log) &&
-      verifyExistingContentMatches(artifact, runNpm)
+      existsOnRegistryTolerant(
+        artifact.name,
+        artifact.version,
+        runNpm,
+        log,
+        registry,
+      ) &&
+      verifyExistingContentMatches(artifact, runNpm, registry)
     ) {
       alreadyPublished.add(artifact.name);
     }
@@ -159,13 +164,12 @@ export function publishRelease(
       log(`↪ ${artifact.name}@${artifact.version} already exists (content verified)`);
       continue;
     }
-    log(`📤 Publishing ${artifact.name}@${artifact.version}`);
+    log(`📤 Publishing ${artifact.name}@${artifact.version} to ${registry}`);
     try {
       runNpm([
         'publish',
         artifact.path,
-        '--registry',
-        registry,
+        ...registryArgs(registry),
         '--access',
         'public',
       ]);
@@ -183,7 +187,11 @@ export function publishRelease(
 
       let contentMatches;
       try {
-        contentMatches = verifyExistingContentMatches(artifact, runNpm);
+        contentMatches = verifyExistingContentMatches(
+          artifact,
+          runNpm,
+          registry,
+        );
       } catch (verifyError) {
         const verifyMessage =
           verifyError instanceof Error ? verifyError.message : String(verifyError);
@@ -223,7 +231,12 @@ export function publishRelease(
   // the release below.
   function stillUnconfirmed(artifact) {
     try {
-      return !existsOnRegistry(artifact.name, artifact.version, runNpm);
+      return !existsOnRegistry(
+        artifact.name,
+        artifact.version,
+        runNpm,
+        registry,
+      );
     } catch (error) {
       log(
         `⚠️ Registry verification check for ${artifact.name}@${artifact.version} errored (${error instanceof Error ? error.message : error}); treating as not yet confirmed.`,

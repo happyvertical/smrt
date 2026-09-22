@@ -281,6 +281,12 @@ export interface PersonaConversationTurnOptions {
   audit?: PrincipalAuditSink;
   /** Opt into Postgres RLS transaction wrapping. */
   postgresRls?: boolean;
+  /**
+   * Permission snapshot the turn's tool loop runs with (forwarded to
+   * `executeAsPrincipal`). Use it to narrow the assistant below the user's
+   * live grants; when omitted, the user's live permissions are resolved.
+   */
+  permissions?: string[];
   /** Correlation id for the turn (feedback ties back to it). Auto-generated when omitted. */
   correlationId?: string;
   /**
@@ -402,6 +408,7 @@ export async function runPersonaConversationTurn(
     agentClass: persona.agentClass,
     postgresRls: options.postgresRls,
     audit: options.audit,
+    permissions: options.permissions,
     onToken: options.onToken,
   });
 

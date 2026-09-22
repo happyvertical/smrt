@@ -322,6 +322,15 @@ describe('local application runtime', () => {
       tenant_id: claim.tenantId,
       slug: 'owner',
     });
+    // The owner holds concrete catalog grants, so generated write routes
+    // (which require `<collection>.<action>`, #2977) accept its session.
+    const ownerGrants = await initialized.runtime.db.query(
+      `SELECT COUNT(*) AS grants
+       FROM role_permissions
+       JOIN roles ON roles.id = role_permissions.role_id
+       WHERE roles.slug = 'owner'`,
+    );
+    expect(Number(ownerGrants.rows[0]?.grants)).toBeGreaterThan(0);
 
     const restored = await initialized.runtime.restoreSession(claim.sessionId);
     expect(restored?.user.id).toBe(claim.userId);

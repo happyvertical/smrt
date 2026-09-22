@@ -80,6 +80,7 @@ import {
   checkTenantIdUuidPreconditions,
   dbStatusCommand,
   summarizeSchemaDiff,
+  summarizeSchemaNotes,
 } from '../db-status.js';
 
 describe('db:status', () => {
@@ -222,6 +223,44 @@ describe('db:status', () => {
         type: 'disabled_foreign_key',
         recommendation:
           'Exact live constraint-name introspection is unavailable; remove it deliberately, then rerun.',
+      },
+    ]);
+  });
+
+  it('reports rename_data_pending as an info-severity note, never as blocking drift (#2911)', () => {
+    // #2911: a wrong rename-source guess recommends copying data into the
+    // wrong column — corrupting state rather than failing closed — so it
+    // must never land in `drift`, which downstream consumers (e.g.
+    // anytown.ai's `db:status:assert`) treat as a hard deploy blocker on
+    // any non-empty entry. The differ now always emits this finding at
+    // `info` severity for exactly that reason.
+    const diff = {
+      added_tables: [],
+      changes: [
+        {
+          type: 'rename_data_pending',
+          table: 'tenants',
+          name: 'hierarchy_path',
+          mismatch: {
+            expected: 'data in hierarchy_path',
+            actual: 'data appears to still be in timezone',
+          },
+          advisory: {
+            severity: 'info' as const,
+            message:
+              'tenants.hierarchy_path is declared but empty, while undeclared column tenants.timezone holds data of a compatible type.',
+          },
+        },
+      ],
+    };
+
+    expect(summarizeSchemaDiff(diff)).toEqual([]);
+    expect(summarizeSchemaNotes(diff)).toEqual([
+      {
+        name: 'tenants.hierarchy_path',
+        type: 'rename_data_pending',
+        recommendation:
+          'tenants.hierarchy_path is declared but empty, while undeclared column tenants.timezone holds data of a compatible type.',
       },
     ]);
   });

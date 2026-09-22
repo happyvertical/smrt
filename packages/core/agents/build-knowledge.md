@@ -36,6 +36,19 @@ owned by each consumer.
 Keep `manifest.json` runtime-focused. `smrt-knowledge.json` is the deterministic
 agent contract for downstream review and architecture tools.
 
+The CLI's schema-command gate reads that same merged file: a pure-consumer
+project (0 local objects) qualifies on the consumed packages its manifest
+records, so a clobbered `objects` map is what made `smrt db:migrate` report
+`missing_local_manifest` (#2925).
+
+`.smrt/manifest.json` has two writers and neither owns all of it: `smrtPlugin()`
+contributes the project's scanned objects and `smrtConsumer()` the consumed
+packages' entries. Both writes are merge-preserving, keyed on each entry's
+recorded `packageName` — a plain overwrite in either direction silently drops
+the other's objects, and the last pass of a multi-environment build is not
+reliably the aggregating one (#1760, #2925). `dist/manifest.json` stays
+local-only: a published package must not carry its dependencies' objects.
+
 The schema-version-1 object projection is additive and high-signal: it retains
 normalized tenant mode/field, explicit `cti`/`sti` strategy, conflict columns,
 method signatures, and field defaults/constraints/readonly/transient flags.

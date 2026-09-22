@@ -131,6 +131,191 @@ test('verify-manifest-exports (smrt#2845): warns (does not fail) when the enviro
   assert.match(result.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
 });
 
+test('verify-manifest-exports (smrt#2924): fails (does not warn) when a non-root importPath cannot be loaded under plain Node', () => {
+  // The root barrel may legitimately be bundler-only (the test above), but a
+  // dedicated "./server" subpath is the specifier the consumer plugin emits
+  // verbatim into a generated .smrt/register.js that the smrt CLI loads with
+  // a bare import() for db:migrate. Mirrors
+  // @happyvertical/smrt-agents@0.51.6, whose ./server entry reached a .svelte
+  // component barrel through @happyvertical/smrt-ui/data.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/server.js'),
+    "import './CollectionList.svelte';\nexport class DataSurfaceActionIdempotencyState {}\n",
+  );
+  writeFileSync(join(packageDir, 'dist/CollectionList.svelte'), '<div></div>');
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /is not loadable under plain Node/);
+  assert.match(result.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
+  assert.match(result.stderr, /Fix \(bundler-only subpath\)/);
+  assert.doesNotMatch(
+    result.stderr,
+    /could not be verified in this environment/,
+  );
+});
+
+test('verify-manifest-exports (smrt#2924): still checks plain-Node loadability for a FULLY-CLOSED object behind a non-root importPath', () => {
+  // Regression for the exact shape of the three real #2924 objects, which the
+  // first cut of this guard silently skipped: `SmrtDataSurfaceActionTask`,
+  // `DataSurfaceActionTokenState`, and `DataSurfaceActionIdempotencyState` all
+  // declare `api: false, cli: false, mcp: false`, so `isFullyClosedSurface`
+  // classifies them as excluded. Export-NAME verification is rightly skipped
+  // for them (no producer signal distinguishes an intentional non-export), but
+  // loadability is an independent question: the consumer plugin still emits
+  // their `./server` importPath into `.smrt/register.js`, which the CLI still
+  // loads under plain Node. Excluding them from the load attempt let a broken
+  // `@happyvertical/smrt-agents/server` pass the guard with exit 0.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/server.js'),
+    "import './CollectionList.svelte';\nexport class DataSurfaceActionIdempotencyState {}\n",
+  );
+  writeFileSync(join(packageDir, 'dist/CollectionList.svelte'), '<div></div>');
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      // The real decorator config, verbatim from
+      // packages/agents/dist/manifest.json.
+      decoratorConfig: {
+        tableName: '_smrt_data_surface_action_idempotency',
+        api: false,
+        cli: false,
+        mcp: false,
+      },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /is not loadable under plain Node/);
+  assert.match(result.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
+  assert.match(result.stderr, /Fix \(bundler-only subpath\)/);
+});
+
+test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object behind a non-root importPath fails on a NON-environment load error too', () => {
+  // The unparseable-file-type case is only one way a server entry stops being
+  // loadable. `ERR_MODULE_NOT_FOUND` (a mistyped or removed dependency
+  // specifier), a missing named export, and any other import-time failure
+  // break a consumer's `.smrt/register.js` under plain Node exactly the same
+  // way — and every real #2924 object is fully closed, so restricting the
+  // non-root check to ENVIRONMENT_LOAD_ERROR_CODES left that whole class
+  // silently passing the guard.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/server.js'),
+    "import './does-not-exist.js';\nexport class DataSurfaceActionIdempotencyState {}\n",
+  );
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /failed to load/);
+  assert.match(result.stderr, /Fix \(load error\)/);
+});
+
+test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object whose non-root importPath matches no exports entry still fails', () => {
+  // Same reachability, one step earlier: Node answers
+  // ERR_PACKAGE_PATH_NOT_EXPORTED for a subpath the package does not export,
+  // so the generated register.js cannot load it. An excluded object has no
+  // export name to verify, but the entry it names must still resolve.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['DataSurfaceActionIdempotencyState'],
+  });
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/not-a-real-subpath',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not match any package.json "exports" entry/);
+});
+
+test('verify-manifest-exports (smrt#2924 F1): a fully-closed object at the ROOT importPath keeps its pre-existing tolerance', () => {
+  // The exclusion must survive for the ROOT barrel, which is legitimately
+  // bundler-only (the documented smrt-products case). A fully-closed root
+  // object whose entry fails to load is still not release-blocking.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['Unused'],
+  });
+  writeFileSync(
+    join(packageDir, 'dist/index.js'),
+    "import './does-not-exist.js';\nexport class RootThing {}\n",
+  );
+  writeManifest(packageDir, {
+    rootThing: {
+      className: 'RootThing',
+      exportName: 'RootThing',
+      filePath: 'src/root-thing.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 0);
+});
+
+test('verify-manifest-exports (smrt#2924): a fully-closed object behind a LOADABLE non-root importPath still skips export-name verification', () => {
+  // The other half of the contract: moving the load attempt ahead of the
+  // exclusion must not start enforcing export names on excluded objects. This
+  // fixture's ./server module loads cleanly but deliberately does NOT export
+  // the advertised class, and that must still pass.
+  const packageDir = createPackageFixture({
+    rootExports: ['RootThing'],
+    serverExports: ['SomethingElse'],
+  });
+  writeManifest(packageDir, {
+    idempotencyState: {
+      className: 'DataSurfaceActionIdempotencyState',
+      exportName: 'DataSurfaceActionIdempotencyState',
+      importPath: '@happyvertical/smrt-fixture/server',
+      filePath: 'src/server/sql-data-surface-action-state.ts',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
+  assert.equal(result.status, 0);
+  assert.doesNotMatch(result.stderr, /does not export it/);
+});
+
 test('verify-manifest-exports (smrt#2845): does not verify a SmrtCollection companion class deliberately withheld from the public export surface', () => {
   // Mirrors @happyvertical/smrt-chat: AgentSessionCollection et al. are
   // auto-derived manifest objects (extends: "SmrtCollection") but are

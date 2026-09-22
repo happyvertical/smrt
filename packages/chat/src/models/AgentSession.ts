@@ -43,6 +43,23 @@ export class AgentSession extends SmrtObject {
   @field({ required: true })
   agentId: string = '';
 
+  /**
+   * Profile the agent authors messages as (#2995).
+   *
+   * `agentId` is an application-supplied slug and is NOT a representable
+   * author: every authoring seam (`ChatMessage.senderProfileId`,
+   * `ChatParticipant.profileId`) is a `crossPackageRef` to `Profile` and
+   * therefore a native uuid column, so writing the slug fails the uuid cast
+   * (22P02) on PostgreSQL. The agent's `bot` Profile is resolved — created on
+   * first use — through `resolveAgentProfile()` in `@happyvertical/smrt-profiles`
+   * and recorded here.
+   *
+   * Nullable so sessions created before #2995 keep loading; `ChatService`
+   * resolves and persists the profile lazily on their next agent turn.
+   */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  agentProfileId: string | null = null;
+
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   participantProfileId: string = '';
 
@@ -84,6 +101,8 @@ export class AgentSession extends SmrtObject {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.agentId !== undefined) this.agentId = options.agentId;
+    if (options.agentProfileId !== undefined)
+      this.agentProfileId = options.agentProfileId;
     if (options.participantProfileId !== undefined)
       this.participantProfileId = options.participantProfileId;
     if (options.chatRoomId !== undefined) this.chatRoomId = options.chatRoomId;

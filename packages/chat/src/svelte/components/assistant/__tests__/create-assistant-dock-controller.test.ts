@@ -2096,9 +2096,11 @@ describe('createAssistantDockController', () => {
     controller.dispose();
   });
 
-  // Finding 3 (#2904 review, fresh cycle): a Reject during an in-flight
-  // apply must not be silently overridden by that apply landing afterward.
-  it('a slow apply does not resurrect a rejected action as applied', async () => {
+  // Finding 3 (#2904 review, fresh cycle) and #2990: a Reject during an
+  // in-flight apply is refused — the entry holds the only idempotency key
+  // that keeps a retry from applying twice — and the apply that lands
+  // afterward is recorded as applied, not dropped.
+  it('refuses a reject while an apply is in flight and records the landed apply', async () => {
     const { registry, identity } = realRegistryWithSurface('orders');
     let resolveApply: ((ok: boolean) => void) | undefined;
     const applyGate = new Promise<boolean>((resolve) => {
@@ -2149,23 +2151,15 @@ describe('createAssistantDockController', () => {
     await controller.applyAction(requestId);
     expect(controller.actions.get(requestId)?.status).toBe('applying');
 
-    // The user rejects WHILE the apply above is still in flight.
+    // The user rejects WHILE the apply above is still in flight: refused.
     controller.rejectAction(requestId);
-    expect(controller.actions.has(requestId)).toBe(false);
+    expect(controller.actions.get(requestId)?.status).toBe('applying');
+    expect(controller.error).toMatch(/rejectAction refused/);
 
-    // The server mutation "lands" (resolves ok:true) after the rejection.
+    // The server mutation lands; the entry records it.
     resolveApply?.(true);
     await applyPromise;
-
-    // The entry must NOT be resurrected as 'applied' — it stays gone.
-    expect(controller.actions.has(requestId)).toBe(false);
-    // The server mutation genuinely happened despite the rejection — the
-    // controller surfaces that as a message rather than hiding it.
-    expect(
-      controller.messages.some((m) =>
-        m.content.includes('already applied by the server'),
-      ),
-    ).toBe(true);
+    expect(controller.actions.get(requestId)?.status).toBe('applied');
 
     controller.dispose();
   });

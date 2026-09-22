@@ -9,13 +9,22 @@
  * mapping per route. It has no `@sveltejs/kit` import and no SvelteKit
  * dependency: any framework whose route handler receives a standard
  * `Request` and returns a `Response` can use it the same way.
+ *
+ * Keep this module — and everything reachable from
+ * `@happyvertical/smrt-agents/server` — free of Svelte imports. This entry is
+ * the manifest `importPath` of three objects, so it lands in a consumer's
+ * generated `.smrt/register.js`, which the `smrt` CLI loads with a plain
+ * `import()` for `db:migrate`. `@happyvertical/smrt-ui/data` is a component
+ * barrel that re-exports `.svelte` files and is not loadable that way; the
+ * Svelte-free `/data-surface` entry carries the shared protocol limits
+ * (#2924).
  */
 
 import type {
   DataSurfaceActionResult,
   DataSurfaceRowId,
 } from '@happyvertical/smrt-types';
-import { DATA_SURFACE_MAX_REQUEST_BYTES } from '@happyvertical/smrt-ui/data';
+import { DATA_SURFACE_MAX_REQUEST_BYTES } from '@happyvertical/smrt-ui/data-surface';
 import type { ExecuteAsPrincipalOptions } from '../execute-as-principal.js';
 import type {
   DataSurfaceActionAdapter,

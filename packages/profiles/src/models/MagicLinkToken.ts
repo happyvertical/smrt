@@ -37,6 +37,9 @@ const DEFAULT_EXPIRATION_MINUTES = 15;
 
 @smrt({
   tableName: 'magic_link_tokens',
+  // Carries the login-token hash `verify()` looks up by. Never in the change
+  // feed (#2937).
+  sensitive: true,
   api: { exclude: ['*'] }, // No API access - internal only
   mcp: { exclude: ['*'] },
   cli: { include: ['list'] }, // Admin visibility only

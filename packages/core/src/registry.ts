@@ -1106,12 +1106,25 @@ export class ObjectRegistry {
     );
     _registerCollection(objectName, collectionConstructor);
   }
+  /**
+   * Register one manifest entry as a metadata-only stub.
+   *
+   * @param name - The entry's key, which may already be qualified
+   *   (`@happyvertical/smrt-events:Event`) or a plain class name.
+   * @param objectDef - The manifest entry.
+   * @param manifestPackageName - The package that owns the manifest FILE this
+   *   entry was read from. This is a FALLBACK, not an override: an entry that
+   *   declares its own `packageName` is registered under that package (#2970),
+   *   because a consumer's aggregated `.smrt/manifest.json` carries other
+   *   packages' objects verbatim and must not re-attribute them to itself.
+   *   Pass this for a local manifest whose entries name no package.
+   */
   static registerFromManifest(
     name: string,
     objectDef: SmartObjectDefinition,
-    packageName?: string,
+    manifestPackageName?: string,
   ): void {
-    _registerFromManifest(name, objectDef, packageName);
+    _registerFromManifest(name, objectDef, manifestPackageName);
   }
 
   /**

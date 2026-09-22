@@ -486,4 +486,135 @@ describe('invoke-agent orchestration', () => {
     });
     expect(claimedByA).toBe(1);
   });
+  describe('permission snapshot ceiling (#2978)', () => {
+    async function invokeFrom(snapshot: string[] | undefined): Promise<{
+      envelope?: DelegationEnvelope;
+      workerPermissions?: string[];
+    }> {
+      let envelope: DelegationEnvelope | undefined;
+      let workerPermissions: string[] | undefined;
+      const capture: WorkerRunner = async ({ run }) => {
+        workerPermissions = [...run.permissions];
+        return { ok: true };
+      };
+      const inProcess: InvokeAgentTransport = {
+        async deliver(delivery) {
+          envelope = delivery.envelope;
+          await executeDelegatedInvocation({
+            db,
+            envelope: delivery.envelope,
+            agentClass: delivery.agentClass,
+            task: delivery.task,
+            worker: capture,
+            audit: () => {},
+          });
+          return {
+            status: 'enqueued',
+            correlationId: delivery.envelope.correlationId,
+            agentClass: delivery.agentClass,
+            depth: delivery.envelope.depth,
+          };
+        },
+      };
+      await executeAsPrincipal(
+        {
+          db,
+          principal: {
+            runAsUserId: userId,
+            tenantId,
+            allowedTools: ['agents.invoke'],
+          },
+          onBehalfOfUserId: ORIGINATOR,
+          audit: () => {},
+          ...(snapshot ? { permissions: snapshot } : {}),
+        },
+        async (run) => {
+          const tool = createInvokeAgentTool({
+            db,
+            parentEnvelope: rootEnvelope(),
+            worker: capture,
+            transport: inProcess,
+          });
+          await tool.execute({
+            run,
+            args: { agentClass: '@happyvertical/smrt-agents:Worker', task: {} },
+            db,
+          });
+        },
+      );
+      return { envelope, workerPermissions };
+    }
+
+    it('a live (un-snapshotted) run delegates with live resolution, unchanged', async () => {
+      await grant('widgets.create');
+      const { envelope, workerPermissions } = await invokeFrom(undefined);
+      expect(envelope?.permissions).toBeUndefined();
+      expect(workerPermissions).toEqual(
+        expect.arrayContaining(['widgets.read', 'widgets.create']),
+      );
+    });
+
+    it('a narrowed run cannot widen through a delegated worker', async () => {
+      // The live user may create widgets; the snapshot deliberately may not.
+      await grant('widgets.create');
+      const { envelope, workerPermissions } = await invokeFrom([
+        'widgets.read',
+      ]);
+      expect(envelope?.permissions).toEqual(['widgets.read']);
+      expect(workerPermissions).toEqual(['widgets.read']);
+    });
+
+    it('a persisted ceiling never exceeds live grants (tampered envelope)', async () => {
+      const envelope: DelegationEnvelope = {
+        ...deriveDelegationEnvelope(rootEnvelope(), {
+          correlationId: 'corr-t',
+        }),
+        permissions: ['widgets.read', 'widgets.create'],
+      };
+      let seen: string[] = [];
+      await executeDelegatedInvocation({
+        db,
+        envelope,
+        agentClass: '@happyvertical/smrt-agents:Worker',
+        task: {},
+        worker: async ({ run }) => {
+          seen = [...run.permissions];
+          return {};
+        },
+        audit: () => {},
+      });
+      // widgets.create is in the ceiling but not a live grant: it stays denied.
+      expect(seen).toEqual(['widgets.read']);
+    });
+
+    it('rejects a dispatch envelope whose permissions are malformed', async () => {
+      const bus = await createDispatchBus({ db });
+      const transport = createDispatchInvokeTransport(bus);
+      const envelope = {
+        ...deriveDelegationEnvelope(rootEnvelope(), {
+          correlationId: 'corr-m',
+        }),
+        permissions: 'widgets.create',
+      } as unknown as DelegationEnvelope;
+      await transport.deliver({
+        envelope,
+        agentClass: '@happyvertical/smrt-agents:Worker',
+        task: {},
+        worker: noopWorker,
+        dispatchBus: bus,
+      });
+      let ran = false;
+      await processAgentInvocations({
+        dispatchBus: bus,
+        subscriber: 'WorkerAgent',
+        worker: async () => {
+          ran = true;
+          return {};
+        },
+        db,
+        audit: () => {},
+      });
+      expect(ran).toBe(false);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 /**
  * Generated `_dev/[...tool]/+server.ts` route: the in-app runtime dev-plane
- * (#2782). Opt-in via `sveltekit: { devPlaneRoute: { enabled: true } }`.
+ * (#2782). Opt-in via `svelteKit: { devPlaneRoute: { enabled: true } }`.
  *
  * The route is dev-only twice over: it 404s unless SvelteKit's `dev` flag is
  * set, and it refuses to start without `SMRT_DEV_MCP_TOKEN`. Everything else

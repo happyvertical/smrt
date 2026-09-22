@@ -723,9 +723,10 @@ describe('smrtConsumer buildStart package discovery', () => {
     expect(register).toContain("from 'plain-pkg/objects'");
   });
 
-  it('tolerates a package whose package.json is unreadable', async () => {
-    // The package dir exists but has no package.json: aggregation should warn
-    // and continue without throwing.
+  it('fails when an explicitly listed package has an unreadable package.json', async () => {
+    // The package dir exists but has no package.json. An explicit `packages`
+    // entry asserts the package contributes objects, so aggregation must name
+    // it and fail rather than contribute zero objects silently (#2923).
     mkdirSync(join(projectRoot, 'node_modules', 'broken-pkg'), {
       recursive: true,
     });
@@ -736,6 +737,28 @@ describe('smrtConsumer buildStart package discovery', () => {
       generateTypes: false,
       projectRoot,
       disableScanning: true,
+    });
+
+    await expect(plugin.buildStart?.call({} as any)).rejects.toThrow(
+      /No SMRT manifest could be resolved for broken-pkg/,
+    );
+  });
+
+  it('tolerates a discovered package whose package.json is unreadable', async () => {
+    // Discovery matches on dependency name, so it is a guess rather than an
+    // assertion: warn and continue with no objects (#2923).
+    mkdirSync(join(projectRoot, 'node_modules', 'smrt-broken-pkg'), {
+      recursive: true,
+    });
+    writePackageJson(projectRoot, {
+      name: 'consumer-app',
+      version: '1.0.0',
+      dependencies: { 'smrt-broken-pkg': '1.0.0' },
+    });
+
+    const plugin = smrtConsumer({
+      generateTypes: false,
+      projectRoot,
     });
 
     await expect(plugin.buildStart?.call({} as any)).resolves.toBeUndefined();

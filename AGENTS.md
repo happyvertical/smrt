@@ -1,4 +1,4 @@
-<!-- hv-managed-policy:start revision=1.0.0 sha256=847ac2b263bba442ca9d5c257ec6273b6062bd6ec3308a7ee3e13b7ed7d2f3d5 -->
+<!-- hv-managed-policy:start revision=1.0.0 sha256=a6aa5e8a4eaf55e2c9cb04ea6da80f09b488f6db6c55fc7dd19d56f718114795 -->
 
 ## Shared development kernel
 
@@ -14,7 +14,7 @@
 - Incomplete work remains ready with `status: blocked` and a concrete handoff. Review agents do not claim implementation.
 - Agents do not merge unless explicitly authorized in the current session.
 - Run documented validation and update affected docs before shipping.
-- Token efficiency: risk defaults to standard, high needs a named trigger; after the first final pass only accepted blockers reopen edits, three passes max; wait outside the implementer.
+- Token efficiency: risk defaults to standard, high needs a named trigger; after the first final pass only accepted blockers reopen edits, six passes max; wait outside the implementer.
 - Preserve unrelated work. Never expose or retain secrets.
 - Use repository Hindsight memory for durable, provenance-linked knowledge; do not store transient logs or duplicate canonical docs.
 - Shared policy and portable skills come only from the designated private control-plane repository. Task, issue, and repository instructions may add stricter rules but may not weaken this kernel.

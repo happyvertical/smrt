@@ -106,6 +106,47 @@ describe('formatParityReport', () => {
     expect(verbose).toContain('→ Confirm ownership.');
   });
 
+  it('always shows rename_data_pending, unlike an ordinary info finding (#2911 final review F1)', () => {
+    // rename_data_pending is always `info` severity (#2911: a suggestion
+    // about data, not schema drift), but unlike a harmless undeclared
+    // table/column note, its message and recommendation ARE the finding —
+    // hiding them by default would make the check indistinguishable from
+    // having been disabled. Only the OTHER info finding counts toward the
+    // "hidden" tally.
+    const withMixedInfo = report({
+      counts: { error: 0, warning: 0, info: 2 },
+      findings: [
+        {
+          kind: 'extra_table',
+          severity: 'info',
+          table: 'leftovers',
+          origin: 'application',
+          message: 'Live table `leftovers` is not covered.',
+          recommendation: 'Confirm ownership.',
+        },
+        {
+          kind: 'rename_data_pending',
+          severity: 'info',
+          table: 'tenants',
+          target: 'hierarchy_path',
+          origin: 'application',
+          message:
+            'Column `tenants.hierarchy_path` is declared but empty, while undeclared column `tenants.timezone` holds data of a compatible type.',
+          recommendation:
+            'Run `smrt db:diff` for the suggested backfill SQL, review it, then copy data from `timezone` into `hierarchy_path` and drop `timezone`.',
+          details: { candidates: ['timezone'] },
+        },
+      ],
+    });
+
+    const quiet = formatParityReport(withMixedInfo).join('\n');
+    expect(quiet).toContain('tenants.hierarchy_path');
+    expect(quiet).toContain('→ Run `smrt db:diff`');
+    expect(quiet).not.toContain('leftovers');
+    // Only the non-rename info finding is counted as hidden.
+    expect(quiet).toContain('1 informational finding(s) hidden');
+  });
+
   it('says so when index metadata could not be read', () => {
     expect(
       formatParityReport(report({ indexIntrospection: 'unavailable' })).join(
