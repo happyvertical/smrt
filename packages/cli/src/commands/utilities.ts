@@ -3063,7 +3063,9 @@ export default testManifest;
               );
             }
             if (ctx.sql) {
-              console.error(`   Failed SQL: ${ctx.sql}`);
+              console.error(
+                `   Failed SQL: ${redactConnectionStringsInText(String(ctx.sql))}`,
+              );
             }
           }
           if (options.verbose && error.stack) {

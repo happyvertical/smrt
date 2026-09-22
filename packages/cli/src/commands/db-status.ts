@@ -523,7 +523,17 @@ export const dbStatusCommand: CLICommand = {
 
       // 5. Get applied migrations
       const applied = await tracker.getAppliedMigrations();
-      const failed = await tracker.getHistory({ status: 'failed' });
+      // `error_message` is the driver's failure text, which can echo the
+      // connection string; scrub it before it feeds any JSON or human output.
+      const failed = (await tracker.getHistory({ status: 'failed' })).map(
+        (row) =>
+          row.error_message
+            ? {
+                ...row,
+                error_message: redactConnectionStringsInText(row.error_message),
+              }
+            : row,
+      );
 
       // 6. Auto-discover manifests to get current definitions
       const { discovered, totalObjects } = await autoDiscoverAndLoad();
@@ -654,9 +664,12 @@ export const dbStatusCommand: CLICommand = {
         // failed probe and "zero orphans" would read identically in
         // `db:status`. `missing_table` skips stay silent here (expected,
         // benign); `smrt db:orphans` lists both kinds in full.
-        status.orphanProbeFailures = orphanReport.skipped.filter(
-          (skip) => skip.kind === 'probe_failed',
-        );
+        status.orphanProbeFailures = orphanReport.skipped
+          .filter((skip) => skip.kind === 'probe_failed')
+          .map((skip) => ({
+            ...skip,
+            reason: redactConnectionStringsInText(skip.reason),
+          }));
       } catch (error) {
         status.orphansError = redactConnectionStringsInText(
           error instanceof Error ? error.message : String(error),

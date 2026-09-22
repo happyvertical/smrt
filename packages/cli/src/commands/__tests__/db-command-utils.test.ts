@@ -47,6 +47,12 @@ describe('db command utilities', () => {
       ).toBe('postgresql://anytown:***@localhost/db');
     });
 
+    it('redacts a raw-whitespace password via the fallback regex (#2985)', () => {
+      expect(
+        redactConnectionString('postgresql://anytown:sup#er pass@localhost/db'),
+      ).toBe('postgresql://anytown:***@localhost/db');
+    });
+
     it('redacts sensitive query parameters alongside the password', () => {
       expect(
         redactConnectionString(
@@ -136,6 +142,22 @@ describe('db command utilities', () => {
           'TypeError: Invalid URL: postgres://user:part@secret@host/db',
         ),
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
+    });
+
+    it('redacts a password containing raw whitespace through the next "@" (#2985)', () => {
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://user:secret pass@host/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
+    });
+
+    it('never lets a whitespace-bearing password span into the next line (#2985)', () => {
+      expect(
+        redactConnectionStringsInText(
+          'Invalid URL: postgres://host:5432/db\n    at admin@example.com',
+        ),
+      ).toBe('Invalid URL: postgres://host:5432/db\n    at admin@example.com');
     });
   });
 

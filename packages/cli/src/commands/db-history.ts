@@ -189,7 +189,16 @@ export const dbHistoryCommand: CLICommand = {
         failedAssessments.map((item) => [item.name, item]),
       );
 
-      const annotatedHistory: AnnotatedHistoryEntry[] = history.map((m) => {
+      const annotatedHistory: AnnotatedHistoryEntry[] = history.map((row) => {
+        // `error_message` stores the driver's failure text, which can echo
+        // the connection string; scrub it once here so every output form
+        // (JSON, verbose, compact) renders the redacted value.
+        const m = {
+          ...row,
+          error_message: row.error_message
+            ? redactConnectionStringsInText(row.error_message)
+            : row.error_message,
+        };
         if (m.status !== 'failed') {
           return {
             ...m,

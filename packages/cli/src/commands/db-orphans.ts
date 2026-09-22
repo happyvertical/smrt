@@ -46,6 +46,24 @@ export function formatOrphanCountLine(count: ForeignKeyOrphanCount): string {
   );
 }
 
+/**
+ * Scrub connection-string credentials from each skipped relationship's
+ * `reason`. A `probe_failed` reason is the database driver's error text,
+ * which can echo the DSN, so both the JSON and human outputs render this
+ * redacted copy.
+ */
+export function redactOrphanReport(
+  report: ForeignKeyOrphanCountReport,
+): ForeignKeyOrphanCountReport {
+  return {
+    ...report,
+    skipped: report.skipped.map((skip) => ({
+      ...skip,
+      reason: redactConnectionStringsInText(skip.reason),
+    })),
+  };
+}
+
 /** Render the full report as console lines. */
 export function formatOrphanReport(
   report: ForeignKeyOrphanCountReport,
@@ -174,9 +192,11 @@ export const dbOrphansCommand: CLICommand = {
       await autoDiscoverAndLoad();
       const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
 
-      const report = await collectForeignKeyOrphanCounts(db, manifestSchemas, {
-        engineHint: dbType,
-      });
+      const report = redactOrphanReport(
+        await collectForeignKeyOrphanCounts(db, manifestSchemas, {
+          engineHint: dbType,
+        }),
+      );
 
       if (options.json) {
         console.log(JSON.stringify(report, null, 2));
