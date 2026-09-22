@@ -409,6 +409,20 @@ describe('Issue #2306: collection-cache identity for db config objects', () => {
 
       expect(keyA).toBe(keyB);
     });
+
+    it('never merges configs holding distinct non-enumerable client handles', () => {
+      const withHiddenClient = () =>
+        Object.defineProperty({ type: 'postgres', url: dbUrl }, 'client', {
+          value: new FakePool(),
+          enumerable: false,
+        });
+
+      const keyA = resolveCollectionDbCacheKey(withHiddenClient());
+      const keyB = resolveCollectionDbCacheKey(withHiddenClient());
+
+      expect(keyA).toBeDefined();
+      expect(keyA).not.toBe(keyB);
+    });
   });
 
   describe('URL-embedded credentials never reach the key (PR #2922 review)', () => {

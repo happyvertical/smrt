@@ -302,6 +302,13 @@ export function resolveCollectionDbCacheKey(db: unknown): string | undefined {
     ...(rawUrl ? { url: rawUrl } : {}),
   }) as Record<string, unknown>;
 
+  // `SmrtClass` honors a pre-created handle via `'client' in db`, which also
+  // sees non-enumerable and inherited properties that the spread above drops.
+  // Keep it in the key so distinct handles can never share a collection.
+  if ('client' in config && config.client != null && !('client' in bounded)) {
+    bounded.client = config.client;
+  }
+
   const canonical: Record<string, unknown> = {};
   for (const k of Object.keys(bounded).sort()) {
     canonical[k] = canonicalizeValue(k, bounded[k], 0);
