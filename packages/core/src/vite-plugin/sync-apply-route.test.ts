@@ -14,7 +14,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
 import {
@@ -188,6 +190,8 @@ describe('generateSyncApplyRouteTemplate', () => {
 
   it('is fail-closed: requires an authenticated principal unless public', () => {
     expect(content).toContain('hasAuthenticatedPrincipal');
+    expect(content).toContain('permissionCollection: "products"');
+    expect(content).toContain('hasOperationPermission(locals');
     expect(content).toContain('target.publicAccess === true');
     expect(content).toContain("'auth_required'");
   });
@@ -280,5 +284,213 @@ describe('generateSyncApplyRoute (file emission)', () => {
       options,
     );
     expect(written).toBe(true);
+  });
+});
+
+describe('generated sync-apply route runtime: operation permissions (#3011)', () => {
+  let projectRoot = '';
+  const createCalls: unknown[] = [];
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'smrt-sync-apply-runtime-'));
+    createCalls.length = 0;
+    (globalThis as Record<string, unknown>).__smrtSyncCreateCalls = createCalls;
+  });
+
+  afterEach(() => {
+    rmSync(projectRoot, { force: true, recursive: true });
+    delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
+  });
+
+  async function importRoute(
+    objects: Record<string, Record<string, unknown>>,
+  ): Promise<{
+    POST: (event: { locals: unknown; request: Request }) => Promise<Response>;
+  }> {
+    const targets = collectSyncApplyTargets(manifestWith(objects));
+    const routePath = join(projectRoot, 'route.ts');
+    writeFileSync(
+      routePath,
+      generateSyncApplyRouteTemplate(targets, '$lib/server/smrt'),
+    );
+    const kitShim = join(projectRoot, 'kit-shim.ts');
+    writeFileSync(
+      kitShim,
+      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\n',
+    );
+    const smrtShim = join(projectRoot, 'smrt-shim.ts');
+    writeFileSync(
+      smrtShim,
+      [
+        'export async function getCollection() {',
+        '  return {',
+        '    async get() { return null; },',
+        '    async create(data: Record<string, unknown>) {',
+        '      (globalThis as any).__smrtSyncCreateCalls.push(data);',
+        "      return { id: data.id, updated_at: '2026-01-01T00:00:00.000Z', async save() {}, async delete() {} };",
+        '    },',
+        '  };',
+        '}',
+      ].join('\n'),
+    );
+    // The REAL core engine, so the generated authorize() closure is exercised
+    // exactly as a consumer's bundle runs it.
+    const coreEntry = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '../sync/apply.ts',
+    );
+    const outFile = join(projectRoot, 'route.mjs');
+    await build({
+      bundle: true,
+      entryPoints: [routePath],
+      format: 'esm',
+      outfile: outFile,
+      platform: 'node',
+      plugins: [
+        {
+          name: 'sync-apply-test-aliases',
+          setup(b) {
+            b.onResolve({ filter: /^@sveltejs\/kit$/ }, () => ({
+              path: kitShim,
+            }));
+            b.onResolve({ filter: /^\$lib\/server\/smrt$/ }, () => ({
+              path: smrtShim,
+            }));
+            b.onResolve({ filter: /^@happyvertical\/smrt-core$/ }, () => ({
+              path: coreEntry,
+            }));
+          },
+        },
+      ],
+    });
+    return await import(pathToFileURL(outFile).href);
+  }
+
+  function createBatch(object: string) {
+    return new Request('http://localhost/api/sync/apply', {
+      body: JSON.stringify({
+        items: [
+          {
+            itemId: 'q-1',
+            object,
+            op: 'create',
+            id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+            payload: { name: 'Widget' },
+          },
+        ],
+      }),
+      method: 'POST',
+    });
+  }
+
+  async function firstResult(response: Response) {
+    const body = (await response.json()) as {
+      results: Array<{ status: string; reason?: string }>;
+    };
+    return body.results[0];
+  }
+
+  const widgetDef = {
+    className: 'Widget',
+    collection: 'widgets',
+    fields: { name: { type: 'text' } },
+    methods: {},
+    decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
+  };
+
+  it('rejects a signed-in principal lacking <collection>.create as forbidden', async () => {
+    const route = await importRoute({ Widget: widgetDef });
+    for (const locals of [
+      { user: { id: 'user-1' } },
+      { permissions: [], user: { id: 'user-1' } },
+      { permissions: ['widgets.read', 'widgets.update'], user: { id: 'u' } },
+      { permissions: 'widgets.create', user: { id: 'user-1' } },
+      { smrtAuth: true },
+      {
+        tenantContext: { permissions: new Set(['widgets.read']) },
+        user: { id: 'user-1' },
+      },
+    ]) {
+      const result = await firstResult(
+        await route.POST({ locals, request: createBatch('widgets') }),
+      );
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+    }
+    expect(createCalls).toHaveLength(0);
+  });
+
+  it('still reports auth_required for anonymous callers', async () => {
+    const route = await importRoute({ Widget: widgetDef });
+    const result = await firstResult(
+      await route.POST({ locals: {}, request: createBatch('widgets') }),
+    );
+    expect(result).toMatchObject({
+      status: 'rejected',
+      reason: 'auth_required',
+    });
+    expect(createCalls).toHaveLength(0);
+  });
+
+  it('applies the op for every supported permission snapshot and the super-admin bypass', async () => {
+    const route = await importRoute({ Widget: widgetDef });
+    const snapshots = [
+      { permissions: ['widgets.create'], user: { id: 'u' } },
+      { permissions: new Set(['widgets.create']), user: { id: 'u' } },
+      { permissionSet: ['widgets.create'], session: { id: 's' } },
+      { smrtPermissions: ['widgets.create'], smrtAuth: true },
+      {
+        tenantContext: { permissions: new Set(['widgets.create']) },
+        user: { id: 'u' },
+      },
+      { tenantContext: { superAdminBypass: true }, user: { id: 'u' } },
+    ];
+    for (const locals of snapshots) {
+      const result = await firstResult(
+        await route.POST({ locals, request: createBatch('widgets') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+    }
+    expect(createCalls).toHaveLength(snapshots.length);
+  });
+
+  it('uses the decorator collection override as the permission prefix', async () => {
+    const route = await importRoute({
+      Widget: {
+        ...widgetDef,
+        decoratorConfig: {
+          ...widgetDef.decoratorConfig,
+          collection: 'gadgets',
+        },
+      },
+    });
+    const denied = await firstResult(
+      await route.POST({
+        locals: { permissions: ['widgets.create'], user: { id: 'u' } },
+        request: createBatch('widgets'),
+      }),
+    );
+    expect(denied).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+    const allowed = await firstResult(
+      await route.POST({
+        locals: { permissions: ['gadgets.create'], user: { id: 'u' } },
+        request: createBatch('widgets'),
+      }),
+    );
+    expect(allowed).toMatchObject({ status: 'applied' });
+  });
+
+  it('keeps public: true targets writable without a principal', async () => {
+    const route = await importRoute({
+      Widget: {
+        ...widgetDef,
+        decoratorConfig: {
+          api: { include: ['create'], public: true },
+        },
+      },
+    });
+    const result = await firstResult(
+      await route.POST({ locals: {}, request: createBatch('widgets') }),
+    );
+    expect(result).toMatchObject({ status: 'applied' });
   });
 });
