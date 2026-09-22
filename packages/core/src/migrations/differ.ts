@@ -1779,10 +1779,14 @@ export class SchemaComparer {
                 severity: 'warning',
                 message:
                   `blocked: ${tableName}.${colName} is declared JSON but ${jsonProbe.count} ` +
-                  `live value(s) ${
-                    nativeJsonToJsonb
-                      ? 'cannot be stored as jsonb (e.g. a \\u0000 escape)'
-                      : 'are not valid JSON'
+                  `${
+                    jsonProbe.reason === 'duplicate_keys'
+                      ? 'JSON object(s) carry duplicate keys that jsonb would silently collapse'
+                      : `live value(s) ${
+                          nativeJsonToJsonb
+                            ? 'cannot be stored as jsonb (e.g. a \\u0000 escape)'
+                            : 'are not valid JSON'
+                        }`
                   } (sample: ${
                     jsonProbe.sample
                       ? maskSampleValue(jsonProbe.sample)

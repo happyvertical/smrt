@@ -28,7 +28,16 @@ import { formatDefaultValue, quoteIdentifier } from './sql-identifiers.js';
 /** Outcome of a server-side cast-safety probe over one column's non-null values. */
 export type ShapeProbeResult =
   | { status: 'clean' }
-  | { status: 'dirty'; count: number; sample?: string }
+  | {
+      status: 'dirty';
+      count: number;
+      sample?: string;
+      /**
+       * `duplicate_keys`: every value casts, but `count` JSON objects carry
+       * duplicate keys that `jsonb` would silently collapse (#3041).
+       */
+      reason?: 'duplicate_keys';
+    }
   | { status: 'unavailable'; reason: string };
 
 /**
@@ -170,6 +179,82 @@ export async function probeCastSafety(
   columnName: string,
   targetType: 'timestamptz' | 'jsonb',
 ): Promise<ShapeProbeResult> {
+  const castResult = await probeCastOnly(db, tableName, columnName, targetType);
+  if (targetType !== 'jsonb' || castResult.status !== 'clean') {
+    return castResult;
+  }
+  return probeJsonbKeyPreservation(db, tableName, columnName);
+}
+
+/**
+ * #3041 review finding: a successful jsonb cast proves castability, not
+ * preservation. `jsonb` keeps only the last of duplicate object keys (it
+ * also drops key order and insignificant whitespace, which SMRT never
+ * treats as data). Walk every object node, nested ones included, and
+ * compare its key count as `json` against `jsonb`; any object that would
+ * lose a key makes the column dirty so the conversion stays a fail-closed
+ * advisory instead of a silent, irreversible rewrite. The result columns
+ * reuse the cast probe's names so one classifier reads both.
+ */
+async function probeJsonbKeyPreservation(
+  db: DatabaseInterface,
+  tableName: string,
+  columnName: string,
+): Promise<ShapeProbeResult> {
+  if (!db.transaction) {
+    return {
+      status: 'unavailable',
+      reason: 'adapter does not support transactions',
+    };
+  }
+  try {
+    const result = await db.transaction(async (tx) =>
+      tx.query(renderDuplicateKeyQuerySql(tableName, columnName)),
+    );
+    const rows = (Array.isArray(result) ? result : (result?.rows ?? [])) as {
+      invalid_count?: unknown;
+      sample_value?: unknown;
+    }[];
+    const classified = classifyProbeRows(rows);
+    return classified.status === 'dirty'
+      ? { ...classified, reason: 'duplicate_keys' }
+      : classified;
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function renderDuplicateKeyQuerySql(
+  tableName: string,
+  columnName: string,
+): string {
+  const column = quoteIdentifier(columnName);
+  const table = quoteIdentifier(tableName);
+  return (
+    'WITH RECURSIVE nodes(v) AS (' +
+    `SELECT (${column}::text)::json FROM ${table} WHERE ${column} IS NOT NULL ` +
+    'UNION ALL ' +
+    'SELECT child.value FROM nodes CROSS JOIN LATERAL (' +
+    "SELECT value FROM json_each(CASE WHEN json_typeof(nodes.v) = 'object' THEN nodes.v ELSE '{}'::json END) " +
+    'UNION ALL ' +
+    "SELECT value FROM json_array_elements(CASE WHEN json_typeof(nodes.v) = 'array' THEN nodes.v ELSE '[]'::json END)" +
+    ') AS child) ' +
+    'SELECT count(*) AS invalid_count, min(v::text) AS sample_value FROM nodes ' +
+    "WHERE json_typeof(v) = 'object' AND " +
+    '(SELECT count(*) FROM json_object_keys(v)) <> ' +
+    '(SELECT count(*) FROM jsonb_object_keys(v::jsonb))'
+  );
+}
+
+async function probeCastOnly(
+  db: DatabaseInterface,
+  tableName: string,
+  columnName: string,
+  targetType: 'timestamptz' | 'jsonb',
+): Promise<ShapeProbeResult> {
   if (!db.transaction) {
     return {
       status: 'unavailable',
@@ -179,10 +264,10 @@ export async function probeCastSafety(
   if (targetType === 'jsonb') {
     // #3041 review finding: the per-row PL/pgSQL probe opens a
     // subtransaction per value, and native `json` columns are the large
-    // legacy `_meta_data`-style ones. A jsonb cast has no silent-coercion
-    // traps (unlike the timestamptz special values above), so a single
-    // set-based cast that succeeds proves every value clean; only a failed
-    // cast falls through to the per-row probe for the count and sample.
+    // legacy `_meta_data`-style ones. A single set-based cast that succeeds
+    // proves every value castable (preservation is checked separately, see
+    // `probeJsonbKeyPreservation`); only a failed cast falls through to the
+    // per-row probe for the count and sample.
     try {
       const castCount = await db.transaction(async (tx) => {
         const result = await tx.query(

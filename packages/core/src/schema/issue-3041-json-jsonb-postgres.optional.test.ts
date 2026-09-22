@@ -227,6 +227,35 @@ describe.skipIf(!pgUrl)(
       expect(await liveType(table, 'payload')).toBe('json');
     });
 
+    it('fails closed when jsonb would silently collapse duplicate object keys', async () => {
+      const table = `i3041_dup_keys_${suffix}`;
+      created.push(table);
+      await db.query(
+        `CREATE TABLE "${table}" (id text PRIMARY KEY, payload json)`,
+      );
+      // One top-level and one nested duplicate; both cast to jsonb cleanly
+      // but lose the first value of the duplicated key.
+      await db.query(
+        `INSERT INTO "${table}" (id, payload) VALUES
+           ('k1', '{"a":1,"a":2}'),
+           ('k2', '{"outer":[{"b":1,"b":2}]}'),
+           ('k3', '{"ok":true}')`,
+      );
+      const schema = schemaFor(table, { payload: { type: 'JSON' } });
+
+      const diff = await new SchemaComparer(db, {
+        ignoreTypeMismatches: false,
+      }).compare(schema);
+      const blocked = diff.changes.find(
+        (change) => change.type === 'type_upgrade' && change.name === 'payload',
+      );
+      expect(blocked?.advisory?.severity).toBe('warning');
+      expect(blocked?.advisory?.message).toContain('2 JSON object(s)');
+      expect(blocked?.advisory?.message).toContain('duplicate keys');
+      expect(getSQLFromDiff(diff)).toEqual([]);
+      expect(await liveType(table, 'payload')).toBe('json');
+    });
+
     it('keeps reporting default drift on a column whose conversion is blocked', async () => {
       const table = `i3041_dirty_default_${suffix}`;
       created.push(table);
