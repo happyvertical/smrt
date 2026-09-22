@@ -110,7 +110,7 @@ HTTP 200
 | `rejected` | `unknown_object` | No model matches the `object` segment. |
 | `rejected` | `op_not_allowed` | The model's API config does not expose this op. |
 | `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. |
-| `rejected` | `forbidden` | The auth middleware refused with a non-401 status. |
+| `rejected` | `forbidden` | The auth middleware refused with a non-401 status, or (generated SvelteKit route) the principal lacks the `<collection>.<op>` permission. |
 | `rejected` | `not_found` | Update target does not exist — or is not visible in the caller's tenant. |
 | `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
 | `rejected` | `write_failed` | Unexpected error applying this item; the batch continued. Safe to retry. |
@@ -216,6 +216,12 @@ Every sync op is a mutation, so the fail-closed #1540 posture applies:
 - **SvelteKit route**: requires an authenticated principal on `locals`
   (`user` / `session` / `smrtAuth === true`, same resolution as generated
   CRUD routes); anonymous callers can only target `public: true` models.
+  An authenticated principal additionally needs the same
+  `<collection>.<op>` operation permission the mirrored generated write
+  route enforces (#2977, #3011) — from `locals.permissions`,
+  `permissionSet`, `smrtPermissions`, or `tenantContext.permissions`, with
+  only `tenantContext.superAdminBypass === true` skipping it. A missing
+  snapshot or permission rejects the item with `forbidden`.
 
 ## Tenant isolation
 

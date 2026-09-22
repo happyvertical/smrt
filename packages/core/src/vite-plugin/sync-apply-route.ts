@@ -44,6 +44,13 @@ interface SyncTargetSpec {
    * simple name.
    */
   registryKey: string;
+  /**
+   * `<collection>` prefix of the `<collection>.<action>` operation permission
+   * the mirrored generated write routes require (#2977) — the same
+   * `decoratorConfig.collection ?? collection` resolution as
+   * sveltekit-generator.ts `resolvePermissionCollection`.
+   */
+  permissionCollection: string;
   ops: MutatingAction[];
   readonlyFields: string[];
   writableAllowlist: string[] | null;
@@ -116,6 +123,16 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
   return Array.isArray(config?.writable) ? config.writable : null;
 }
 
+/** Mirror of sveltekit-generator.ts `resolvePermissionCollection` (#2977). */
+function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
+  const configured = (
+    objectDef.decoratorConfig as { collection?: unknown } | undefined
+  )?.collection;
+  return typeof configured === 'string' && configured.length > 0
+    ? configured
+    : objectDef.collection;
+}
+
 /**
  * Collect the syncable targets from a manifest: non-collection objects whose
  * API config is enabled and exposes at least one mutating action.
@@ -145,6 +162,7 @@ export function collectSyncApplyTargets(
     targets.push({
       segment: objectDef.collection,
       registryKey: className,
+      permissionCollection: resolvePermissionCollection(objectDef),
       ops,
       readonlyFields: collectReadonlyFieldNames(objectDef),
       writableAllowlist: getApiWritableAllowlist(apiConfig),
@@ -160,6 +178,7 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
   const entries = targets.map((target) => {
     const fields = [
       `registryKey: ${JSON.stringify(target.registryKey)}`,
+      `permissionCollection: ${JSON.stringify(target.permissionCollection)}`,
       `ops: ${JSON.stringify(target.ops)}`,
       `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
       `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
@@ -218,6 +237,8 @@ ${tenantHelper}
 interface SyncTargetConfig {
   /** Manifest registry key (may be package-qualified), as CRUD routes use. */
   registryKey: string;
+  /** \`<collection>\` prefix of the required \`<collection>.<op>\` permission. */
+  permissionCollection: string;
   ops: SyncApplyOp[];
   readonlyFields: string[];
   writableAllowlist: string[] | null;
@@ -239,6 +260,39 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
     isResolvedPrincipal(l.user) ||
     isResolvedPrincipal(l.session) ||
     l.smrtAuth === true
+  );
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function hasGrantedPermission(value: unknown, permission: string): boolean {
+  if (Array.isArray(value)) return value.includes(permission);
+  if (value instanceof Set) return value.has(permission);
+  return false;
+}
+
+// Fail-closed operation permission (#2977, #3011): each applied op requires
+// the same \`<collection>.<op>\` permission the mirrored generated write route
+// enforces, read from the principal's session permission snapshot. A missing
+// snapshot denies; only an explicit tenancy super-admin bypass skips it.
+function hasOperationPermission(
+  locals: unknown,
+  permissionCollection: string,
+  op: SyncApplyOp,
+): boolean {
+  const l = readRecord(locals);
+  const tenantContext = readRecord(l.tenantContext);
+  if (tenantContext.superAdminBypass === true) return true;
+  const permission = \`\${permissionCollection}.\${op}\`;
+  return (
+    hasGrantedPermission(l.permissions, permission) ||
+    hasGrantedPermission(l.permissionSet, permission) ||
+    hasGrantedPermission(l.smrtPermissions, permission) ||
+    hasGrantedPermission(tenantContext.permissions, permission)
   );
 }
 
@@ -267,10 +321,15 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
         objectName: target.registryKey,
         collection,
         isOpAllowed: (op: SyncApplyOp) => target.ops.includes(op),
-        authorize: () =>
-          authenticated || target.publicAccess === true
+        authorize: (op: SyncApplyOp) => {
+          // \`public: true\` keeps its unauthenticated write semantics, as on
+          // the generated CRUD routes.
+          if (target.publicAccess === true) return 'ok' as const;
+          if (!authenticated) return 'auth_required' as const;
+          return hasOperationPermission(locals, target.permissionCollection, op)
             ? ('ok' as const)
-            : ('auth_required' as const),
+            : ('forbidden' as const);
+        },
         prepare: (payload: Record<string, unknown>) =>
           applySyncWritablePolicy(payload, {
             readonlyFields: target.readonlyFields,
