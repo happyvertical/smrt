@@ -68,6 +68,8 @@ export interface SecretOptions extends SmrtObjectOptions {
 // surface false-positive name collisions across tenants. See
 // `packages/secrets/CLAUDE.md` "Known exceptions to monorepo standards" for context.
 @smrt({
+  // Stores key material; never in the change feed (#2937).
+  sensitive: true,
   tenantScoped: true,
   // NO API or MCP exposure for security
   api: { include: [] },

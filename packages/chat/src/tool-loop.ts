@@ -202,6 +202,13 @@ export interface ToolLoopOptions {
   audit?: PrincipalAuditSink;
   /** Opt into Postgres RLS transaction wrapping. */
   postgresRls?: boolean;
+  /**
+   * Pre-resolved permission snapshot forwarded to {@link executeAsPrincipal}.
+   * When set, the turn's tools run with exactly these slugs (a host may narrow
+   * them below the user's live grants); when omitted, the principal's live
+   * permissions are resolved.
+   */
+  permissions?: string[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -540,6 +547,7 @@ export async function runToolLoop(
     agentClass,
     audit,
     postgresRls,
+    permissions,
   } = options;
 
   const aiTools = [
@@ -571,6 +579,7 @@ export async function runToolLoop(
       action: 'chat.tool_loop',
       postgresRls,
       audit,
+      ...(permissions ? { permissions: [...permissions] } : {}),
     },
     async (run): Promise<ToolLoopResult> => {
       // `LoopMessage` carries `tool_call_id` on tool observations (OpenAI's tool

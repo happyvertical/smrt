@@ -600,6 +600,13 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
     const tokenHash = await this.hashBootstrapToken(input.token);
     const now = this.now();
     const nowIso = now.toISOString();
+    // Generated write routes require `<collection>.<action>` grants (#2977),
+    // so the owner role must hold the default role matrix over the manifest
+    // permission catalog, not only the role itself. Seeding is idempotent and
+    // additive, and runs before the claim transaction because the catalog
+    // sync uses its own collection connections.
+    const roles = await RoleCollection.create({ db: this.db });
+    await roles.seedSystemRoles({ seedPermissions: true });
     return this.db.transaction(async (tx) => {
       const claimed = await tx.query(
         `UPDATE ${BOOTSTRAP_TABLE}

@@ -52,12 +52,14 @@
   "scripts": {
     "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
+    "check": "svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.kit.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/agent-reply-postgres.test.ts",
     "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
-    "check": "svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "keywords": [
@@ -84,6 +86,7 @@
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
@@ -100,7 +103,6 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "2.69.1",
     "@sveltejs/package": "^2.5.8",

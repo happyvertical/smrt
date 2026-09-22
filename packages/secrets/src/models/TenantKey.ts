@@ -65,6 +65,8 @@ export interface TenantKeyOptions extends SmrtObjectOptions {
 // service needs to inspect. See `packages/secrets/CLAUDE.md` "Known exceptions to
 // monorepo standards" for the full rationale.
 @smrt({
+  // Stores key material; never in the change feed (#2937).
+  sensitive: true,
   // NOT tenant-scoped - this model tracks keys FOR tenants
   api: { include: [] }, // No API exposure
   mcp: { include: [] }, // No MCP exposure

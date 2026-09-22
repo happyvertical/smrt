@@ -83,6 +83,7 @@ export {
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
 export {
+  ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS,
   type AssistantActionClient,
   type AssistantActionState,
   type AssistantDockController,

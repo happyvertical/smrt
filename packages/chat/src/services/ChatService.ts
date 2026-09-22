@@ -2,6 +2,10 @@ import {
   ObjectRegistry,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
+import {
+  ProfileCollection,
+  resolveAgentProfileId,
+} from '@happyvertical/smrt-profiles';
 import { AgentSessionCollection } from '../collections/AgentSessionCollection.js';
 import { ChatMessageCollection } from '../collections/ChatMessageCollection.js';
 import { ChatParticipantCollection } from '../collections/ChatParticipantCollection.js';
@@ -86,6 +90,16 @@ export interface ThreadLookup {
  */
 const RUN_AGENT_REPLY = Symbol('smrt-chat.runAgentReply');
 
+/**
+ * Shape test for an `agentId` that is really a Profile uuid (#2995).
+ *
+ * Used only to decide whether a pre-#2995 session's `agentId` is worth looking
+ * up as a Profile; it is a cheap filter, never an authorization decision — the
+ * lookup that follows is tenant-bound and the result is validated.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export class ChatService {
   // Raw persistence collections are PRIVATE (S5 #1392). They can author/mutate
   // any row with no actor/membership check, so they must NOT appear on the
@@ -99,6 +113,12 @@ export class ChatService {
   readonly #agentSessions: AgentSessionCollection;
   readonly #reactions: ChatReactionCollection;
   readonly #voiceSessions: VoiceSessionCollection;
+  /**
+   * Profiles of the OWNING package (`@happyvertical/smrt-profiles`), used only
+   * to resolve the `bot` Profile an agent authors as (#2995). Private for the
+   * same reason as the chat collections: it can mint/read profile rows.
+   */
+  readonly #profiles: ProfileCollection;
 
   private constructor(
     rooms: ChatRoomCollection,
@@ -108,6 +128,7 @@ export class ChatService {
     agentSessions: AgentSessionCollection,
     reactions: ChatReactionCollection,
     voiceSessions: VoiceSessionCollection,
+    profiles: ProfileCollection,
   ) {
     this.#rooms = rooms;
     this.#messages = messages;
@@ -116,6 +137,7 @@ export class ChatService {
     this.#agentSessions = agentSessions;
     this.#reactions = reactions;
     this.#voiceSessions = voiceSessions;
+    this.#profiles = profiles;
   }
 
   static async create(options: SmrtObjectOptions): Promise<ChatService> {
@@ -176,6 +198,7 @@ export class ChatService {
       '@happyvertical/smrt-chat:VoiceSession',
       options,
     )) as VoiceSessionCollection;
+    const profiles = await ProfileCollection.create(options);
 
     return new ChatService(
       rooms,
@@ -185,6 +208,7 @@ export class ChatService {
       agentSessions,
       reactions,
       voiceSessions,
+      profiles,
     );
   }
 
@@ -723,9 +747,34 @@ export class ChatService {
     maxTokens?: number;
     maxMessages?: number;
     sessionKey?: string | null;
+    /**
+     * Profile the agent authors as (#2995). Optional: when omitted the agent's
+     * `bot` Profile is resolved (created on first use) from `agentId`. Supply
+     * it when the SERVER already holds the agent's acting identity — e.g. a
+     * persona's `actsAsProfileId`.
+     *
+     * Like `actorProfileId`, this is a SERVER-supplied value and must never be
+     * request input: it selects the author of every later assistant message in
+     * the session. It is validated in {@link ChatService.requireAgentProfile}
+     * (must exist, must be visible in this tenant, must not be the acting
+     * participant) and can never re-point a session that already resolved a
+     * different agent profile.
+     */
+    agentProfileId?: string | null;
   }) {
     const participantProfileId = params.actorProfileId;
     const sessionKey = params.sessionKey ?? null;
+    // Validate a supplied authoring Profile now (cheap, no writes); resolution
+    // is deferred until we know whether a session is being reused, so reuse
+    // never mints a `bot` profile it will not use and never bypasses the
+    // adoption rule in #resolveAgentProfileId (#2995).
+    const suppliedAgentProfileId = params.agentProfileId
+      ? await this.#requireAgentProfile(
+          params.agentProfileId,
+          params.tenantId,
+          participantProfileId,
+        )
+      : null;
     // Check for existing active session first to avoid orphaned rooms. When a
     // sessionKey is supplied the reuse lookup is narrowed to a matching key so a
     // session opened for a different subject is never reused/rewritten here.
@@ -754,10 +803,25 @@ export class ChatService {
             profileId: participantProfileId,
             role: 'owner',
           });
+          // Never RE-POINT a session that already resolved an agent profile
+          // (S5 #1392, #2995): a second create with a different
+          // `agentProfileId` would silently re-author the rest of an existing
+          // conversation and leave the previous agent enrolled. Only a session
+          // that has none — i.e. one created before #2995 — is settled here,
+          // through the SAME path the reply takes, so a legacy uuid `agentId`
+          // is adopted rather than replaced by a synthetic profile.
+          if (!existingSession.agentProfileId) {
+            if (suppliedAgentProfileId) {
+              existingSession.agentProfileId = suppliedAgentProfileId;
+              await existingSession.save();
+            } else {
+              await this.#resolveAgentProfileId(existingSession);
+            }
+          }
           await this.#enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
-            profileId: params.agentId,
+            profileId: existingSession.agentProfileId as string,
             role: 'member',
           });
           return { session: existingSession, room: existingRoom };
@@ -766,6 +830,15 @@ export class ChatService {
       // Session exists but room is missing/orphaned — expire it so we create fresh
       await existingSession.expire();
     }
+
+    // No session is being reused, so an authoring Profile is now actually
+    // needed: resolve (creating on first use) unless one was supplied (#2995).
+    const agentProfileId =
+      suppliedAgentProfileId ??
+      (await resolveAgentProfileId(this.#profiles, {
+        agentId: params.agentId,
+        tenantId: params.tenantId,
+      }));
 
     // Create an agent-type room for this session
     const room = await this.#rooms.create({
@@ -790,7 +863,7 @@ export class ChatService {
     await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
-      profileId: params.agentId,
+      profileId: agentProfileId,
       role: 'member',
     });
 
@@ -798,6 +871,7 @@ export class ChatService {
     // is persisted on the new session and future reuse lookups stay scoped).
     const session = await this.#agentSessions.findOrCreate({
       agentId: params.agentId,
+      agentProfileId,
       participantProfileId,
       tenantId: params.tenantId,
       allowedTools: params.allowedTools,
@@ -857,7 +931,8 @@ export class ChatService {
    *
    * INTERNAL authority: this is the only path that authors a message as the
    * agent, and it is not reachable with a caller-supplied `senderProfileId`/
-   * `role`. The author is always `session.agentId`. Tool calls are gated
+   * `role`. The author is always the session's resolved agent Profile
+   * (`session.agentProfileId`), never the `agentId` slug (#2995). Tool calls are gated
    * fail-closed against the session's allow-list. Intended for the trusted
    * agent-runtime, never a per-tenant request handler driven by client-supplied
    * role/sender.
@@ -899,10 +974,23 @@ export class ChatService {
       }
     }
 
+    // The author is the agent's resolved `bot` Profile uuid, never the
+    // `agentId` slug: `senderProfileId` is a uuid column (#2995). Enrolment is
+    // idempotent and repeated here so a session created before #2995 — whose
+    // room enrolled the slug, not the profile — still satisfies #writeMessage's
+    // membership check on its first agent turn after the upgrade.
+    const agentProfileId = await this.#resolveAgentProfileId(session);
+    await this.#enrollParticipant({
+      tenantId: params.tenantId,
+      roomId: session.chatRoomId as string,
+      profileId: agentProfileId,
+      role: 'member',
+    });
+
     return this.#writeMessage({
       tenantId: params.tenantId,
       roomId: session.chatRoomId as string,
-      senderProfileId: session.agentId,
+      senderProfileId: agentProfileId,
       content: params.content,
       role,
       messageType: params.messageType ?? 'text',
@@ -910,6 +998,104 @@ export class ChatService {
       agentSessionId: params.agentSessionId,
       toolCallData: params.toolCallData ?? null,
     });
+  }
+
+  /**
+   * Validate a SERVER-supplied agent authoring Profile (S5 #1392, #2995).
+   *
+   * `agentProfileId` selects the author of every later assistant message in the
+   * session and is enrolled as a room member, so it is held to the same
+   * standard as `actorProfileId`: it must resolve to a Profile that is VISIBLE
+   * IN THIS TENANT (the model uses optional tenancy, so an untenanted profile
+   * is legitimate and a profile owned by another tenant is not), and it must
+   * not be the acting participant — an agent room has exactly two identities.
+   *
+   * The `bot` profile type is deliberately NOT required: a persona's
+   * `actsAsProfileId` is an ordinary `crossPackageRef` to `Profile` with no
+   * type constraint anywhere in the framework, and demanding one here would
+   * reject the framework's own acting identities.
+   */
+  async #requireAgentProfile(
+    agentProfileId: string,
+    tenantId: string,
+    actorProfileId: string,
+  ): Promise<string> {
+    if (agentProfileId === actorProfileId) {
+      throw new Error(
+        'agentProfileId must not be the acting participant (authorization denied)',
+      );
+    }
+    const profile = await this.#profiles.get({ id: agentProfileId });
+    if (!profile) {
+      throw new Error(
+        'agentProfileId does not resolve to a profile (authorization denied)',
+      );
+    }
+    if (profile.tenantId !== null && profile.tenantId !== tenantId) {
+      throw new Error(
+        'agentProfileId belongs to another tenant (authorization denied)',
+      );
+    }
+    return agentProfileId;
+  }
+
+  /**
+   * Resolve the Profile uuid an agent session's agent authors as (#2995).
+   *
+   * `agentId` is an application slug; every authoring seam is a uuid column
+   * referencing `Profile`, so the slug can never be the author. The agent's
+   * `bot` Profile is resolved — created on first use, tenant-bound — through
+   * the owning package's `resolveAgentProfile()` API.
+   *
+   * Sessions created before #2995 carry no `agentProfileId`. They are backfilled
+   * lazily here, on the first agent turn after the upgrade, so an existing
+   * conversation keeps working without an offline migration.
+   *
+   * One pre-#2995 cohort must be ADOPTED rather than resolved: the voice path
+   * used to collapse a persona's `actsAsProfileId` into `agentId`, so those
+   * sessions carry a real Profile uuid there — and on PostgreSQL those rows
+   * committed, because the uuid cast succeeded. Minting a fresh `bot` profile
+   * for them would change the author mid-conversation, permanently (the
+   * no-re-point rule), and enrol a third identity in a two-seat room. When
+   * `agentId` already names a Profile visible in this tenant that is not the
+   * session participant, that Profile IS the author and is adopted as-is.
+   */
+  async #resolveAgentProfileId(session: AgentSession): Promise<string> {
+    if (session.agentProfileId) return session.agentProfileId;
+
+    const agentProfileId =
+      (await this.#adoptLegacyAgentIdProfile(session)) ??
+      (await resolveAgentProfileId(this.#profiles, {
+        agentId: session.agentId,
+        tenantId: session.tenantId,
+      }));
+    session.agentProfileId = agentProfileId;
+    await session.save();
+    return agentProfileId;
+  }
+
+  /**
+   * Adopt a pre-#2995 session whose `agentId` is already a Profile uuid, or
+   * return `null` when it is an ordinary agent slug.
+   *
+   * Held to the same standard as a caller-supplied `agentProfileId`: the
+   * Profile must be visible in the session's tenant and must not be the session
+   * participant, so an `agentId` that happens to collide with a human profile
+   * cannot make that human the author.
+   */
+  async #adoptLegacyAgentIdProfile(
+    session: AgentSession,
+  ): Promise<string | null> {
+    const candidate = session.agentId;
+    if (!UUID_PATTERN.test(candidate)) return null;
+    if (candidate === session.participantProfileId) return null;
+
+    const profile = await this.#profiles.get({ id: candidate });
+    if (!profile) return null;
+    if (profile.tenantId !== null && profile.tenantId !== session.tenantId) {
+      return null;
+    }
+    return candidate;
   }
 
   /** Load an active agent session by id, tenant-bound, or throw. */
@@ -1224,7 +1410,8 @@ export type AgentReplyService = Pick<ChatService, 'initialize'>;
  * NOT re-exported from `src/index.ts`. Only in-process, trusted agent-runtime
  * code that imports this module path directly can author messages as the agent;
  * route handlers and package consumers (which import from the package index)
- * cannot. The author is always `session.agentId`, never a caller-supplied
+ * cannot. The author is always the session's resolved agent Profile
+ * (`session.agentProfileId`), never a caller-supplied
  * sender/role, and tool calls are gated fail-closed against `allowedTools`.
  *
  * Because this lives in the same module as {@link ChatService}, reaching the

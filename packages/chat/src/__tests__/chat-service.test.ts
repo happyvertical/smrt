@@ -479,6 +479,23 @@ describe('ChatService', () => {
       });
 
       expect(agentMsg.role).toBe('assistant');
+      // The agent authors as its resolved `bot` Profile, never as the
+      // `agentId` slug (#2995). `senderProfileId` is a uuid column on
+      // PostgreSQL, so the slug cannot be an author there; SQLite would
+      // silently accept it, hence this explicit assertion.
+      expect(agentMsg.senderProfileId).not.toBe('agent-1');
+      expect(agentMsg.senderProfileId).toBe(session.agentProfileId);
+      expect(session.agentProfileId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu,
+      );
+
+      // The agent is enrolled in the room under that profile, not the slug.
+      const agentMembership = await raw.participants.findMembership(
+        room.id as string,
+        session.agentProfileId as string,
+        'tenant-1',
+      );
+      expect(agentMembership?.status).toBe('active');
     });
 
     it('should reject messages to closed sessions', async () => {

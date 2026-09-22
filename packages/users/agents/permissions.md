@@ -95,6 +95,13 @@ catalog presence then resolves permissions, throwing fail-closed by default.
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
 
+Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
+custom actions) enforce the same `collection.action` slug (custom actions use
+`collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's
+session permission snapshot (`locals.permissions`/`permissionSet`/
+`smrtPermissions` or `locals.tenantContext.permissions`), otherwise 403. Only
+`locals.tenantContext.superAdminBypass` skips it; `api.public: true` stays open.
+
 Resource-anchored guards receive the resource tenant ID. When it differs from
 the session tenant, omit the session membership so the resolver selects the
 appropriate authority; mismatched supplied membership/tenant fails closed.

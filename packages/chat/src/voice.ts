@@ -209,19 +209,23 @@ export async function createVoiceChatSession(
     assertAgentSessionMatchesActor(agentSession, options.actorProfileId);
     assertActiveAgentSession(agentSession);
   } else {
+    // `agentId` is the agent's logical identity and `agentProfileId` is the
+    // Profile it AUTHORS as — two different things since #2995. The persona's
+    // `actsAsProfileId` is the latter (a `crossPackageRef` to `Profile`), so it
+    // is passed as the authoring profile rather than collapsed into `agentId`;
+    // otherwise a synthetic `bot` profile would be minted for it and persona
+    // replies would stop being attributed to the configured acting identity.
     const agentId =
-      options.agentId ??
-      persona.actsAsProfileId ??
-      persona.id ??
-      persona.agentClass;
+      options.agentId ?? persona.id ?? persona.agentClass ?? undefined;
     if (!agentId) {
       throw new VoiceGatewayBadRequestError(
-        'createVoiceChatSession requires agentId when the persona has no acting profile or id',
+        'createVoiceChatSession requires agentId when the persona has no id or agent class',
       );
     }
     const created = await options.chatService.createAgentSession({
       tenantId: options.tenantId,
       agentId,
+      agentProfileId: persona.actsAsProfileId ?? null,
       actorProfileId: options.actorProfileId,
       allowedTools: persona.allowedTools,
       systemPrompt: options.instructions ?? persona.instructions,

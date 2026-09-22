@@ -229,7 +229,7 @@ Generated reads (`list`/`get`) on the REST and SvelteKit generators support cond
 ## Generated dev-plane route (#2782)
 
 `src/vite-plugin/dev-plane-route.ts` emits `<routesDir>/_dev/[...tool]/+server.ts`
-only when `sveltekit.devPlaneRoute.enabled === true` and
+only when `svelteKit.devPlaneRoute.enabled === true` and
 `@happyvertical/smrt-dev-mcp/dev-plane` resolves from the consumer (same
 resolvability guard as `_resources`). The route is dev-only (`$app/environment`
 `dev`, else 404), refuses to start without `SMRT_DEV_MCP_TOKEN` (503), and
@@ -237,3 +237,5 @@ delegates everything else to `createDevPlane`, passing `getSmrtConfig(...).db`
 from the generated `$lib/server/smrt` so the plane shares the app's connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
+
+Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`.
