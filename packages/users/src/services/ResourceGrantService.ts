@@ -49,6 +49,10 @@ export interface CreateResourceGrantOptions extends SmrtClassOptions {
     parentGrantId?: string | null;
   };
 }
+export interface RevokeResourceGrantOptions {
+  actor: OperationPermissionOptions;
+  verifyResource: ResourceIdentityVerifier;
+}
 
 /**
  * Public resource gate. It always verifies application ownership first and
@@ -132,12 +136,23 @@ export class ResourceGrantService {
   }
   async revoke(
     grantId: string,
-    actor: OperationPermissionOptions,
+    options: RevokeResourceGrantOptions,
   ): Promise<void> {
-    await assertOperationPermission({ ...actor, ...this.options });
     const collection = await ResourceGrantCollection.create(this.options);
     const grant = await collection.get({ id: grantId });
     if (!grant) throw new Error('Resource grant not found.');
+    const resource = {
+      tenantId: grant.tenantId ?? '',
+      resourceType: grant.resourceType,
+      resourceId: grant.resourceId,
+    };
+    if (!resource.tenantId || !(await options.verifyResource(resource)))
+      throw new Error('Resource identity was not verified.');
+    await assertOperationPermission({
+      ...options.actor,
+      ...this.options,
+      tenantId: resource.tenantId,
+    });
     grant.revokedAt = new Date().toISOString();
     await grant.save();
   }

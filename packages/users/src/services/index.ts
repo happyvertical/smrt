@@ -128,6 +128,7 @@ export {
   type ResourceIdentity,
   type ResourceIdentityVerifier,
   type ResourceOperationPermissionOptions,
+  type RevokeResourceGrantOptions,
 } from './ResourceGrantService.js';
 export {
   getCurrentSessionPermissionContext,

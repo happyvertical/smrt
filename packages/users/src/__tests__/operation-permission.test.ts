@@ -25,6 +25,7 @@ import {
   hasOperationPermission,
   OperationPermissionError,
   PermissionCatalogService,
+  ResourceGrantService,
   registerPermissionDefinitions,
   syncPermissionCatalog,
 } from '../services/index.js';
@@ -356,6 +357,63 @@ describe('operation permission guards', () => {
       allowed: false,
       reason: 'resource_grant_missing',
     });
+  });
+
+  it('requires a verified resource and tenant permission to create or revoke grants (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const service = new ResourceGrantService(options);
+    const actorOperation = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+    };
+    const resource = {
+      tenantId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+    };
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization: {
+          ...actorOperation,
+          resource,
+          verifyResource: () => false,
+        },
+        grant: {
+          ...resource,
+          userId,
+          permission: 'operation_permission_records.update',
+        },
+      }),
+    ).rejects.toThrow('Resource identity was not verified.');
+    const grant = await service.create({
+      ...options,
+      actor: actorOperation,
+      authorization: {
+        ...actorOperation,
+        resource,
+        verifyResource: () => true,
+      },
+      grant: {
+        ...resource,
+        userId,
+        permission: 'operation_permission_records.update',
+      },
+    });
+    if (!grant.id) throw new Error('Expected persisted resource grant id.');
+    await expect(
+      service.revoke(grant.id, {
+        actor: actorOperation,
+        verifyResource: () => false,
+      }),
+    ).rejects.toThrow('Resource identity was not verified.');
   });
 
   it('allows holders and denies non-holders fail-closed', async () => {
