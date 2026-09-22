@@ -64,7 +64,10 @@ let fileInputEl: HTMLInputElement | undefined;
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
 let textareaEl: HTMLTextAreaElement | undefined;
-let rootEl: HTMLDivElement | undefined;
+// The Textarea primitive's own instance, for its public `getElement()`.
+let textareaComponent:
+  | { getElement(): HTMLTextAreaElement | null }
+  | undefined = $state();
 
 function resize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -75,11 +78,8 @@ function resize(el: HTMLTextAreaElement) {
 // textarea to it here. Typed input still resizes through handleInput.
 $effect(() => {
   void content;
-  const el =
-    textareaEl ??
-    rootEl?.querySelector<HTMLTextAreaElement>('textarea') ??
-    undefined;
-  if (el) resize(el);
+  textareaEl ??= textareaComponent?.getElement() ?? undefined;
+  if (textareaEl) resize(textareaEl);
 });
 
 async function handleFileChange(event: Event) {
@@ -171,10 +171,7 @@ function removeAttachment(id: string) {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="assistant-composer"
-  bind:this={rootEl}
-  ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
+<div class="assistant-composer" ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
   {#if sendError}
     <p class="assistant-composer-error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
@@ -241,6 +238,7 @@ function removeAttachment(id: string) {
       aria-label={t(M['chat.assistant_composer.attach_files'])}
     />
     <Textarea
+      bind:this={textareaComponent}
       bind:value={content}
       class="assistant-composer-textarea"
       {placeholder}

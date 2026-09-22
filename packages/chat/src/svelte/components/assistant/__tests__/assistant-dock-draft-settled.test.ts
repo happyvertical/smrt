@@ -140,6 +140,27 @@ describe('controller draft (#2991)', () => {
     controller.dispose();
   });
 
+  it('keeps the draft across a registry or transport swap', () => {
+    let registry = registryWithSurface();
+    let transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      get transport() {
+        return transport;
+      },
+      get registry() {
+        return registry;
+      },
+      initialDraft: 'unsent text',
+    });
+    registry = registryWithSurface();
+    controller.syncRegistry();
+    expect(controller.draft).toBe('unsent text');
+    transport = createInMemoryAssistantTransport();
+    controller.syncTransport();
+    expect(controller.draft).toBe('unsent text');
+    controller.dispose();
+  });
+
   it('defaults to an empty draft', () => {
     const controller = createAssistantDockController({
       transport: createInMemoryAssistantTransport(),

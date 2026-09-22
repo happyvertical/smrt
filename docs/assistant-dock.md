@@ -426,9 +426,13 @@ its own UI without watching `controller.actions` in an `$effect`.
 | `{ status: 'rejected', by: 'user' }` | The user discarded the proposal (a `rejectAction` that was not refused). |
 | `{ status: 'unknown', result?, error? }` | No decision (see above). The retry reports its own outcome later. |
 
-It doesn't fire for a refused `rejectAction`, for an apply that never
-reached the server (surface not mounted), or for an outcome whose registry
-or transport was swapped while it was in flight. A throw from it is caught.
+It covers apply outcomes and user rejects only. It doesn't fire for a
+preview that fails, is refused, or is invalidated because its surface
+unmounted (the host that called `previewAction` reads
+`controller.actions.get(requestId)` once it resolves), for a refused
+`rejectAction`, for an apply that never reached the server (surface not
+mounted), or for an outcome whose registry or transport was swapped while
+it was in flight. A throw from it is caught.
 Only `applied` is positive evidence of a change; treat `unknown` as "may
 have landed" and never as success or failure. `onactionapplied` is
 unchanged.

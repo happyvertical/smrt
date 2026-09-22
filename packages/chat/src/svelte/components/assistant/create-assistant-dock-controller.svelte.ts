@@ -196,7 +196,10 @@ export interface AssistantDockControllerOptions {
    * swapped while in flight, for a refused `rejectAction`, or for an apply
    * that never reached the server (surface not mounted). A throw from the
    * callback is caught and never changes the action's state. For an applied
-   * outcome it fires after `onActionApplied`. */
+   * outcome it fires after `onActionApplied`. Covers the apply phase and user
+   * rejects only: a preview that fails or is refused (or is invalidated when
+   * its surface unmounts) ends `failed` without a call; a host that proposed
+   * it reads `actions.get(requestId)` after `previewAction` resolves. */
   onActionSettled?: (
     request: DataSurfaceActionRequest,
     outcome: AssistantActionOutcome,
@@ -525,7 +528,11 @@ export function createAssistantDockController(
   //     that can no longer reach it anyway);
   //   pollingStopped (an explicit host stopPolling() call is a polling
   //     preference, not context data — a swap must not silently resume
-  //     polling the host asked to stop).
+  //     polling the host asked to stop);
+  //   draft (#2991: the user's own unsent composer text, not data read from
+  //     the old context — nothing is sent until the user sends it, and then
+  //     under the new context; a host that seeded a context-specific prompt
+  //     replaces it with setDraft()).
   function resetConversationStateForContextSwap() {
     threads = [];
     activeThreadId = null;
