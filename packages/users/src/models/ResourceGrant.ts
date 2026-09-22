@@ -27,6 +27,8 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
  * operation guard has allowed the same permission.
  */
 @smrt({
+  // Grants are tenant-private even on their read-only generated surface.
+  tenantScoped: true,
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
