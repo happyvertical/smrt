@@ -27,10 +27,11 @@ export interface ResourceGrantOptions extends SmrtObjectOptions {
  * operation guard has allowed the same permission.
  */
 @smrt({
-  // Grants are tenant-private even on their read-only generated surface.
+  // Grant records reveal resource/user authorization relationships. The public
+  // surface is the permission-gated service, never generated CRUD or MCP.
   tenantScoped: true,
-  api: { include: ['list', 'get'] },
-  mcp: { include: ['list', 'get'] },
+  api: { include: [] },
+  mcp: { include: [] },
   cli: { skipApiCheck: true },
   indexes: [
     { name: 'resource_grants_lookup_idx', columns: ['tenantId', 'userId'] },

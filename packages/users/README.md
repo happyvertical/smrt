@@ -652,8 +652,8 @@ first requires the catalogued tenant permission, then requires an active exact
 overrides a resource grant, while tenant and membership denies remain the
 upstream gate. The verifier must load authoritative ownership and fail closed.
 
-`ResourceGrantService` is the only write surface: generated REST and MCP model
-writes are read-only. Its caller supplies a catalogued administrative operation
+`ResourceGrantService` is the only public grant surface: generated REST and MCP
+operations are disabled. Its caller supplies a catalogued administrative operation
 for the bootstrap grant, avoiding a circular "already delegated" requirement.
 Delegation requires a live, delegable parent owned by the actor and covering the
 same tenant/resource/permission; chains are bounded and ancestor revocation

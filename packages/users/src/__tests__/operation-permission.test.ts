@@ -29,6 +29,7 @@ import {
   registerPermissionDefinitions,
   syncPermissionCatalog,
 } from '../services/index.js';
+import { MembershipStatus } from '../types/index.js';
 
 @smrt({
   api: { include: ['list', 'create', 'update'] },
@@ -414,6 +415,67 @@ describe('operation permission guards', () => {
         verifyResource: () => false,
       }),
     ).rejects.toThrow('Resource identity was not verified.');
+    const unauthorized = await createActor([]);
+    await expect(
+      service.create({
+        ...options,
+        actor: {
+          ...actorOperation,
+          tenantId: unauthorized.tenant.id,
+          userId: unauthorized.user.id,
+        },
+        authorization: {
+          ...actorOperation,
+          resource,
+          verifyResource: () => true,
+        },
+        grant: {
+          ...resource,
+          userId,
+          permission: 'operation_permission_records.update',
+        },
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+  });
+
+  it('does not let a resource grant survive membership revocation (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    await (
+      await grants.create({
+        tenantId,
+        userId,
+        resourceType: 'construction-project',
+        resourceId: 'project-a',
+        permission: 'operation_permission_records.update',
+      })
+    ).save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({ allowed: true });
+    const membership = await memberships.findByUserAndTenant(userId, tenantId);
+    if (!membership) throw new Error('Expected membership.');
+    membership.status = MembershipStatus.SUSPENDED;
+    await membership.save();
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'tenant_permission_denied',
+    });
   });
 
   it('allows holders and denies non-holders fail-closed', async () => {
