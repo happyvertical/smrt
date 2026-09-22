@@ -296,6 +296,33 @@ describePostgres(
       ]);
     });
 
+    it('the display chain reports an unreadable ancestor as an access error, not a broken chain', async () => {
+      turnTenancyOn();
+      registerTenantScopedClass('Tenant', {
+        field: 'id',
+        mode: 'optional',
+        autoFilter: true,
+      });
+      try {
+        const resolver = await PermissionResolver.create(options);
+        // Under the desk's own scope the interceptor refuses the ancestor
+        // read: an ACCESS error, never a claim that the hierarchy is broken.
+        const error = await withTenant({ tenantId: desk.id as string }, () =>
+          resolver.getTenantInheritanceChain(desk.id as string),
+        ).catch((caught: unknown) => caught);
+        expect((error as Error).name).toBe('TenantIsolationError');
+        expect((error as { code?: string }).code).not.toBe('PARENT_NOT_FOUND');
+        // Authorization is unaffected: the cascade reads outside the filter.
+        const tenantPermissions = await withTenant(
+          { tenantId: desk.id as string },
+          () => resolver.resolveTenantPermissions(desk.id as string),
+        );
+        expect(tenantPermissions.permissions).toBeInstanceOf(Set);
+      } finally {
+        unregisterTenantScopedClass('Tenant');
+      }
+    });
+
     it('fails closed when the real parent chain is broken', async () => {
       const db = isolated?.db;
       if (!db) throw new Error('Expected the isolated PostgreSQL database.');

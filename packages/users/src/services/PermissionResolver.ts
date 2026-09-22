@@ -454,8 +454,16 @@ export class PermissionResolver {
    * parent, cycle, or deeper than `MAX_TENANT_HIERARCHY_DEPTH`) throws
    * {@link TenantHierarchyError}: the resolution fails closed rather than
    * guessing which overrides apply.
+   *
+   * `unreadableAncestor: 'truncate'` is for callers outside system context
+   * (the display chain), where an ancestor the caller cannot read is
+   * indistinguishable from a missing one: the chain then ends at the nearest
+   * readable ancestor instead of throwing `PARENT_NOT_FOUND`.
    */
-  private async loadVerifiedAncestorChain(tenant: Tenant): Promise<Tenant[]> {
+  private async loadVerifiedAncestorChain(
+    tenant: Tenant,
+    options: { unreadableAncestor?: 'throw' | 'truncate' } = {},
+  ): Promise<Tenant[]> {
     const tenantId = tenant.id as string;
     const pathIds = tenant.getAncestorIds();
     if (
@@ -509,6 +517,12 @@ export class PermissionResolver {
       seen.add(cursor);
       const parent = await this.tenantCollection.get({ id: cursor });
       if (!parent?.id) {
+        // Outside system context a missing row may only be invisible to the
+        // caller, not absent: the display path stops at the nearest ancestor
+        // it can read rather than report intact data as broken.
+        if (options.unreadableAncestor === 'truncate') {
+          break;
+        }
         throw new TenantHierarchyError(
           `Tenant ${tenantId} names missing ancestor ${cursor}`,
           'PARENT_NOT_FOUND',
@@ -533,9 +547,14 @@ export class PermissionResolver {
       return [];
     }
 
-    // The same verified chain the cascade applies, so the diagnostic never
-    // disagrees with authorization (throws on a broken real chain, as it does).
-    const ancestors = await this.loadVerifiedAncestorChain(tenant);
+    // The same verified chain the cascade applies when every ancestor is
+    // readable by the caller. This runs under the caller's own tenancy scope,
+    // so an ancestor it cannot read ends the chain (nearest ancestors kept)
+    // rather than being reported as a broken hierarchy. Cycles and over-depth
+    // still throw.
+    const ancestors = await this.loadVerifiedAncestorChain(tenant, {
+      unreadableAncestor: 'truncate',
+    });
     const chain: Array<{
       tenant: Tenant;
       inherits: boolean;

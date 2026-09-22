@@ -134,7 +134,11 @@ real chain: a per-request failure for that tenant's whole subtree, which
 `smrt db:materialize-tenant-hierarchy --dry-run` reports ahead of time (see
 README "Upgrading an existing fleet").
 `getTenantInheritanceChain()` returns Tenant rows, so it is NOT run in system
-context; it reports the same verified chain the cascade applies. Descendant path rewrites are raw column updates recorded through
+context; it reports the same verified chain the cascade applies when the
+caller can read every ancestor. Otherwise it never reports PARENT_NOT_FOUND
+for a row the caller simply cannot see: an interceptor refusal surfaces as
+TenantIsolationError, and a silently filtered row (e.g. RLS) ends the chain at
+the nearest readable ancestor. Descendant path rewrites are raw column updates recorded through
 `bumpChangeFeed`; `updated_at` is intentionally not bumped (derived columns;
 every save recomputes them). They are not atomic with the moving row's save —
 an interrupted subtree fails closed until re-saved or backfilled.
