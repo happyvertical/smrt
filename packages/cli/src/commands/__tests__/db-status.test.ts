@@ -134,6 +134,34 @@ describe('db:status', () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps a probe-blocked type upgrade's own diagnosis (#3041)", () => {
+    expect(
+      summarizeSchemaDiff({
+        added_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'accounts',
+            name: '_meta_data',
+            mismatch: { expected: 'JSONB', actual: 'json' },
+            advisory: {
+              severity: 'warning',
+              message:
+                'blocked: accounts._meta_data is declared JSON but 2 JSON object(s) carry duplicate keys that jsonb would silently collapse.',
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        name: 'accounts._meta_data',
+        type: 'type_upgrade',
+        recommendation:
+          'Manual intervention required: blocked: accounts._meta_data is declared JSON but 2 JSON object(s) carry duplicate keys that jsonb would silently collapse.',
+      },
+    ]);
+  });
+
   it('summarizes live schema drift into actionable status entries', () => {
     expect(
       summarizeSchemaDiff({

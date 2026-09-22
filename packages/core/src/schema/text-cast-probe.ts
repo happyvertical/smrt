@@ -271,10 +271,11 @@ function renderDuplicateKeyQuerySql(
 }
 
 /**
- * Upper bound for the preservation walk. A timeout resolves to
- * `unavailable` -- the conversion is then not proposed (never a silent
- * collapse), and `db:status` live parity still reports the json/jsonb drift
- * without probing, so the column does not disappear from view.
+ * Upper bound for the preservation walk. A walk that does not finish (this
+ * timeout, a lock wait) resolves to `dirty` with reason
+ * `preservation_unverified`: the differ then emits a visible warning
+ * advisory with no conversion SQL (never a silent collapse, and never the
+ * silent withdrawal `unavailable` would mean).
  */
 const PRESERVATION_PROBE_TIMEOUT = '60s';
 
