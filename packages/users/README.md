@@ -686,6 +686,28 @@ writes only rows that differ (a second run is a no-op), runs in one
 transaction, touches only the two derived columns, and refuses — writing
 nothing — when any tenant's parent chain is broken, listing the offenders.
 
+**Upgrading an existing fleet.** Two things change the moment the new package
+is deployed, before any backfill:
+
+1. **Run `--dry-run` first, as a health check.** A tenant whose *real*
+   `parent_tenant_id` chain is broken — a missing parent, a cycle, or deeper
+   than 10 (older releases accepted explicit `hierarchyLevel`/`hierarchyPath`
+   create inputs without checking) — now makes permission resolution for that
+   tenant and its whole subtree throw `TenantHierarchyError`
+   (`code`: `PARENT_NOT_FOUND`, `CIRCULAR_REFERENCE`, `MAX_DEPTH_EXCEEDED`)
+   instead of guessing. The dry run lists exactly these rows; repair their
+   `parent_tenant_id` by hand (the backfill refuses to write while any exist),
+   then apply.
+2. **The tenant-override cascade follows the real parent chain.** Resolution
+   no longer trusts a stored path it cannot verify, so a never-materialized
+   child now receives its real ancestors' `TenantPermissionOverride` rows in
+   both directions — DENYs *and* GRANTs (subject to `cascadePermissions` /
+   `inheritPermissions`). That is the intended cascade and what the backfill
+   produces anyway, but ancestor GRANT overrides that were previously inert on
+   such rows become live: audit them before rolling out. `inheritsToDescendants`
+   and the ancestor-read policy stay dormant on those rows until the backfill
+   runs.
+
 Permission resolution works under the `@happyvertical/smrt-tenancy`
 interceptor regardless of which users classes you register as tenant-scoped:
 the resolver's own cross-tenant reads (ancestor tenant overrides, ancestor and

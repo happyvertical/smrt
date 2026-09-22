@@ -407,6 +407,8 @@ export async function recordTenantHierarchyChanges(
     rowIds === undefined
       ? [{ table: tableName, rowId: null }]
       : rowIds.map((rowId) => ({ table: tableName, rowId }));
+  // One failed append must not drop the rest: keep recording, and log each
+  // row that could not be recorded so it can be identified.
   for (const input of inputs) {
     try {
       await bumpChangeFeed(db, { ...input, operation: 'update' });
@@ -416,7 +418,6 @@ export async function recordTenantHierarchyChanges(
         rowId: input.rowId,
         error: error instanceof Error ? error.message : String(error),
       });
-      return;
     }
   }
 }

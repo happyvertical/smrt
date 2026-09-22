@@ -533,8 +533,9 @@ export class PermissionResolver {
       return [];
     }
 
-    const ancestors =
-      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    // The same verified chain the cascade applies, so the diagnostic never
+    // disagrees with authorization (throws on a broken real chain, as it does).
+    const ancestors = await this.loadVerifiedAncestorChain(tenant);
     const chain: Array<{
       tenant: Tenant;
       inherits: boolean;

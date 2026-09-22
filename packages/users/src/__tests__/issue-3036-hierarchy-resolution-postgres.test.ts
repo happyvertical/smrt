@@ -265,7 +265,9 @@ describePostgres(
       expect(result.permissions.has('tenants.read')).toBe(false);
       expect(result.permissions.size).toBeGreaterThan(0);
 
-      // Never-materialized legacy shape: the real ancestor's DENY still lands.
+      // Never-materialized legacy shape: the real chain applies in BOTH
+      // directions — the root's DENY lands, and so does a root GRANT (the
+      // cascade semantics the backfill would produce anyway).
       await db.query(
         'UPDATE tenants SET hierarchy_path = ?, hierarchy_level = 0 WHERE id = ?',
         '',
@@ -274,6 +276,24 @@ describePostgres(
       result = await resolveAt(resolver, userId, publication);
       expect(result.permissions.has('tenants.read')).toBe(false);
       expect(result.permissions.has('tenants.delete')).toBe(false);
+      // Written the way a network administrator would: in the network's context.
+      await withTenant({ tenantId: network.id as string }, async () => {
+        await tenantOverrides.create({
+          tenantId: network.id,
+          permissionId: deletePerm.id,
+          effect: TenantPermissionEffect.GRANT,
+        });
+      });
+      result = await resolveAt(resolver, userId, publication);
+      expect(result.permissions.has('tenants.delete')).toBe(true);
+      // The display chain matches what authorization applied.
+      const chain = await resolver.getTenantInheritanceChain(
+        publication.id as string,
+      );
+      expect(chain.map((link) => link.tenant.id)).toEqual([
+        network.id,
+        publication.id,
+      ]);
     });
 
     it('fails closed when the real parent chain is broken', async () => {

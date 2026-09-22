@@ -129,9 +129,12 @@ backstops those reads any more, the tenant-override cascade verifies its chain
 too: it uses hierarchyPath only when it agrees link-by-link with
 parentTenantId, otherwise walks the real parent links (so a forged path cannot
 cascade an unrelated tenant in, and a never-materialized row still gets its real
-ancestors' DENYs), and throws TenantHierarchyError on a broken real chain.
+ancestors' DENYs — and GRANTs), and throws TenantHierarchyError on a broken
+real chain: a per-request failure for that tenant's whole subtree, which
+`smrt db:materialize-tenant-hierarchy --dry-run` reports ahead of time (see
+README "Upgrading an existing fleet").
 `getTenantInheritanceChain()` returns Tenant rows, so it is NOT run in system
-context. Descendant path rewrites are raw column updates recorded through
+context; it reports the same verified chain the cascade applies. Descendant path rewrites are raw column updates recorded through
 `bumpChangeFeed`; `updated_at` is intentionally not bumped (derived columns;
 every save recomputes them). They are not atomic with the moving row's save —
 an interrupted subtree fails closed until re-saved or backfilled.
