@@ -642,6 +642,23 @@ PermissionResolver evaluates permissions in order, where each level can add or r
 Tenant-level inherited permissions are part of the effective permission set
 returned by `resolvePermissions()` and `SessionService.loadSessionContext()`.
 
+### Resource-scoped grants
+
+Use `checkResourceOperationPermission()` where an application must restrict an
+otherwise tenant-authorized operation to one exact resource. Pass the resource
+tenant/type/id and an application-owned `verifyResource` callback. The guard
+first requires the catalogued tenant permission, then requires an active exact
+`ResourceGrant`; a grant for project A never matches project B. A resource deny
+overrides a resource grant, while tenant and membership denies remain the
+upstream gate. The verifier must load authoritative ownership and fail closed.
+
+`ResourceGrantService` is the only public grant surface: generated REST and MCP
+operations are disabled. Its caller supplies a catalogued administrative operation
+for the bootstrap grant, avoiding a circular "already delegated" requirement.
+Delegation requires a live, delegable parent owned by the actor and covering the
+same tenant/resource/permission; chains are bounded and ancestor revocation
+immediately invalidates every child at the next guard check.
+
 ### Hierarchical tenants
 
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.

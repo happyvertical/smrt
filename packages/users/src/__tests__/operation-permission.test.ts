@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
+import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import '../models/index.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
+import { ResourceGrantCollection } from '../collections/ResourceGrantCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import {
   DEFAULT_ROLE_PERMISSION_PATTERNS,
@@ -19,13 +21,16 @@ import type { Tenant } from '../models/Tenant.js';
 import type { User } from '../models/User.js';
 import {
   assertOperationPermission,
+  checkResourceOperationPermission,
   deriveOperationPermissionSlug,
   hasOperationPermission,
   OperationPermissionError,
   PermissionCatalogService,
+  ResourceGrantService,
   registerPermissionDefinitions,
   syncPermissionCatalog,
 } from '../services/index.js';
+import { MembershipStatus } from '../types/index.js';
 
 @smrt({
   api: { include: ['list', 'create', 'update'] },
@@ -211,6 +216,474 @@ describe('operation permission guards', () => {
         permissionSet: [] as readonly string[],
       }),
     ).rejects.toThrow(OperationPermissionError);
+  });
+
+  it('requires an exact live resource grant after tenant permission (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const resourceType = 'construction-project';
+    const grants = await ResourceGrantCollection.create(options);
+    const grant = await grants.create({
+      tenantId,
+      userId,
+      resourceType,
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+    });
+    await grant.save();
+    const base = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+      verifyResource: async (resource: { tenantId: string }) =>
+        resource.tenantId === tenantId,
+    };
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({ allowed: true });
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-b',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+    const explicitDeny = await grants.create({
+      tenantId,
+      userId,
+      resourceType,
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      effect: 'deny',
+    });
+    await explicitDeny.save();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: { tenantId, resourceType, resourceId: 'project-a' },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_denied',
+    });
+    await explicitDeny.delete();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId: 'other-tenant',
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_not_verified',
+    });
+    grant.revokedAt = new Date().toISOString();
+    await grant.save();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('invalidates delegated grants when an ancestor is revoked (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const parent = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      canDelegate: true,
+    });
+    await parent.save();
+    const child = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      parentGrantId: parent.id,
+    });
+    await child.save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({ allowed: true });
+    parent.revokedAt = new Date().toISOString();
+    await parent.save();
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('requires a verified resource and tenant permission to create or revoke grants (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const service = new ResourceGrantService(options);
+    const grants = await ResourceGrantCollection.create(options);
+    const actorOperation = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+    };
+    const resource = {
+      tenantId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+    };
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization: {
+          ...actorOperation,
+          resource,
+          verifyResource: () => false,
+        },
+        grant: {
+          ...resource,
+          userId,
+          permission: 'operation_permission_records.update',
+        },
+      }),
+    ).rejects.toThrow('Resource identity was not verified.');
+    const grant = await service.create({
+      ...options,
+      actor: actorOperation,
+      authorization: {
+        ...actorOperation,
+        resource,
+        verifyResource: () => true,
+      },
+      grant: {
+        ...resource,
+        userId,
+        permission: 'operation_permission_records.update',
+      },
+    });
+    if (!grant.id) throw new Error('Expected persisted resource grant id.');
+    await expect(
+      service.revoke(grant.id, {
+        actor: actorOperation,
+        verifyResource: () => false,
+      }),
+    ).rejects.toThrow('Resource identity was not verified.');
+    const unauthorized = await createActor([]);
+    await expect(
+      service.revoke(grant.id, {
+        actor: {
+          ...actorOperation,
+          tenantId: unauthorized.tenant.id,
+          userId: unauthorized.user.id,
+          onDeny: 'return',
+        },
+        verifyResource: () => true,
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+    expect((await grants.get({ id: grant.id }))?.revokedAt).toBeFalsy();
+    await expect(
+      service.create({
+        ...options,
+        actor: {
+          ...actorOperation,
+          tenantId: unauthorized.tenant.id,
+          userId: unauthorized.user.id,
+          onDeny: 'return',
+        },
+        authorization: {
+          ...actorOperation,
+          resource,
+          verifyResource: () => true,
+        },
+        grant: {
+          ...resource,
+          userId,
+          permission: 'operation_permission_records.update',
+        },
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+    expect(
+      await grants.findExact(
+        tenantId,
+        userId,
+        resource.resourceType,
+        resource.resourceId,
+        'operation_permission_records.update',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('does not let a resource grant survive membership revocation (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    await (
+      await grants.create({
+        tenantId,
+        userId,
+        resourceType: 'construction-project',
+        resourceId: 'project-a',
+        permission: 'operation_permission_records.update',
+      })
+    ).save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({ allowed: true });
+    const membership = await memberships.findByUserAndTenant(userId, tenantId);
+    if (!membership) throw new Error('Expected membership.');
+    membership.status = MembershipStatus.SUSPENDED;
+    await membership.save();
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'tenant_permission_denied',
+    });
+  });
+
+  it('rejects delegation escalation and malformed parent chains (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const parent = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      canDelegate: true,
+    });
+    await parent.save();
+    if (!parent.id) throw new Error('Expected persisted parent grant id.');
+    const service = new ResourceGrantService(options);
+    const actorOperation = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+    };
+    const authorization = {
+      ...actorOperation,
+      resource: {
+        tenantId,
+        resourceType: 'construction-project',
+        resourceId: 'project-b',
+      },
+      verifyResource: () => true,
+    };
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization,
+        grant: {
+          ...authorization.resource,
+          userId,
+          permission: 'operation_permission_records.update',
+          parentGrantId: parent.id,
+        },
+      }),
+    ).rejects.toThrow('Delegation parent does not cover this grant.');
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization: {
+          ...actorOperation,
+          resource: {
+            tenantId,
+            resourceType: 'construction-project',
+            resourceId: 'project-a',
+          },
+          verifyResource: () => true,
+        },
+        grant: {
+          tenantId,
+          userId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+          permission: 'operation_permission_records.create',
+          parentGrantId: parent.id,
+        },
+      }),
+    ).rejects.toThrow('Delegation parent does not cover this grant.');
+    parent.parentGrantId = parent.id;
+    await parent.save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...actorOperation,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('fails closed for a delegation chain deeper than eight ancestors (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    let parentGrantId: string | undefined;
+    for (let index = 0; index < 10; index += 1) {
+      const ancestor =
+        index === 9
+          ? undefined
+          : await users.create({
+              email: `resource-grant-ancestor-${index}-${randomUUID()}@example.com`,
+            });
+      await ancestor?.save();
+      if (ancestor && !ancestor.id)
+        throw new Error('Expected persisted ancestor id.');
+      const grant = await grants.create({
+        tenantId,
+        // Only the deepest record belongs to the actor. Its ancestors still
+        // have to be valid even though they are not independently usable by
+        // this actor.
+        userId: ancestor?.id ?? userId,
+        resourceType: 'construction-project',
+        resourceId: 'project-a',
+        permission: 'operation_permission_records.update',
+        canDelegate: true,
+        parentGrantId,
+      });
+      await grant.save();
+      parentGrantId = grant.id;
+    }
+    await expect(
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('fails closed for an orphaned persisted delegation grant (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const orphan = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+    });
+    await orphan.save();
+    if (!orphan.id) throw new Error('Expected persisted grant id.');
+    // Simulate stale/corrupt historical data that pre-dates the FK; the guard
+    // must still reject it rather than treating the unresolved parent as root.
+    const db = await getDatabase(options.db);
+    await db.query('PRAGMA foreign_keys = OFF');
+    await db.query(
+      'UPDATE resource_grants SET parent_grant_id = ? WHERE id = ?',
+      randomUUID(),
+      orphan.id,
+    );
+    await db.query('PRAGMA foreign_keys = ON');
+    await expect(
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
   });
 
   it('allows holders and denies non-holders fail-closed', async () => {

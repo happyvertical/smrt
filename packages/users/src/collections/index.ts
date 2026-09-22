@@ -27,6 +27,7 @@ export {
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';
 export { PermissionCollection } from './PermissionCollection.js';
+export { ResourceGrantCollection } from './ResourceGrantCollection.js';
 export {
   RoleCollection,
   type SeedSystemRolesOptions,
