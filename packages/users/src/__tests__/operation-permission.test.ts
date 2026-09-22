@@ -417,6 +417,16 @@ describe('operation permission guards', () => {
     ).rejects.toThrow('Resource identity was not verified.');
     const unauthorized = await createActor([]);
     await expect(
+      service.revoke(grant.id, {
+        actor: {
+          ...actorOperation,
+          tenantId: unauthorized.tenant.id,
+          userId: unauthorized.user.id,
+        },
+        verifyResource: () => true,
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+    await expect(
       service.create({
         ...options,
         actor: {
@@ -524,6 +534,29 @@ describe('operation permission guards', () => {
         },
       }),
     ).rejects.toThrow('Delegation parent does not cover this grant.');
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization: {
+          ...actorOperation,
+          resource: {
+            tenantId,
+            resourceType: 'construction-project',
+            resourceId: 'project-a',
+          },
+          verifyResource: () => true,
+        },
+        grant: {
+          tenantId,
+          userId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+          permission: 'operation_permission_records.create',
+          parentGrantId: parent.id,
+        },
+      }),
+    ).rejects.toThrow('Delegation parent does not cover this grant.');
     parent.parentGrantId = parent.id;
     await parent.save();
     const guard = () =>
@@ -537,6 +570,58 @@ describe('operation permission guards', () => {
         },
       });
     await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('fails closed for a delegation chain deeper than eight ancestors (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    let parentGrantId: string | undefined;
+    for (let index = 0; index < 10; index += 1) {
+      const ancestor =
+        index === 9
+          ? undefined
+          : await users.create({
+              email: `resource-grant-ancestor-${index}-${randomUUID()}@example.com`,
+            });
+      await ancestor?.save();
+      if (ancestor && !ancestor.id)
+        throw new Error('Expected persisted ancestor id.');
+      const grant = await grants.create({
+        tenantId,
+        // Only the deepest record belongs to the actor. Its ancestors still
+        // have to be valid even though they are not independently usable by
+        // this actor.
+        userId: ancestor?.id ?? userId,
+        resourceType: 'construction-project',
+        resourceId: 'project-a',
+        permission: 'operation_permission_records.update',
+        canDelegate: true,
+        parentGrantId,
+      });
+      await grant.save();
+      parentGrantId = grant.id;
+    }
+    await expect(
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
       allowed: false,
       reason: 'resource_grant_missing',
     });
