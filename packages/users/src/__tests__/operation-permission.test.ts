@@ -478,6 +478,70 @@ describe('operation permission guards', () => {
     });
   });
 
+  it('rejects delegation escalation and malformed parent chains (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const parent = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      canDelegate: true,
+    });
+    await parent.save();
+    if (!parent.id) throw new Error('Expected persisted parent grant id.');
+    const service = new ResourceGrantService(options);
+    const actorOperation = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+    };
+    const authorization = {
+      ...actorOperation,
+      resource: {
+        tenantId,
+        resourceType: 'construction-project',
+        resourceId: 'project-b',
+      },
+      verifyResource: () => true,
+    };
+    await expect(
+      service.create({
+        ...options,
+        actor: actorOperation,
+        authorization,
+        grant: {
+          ...authorization.resource,
+          userId,
+          permission: 'operation_permission_records.update',
+          parentGrantId: parent.id,
+        },
+      }),
+    ).rejects.toThrow('Delegation parent does not cover this grant.');
+    parent.parentGrantId = parent.id;
+    await parent.save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...actorOperation,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
   it('allows holders and denies non-holders fail-closed', async () => {
     const holder = await createActor(['operation_permission_records.update']);
     const nonHolder = await createActor([]);
