@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.16
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - resolve permissions outside the tenant filter; maintain tenant hierarchy (#3040) (users)
+- @happyvertical/smrt-config@0.51.16
+  - @happyvertical/smrt-scanner@0.51.16
+  - @happyvertical/smrt-types@0.51.16
+
 ## 0.51.15
 
 ### Patch Changes
