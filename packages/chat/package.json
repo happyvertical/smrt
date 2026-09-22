@@ -47,7 +47,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
