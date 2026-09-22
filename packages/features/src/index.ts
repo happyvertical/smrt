@@ -14,6 +14,12 @@ import './__smrt-register__.js';
 export { FeatureDefinition } from './feature-definition.js';
 export { FeatureDefinitionCollection } from './feature-definitions.js';
 export { FeatureOverride } from './feature-override.js';
+export {
+  FeatureOverrideAuthorizationError,
+  type FeatureOverrideAuthorizer,
+  FeatureOverrideService,
+  type FeatureOverrideWriteRequest,
+} from './feature-override-service.js';
 export { FeatureOverrideCollection } from './feature-overrides.js';
 export { FeatureResolver } from './feature-resolver.js';
 export { FeatureSyncService } from './feature-sync.js';

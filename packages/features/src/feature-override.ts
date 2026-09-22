@@ -10,8 +10,9 @@ import {
 // another user) can be written, and the object is not tenant-scoped. Generated
 // REST routes and MCP tools only check authentication, so they are closed
 // (#3013). Hosts write overrides server-side through
-// `FeatureOverrideCollection.setOverride()` / `removeOverride()` after their
-// own authorization decision. The CLI is closed too: generated CLI commands
+// `FeatureOverrideService`, which requires an explicit authorizer for every
+// write (or the collection's `setOverride()` / `removeOverride()` after their
+// own authorization decision). The CLI is closed too: generated CLI commands
 // dispatch through the generated API.
 @smrt({
   tableName: '_smrt_feature_overrides',

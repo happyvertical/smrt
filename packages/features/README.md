@@ -55,11 +55,20 @@ The first match wins.
 
 ## Generated surfaces
 
-`FeatureDefinition` and `FeatureOverride` ship with generated REST routes and
-MCP tools and CLI commands closed (`api: false`, `mcp: false`, `cli: false`). Override rows are
-authorization state for every scope, so expose writes only through your own
-server code that authorizes the caller first, then calls
-`FeatureOverrideCollection.setOverride()` / `removeOverride()`.
+`FeatureDefinition` and `FeatureOverride` ship with generated REST routes,
+MCP tools, and CLI commands closed (`api: false`, `mcp: false`,
+`cli: false`). Override rows are authorization state for every scope, so
+write them only from server code through `FeatureOverrideService`, which
+asks an authorizer you bind to the current caller before every write and
+fails closed:
+
+```typescript
+const service = new FeatureOverrideService(overrides, (request) =>
+  request.scopeType === 'tenant' && request.scopeId === session.tenantId &&
+  session.permissions.has('features.manage'),
+);
+await service.setOverride(key, 'tenant', session.tenantId, FeatureOverrideEffect.ENABLE);
+```
 
 ## Documentation
 
