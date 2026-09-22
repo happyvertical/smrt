@@ -13,26 +13,20 @@ const SENSITIVE_QUERY_PARAMS = new Set([
 // embedded inside a larger message such as a thrown error's text or stack.
 //
 // The username is `*` (not `+`) so an empty-username form
-// (`postgres://:secret@host/db`) still matches. The password is greedy, so
-// regex backtracking matches through the LAST `@` in its span. Free-form
-// error text is exactly where a malformed password shows up — a literal
-// unescaped `@`, raw whitespace (`user:secret pass@host`, the input that
-// makes URL parsing fail), both (`user:sec ret@pa ss@host`), or scheme-like
-// text (`user:x:https://y@host`) — and the scrubber cannot tell where such a
-// password ends, so it redacts up to the last possible credential delimiter.
-// Two alternatives, tried in order:
-//
-// 1. Through the last `@` before the next `scheme://` on the line, so a
-//    second connection string on the same line keeps its own match.
-// 2. Otherwise (no `@` before that next `scheme://`, i.e. the scheme-like
-//    text is inside the password), through the last `@` on the line.
-//
-// Neither crosses a newline, so a stack trace's other frames survive. Both
-// can over-redact text between a DSN and a later unrelated `@` on the same
-// line (an email); hiding too much text is the safe failure for a secret
-// scrubber.
+// (`postgres://:secret@host/db`) still matches. The password is `[^\n]*@`:
+// greedy, so regex backtracking matches through the LAST `@` on the line.
+// Free-form error text is exactly where a malformed password shows up — a
+// literal unescaped `@`, raw whitespace (`user:secret pass@host`, the input
+// that makes URL parsing fail), scheme-like text (`user:x@https://y@host`),
+// or any mix — and no narrower boundary can tell where such a password
+// ends, so the scrubber redacts through the last possible credential
+// delimiter. The match never crosses a newline, so a stack trace's other
+// frames survive. The accepted cost is over-redaction: everything between
+// the first credential-bearing DSN on a line and the line's last `@` (a
+// second DSN's host, an email) is hidden too — the safe failure for a
+// secret scrubber.
 const CONNECTION_STRING_USERINFO_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)(?:(?:(?![a-z][a-z0-9+.-]*:\/\/)[^\n])*@|[^\n]*@)/gi;
+  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)[^\n]*@/gi;
 
 const SENSITIVE_QUERY_PARAM_PATTERN =
   /([?&](?:access_token|apikey|api_key|auth|auth_token|password|token)=)[^&\s]+/gi;

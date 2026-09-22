@@ -101,10 +101,26 @@ describe('db command utilities', () => {
 
     it('redacts multiple connection strings and query-param secrets in one message', () => {
       const text =
-        'primary postgres://a:one@host1/db1 failed; fallback postgres://b:two@host2/db2?token=abc also failed';
+        'primary postgres://a:one@host1/db1 failed\nfallback postgres://b:two@host2/db2?token=abc also failed';
       expect(redactConnectionStringsInText(text)).toBe(
-        'primary postgres://a:***@host1/db1 failed; fallback postgres://b:***@host2/db2?token=*** also failed',
+        'primary postgres://a:***@host1/db1 failed\nfallback postgres://b:***@host2/db2?token=*** also failed',
       );
+    });
+
+    it('over-redacts, never leaks, when two connection strings share a line (#2985)', () => {
+      const redacted = redactConnectionStringsInText(
+        'primary postgres://a:one@host1/db1 failed; fallback postgres://b:two@host2/db2?token=abc',
+      );
+      expect(redacted).toBe('primary postgres://a:***@host2/db2?token=***');
+      expect(redacted).not.toMatch(/one|two|abc/);
+    });
+
+    it('redacts a password mixing a literal "@" with scheme-like text (#2985)', () => {
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://user:secret@https://suffix@host/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
     });
 
     it('leaves ordinary error text with no embedded connection string unchanged', () => {
