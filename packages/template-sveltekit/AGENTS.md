@@ -13,7 +13,7 @@ It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Current generated-project contract
 
-- Node `>=24.18.0`; pnpm `10.34.4` via `packageManager` and `engines`.
+- Node `>=24.18.0`; pnpm `11.11.0` via `packageManager` and `engines`.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
 - The production baseline uses adapter-node with separate web, task-worker, and

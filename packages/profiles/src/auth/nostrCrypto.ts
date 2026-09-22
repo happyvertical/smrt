@@ -12,7 +12,7 @@ import {
   hkdfSync,
   randomBytes,
 } from 'node:crypto';
-import { schnorr, secp256k1 } from '@noble/curves/secp256k1';
+import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js';
 import { bech32 } from 'bech32';
 
 export interface NostrKeypair {
@@ -313,7 +313,7 @@ export function isValidPubkey(pubkey: string): boolean {
   try {
     // Try to use it in a point multiplication
     const fullPubkey = Buffer.from(`02${pubkey}`, 'hex');
-    secp256k1.ProjectivePoint.fromHex(fullPubkey);
+    secp256k1.Point.fromBytes(fullPubkey);
     return true;
   } catch {
     return false;

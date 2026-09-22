@@ -140,7 +140,7 @@ wrapper is checked in — always invoke via `./gradlew`.
 
 ## Conventions
 
-- Kotlin 2.4.0 / AGP 9.2.1 (androidKmpLibrary DSL) / Gradle 9.6.1 /
+- Kotlin 2.4.20 / AGP 9.4.1 (androidKmpLibrary DSL) / Gradle 9.7.1 /
   compileSdk 36 / minSdk 26 / JVM toolchain 21 / iOS deployment 17.0 —
   renovate keeps these current; bump deliberately in
   `gradle/libs.versions.toml`.

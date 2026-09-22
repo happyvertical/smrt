@@ -142,8 +142,8 @@ minimumReleaseAgeExclude:
   - '@happyvertical/utils@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1079.0
-  '@google-cloud/tasks': ^6.2.3
+  '@aws-sdk/client-sqs': ^3.1136.0
+  '@google-cloud/tasks': ^7.1.1
   '@happyvertical/ai': ^0.89.12
   '@happyvertical/cache': ^0.89.12
   '@happyvertical/documents': ^0.89.12
@@ -166,9 +166,9 @@ catalog:
   '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.89.12
   '@happyvertical/utils': ^0.89.12
-  '@sentry/node': ^10.63.0
+  '@sentry/node': ^10.75.0
   bull: ^4.16.5
-  bullmq: ^5.79.2
+  bullmq: ^6.3.8
   jimp: ^1.6.1
   sharp: ^0.35.4
 
