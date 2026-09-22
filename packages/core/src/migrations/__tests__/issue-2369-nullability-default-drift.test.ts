@@ -559,6 +559,106 @@ for (const { name, type, engine } of engines) {
       }
     });
 
+    it('adds two backfilled required columns in one batch when the first is unique (#3008 review)', async () => {
+      await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+      await db.query('CREATE INDEX items_name_idx ON items (name)');
+      await db.query(
+        "INSERT INTO items (id, name) VALUES ('i1', 'a'), ('i2', 'b')",
+      );
+      const manifest = {
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            claim_key: {
+              type: 'TEXT',
+              notNull: true,
+              unique: true,
+              backfill: "'closed:' || id",
+            },
+            label: { type: 'TEXT', notNull: true, backfill: "'l:' || id" },
+          },
+          [{ name: 'items_name_idx', columns: ['name'] }],
+        ),
+      };
+      await applyStatements(
+        db,
+        getSQLFromDiff(await comparer().compare(manifest)),
+      );
+      expect(
+        (await db.query('SELECT id, claim_key, label FROM items ORDER BY id'))
+          .rows,
+      ).toEqual([
+        { id: 'i1', claim_key: 'closed:i1', label: 'l:i1' },
+        { id: 'i2', claim_key: 'closed:i2', label: 'l:i2' },
+      ]);
+      await expect(
+        db.query(
+          "INSERT INTO items (id, name, claim_key, label) VALUES ('i3', 'c', 'closed:i1', 'x')",
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('refuses a unique column whose backfill gives existing rows the same value (#3008 review)', async () => {
+      await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+      await db.query(
+        "INSERT INTO items (id, name) VALUES ('i1', 'same'), ('i2', 'same')",
+      );
+      const diff = await comparer().compare({
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            claim_key: { type: 'TEXT', notNull: true, backfill: 'name' },
+          },
+          [
+            {
+              name: 'items_claim_key_idx',
+              columns: ['claim_key'],
+              unique: true,
+            },
+          ],
+        ),
+      });
+      expect(diff.changes).toHaveLength(1);
+      expect(diff.changes[0].advisory?.message).toMatch(
+        /^items\.claim_key was not added: .*same value, but the column is unique/,
+      );
+    });
+
+    it('keeps a live index when its shape-drift replacement over a refused column is withheld (#3008 review)', async () => {
+      await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
+      await db.query('CREATE UNIQUE INDEX items_ident_idx ON items (name)');
+      await db.query("INSERT INTO items (id, name) VALUES ('i1', 'a')");
+      const diff = await comparer().compare({
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            owner_id: { type: 'TEXT', notNull: true },
+          },
+          [
+            {
+              name: 'items_ident_idx',
+              columns: ['name', 'owner_id'],
+              unique: true,
+            },
+          ],
+        ),
+      });
+      expect(
+        diff.changes.filter(
+          (c) => c.type === 'drop_index' || c.type === 'add_index',
+        ),
+      ).toEqual([]);
+      expect(diff.changes[0].advisory?.message).toContain(
+        'index items_ident_idx',
+      );
+    });
+
     it('enforces NOT NULL on a required column without a default when the table is empty', async () => {
       await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
       const manifest = {

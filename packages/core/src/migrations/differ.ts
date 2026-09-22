@@ -486,6 +486,17 @@ export class SchemaComparer {
    * re-reading `getTableSchema` per relationship would multiply catalog
    * round-trips on a wide schema.
    */
+  /**
+   * #3008: indexes planned earlier in this table's batch (DuckDB unique
+   * follow-ups), which a later `SET NOT NULL` must also drop and recreate.
+   */
+  private batchIndexes = new Map<
+    string,
+    Array<{ name: string; sql: string }>
+  >();
+  /** #3008: per-table single-column unique targets, set by compareTable. */
+  private uniqueTargets = new Map<string, Set<string>>();
+
   private liveSchemas = new Map<
     string,
     SqlTableSchemaInfo | null | undefined
@@ -666,6 +677,17 @@ export class SchemaComparer {
     manifestSchemas: Record<string, SchemaDefinition> = {},
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
+    this.batchIndexes.delete(tableName);
+    // #3008: single-column unique targets (unique indexes / conflict
+    // columns) — a backfill for one of these must be distinct per row.
+    this.uniqueTargets.set(
+      tableName,
+      new Set(
+        (manifest.indexes ?? [])
+          .filter((index) => index.unique && index.columns.length === 1)
+          .map((index) => index.columns[0]),
+      ),
+    );
 
     // Get current table schema from database
     const dbSchema = await this.getLiveSchema(tableName);
@@ -778,7 +800,20 @@ export class SchemaComparer {
       }
       return undefined;
     };
+    // A same-name DROP + CREATE (shape drift) must not keep its DROP when
+    // the CREATE is withheld: that would remove the live index for nothing.
+    const withheldIndexNames = new Set(
+      indexChanges
+        .filter((change) => dependsOnMissing(change))
+        .map((change) => change.index?.name ?? change.name),
+    );
     for (const change of [...indexChanges, ...foreignKeyChanges]) {
+      if (
+        change.type === 'drop_index' &&
+        withheldIndexNames.has(change.index?.name ?? change.name)
+      ) {
+        continue;
+      }
       const missing = dependsOnMissing(change);
       if (!missing) {
         changes.push(change);
@@ -2853,7 +2888,13 @@ export class SchemaComparer {
         (await this.columnHasNulls(tableName, colName));
       const unusableBackfill =
         backfillNeeded && colDef.backfill
-          ? await this.probeBackfill(tableName, colName, colDef.backfill, true)
+          ? await this.probeBackfill(
+              tableName,
+              colName,
+              colDef.backfill,
+              true,
+              this.isUniqueTarget(tableName, colName, colDef),
+            )
           : undefined;
       if (backfillNeeded && unusableBackfill) {
         changes.push({
@@ -4139,6 +4180,7 @@ export class SchemaComparer {
           colName,
           colDef.backfill,
           false,
+          this.isUniqueTarget(tableName, colName, colDef),
         );
         if (unusable) {
           return [
@@ -4218,9 +4260,13 @@ export class SchemaComparer {
     }
     followUps.push(...backfillFollowUps);
     if (colDef.unique && this.engine !== 'postgres') {
-      followUps.push(
-        `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${quotedTable} (${quotedCol})`,
-      );
+      const indexName = uniqueColumnIndexName(tableName, colName);
+      const createIndex = `CREATE UNIQUE INDEX ${this.quoteIdentifier(indexName)} ON ${quotedTable} (${quotedCol})`;
+      followUps.push(createIndex);
+      this.batchIndexes.set(tableName, [
+        ...(this.batchIndexes.get(tableName) ?? []),
+        { name: indexName, sql: createIndex },
+      ]);
       // DuckDB has no `ADD CONSTRAINT`, so this is the only way to add
       // uniqueness to an existing table there. The DuckDB strategy's
       // `requiresInlineUnique()` note (DuckDB #12684: ON CONFLICT ignored
@@ -4285,11 +4331,23 @@ export class SchemaComparer {
    * Plan-time, so the refusal names the table and column in the report
    * instead of surfacing later as a bare, redacted engine error.
    */
+  private isUniqueTarget(
+    tableName: string,
+    colName: string,
+    colDef: ColumnDefinition,
+  ): boolean {
+    return (
+      Boolean(colDef.unique) ||
+      (this.uniqueTargets.get(tableName)?.has(colName) ?? false)
+    );
+  }
+
   private async probeBackfill(
     tableName: string,
     colName: string,
     backfill: string,
     existing: boolean,
+    unique = false,
   ): Promise<string | undefined> {
     const quotedCol = this.quoteIdentifier(colName);
     const where = existing
@@ -4301,6 +4359,17 @@ export class SchemaComparer {
       );
       if ((result.rows?.length ?? 0) > 0) {
         return `its declared backfill (${backfill}) yields NULL for at least one existing row, so NOT NULL cannot be enforced; make the expression non-null for every row (e.g. wrap it in COALESCE)`;
+      }
+      if (unique) {
+        const value = existing
+          ? `COALESCE(${quotedCol}, (${backfill}))`
+          : `(${backfill})`;
+        const duplicates = await this.db.query(
+          `SELECT ${value} AS v FROM ${this.quoteIdentifier(tableName)} GROUP BY ${value} HAVING COUNT(*) > 1 LIMIT 1`,
+        );
+        if ((duplicates.rows?.length ?? 0) > 0) {
+          return `its declared backfill (${backfill}) gives two or more existing rows the same value, but the column is unique; derive a per-row value (e.g. from id)`;
+        }
       }
       return undefined;
     } catch (err) {
@@ -4369,6 +4438,11 @@ export class SchemaComparer {
         `[SchemaComparer] DuckDB index probe unavailable for ${tableName}`,
         { error: err instanceof Error ? err.message : String(err) },
       );
+    }
+    for (const planned of this.batchIndexes.get(tableName) ?? []) {
+      if (!indexes.some((index) => index.name === planned.name)) {
+        indexes.push(planned);
+      }
     }
     return [
       ...indexes.map(
