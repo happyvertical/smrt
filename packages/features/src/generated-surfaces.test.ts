@@ -78,7 +78,7 @@ describe('smrt-features generated surfaces', () => {
     closers.clear();
   });
 
-  it('exposes definitions as read-only and overrides as full CRUD across REST, CLI, and MCP', async () => {
+  it('closes generated REST and MCP surfaces for definitions and overrides (#3013)', async () => {
     const db = await getTestDatabase({
       classes: ['FeatureDefinition', 'FeatureOverride'],
     });
@@ -148,10 +148,36 @@ describe('smrt-features generated surfaces', () => {
       }),
     );
 
-    expect(listDefinitions.status).toBe(200);
-    expect(createDefinition.status).toBe(405);
-    expect(getOverride.status).toBe(200);
-    expect(createOverride.status).toBe(201);
+    const listOverrides = await handler(
+      new Request('http://localhost/api/v1/featureoverride'),
+    );
+    const deleteOverride = await handler(
+      new Request(`http://localhost/api/v1/featureoverride/${override.id}`, {
+        method: 'DELETE',
+      }),
+    );
+
+    // Neither object may be read or written through generated REST (#3013).
+    for (const response of [
+      listDefinitions,
+      createDefinition,
+      getOverride,
+      createOverride,
+      listOverrides,
+      deleteOverride,
+    ]) {
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect([200, 201, 204]).not.toContain(response.status);
+    }
+    // No cross-tenant override row was written or removed.
+    expect(
+      await overrides.findByFeatureAndScope(
+        '@test/pkg:Demo#newEditor',
+        'tenant',
+        'tenant-2',
+      ),
+    ).toBeNull();
+    expect(await overrides.get(override.id)).not.toBeNull();
 
     const cli = new CLIGenerator({ prompt: false }, { db });
     const definitionCommands = await (cli as any).generateObjectCommands(
@@ -163,34 +189,19 @@ describe('smrt-features generated surfaces', () => {
       {},
     );
 
-    expect(definitionCommands.map((command: any) => command.name)).toEqual([
-      'featuredefinition:list',
-      'featuredefinition:get',
-    ]);
-    expect(overrideCommands.map((command: any) => command.name)).toEqual([
-      'featureoverride:list',
-      'featureoverride:get',
-      'featureoverride:create',
-      'featureoverride:update',
-      'featureoverride:delete',
-    ]);
+    expect(definitionCommands).toEqual([]);
+    expect(overrideCommands).toEqual([]);
 
     const mcp = new MCPGenerator({}, { db });
     const toolNames = (await mcp.generateTools()).map((tool) => tool.name);
 
-    expect(toolNames).toContain('featuredefinition_list');
-    expect(toolNames).toContain('featuredefinition_get');
-    expect(toolNames).not.toContain('featuredefinition_create');
-    expect(toolNames).not.toContain('featuredefinition_getmetadata');
-    expect(toolNames).not.toContain('featuredefinition_setmetadata');
-    expect(toolNames).toContain('featureoverride_list');
-    expect(toolNames).toContain('featureoverride_get');
-    expect(toolNames).toContain('featureoverride_create');
-    expect(toolNames).toContain('featureoverride_update');
-    expect(toolNames).toContain('featureoverride_delete');
-    expect(toolNames).not.toContain('featureoverride_isinherit');
-    expect(toolNames).not.toContain('featureoverride_isenabled');
-    expect(toolNames).not.toContain('featureoverride_isdisabled');
+    expect(
+      toolNames.filter(
+        (name) =>
+          name.startsWith('featuredefinition_') ||
+          name.startsWith('featureoverride_'),
+      ),
+    ).toEqual([]);
   });
 
   it('keeps the /count route available for list-only REST surfaces', async () => {

@@ -53,6 +53,14 @@ The first match wins.
 - `_smrt_feature_definitions` — code-owned feature shape (default effect, allowed scopes, metadata)
 - `_smrt_feature_overrides` — runtime overrides at any scope level
 
+## Generated surfaces
+
+`FeatureDefinition` and `FeatureOverride` ship with generated REST routes and
+MCP tools and CLI commands closed (`api: false`, `mcp: false`, `cli: false`). Override rows are
+authorization state for every scope, so expose writes only through your own
+server code that authorizes the caller first, then calls
+`FeatureOverrideCollection.setOverride()` / `removeOverride()`.
+
 ## Documentation
 
 - See [`AGENTS.md`](./AGENTS.md) for package-internal patterns

@@ -4,9 +4,11 @@ import { parseFeatureMetadata, serializeFeatureMetadata } from './utils.js';
 
 @smrt({
   tableName: '_smrt_feature_definitions',
-  api: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get'], exclude: ['getMetadata', 'setMetadata'] },
-  mcp: { include: ['list', 'get'], exclude: ['getMetadata', 'setMetadata'] },
+  // Closed by default like FeatureOverride (#3013): the catalog is framework
+  // state synced from manifests, not a tenant resource.
+  api: false,
+  cli: false,
+  mcp: false,
   conflictColumns: ['feature_key'],
 })
 export class FeatureDefinition extends SmrtObject {
