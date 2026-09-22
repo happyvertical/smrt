@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: stop cold permission seeding from reading per catalog slug (#3029) (users)
+  - @happyvertical/smrt-config@0.51.13
+  - @happyvertical/smrt-types@0.51.13
+  - @happyvertical/smrt-scanner@0.51.13
+
 ## 0.51.12
 
 ### Patch Changes
