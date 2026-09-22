@@ -15,6 +15,14 @@ import './__smrt-register__.js';
 // override them via `resolvePrompt()` without further plumbing.
 import './prompts.js';
 
+// Agent (bot) profile resolution (#2995)
+export {
+  AGENT_PROFILE_CONTEXT,
+  AGENT_PROFILE_TYPE_SLUG,
+  type ResolveAgentProfileParams,
+  resolveAgentProfile,
+  resolveAgentProfileId,
+} from './agent-profile';
 // Auth module - Identity resolution
 // Auth module - Nostr crypto
 // Auth module - Magic link service

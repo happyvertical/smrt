@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.10
+
+### Patch Changes
+
+- ### Features
+
+  - declared read-only ancestor visibility for descendant memberships (#2945) (users)
+  - @happyvertical/smrt-config@0.51.10
+  - @happyvertical/smrt-types@0.51.10
+  - @happyvertical/smrt-scanner@0.51.10
+
 ## 0.51.9
 
 ### Patch Changes

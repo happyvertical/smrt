@@ -90,6 +90,19 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
     expect(collectionRoute).toContain('requireRouteAuth(locals, true);'); // POST
     expect(itemRoute).toContain('requireRouteAuth(locals, false);'); // GET item
     expect(itemRoute).toContain('requireRouteAuth(locals, true);'); // PUT + DELETE
+    // Writes also require the operation permission (#2977); reads do not.
+    expect(collectionRoute).toContain(
+      'const PERMISSION_COLLECTION = "widgets";',
+    );
+    expect(collectionRoute).toContain(
+      'requireRoutePermission(locals, "create");',
+    );
+    expect(itemRoute).toContain('requireRoutePermission(locals, "update");');
+    expect(itemRoute).toContain('requireRoutePermission(locals, "delete");');
+    expect(collectionRoute).not.toContain(
+      'requireRoutePermission(locals, "read")',
+    );
+    expect(collectionRoute).toContain("throw error(403, 'Permission denied');");
     // 401 on missing principal.
     expect(collectionRoute).toContain(
       "throw error(401, 'Authentication required');",

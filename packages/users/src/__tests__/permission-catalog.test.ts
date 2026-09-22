@@ -1,9 +1,10 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
   field,
+  loadManifestFromPathSync,
   ObjectRegistry,
   SmrtObject,
   smrt,
@@ -318,6 +319,77 @@ describe('PermissionCatalogService', () => {
       ).toMatchObject({ qualifiedName: newPeer.qualifiedName });
     } finally {
       restoreBaseline();
+    }
+  });
+
+  it('catalogs collection-class API actions under the item collection (#2977)', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
+    const packageName = '@catalog/collection-2977';
+    const objects = {
+      Gizmo2977: {
+        className: 'Gizmo2977',
+        collection: 'gizmo2977s',
+        decoratorConfig: { api: false, collection: 'gizmos_2977' },
+        fields: {},
+        methods: {},
+        qualifiedName: `${packageName}:Gizmo2977`,
+      },
+      SpecialGizmo2977Collection: {
+        className: 'SpecialGizmo2977Collection',
+        collection: 'gizmo2977s',
+        decoratorConfig: { api: { include: ['restoreSpecial'] } },
+        extends: 'Gizmo2977Collection',
+        fields: {},
+        methods: {
+          restoreSpecial: { isPublic: true, name: 'restoreSpecial' },
+        },
+        qualifiedName: `${packageName}:SpecialGizmo2977Collection`,
+      },
+      Gizmo2977Collection: {
+        className: 'Gizmo2977Collection',
+        collection: 'gizmo2977_collections',
+        decoratorConfig: { api: { include: ['importBatch'] } },
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Gizmo2977',
+        fields: {},
+        methods: {
+          importBatch: { isPublic: true, name: 'importBatch' },
+          internalSweep: { isPublic: true, name: 'internalSweep' },
+          hidden: { isPublic: false, name: 'hidden' },
+        },
+        qualifiedName: `${packageName}:Gizmo2977Collection`,
+      },
+    };
+    const manifestDir = mkdtempSync(join(tmpdir(), 'catalog-2977-'));
+    const manifestPath = join(manifestDir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify({ objects, packageName }));
+    try {
+      loadManifestFromPathSync(manifestPath);
+      for (const [name, entry] of Object.entries(objects)) {
+        ObjectRegistry.registerFromManifest(
+          `${packageName}:${name}`,
+          entry as never,
+          packageName,
+        );
+      }
+
+      const slugs = PermissionCatalogService.create()
+        .getCatalog()
+        .permissions.map((permission) => permission.slug);
+      expect(slugs).toContain('gizmos_2977.importBatch');
+      // An inherited collection class (no own type argument) resolves the
+      // same item through its ancestry, as the route generator does.
+      expect(slugs).toContain('gizmos_2977.restoreSpecial');
+      expect(slugs).not.toContain('gizmo2977s.restoreSpecial');
+      expect(slugs).not.toContain('gizmo2977s.read');
+      expect(slugs).not.toContain('gizmos_2977.internalSweep');
+      expect(slugs).not.toContain('gizmos_2977.hidden');
+      expect(
+        slugs.filter((slug) => slug.startsWith('gizmo2977_collections.')),
+      ).toEqual([]);
+    } finally {
+      restoreBaseline();
+      rmSync(manifestDir, { force: true, recursive: true });
     }
   });
 

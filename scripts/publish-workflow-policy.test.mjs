@@ -90,3 +90,49 @@ test('routine releases batch instead of publishing after every main push', () =>
       publisher.indexOf('node scripts/publish-validated-artifacts.mjs'),
   );
 });
+
+test('releases are published to the primary registry, with npmjs as a mirror', () => {
+  const publisher = job('publish-release');
+  const mirror = job('mirror-npmjs');
+
+  // A literal: the publish token is sent to this host, so it must not come
+  // from an unreviewed repository variable or input.
+  assert.match(
+    workflow,
+    /^  RELEASE_PRIMARY_REGISTRY: 'https:\/\/npm\.happyvertical\.com\/'$/m,
+  );
+  assert.doesNotMatch(workflow, /RELEASE_PRIMARY_REGISTRY:.*(vars\.|inputs\.|secrets\.)/);
+  // The release record must not claim a mirror that has not run yet.
+  assert.doesNotMatch(publisher, /and mirrored to npmjs/);
+
+  // The token is proven valid against the primary before anything
+  // irreversible; a non-empty check is what let an expired token through.
+  const auth = publisher.indexOf('- name: Authenticate to the primary registry');
+  assert.ok(auth > publisher.indexOf('- name: Setup Environment'));
+  assert.ok(auth < publisher.indexOf('git commit -m'));
+  assert.match(publisher, /npm whoami --registry "\$RELEASE_PRIMARY_REGISTRY" \\\n\s+"--@happyvertical:registry=\$RELEASE_PRIMARY_REGISTRY"/);
+  // The host is checked against the reviewed allowlist before the token is
+  // written for it or sent to it.
+  const allowlist = publisher.indexOf("primaryRegistry();");
+  assert.ok(allowlist > auth && allowlist < publisher.indexOf('_authToken=%s'));
+  // setup-node redirects npm's userconfig; the credential must follow it.
+  assert.match(publisher, /rc="\$\{NPM_CONFIG_USERCONFIG:-\$HOME\/\.npmrc\}"/);
+
+  // A release must not depend on the npmjs credential existing.
+  assert.doesNotMatch(job('prepare-release'), /NPM_TOKEN secret is required/);
+  assert.doesNotMatch(publisher, /NPM_TOKEN secret is required/);
+  assert.match(job('prepare-release'), /NPM_HAPPYVERTICAL_PUBLISH_TOKEN is required/);
+
+  // The mirror can never fail the release, never holds the primary's
+  // credential, and also runs when no release was cut so it self-heals.
+  assert.match(mirror, /^    continue-on-error: true$/m);
+  assert.match(mirror, /^    needs: \[prepare-release, publish-release\]$/m);
+  assert.match(
+    mirror,
+    /MIRROR_RELEASE_VERSION: \$\{\{ needs\.prepare-release\.outputs\.version \}\}/,
+  );
+  assert.match(mirror, /needs\.publish-release\.result == 'skipped'/);
+  assert.match(mirror, /run: node scripts\/mirror-release-to-npmjs\.mjs/);
+  assert.doesNotMatch(mirror, /NPM_HAPPYVERTICAL_PUBLISH_TOKEN/);
+  assert.doesNotMatch(mirror, /contents: write/);
+});

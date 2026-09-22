@@ -22,6 +22,7 @@
       "hermes": "dispatch: hermes",
       "jcode": "dispatch: jcode",
       "kimi": "dispatch: kimi",
+      "omp": "dispatch: omp",
       "zcode": "dispatch: zcode"
     }
   },

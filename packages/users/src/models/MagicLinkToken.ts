@@ -32,6 +32,8 @@ export interface MagicLinkTokenOptions extends SmrtObjectOptions {
 
 @smrt({
   tableName: 'users_magic_link_tokens',
+  // Carries the replay-protection nonce. Never in the change feed (#2937).
+  sensitive: true,
   // Magic link tokens are security-sensitive — no public API
   api: { include: [] },
   mcp: { include: [] },

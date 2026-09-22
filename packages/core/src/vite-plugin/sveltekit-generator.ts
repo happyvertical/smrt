@@ -548,6 +548,20 @@ function collectReadPermissionFields(
 }
 
 /**
+ * The collection segment of generated operation permission slugs. Mirrors the
+ * smrt-users `PermissionCatalogService` derivation: an explicit
+ * `@smrt({ collection })` wins, then the manifest collection.
+ */
+function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
+  const configured = (
+    objectDef.decoratorConfig as { collection?: unknown } | undefined
+  )?.collection;
+  return typeof configured === 'string' && configured.length > 0
+    ? configured
+    : objectDef.collection;
+}
+
+/**
  * Emit the fail-closed authorization guard injected into generated route files
  * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
  * which throws 401 unless the route is `public` or `locals` carries an
@@ -557,15 +571,20 @@ function collectReadPermissionFields(
 function generateAuthGuardHelper(
   objectDef: SmartObjectDefinition,
   manifest?: SmartObjectManifest,
+  permissionObjectDef: SmartObjectDefinition = objectDef,
 ): string {
   const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
   const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const permissionCollection = resolvePermissionCollection(permissionObjectDef);
 
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
 const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
 const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPermissionFields)};
+// Operation permissions (#2977): mutating handlers require
+// \`<collection>.<action>\`, matching the smrt-users permission catalog slug.
+const PERMISSION_COLLECTION = ${JSON.stringify(permissionCollection)};
 
 interface PublicJsonOptions {
   permissions?: Iterable<string>;
@@ -594,6 +613,34 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
   if (PUBLIC_ACCESS === 'read' && !mutating) return;
   if (!hasAuthenticatedPrincipal(locals)) {
     throw error(401, 'Authentication required');
+  }
+}
+
+function hasGrantedPermission(value: unknown, permission: string): boolean {
+  if (Array.isArray(value)) return value.includes(permission);
+  if (value instanceof Set) return value.has(permission);
+  return false;
+}
+
+// Fail-closed write authorization (#2977): a mutating handler requires the
+// \`<collection>.<action>\` operation permission in the principal's session
+// permission snapshot (\`locals.permissions\` from smrt-users, or the
+// smrt-tenancy \`locals.tenantContext\`). A missing snapshot denies. Only an
+// explicit tenancy super-admin bypass skips the check; \`public: true\` routes
+// keep their unauthenticated semantics.
+function requireRoutePermission(locals: unknown, action: string): void {
+  if (PUBLIC_ACCESS === true) return;
+  const l = readJsonRecord(locals);
+  const tenantContext = readJsonRecord(l.tenantContext);
+  if (tenantContext.superAdminBypass === true) return;
+  const permission = \`\${PERMISSION_COLLECTION}.\${action}\`;
+  const granted =
+    hasGrantedPermission(l.permissions, permission) ||
+    hasGrantedPermission(l.permissionSet, permission) ||
+    hasGrantedPermission(l.smrtPermissions, permission) ||
+    hasGrantedPermission(tenantContext.permissions, permission);
+  if (!granted) {
+    throw error(403, 'Permission denied');
   }
 }
 
@@ -917,8 +964,17 @@ ${readScopeHelpers}
 function routeGuardPreamble(
   objectDef: SmartObjectDefinition,
   mutating: boolean,
+  permissionAction?: 'create' | 'update' | 'delete',
 ): string {
   const lines = [`  requireRouteAuth(locals, ${mutating});`];
+  if (mutating) {
+    if (!permissionAction) {
+      throw new Error('Mutating generated routes require a permission action');
+    }
+    lines.push(
+      `  requireRoutePermission(locals, ${JSON.stringify(permissionAction)});`,
+    );
+  }
   if (needsRouteTenantContext(objectDef)) {
     lines.push('  establishTenantContext(locals);');
   }
@@ -3276,7 +3332,7 @@ ${listAndCount}
     ? `
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request }) => {
-${routeGuardPreamble(objectDef, true)}
+${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
@@ -3460,7 +3516,7 @@ ${generateNotFoundError(className)}
     ? `
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
-${routeGuardPreamble(objectDef, true)}
+${routeGuardPreamble(objectDef, true, 'update')}
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
@@ -3491,7 +3547,7 @@ ${
     ? `
 // Delete ${simpleClassName.toLowerCase()}
 export const DELETE: RequestHandler = async ({ locals, params }) => {
-${routeGuardPreamble(objectDef, true)}
+${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -3620,7 +3676,17 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
+${generateAuthGuardHelper(
+  objectDef,
+  semanticManifest,
+  // Collection-class hosted actions are gated on the item collection's slug,
+  // matching the smrt-users permission catalog (#2977).
+  hostType === 'collection' &&
+    firstSpec.lookupObjectDef &&
+    isCollectionManifestClass(semanticManifest, objectDef)
+    ? firstSpec.lookupObjectDef
+    : objectDef,
+)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -3639,9 +3705,14 @@ function generateActionRouteHandler(
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
   // objects also establish tenant context so the action runs filtered.
-  const guardLines = [
-    `  requireRouteAuth(locals, ${routeConfig.method !== 'GET'});`,
-  ];
+  const mutating = routeConfig.method !== 'GET';
+  const guardLines = [`  requireRouteAuth(locals, ${mutating});`];
+  if (mutating) {
+    // Custom mutating actions require `<collection>.<method>` (#2977).
+    guardLines.push(
+      `  requireRoutePermission(locals, ${JSON.stringify(actionName)});`,
+    );
+  }
   if (needsTenantContext) {
     guardLines.push('  establishTenantContext(locals);');
   }

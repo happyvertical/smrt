@@ -88,6 +88,25 @@ smrt-svelte→smrt-chat runtime edge" binding decision. See also
 `packages/smrt-svelte/src/components/workspace/README.md` for the general
 `ShellDockTool` recipe pattern this follows.
 
+### Narrow docks (#3000)
+
+The dock is a size container (`container-type: inline-size`), so its layout
+follows the width it is given, not the viewport. At 480px and wider the
+thread list sits beside the conversation. Below that, for example the
+default ~250px `AdminShell` right edge or a portrait-tablet overlay, the
+list collapses behind a "Conversations" disclosure button (`aria-expanded`,
+`aria-controls`). When opened, the list stacks above the conversation, and
+picking or starting a thread closes it again, so the conversation always
+keeps the full dock width. Hosts don't need to widen the edge for the dock
+to be usable. The composer textarea uses `--smrt-font-family`, the same
+font as the rest of the dock.
+
+jsdom ignores `@container`, so the widths are checked in Chromium by
+`packages/chat/e2e/assistant-dock-narrow.spec.ts` against the
+`/previews/assistant-dock-narrow` fixture. Run it with
+`pnpm --filter @happyvertical/smrt-chat test:e2e`. It is not wired into CI
+yet.
+
 ## Architecture
 
 Sequence: `send → poll → render → action preview → confirm → apply`.
@@ -310,6 +329,88 @@ This file, plus the shell-mounting recipe in
 `packages/chat/AGENTS.md`. Linked from the root `README.md` documentation
 index, next to `ui-surfaces.md`.
 
+## Host extension points
+
+### Rendering a message's `toolCallData` (#2988)
+
+`AssistantMessage.toolCallData` is host-defined, so the dock doesn't render
+it by default. There is no tool-call region, and the payload is never
+stringified or injected as HTML. To render it, pass a `toolCall` snippet.
+The dock calls it only for messages whose `toolCallData` is set, and puts
+the output inside that message's own `MessageBubble`, below its text:
+
+```svelte
+<AssistantDock {transport} {registry}>
+  {#snippet toolCall(message)}
+    <CandidateCard data={message.toolCallData} />
+  {/snippet}
+</AssistantDock>
+```
+
+Validate the payload's shape in the snippet, and render it with ordinary
+Svelte markup, never `{@html}`.
+
+### Proposing an action and observing the result (#2989)
+
+The dock creates its own controller. `oncontroller` hands that controller
+to the host once, on mount. The host proposes an action with
+`controller.previewAction(request)`. The proposal renders with
+Confirm/Reject, and the dock still owns apply, the idempotency key, and the
+mount checks. `onactionapplied(request, result)` fires once for each apply
+the server accepts. Read ids and details from `result`, the server's own
+apply result, never from the request you sent:
+
+```svelte
+<AssistantDock
+  {transport}
+  {registry}
+  {actionClient}
+  oncontroller={(c) => (dock = c)}
+  onactionapplied={(_request, result) => refreshPanel(result.details)}
+/>
+```
+
+`onactionapplied` doesn't fire for a refusal, a failed or unknown outcome,
+or an apply whose registry or transport was swapped while it was in flight.
+A throw from it is caught. Hosts that build the controller themselves pass
+the same callback as `onActionApplied` to `createAssistantDockController`.
+The dock doesn't derive proposals from `toolCallData` on its own. The host
+decides which assistant turns become proposals.
+
+### Refused vs. unknown apply outcomes (#2990)
+
+An apply can end in two ways:
+
+- **Refused.** The server decided and said no. `status: 'failed'` and
+  `outcomeUnknown: false`. Examples: `denied`, `not_found`,
+  `stale_revision`, `idempotency_conflict`, or any `confirmation_*` reason.
+  A decision was reached, so `rejectAction` may discard it. `retryable`
+  keeps its existing meaning ("an apply attempt failed"). A same-key
+  retry of a refusal can't mutate; it only gets the refusal again or
+  `idempotency_conflict`. The dock doesn't offer that retry.
+- **Unknown.** No decision was reached, so the mutation may have committed.
+  `status: 'failed'`, `outcomeUnknown: true`, `retryable: true`. This
+  happens when `actionClient.apply` rejects (transport failure, 5xx,
+  timeout), or when it resolves `{ ok: false, reason }` with a reason in
+  `ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS` (`idempotency_in_progress`,
+  `outcome_unknown`). An action client reports "no decision" in either of
+  those two ways. For example, it can map an HTTP 5xx to
+  `'outcome_unknown'`.
+
+Until an apply gets a decision, the entry keeps its idempotency key.
+`applyAction` retries it with that same key, so the server replays the
+earlier attempt and can't mutate twice. Duplicate retries in flight at once
+collapse into one call. `rejectAction` is refused while an apply is in
+flight or its outcome is unknown, and so is a new `previewAction` for the
+same request id. Either one would drop the only key that keeps a retry
+safe. In this state the dock shows a notice and a **Check again** button,
+and no Reject. A decision on a later attempt clears `outcomeUnknown`.
+
+A registry or transport swap, such as a tenant change, still clears every
+action, including unknown ones. A key taken under the old context is never
+valid against the new one. Reconciling it after switching back is not
+handled (see Gaps).
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
@@ -352,3 +453,10 @@ index, next to `ui-surfaces.md`.
    already-documented `writeEndpoint` gap above (item 1) for the identical
    reason: neither model exposes a generated route safe to call unscoped
    from the browser.
+8. **Unknown apply outcomes don't survive a context swap (#2990).** A
+   registry or transport swap clears `actions`, including entries with
+   `outcomeUnknown`, because old-context state must never render in the
+   new context. If the host switches back and proposes the same action
+   again, it gets a fresh idempotency key. Retaining unknown outcomes per
+   context without leaking them across the swap boundary needs its own
+   design.

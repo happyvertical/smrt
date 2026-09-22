@@ -107,7 +107,7 @@ describe('guard-release-publish', () => {
     const spawn = spawnFromResponses(
       new Map([
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),
@@ -126,11 +126,11 @@ describe('guard-release-publish', () => {
     const spawn = spawnFromResponses(
       new Map([
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),
@@ -170,11 +170,11 @@ describe('guard-release-publish', () => {
           { status: 2, stdout: '', stderr: '' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),
@@ -207,7 +207,7 @@ describe('guard-release-publish', () => {
           { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
       ]),
@@ -242,11 +242,11 @@ describe('guard-release-publish', () => {
           { status: 2, stdout: '', stderr: '' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),
@@ -282,11 +282,11 @@ describe('guard-release-publish', () => {
           { status: 2, stdout: '', stderr: '' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),
@@ -320,11 +320,11 @@ describe('guard-release-publish', () => {
           { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
       ]),
@@ -355,11 +355,11 @@ describe('guard-release-publish', () => {
           { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
       ]),
@@ -397,11 +397,11 @@ describe('guard-release-publish', () => {
           { status: 0, stdout: 'abc\trefs/tags/v0.39.0\n' },
         ],
         [
-          'npm view @happyvertical/smrt-core@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-core@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 0, stdout: '"0.39.0"\n' },
         ],
         [
-          'npm view @happyvertical/smrt-extra@0.39.0 version --registry=https://registry.npmjs.org --prefer-online --json',
+          'npm view @happyvertical/smrt-extra@0.39.0 version --registry https://registry.npmjs.org/ --@happyvertical:registry=https://registry.npmjs.org/ --prefer-online --json',
           { status: 1, stderr: 'npm ERR! code E404\n' },
         ],
       ]),

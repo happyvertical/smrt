@@ -179,10 +179,14 @@ passes the session's exact `locals.permissions` snapshot to
 `assertOperationPermission()`. Keep that pattern for custom SvelteKit actions,
 endpoints, jobs running as a principal, and other in-process writes.
 
-Generated REST routes are authentication-gated and tenant-scoped. On SQLite,
-authentication is not a substitute for your app's operation policy. Put
-permission-checked mutations behind app-owned handlers, or use the framework's
-Postgres RLS setup when moving to a production database.
+Generated REST routes are authentication-gated and tenant-scoped, and their
+writes (POST/PUT/DELETE and mutating custom actions) also require the
+`<collection>.<action>` permission in the session's `locals.permissions`
+snapshot, failing closed with 403. Local owner onboarding seeds the default
+role matrix over the catalog; run the sync and seed above again after adding
+objects so existing roles receive the new slugs. Reads are not permission-gated
+beyond field read permissions, so keep sensitive reads behind app-owned handlers
+or the framework's Postgres RLS setup.
 
 ## 7. Load data into a SvelteKit page
 

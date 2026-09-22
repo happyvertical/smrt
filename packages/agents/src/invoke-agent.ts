@@ -37,6 +37,7 @@
 import type { AITool } from '@happyvertical/ai';
 import { createLogger, type Logger } from '@happyvertical/logger';
 import type { DispatchBus, SmrtClassOptions } from '@happyvertical/smrt-core';
+import { PermissionResolver } from '@happyvertical/smrt-users';
 import {
   assertWithinDelegationDepth,
   type DelegationEnvelope,
@@ -225,7 +226,10 @@ function isValidDelegationEnvelope(
     typeof value.onBehalfOfUserId === 'string' &&
     value.onBehalfOfUserId.length > 0 &&
     Number.isInteger(value.depth) &&
-    typeof value.correlationId === 'string'
+    typeof value.correlationId === 'string' &&
+    (value.permissions === undefined ||
+      (Array.isArray(value.permissions) &&
+        value.permissions.every((slug) => typeof slug === 'string')))
   );
 }
 
@@ -263,6 +267,28 @@ export async function executeDelegatedInvocation(options: {
     logger,
   } = options;
 
+  // A snapshot-narrowed chain (#2978) carries a permission ceiling. The worker
+  // runs with ceiling ∩ live grants, so neither a stale ceiling nor a tampered
+  // persisted envelope can widen authority beyond the principal's live RBAC.
+  let permissions: string[] | undefined;
+  if (envelope.permissions !== undefined) {
+    const ceiling = new Set(envelope.permissions);
+    if (envelope.tenantId) {
+      const resolver = await PermissionResolver.create({
+        db,
+      } as SmrtClassOptions);
+      const live = await resolver.resolvePermissions(
+        envelope.runAsUserId,
+        envelope.tenantId,
+      );
+      permissions = Array.from(live.permissions).filter((slug) =>
+        ceiling.has(slug),
+      );
+    } else {
+      permissions = [];
+    }
+  }
+
   return executeAsPrincipal(
     {
       db,
@@ -282,6 +308,7 @@ export async function executeDelegatedInvocation(options: {
       audit,
       postgresRls,
       logger,
+      ...(permissions !== undefined ? { permissions } : {}),
     },
     async (run): Promise<AgentCompletion> => {
       let completion: AgentCompletion;
@@ -615,6 +642,15 @@ export function createInvokeAgentTool(
         runAsUserId: run.context.userId ?? options.parentEnvelope.runAsUserId,
         tenantId: run.context.tenantId ?? options.parentEnvelope.tenantId,
       };
+      // A snapshot-narrowed run (#2978) propagates its snapshot as the chain's
+      // permission ceiling; it can only narrow an existing envelope ceiling.
+      if (run.permissionSnapshot) {
+        const snapshot = run.permissionSnapshot;
+        const existing = options.parentEnvelope.permissions;
+        parent.permissions = existing
+          ? existing.filter((slug) => snapshot.includes(slug))
+          : [...snapshot];
+      }
 
       // The worker's tool ceiling comes ONLY from trusted server-side policy
       // (`resolveWorkerAllowedTools`), never from the model-controlled tool

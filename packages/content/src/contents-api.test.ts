@@ -113,6 +113,9 @@ describe('Content API Endpoints', () => {
       // is false and every route — read and write — requires a resolved
       // principal; `smrtAuth: true` is the guard's explicit opt-in marker.
       smrtAuth: true,
+      // Generated write routes also require the operation permission from the
+      // session snapshot (#2977).
+      permissions: ['contents.create', 'contents.update', 'contents.delete'],
       tenantId: 'test-tenant',
       profileId: 'test-user',
       // We pass the global test db down through a mocked context or expect getSmrtClient to pick up the global test registry

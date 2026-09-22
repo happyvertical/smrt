@@ -17,6 +17,88 @@ Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server 
 - Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows?, dryRun? })` — scheduled since #2375 by `runRetentionSweep()` (30-day default), so nothing needs to call it directly; `dryRun` counts the same predicate instead of deleting. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable. The age bound is a **prefix** bound — everything below the oldest entry still inside the window — because `created_at` and `seq` are not co-monotonic (writer clocks skew, and a staged entry carries its stage-time stamp into a later-assigned sequence); deleting by timestamp alone could punch a hole in the middle of the retained run, where `since < floor - 1` cannot see it and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
 
 
+## Credential-bearing tables are never disclosed (#2937)
+
+`src/change-feed-sensitivity.ts` is a leaf module (it imports nothing, so
+`change-feed.ts`, `change-signals.ts` and the registry can all consult it
+without a cycle) holding the tables whose **row id or payload is a secret**. A
+table joins it two ways: by name, via the baseline
+`CHANGE_FEED_CREDENTIAL_TABLES` (`sessions`, `users_cli_auth_requests`,
+`users_magic_link_tokens`, `magic_link_tokens`, `api_keys`,
+`nostr_identities`), or because a class declared `@smrt({ sensitive: true })`
+and registration pushed its resolved table name across
+(`declareChangeFeedSensitiveTable`, called from both the decorator and the
+manifest-stub registration paths). Both are needed: the declaration is the
+package's own contract but only binds in a process where that package
+registered, while the name baseline is all the read path has when serving a
+database another process writes. The set is **monotonic** — `sensitive: false`
+is not an opt-out and nothing removes a name — so a consumer whose domain
+table is named `sessions` loses feed coverage for it and must rename it via
+`@smrt({ tableName })`.
+
+`isChangeFeedObservableTable()` ANDs the sensitivity check with
+`CHANGE_FEED_EXCLUDED_TABLES`, and the refusal is enforced at four points, not
+one: the interceptor write path; `appendChange`/`appendChanges`, the lowest
+write API, so `bumpChangeFeed()` and any other escape hatch are covered (a
+refused append returns `null`, indistinguishable from a staged one);
+`deliverLocally` in `change-signals.ts`, which also catches a signal broadcast
+by a peer replica running an older build; and **`getChangesSince()`**. The
+read-side refusal is what makes upgrading sufficient — rows an earlier version
+already wrote stay in the log but are never served. A caller-named sensitive
+table is dropped from the `tables` filter rather than erroring, so nothing
+confirms the table exists, and a request naming *only* sensitive tables gets
+an empty page rather than an unfiltered one. Filtered rows never hold the
+cursor back: an exhaustive page still advances to the served horizon.
+
+`pruneChangeFeed()` additionally deletes sensitive rows below the horizon on
+every sweep, ahead of either retention bound, so credentials do not sit at rest
+for the retention window. That deletes from the middle of the retained run,
+which the age bound goes to lengths to avoid — permissible only because these
+rows are unservable on every read path, so no page ever contained them and no
+cursor can fall into the gap. It **does** move `floor`, and usually will: a
+session is created before the first domain write and re-saved on every request,
+so the lowest retained sequences are typically credential rows. `floor` is read
+live (`MIN(seq)`) on every `getChangesSince` and never cached, so the only
+consequence is that a cursor below the new floor is answered `resyncRequired`
+and refetches — including a `since=0` client on a never-pruned feed. Extra
+resyncs, never a missed change. The horizon does not move, because the newest
+entry is retained even when it is sensitive; that preserves "a non-empty feed
+is never emptied" and means one credential row can linger until the next write
+moves the horizon past it.
+
+Because a non-observable table appends nothing, it also has no ETag source:
+`getTableVersion()` would pin at whatever an older build last wrote and then
+fall back to the global horizon, which moves only on unrelated traffic — so a
+conditional GET could answer `304` for a revoked API key or a rotated session.
+`getTableVersion()` therefore returns a deliberately **unrepeatable** value for
+such a table — 48 bits of `crypto` randomness per call, not a per-process
+counter, because two replicas' clock-seeded counters drift through each other
+and the ETag carries no per-process entropy — so no *concrete* `If-None-Match`
+can match and every such read is a full 200. It is the single point every ETag
+path goes through (the runtime `APIGenerator`, the generated
+`conditionalVersionedRead`, and route files an older generator already
+emitted), so no call site needs a special case. A wildcard `If-None-Match: *`
+still 304s; the read paths evaluate it only after the payload is built, so it
+distinguishes nothing an unconditional request would not.
+
+Registration derives the declared name from config and manifest; the writer uses
+`instance.tableName`, which resolves through the STI base's schema and then the
+class's own. Where those two derivations disagree the declaration lands on a
+name nothing writes under, and the real table keeps appending. STI is *not* such
+a case today — `@smrt()` already resolves an STI child to its base's table, so a
+child declaring `sensitive` declares `<base>` (verified) — but the manifest-stub
+and manifest-merge paths derive the name differently again, so registration
+declares every candidate name. The authoritative check is at the write path:
+`isChangeFeedSensitiveWrite()` asks the registry about the instance's own class
+through a resolver hook on the leaf module (so `change-feed.ts` never imports
+the registry), sees the exact name being recorded with no derivation to keep in
+sync, and declares it — closing the read path and signal bus for that table.
+
+Scope note: the generated `_changes`/`_events` routes still gate on an
+authenticated principal only — there is no per-table permission check, and
+tenant scoping (`getTenantScopedChangesSince`, fail-closed) remains the sole
+row-level filter for ordinary tables.
+
 ## Compatible bulk mutations (#2818)
 
 `appendChanges(db, entries)` validates all inputs before writing and returns one
