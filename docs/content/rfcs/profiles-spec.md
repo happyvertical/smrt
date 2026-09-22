@@ -1,5 +1,18 @@
 # @have/profiles
 
+> **Historical document — written against a pre-rename API.** This RFC was
+> authored for `@have/profiles` before the `@have/*` → `@happyvertical/*`
+> rename; the package ships today as `@happyvertical/smrt-profiles`. The
+> per-type field helpers used throughout (`text()`, `boolean()`, `datetime()`,
+> `json()`) were removed in #318 — schema now comes from TypeScript property
+> types, narrowed by the `field` / `foreignKey` / `meta` decorators — and the
+> implemented package has since grown beyond this spec (auth and identity
+> models, profile assets, manifest generation). For the current surface, read
+> [`packages/profiles/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/profiles/README.md)
+> and
+> [`packages/profiles/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/profiles/AGENTS.md).
+> This page is kept as a record of design intent, not as instructions.
+
 ## Package Overview
 
 The `@have/profiles` package provides a comprehensive, flexible system for managing profiles, relationships, and metadata. It is designed as a **SMRT-specific module** (similar to `@have/content` and `@have/products`), excluded from the main SDK build pipeline but deeply integrated with the SMRT framework and other SDK packages.
