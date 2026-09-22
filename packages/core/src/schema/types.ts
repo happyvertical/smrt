@@ -38,6 +38,18 @@ export interface ColumnDefinition {
     engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
   };
   check?: string; // CHECK constraint
+  /**
+   * Per-row SQL expression that fills existing rows when a required
+   * (`notNull`) column without a default is added to a populated table, or
+   * when a nullable column holding NULLs is tightened to NOT NULL (#3008).
+   *
+   * The expression is evaluated once per row inside the migration
+   * transaction (`UPDATE t SET c = (<backfill>) WHERE c IS NULL`, or the copy
+   * step of a SQLite table rebuild) and may reference the row's other
+   * columns, e.g. `'closed:' || id`. It is not a default: new inserts must
+   * still supply the value. Not DDL; never emitted into CREATE TABLE.
+   */
+  backfill?: string;
   description?: string;
 }
 

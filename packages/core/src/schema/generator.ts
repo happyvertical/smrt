@@ -13,6 +13,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { classnameToTablename } from '../utils/naming.js';
+import { normalizeBackfill } from './backfill.js';
 import {
   type ConflictTableStrategy,
   conflictIndexName,
@@ -1189,6 +1190,10 @@ export class SchemaGenerator {
         this.shouldEmitDefault(field, field._meta.default)
       ) {
         columnDef.defaultValue = field._meta.default;
+      }
+      const backfill = normalizeBackfill(field._meta?.backfill);
+      if (backfill !== undefined) {
+        columnDef.backfill = backfill;
       }
       // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
       // This was forcing all TEXT fields to be NOT NULL regardless of required option
