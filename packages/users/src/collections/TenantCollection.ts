@@ -232,6 +232,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     parentTenantId: string,
     options: CreateChildTenantOptions,
   ): Promise<Tenant> {
+    await this.requireVisibleParent(parentTenantId);
     return await this.create({
       name: options.name,
       slug: options.slug,
@@ -270,9 +271,28 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       );
     }
 
+    if (newParentId !== null) {
+      await this.requireVisibleParent(newParentId);
+    }
     tenant.parentTenantId = newParentId;
     await tenant.save();
     return tenant;
+  }
+
+  /**
+   * Load the new parent through this collection — i.e. under the caller's own
+   * tenancy scope — before linking to it. `Tenant.save()` resolves the chain
+   * with raw reads so it can derive paths for any row, so this is the check
+   * that keeps a caller from parenting a tenant under one it cannot see.
+   */
+  private async requireVisibleParent(parentTenantId: string): Promise<void> {
+    const parent = await this.get({ id: parentTenantId });
+    if (!parent?.id) {
+      throw new TenantHierarchyError(
+        `Parent tenant not found: ${parentTenantId}`,
+        'PARENT_NOT_FOUND',
+      );
+    }
   }
 
   /**

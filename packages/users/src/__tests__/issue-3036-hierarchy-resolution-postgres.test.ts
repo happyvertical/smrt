@@ -338,6 +338,32 @@ describePostgres(
       }
     });
 
+    it('refuses to parent a tenant under one the caller cannot see', async () => {
+      registerTenantScopedClass('Tenant', {
+        field: 'id',
+        mode: 'optional',
+        autoFilter: true,
+      });
+      enableTenancy();
+      try {
+        await expect(
+          withTenant({ tenantId: desk.id as string }, () =>
+            tenants.moveToParent(desk.id as string, sibling.id as string),
+          ),
+        ).rejects.toThrow();
+        await expect(
+          withTenant({ tenantId: desk.id as string }, () =>
+            tenants.createChild(sibling.id as string, { name: 'Smuggled' }),
+          ),
+        ).rejects.toThrow();
+      } finally {
+        disableTenancy();
+        unregisterTenantScopedClass('Tenant');
+      }
+      const reloaded = await tenants.get({ id: desk.id as string });
+      expect(reloaded?.parentTenantId).toBe(publication.id);
+    });
+
     it('fails closed when the real parent chain is broken', async () => {
       const db = isolated?.db;
       if (!db) throw new Error('Expected the isolated PostgreSQL database.');

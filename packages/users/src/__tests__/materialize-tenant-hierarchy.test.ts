@@ -154,6 +154,18 @@ describe('materializeTenantHierarchy (SQLite)', () => {
     expect(again.changes).toEqual([]);
   });
 
+  it('refuses a database that cannot run the write in one transaction', async () => {
+    const db = {
+      query: async () => ({ rows: [] }),
+    } as unknown as Parameters<typeof materializeTenantHierarchy>[0];
+    await expect(materializeTenantHierarchy(db)).rejects.toThrow(
+      /requires a database with transaction\(\)/,
+    );
+    await expect(
+      materializeTenantHierarchy(db, { dryRun: true }),
+    ).resolves.toMatchObject({ applied: false, total: 0 });
+  });
+
   it('refuses an unsafe table name', async () => {
     dbPath = join(tmpdir(), `smrt-materialize-${randomUUID()}.db`);
     const tenants = await TenantCollection.create({

@@ -90,7 +90,8 @@ async function planFrom(
  * Idempotent: it writes only rows that differ, so a second run reports zero
  * changes. It refuses (writing nothing) when any tenant's chain is broken;
  * `dryRun` reports the same plan, problems included, without throwing.
- * Runs in one transaction when the adapter supports it. Touches only the two
+ * Runs in one transaction and refuses an adapter without `transaction()`
+ * (dry runs excepted). Touches only the two
  * derived columns (not `updated_at`) and records one table-level change-feed
  * entry after commit.
  *
@@ -120,9 +121,15 @@ export async function materializeTenantHierarchy(
     return { ...plan, applied: true };
   };
 
-  const result = db.transaction
-    ? await db.transaction((tx) => run(tx))
-    : await run(db);
+  // All-or-nothing: a partially applied materialization would leave the
+  // authorization source half-rewritten, so refuse adapters that cannot run
+  // the whole write in one transaction (as the other users backfills do).
+  if (!db.transaction) {
+    throw new Error(
+      'Tenant hierarchy materialization requires a database with transaction(); no changes were made.',
+    );
+  }
+  const result = await db.transaction((tx) => run(tx));
   if (result.changes.length > 0) {
     // After commit: one table-level entry tells feed consumers the hierarchy
     // may have changed anywhere in the table.
