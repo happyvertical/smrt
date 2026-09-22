@@ -4,6 +4,7 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -15,6 +16,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Membership } from '../models/Membership.js';
 import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
+import { TenantHierarchyError } from '../models/tenant-hierarchy.js';
 import {
   type AncestorReadPolicy,
   getConfiguredAncestorReadPolicy,
@@ -108,6 +110,43 @@ export interface TenantPermissionInheritanceResult {
    * cascade.)
    */
   deniedPermissions: Set<string>;
+}
+
+/**
+ * Run a permission resolution outside the consumer's tenant row filter
+ * (smrt#3036).
+ *
+ * Resolution is an AUTHORIZATION computation, not a data read on the caller's
+ * behalf. Its answer must be a function of the `(userId, tenantId)` it was
+ * asked about and the rows that govern it — never of whichever tenant happens
+ * to be ambient. Several of its reads are deliberately cross-tenant and owned
+ * by the framework:
+ *
+ * - the batched `TenantPermissionOverride` read over the resolved tenant's
+ *   ancestor chain (the tenant cascade and the tenant-DENY hard block);
+ * - the principal's ACTIVE memberships on ANCESTOR tenants, which is how
+ *   `inheritsToDescendants` finds the authority it flows downward;
+ * - the principal's memberships on DESCENDANT tenants and the resolution of
+ *   each one at its own tenant, which is how the declared ancestor-read policy
+ *   finds what may travel upward;
+ * - the ancestor `Tenant` rows that verify a materialized `hierarchyPath`.
+ *
+ * With `TenantPermissionOverride` or `Membership` registered tenant-scoped
+ * (`autoFilter`), the interceptor either refused the first (throwing
+ * `TenantIsolationError`, which consumers commonly turn into an empty set) or
+ * narrowed the rest to the ambient tenant, so both hierarchy features silently
+ * did nothing and own-tenant resolution broke as soon as a hierarchy path was
+ * materialized.
+ *
+ * Why this is not a widening: every read here is keyed by the explicit
+ * arguments (the user, the resolved tenant, and ids derived from verified
+ * hierarchy links), the resolver invokes no caller code while inside, and it
+ * returns only permission slugs and the ids that produced them — never a row.
+ * The system context is scoped to this call via AsyncLocalStorage, so the
+ * caller's own reads before and after remain filtered exactly as before.
+ */
+async function resolveOutsideTenantFilter<T>(fn: () => Promise<T>): Promise<T> {
+  return await withSystemContext(fn);
 }
 
 /**
@@ -262,6 +301,14 @@ export class PermissionResolver {
   async resolveTenantPermissions(
     tenantId: string,
   ): Promise<TenantPermissionInheritanceResult> {
+    return await resolveOutsideTenantFilter(() =>
+      this.resolveTenantPermissionsInternal(tenantId),
+    );
+  }
+
+  private async resolveTenantPermissionsInternal(
+    tenantId: string,
+  ): Promise<TenantPermissionInheritanceResult> {
     const result: TenantPermissionInheritanceResult = {
       permissions: new Set<string>(),
       contributingTenantIds: [],
@@ -274,9 +321,9 @@ export class PermissionResolver {
       return result;
     }
 
-    // Get the inheritance chain from root to this tenant
-    const ancestors =
-      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    // Get the inheritance chain from root to this tenant, verified against the
+    // real parent links (the stored path is never trusted on its own).
+    const ancestors = await this.loadVerifiedAncestorChain(tenant);
     const chain: Tenant[] = [...ancestors, tenant];
 
     // Batch fetch all permission overrides for the entire chain (single query)
@@ -395,18 +442,119 @@ export class PermissionResolver {
   }
 
   /**
+   * The tenant's ancestors, root first, proven against real `parentTenantId`
+   * links (smrt#3036).
+   *
+   * The materialized `hierarchyPath` is used when it agrees link-by-link with
+   * the parent chain. When it does not — a legacy row with a correct parent
+   * and an empty path, or a stale or forged path — the chain is rebuilt by
+   * walking `parentTenantId`, so a path can never make an unrelated tenant's
+   * overrides cascade in, and a never-materialized row still receives its
+   * real ancestors' DENYs. A parent chain that is itself broken (missing
+   * parent, cycle, or deeper than `MAX_TENANT_HIERARCHY_DEPTH`) throws
+   * {@link TenantHierarchyError}: the resolution fails closed rather than
+   * guessing which overrides apply.
+   *
+   * `unreadableAncestor: 'truncate'` is for callers outside system context
+   * (the display chain), where an ancestor the caller cannot read is
+   * indistinguishable from a missing one: the chain then ends at the nearest
+   * readable ancestor instead of throwing `PARENT_NOT_FOUND`.
+   */
+  private async loadVerifiedAncestorChain(
+    tenant: Tenant,
+    options: { unreadableAncestor?: 'throw' | 'truncate' } = {},
+  ): Promise<Tenant[]> {
+    const tenantId = tenant.id as string;
+    const pathIds = tenant.getAncestorIds();
+    if (
+      pathIds.length < MAX_TENANT_HIERARCHY_DEPTH &&
+      !pathIds.includes(tenantId) &&
+      new Set(pathIds).size === pathIds.length &&
+      pathIds.length > 0 === !!tenant.parentTenantId
+    ) {
+      const loaded =
+        pathIds.length > 0
+          ? await this.tenantCollection.listByIds(pathIds)
+          : [];
+      const byId = new Map(loaded.map((row) => [row.id, row]));
+      const chain: Tenant[] = [];
+      let expectedParentId: string | null = null;
+      let consistent = true;
+      for (const id of pathIds) {
+        const ancestor = byId.get(id);
+        if (
+          !ancestor?.id ||
+          (ancestor.parentTenantId ?? null) !== expectedParentId
+        ) {
+          consistent = false;
+          break;
+        }
+        chain.push(ancestor);
+        expectedParentId = ancestor.id;
+      }
+      if (consistent && (tenant.parentTenantId ?? null) === expectedParentId) {
+        return chain;
+      }
+    }
+
+    // Stored path disagrees with the parent links: walk the real chain.
+    const walked: Tenant[] = [];
+    const seen = new Set<string>([tenantId]);
+    let cursor = tenant.parentTenantId ?? null;
+    while (cursor) {
+      if (seen.has(cursor)) {
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} has a circular parent chain at ${cursor}`,
+          'CIRCULAR_REFERENCE',
+        );
+      }
+      if (walked.length + 1 >= MAX_TENANT_HIERARCHY_DEPTH) {
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} is deeper than the maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH})`,
+          'MAX_DEPTH_EXCEEDED',
+        );
+      }
+      seen.add(cursor);
+      const parent = await this.tenantCollection.get({ id: cursor });
+      if (!parent?.id) {
+        // Outside system context a missing row may only be invisible to the
+        // caller, not absent: the display path stops at the nearest ancestor
+        // it can read rather than report intact data as broken.
+        if (options.unreadableAncestor === 'truncate') {
+          break;
+        }
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} names missing ancestor ${cursor}`,
+          'PARENT_NOT_FOUND',
+        );
+      }
+      walked.unshift(parent);
+      cursor = parent.parentTenantId ?? null;
+    }
+    return walked;
+  }
+
+  /**
    * Get the inheritance chain for a tenant (for debugging/display purposes)
    */
   async getTenantInheritanceChain(
     tenantId: string,
   ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
+    // Deliberately NOT run outside the tenant filter: this returns Tenant
+    // rows, so it stays subject to the caller's own tenancy scope (#3036).
     const tenant = await this.tenantCollection.get({ id: tenantId });
     if (!tenant) {
       return [];
     }
 
-    const ancestors =
-      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    // The same verified chain the cascade applies when every ancestor is
+    // readable by the caller. This runs under the caller's own tenancy scope,
+    // so an ancestor it cannot read ends the chain (nearest ancestors kept)
+    // rather than being reported as a broken hierarchy. Cycles and over-depth
+    // still throw.
+    const ancestors = await this.loadVerifiedAncestorChain(tenant, {
+      unreadableAncestor: 'truncate',
+    });
     const chain: Array<{
       tenant: Tenant;
       inherits: boolean;
@@ -479,6 +627,16 @@ export class PermissionResolver {
     tenantId: string,
     options: PermissionResolutionOptions = {},
   ): Promise<PermissionResolutionResult> {
+    return await resolveOutsideTenantFilter(() =>
+      this.resolvePermissionsInternal(userId, tenantId, options),
+    );
+  }
+
+  private async resolvePermissionsInternal(
+    userId: string,
+    tenantId: string,
+    options: PermissionResolutionOptions,
+  ): Promise<PermissionResolutionResult> {
     const result: PermissionResolutionResult = {
       permissions: new Set<string>(),
       membershipId: null,
@@ -523,7 +681,8 @@ export class PermissionResolver {
     result.membershipId = membership.id ?? null;
     result.roleId = membership.roleId ?? null;
 
-    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    const tenantPermissions =
+      await this.resolveTenantPermissionsInternal(tenantId);
     for (const slug of tenantPermissions.permissions) {
       result.permissions.add(slug);
     }
@@ -836,9 +995,11 @@ export class PermissionResolver {
       // This cannot recurse: the contributing membership is passed explicitly,
       // so resolving the descendant takes the direct-membership branch and
       // never re-enters this policy.
-      const own = await this.resolvePermissions(userId, contributingTenantId, {
-        membership: contributing,
-      });
+      const own = await this.resolvePermissionsInternal(
+        userId,
+        contributingTenantId,
+        { membership: contributing },
+      );
 
       let contributed = false;
       for (const slug of own.permissions) {
@@ -859,7 +1020,8 @@ export class PermissionResolver {
     }
 
     // A tenant-level DENY on the tenant being resolved still wins.
-    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    const tenantPermissions =
+      await this.resolveTenantPermissionsInternal(tenantId);
     for (const slug of tenantPermissions.deniedPermissions) {
       granted.delete(slug);
     }

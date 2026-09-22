@@ -1630,6 +1630,19 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
     expect(result.inheritedFromTenantId).toBe(root.id);
   });
 
+  /**
+   * Write a corrupt materialized path directly: `Tenant.save()` now derives
+   * the path from `parentTenantId` (smrt#3036), so corruption can only come
+   * from outside the framework — which is exactly what these guards defend.
+   */
+  async function forgeHierarchyPath(tenantId: string, path: string) {
+    await tenants.db.query(
+      'UPDATE tenants SET hierarchy_path = ? WHERE id = ?',
+      path,
+      tenantId,
+    );
+  }
+
   it('fails closed on malformed hierarchy paths', async () => {
     const { root, child } = await createTenantChain();
     const adminRole = await createRoleGranting(
@@ -1644,14 +1657,12 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
     );
 
     // Self-referential path: the tenant appears in its own ancestor chain.
-    child.hierarchyPath = `${root.id}/${child.id}`;
-    await child.save();
+    await forgeHierarchyPath(child.id!, `${root.id}/${child.id}`);
     let result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.size).toBe(0);
 
     // Duplicate ancestor ids.
-    child.hierarchyPath = `${root.id}/${root.id}`;
-    await child.save();
+    await forgeHierarchyPath(child.id!, `${root.id}/${root.id}`);
     result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.size).toBe(0);
 
@@ -1660,14 +1671,12 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
       { length: 10 },
       (_, index) => `fake-ancestor-${index}`,
     );
-    child.hierarchyPath = [root.id, ...fakeAncestors].join('/');
-    await child.save();
+    await forgeHierarchyPath(child.id!, [root.id, ...fakeAncestors].join('/'));
     result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.size).toBe(0);
 
     // Sanity: restoring the real path restores inheritance.
-    child.hierarchyPath = root.id!;
-    await child.save();
+    await forgeHierarchyPath(child.id!, root.id!);
     result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.has('articles.update')).toBe(true);
   });
@@ -1693,8 +1702,7 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
     // ancestor while parentTenantId still points at the real root. The path
     // passes the structural guards (short, no dupes, not self-referential)
     // but must not be trusted as an authorization source.
-    child.hierarchyPath = unrelated.id!;
-    await child.save();
+    await forgeHierarchyPath(child.id!, unrelated.id!);
 
     const result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.size).toBe(0);

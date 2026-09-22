@@ -45,6 +45,7 @@
     "@happyvertical/smrt-dev-mcp": "workspace:*",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "acorn": "^8.18.0",

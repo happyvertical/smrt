@@ -629,8 +629,13 @@ describe('PermissionResolver: read-only ancestor visibility', () => {
 
     // Corrupt the materialized path so it claims an ancestor the real
     // parentTenantId chain does not support.
-    publication.hierarchyPath = `${network.id}/${sibling.id}`;
-    await publication.save();
+    // Written directly: `Tenant.save()` derives the path (smrt#3036), so
+    // corruption can only come from outside the framework.
+    await tenants.db.query(
+      'UPDATE tenants SET hierarchy_path = ? WHERE id = ?',
+      `${network.id}/${sibling.id}`,
+      publication.id,
+    );
 
     const resolver = await PermissionResolver.create(options, {
       ancestorReadPolicy: { ...NETWORK_POLICY, maxDepth: 5 },

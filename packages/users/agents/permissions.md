@@ -60,8 +60,20 @@ membership or tenant DENY to attenuate inherited role authority.
 
 ## Hierarchies and seeding
 
-- createChild calculates paths/depth; moveToParent updates all descendants;
-  getTree(rootId?) returns UI structure. Maximum depth is 10.
+- `Tenant.save()` derives hierarchyPath/hierarchyLevel from the REAL
+  parentTenantId chain on every save (never from an ancestor's stored path),
+  refuses missing parents, cycles and over-depth before writing, and
+  re-materializes descendants by raw column update (so STI subclass columns
+  are never clobbered). createChild/moveToParent/makeRoot are thin wrappers.
+  `materializeTenantHierarchy(db, { dryRun })` / `smrt
+  db:materialize-tenant-hierarchy` backfills legacy rows: idempotent, one
+  transaction, refuses a broken chain without writing (#3036). A NEW or
+  CHANGED parent link is authority-bearing, so `Tenant.save()` first loads the
+  parent through TenantCollection (the caller's tenancy scope) and refuses an
+  invisible one on every path — helpers, `create({ parentTenantId })`, or a
+  plain assignment + save; system context bypasses as usual, and an unchanged
+  link is never re-checked. getTree(rootId?)
+  returns UI structure. Maximum depth is 10.
 - Tenant override cascade requires parent cascadePermissions and child
   inheritPermissions. These flags do not gate the independent, per-role
   inheritsToDescendants membership flow.
@@ -107,6 +119,34 @@ the session tenant, omit the session membership so the resolver selects the
 appropriate authority; mismatched supplied membership/tenant fails closed.
 Inherited root-admin authority can then authorize descendant resources without
 application-side membership fan-out.
+
+PermissionResolver runs every resolution inside smrt-tenancy's system context
+(#3036). Its reads are deliberately cross-tenant and framework-owned — the
+ancestor TenantPermissionOverride batch, ancestor memberships for
+inheritsToDescendants, descendant memberships for ancestor-read — and are keyed
+by the explicit (userId, tenantId); with those classes registered tenant-scoped
+(`autoFilter`) the consumer's filter otherwise threw TenantIsolationError or
+silently narrowed them. It returns slugs and ids only, never rows, and the
+caller's own reads stay filtered. Do not move a resolver read back under the
+ambient tenant; the Postgres regression suite
+`issue-3036-hierarchy-resolution-postgres.test.ts` pins this. Because nothing
+backstops those reads any more, the tenant-override cascade verifies its chain
+too: it uses hierarchyPath only when it agrees link-by-link with
+parentTenantId, otherwise walks the real parent links (so a forged path cannot
+cascade an unrelated tenant in, and a never-materialized row still gets its real
+ancestors' DENYs — and GRANTs), and throws TenantHierarchyError on a broken
+real chain: a per-request failure for that tenant's whole subtree, which
+`smrt db:materialize-tenant-hierarchy --dry-run` reports ahead of time (see
+README "Upgrading an existing fleet").
+`getTenantInheritanceChain()` returns Tenant rows, so it is NOT run in system
+context; it reports the same verified chain the cascade applies when the
+caller can read every ancestor. Otherwise it never reports PARENT_NOT_FOUND
+for a row the caller simply cannot see: an interceptor refusal surfaces as
+TenantIsolationError, and a silently filtered row (e.g. RLS) ends the chain at
+the nearest readable ancestor. Descendant path rewrites are raw column updates recorded through
+`bumpChangeFeed`; `updated_at` is intentionally not bumped (derived columns;
+every save recomputes them). They are not atomic with the moving row's save —
+an interrupted subtree fails closed until re-saved or backfilled.
 
 System context and super-admin bypass are honored. Pass
 allowSuperAdminBypass: false for money or separation-of-duties operations that

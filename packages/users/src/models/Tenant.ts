@@ -8,10 +8,19 @@ import {
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSaveOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { Tenant as TenantContract } from '@happyvertical/smrt-types';
 import { TenantStatus } from '../types/index.js';
+import {
+  applyTenantHierarchyUpdates,
+  computeTenantHierarchyFields,
+  planDescendantHierarchy,
+  recordTenantHierarchyChanges,
+  type TenantHierarchyDatabase,
+  TenantHierarchyError,
+} from './tenant-hierarchy.js';
 
 /**
  * Constructor options for {@link Tenant}.
@@ -27,11 +36,7 @@ export interface TenantOptions extends SmrtObjectOptions {
   inheritPermissions?: boolean;
 }
 
-/**
- * Maximum allowed depth for tenant hierarchy.
- * Prevents excessively deep trees that could cause performance issues.
- */
-export const MAX_TENANT_HIERARCHY_DEPTH = 10;
+export { MAX_TENANT_HIERARCHY_DEPTH } from './tenant-hierarchy.js';
 
 /**
  * Tenant represents an organizational boundary in the multi-tenant system.
@@ -119,7 +124,8 @@ export class Tenant extends SmrtObject implements TenantContract {
 
   /**
    * Depth in the hierarchy tree (0 = root, 1 = first level child, etc.)
-   * Automatically managed by TenantCollection methods.
+   * Derived from `parentTenantId` and maintained by {@link Tenant.save};
+   * any value assigned directly is recomputed on save.
    */
   hierarchyLevel: number = 0;
 
@@ -127,7 +133,10 @@ export class Tenant extends SmrtObject implements TenantContract {
    * Materialized path for efficient tree traversal.
    * Format: "ancestor-id/parent-id" (path to parent; does not include this tenant's id)
    * Empty string for root tenants.
-   * Automatically managed by TenantCollection methods.
+   * Derived from `parentTenantId` and maintained by {@link Tenant.save};
+   * any value assigned directly is recomputed on save. Rows written before
+   * the framework maintained it are backfilled with
+   * `smrt db:materialize-tenant-hierarchy` (smrt#3036).
    */
   hierarchyPath: string = '';
 
@@ -208,6 +217,111 @@ export class Tenant extends SmrtObject implements TenantContract {
    */
   acceptsInheritance(): boolean {
     return !!this.parentTenantId && this.inheritPermissions;
+  }
+
+  /**
+   * Persist the tenant, keeping the derived hierarchy fields true (smrt#3036).
+   *
+   * `hierarchyPath` / `hierarchyLevel` are recomputed from the real
+   * `parentTenantId` chain on EVERY save — whichever collection, subclass, or
+   * code path produced the object — so a consumer never hand-maintains them.
+   * When they change (a reparent, or healing a stale row), every descendant is
+   * re-materialized too. Both columns are an authorization source for
+   * `inheritsToDescendants` and the declared ancestor-read policy.
+   *
+   * @throws {TenantHierarchyError} before anything is written, when the new
+   *   parent is missing, would create a cycle, or would put this tenant or one
+   *   of its descendants at or below `MAX_TENANT_HIERARCHY_DEPTH`.
+   */
+  override async save(options: SmrtSaveOptions = {}): Promise<this> {
+    const db: TenantHierarchyDatabase = this.db;
+    const table = this.tableName;
+    await this.assertNewParentVisible(db, table);
+    const fields = await computeTenantHierarchyFields(
+      db,
+      table,
+      this.id,
+      this.parentTenantId,
+    );
+    const changed =
+      fields.hierarchyPath !== this.hierarchyPath ||
+      fields.hierarchyLevel !== this.hierarchyLevel;
+    // Plan (read-only) before writing, so an over-deep or looping subtree is
+    // refused before this row moves. The descendant rewrite that follows the
+    // save is not atomic with it: if it is interrupted, the stale subtree
+    // fails closed in the resolver (which verifies paths against parent
+    // links) until the next save of each row or `smrt
+    // db:materialize-tenant-hierarchy` repairs it. A row not yet persisted
+    // cannot have children pointing at it.
+    const descendantUpdates =
+      changed && this.id && this.isPersisted
+        ? await planDescendantHierarchy(db, table, this.id, fields)
+        : [];
+
+    this.hierarchyPath = fields.hierarchyPath;
+    this.hierarchyLevel = fields.hierarchyLevel;
+    await super.save(options);
+    if (descendantUpdates.length > 0) {
+      await applyTenantHierarchyUpdates(db, table, descendantUpdates);
+      await recordTenantHierarchyChanges(
+        this.db,
+        table,
+        descendantUpdates.map((update) => update.id),
+      );
+    }
+    return this;
+  }
+
+  /**
+   * Refuse to link this tenant under a parent the caller cannot see.
+   *
+   * A parent link is authority-bearing: ancestor tenant overrides cascade down
+   * it and `inheritsToDescendants` roles flow along it. The chain itself is
+   * resolved with raw reads (so paths can be derived for any row), so this is
+   * the check that keeps a NEW or CHANGED link subject to the caller's own
+   * tenancy scope, whichever path made it — `createChild`, `moveToParent`,
+   * `create({ parentTenantId })`, or a plain `parentTenantId` assignment and
+   * `save()`. The parent is loaded through `TenantCollection`, i.e. through
+   * the tenancy interceptor: a refused or filtered read fails the save before
+   * anything is written. System context (migrations, backfills, platform
+   * administration) bypasses the interceptor as everywhere else. An unchanged
+   * link is not re-checked, so a tenant can still save itself under its own
+   * scope when its parent is not visible there.
+   */
+  private async assertNewParentVisible(
+    db: TenantHierarchyDatabase,
+    table: string,
+  ): Promise<void> {
+    const parentId = this.parentTenantId ?? null;
+    if (!parentId) {
+      return;
+    }
+    if (this.id) {
+      const { rows } = await db.query(
+        `SELECT parent_tenant_id FROM ${table} WHERE id = ?`,
+        this.id,
+      );
+      const stored = rows[0]?.parent_tenant_id;
+      if (
+        rows[0] &&
+        stored !== null &&
+        stored !== undefined &&
+        String(stored) === parentId
+      ) {
+        return;
+      }
+    }
+    const { TenantCollection } = await import(
+      '../collections/TenantCollection.js'
+    );
+    const tenants = await TenantCollection.create({ db: this.db });
+    const parent = await tenants.get({ id: parentId });
+    if (!parent?.id) {
+      throw new TenantHierarchyError(
+        `Parent tenant not found: ${parentId}`,
+        'PARENT_NOT_FOUND',
+      );
+    }
   }
 
   /**
