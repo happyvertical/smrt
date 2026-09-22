@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.51.14
+
+### Patch Changes
+
+- ### Features
+  
+  - add resource scoped permission grants (#3024) (users)
+  
+  ### Bug Fixes
+  
+  - close generated surfaces for feature flags; add authorized override service (#3030) (features)
+  - link module docs by package specifier in docs:agents (#3035) (cli)
+  - precheck partial unique backfills on engines that drop the predicate (#3028) (core)
+  - enforce <collection>.<op> permission in generated sync/apply route (#3027) (core)
+  
+  ### Other Changes
+  
+  - chore: retire agent-policy lifecycle artifacts (#3016)
+  - chore: update weekly dependency update (#2959) (deps)
+- @happyvertical/smrt-config@0.51.14
+  - @happyvertical/smrt-scanner@0.51.14
+  - @happyvertical/smrt-types@0.51.14
+
 ## 0.51.13
 
 ### Patch Changes
