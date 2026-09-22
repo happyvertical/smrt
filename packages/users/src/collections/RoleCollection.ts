@@ -129,7 +129,9 @@ export class RoleCollection extends SmrtCollection<Role> {
         continue;
       }
 
-      // Create new system role
+      // Create new system role. `create()` already persists, so the second
+      // `save()` this used to make was a redundant UPDATE plus an extra
+      // change-feed append (#3022).
       const role = await this.create({
         slug: roleDef.slug,
         name: roleDef.name,
@@ -138,7 +140,6 @@ export class RoleCollection extends SmrtCollection<Role> {
         isSystem: true,
         inheritsToDescendants: inheritable,
       });
-      await role.save();
       roles.push(role);
     }
 

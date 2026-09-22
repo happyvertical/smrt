@@ -212,9 +212,29 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
       return existing[0];
     }
 
-    const rolePermission = await this.create({ roleId, permissionId });
-    await rolePermission.save();
-    return rolePermission;
+    return await this.grantPermission(roleId, permissionId);
+  }
+
+  /**
+   * Insert one grant whose absence the caller has already established.
+   *
+   * `addPermission()` re-reads the pair before inserting, which is right for a
+   * caller holding no prior knowledge. `seedRolePermissions()` has just loaded
+   * the role's whole grant set, so going through `addPermission()` paid a
+   * second SELECT for every single grant it was about to add — O(roles ×
+   * catalog) round trips on a cold bootstrap (#3022).
+   *
+   * `create()` already persists, so there is no second `save()` here: that had
+   * been an extra UPDATE and an extra change-feed append per seeded row.
+   *
+   * @private Internal to the seeding path; external callers use
+   *   `addPermission()`, which keeps the existence check.
+   */
+  private async grantPermission(
+    roleId: string,
+    permissionId: string,
+  ): Promise<RolePermission> {
+    return await this.create({ roleId, permissionId });
   }
 
   /**
@@ -341,7 +361,9 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
           continue;
         }
 
-        await this.addPermission(role.id, permissionId);
+        // Absence was just established from `existingPermissionIds`, so skip
+        // `addPermission()`'s own per-pair re-read (#3022).
+        await this.grantPermission(role.id, permissionId);
         result.added[roleSlug].push(slug);
       }
 
