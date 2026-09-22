@@ -289,6 +289,10 @@ and always reports what it will not touch:
   REQUIRED_COLUMN_NOT_ADDED`) names table and column, and `compareTable`
   withholds `add_index`/`add_foreign_key` changes on it. The same backfill
   repairs nullability drift (an existing nullable column holding NULLs).
+  A backfill for a single-column unique target is also probed for duplicate
+  values and refused by name. Partial unique indexes are exempt from that
+  probe only where `supportsPartialIndexes()` holds (SQLite/PostgreSQL);
+  DuckDB/JSON build them as full indexes, so they are probed there (#3015).
   DuckDB refuses `ALTER COLUMN` while any index depends on the table, so its
   `SET NOT NULL` is bracketed by `DROP INDEX`/recreate from `duckdb_indexes().sql`.
 - **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
