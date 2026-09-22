@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-types",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,7 +21,7 @@
     "dev": "npm run build:watch & npm run test:watch"
   },
   "devDependencies": {
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

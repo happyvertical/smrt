@@ -1,5 +1,38 @@
 # @happyvertical/smrt-core
 
+## 0.51.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: stop cold permission seeding from reading per catalog slug (#3029) (users)
+  - @happyvertical/smrt-config@0.51.13
+  - @happyvertical/smrt-types@0.51.13
+  - @happyvertical/smrt-scanner@0.51.13
+
+## 0.51.12
+
+### Patch Changes
+
+- ### Features
+
+  - one browser inference path with WebLLM and bitgpu backends (#2958) (smrt-web,smrt-svelte)
+
+  ### Bug Fixes
+
+  - redact database connection-string credentials from CLI failure output (#2985) (cli)
+  - add required columns to populated tables via a per-row backfill (#3008) (#3014) (core)
+  - point @happyvertical scope at our registry (#3010) (npm)
+
+  ### Other Changes
+
+  - perf: stable collection-cache identity for database config objects (#2922) (core)
+  - perf: lazy-load @happyvertical/ai in class.ts (#2952) (core)
+  - @happyvertical/smrt-config@0.51.12
+  - @happyvertical/smrt-types@0.51.12
+  - @happyvertical/smrt-scanner@0.51.12
+
 ## 0.51.11
 
 ### Patch Changes

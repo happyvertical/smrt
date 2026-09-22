@@ -85,8 +85,7 @@ export default defineConfig({
   },
   plugins: [
     dts({
-      rollupTypes: true,
-      bundledPackages: [],
+      bundleTypes: { bundledPackages: [] },
     }),
   ],
   test: {

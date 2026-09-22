@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-playbooks",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "description": "Layered playbook registry, app/tenant overrides, and plan resolution for SMRT agents",
   "type": "module",
   "main": "./dist/index.js",
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-chat",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "smrtJsdoc": "strict",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
@@ -47,7 +47,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
@@ -94,7 +95,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.57.1"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -104,13 +105,16 @@
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/kit": "^2.69.1",
+    "@happyvertical/smrt-web": "workspace:*",
+    "@mlc-ai/web-llm": "^0.2.85",
+    "bitgpu": "0.19.1",
+    "@sveltejs/kit": "2.69.1",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.6",
     "fast-glob": "^3.3.3",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.1",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

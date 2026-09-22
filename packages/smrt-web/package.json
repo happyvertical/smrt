@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-web",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "description": "SMRT browser client data runtime: typed collection factory wrapping the client-data engine over generated REST clients",
   "author": "HappyVertical",
   "type": "module",
@@ -25,6 +25,10 @@
       "types": "./dist/intents.d.ts",
       "import": "./dist/intents.js"
     },
+    "./ai": {
+      "types": "./dist/ai.d.ts",
+      "import": "./dist/ai.js"
+    },
     "./webmcp-tool-names": {
       "types": "./dist/webmcp-tool-names.d.ts",
       "import": "./dist/webmcp-tool-names.js"
@@ -32,7 +36,7 @@
   },
   "dependencies": {
     "@tanstack/db": "^0.6.14",
-    "@tanstack/query-core": "^5.101.2",
+    "@tanstack/query-core": "^5.103.1",
     "@tanstack/query-db-collection": "^1.0.46"
   },
   "scripts": {
@@ -49,7 +53,7 @@
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.6",
     "fake-indexeddb": "^6.2.5",
     "typescript": "5.9.3",
     "vite": "8.1.4",

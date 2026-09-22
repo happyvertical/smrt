@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-places",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "description": "Hierarchical place management with geo integration and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -47,7 +47,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.6",
     "fast-glob": "3.3.3",
     "typescript": "5.9.3",
     "vite": "8.1.4",

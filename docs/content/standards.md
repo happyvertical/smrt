@@ -175,8 +175,8 @@ export default createPackageConfig('<package-name>', {
 - **Build target**: `es2022` for libraries; `node20` only for tools that must run server-side (CLIs); `node24` only when explicitly required.
 - **`vite-plugin-dts`**: comes via `vite.config.base.ts`; do not add to per-package devDependencies.
 - **DTS bundling**:
-  - `rollupTypes: false` for foundation packages (`core`, `cli`) — many internal types
-  - `rollupTypes: true` for narrow public APIs
+  - `bundleTypes: false` for foundation packages (`core`, `cli`) — many internal types
+  - `bundleTypes: true` for narrow public APIs
 - **Output format**: ESM only (`formats: ['es']`)
 - **Sourcemaps**: on
 - **`vitest` package** is exempt — it must build with `tsc` because it provides the vite plugin to others. The empty `vite.config.ts` should be removed.

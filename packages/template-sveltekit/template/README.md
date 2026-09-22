@@ -6,7 +6,7 @@ managed-cloud environments. It does not provision external providers.
 
 ## 1. Install and run
 
-Requirements: Node.js 24.18.0 or newer and pnpm 10.34.4. The exact pnpm version
+Requirements: Node.js 24.18.0 or newer and pnpm 11.11.0. The exact pnpm version
 is declared in `packageManager`.
 
 ```bash

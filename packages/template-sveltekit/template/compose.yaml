@@ -39,7 +39,7 @@ services:
       database:
         condition: service_healthy
   database:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
     environment:
       POSTGRES_DB: smrt_app
       POSTGRES_USER: smrt_app
@@ -50,7 +50,8 @@ services:
       timeout: 3s
       retries: 20
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ keeps PGDATA under /var/lib/postgresql/18/docker.
+      - postgres-data:/var/lib/postgresql
 
 volumes:
   postgres-data:

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.51.11",
+  "version": "0.51.13",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "HappyVertical",
   "type": "module",
@@ -159,14 +159,14 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@oxc-project/runtime": "^0.138.0",
+    "@oxc-project/runtime": "^0.150.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",
-    "minimatch": "10.2.5",
-    "oxc-transform": "0.138.0",
+    "minimatch": "10.2.6",
+    "oxc-transform": "0.150.0",
     "pluralize": "^8.0.0",
-    "tsx": "^4.23.0",
-    "yaml": "^2.9.0"
+    "tsx": "^4.23.13",
+    "yaml": "^2.9.1"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.typecheck.json",
@@ -187,7 +187,7 @@
     "prepack": "node scripts/prepack.js"
   },
   "peerDependencies": {
-    "@huggingface/transformers": ">=3.0.0 <4.0.0",
+    "@huggingface/transformers": ">=3.0.0 <5.0.0",
     "@xenova/transformers": "^2.17.2"
   },
   "peerDependenciesMeta": {
@@ -199,18 +199,18 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.5.0",
-    "@huggingface/transformers": "^3.8.1",
-    "@sveltejs/kit": "^2.69.3",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
+    "@faker-js/faker": "^10.6.0",
+    "@huggingface/transformers": "^4.3.0",
+    "@sveltejs/kit": "2.69.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.6",
     "@types/pluralize": "^0.0.33",
     "@xenova/transformers": "^2.17.2",
-    "svelte": "^5.56.4",
+    "svelte": "^5.57.1",
     "svelte-check": "4.7.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
-    "vite-plugin-dts": "4.5.4",
+    "vite-plugin-dts": "5.1.0",
     "vitest": "4.1.10"
   },
   "publishConfig": {

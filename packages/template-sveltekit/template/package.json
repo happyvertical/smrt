@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.4",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
     "node": ">=24.18.0",
-    "pnpm": "10.34.4"
+    "pnpm": "11.11.0"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
@@ -29,28 +29,28 @@
     "worker:schedule": "node scripts/smrt-worker.mjs schedule"
   },
   "devDependencies": {
-    "@sveltejs/adapter-node": "^5.5.4",
-    "@sveltejs/kit": "^2.69.2",
-    "@sveltejs/vite-plugin-svelte": "^7.2.0",
-    "@types/node": "^24.13.3",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.2",
-    "typescript": "^6.0.3",
-    "vite": "^8.1.4",
-    "@happyvertical/smrt-cli": "^0.51.11"
+    "@sveltejs/adapter-node": "^5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "^24.13.6",
+    "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "@happyvertical/smrt-cli": "^0.51.13"
   },
   "dependencies": {
-    "@happyvertical/smrt-app-runtime": "^0.51.11",
-    "@happyvertical/smrt-config": "^0.51.11",
-    "@happyvertical/smrt-core": "^0.51.11",
-    "@happyvertical/smrt-jobs": "^0.51.11",
-    "@happyvertical/smrt-profiles": "^0.51.11",
-    "@happyvertical/smrt-svelte": "^0.51.11",
-    "@happyvertical/smrt-tenancy": "^0.51.11",
-    "@happyvertical/smrt-ui": "^0.51.11",
-    "@happyvertical/smrt-users": "^0.51.11",
-    "@happyvertical/smrt-web": "^0.51.11",
-    "@happyvertical/sql": "^0.89.4",
+    "@happyvertical/smrt-app-runtime": "^0.51.13",
+    "@happyvertical/smrt-config": "^0.51.13",
+    "@happyvertical/smrt-core": "^0.51.13",
+    "@happyvertical/smrt-jobs": "^0.51.13",
+    "@happyvertical/smrt-profiles": "^0.51.13",
+    "@happyvertical/smrt-svelte": "^0.51.13",
+    "@happyvertical/smrt-tenancy": "^0.51.13",
+    "@happyvertical/smrt-ui": "^0.51.13",
+    "@happyvertical/smrt-users": "^0.51.13",
+    "@happyvertical/smrt-web": "^0.51.13",
+    "@happyvertical/sql": "^0.89.12",
     "@modelcontextprotocol/server": "^2.0.0"
   }
 }

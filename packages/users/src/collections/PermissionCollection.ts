@@ -87,13 +87,13 @@ export class PermissionCollection extends SmrtCollection<Permission> {
       return existing;
     }
 
-    const permission = await this.create({
+    // `create()` already persists; the second `save()` was a redundant UPDATE
+    // and an extra change-feed append per row (#3022).
+    return await this.create({
       slug,
       name: defaults.name ?? slug,
       description: defaults.description ?? '',
       category: defaults.category ?? slug.split('.')[0],
     });
-    await permission.save();
-    return permission;
   }
 }

@@ -13,6 +13,14 @@ through `createChatStreamHandler` in plain mode, so an embedded `SmrtChatBackend
 client can exercise token streaming locally. `/previews` hosts the shared
 component playground entries from `src/svelte/playground.ts`.
 
+The root route also drives the **browser inference path**
+(`@happyvertical/smrt-web/ai`: bitgpu, WebLLM, and route backends composed by
+`createInferencePath`) and an **agent-addressable draft form** (`useViewIntent`
+over `src/routes/chat-dev.intents.ts`, #2588). Their dev-config dependencies
+(static optional-peer imports, `workspace-aliases.js` prefix rules, the theme
+stylesheet import) and the stage→apply tool-call gotchas are in
+[agents/dev-workbench.md](agents/dev-workbench.md).
+
 The root workbench also has a dev-only voice conversation mode. It reads voice
 gateway connection details through `/api/dev-voice/config`, streams browser mic
 audio to `WS /ws/voice` as PCM16 mono, appends gateway transcripts/responses to
