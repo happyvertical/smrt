@@ -663,6 +663,36 @@ immediately invalidates every child at the next guard check.
 
 Tenants support parent-child trees (max depth 10). Two flags control inheritance: `cascadePermissions` (parent pushes down) and `inheritPermissions` (child accepts). Both must be true for permissions to flow.
 
+The materialized `hierarchyPath` / `hierarchyLevel` are **derived by the
+framework**: `Tenant.save()` recomputes them from the real `parentTenantId`
+chain on every save — through the collection helpers, a plain
+`tenant.parentTenantId = x; await tenant.save()`, or an STI subclass — and
+re-materializes every descendant when they change. A missing parent, a cycle,
+or a move that would push any descendant past the depth limit throws
+`TenantHierarchyError` before anything is written. Never set them by hand.
+
+Both hierarchy features — `inheritsToDescendants` and the ancestor-read policy
+below — walk that path and fail closed without it. Rows written before the
+framework maintained it (a correct `parent_tenant_id` but an empty path at level
+0) must be backfilled once, after `db:migrate`:
+
+```sh
+smrt db:materialize-tenant-hierarchy --dry-run   # report what would change
+smrt db:materialize-tenant-hierarchy             # apply (idempotent)
+```
+
+Or programmatically: `await materializeTenantHierarchy(db, { dryRun })`. It
+writes only rows that differ (a second run is a no-op), runs in one
+transaction, touches only the two derived columns, and refuses — writing
+nothing — when any tenant's parent chain is broken, listing the offenders.
+
+Permission resolution works under the `@happyvertical/smrt-tenancy`
+interceptor regardless of which users classes you register as tenant-scoped:
+the resolver's own cross-tenant reads (ancestor tenant overrides, ancestor and
+descendant memberships) run in the framework's system context, keyed by the
+user and tenant being resolved. It returns permissions, never rows; your
+application's reads stay filtered.
+
 ### Read-only ancestor visibility (opt-in, off by default)
 
 Membership authority travels DOWN the hierarchy: a direct membership in the
@@ -748,8 +778,12 @@ pass `null` to force it off regardless of configuration.
 
 #### Adoption note
 
-This is additive and off by default — no migration is required, and no existing
-deployment changes behavior until `permissions.ancestorRead` is declared. When
+This is additive and off by default — no schema migration is required, and no
+existing deployment changes behavior until `permissions.ancestorRead` is
+declared. It does require materialized tenant paths: run
+`smrt db:materialize-tenant-hierarchy` once if your tenants were created before
+the framework maintained `hierarchyPath` (see
+[Hierarchical tenants](#hierarchical-tenants)). When
 adopting it, declare the **narrowest** role and collection lists that make the
 ancestor-level list work, and keep `maxDepth` at the smallest value your
 hierarchy needs. `roles` must name system-role slugs; a tenant-scoped role with
@@ -803,6 +837,8 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillLegacyUserProfiles` | Transactionally create and link canonical global Person Profiles for legacy Users; never creates OIDC identities or infers ownership. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
+| `materializeTenantHierarchy` | Idempotently backfill `hierarchy_path`/`hierarchy_level` from `parent_tenant_id` (`{ dryRun }`); refuses a broken chain without writing. CLI: `smrt db:materialize-tenant-hierarchy`. |
+| `planTenantHierarchy` | Pure planner behind the backfill: expected fields, changes, and broken-chain problems for a set of tenant rows. |
 | `OidcProfileResolver` | Transaction-bound pre-provision hook for application identity reconciliation. |
 | `OidcProfileOwnerAuthorizer` | Transaction-bound application authorization for binding a first identity to an existing canonical Profile and its sole approved User owner. |
 | `NormalizedOidcClaims` | Frozen resolver claims with required normalized `email`. |
@@ -842,7 +878,8 @@ for authentication, deduplication, and status semantics.
 | `ACCESS_REQUEST_CAPABILITIES`, `AccessRequestError` | Operator capability slugs; typed domain error (`error.code`) |
 | `DEFAULT_ROLE_SLUGS`, `DEFAULT_ROLES`, `DEFAULT_TENANT_POLICY` | System role slugs, role configs, default tenant policy |
 | `DEFAULT_SESSION_TTL`, `MAX_TENANT_HIERARCHY_DEPTH` | 604800 (7 days in seconds), 10 |
-| `TenantHierarchyError` | Thrown when hierarchy depth limit is exceeded |
+| `TenantHierarchyError` | Thrown on a missing parent, a cycle, or exceeding the hierarchy depth limit (`code`) |
+| `TenantHierarchyMaterializationError` | Thrown by `materializeTenantHierarchy` when any tenant's parent chain is broken; lists `problems` |
 
 ## Dependencies
 

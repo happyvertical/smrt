@@ -126,6 +126,12 @@ export {
   UserEmailKeyBackfillError,
   type UserEmailKeyBackfillErrorCode,
 } from './migrations/backfillUserEmailKeys.js';
+export {
+  type MaterializeTenantHierarchyOptions,
+  type MaterializeTenantHierarchyResult,
+  materializeTenantHierarchy,
+  TenantHierarchyMaterializationError,
+} from './migrations/materializeTenantHierarchy.js';
 // Models
 export {
   AccessRequest,
@@ -161,6 +167,14 @@ export {
   UsersCliAuthRequest,
   UsersMagicLinkToken,
 } from './models/index.js';
+export {
+  planTenantHierarchy,
+  type TenantHierarchyChange,
+  type TenantHierarchyErrorCode,
+  type TenantHierarchyPlan,
+  type TenantHierarchyProblem,
+  type TenantHierarchyRow,
+} from './models/tenant-hierarchy.js';
 // Credential retention — expired sessions and tokens (#2375)
 export {
   CLI_AUTH_RETENTION_TASK,

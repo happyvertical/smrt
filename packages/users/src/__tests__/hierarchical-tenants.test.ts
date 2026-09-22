@@ -343,9 +343,13 @@ describe('Tenant Hierarchy', () => {
 
       const child = await tenants.createChild(root.id!, { name: 'Child' });
 
-      // Manually corrupt the hierarchy level
-      child.hierarchyLevel = 5;
-      await child.save();
+      // Corrupt the level directly: `Tenant.save()` derives it from the
+      // parent chain (smrt#3036), so corruption only arrives from outside.
+      await tenants.db.query(
+        'UPDATE tenants SET hierarchy_level = ? WHERE id = ?',
+        5,
+        child.id,
+      );
 
       const errors = await tenants.validateHierarchy(child.id!);
       expect(errors.length).toBeGreaterThan(0);

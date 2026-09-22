@@ -688,6 +688,9 @@ importers:
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
       '@happyvertical/sql':
         specifier: ^0.89.12
         version: 0.89.12(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)

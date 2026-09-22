@@ -3,26 +3,12 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
-import { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from '../models/Tenant.js';
+import { SmrtCollection } from '@happyvertical/smrt-core';
+import { Tenant } from '../models/Tenant.js';
+import { TenantHierarchyError } from '../models/tenant-hierarchy.js';
 import { TenantStatus } from '../types/index.js';
 
-/**
- * Error thrown when tenant hierarchy operations fail
- */
-export class TenantHierarchyError extends Error {
-  constructor(
-    message: string,
-    public readonly code:
-      | 'CIRCULAR_REFERENCE'
-      | 'MAX_DEPTH_EXCEEDED'
-      | 'PARENT_NOT_FOUND'
-      | 'INVALID_OPERATION',
-  ) {
-    super(message);
-    this.name = 'TenantHierarchyError';
-  }
-}
+export { TenantHierarchyError };
 
 /**
  * Options for creating a child tenant
@@ -45,7 +31,12 @@ export interface CreateChildTenantOptions {
  * - Basic CRUD operations
  * - Hierarchy management (parent/child relationships)
  * - Tree traversal (ancestors, descendants, siblings)
- * - Hierarchy path maintenance
+ * - Hierarchy validation
+ *
+ * `hierarchyLevel` / `hierarchyPath` are derived from `parentTenantId` by
+ * {@link Tenant.save} on every create, update, and move — any value supplied
+ * in a create input is recomputed, because both are an authorization source
+ * (smrt#3036).
  */
 export class TenantCollection extends SmrtCollection<Tenant> {
   static readonly _itemClass = Tenant;
@@ -233,53 +224,32 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
   /**
    * Create a child tenant under a parent.
-   * Automatically sets hierarchyLevel and hierarchyPath.
+   * `hierarchyLevel` and `hierarchyPath` are derived by {@link Tenant.save}.
+   *
+   * @throws {TenantHierarchyError} `PARENT_NOT_FOUND` or `MAX_DEPTH_EXCEEDED`.
    */
   async createChild(
     parentTenantId: string,
     options: CreateChildTenantOptions,
   ): Promise<Tenant> {
-    const parent = await this.get({ id: parentTenantId });
-    if (!parent?.id) {
-      throw new TenantHierarchyError(
-        `Parent tenant not found: ${parentTenantId}`,
-        'PARENT_NOT_FOUND',
-      );
-    }
-
-    // Check depth limit
-    const newLevel = parent.hierarchyLevel + 1;
-    if (newLevel >= MAX_TENANT_HIERARCHY_DEPTH) {
-      throw new TenantHierarchyError(
-        `Maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH}) exceeded`,
-        'MAX_DEPTH_EXCEEDED',
-      );
-    }
-
-    // Build hierarchy path
-    const newPath = parent.hierarchyPath
-      ? `${parent.hierarchyPath}/${parent.id}`
-      : parent.id;
-
-    const child = await this.create({
+    return await this.create({
       name: options.name,
       slug: options.slug,
       description: options.description ?? '',
       status: options.status ?? TenantStatus.ACTIVE,
       parentTenantId: parentTenantId,
-      hierarchyLevel: newLevel,
-      hierarchyPath: newPath,
       cascadePermissions: options.cascadePermissions ?? true,
       inheritPermissions: options.inheritPermissions ?? true,
     });
-
-    await child.save();
-    return child;
   }
 
   /**
-   * Move a tenant to a new parent.
-   * Updates hierarchyLevel and hierarchyPath for the tenant and all descendants.
+   * Move a tenant to a new parent (or to the root with `null`).
+   *
+   * {@link Tenant.save} recomputes the tenant's hierarchy fields from the real
+   * parent chain and re-materializes every descendant, refusing the move
+   * before writing anything when it would create a cycle or push any
+   * descendant past `MAX_TENANT_HIERARCHY_DEPTH`.
    */
   async moveToParent(
     tenantId: string,
@@ -293,7 +263,6 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       );
     }
 
-    // Validate not moving to self
     if (newParentId === tenantId) {
       throw new TenantHierarchyError(
         'Cannot move tenant to itself',
@@ -301,99 +270,8 @@ export class TenantCollection extends SmrtCollection<Tenant> {
       );
     }
 
-    // Validate not moving to a descendant
-    if (newParentId) {
-      const isDescendant = await this.isDescendantOf(newParentId, tenantId);
-      if (isDescendant) {
-        throw new TenantHierarchyError(
-          'Cannot move tenant to one of its descendants',
-          'CIRCULAR_REFERENCE',
-        );
-      }
-    }
-
-    // Fetch descendants BEFORE any changes (uses current hierarchyPath for lookup)
-    const descendants = await this.getDescendants(tenantId);
-
-    let newLevel: number;
-    let newPath: string;
-
-    if (newParentId === null) {
-      // Moving to root
-      newLevel = 0;
-      newPath = '';
-    } else {
-      const newParent = await this.get({ id: newParentId });
-      if (!newParent) {
-        throw new TenantHierarchyError(
-          `New parent tenant not found: ${newParentId}`,
-          'PARENT_NOT_FOUND',
-        );
-      }
-
-      newLevel = newParent.hierarchyLevel + 1;
-
-      // Check depth limit (considering descendants)
-      const maxDescendantDepth = descendants.reduce(
-        (max, d) => Math.max(max, d.hierarchyLevel - tenant.hierarchyLevel),
-        0,
-      );
-
-      if (newLevel + maxDescendantDepth >= MAX_TENANT_HIERARCHY_DEPTH) {
-        throw new TenantHierarchyError(
-          `Moving would exceed maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH})`,
-          'MAX_DEPTH_EXCEEDED',
-        );
-      }
-
-      newPath = newParent.hierarchyPath
-        ? `${newParent.hierarchyPath}/${newParent.id}`
-        : newParent.id!;
-    }
-
-    // Calculate the path prefix for descendants
-    const oldPath = tenant.hierarchyPath
-      ? `${tenant.hierarchyPath}/${tenant.id}`
-      : tenant.id;
-    const newPathForDescendants = newPath
-      ? `${newPath}/${tenant.id}`
-      : tenant.id;
-
-    // Update the tenant
-    const levelDelta = newLevel - tenant.hierarchyLevel;
     tenant.parentTenantId = newParentId;
-    tenant.hierarchyLevel = newLevel;
-    tenant.hierarchyPath = newPath;
     await tenant.save();
-
-    // Update all descendants (using the list fetched before changes)
-    for (const descendant of descendants) {
-      // Validate descendant has hierarchyPath - missing path indicates data corruption
-      if (!descendant.hierarchyPath) {
-        throw new TenantHierarchyError(
-          `Descendant tenant ${descendant.id} has no hierarchyPath while updating hierarchy from ${oldPath} to ${newPathForDescendants}`,
-          'INVALID_OPERATION',
-        );
-      }
-
-      // Validate descendant path starts with expected prefix
-      if (!descendant.hierarchyPath.startsWith(oldPath)) {
-        throw new TenantHierarchyError(
-          `Descendant tenant ${descendant.id} has hierarchyPath "${descendant.hierarchyPath}" which does not start with expected prefix "${oldPath}"`,
-          'INVALID_OPERATION',
-        );
-      }
-
-      // Update path by replacing old prefix with new prefix
-      descendant.hierarchyPath =
-        newPathForDescendants +
-        descendant.hierarchyPath.substring(oldPath.length);
-
-      // Adjust level by the same delta
-      descendant.hierarchyLevel += levelDelta;
-      await descendant.save();
-    }
-
     return tenant;
   }
 
@@ -494,57 +372,5 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
     const trees = await Promise.all(roots.map(buildTree));
     return trees.filter(Boolean) as Array<Tenant & { children: Tenant[] }>;
-  }
-
-  // ============= Override create to handle hierarchy =============
-
-  /**
-   * Override create to automatically set hierarchy fields for new tenants.
-   * Only calculates them when the caller hasn't already supplied
-   * `hierarchyLevel`/`hierarchyPath` in the create input — an explicitly
-   * provided value is preserved as-is.
-   */
-  async create(options: SmrtCreateInput<Tenant>): Promise<Tenant> {
-    // If parentTenantId is provided and hierarchy fields not already set
-    if (options.parentTenantId) {
-      // Only calculate when the caller didn't already supply them
-      // (a provided hierarchyLevel/hierarchyPath is preserved as-is)
-      const needsHierarchyCalc =
-        options.hierarchyLevel === undefined ||
-        options.hierarchyPath === undefined;
-
-      if (needsHierarchyCalc) {
-        const parent = await this.get({ id: options.parentTenantId });
-        if (!parent?.id) {
-          throw new TenantHierarchyError(
-            `Parent tenant not found: ${options.parentTenantId}`,
-            'PARENT_NOT_FOUND',
-          );
-        }
-
-        const newLevel = parent.hierarchyLevel + 1;
-        if (newLevel >= MAX_TENANT_HIERARCHY_DEPTH) {
-          throw new TenantHierarchyError(
-            `Maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH}) exceeded`,
-            'MAX_DEPTH_EXCEEDED',
-          );
-        }
-
-        if (options.hierarchyLevel === undefined) {
-          options.hierarchyLevel = newLevel;
-        }
-        if (options.hierarchyPath === undefined) {
-          options.hierarchyPath = parent.hierarchyPath
-            ? `${parent.hierarchyPath}/${parent.id}`
-            : parent.id;
-        }
-      }
-    } else {
-      // Root tenant
-      options.hierarchyLevel = options.hierarchyLevel ?? 0;
-      options.hierarchyPath = options.hierarchyPath ?? '';
-    }
-
-    return super.create(options);
   }
 }

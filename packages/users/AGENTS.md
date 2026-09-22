@@ -21,7 +21,12 @@ are not prerequisites for unrelated user-package work.
   `emailKey`. `profileId` is a unique cross-package reference: at most one User
   owns each non-null Profile.
 - Tenant uses STI and a materialized hierarchy, maximum depth 10.
-  `createChild()` calculates paths; `moveToParent()` updates all descendants.
+  `hierarchyPath`/`hierarchyLevel` are derived from `parentTenantId` by
+  `Tenant.save()` on every save (any caller-supplied value is recomputed) and
+  descendants are re-materialized when they change; never hand-maintain them.
+  Legacy rows are backfilled with `smrt db:materialize-tenant-hierarchy`
+  (`materializeTenantHierarchy()`). Tests that need a corrupt path must write it
+  with raw SQL (#3036).
 - Role with `tenantId = null` is available to all tenants; `isSystem` prevents
   deletion. `inheritsToDescendants` is opt-in. Seed owner/admin/member/viewer
   through `RoleCollection.seedSystemRoles()` at application initialization.

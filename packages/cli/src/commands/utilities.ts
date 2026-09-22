@@ -39,6 +39,7 @@ import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
+import { dbMaterializeTenantHierarchyCommand } from './db-materialize-tenant-hierarchy.js';
 import {
   computeBlockedColumns,
   computeOrphanOnlyBlockedColumns,
@@ -3738,6 +3739,7 @@ export default testManifest;
   'db:migrate-int8': dbMigrateInt8Command,
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
+  'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
