@@ -29,6 +29,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 interface DbOrphansOptions {
@@ -43,6 +44,24 @@ export function formatOrphanCountLine(count: ForeignKeyOrphanCount): string {
     `${count.childTable}.${count.childColumn} -> ` +
     `${count.parentTable}.${count.parentColumn}: ${count.orphanCount} orphan(s)${marker}`
   );
+}
+
+/**
+ * Scrub connection-string credentials from each skipped relationship's
+ * `reason`. A `probe_failed` reason is the database driver's error text,
+ * which can echo the DSN, so both the JSON and human outputs render this
+ * redacted copy.
+ */
+export function redactOrphanReport(
+  report: ForeignKeyOrphanCountReport,
+): ForeignKeyOrphanCountReport {
+  return {
+    ...report,
+    skipped: report.skipped.map((skip) => ({
+      ...skip,
+      reason: redactConnectionStringsInText(skip.reason),
+    })),
+  };
 }
 
 /** Render the full report as console lines. */
@@ -173,9 +192,11 @@ export const dbOrphansCommand: CLICommand = {
       await autoDiscoverAndLoad();
       const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
 
-      const report = await collectForeignKeyOrphanCounts(db, manifestSchemas, {
-        engineHint: dbType,
-      });
+      const report = redactOrphanReport(
+        await collectForeignKeyOrphanCounts(db, manifestSchemas, {
+          engineHint: dbType,
+        }),
+      );
 
       if (options.json) {
         console.log(JSON.stringify(report, null, 2));
@@ -192,13 +213,15 @@ export const dbOrphansCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error: redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            ),
           }),
         );
       } else {
         console.error('\n❌ Failed to collect the orphan report:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

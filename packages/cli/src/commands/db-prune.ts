@@ -24,6 +24,7 @@ import type { CLICommand } from '../cli-generator.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 /** Parsed CLI options for the `db:prune` command. */
@@ -142,6 +143,25 @@ export function buildPrunePolicy(
   }
 
   return policy;
+}
+
+/**
+ * Scrub connection-string credentials from per-task failures. The sweep
+ * never throws for a task failure; it stores the driver's error text in
+ * `tasks[].error`, which can echo the DSN, so both output forms render this
+ * redacted copy.
+ */
+export function redactSweepResult(
+  result: RetentionSweepResult,
+): RetentionSweepResult {
+  return {
+    ...result,
+    tasks: result.tasks.map((task) =>
+      task.error
+        ? { ...task, error: redactConnectionStringsInText(task.error) }
+        : task,
+    ),
+  };
 }
 
 /** Render a completed sweep as an operator-readable table. */
@@ -267,7 +287,7 @@ export const dbPruneCommand: CLICommand = {
       );
 
       const policy = buildPrunePolicy(smrtConfig.toJSON().retention, options);
-      const result = await runRetentionSweep(db, policy);
+      const result = redactSweepResult(await runRetentionSweep(db, policy));
       const unmatched = unmatchedSkipNames(options.skip, result);
 
       if (options.json) {
@@ -298,7 +318,9 @@ export const dbPruneCommand: CLICommand = {
         process.exitCode = 1;
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = redactConnectionStringsInText(
+        error instanceof Error ? error.message : String(error),
+      );
       if (options.json) {
         console.log(JSON.stringify({ error: message }));
       } else {

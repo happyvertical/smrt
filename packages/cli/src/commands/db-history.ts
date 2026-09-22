@@ -9,7 +9,10 @@ import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import { closeDatabaseConnection } from './db-command-utils.js';
+import {
+  closeDatabaseConnection,
+  redactConnectionStringsInText,
+} from './db-command-utils.js';
 import {
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
@@ -186,7 +189,16 @@ export const dbHistoryCommand: CLICommand = {
         failedAssessments.map((item) => [item.name, item]),
       );
 
-      const annotatedHistory: AnnotatedHistoryEntry[] = history.map((m) => {
+      const annotatedHistory: AnnotatedHistoryEntry[] = history.map((row) => {
+        // `error_message` stores the driver's failure text, which can echo
+        // the connection string; scrub it once here so every output form
+        // (JSON, verbose, compact) renders the redacted value.
+        const m = {
+          ...row,
+          error_message: row.error_message
+            ? redactConnectionStringsInText(row.error_message)
+            : row.error_message,
+        };
         if (m.status !== 'failed') {
           return {
             ...m,
@@ -373,13 +385,15 @@ export const dbHistoryCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error: redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            ),
           }),
         );
       } else {
         console.error('\n❌ Failed to get migration history:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;

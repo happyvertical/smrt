@@ -27,6 +27,7 @@ import {
   dbOrphansCommand,
   formatOrphanCountLine,
   formatOrphanReport,
+  redactOrphanReport,
 } from '../db-orphans.js';
 import { utilityCommands } from '../utilities.js';
 
@@ -104,6 +105,32 @@ describe('formatOrphanCountLine', () => {
         nullable: true,
       }),
     ).toBe('events.type_id -> event_types.id: 3 orphan(s)');
+  });
+});
+
+describe('redactOrphanReport (#2985)', () => {
+  it('scrubs connection-string credentials from skipped reasons', () => {
+    const redacted = redactOrphanReport({
+      engine: 'sqlite',
+      counts: [],
+      skipped: [
+        {
+          childTable: 'events',
+          childColumn: 'type_id',
+          parentTable: 'event_types',
+          parentColumn: 'id',
+          reason: 'probe failed: postgres://app:hunter2@db/prod refused',
+          kind: 'probe_failed',
+        },
+      ],
+    });
+
+    expect(redacted.skipped[0]?.reason).toBe(
+      'probe failed: postgres://app:***@db/prod refused',
+    );
+    expect(
+      formatOrphanReport(redacted, { verbose: true }).join('\n'),
+    ).not.toContain('hunter2');
   });
 });
 
