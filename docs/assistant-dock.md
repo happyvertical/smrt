@@ -303,6 +303,7 @@ data-surface actions; the content-specific sanitizer stays specific to
 | `message.attachments` render as a chip/link list on the bubble, after both `send()` and `loadMessages()` | `packages/chat/src/svelte/components/assistant/__tests__/AssistantDock.test.ts`; also asserted end-to-end in `packages/smrt-svelte/src/web/__tests__/assistant-dock.integration.svelte.test.ts` | svelte component + integration (#2904 review, cycle-3 second final F1) |
 | `ModelPicker`, `AssistantComposer`'s file input, and every AssistantDock-family component have an accessible name / pass `expectNoA11yViolations` | `packages/chat/src/svelte/components/shared/__tests__/ModelPicker.test.ts`, `AssistantComposer.test.ts`, `AssistantDock.test.ts`, `AssistantThreadList.test.ts` | svelte component (#2904 review, cycle-3 second final F2) |
 | `createSmrtAssistantTransport` calls `GET {readEndpoint}/threads`/`.../threads/{id}/messages`, never a raw generated list route; `normalizeAssistantThreadSummary`/`normalizeAssistantMessage` tolerate snake_case fields, a JSON-string `attachments` column, and newest-first pagination | `packages/chat/src/svelte/components/assistant/__tests__/assistant-transport.test.ts` | unit (Copilot PR #2919 review, threads jAwqo/jAwrQ/jAwvV) |
+| Composer draft seeding (`initialDraft`, `controller.setDraft`, bindable `AssistantComposer` `value`) never sends; `composerPlaceholder` is forwarded; `onActionSettled`/`onactionsettled` report applied, server- and user-rejected, and unknown outcomes | `packages/chat/src/svelte/components/assistant/__tests__/assistant-dock-draft-settled.test.ts` | unit + svelte component (#2991) |
 | A registry (or transport) swap clears threads/activeThreadId/messages/pendingSends/actions and reloads from the new transport, discarding an old in-flight load; `surfaces` narrows against the live registry (an unregistered override entry is not mounted); `applyAction` permits only `previewed` or an apply-phase `failed` retry | `packages/chat/src/svelte/components/assistant/__tests__/create-assistant-dock-controller.test.ts` | unit (Copilot PR #2919 review, threads jAwsd/jAwr0/jAwwg) |
 
 The integration test's harness follows the exemplar's stated scope: a real
@@ -410,6 +411,49 @@ A registry or transport swap, such as a tenant change, still clears every
 action, including unknown ones. A key taken under the old context is never
 valid against the new one. Reconciling it after switching back is not
 handled (see Gaps).
+
+### Observing every action outcome (#2991)
+
+`onactionsettled(request, outcome)` (controller option `onActionSettled`)
+fires each time a proposed action reaches an outcome, so a host can update
+its own UI without watching `controller.actions` in an `$effect`.
+`outcome` is an `AssistantActionOutcome`:
+
+| `outcome` | When |
+|---|---|
+| `{ status: 'applied', result }` | The server accepted the apply. Fires after `onactionapplied`. |
+| `{ status: 'rejected', by: 'server', result }` | The server decided and refused; `result.reason` says why. |
+| `{ status: 'rejected', by: 'user' }` | The user discarded the proposal (a `rejectAction` that was not refused). |
+| `{ status: 'unknown', result?, error? }` | No decision (see above). The retry reports its own outcome later. |
+
+It doesn't fire for a refused `rejectAction`, for an apply that never
+reached the server (surface not mounted), or for an outcome whose registry
+or transport was swapped while it was in flight. A throw from it is caught.
+Only `applied` is positive evidence of a change; treat `unknown` as "may
+have landed" and never as success or failure. `onactionapplied` is
+unchanged.
+
+### Seeding the composer draft and placeholder (#2991)
+
+`initialDraft` seeds the composer on mount, for example with a prompt the
+host computed for the item being edited. `controller.setDraft(text)`
+replaces the draft later, and `controller.draft` reads it back, including
+what the user typed. Neither ever sends: the user edits and sends it. The
+draft clears after a send the transport accepted, and it survives a
+registry or transport swap because it is the user's unsent text.
+`composerPlaceholder` is forwarded to the composer's textarea. Standalone
+`AssistantComposer` takes the same draft as a bindable `value` prop.
+
+```svelte
+<AssistantDock
+  {transport}
+  {registry}
+  initialDraft={initialPrompt}
+  composerPlaceholder="Describe the image edit to generate…"
+  oncontroller={(c) => (dock = c)}
+  onactionsettled={(_request, outcome) => updatePanel(outcome)}
+/>
+```
 
 ## Gaps / follow-ups
 

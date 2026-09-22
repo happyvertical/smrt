@@ -32,6 +32,7 @@ import type {
 import { safeAttachmentHref } from './attachment-href.js';
 import {
   type AssistantActionClient,
+  type AssistantActionOutcome,
   type AssistantDockController,
   createAssistantDockController,
 } from './create-assistant-dock-controller.svelte.js';
@@ -101,6 +102,21 @@ export interface Props {
     request: DataSurfaceActionRequest,
     result: DataSurfaceActionResult,
   ) => void;
+  /** Called each time a proposed action reaches an outcome (#2991): applied,
+   * rejected (by the server or the user), or unknown. See
+   * `AssistantDockControllerOptions.onActionSettled`. */
+  onactionsettled?: (
+    request: DataSurfaceActionRequest,
+    outcome: AssistantActionOutcome,
+  ) => void;
+  /** Initial composer draft (#2991), for example a prompt computed for the
+   * item being edited. Read once, on mount; the user edits and sends it.
+   * It is never sent on their behalf. To replace it later, call
+   * `controller.setDraft(text)` from `oncontroller`. */
+  initialDraft?: string;
+  /** Placeholder for the composer's empty textarea (#2991). Defaults to the
+   * composer's own placeholder. */
+  composerPlaceholder?: string;
 }
 
 const {
@@ -112,6 +128,9 @@ const {
   toolCall,
   oncontroller,
   onactionapplied,
+  onactionsettled,
+  initialDraft,
+  composerPlaceholder,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -135,6 +154,9 @@ const controller: AssistantDockController = createAssistantDockController({
   },
   visible: () => visible,
   onActionApplied: (request, result) => onactionapplied?.(request, result),
+  onActionSettled: (request, outcome) => onactionsettled?.(request, outcome),
+  // Read once, on mount, like the controller itself.
+  initialDraft: untrack(() => initialDraft),
 });
 
 // F1 (#2904 review): the whole body runs under `untrack` so the effect takes
@@ -495,9 +517,13 @@ async function handleConfirmAction(requestId: string) {
           </div>
         {/if}
         <AssistantComposer
+          bind:value={
+            () => controller.draft, (text) => controller.setDraft(text)
+          }
           onsend={handleSend}
           onupload={handleUpload}
           disabled={!controller.activeThreadId}
+          placeholder={composerPlaceholder}
         />
       </div>
     </div>

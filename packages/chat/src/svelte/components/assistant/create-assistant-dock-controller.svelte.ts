@@ -127,6 +127,23 @@ export interface AssistantActionState {
 export const ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS: readonly string[] =
   Object.freeze(['idempotency_in_progress', 'outcome_unknown']);
 
+/** How a proposed action ended, as reported to `onActionSettled`.
+ * - `applied`: the server accepted an apply; `result` is its own result.
+ * - `rejected` `by: 'server'`: the server decided and refused the apply;
+ *   `result` carries its `reason`. The entry stays retryable with its key.
+ * - `rejected` `by: 'user'`: the user discarded the proposal
+ *   (`rejectAction` succeeded). Nothing was sent to apply.
+ * - `unknown`: the apply reached no decision (see
+ *   `AssistantActionState.outcomeUnknown`). The change may have landed; the
+ *   entry keeps its key, and a later retry reports its own outcome. `result`
+ *   is set when the client resolved an unknown-outcome reason, `error` when
+ *   it rejected. */
+export type AssistantActionOutcome =
+  | { status: 'applied'; result: DataSurfaceActionResult }
+  | { status: 'rejected'; by: 'server'; result: DataSurfaceActionResult }
+  | { status: 'rejected'; by: 'user' }
+  | { status: 'unknown'; result?: DataSurfaceActionResult; error?: string };
+
 function isUnknownOutcomeReason(reason: string | undefined): boolean {
   return (
     reason !== undefined &&
@@ -169,6 +186,24 @@ export interface AssistantDockControllerOptions {
     request: DataSurfaceActionRequest,
     result: DataSurfaceActionResult,
   ) => void;
+  /** Called each time a proposed action reaches an outcome (#2991): an
+   * accepted apply, a server refusal, a user reject, or an apply with no
+   * decision. See `AssistantActionOutcome`. Unlike `onActionApplied` it also
+   * covers the outcomes that did not apply, so a host can update its own UI
+   * without watching `actions`. It can fire more than once per request: an
+   * `unknown` outcome is followed by the outcome of the retry. Same rules as
+   * `onActionApplied` otherwise: not called for an outcome whose context was
+   * swapped while in flight, for a refused `rejectAction`, or for an apply
+   * that never reached the server (surface not mounted). A throw from the
+   * callback is caught and never changes the action's state. For an applied
+   * outcome it fires after `onActionApplied`. */
+  onActionSettled?: (
+    request: DataSurfaceActionRequest,
+    outcome: AssistantActionOutcome,
+  ) => void;
+  /** Initial composer draft text (#2991). Seeds the composer; it is never
+   * sent until the user sends it. */
+  initialDraft?: string;
 }
 
 export interface AssistantDockController {
@@ -186,6 +221,14 @@ export interface AssistantDockController {
    * `setError`; a host or the dock's own `handleSend` can also report a
    * failure here. */
   readonly error: string | null;
+  /** The composer's current draft text (#2991). Two-way: it follows what
+   * the user types, and `setDraft` replaces it. Cleared after a send the
+   * transport accepted. */
+  readonly draft: string;
+  /** Replaces the composer draft (#2991) so a host can seed a prompt for the
+   * user to edit. Never sends. Survives registry/transport swaps: it is the
+   * user's unsent text, not conversation state. */
+  setDraft(text: string): void;
   /** Records (or clears, with `null`) a background failure for `error` to
    * report. Distinct from a failed `AssistantPendingSend`/`AssistantActionState`,
    * which already carry their own `error` field — this is for failures with
@@ -279,9 +322,14 @@ export function createAssistantDockController(
   let models = $state<ModelOption[]>([]);
   let selectedModel = $state<string | undefined>(undefined);
   let error = $state<string | null>(null);
+  let draft = $state<string>(options.initialDraft ?? '');
 
   function setError(message: string | null) {
     error = message;
+  }
+
+  function setDraft(text: string) {
+    draft = text;
   }
   // SvelteMap (not a plain Map) so `.set()` mutations are reactive to
   // template reads of `controller.actions`, matching Svelte 5's `$state`
@@ -1225,7 +1273,18 @@ export function createAssistantDockController(
           // unknown outcome; "no decision" keeps the key held.
           outcomeUnknown: !result.ok && isUnknownOutcomeReason(result.reason),
         });
-        if (result.ok) notifyActionApplied(applyRequest, result);
+        if (result.ok) {
+          notifyActionApplied(applyRequest, result);
+          notifyActionSettled(applyRequest, { status: 'applied', result });
+        } else if (isUnknownOutcomeReason(result.reason)) {
+          notifyActionSettled(applyRequest, { status: 'unknown', result });
+        } else {
+          notifyActionSettled(applyRequest, {
+            status: 'rejected',
+            by: 'server',
+            result,
+          });
+        }
       } else if (!current && result.ok && epoch === contextEpoch) {
         // The user rejected while this apply was in flight, and the server
         // mutation landed anyway — the rejection cannot undo a real server
@@ -1252,18 +1311,20 @@ export function createAssistantDockController(
           ];
         }
         notifyActionApplied(applyRequest, result);
+        notifyActionSettled(applyRequest, { status: 'applied', result });
       }
     } catch (caughtError) {
       const current = actions.get(requestId);
       // Cycle-4 final finding 1: also drop this write on a context swap.
       if (current && current.status === 'applying' && epoch === contextEpoch) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : String(caughtError);
         actions.set(requestId, {
           ...current,
           status: 'failed',
-          error:
-            caughtError instanceof Error
-              ? caughtError.message
-              : String(caughtError),
+          error: message,
           // Cycle-4 final finding 2: a genuine apply attempt failed —
           // retryable.
           retryable: true,
@@ -1271,6 +1332,10 @@ export function createAssistantDockController(
           // failure, 5xx, timeout, or a client bug); the mutation may have
           // committed, so the key stays held for a same-key retry.
           outcomeUnknown: true,
+        });
+        notifyActionSettled(current.request, {
+          status: 'unknown',
+          error: message,
         });
       }
     }
@@ -1282,6 +1347,17 @@ export function createAssistantDockController(
   ) {
     try {
       options.onActionApplied?.(request, result);
+    } catch {
+      // A host callback failure must never corrupt action state.
+    }
+  }
+
+  function notifyActionSettled(
+    request: DataSurfaceActionRequest,
+    outcome: AssistantActionOutcome,
+  ) {
+    try {
+      options.onActionSettled?.(request, outcome);
     } catch {
       // A host callback failure must never corrupt action state.
     }
@@ -1300,6 +1376,7 @@ export function createAssistantDockController(
       return;
     }
     actions.delete(requestId);
+    notifyActionSettled(state.request, { status: 'rejected', by: 'user' });
   }
 
   function dispose() {
@@ -1341,6 +1418,10 @@ export function createAssistantDockController(
     get error() {
       return error;
     },
+    get draft() {
+      return draft;
+    },
+    setDraft,
     setError,
     loadThreads,
     loadModels,

@@ -34,16 +34,19 @@ export interface Props {
   disabled?: boolean;
   /** Placeholder text for the empty textarea. */
   placeholder?: string;
+  /** The draft text (#2991). Bindable: a host can seed it with a prompt for
+   * the user to edit, and read back what they typed. Setting it never sends.
+   * Cleared after `onsend` resolves. */
+  value?: string;
 }
 
-const {
+let {
   onsend,
   onupload,
   disabled = false,
   placeholder = 'Ask the assistant…',
+  value: content = $bindable(''),
 }: Props = $props();
-
-let content = $state('');
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
 let sending = $state(false);
@@ -61,6 +64,23 @@ let fileInputEl: HTMLInputElement | undefined;
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
 let textareaEl: HTMLTextAreaElement | undefined;
+let rootEl: HTMLDivElement | undefined;
+
+function resize(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+}
+
+// #2991: a seeded draft never fires the textarea's input event, so size the
+// textarea to it here. Typed input still resizes through handleInput.
+$effect(() => {
+  void content;
+  const el =
+    textareaEl ??
+    rootEl?.querySelector<HTMLTextAreaElement>('textarea') ??
+    undefined;
+  if (el) resize(el);
+});
 
 async function handleFileChange(event: Event) {
   const input = event.currentTarget as HTMLInputElement;
@@ -142,8 +162,7 @@ function handleKeydown(event: KeyboardEvent) {
 function handleInput(event: Event) {
   const el = event.currentTarget as HTMLTextAreaElement;
   textareaEl = el;
-  el.style.height = 'auto';
-  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  resize(el);
 }
 
 function removeAttachment(id: string) {
@@ -152,7 +171,10 @@ function removeAttachment(id: string) {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="assistant-composer" ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
+<div
+  class="assistant-composer"
+  bind:this={rootEl}
+  ondrop={handleDrop} ondragover={(e) => e.preventDefault()}>
   {#if sendError}
     <p class="assistant-composer-error" role="alert">
       {t(M['chat.assistant_composer.send_error'], { message: sendError })}
