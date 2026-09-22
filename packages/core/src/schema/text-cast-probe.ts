@@ -35,8 +35,13 @@ export type ShapeProbeResult =
       /**
        * `duplicate_keys`: every value casts, but `count` JSON objects carry
        * duplicate keys that `jsonb` would silently collapse (#3041).
+       * `preservation_unverified`: every value casts, but the duplicate-key
+       * walk did not finish (its bound, a lock wait); `count` is 0 and no
+       * conversion may be offered, but the decision must stay visible.
        */
-      reason?: 'duplicate_keys';
+      reason?: 'duplicate_keys' | 'preservation_unverified';
+      /** Why the preservation walk did not finish (`preservation_unverified`). */
+      detail?: string;
     }
   | { status: 'unavailable'; reason: string };
 
@@ -223,9 +228,15 @@ async function probeJsonbKeyPreservation(
       ? { ...classified, reason: 'duplicate_keys' }
       : classified;
   } catch (error) {
+    // #3041 review finding: the cast already proved the column castable, so
+    // a walk that ran and gave up (typically the timeout below) is not the
+    // "could not probe" state `unavailable` means -- returning it would
+    // silently withdraw the conversion. Fail closed, visibly.
     return {
-      status: 'unavailable',
-      reason: error instanceof Error ? error.message : String(error),
+      status: 'dirty',
+      count: 0,
+      reason: 'preservation_unverified',
+      detail: error instanceof Error ? error.message : String(error),
     };
   }
 }

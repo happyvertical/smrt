@@ -1768,6 +1768,27 @@ export class SchemaComparer {
               sql: statements[statements.length - 1],
               sqlStatements: statements,
             });
+          } else if (
+            jsonUpgradeCandidate &&
+            jsonProbe?.status === 'dirty' &&
+            jsonProbe.reason === 'preservation_unverified'
+          ) {
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: jsonMismatch,
+              advisory: {
+                severity: 'warning',
+                message:
+                  `blocked: ${tableName}.${colName} casts to jsonb, but the check that ` +
+                  'no object carries duplicate keys (which jsonb would silently collapse) ' +
+                  `did not finish (${(jsonProbe.detail ?? 'unknown').slice(0, 200)}). ` +
+                  'No conversion is offered until it can be verified; rerun when the ' +
+                  'table is idle, or confirm the data has no duplicate keys and convert it manually.',
+              },
+            });
           } else if (jsonUpgradeCandidate && jsonProbe?.status === 'dirty') {
             changes.push({
               type: 'type_upgrade',

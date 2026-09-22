@@ -3008,3 +3008,64 @@ describe('SchemaComparer text -> jsonb convergence (#2772)', () => {
     expect(diff.has_changes).toBe(false);
   });
 });
+
+/**
+ * #3041 — a live native `json` column behind a manifest JSON field. The
+ * positive paths run against a real server in
+ * `schema/issue-3041-json-jsonb-postgres.optional.test.ts`; this pins the
+ * one path a live server cannot reproduce on demand: the duplicate-key walk
+ * starting and then giving up (its statement_timeout) after the cast proved
+ * the column castable must stay a visible advisory, never a silent drop.
+ */
+describe('SchemaComparer json -> jsonb preservation walk timeout (#3041)', () => {
+  it('reports an advisory without SQL when the duplicate-key walk does not finish', async () => {
+    const answer = async (sql: string) => {
+      if (sql.includes('WITH RECURSIVE')) {
+        throw new Error('canceling statement due to statement timeout');
+      }
+      if (sql.includes('cast_count')) return { rows: [{ cast_count: 3 }] };
+      return { rows: [{ table_name: 'accounts' }] };
+    };
+    const db = {
+      url: 'postgresql://localhost/test',
+      query: answer,
+      transaction: async (
+        callback: (tx: { query: (sql: string) => Promise<unknown> }) => unknown,
+      ) => callback({ query: answer }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          _meta_data: { type: 'json', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(db as any, {
+      ignoreTypeMismatches: false,
+    }).compare({
+      accounts: {
+        tableName: 'accounts',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          _meta_data: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const upgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(upgrades).toHaveLength(1);
+    expect(upgrades[0].mismatch?.expected).toBe('JSONB');
+    expect(upgrades[0].sql).toBeUndefined();
+    expect(upgrades[0].advisory?.severity).toBe('warning');
+    expect(upgrades[0].advisory?.message).toContain('did not finish');
+    expect(upgrades[0].advisory?.message).toContain('statement timeout');
+    expect(upgrades[0].advisory?.suggestedSql).toBeUndefined();
+    expect(getSQLFromDiff(diff)).toEqual([]);
+  });
+});
