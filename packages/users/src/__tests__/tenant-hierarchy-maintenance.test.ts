@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getChangesSince, getTableVersion } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   TenantCollection,
@@ -105,6 +106,26 @@ describe('Tenant hierarchy is maintained on save', () => {
     expect(
       await tenants.validateHierarchy(greatGrandchild.id as string),
     ).toEqual([]);
+  });
+
+  it('records rewritten descendants in the change feed', async () => {
+    const a = await root('A');
+    const b = await root('B');
+    const child = await tenants.createChild(a.id as string, { name: 'Child' });
+    const grandchild = await tenants.createChild(child.id as string, {
+      name: 'Grandchild',
+    });
+    const since = await getTableVersion(tenants.db, 'tenants');
+
+    await tenants.moveToParent(child.id as string, b.id as string);
+
+    const page = await getChangesSince(tenants.db, {
+      since,
+      tables: ['tenants'],
+    });
+    const rowIds = page.changes.map((change) => change.rowId);
+    expect(rowIds).toContain(child.id);
+    expect(rowIds).toContain(grandchild.id);
   });
 
   it('re-materializes descendants when a tenant becomes a root', async () => {

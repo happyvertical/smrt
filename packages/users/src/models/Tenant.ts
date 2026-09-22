@@ -17,6 +17,7 @@ import {
   applyTenantHierarchyUpdates,
   computeTenantHierarchyFields,
   planDescendantHierarchy,
+  recordTenantHierarchyChanges,
   type TenantHierarchyDatabase,
 } from './tenant-hierarchy.js';
 
@@ -244,8 +245,12 @@ export class Tenant extends SmrtObject implements TenantContract {
       fields.hierarchyPath !== this.hierarchyPath ||
       fields.hierarchyLevel !== this.hierarchyLevel;
     // Plan (read-only) before writing, so an over-deep or looping subtree is
-    // refused without leaving this row moved and its descendants stale. A row
-    // not yet persisted cannot have children pointing at it.
+    // refused before this row moves. The descendant rewrite that follows the
+    // save is not atomic with it: if it is interrupted, the stale subtree
+    // fails closed in the resolver (which verifies paths against parent
+    // links) until the next save of each row or `smrt
+    // db:materialize-tenant-hierarchy` repairs it. A row not yet persisted
+    // cannot have children pointing at it.
     const descendantUpdates =
       changed && this.id && this.isPersisted
         ? await planDescendantHierarchy(db, table, this.id, fields)
@@ -256,6 +261,11 @@ export class Tenant extends SmrtObject implements TenantContract {
     await super.save(options);
     if (descendantUpdates.length > 0) {
       await applyTenantHierarchyUpdates(db, table, descendantUpdates);
+      await recordTenantHierarchyChanges(
+        this.db,
+        table,
+        descendantUpdates.map((update) => update.id),
+      );
     }
     return this;
   }

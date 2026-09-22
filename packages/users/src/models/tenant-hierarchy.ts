@@ -22,6 +22,11 @@
  * @packageDocumentation
  */
 
+import { createLogger } from '@happyvertical/logger';
+import { bumpChangeFeed } from '@happyvertical/smrt-core';
+
+const logger = createLogger({ level: 'info' });
+
 /**
  * Maximum allowed depth for tenant hierarchy.
  * Prevents excessively deep trees that could cause performance issues.
@@ -380,4 +385,38 @@ export function planTenantHierarchy(
     changes: changes.sort(byIdOrder),
     problems: problems.sort(byIdOrder),
   };
+}
+
+/**
+ * Record raw hierarchy rewrites in the change feed through core's documented
+ * out-of-band escape hatch, so feed consumers observe that a row's ancestry
+ * changed. `rowIds` omitted records one table-level change.
+ *
+ * Mirrors the framework writer's failure policy: the write already succeeded
+ * and must not be un-succeeded by feed bookkeeping, so failures are logged and
+ * swallowed. `updated_at` is deliberately NOT bumped — the two columns are
+ * derived, and every `Tenant.save()` recomputes them, so a concurrent holder
+ * of a stale instance heals rather than conflicts.
+ */
+export async function recordTenantHierarchyChanges(
+  db: Parameters<typeof bumpChangeFeed>[0],
+  tableName: string,
+  rowIds?: readonly string[],
+): Promise<void> {
+  const inputs =
+    rowIds === undefined
+      ? [{ table: tableName, rowId: null }]
+      : rowIds.map((rowId) => ({ table: tableName, rowId }));
+  for (const input of inputs) {
+    try {
+      await bumpChangeFeed(db, { ...input, operation: 'update' });
+    } catch (error) {
+      logger.warn('Failed to record tenant hierarchy change in change feed', {
+        table: tableName,
+        rowId: input.rowId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+  }
 }

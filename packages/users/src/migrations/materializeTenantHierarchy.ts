@@ -3,6 +3,7 @@ import {
   applyTenantHierarchyUpdates,
   assertTenantTableName,
   planTenantHierarchy,
+  recordTenantHierarchyChanges,
   type TenantHierarchyDatabase,
   type TenantHierarchyPlan,
   type TenantHierarchyProblem,
@@ -90,7 +91,8 @@ async function planFrom(
  * changes. It refuses (writing nothing) when any tenant's chain is broken;
  * `dryRun` reports the same plan, problems included, without throwing.
  * Runs in one transaction when the adapter supports it. Touches only the two
- * derived columns.
+ * derived columns (not `updated_at`) and records one table-level change-feed
+ * entry after commit.
  *
  * Exposed as `smrt db:materialize-tenant-hierarchy [--dry-run]`.
  *
@@ -118,5 +120,13 @@ export async function materializeTenantHierarchy(
     return { ...plan, applied: true };
   };
 
-  return db.transaction ? await db.transaction((tx) => run(tx)) : await run(db);
+  const result = db.transaction
+    ? await db.transaction((tx) => run(tx))
+    : await run(db);
+  if (result.changes.length > 0) {
+    // After commit: one table-level entry tells feed consumers the hierarchy
+    // may have changed anywhere in the table.
+    await recordTenantHierarchyChanges(db, table);
+  }
+  return result;
 }

@@ -217,6 +217,82 @@ describePostgres(
       expect(result.permissions.has('tenants.read')).toBe(false);
     });
 
+    it('a stored path never cascades an unrelated tenant in; the real chain always does', async () => {
+      const db = isolated?.db;
+      if (!db) throw new Error('Expected the isolated PostgreSQL database.');
+      const userId = await memberOf(
+        publication,
+        'member',
+        'forged@example.com',
+      );
+      const [deletePerm] = await permissions.list({
+        where: { slug: 'tenants.delete' },
+        limit: 1,
+      });
+      const [readPerm] = await permissions.list({
+        where: { slug: 'tenants.read' },
+        limit: 1,
+      });
+      if (!deletePerm?.id || !readPerm?.id) throw new Error('catalog gap');
+
+      // An unrelated tenant GRANTs a write; the real root DENYs a read.
+      const unrelated = await tenants.create({ name: 'Unrelated' });
+      await (
+        await tenantOverrides.create({
+          tenantId: unrelated.id,
+          permissionId: deletePerm.id,
+          effect: TenantPermissionEffect.GRANT,
+        })
+      ).save();
+      await (
+        await tenantOverrides.create({
+          tenantId: network.id,
+          permissionId: readPerm.id,
+          effect: TenantPermissionEffect.DENY,
+        })
+      ).save();
+      turnTenancyOn();
+      const resolver = await PermissionResolver.create(options);
+
+      // Forged path naming the unrelated tenant (raw SQL: saves derive it).
+      await db.query(
+        'UPDATE tenants SET hierarchy_path = ? WHERE id = ?',
+        unrelated.id,
+        publication.id,
+      );
+      let result = await resolveAt(resolver, userId, publication);
+      expect(result.permissions.has('tenants.delete')).toBe(false);
+      expect(result.permissions.has('tenants.read')).toBe(false);
+      expect(result.permissions.size).toBeGreaterThan(0);
+
+      // Never-materialized legacy shape: the real ancestor's DENY still lands.
+      await db.query(
+        'UPDATE tenants SET hierarchy_path = ?, hierarchy_level = 0 WHERE id = ?',
+        '',
+        publication.id,
+      );
+      result = await resolveAt(resolver, userId, publication);
+      expect(result.permissions.has('tenants.read')).toBe(false);
+      expect(result.permissions.has('tenants.delete')).toBe(false);
+    });
+
+    it('fails closed when the real parent chain is broken', async () => {
+      const db = isolated?.db;
+      if (!db) throw new Error('Expected the isolated PostgreSQL database.');
+      const userId = await memberOf(publication, 'member', 'cycle@example.com');
+      // A cycle the framework can no longer write; only raw SQL produces it.
+      await db.query(
+        'UPDATE tenants SET parent_tenant_id = ? WHERE id = ?',
+        desk.id,
+        network.id,
+      );
+      turnTenancyOn();
+      const resolver = await PermissionResolver.create(options);
+      await expect(
+        resolveAt(resolver, userId, publication),
+      ).rejects.toMatchObject({ code: 'CIRCULAR_REFERENCE' });
+    });
+
     it('declared ancestor read grants exactly the listed read ops at the ancestor', async () => {
       const userId = await memberOf(publication, 'member', 'up@example.com');
       turnTenancyOn();

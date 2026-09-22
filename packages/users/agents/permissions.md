@@ -124,7 +124,17 @@ by the explicit (userId, tenantId); with those classes registered tenant-scoped
 silently narrowed them. It returns slugs and ids only, never rows, and the
 caller's own reads stay filtered. Do not move a resolver read back under the
 ambient tenant; the Postgres regression suite
-`issue-3036-hierarchy-resolution-postgres.test.ts` pins this.
+`issue-3036-hierarchy-resolution-postgres.test.ts` pins this. Because nothing
+backstops those reads any more, the tenant-override cascade verifies its chain
+too: it uses hierarchyPath only when it agrees link-by-link with
+parentTenantId, otherwise walks the real parent links (so a forged path cannot
+cascade an unrelated tenant in, and a never-materialized row still gets its real
+ancestors' DENYs), and throws TenantHierarchyError on a broken real chain.
+`getTenantInheritanceChain()` returns Tenant rows, so it is NOT run in system
+context. Descendant path rewrites are raw column updates recorded through
+`bumpChangeFeed`; `updated_at` is intentionally not bumped (derived columns;
+every save recomputes them). They are not atomic with the moving row's save —
+an interrupted subtree fails closed until re-saved or backfilled.
 
 System context and super-admin bypass are honored. Pass
 allowSuperAdminBypass: false for money or separation-of-duties operations that

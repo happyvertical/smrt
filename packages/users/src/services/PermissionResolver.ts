@@ -16,6 +16,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Membership } from '../models/Membership.js';
 import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
+import { TenantHierarchyError } from '../models/tenant-hierarchy.js';
 import {
   type AncestorReadPolicy,
   getConfiguredAncestorReadPolicy,
@@ -320,9 +321,9 @@ export class PermissionResolver {
       return result;
     }
 
-    // Get the inheritance chain from root to this tenant
-    const ancestors =
-      await this.tenantCollection.getAncestorsFromRoot(tenantId);
+    // Get the inheritance chain from root to this tenant, verified against the
+    // real parent links (the stored path is never trusted on its own).
+    const ancestors = await this.loadVerifiedAncestorChain(tenant);
     const chain: Tenant[] = [...ancestors, tenant];
 
     // Batch fetch all permission overrides for the entire chain (single query)
@@ -441,19 +442,92 @@ export class PermissionResolver {
   }
 
   /**
+   * The tenant's ancestors, root first, proven against real `parentTenantId`
+   * links (smrt#3036).
+   *
+   * The materialized `hierarchyPath` is used when it agrees link-by-link with
+   * the parent chain. When it does not — a legacy row with a correct parent
+   * and an empty path, or a stale or forged path — the chain is rebuilt by
+   * walking `parentTenantId`, so a path can never make an unrelated tenant's
+   * overrides cascade in, and a never-materialized row still receives its
+   * real ancestors' DENYs. A parent chain that is itself broken (missing
+   * parent, cycle, or deeper than `MAX_TENANT_HIERARCHY_DEPTH`) throws
+   * {@link TenantHierarchyError}: the resolution fails closed rather than
+   * guessing which overrides apply.
+   */
+  private async loadVerifiedAncestorChain(tenant: Tenant): Promise<Tenant[]> {
+    const tenantId = tenant.id as string;
+    const pathIds = tenant.getAncestorIds();
+    if (
+      pathIds.length < MAX_TENANT_HIERARCHY_DEPTH &&
+      !pathIds.includes(tenantId) &&
+      new Set(pathIds).size === pathIds.length &&
+      pathIds.length > 0 === !!tenant.parentTenantId
+    ) {
+      const loaded =
+        pathIds.length > 0
+          ? await this.tenantCollection.listByIds(pathIds)
+          : [];
+      const byId = new Map(loaded.map((row) => [row.id, row]));
+      const chain: Tenant[] = [];
+      let expectedParentId: string | null = null;
+      let consistent = true;
+      for (const id of pathIds) {
+        const ancestor = byId.get(id);
+        if (
+          !ancestor?.id ||
+          (ancestor.parentTenantId ?? null) !== expectedParentId
+        ) {
+          consistent = false;
+          break;
+        }
+        chain.push(ancestor);
+        expectedParentId = ancestor.id;
+      }
+      if (consistent && (tenant.parentTenantId ?? null) === expectedParentId) {
+        return chain;
+      }
+    }
+
+    // Stored path disagrees with the parent links: walk the real chain.
+    const walked: Tenant[] = [];
+    const seen = new Set<string>([tenantId]);
+    let cursor = tenant.parentTenantId ?? null;
+    while (cursor) {
+      if (seen.has(cursor)) {
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} has a circular parent chain at ${cursor}`,
+          'CIRCULAR_REFERENCE',
+        );
+      }
+      if (walked.length + 1 >= MAX_TENANT_HIERARCHY_DEPTH) {
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} is deeper than the maximum hierarchy depth (${MAX_TENANT_HIERARCHY_DEPTH})`,
+          'MAX_DEPTH_EXCEEDED',
+        );
+      }
+      seen.add(cursor);
+      const parent = await this.tenantCollection.get({ id: cursor });
+      if (!parent?.id) {
+        throw new TenantHierarchyError(
+          `Tenant ${tenantId} names missing ancestor ${cursor}`,
+          'PARENT_NOT_FOUND',
+        );
+      }
+      walked.unshift(parent);
+      cursor = parent.parentTenantId ?? null;
+    }
+    return walked;
+  }
+
+  /**
    * Get the inheritance chain for a tenant (for debugging/display purposes)
    */
   async getTenantInheritanceChain(
     tenantId: string,
   ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
-    return await resolveOutsideTenantFilter(() =>
-      this.getTenantInheritanceChainInternal(tenantId),
-    );
-  }
-
-  private async getTenantInheritanceChainInternal(
-    tenantId: string,
-  ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
+    // Deliberately NOT run outside the tenant filter: this returns Tenant
+    // rows, so it stays subject to the caller's own tenancy scope (#3036).
     const tenant = await this.tenantCollection.get({ id: tenantId });
     if (!tenant) {
       return [];
