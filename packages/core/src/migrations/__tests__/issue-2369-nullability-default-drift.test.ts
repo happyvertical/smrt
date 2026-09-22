@@ -628,7 +628,7 @@ for (const { name, type, engine } of engines) {
       );
     });
 
-    it('does not refuse a backfill whose duplicates fall outside a partial unique index (#3008 review)', async () => {
+    it('refuses duplicates outside a partial unique index only where the engine drops the predicate (#3008 review, #3015)', async () => {
       await db.query(
         'CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT, active INTEGER)',
       );
@@ -654,11 +654,21 @@ for (const { name, type, engine } of engines) {
           ],
         ),
       });
-      expect(
-        diff.changes.some(
-          (c) => c.mismatch?.actual === REQUIRED_COLUMN_NOT_ADDED,
-        ),
-      ).toBe(false);
+      if (engine === 'duckdb') {
+        // DuckDB creates the partial index as a FULL unique index, so the
+        // duplicate backfill must be a named plan-time refusal, not a raw
+        // CREATE UNIQUE INDEX failure (#3015).
+        expect(diff.changes[0].advisory?.message).toMatch(
+          /^items\.claim_key was not added: .*same value, but the column is unique/,
+        );
+      } else {
+        // SQLite honors the predicate: duplicates outside it are fine.
+        expect(
+          diff.changes.some(
+            (c) => c.mismatch?.actual === REQUIRED_COLUMN_NOT_ADDED,
+          ),
+        ).toBe(false);
+      }
     });
 
     it('keeps a live index when its shape-drift replacement over a refused column is withheld (#3008 review)', async () => {
