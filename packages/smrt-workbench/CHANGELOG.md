@@ -1,5 +1,15 @@
 # @happyvertical/smrt-workbench
 
+## 0.51.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.11
+  - @happyvertical/smrt-svelte@0.51.11
+  - @happyvertical/smrt-playground@0.51.11
+  - @happyvertical/smrt-ui@0.51.11
+
 ## 0.51.10
 
 ### Patch Changes

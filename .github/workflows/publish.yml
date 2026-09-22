@@ -370,12 +370,19 @@ jobs:
           auth-token: ${{ secrets.NPM_TOKEN }}
           github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # setup-node points NPM_CONFIG_USERCONFIG at its own temporary npmrc, so
-      # the credential has to go into whichever file npm will actually read.
+      # This job installs nothing, so it does not need setup-node's npmrc.
+      # Write a fresh one holding only the primary's credential and point npm
+      # at it for the rest of the job. Never append to setup-node's file: it
+      # ends without a newline, so an appended line fuses onto its
+      # `registry=` line and the token is silently never a credential (#3005).
       # `npm whoami` then proves the token is valid against the primary before
       # anything irreversible: an empty-string check is what let an expired
       # token reach the publish step in #2998.
       - name: Authenticate to the primary registry
+        # The emergency changesets mode publishes to npmjs with NPM_TOKEN via
+        # setup-node's npmrc; replacing NPM_CONFIG_USERCONFIG job-wide would
+        # strip that credential, so this step is artifacts-mode only.
+        if: inputs.publish-mode != 'changesets'
         env:
           PRIMARY_TOKEN: ${{ secrets.NPM_HAPPYVERTICAL_PUBLISH_TOKEN }}
         run: |
@@ -388,8 +395,11 @@ jobs:
           node --input-type=module -e "import { primaryRegistry } from './scripts/release-registry.mjs'; primaryRegistry();"
           host="${RELEASE_PRIMARY_REGISTRY#https://}"
           host="${host%/}"
-          rc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          printf '//%s/:_authToken=%s\n' "$host" "$PRIMARY_TOKEN" >> "$rc"
+          rc="$RUNNER_TEMP/release-npmrc"
+          umask 077
+          printf '//%s/:_authToken=%s\n' "$host" "$PRIMARY_TOKEN" > "$rc"
+          echo "NPM_CONFIG_USERCONFIG=$rc" >> "$GITHUB_ENV"
+          export NPM_CONFIG_USERCONFIG="$rc"
           who=$(npm whoami --registry "$RELEASE_PRIMARY_REGISTRY" \
             "--@happyvertical:registry=$RELEASE_PRIMARY_REGISTRY")
           echo "✓ Authenticated to $RELEASE_PRIMARY_REGISTRY as $who"
