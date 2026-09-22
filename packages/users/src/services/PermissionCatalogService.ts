@@ -13,6 +13,7 @@ import {
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
   isValidPermissionSlug,
+  type Permission,
   parsePermissionSlug,
 } from '../models/Permission.js';
 
@@ -751,9 +752,28 @@ export class PermissionCatalogService {
     const unchanged: string[] = [];
     const updated: string[] = [];
 
+    // Load the live catalog in ONE read rather than a `findBySlug()` per
+    // definition (#3022). The catalog is registry-derived, so its size grows
+    // with every consumed package's object and action surface: on a consumer
+    // app it is thousands of slugs, and a per-slug SELECT made this bootstrap
+    // scale linearly with the registry — it is the dominant cost of a cold
+    // first write, and it doubled between 0.51.7 and 0.51.11 purely because
+    // the catalog grew. `list({})` applies no implicit bound (see
+    // `applyListBounds`), so this is the whole table, exactly what the
+    // per-slug probes collectively read.
+    const existingBySlug = new Map<string, Permission>();
+    for (const permission of await permissions.list({})) {
+      if (typeof permission.slug === 'string' && permission.slug.length > 0) {
+        existingBySlug.set(permission.slug, permission);
+      }
+    }
+
     for (const definition of catalog.permissions) {
-      const existing = await permissions.findBySlug(definition.slug);
+      const existing = existingBySlug.get(definition.slug) ?? null;
       if (!existing) {
+        // `collection.create()` already persists (it calls `save()`), so a
+        // second `save()` here was a redundant UPDATE plus a second change-feed
+        // append for every seeded row (#3022).
         const permission = await permissions.create({
           category:
             definition.category ??
@@ -762,7 +782,10 @@ export class PermissionCatalogService {
           name: definition.name ?? definition.slug,
           slug: definition.slug,
         });
-        await permission.save();
+        // Keep the in-memory view authoritative: the removed per-slug read used
+        // to see a row this same loop had just written, so a catalog carrying
+        // the same slug twice must still resolve to one row.
+        existingBySlug.set(definition.slug, permission);
         created.push(definition.slug);
         continue;
       }
