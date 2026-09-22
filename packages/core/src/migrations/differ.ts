@@ -684,12 +684,18 @@ export class SchemaComparer {
       tableName,
       new Set(
         (manifest.indexes ?? [])
-          .filter(
-            // Partial indexes are left to the engine: their predicate
-            // decides which rows must be distinct.
-            (index) =>
-              index.unique && !index.where && index.columns.length === 1,
-          )
+          .filter((index) => {
+            if (!index.unique || index.columns.length !== 1) return false;
+            if (!index.where) return true;
+            // Partial indexes are left to the engine where it honors the
+            // predicate, which decides which rows must be distinct. DuckDB
+            // and JSON create them as FULL unique indexes (#3015), so the
+            // precheck must cover them there — except STI subtype indexes,
+            // which those engines skip entirely.
+            return (
+              !this.supportsPartialIndexes() && !isStiSubtypeUniqueIndex(index)
+            );
+          })
           .map((index) => index.columns[0]),
       ),
     );
