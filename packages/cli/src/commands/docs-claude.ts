@@ -38,6 +38,12 @@ export interface PackageInfo {
   directory?: string;
   /** Module paths without loading their bodies in the default snapshot. */
   moduleDocPaths?: string[];
+  /**
+   * Installed specifier (`node_modules/<scope>/<entry>`), which differs from
+   * `name` under an `npm:` alias install. Module-doc links use it so they
+   * resolve from the consumer's `node_modules`.
+   */
+  specifier?: string;
 }
 
 export interface RootDocInfo {
@@ -257,7 +263,12 @@ async function discoverInstalledPackages(
 
   for (const entry of installedDirectories) {
     if (!entry.name.startsWith('smrt-')) continue;
-    const pkg = loadPackageInfo(entry.realDirectory, entry.name, complete);
+    const pkg = loadPackageInfo(
+      entry.realDirectory,
+      entry.name,
+      complete,
+      `@happyvertical/${entry.name}`,
+    );
     if (pkg) packages.push(pkg);
   }
 
@@ -302,7 +313,12 @@ function discoverSdkPackages(
   const packages: PackageInfo[] = [];
   for (const entry of installedDirectories) {
     if (entry.name.startsWith('smrt-') || entry.name === 'smrt') continue;
-    const pkg = loadPackageInfo(entry.realDirectory, entry.name, complete);
+    const pkg = loadPackageInfo(
+      entry.realDirectory,
+      entry.name,
+      complete,
+      `@happyvertical/${entry.name}`,
+    );
     if (pkg) packages.push(pkg);
   }
   return packages.sort((a, b) => a.name.localeCompare(b.name));
@@ -312,6 +328,7 @@ function loadPackageInfo(
   packagePath: string,
   dirName: string,
   complete: boolean,
+  specifier?: string,
 ): PackageInfo | null {
   const packageJsonPath = join(packagePath, 'package.json');
   if (!existsSync(packageJsonPath)) {
@@ -331,6 +348,7 @@ function loadPackageInfo(
       claudeMd: agentDoc.content,
       docSource: agentDoc.source,
       directory: packagePath,
+      specifier: specifier ?? packageJson.name,
       moduleDocPaths:
         agentDoc.source === 'AGENTS.md'
           ? resolveAgentModuleDocPaths(
@@ -482,15 +500,17 @@ function renderPackageDoc(
   if (!complete && paths.length > 0) {
     lines.push('#### Module documentation', '');
     lines.push(
-      'Read the relevant source file on demand, or regenerate with `--complete`.',
+      'Resolve each link under `node_modules/` (for example `node_modules/@happyvertical/smrt-core/agents/object-runtime.md`) and read it on demand, or regenerate with `--complete`.',
       '',
     );
     for (const path of paths) {
-      const source = (pkg.directory ? join(pkg.directory, path) : path).replace(
-        /\\/g,
-        '/',
-      );
-      lines.push(`- [${path}](<${source}>)`);
+      // Link by bare package specifier, never by the installed realpath: the
+      // generated file is committed by consumers, and an absolute pnpm-store
+      // path embeds the checkout directory and store hash, so it churns on
+      // every install in another worktree or machine.
+      const relative = path.replace(/\\/g, '/');
+      const specifier = pkg.specifier ?? pkg.name;
+      lines.push(`- [${relative}](<${specifier}/${relative}>)`);
     }
     lines.push('');
   }

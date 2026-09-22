@@ -242,8 +242,9 @@ Gamma content.
 
       expect(markdown).toContain('Orientation and Gotchas.');
       expect(markdown).toContain(
-        '(<' + '/project/node_modules/@test/split-pkg/agents/payouts.md' + '>)',
+        '- [agents/payouts.md](<@test/split-pkg/agents/payouts.md>)',
       );
+      expect(markdown).not.toContain('/project/node_modules');
       expect(markdown).not.toContain('claimForPayout never double-owns.');
       const complete = generateMarkdown(
         packages,
@@ -258,7 +259,7 @@ Gamma content.
       expect(complete).toContain('`smrt docs:agents --complete`');
     });
 
-    it('normalizes Windows module link separators', () => {
+    it('links module docs by package specifier, not installed realpath', () => {
       const markdown = generateMarkdown([
         {
           name: '@test/windows',
@@ -266,12 +267,14 @@ Gamma content.
           readme: null,
           agentMd: '# Windows\n\nGuidance',
           directory: String.raw`C:\project\node_modules\pkg`,
-          moduleDocPaths: ['agents/module.md'],
+          moduleDocPaths: [String.raw`agents\module.md`],
         },
       ]);
       expect(markdown).toContain(
-        '(<C:/project/node_modules/pkg/agents/module.md>)',
+        '- [agents/module.md](<@test/windows/agents/module.md>)',
       );
+      expect(markdown).not.toContain('C:');
+      expect(markdown).not.toContain('\\');
     });
 
     it('should include footer with regeneration note', () => {

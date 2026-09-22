@@ -101,6 +101,29 @@ describe('docs:agents handler', () => {
     expect(printed).toContain('*No AGENTS.md found for this package.*');
   });
 
+  it('links module docs by the installed alias, not the manifest name', async () => {
+    makePackage('@happyvertical', 'smrt-alias', {
+      pkgName: '@happyvertical/smrt-installed',
+      agents: '# Alias\n\nOrientation. [Details](agents/details.md)',
+    });
+    const moduleDir = join(
+      tempDir,
+      'node_modules',
+      '@happyvertical',
+      'smrt-alias',
+      'agents',
+    );
+    mkdirSync(moduleDir);
+    writeFileSync(join(moduleDir, 'details.md'), '# Details\n\nbody.');
+
+    await docsCommands['docs:agents'].handler([], { 'dry-run': true });
+    const printed = logSpy.mock.calls.map((call) => call[0]).join('\n');
+    expect(printed).toContain(
+      '- [agents/details.md](<@happyvertical/smrt-alias/agents/details.md>)',
+    );
+    expect(printed).not.toContain('@happyvertical/smrt-installed/agents');
+  });
+
   it.each([
     'docs:agents',
     'docs:claude',
@@ -127,14 +150,9 @@ describe('docs:agents handler', () => {
     const selected = logSpy.mock.calls.map((call) => call[0]).join('\n');
     for (const name of ['smrt-content', 'ai']) {
       expect(selected).toContain(
-        join(
-          tempDir,
-          'node_modules',
-          '@happyvertical',
-          name,
-          'agents/details.md',
-        ),
+        `- [agents/details.md](<@happyvertical/${name}/agents/details.md>)`,
       );
+      expect(selected).not.toContain(join(tempDir, 'node_modules'));
       expect(selected).not.toContain(`${name} module body.`);
     }
     logSpy.mockClear();
