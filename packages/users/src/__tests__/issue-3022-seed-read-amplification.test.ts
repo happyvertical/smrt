@@ -200,21 +200,39 @@ describe('issue #3022: cold seeding must not read per catalog slug', () => {
     expect(outcome.permissionsCreated).toBeGreaterThan(0);
     expect(outcome.grantsAdded).toBeGreaterThan(0);
 
-    // One write per created row. The pre-fix path wrote each row twice — the
-    // `create()`'s own persist and a redundant `save()` — so these bounds are
-    // exactly what a reintroduced second write breaks.
-    expect(outcome.counts.permissionWrites).toBeLessThanOrEqual(
+    // One write per created row, bounded on BOTH sides.
+    //
+    // The upper bound is the guard: the pre-fix path wrote each row twice —
+    // the `create()`'s own persist and a redundant `save()` — so `< 2x` is
+    // precisely the signal this case exists to catch, while leaving room for
+    // a stray retry (`SmrtObject.save()` persists under `withRetry`, and the
+    // counter increments per attempt).
+    //
+    // The lower bound closes the vacuity hole: these counters are fed by a
+    // wrapper on `db.upsert()`, so a future persistence path that used
+    // `db.insert()`/`db.update()` instead would zero them and sail through an
+    // upper-only assertion — the guard would stop guarding while staying
+    // green, which is exactly the round-1 failure mode.
+    expect(outcome.counts.permissionWrites).toBeGreaterThanOrEqual(
       outcome.permissionsCreated,
     );
-    expect(outcome.counts.rolePermissionWrites).toBeLessThanOrEqual(
+    expect(outcome.counts.permissionWrites).toBeLessThan(
+      2 * outcome.permissionsCreated,
+    );
+    expect(outcome.counts.rolePermissionWrites).toBeGreaterThanOrEqual(
       outcome.grantsAdded,
+    );
+    expect(outcome.counts.rolePermissionWrites).toBeLessThan(
+      2 * outcome.grantsAdded,
     );
 
     // And one change-feed append per row write. This is the counter that
     // actually dominated the consumer's wall clock, and it is asserted
-    // separately so a future write path that bypasses `upsert()` cannot make
-    // the doubling invisible again. The slack covers the handful of system
-    // role rows seeded alongside the catalog.
+    // separately because it is write-path independent: a second write routed
+    // through `insert()`/`update()` rather than `upsert()` still trips it.
+    // The upper slack covers the handful of system role rows seeded alongside
+    // the catalog; the lower bound keeps it non-vacuous.
+    expect(outcome.counts.changeFeedAppends).toBeGreaterThan(0);
     expect(outcome.counts.changeFeedAppends).toBeLessThanOrEqual(
       outcome.permissionsCreated + outcome.grantsAdded + 16,
     );
