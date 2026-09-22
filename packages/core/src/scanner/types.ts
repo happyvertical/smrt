@@ -58,6 +58,8 @@ export interface FieldMeta {
   required?: boolean;
   /** Default value carried in metadata for runtime-registry generation. */
   default?: unknown;
+  /** Per-row SQL backfill for adding/tightening a required column (#3008). */
+  backfill?: string;
   /** Marks the field as the primary key column. */
   primaryKey?: boolean;
   /** Marks the column as unique. */

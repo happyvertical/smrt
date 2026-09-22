@@ -97,6 +97,26 @@ export function isSqliteRebuildPlaceholder(sql: string | undefined): boolean {
   return typeof sql === 'string' && sql.includes('requires table recreation');
 }
 
+/**
+ * #3008: the placeholder the differ emits for a required column whose
+ * existing rows are filled from a declared per-row backfill. SQLite cannot
+ * add a NOT NULL column without a default to a populated table, nor
+ * `SET NOT NULL` afterwards, so {@link planSqliteTableRebuilds} turns it into
+ * a rebuild whose copy step evaluates the backfill for every row. An
+ * `add_column` placeholder adds the column; an `alter_column` placeholder
+ * tightens an existing nullable column (`COALESCE(col, backfill)`).
+ */
+export function sqliteBackfillPlaceholderSql(columnName: string): string {
+  return `-- SQLite: required column ${quoteIdentifier(columnName)} is backfilled by table recreation`;
+}
+
+/** True when `sql` is the #3008 backfill-rebuild placeholder. */
+export function isSqliteBackfillPlaceholder(sql: string | undefined): boolean {
+  return (
+    typeof sql === 'string' && sql.includes('is backfilled by table recreation')
+  );
+}
+
 function blockedSql(columnName: string, reason: string): string {
   // Must stay a single line, and must not read as a no-op: the CLI classifies
   // any comment that says "no change needed" as noop and drops it silently.
@@ -146,6 +166,16 @@ export interface PlanSqliteTableRebuildsOptions {
   changes: SchemaChange[];
   /** Abstract → SQLite type mapping (the engine's DDL strategy `mapType`). */
   mapType: (type: SQLDataType) => string;
+  /**
+   * Statements to run after the rebuild for a column the rebuild adds
+   * (#3008), e.g. its `CREATE UNIQUE INDEX <table>_<col>_key`.
+   */
+  addedColumnFollowUps?: (change: SchemaChange) => string[];
+  /**
+   * Full column definition for a column the rebuild adds (#3008). Defaults
+   * to `"<name>" <type> NOT NULL [CHECK (...)]`.
+   */
+  addedColumnDefinition?: (change: SchemaChange) => string;
 }
 
 /**
@@ -174,13 +204,21 @@ export async function planSqliteTableRebuilds(
 ): Promise<SchemaChange[]> {
   const { db, tableName, changes, mapType } = options;
 
-  const pending = changes.filter(
+  const retypes = changes.filter(
     (change) =>
       change.type === 'type_upgrade' &&
       change.name &&
       change.column &&
       isSqliteRebuildPlaceholder(change.sql),
   );
+  const backfills = changes.filter(
+    (change) =>
+      (change.type === 'add_column' || change.type === 'alter_column') &&
+      change.name &&
+      typeof change.column?.backfill === 'string' &&
+      isSqliteBackfillPlaceholder(change.sql),
+  );
+  const pending = [...retypes, ...backfills];
   if (pending.length === 0) {
     return changes;
   }
@@ -222,11 +260,36 @@ export async function planSqliteTableRebuilds(
   }
 
   const columnTypes = new Map<string, string>();
-  for (const change of pending) {
+  for (const change of retypes) {
     columnTypes.set(
       change.name as string,
       mapType((change.column as { type: SQLDataType }).type),
     );
+  }
+
+  const appendColumns: SqliteAppendedColumn[] = [];
+  const tightenColumns = new Map<string, string>();
+  const followUps: string[] = [];
+  for (const change of backfills) {
+    const name = change.name as string;
+    const column = change.column as NonNullable<SchemaChange['column']>;
+    const backfill = column.backfill as string;
+    if (change.type === 'add_column') {
+      const check = column.check ? ` CHECK (${column.check})` : '';
+      appendColumns.push({
+        name,
+        definition:
+          options.addedColumnDefinition?.(change) ??
+          `${quoteIdentifier(name)} ${mapType(column.type)} NOT NULL${check}`,
+        copyExpression: `(${backfill})`,
+      });
+      followUps.push(...(options.addedColumnFollowUps?.(change) ?? []));
+    } else {
+      tightenColumns.set(
+        name,
+        `COALESCE(${quoteIdentifier(name)}, (${backfill}))`,
+      );
+    }
   }
 
   const plan = buildSqliteRebuildStatements({
@@ -236,6 +299,8 @@ export async function planSqliteTableRebuilds(
     columns: context.columns,
     objects: context.objects,
     legacyAlterTable: context.legacyAlterTable,
+    appendColumns,
+    tightenColumns,
   });
 
   if (!plan) {
@@ -245,6 +310,7 @@ export async function planSqliteTableRebuilds(
   }
 
   const [primary, ...covered] = pending;
+  const statements = [...plan.statements, ...followUps];
   const rebuilt = changes.map((change) => {
     if (change === primary) {
       return {
@@ -252,9 +318,15 @@ export async function planSqliteTableRebuilds(
         // `sql` stays a real statement so the CLI classifies this upgrade as
         // executable; every consumer that actually runs the change prefers
         // `sqlStatements`.
-        sql: plan.statements[0],
-        sqlStatements: plan.statements,
+        sql: statements[0],
+        sqlStatements: statements,
       };
+    }
+    if (covered.includes(change) && change.type === 'add_column') {
+      // Nothing left to run: the primary's rebuild adds this column. An
+      // `add_column` is always executed, so it cannot stay as a no-op
+      // comment the way a covered type upgrade does — drop it.
+      return null;
     }
     if (covered.includes(change)) {
       const { sqlStatements: _dropped, ...rest } = change;
@@ -275,7 +347,7 @@ export async function planSqliteTableRebuilds(
   return [
     ...rebuilt.filter((_, index) => rebuildPositions.has(index)),
     ...rebuilt.filter((_, index) => !rebuildPositions.has(index)),
-  ];
+  ].filter((change): change is SchemaChange => change !== null);
 }
 
 /**
@@ -405,6 +477,22 @@ export interface BuildSqliteRebuildStatementsInput {
   objects: { name: string; sql: string }[];
   /** Current `PRAGMA legacy_alter_table` value, restored after the rename. */
   legacyAlterTable: boolean;
+  /** #3008: new columns the rebuild adds, filled by their copy expression. */
+  appendColumns?: SqliteAppendedColumn[];
+  /**
+   * #3008: existing columns the rebuild tightens to NOT NULL, mapped to the
+   * copy expression that fills their NULLs.
+   */
+  tightenColumns?: Map<string, string>;
+}
+
+/** A column a rebuild appends to the table (#3008). */
+export interface SqliteAppendedColumn {
+  name: string;
+  /** Full column definition, e.g. `"key" TEXT NOT NULL`. */
+  definition: string;
+  /** Per-row value copied into it, evaluated against the old table. */
+  copyExpression: string;
 }
 
 /**
@@ -435,20 +523,37 @@ export function buildSqliteRebuildStatements(
     columns,
     objects,
     legacyAlterTable,
+    appendColumns = [],
+    tightenColumns = new Map<string, string>(),
   } = input;
 
   const stagingTable = `${SQLITE_REBUILD_TABLE_PREFIX}${tableName}`;
   const createStaging = rewriteSqliteCreateTable(createTableSql, {
     tableName: stagingTable,
     columnTypes,
+    notNullColumns: new Set(tightenColumns.keys()),
+    appendDefinitions: appendColumns.map((column) => column.definition),
   });
   if (!createStaging) {
     return null;
   }
+  const liveColumns = new Set(columns.map((name) => name.toLowerCase()));
+  for (const name of tightenColumns.keys()) {
+    if (!liveColumns.has(name.toLowerCase())) return null;
+  }
+  for (const column of appendColumns) {
+    if (liveColumns.has(column.name.toLowerCase())) return null;
+  }
 
   const quotedTable = quoteIdentifier(tableName);
   const quotedStaging = quoteIdentifier(stagingTable);
-  const columnList = columns.map((name) => quoteIdentifier(name)).join(', ');
+  const targetList = [...columns, ...appendColumns.map((c) => c.name)]
+    .map((name) => quoteIdentifier(name))
+    .join(', ');
+  const sourceList = [
+    ...columns.map((name) => tightenColumns.get(name) ?? quoteIdentifier(name)),
+    ...appendColumns.map((column) => column.copyExpression),
+  ].join(', ');
 
   const statements = [
     // Deferred FK enforcement survives the window where the table is absent.
@@ -458,7 +563,7 @@ export function buildSqliteRebuildStatements(
     // Idempotent for a retry after a partially applied non-transactional run.
     `DROP TABLE IF EXISTS ${quotedStaging}`,
     createStaging,
-    `INSERT INTO ${quotedStaging} (${columnList}) SELECT ${columnList} FROM ${quotedTable}`,
+    `INSERT INTO ${quotedStaging} (${targetList}) SELECT ${sourceList} FROM ${quotedTable}`,
     `DROP TABLE ${quotedTable}`,
     'PRAGMA legacy_alter_table = ON',
     `ALTER TABLE ${quotedStaging} RENAME TO ${quotedTable}`,
@@ -491,7 +596,14 @@ export function buildSqliteRebuildStatements(
  */
 export function rewriteSqliteCreateTable(
   createTableSql: string,
-  target: { tableName: string; columnTypes: Map<string, string> },
+  target: {
+    tableName: string;
+    columnTypes: Map<string, string>;
+    /** #3008: columns whose definition gains `NOT NULL`. */
+    notNullColumns?: Set<string>;
+    /** #3008: column definitions appended after the existing columns. */
+    appendDefinitions?: string[];
+  },
 ): string | null {
   const parsed = parseCreateTableBody(createTableSql);
   if (!parsed) {
@@ -503,21 +615,40 @@ export function rewriteSqliteCreateTable(
     wanted.set(name.toLowerCase(), type);
   }
 
+  const tighten = new Set(
+    [...(target.notNullColumns ?? [])].map((name) => name.toLowerCase()),
+  );
+
   const rewritten: string[] = [];
+  let lastColumnIndex = -1;
   for (const item of parsed.items) {
     const columnName = readColumnDefinitionName(item);
+    if (columnName) lastColumnIndex = rewritten.length;
+    let current = item;
+    if (columnName && tighten.has(columnName.toLowerCase())) {
+      tighten.delete(columnName.toLowerCase());
+      if (!/\bnot\s+null\b/i.test(current)) {
+        current = `${current} NOT NULL`;
+      }
+    }
     const newType = columnName ? wanted.get(columnName.toLowerCase()) : null;
     if (!columnName || !newType) {
-      rewritten.push(item);
+      rewritten.push(current);
       continue;
     }
-    const replaced = replaceColumnType(item, newType);
+    const replaced = replaceColumnType(current, newType);
     if (!replaced) {
       return null;
     }
     rewritten.push(replaced);
     wanted.delete(columnName.toLowerCase());
   }
+
+  if (tighten.size > 0) {
+    return null;
+  }
+  // Column definitions must precede table-level constraints.
+  rewritten.splice(lastColumnIndex + 1, 0, ...(target.appendDefinitions ?? []));
 
   if (wanted.size > 0) {
     // A column the differ wants retyped is not in the live DDL. Rebuilding
