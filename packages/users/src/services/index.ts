@@ -120,6 +120,16 @@ export {
   type PostgresPermissionPolicyTarget,
 } from './PostgresPermissionPolicies.js';
 export {
+  type CreateResourceGrantOptions,
+  checkResourceOperationPermission,
+  MAX_RESOURCE_GRANT_DELEGATION_DEPTH,
+  type ResourceGrantDecision,
+  ResourceGrantService,
+  type ResourceIdentity,
+  type ResourceIdentityVerifier,
+  type ResourceOperationPermissionOptions,
+} from './ResourceGrantService.js';
+export {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   type PrincipalPermissionRuntimeOptions,

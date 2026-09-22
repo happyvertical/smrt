@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import '../models/index.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
+import { ResourceGrantCollection } from '../collections/ResourceGrantCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import {
   DEFAULT_ROLE_PERMISSION_PATTERNS,
@@ -19,6 +20,7 @@ import type { Tenant } from '../models/Tenant.js';
 import type { User } from '../models/User.js';
 import {
   assertOperationPermission,
+  checkResourceOperationPermission,
   deriveOperationPermissionSlug,
   hasOperationPermission,
   OperationPermissionError,
@@ -211,6 +213,149 @@ describe('operation permission guards', () => {
         permissionSet: [] as readonly string[],
       }),
     ).rejects.toThrow(OperationPermissionError);
+  });
+
+  it('requires an exact live resource grant after tenant permission (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const resourceType = 'construction-project';
+    const grants = await ResourceGrantCollection.create(options);
+    const grant = await grants.create({
+      tenantId,
+      userId,
+      resourceType,
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+    });
+    await grant.save();
+    const base = {
+      ...options,
+      collection: 'operation_permission_records',
+      action: 'update',
+      tenantId,
+      userId,
+      verifyResource: async (resource: { tenantId: string }) =>
+        resource.tenantId === tenantId,
+    };
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({ allowed: true });
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-b',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+    const explicitDeny = await grants.create({
+      tenantId,
+      userId,
+      resourceType,
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      effect: 'deny',
+    });
+    await explicitDeny.save();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: { tenantId, resourceType, resourceId: 'project-a' },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_denied',
+    });
+    await explicitDeny.delete();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId: 'other-tenant',
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_not_verified',
+    });
+    grant.revokedAt = new Date().toISOString();
+    await grant.save();
+    await expect(
+      checkResourceOperationPermission({
+        ...base,
+        resource: {
+          tenantId,
+          resourceType,
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('invalidates delegated grants when an ancestor is revoked (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const parent = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      canDelegate: true,
+    });
+    await parent.save();
+    const child = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+      parentGrantId: parent.id,
+    });
+    await child.save();
+    const guard = () =>
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      });
+    await expect(guard()).resolves.toMatchObject({ allowed: true });
+    parent.revokedAt = new Date().toISOString();
+    await parent.save();
+    await expect(guard()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
   });
 
   it('allows holders and denies non-holders fail-closed', async () => {
