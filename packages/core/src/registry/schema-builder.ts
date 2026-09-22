@@ -6,6 +6,7 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
+import { normalizeBackfill } from '../schema/backfill.js';
 import {
   conflictIndexName,
   nullableConflictIdentity,
@@ -112,12 +113,16 @@ function mergeRuntimeFieldColumns(
         fieldDef._meta?.sqlType ||
         (fieldDef as unknown as { sqlType?: string }).sqlType;
       const referenceKind = getReferenceKind(fieldDef);
+      // #3008: the per-row backfill lives in field metadata only; overlay it
+      // onto manifest-sourced columns too so db:migrate always sees it.
+      const backfill = normalizeBackfill(fieldDef._meta?.backfill);
       columnsToUse[columnName] = {
         ...existing,
         ...(sqlType
           ? { type: String(sqlType).toUpperCase() as SQLDataType }
           : {}),
         ...(referenceKind ? { referenceKind } : {}),
+        ...(backfill !== undefined ? { backfill } : {}),
       };
     }
   }
@@ -1078,6 +1083,10 @@ export function fieldsToColumns(
       shouldEmitDefault(fieldDef, normalizedSqlType, defaultValue)
     ) {
       column.defaultValue = defaultValue;
+    }
+    const backfill = normalizeBackfill(fieldDef._meta?.backfill);
+    if (backfill !== undefined) {
+      column.backfill = backfill;
     }
 
     // Handle foreign keys

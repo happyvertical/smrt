@@ -60,11 +60,19 @@ import {
 } from '../schema/uuid-convergence.js';
 import {
   planSqliteTableRebuilds,
+  sqliteBackfillPlaceholderSql,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
+
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * `mismatch.actual` of the manual change reported when a required column
+ * could not be added to a populated table (#3008): the column is absent.
+ */
+export const REQUIRED_COLUMN_NOT_ADDED = '(column not added)';
 
 /**
  * Valid SQLDataType values for validation
@@ -478,6 +486,17 @@ export class SchemaComparer {
    * re-reading `getTableSchema` per relationship would multiply catalog
    * round-trips on a wide schema.
    */
+  /**
+   * #3008: indexes planned earlier in this table's batch (DuckDB unique
+   * follow-ups), which a later `SET NOT NULL` must also drop and recreate.
+   */
+  private batchIndexes = new Map<
+    string,
+    Array<{ name: string; sql: string }>
+  >();
+  /** #3008: per-table single-column unique targets, set by compareTable. */
+  private uniqueTargets = new Map<string, Set<string>>();
+
   private liveSchemas = new Map<
     string,
     SqlTableSchemaInfo | null | undefined
@@ -658,6 +677,22 @@ export class SchemaComparer {
     manifestSchemas: Record<string, SchemaDefinition> = {},
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
+    this.batchIndexes.delete(tableName);
+    // #3008: single-column unique targets (unique indexes / conflict
+    // columns) — a backfill for one of these must be distinct per row.
+    this.uniqueTargets.set(
+      tableName,
+      new Set(
+        (manifest.indexes ?? [])
+          .filter(
+            // Partial indexes are left to the engine: their predicate
+            // decides which rows must be distinct.
+            (index) =>
+              index.unique && !index.where && index.columns.length === 1,
+          )
+          .map((index) => index.columns[0]),
+      ),
+    );
 
     // Get current table schema from database
     const dbSchema = await this.getLiveSchema(tableName);
@@ -679,16 +714,56 @@ export class SchemaComparer {
     // consumes `type_upgrade` placeholders — SQLite `alter_column`
     // nullability/default drift (#2369) stays manual until the rebuild also
     // rewrites constraints.
-    changes.push(
-      ...(this.engine === 'sqlite'
+    const plannedColumnChanges =
+      this.engine === 'sqlite'
         ? await planSqliteTableRebuilds({
             db: this.db,
             tableName,
             changes: columnChanges,
             mapType: (type) => this.ddlStrategy.mapType(type),
+            addedColumnDefinition: (change) =>
+              this.sqliteAddedColumnDefinition(change),
+            addedColumnFollowUps: (change) =>
+              change.column?.unique && change.name
+                ? [
+                    `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, change.name))} ON ${this.quoteIdentifier(tableName)} (${this.quoteIdentifier(change.name)})`,
+                  ]
+                : [],
           })
-        : columnChanges),
-    );
+        : columnChanges;
+    // #3008: an `add_column` the SQLite rebuild planner had to refuse is
+    // left as comment-only SQL; report it as the same "column not added"
+    // manual change every engine uses, never as an executable migration.
+    const notAdded = new Set<string>();
+    for (const change of plannedColumnChanges) {
+      if (
+        change.type === 'add_column' &&
+        change.name &&
+        change.column &&
+        !change.sqlStatements &&
+        change.sql?.trim().startsWith('--')
+      ) {
+        const reason = change.sql.replace(/^--\s*/, '');
+        changes.push(
+          this.requiredColumnNotAddedChange(
+            tableName,
+            change.name,
+            change.column,
+            reason,
+          ),
+        );
+        notAdded.add(change.name);
+        continue;
+      }
+      if (
+        change.type === 'alter_column' &&
+        change.name &&
+        change.mismatch?.actual === REQUIRED_COLUMN_NOT_ADDED
+      ) {
+        notAdded.add(change.name);
+      }
+      changes.push(change);
+    }
 
     // Partial-index predicates are not surfaced by `getTableSchema()` (the
     // @happyvertical/sql introspection returns only name/columns/unique), so
@@ -705,15 +780,69 @@ export class SchemaComparer {
       dbSchema,
       dbIndexPredicates,
     );
-    changes.push(...indexChanges);
-    changes.push(
-      ...(await this.compareForeignKeys(
-        tableName,
-        manifest,
-        dbSchema,
-        manifestSchemas,
-      )),
+    const foreignKeyChanges = await this.compareForeignKeys(
+      tableName,
+      manifest,
+      dbSchema,
+      manifestSchemas,
     );
+    if (notAdded.size === 0) {
+      changes.push(...indexChanges, ...foreignKeyChanges);
+      return changes;
+    }
+
+    // #3008: a required column that was not added cannot carry an index or
+    // foreign key yet. Withhold those (they would abort the batch with a raw
+    // "column does not exist") and name them on the column's manual change.
+    const withheld = new Map<string, string[]>();
+    const dependsOnMissing = (change: SchemaChange): string | undefined => {
+      if (change.type === 'add_index') {
+        return change.index?.columns.find((column) => notAdded.has(column));
+      }
+      if (change.type === 'add_foreign_key') {
+        const column = change.foreignKey?.column;
+        return column && notAdded.has(column) ? column : undefined;
+      }
+      return undefined;
+    };
+    // A same-name DROP + CREATE (shape drift) must not keep its DROP when
+    // the CREATE is withheld: that would remove the live index for nothing.
+    const withheldIndexNames = new Set(
+      indexChanges
+        .filter((change) => dependsOnMissing(change))
+        .map((change) => change.index?.name ?? change.name),
+    );
+    for (const change of [...indexChanges, ...foreignKeyChanges]) {
+      if (
+        change.type === 'drop_index' &&
+        withheldIndexNames.has(change.index?.name ?? change.name)
+      ) {
+        continue;
+      }
+      const missing = dependsOnMissing(change);
+      if (!missing) {
+        changes.push(change);
+        continue;
+      }
+      const label =
+        change.type === 'add_index'
+          ? `index ${change.index?.name ?? change.name ?? '(unnamed)'}`
+          : `foreign key on ${missing}`;
+      withheld.set(missing, [...(withheld.get(missing) ?? []), label]);
+    }
+    for (const change of changes) {
+      const labels =
+        change.name && change.mismatch?.actual === REQUIRED_COLUMN_NOT_ADDED
+          ? withheld.get(change.name)
+          : undefined;
+      if (!labels || !change.advisory) continue;
+      const note = ` Withheld until it exists: ${labels.join(', ')}.`;
+      change.advisory = {
+        ...change.advisory,
+        message: `${change.advisory.message}${note}`,
+      };
+      change.sql = `${change.sql}${note}`;
+    }
 
     return changes;
   }
@@ -2759,7 +2888,52 @@ export class SchemaComparer {
       const quotedTable = this.quoteIdentifier(tableName);
       const quotedCol = this.quoteIdentifier(colName);
       const setNotNull = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`;
-      if (!this.supportsAlterColumn()) {
+      const backfillNeeded =
+        Boolean(colDef.backfill) &&
+        (await this.columnHasNulls(tableName, colName));
+      const unusableBackfill =
+        backfillNeeded && colDef.backfill
+          ? await this.probeBackfill(
+              tableName,
+              colName,
+              colDef.backfill,
+              true,
+              this.isUniqueTarget(tableName, colName, colDef),
+            )
+          : undefined;
+      if (backfillNeeded && unusableBackfill) {
+        changes.push({
+          type: 'alter_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          alteration: 'set_not_null',
+          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          sql: `-- ${tableName}.${colName} is required but live rows hold NULL and ${unusableBackfill}`,
+          advisory: {
+            severity: 'warning',
+            message: `${tableName}.${colName} is required but live rows hold NULL and ${unusableBackfill}.`,
+            suggestedSql: [
+              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
+              this.supportsAlterColumn()
+                ? setNotNull
+                : '-- SQLite: enforcing NOT NULL afterwards requires a table rebuild (#2370)',
+            ],
+          },
+        });
+      } else if (this.engine === 'sqlite' && backfillNeeded) {
+        // #3008: SQLite tightens through a table rebuild whose copy step
+        // fills the NULLs from the declared backfill.
+        changes.push({
+          type: 'alter_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          alteration: 'set_not_null',
+          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          sql: sqliteBackfillPlaceholderSql(colName),
+        });
+      } else if (!this.supportsAlterColumn()) {
         changes.push(
           this.buildAlterColumnChange({
             tableName,
@@ -2769,6 +2943,25 @@ export class SchemaComparer {
             expected: 'NOT NULL',
             actual: 'NULL',
             statements: null,
+          }),
+        );
+      } else if (backfillNeeded && colDef.backfill) {
+        // #3008: fill the NULLs from the declared per-row backfill, then
+        // tighten — the recovery path for a column an older db:migrate
+        // added nullable.
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'set_not_null',
+            expected: 'NOT NULL',
+            actual: 'NULL',
+            statements: await this.backfillStatements(
+              tableName,
+              colName,
+              colDef.backfill,
+            ),
           }),
         );
       } else if (hasManifestDefault && manifestDefaultSql !== undefined) {
@@ -2784,7 +2977,7 @@ export class SchemaComparer {
             actual: 'NULL',
             statements: [
               `UPDATE ${quotedTable} SET ${quotedCol} = ${manifestDefaultSql} WHERE ${quotedCol} IS NULL`,
-              setNotNull,
+              ...(await this.setNotNullStatements(tableName, colName)),
             ],
           }),
         );
@@ -2818,7 +3011,7 @@ export class SchemaComparer {
             alteration: 'set_not_null',
             expected: 'NOT NULL',
             actual: 'NULL',
-            statements: [setNotNull],
+            statements: await this.setNotNullStatements(tableName, colName),
           }),
         );
       }
@@ -3918,11 +4111,15 @@ export class SchemaComparer {
    * - `NOT NULL` with a default: inline on SQLite/PostgreSQL (existing rows
    *   receive the default); DuckDB adds with `DEFAULT` then a separate
    *   `ALTER COLUMN ... SET NOT NULL`.
-   * - `NOT NULL` without a default: enforced only when the table is empty
+   * - `NOT NULL` without a default: enforced inline when the table is empty
    *   (inline on SQLite/PostgreSQL, `SET NOT NULL` step on DuckDB). On a
-   *   populated table there is nothing to backfill with, so the column is
-   *   added nullable and a manual `alter_column` (`set_not_null`) is reported
-   *   with the exact remediation instead of emitting DDL every engine rejects.
+   *   populated table it needs a declared per-row `backfill` (#3008): add
+   *   nullable, `UPDATE` from the backfill, then `SET NOT NULL` (SQLite: a
+   *   table rebuild). Without one — or when the backfill yields NULL or does
+   *   not evaluate — the column is NOT added and a manual `alter_column`
+   *   (`mismatch.actual === REQUIRED_COLUMN_NOT_ADDED`) names it.
+   * - A backfill also wins over a declared default for existing rows; the
+   *   default is then set after the fill, for future inserts only.
    * - `UNIQUE`: inline on PostgreSQL (a real constraint); SQLite/DuckDB get a
    *   separate `CREATE UNIQUE INDEX <table>_<col>_key` (the PostgreSQL
    *   constraint-index name, so the orphan sweep leaves it alone).
@@ -3968,33 +4165,77 @@ export class SchemaComparer {
     const setNotNull = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`;
 
     let enforceNotNull = false;
+    // #3008: statements that fill existing rows from the declared per-row
+    // backfill, then enforce NOT NULL. They run after ADD COLUMN and before
+    // any unique index, inside the same migration unit.
+    const backfillFollowUps: string[] = [];
+    // With a backfill on a populated table the declared default (if any) is
+    // applied only after existing rows are filled: adding it inline would
+    // stamp every existing row with the same constant first (and collide
+    // with a unique index over the column).
+    let deferDefault = false;
     if (colDef.notNull) {
-      if (hasDefault) {
-        enforceNotNull = true;
-      } else if (!(await this.tableHasRows(tableName))) {
+      const populated =
+        colDef.backfill || !hasDefault
+          ? await this.tableHasRows(tableName)
+          : true;
+      if (colDef.backfill && populated) {
+        const unusable = await this.probeBackfill(
+          tableName,
+          colName,
+          colDef.backfill,
+          false,
+          this.isUniqueTarget(tableName, colName, colDef),
+        );
+        if (unusable) {
+          return [
+            this.requiredColumnNotAddedChange(
+              tableName,
+              colName,
+              colDef,
+              unusable,
+            ),
+          ];
+        }
+        if (this.engine === 'sqlite') {
+          // SQLite cannot SET NOT NULL after the fact: the table rebuild
+          // planner (`planSqliteTableRebuilds`) adds the column NOT NULL and
+          // fills it from the backfill in its copy step.
+          return [
+            {
+              type: 'add_column',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              sql: sqliteBackfillPlaceholderSql(colName),
+            },
+          ];
+        }
+        deferDefault = formattedDefault !== undefined;
+        backfillFollowUps.push(
+          ...(await this.backfillStatements(
+            tableName,
+            colName,
+            colDef.backfill,
+            deferDefault
+              ? [
+                  this.generateSetDefaultSQL(
+                    tableName,
+                    colName,
+                    formattedDefault as string,
+                    validatedType,
+                  ),
+                ]
+              : [],
+          )),
+        );
+      } else if (hasDefault || !populated) {
         enforceNotNull = true;
       } else {
-        // Populated table, no default: nothing to backfill with. Add the
-        // column nullable and report the constraint as a manual follow-up.
-        extraChanges.push({
-          type: 'alter_column',
-          table: tableName,
-          name: colName,
-          column: colDef,
-          alteration: 'set_not_null',
-          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
-          sql: `-- ${tableName}.${colName} is required by the manifest but has no default to backfill existing rows; the column is added nullable. Backfill it, then run: ${setNotNull}`,
-          advisory: {
-            severity: 'warning',
-            message: `${tableName}.${colName} is required by the manifest but has no default, and ${tableName} already holds rows — no engine can add it NOT NULL. It is added nullable; backfill it, then rerun db:migrate (or declare a default on the field).`,
-            suggestedSql: [
-              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
-              this.supportsAlterColumn()
-                ? setNotNull
-                : `-- SQLite: enforcing NOT NULL afterwards requires a table rebuild (#2370)`,
-            ],
-          },
-        });
+        // Populated table, no default, no backfill: nothing any engine can
+        // fill existing rows with. Refuse the column outright (#3008) rather
+        // than add it nullable and leave the constraint half-applied.
+        return [this.requiredColumnNotAddedChange(tableName, colName, colDef)];
       }
     }
 
@@ -4004,7 +4245,7 @@ export class SchemaComparer {
     if (colDef.unique && this.engine === 'postgres') {
       parts.push('UNIQUE');
     }
-    if (formattedDefault !== undefined) {
+    if (formattedDefault !== undefined && !deferDefault) {
       parts.push(`DEFAULT ${formattedDefault}`);
     }
     if (colDef.check) {
@@ -4020,12 +4261,17 @@ export class SchemaComparer {
     const addColumn = `ALTER TABLE ${quotedTable} ADD COLUMN ${parts.join(' ')}`;
 
     if (enforceNotNull && !inlineConstraintsAllowed) {
-      followUps.push(setNotNull);
+      followUps.push(...(await this.setNotNullStatements(tableName, colName)));
     }
+    followUps.push(...backfillFollowUps);
     if (colDef.unique && this.engine !== 'postgres') {
-      followUps.push(
-        `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${quotedTable} (${quotedCol})`,
-      );
+      const indexName = uniqueColumnIndexName(tableName, colName);
+      const createIndex = `CREATE UNIQUE INDEX ${this.quoteIdentifier(indexName)} ON ${quotedTable} (${quotedCol})`;
+      followUps.push(createIndex);
+      this.batchIndexes.set(tableName, [
+        ...(this.batchIndexes.get(tableName) ?? []),
+        { name: indexName, sql: createIndex },
+      ]);
       // DuckDB has no `ADD CONSTRAINT`, so this is the only way to add
       // uniqueness to an existing table there. The DuckDB strategy's
       // `requiresInlineUnique()` note (DuckDB #12684: ON CONFLICT ignored
@@ -4048,6 +4294,212 @@ export class SchemaComparer {
     };
 
     return [primary, ...extraChanges];
+  }
+
+  /**
+   * #3008: fill a column's NULLs from its declared per-row backfill, then
+   * enforce NOT NULL (PostgreSQL/DuckDB; SQLite goes through a table
+   * rebuild). {@link probeBackfill} has already checked, at plan time, that
+   * the expression yields a value for every row; should a row written after
+   * that still produce NULL, `SET NOT NULL` fails and the whole migration
+   * unit rolls back.
+   */
+  private async backfillStatements(
+    tableName: string,
+    colName: string,
+    backfill: string,
+    alterBeforeNotNull: string[] = [],
+  ): Promise<string[]> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const statements = [
+      `UPDATE ${quotedTable} SET ${quotedCol} = (${backfill}) WHERE ${quotedCol} IS NULL`,
+    ];
+    statements.push(
+      ...(await this.setNotNullStatements(
+        tableName,
+        colName,
+        alterBeforeNotNull,
+      )),
+    );
+    return statements;
+  }
+
+  /**
+   * #3008: evaluate a declared backfill against the live rows before any DDL
+   * is planned. Returns a reason the column cannot be backfilled — the
+   * expression yields NULL for some row, or does not evaluate at all — or
+   * `undefined` when every row that needs a value gets one. `existing` is
+   * true when the column already exists (the tighten path), so only its NULL
+   * rows count.
+   *
+   * Plan-time, so the refusal names the table and column in the report
+   * instead of surfacing later as a bare, redacted engine error.
+   */
+  private isUniqueTarget(
+    tableName: string,
+    colName: string,
+    colDef: ColumnDefinition,
+  ): boolean {
+    return (
+      Boolean(colDef.unique) ||
+      (this.uniqueTargets.get(tableName)?.has(colName) ?? false)
+    );
+  }
+
+  private async probeBackfill(
+    tableName: string,
+    colName: string,
+    backfill: string,
+    existing: boolean,
+    unique = false,
+  ): Promise<string | undefined> {
+    const quotedCol = this.quoteIdentifier(colName);
+    const where = existing
+      ? `${quotedCol} IS NULL AND (${backfill}) IS NULL`
+      : `(${backfill}) IS NULL`;
+    try {
+      const result = await this.db.query(
+        `SELECT 1 AS present FROM ${this.quoteIdentifier(tableName)} WHERE ${where} LIMIT 1`,
+      );
+      if ((result.rows?.length ?? 0) > 0) {
+        return `its declared backfill (${backfill}) yields NULL for at least one existing row, so NOT NULL cannot be enforced; make the expression non-null for every row (e.g. wrap it in COALESCE)`;
+      }
+      if (unique) {
+        const value = existing
+          ? `COALESCE(${quotedCol}, (${backfill}))`
+          : `(${backfill})`;
+        const duplicates = await this.db.query(
+          `SELECT ${value} AS v FROM ${this.quoteIdentifier(tableName)} GROUP BY ${value} HAVING COUNT(*) > 1 LIMIT 1`,
+        );
+        if ((duplicates.rows?.length ?? 0) > 0) {
+          return `its declared backfill (${backfill}) gives two or more existing rows the same value, but the column is unique; derive a per-row value (e.g. from id)`;
+        }
+      }
+      return undefined;
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] Backfill probe failed for ${tableName}.${colName}`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return `its declared backfill (${backfill}) does not evaluate on this database; check the expression's SQL and column names (snake_case)`;
+    }
+  }
+
+  /**
+   * #3008: the column definition a SQLite backfill rebuild appends — NOT
+   * NULL, plus the declared default (for future inserts) and CHECK.
+   */
+  private sqliteAddedColumnDefinition(change: SchemaChange): string {
+    const column = change.column as ColumnDefinition;
+    const type: SQLDataType = isValidSQLDataType(column.type)
+      ? column.type
+      : 'TEXT';
+    const parts = [
+      this.quoteIdentifier(change.name as string),
+      this.ddlStrategy.mapType(type),
+      'NOT NULL',
+    ];
+    if (column.defaultValue !== undefined && column.defaultValue !== null) {
+      parts.push(
+        `DEFAULT ${this.ddlStrategy.formatDefaultValue(column.defaultValue, type)}`,
+      );
+    }
+    if (column.check) parts.push(`CHECK (${column.check})`);
+    return parts.join(' ');
+  }
+
+  /**
+   * `ALTER COLUMN ... SET NOT NULL`, made executable on DuckDB. DuckDB
+   * refuses to alter a table any index depends on ("Cannot alter entry …
+   * because there are entries that depend on it"), so there the table's
+   * explicit indexes are dropped around the ALTER and recreated from their
+   * own DDL, inside the same migration unit.
+   */
+  private async setNotNullStatements(
+    tableName: string,
+    colName: string,
+    alterBefore: string[] = [],
+  ): Promise<string[]> {
+    const setNotNull = `ALTER TABLE ${this.quoteIdentifier(tableName)} ALTER COLUMN ${this.quoteIdentifier(colName)} SET NOT NULL`;
+    // The JSON adapter runs on DuckDB and shares its ALTER restriction.
+    if (this.engine !== 'duckdb' && this.engine !== 'json') {
+      return [...alterBefore, setNotNull];
+    }
+    let indexes: Array<{ name: string; sql: string }> = [];
+    try {
+      const result = await this.db.query(
+        `SELECT index_name, sql FROM duckdb_indexes() WHERE table_name = ${this.quoteLiteral(tableName)} AND sql IS NOT NULL`,
+      );
+      indexes = (
+        result.rows as Array<{ index_name?: unknown; sql?: unknown }>
+      ).flatMap((row) =>
+        typeof row.index_name === 'string' && typeof row.sql === 'string'
+          ? [{ name: row.index_name, sql: row.sql.replace(/;\s*$/, '') }]
+          : [],
+      );
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] DuckDB index probe unavailable for ${tableName}`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+    }
+    for (const planned of this.batchIndexes.get(tableName) ?? []) {
+      if (!indexes.some((index) => index.name === planned.name)) {
+        indexes.push(planned);
+      }
+    }
+    return [
+      ...indexes.map(
+        (index) => `DROP INDEX ${this.quoteIdentifier(index.name)}`,
+      ),
+      ...alterBefore,
+      setNotNull,
+      ...indexes.map((index) => index.sql),
+    ];
+  }
+
+  /**
+   * #3008: the manual change reported instead of an `add_column` when a
+   * required column without a default or backfill cannot be added to a
+   * populated table (or when a SQLite backfill rebuild is refused). The
+   * column is NOT added; `compareTable` also withholds the indexes and
+   * foreign keys that would target it.
+   */
+  requiredColumnNotAddedChange(
+    tableName: string,
+    colName: string,
+    colDef: ColumnDefinition,
+    reason?: string,
+  ): SchemaChange {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const why =
+      reason ??
+      `it is required, has no default, and ${tableName} already holds rows`;
+    const fix = reason
+      ? 'Fix that, then rerun db:migrate.'
+      : 'Declare a per-row backfill on the field, e.g. @field({ required: true, backfill: "\'row:\' || id" }), or a default, then rerun db:migrate.';
+    return {
+      type: 'alter_column',
+      table: tableName,
+      name: colName,
+      column: colDef,
+      alteration: 'set_not_null',
+      mismatch: { expected: 'NOT NULL', actual: REQUIRED_COLUMN_NOT_ADDED },
+      sql: `-- ${tableName}.${colName} was not added: ${why}. ${fix}`,
+      advisory: {
+        severity: 'warning',
+        message: `${tableName}.${colName} was not added: ${why}. ${fix}`,
+        suggestedSql: [
+          `ALTER TABLE ${quotedTable} ADD COLUMN ${quotedCol} ${this.ddlStrategy.mapType(isValidSQLDataType(colDef.type) ? colDef.type : 'TEXT')}`,
+          `UPDATE ${quotedTable} SET ${quotedCol} = <per-row value> WHERE ${quotedCol} IS NULL`,
+          this.supportsAlterColumn()
+            ? `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`
+            : '-- SQLite: enforcing NOT NULL afterwards requires a table rebuild (#2370)',
+        ],
+      },
+    };
   }
 
   /**

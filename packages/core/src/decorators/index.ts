@@ -91,6 +91,25 @@ export interface FieldOptions {
   required?: boolean;
   /** Default value for the field */
   default?: unknown;
+  /**
+   * Per-row SQL expression `db:migrate` uses to fill existing rows when this
+   * field is added as a required column (no `default`) to a table that
+   * already has rows, or when an existing nullable column with NULLs becomes
+   * required (#3008). Evaluated once per row inside the migration
+   * transaction, before NOT NULL and any unique index are enforced, so it
+   * can derive a distinct value from the row's other columns:
+   *
+   * ```typescript
+   * @field({ required: true, maxLength: 80, backfill: "'closed:' || id" })
+   * openKey: string = '';
+   * ```
+   *
+   * Must be a string literal (the build-time scanner reads it from source).
+   * Write it in SQL that every engine you run accepts (`||`, `CASE`,
+   * `COALESCE`, `CAST`); columns are the table's snake_case names. It is not
+   * a default: the model must still supply a value on every insert.
+   */
+  backfill?: string;
   /** Whether the field is unique */
   unique?: boolean;
   /**

@@ -275,13 +275,26 @@ and always reports what it will not touch:
   way to add uniqueness there; the bundled DuckDB 1.4.x resolves
   `ON CONFLICT (col)` through that index (the old #12684 limitation the DuckDB
   strategy's `requiresInlineUnique()` note describes no longer reproduces —
-  the #2369 DuckDB test pins the upsert), older DuckDB builds may not. A required column with no default is enforced only on an empty table;
-  on a populated one it is added nullable and the `NOT NULL` is reported as a
-  manual follow-up on every engine.
+  the #2369 DuckDB test pins the upsert), older DuckDB builds may not. A required column with no default is enforced inline only on an empty
+  table. On a populated one it needs a per-row `backfill` (#3008,
+  `ColumnDefinition.backfill` from `@field({ backfill })`): PostgreSQL/DuckDB
+  run `ADD COLUMN` (nullable) → `UPDATE … SET col = (backfill) WHERE col IS
+  NULL` → `SET DEFAULT` (deferred, if declared) → `SET NOT NULL` → the unique
+  index; SQLite adds it through the table rebuild (`sqliteBackfillPlaceholderSql`
+  → `planSqliteTableRebuilds` appends `"col" TYPE NOT NULL` and copies
+  `(backfill)`), one rebuild per table for every such column. The differ first
+  probes `WHERE (backfill) IS NULL` on the live rows. With no default and no
+  backfill, or with a backfill that yields NULL or will not evaluate, the
+  column is **not added**: a manual `alter_column` (`mismatch.actual ===
+  REQUIRED_COLUMN_NOT_ADDED`) names table and column, and `compareTable`
+  withholds `add_index`/`add_foreign_key` changes on it. The same backfill
+  repairs nullability drift (an existing nullable column holding NULLs).
+  DuckDB refuses `ALTER COLUMN` while any index depends on the table, so its
+  `SET NOT NULL` is bracketed by `DROP INDEX`/recreate from `duckdb_indexes().sql`.
 - **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
-  (comment SQL → `db:migrate` exit 1). The SQLite rebuild consumes
-  only `type_upgrade` placeholders today; extending it to rewrite constraints
-  would lift this.
+  (comment SQL → `db:migrate` exit 1), except a NOT NULL tightening with a
+  declared `backfill`, which the rebuild performs (`COALESCE(col, backfill)`
+  in the copy). The rebuild otherwise consumes `type_upgrade` placeholders.
 - Defaults compare through `canonicalizeDefault()`, which folds engine
   renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
   `now()`) by manifest type; an unclassifiable rendering skips the comparison

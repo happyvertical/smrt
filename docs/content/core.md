@@ -821,6 +821,46 @@ class Product extends SmrtObject {
 }
 ```
 
+### Adding a required column to a table that already has rows
+
+`smrt db:migrate` adds a new `@field({ required: true })` column to a
+populated table only when it can give every existing row a value first:
+
+- A `default` fills existing rows with that constant.
+- A `backfill` fills them per row. It is a SQL expression, evaluated once per
+  existing row inside the migration transaction, and it may reference the
+  row's other columns by their snake_case names:
+
+```typescript
+@smrt({ conflictColumns: ['openKey'] })
+class Punch extends SmrtObject {
+  @field({ required: true, maxLength: 80, backfill: "'closed:' || id" })
+  openKey: string = '';
+}
+```
+
+The migration adds the column, runs
+`UPDATE punches SET open_key = ('closed:' || id) WHERE open_key IS NULL`,
+enforces NOT NULL, and then builds the `conflictColumns` unique index over
+the filled values. All of it runs in one migration unit. SQLite cannot add
+or tighten NOT NULL in place, so there the column is added by a table
+rebuild whose copy step evaluates the expression. When a field declares
+both, the backfill fills existing rows and the default applies only to later
+inserts. A constant default alone would give every existing row the same
+value and collide with a unique index.
+
+If there is neither, or if the backfill yields NULL for some row or fails to
+evaluate, `db:migrate` exits 1 and names the table and column. It does not
+add the column, and it holds back any index or foreign key on that column.
+Nothing is left half-applied. A column that an older release already added
+as nullable is repaired the same way: the backfill fills its NULLs, and
+then NOT NULL is enforced.
+
+Write the backfill in SQL that every engine you run accepts (`||`, `CASE`,
+`COALESCE`, `CAST`). It must be a string literal, because the build-time
+scanner reads it from source. A backfill is not a default: the model still
+has to supply the value on every insert.
+
 ## Advanced Querying
 
 Collections support flexible querying with multiple operators:

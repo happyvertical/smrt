@@ -1,5 +1,4 @@
-import type { AIClientOptions } from '@happyvertical/ai';
-import { type AIClient, getAI } from '@happyvertical/ai';
+import type { AIClient, AIClientOptions } from '@happyvertical/ai';
 import type {
   FilesystemAdapter,
   FilesystemAdapterOptions,
@@ -723,10 +722,15 @@ export class SmrtClass {
 
             // Only initialize if we have a provider configured
             if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
-              // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-              // getAI() returns AIInterface, which we narrow to AIClient for
-              // backward compatibility. The index-signature `AIConfig` is routed
-              // through getAI's own parameter type rather than the closed union.
+              // Use the getAI() factory (loaded lazily to keep the
+              // `@happyvertical/ai` module graph off smrt-core's cold-start
+              // import path — see issue #2894) to support all AI providers
+              // (OpenAI, Anthropic, Gemini, etc.). getAI() returns
+              // AIInterface, which we narrow to AIClient for backward
+              // compatibility. The index-signature `AIConfig` is routed
+              // through getAI's own parameter type rather than the closed
+              // union.
+              const { getAI } = await import('@happyvertical/ai');
               this._ai = (await getAI(
                 aiConfig as unknown as Parameters<typeof getAI>[0],
               )) as unknown as AIClient;

@@ -20,8 +20,9 @@ import { utilityCommands } from '../utilities.js';
  * db:migrate against a REAL SQLite database for the #2369 surface: orphan
  * NOT NULL columns are warned about every run (never silently "in sync"),
  * `--drop-columns` removes them, required-with-default columns are added
- * with executable DDL on a populated table, and a required column without a
- * default is added nullable with the NOT NULL reported as a manual step.
+ * with executable DDL on a populated table, a required column without a
+ * default is refused (not added) unless it declares a per-row backfill, which
+ * fills existing rows before NOT NULL is enforced (#3008).
  * Only manifest discovery and the declared schema source are injected; the
  * SchemaComparer and MigrationTracker run for real.
  */
@@ -215,30 +216,74 @@ describe('db:migrate (real SQLite, #2369)', () => {
     expect(output()).toContain('up to date');
   });
 
-  it('adds a required column without a default nullable on a populated table and reports the NOT NULL as manual (exit 1)', async () => {
+  it('refuses a required column without a default or backfill on a populated table, names it, and adds nothing (exit 1, #3008)', async () => {
     await withDb(async (db) => {
       await db.query('CREATE TABLE posts (id TEXT PRIMARY KEY)');
       await db.query("INSERT INTO posts (id) VALUES ('p1')");
     });
     declareSchema(
-      postsSchema({
-        id: { type: 'TEXT', primaryKey: true },
-        owner_id: { type: 'TEXT', notNull: true },
-      }),
+      postsSchema(
+        {
+          id: { type: 'TEXT', primaryKey: true },
+          owner_id: { type: 'TEXT', notNull: true },
+        },
+        [{ name: 'posts_owner_id_idx', columns: ['owner_id'], unique: true }],
+      ),
     );
 
     await utilityCommands['db:migrate'].handler([], {});
     const out = output();
-    expect(out).toContain('Applying 1 schema change(s)');
     expect(out).toContain('requires manual intervention');
-    expect(out).toContain('posts.owner_id: expected NOT NULL, found NULL');
+    expect(out).toContain('posts.owner_id was not added');
+    expect(out).toContain('backfill');
+    expect(out).not.toContain('Applying');
     expect(process.exitCode).toBe(1);
 
     await withDb(async (db) => {
       const cols = await db.getTableSchema?.('posts');
-      expect(cols?.columns.owner_id).toMatchObject({ notNull: false });
-      // Still insertable — the column was not rejected outright.
-      await db.query("INSERT INTO posts (id) VALUES ('p2')");
+      expect(Object.keys(cols?.columns ?? {})).not.toContain('owner_id');
     });
+  });
+
+  it('adds a required conflict-key column to a populated table from a per-row backfill (exit 0, #3008)', async () => {
+    await withDb(async (db) => {
+      await db.query('CREATE TABLE posts (id TEXT PRIMARY KEY)');
+      await db.query("INSERT INTO posts (id) VALUES ('p1'), ('p2')");
+    });
+    declareSchema(
+      postsSchema(
+        {
+          id: { type: 'TEXT', primaryKey: true },
+          open_key: {
+            type: 'TEXT',
+            notNull: true,
+            backfill: "'closed:' || id",
+          },
+        },
+        [{ name: 'posts_open_key_idx', columns: ['open_key'], unique: true }],
+      ),
+    );
+
+    await utilityCommands['db:migrate'].handler([], {});
+    expect(output()).not.toContain('requires manual intervention');
+    expect(process.exitCode).toBeUndefined();
+
+    await withDb(async (db) => {
+      expect(
+        (await db.query('SELECT id, open_key FROM posts ORDER BY id')).rows,
+      ).toEqual([
+        { id: 'p1', open_key: 'closed:p1' },
+        { id: 'p2', open_key: 'closed:p2' },
+      ]);
+      const cols = await db.getTableSchema?.('posts');
+      expect(cols?.columns.open_key).toMatchObject({ notNull: true });
+      await expect(
+        db.query("INSERT INTO posts (id, open_key) VALUES ('p3', 'closed:p1')"),
+      ).rejects.toThrow();
+    });
+
+    logSpy.mockClear();
+    await utilityCommands['db:migrate'].handler([], {});
+    expect(output()).toContain('up to date');
   });
 });
