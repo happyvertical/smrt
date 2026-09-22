@@ -127,14 +127,9 @@ describe('docs:agents handler', () => {
     const selected = logSpy.mock.calls.map((call) => call[0]).join('\n');
     for (const name of ['smrt-content', 'ai']) {
       expect(selected).toContain(
-        join(
-          tempDir,
-          'node_modules',
-          '@happyvertical',
-          name,
-          'agents/details.md',
-        ),
+        `- [agents/details.md](<@happyvertical/${name}/agents/details.md>)`,
       );
+      expect(selected).not.toContain(join(tempDir, 'node_modules'));
       expect(selected).not.toContain(`${name} module body.`);
     }
     logSpy.mockClear();

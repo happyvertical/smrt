@@ -486,11 +486,12 @@ function renderPackageDoc(
       '',
     );
     for (const path of paths) {
-      const source = (pkg.directory ? join(pkg.directory, path) : path).replace(
-        /\\/g,
-        '/',
-      );
-      lines.push(`- [${path}](<${source}>)`);
+      // Link by bare package specifier, never by the installed realpath: the
+      // generated file is committed by consumers, and an absolute pnpm-store
+      // path embeds the checkout directory and store hash, so it churns on
+      // every install in another worktree or machine.
+      const relative = path.replace(/\\/g, '/');
+      lines.push(`- [${relative}](<${pkg.name}/${relative}>)`);
     }
     lines.push('');
   }
