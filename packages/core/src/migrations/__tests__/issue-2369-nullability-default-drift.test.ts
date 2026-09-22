@@ -628,6 +628,39 @@ for (const { name, type, engine } of engines) {
       );
     });
 
+    it('does not refuse a backfill whose duplicates fall outside a partial unique index (#3008 review)', async () => {
+      await db.query(
+        'CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT, active INTEGER)',
+      );
+      await db.query(
+        "INSERT INTO items (id, name, active) VALUES ('i1', 'same', 0), ('i2', 'same', 0)",
+      );
+      const diff = await comparer().compare({
+        items: schema(
+          'items',
+          {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            active: { type: 'INTEGER' },
+            claim_key: { type: 'TEXT', notNull: true, backfill: 'name' },
+          },
+          [
+            {
+              name: 'items_claim_key_idx',
+              columns: ['claim_key'],
+              unique: true,
+              where: 'active = 1',
+            },
+          ],
+        ),
+      });
+      expect(
+        diff.changes.some(
+          (c) => c.mismatch?.actual === REQUIRED_COLUMN_NOT_ADDED,
+        ),
+      ).toBe(false);
+    });
+
     it('keeps a live index when its shape-drift replacement over a refused column is withheld (#3008 review)', async () => {
       await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT)');
       await db.query('CREATE UNIQUE INDEX items_ident_idx ON items (name)');

@@ -684,7 +684,12 @@ export class SchemaComparer {
       tableName,
       new Set(
         (manifest.indexes ?? [])
-          .filter((index) => index.unique && index.columns.length === 1)
+          .filter(
+            // Partial indexes are left to the engine: their predicate
+            // decides which rows must be distinct.
+            (index) =>
+              index.unique && !index.where && index.columns.length === 1,
+          )
           .map((index) => index.columns[0]),
       ),
     );
