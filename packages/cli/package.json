@@ -52,6 +52,7 @@
     "tar": "^7.5.22"
   },
   "devDependencies": {
+    "@microsoft/api-extractor": "7.59.1",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
     "typescript": "5.9.3",

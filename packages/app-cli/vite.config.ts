@@ -51,7 +51,7 @@ export default defineConfig({
   },
   plugins: [
     dts({
-      // rollupTypes: true inlines the type-only re-exports from
+      // bundleTypes inlines the type-only re-exports from
       // @happyvertical/smrt-users/sveltekit (used by ./discovery.ts) into
       // the consolidated dist/index.d.ts. Without this, the per-file
       // discovery.d.ts retains `import type { ... } from
@@ -64,8 +64,7 @@ export default defineConfig({
       // bundledPackages tells the dts roller it's OK to follow into
       // these packages and inline the referenced type shapes rather
       // than leaving the external import.
-      rollupTypes: true,
-      bundledPackages: ['@happyvertical/smrt-users'],
+      bundleTypes: { bundledPackages: ['@happyvertical/smrt-users'] },
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/__tests__/**'],
     }),

@@ -3,10 +3,10 @@
 // (./models, ./service) backed by separate dist entries that downstream
 // consumers import via type-import paths like
 // `dist/models/index.d.ts -> ./SecretAuditLog.js`. The base config's
-// rollupTypes:true bundles all types into a single d.ts per entry,
+// bundleTypes:true bundles all types into a single d.ts per entry,
 // which produces a different type-import structure that fails
 // `verify:pack` for this package. Migration would require base config
-// to support per-entry rollupTypes:false plus entryRoot, or this
+// to support per-entry bundleTypes:false plus entryRoot, or this
 // package's published surface needs to be re-shaped to a single entry.
 
 import { resolve } from 'node:path';
@@ -86,12 +86,12 @@ export default defineConfig(async () => {
         },
       }),
       dts({
-        outDir: resolve(packageDir, 'dist'),
+        outDirs: resolve(packageDir, 'dist'),
         entryRoot: resolve(packageDir, 'src'),
         include: [resolve(packageDir, 'src/**/*')],
         exclude: ['**/*.test.ts', '**/*.spec.ts'],
         insertTypesEntry: false,
-        rollupTypes: false,
+        bundleTypes: false,
         tsconfigPath: resolve(packageDir, 'tsconfig.json'),
         clearPureImport: true,
       }),

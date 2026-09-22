@@ -479,7 +479,7 @@ export function createPackageConfig(
           : []),
         // Generate TypeScript declarations
         dts({
-          outDir: resolve(packageDir, 'dist'),
+          outDirs: resolve(packageDir, 'dist'),
           entryRoot: resolve(packageDir, 'src'),
           include: [resolve(packageDir, 'src/**/*.ts')],
           exclude: [
@@ -497,8 +497,8 @@ export function createPackageConfig(
             ...(options.dtsExclude ?? []),
           ],
           insertTypesEntry: false, // We handle this in package.json
-          // Don't rollup types when svelte subdir exists (separate entry points)
-          rollupTypes: !options.svelte,
+          // Don't bundle types when svelte subdir exists (separate entry points)
+          bundleTypes: !options.svelte,
           // Prefer a package-specific build tsconfig when present so workspace
           // source resolution stays clean without requiring sibling dist output.
           tsconfigPath,

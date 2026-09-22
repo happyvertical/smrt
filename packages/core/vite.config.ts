@@ -204,7 +204,7 @@ export default defineConfig({
   },
   plugins: [
     dts({
-      outDir: resolve(__dirname, 'dist'),
+      outDirs: resolve(__dirname, 'dist'),
       include: [resolve(__dirname, 'src/**/*.ts')],
       exclude: [
         '**/*.test.ts',
@@ -218,7 +218,7 @@ export default defineConfig({
         'src/vite-plugin/templates/default-ui.ts',
       ],
       insertTypesEntry: false,
-      rollupTypes: false,
+      bundleTypes: false,
       tsconfigPath: resolve(__dirname, 'tsconfig.json'),
     }),
   ],

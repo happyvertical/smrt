@@ -99,6 +99,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.3
         version: 21.2.3
+      '@microsoft/api-extractor':
+        specifier: 7.59.1
+        version: 7.59.1(@types/node@24.13.2)
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
@@ -149,7 +152,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vite-plugin-dts:
         specifier: 5.1.0
-        version: 5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@30.1.0(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -359,6 +362,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@microsoft/api-extractor':
+        specifier: 7.59.1
+        version: 7.59.1(@types/node@24.13.2)
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0
@@ -373,7 +379,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vite-plugin-dts:
         specifier: 5.1.0
-        version: 5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@30.1.0(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -686,6 +692,9 @@ importers:
         specifier: ^7.5.22
         version: 7.5.22
     devDependencies:
+      '@microsoft/api-extractor':
+        specifier: 7.59.1
+        version: 7.59.1(@types/node@24.13.2)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -700,7 +709,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vite-plugin-dts:
         specifier: 5.1.0
-        version: 5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@30.1.0(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -986,7 +995,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vite-plugin-dts:
         specifier: 5.1.0
-        version: 5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@30.1.0(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -2352,7 +2361,7 @@ importers:
         version: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
       vite-plugin-dts:
         specifier: ^5.1.0
-        version: 5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+        version: 5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@30.1.0(@noble/hashes@2.4.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -4880,11 +4889,13 @@ packages:
     resolution: {integrity: sha512-6QEf6yqFbETdwGITKq57aYoPfX/3K8XFNwsAlx0C1M7o8cb79sv1M3w+tWuWvIcSbNqrLF7OD7YpZMVVz335hQ==}
     engines: {node: '>=20.0.0'}
 
-  '@microsoft/api-extractor-model@7.33.4':
-    resolution: {integrity: sha512-u1LTaNTikZAQ9uK6KG1Ms7nvNedsnODnspq/gH2dcyETWvH4hVNGNDvRAEutH66kAmxA4/necElqGNs1FggC8w==}
+  '@microsoft/api-extractor-model@7.33.12':
+    resolution: {integrity: sha512-TdKOYgwf98xLjNW+y3iXIiCf4ZLQbilGAlqkMTTAqqAWfgRXAn9YCSGMsaiB1U7OPRvslUWg6n08EqQPbP93tA==}
+    engines: {node: '>=20.9.0'}
 
-  '@microsoft/api-extractor@7.57.6':
-    resolution: {integrity: sha512-0rFv/D8Grzw1Mjs2+8NGUR+o4h9LVm5zKRtMeWnpdB5IMJF4TeHCL1zR5LMCIudkOvyvjbhMG5Wjs0B5nqsrRQ==}
+  '@microsoft/api-extractor@7.59.1':
+    resolution: {integrity: sha512-GjRUqx1MTY7xuH36urwASkfBPzrdxYG+irVeV7C9JEdRtn509AgMmwit/BhvztQzIoFk9vhFDTVYOp2cjw+9Uw==}
+    engines: {node: '>=20.9.0'}
     hasBin: true
 
   '@microsoft/tsdoc-config@0.18.1':
@@ -6101,8 +6112,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@rushstack/node-core-library@5.20.3':
-    resolution: {integrity: sha512-95JgEPq2k7tHxhF9/OJnnyHDXfC9cLhhta0An/6MlkDsX2A6dTzDrTUG18vx4vjc280V0fi0xDH9iQczpSuWsw==}
+  '@rushstack/node-core-library@5.24.1':
+    resolution: {integrity: sha512-ZlOrzv92MwnsCXA45qWfDj4L/kTasKghXezu+M2WmdtkbnXyPnZSCovfeBZx1Yc5qm+LkElbLw6IeSSWZDhZUg==}
+    engines: {node: '>=20.9.0'}
     peerDependencies:
       '@types/node': 24.13.2
     peerDependenciesMeta:
@@ -6117,19 +6129,21 @@ packages:
       '@types/node':
         optional: true
 
-  '@rushstack/rig-package@0.7.2':
-    resolution: {integrity: sha512-9XbFWuqMYcHUso4mnETfhGVUSaADBRj6HUAAEYk50nMPn8WRICmBuCphycQGNB3duIR6EEZX3Xj3SYc2XiP+9A==}
+  '@rushstack/rig-package@0.7.3':
+    resolution: {integrity: sha512-aAA518n6wxxjCfnTAOjQnm7ngNE0FVHxHAw2pxKlIhxrMn0XQjGcXKF0oKWpjBgJOmsaJpVob/v+zr3zxgPWuA==}
 
-  '@rushstack/terminal@0.22.3':
-    resolution: {integrity: sha512-gHC9pIMrUPzAbBiI4VZMU7Q+rsCzb8hJl36lFIulIzoceKotyKL3Rd76AZ2CryCTKEg+0bnTj406HE5YY5OQvw==}
+  '@rushstack/terminal@0.24.4':
+    resolution: {integrity: sha512-3fRBWK0IMY293lBx5ycgit1DTMUi+nhOjALHlrIad9hQsqzM9Ak+XdBI1gJ/tZPxW+LraeAc4SsmMdcOflBmAQ==}
+    engines: {node: '>=20.9.0'}
     peerDependencies:
       '@types/node': 24.13.2
     peerDependenciesMeta:
       '@types/node':
         optional: true
 
-  '@rushstack/ts-command-line@5.3.3':
-    resolution: {integrity: sha512-c+ltdcvC7ym+10lhwR/vWiOhsrm/bP3By2VsFcs5qTKv+6tTmxgbVrtJ5NdNjANiV5TcmOZgUN+5KYQ4llsvEw==}
+  '@rushstack/ts-command-line@5.3.14':
+    resolution: {integrity: sha512-lT2JKZk2dukBMp4GFOh4RaDfVzpZehGgQOGpzpSliUn317NgEmOOCXyd7/d0eU46HHsbRxizP83GAm39s0lAlg==}
+    engines: {node: '>=20.9.0'}
 
   '@russellthehippo/honker-node-darwin-arm64@0.3.3':
     resolution: {integrity: sha512-VdzCHb6+XVEw9z4VIdjZ338lWzYAzugLPNZbKsDChxXNt7z93S9fj5g8cqUOAZIzZ9e80InRyJ+IrTrQn+xmiQ==}
@@ -8610,10 +8624,6 @@ packages:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
     engines: {node: 20 || >=22}
 
-  lru-cache@6.0.0:
-    resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
-    engines: {node: '>=10'}
-
   luxon@3.7.2:
     resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
     engines: {node: '>=12'}
@@ -8709,6 +8719,10 @@ packages:
   min-indent@1.0.1:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
     engines: {node: '>=4'}
+
+  minimatch@10.2.3:
+    resolution: {integrity: sha512-Rwi3pnapEqirPSbWbrZaa6N3nmqq4Xer/2XooiOKyV3q12ML06f7MOuc5DVH8ONZIFhwIYQ3yzPH4nt7iWHaTg==}
+    engines: {node: 18 || 20 || >=22}
 
   minimatch@10.2.5:
     resolution: {integrity: sha512-MULkVLfKGYDFYejP07QOurDLLQpcjk7Fw+7jXS2R2czRQzR56yHRveU5NDJEOviH+hETZKSkIk5c+T23GjFUMg==}
@@ -9496,11 +9510,6 @@ packages:
   selderee@0.12.0:
     resolution: {integrity: sha512-b1YMh3+DHZp59DLna3qVwQ5iOla/nrI6mLBNW02XxU77M3046Df6VLkoaJyFz20VsGIG5kkp+FK0kg4K4HnUFw==}
 
-  semver@7.5.4:
-    resolution: {integrity: sha512-1bCSESV6Pv+i21Hvpxp3Dx+pSD8lIPt8uVjRrxAUt/nbswYc+tK6Y2btiULjd4+fnq15PX+nqQDC7Oft7WkwcA==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
     engines: {node: '>=10'}
@@ -9727,10 +9736,6 @@ packages:
     resolution: {integrity: sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ==}
     engines: {node: '>=8'}
 
-  strip-json-comments@3.1.1:
-    resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
-    engines: {node: '>=8'}
-
   strnum@2.4.2:
     resolution: {integrity: sha512-rDG3Ah4TV0k1hWvLSzkZtMmLN9+eS+h3knq4MP6A42Y3Yh5qGNnOUs1jJkoSr8FG5dsL28c7KgkIBzSEykqtuw==}
 
@@ -9949,11 +9954,6 @@ packages:
 
   typed-query-selector@2.12.2:
     resolution: {integrity: sha512-EOPFbyIub4ngnEdqi2yOcNeDLaX/0jcE1JoAXQDDMIthap7FoN795lc/SHfIq2d416VufXpM8z/lD+WRm2gfOQ==}
-
-  typescript@5.8.2:
-    resolution: {integrity: sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==}
-    engines: {node: '>=14.17'}
-    hasBin: true
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -10345,9 +10345,6 @@ packages:
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
-
-  yallist@4.0.0:
-    resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
 
   yallist@5.0.0:
     resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
@@ -12672,34 +12669,31 @@ snapshots:
       tinyglobby: 0.2.17
       yaml: 2.9.1
 
-  '@microsoft/api-extractor-model@7.33.4(@types/node@24.13.2)':
+  '@microsoft/api-extractor-model@7.33.12(@types/node@24.13.2)':
     dependencies:
       '@microsoft/tsdoc': 0.16.0
       '@microsoft/tsdoc-config': 0.18.1
-      '@rushstack/node-core-library': 5.20.3(@types/node@24.13.2)
+      '@rushstack/node-core-library': 5.24.1(@types/node@24.13.2)
     transitivePeerDependencies:
       - '@types/node'
-    optional: true
 
-  '@microsoft/api-extractor@7.57.6(@types/node@24.13.2)':
+  '@microsoft/api-extractor@7.59.1(@types/node@24.13.2)':
     dependencies:
-      '@microsoft/api-extractor-model': 7.33.4(@types/node@24.13.2)
+      '@microsoft/api-extractor-model': 7.33.12(@types/node@24.13.2)
       '@microsoft/tsdoc': 0.16.0
       '@microsoft/tsdoc-config': 0.18.1
-      '@rushstack/node-core-library': 5.20.3(@types/node@24.13.2)
-      '@rushstack/rig-package': 0.7.2
-      '@rushstack/terminal': 0.22.3(@types/node@24.13.2)
-      '@rushstack/ts-command-line': 5.3.3(@types/node@24.13.2)
+      '@rushstack/node-core-library': 5.24.1(@types/node@24.13.2)
+      '@rushstack/rig-package': 0.7.3
+      '@rushstack/terminal': 0.24.4(@types/node@24.13.2)
+      '@rushstack/ts-command-line': 5.3.14(@types/node@24.13.2)
       diff: 8.0.3
-      lodash: 4.18.1
-      minimatch: 10.2.5
+      minimatch: 10.2.3
       resolve: 1.22.11
-      semver: 7.5.4
+      semver: 7.7.4
       source-map: 0.6.1
-      typescript: 5.8.2
+      typescript: 5.9.3
     transitivePeerDependencies:
       - '@types/node'
-    optional: true
 
   '@microsoft/tsdoc-config@0.18.1':
     dependencies:
@@ -12707,10 +12701,8 @@ snapshots:
       ajv: 8.18.0
       jju: 1.4.0
       resolve: 1.22.11
-    optional: true
 
-  '@microsoft/tsdoc@0.16.0':
-    optional: true
+  '@microsoft/tsdoc@0.16.0': {}
 
   '@mlc-ai/web-llm@0.2.85':
     dependencies:
@@ -13543,49 +13535,44 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.59.0':
     optional: true
 
-  '@rushstack/node-core-library@5.20.3(@types/node@24.13.2)':
+  '@rushstack/node-core-library@5.24.1(@types/node@24.13.2)':
     dependencies:
-      ajv: 8.18.0
-      ajv-draft-04: 1.0.0(ajv@8.18.0)
-      ajv-formats: 3.0.1(ajv@8.18.0)
+      ajv: 8.20.0
+      ajv-draft-04: 1.0.0(ajv@8.20.0)
+      ajv-formats: 3.0.1(ajv@8.20.0)
       fs-extra: 11.3.5
       import-lazy: 4.0.0
       jju: 1.4.0
       resolve: 1.22.11
-      semver: 7.5.4
+      semver: 7.7.4
     optionalDependencies:
       '@types/node': 24.13.2
-    optional: true
 
   '@rushstack/problem-matcher@0.2.1(@types/node@24.13.2)':
     optionalDependencies:
       '@types/node': 24.13.2
-    optional: true
 
-  '@rushstack/rig-package@0.7.2':
+  '@rushstack/rig-package@0.7.3':
     dependencies:
+      jju: 1.4.0
       resolve: 1.22.11
-      strip-json-comments: 3.1.1
-    optional: true
 
-  '@rushstack/terminal@0.22.3(@types/node@24.13.2)':
+  '@rushstack/terminal@0.24.4(@types/node@24.13.2)':
     dependencies:
-      '@rushstack/node-core-library': 5.20.3(@types/node@24.13.2)
+      '@rushstack/node-core-library': 5.24.1(@types/node@24.13.2)
       '@rushstack/problem-matcher': 0.2.1(@types/node@24.13.2)
       supports-color: 8.1.1
     optionalDependencies:
       '@types/node': 24.13.2
-    optional: true
 
-  '@rushstack/ts-command-line@5.3.3(@types/node@24.13.2)':
+  '@rushstack/ts-command-line@5.3.14(@types/node@24.13.2)':
     dependencies:
-      '@rushstack/terminal': 0.22.3(@types/node@24.13.2)
+      '@rushstack/terminal': 0.24.4(@types/node@24.13.2)
       '@types/argparse': 1.0.38
       argparse: 1.0.10
       string-argv: 0.3.2
     transitivePeerDependencies:
       - '@types/node'
-    optional: true
 
   '@russellthehippo/honker-node-darwin-arm64@0.3.3':
     optional: true
@@ -14180,8 +14167,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@types/argparse@1.0.38':
-    optional: true
+  '@types/argparse@1.0.38': {}
 
   '@types/aria-query@5.0.4': {}
 
@@ -14399,15 +14385,9 @@ snapshots:
     dependencies:
       humanize-ms: 1.2.1
 
-  ajv-draft-04@1.0.0(ajv@8.18.0):
+  ajv-draft-04@1.0.0(ajv@8.20.0):
     optionalDependencies:
-      ajv: 8.18.0
-    optional: true
-
-  ajv-formats@3.0.1(ajv@8.18.0):
-    optionalDependencies:
-      ajv: 8.18.0
-    optional: true
+      ajv: 8.20.0
 
   ajv-formats@3.0.1(ajv@8.20.0):
     optionalDependencies:
@@ -14419,7 +14399,6 @@ snapshots:
       fast-uri: 3.1.6
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
-    optional: true
 
   ajv@8.20.0:
     dependencies:
@@ -14457,7 +14436,6 @@ snapshots:
   argparse@1.0.10:
     dependencies:
       sprintf-js: 1.0.3
-    optional: true
 
   argparse@2.0.1: {}
 
@@ -14992,8 +14970,7 @@ snapshots:
 
   devtools-protocol@0.0.1653615: {}
 
-  diff@8.0.3:
-    optional: true
+  diff@8.0.3: {}
 
   dom-accessibility-api@0.5.16: {}
 
@@ -15854,8 +15831,7 @@ snapshots:
       cjs-module-lexer: 2.2.0
       module-details-from-path: 1.0.4
 
-  import-lazy@4.0.0:
-    optional: true
+  import-lazy@4.0.0: {}
 
   import-local@3.2.0:
     dependencies:
@@ -16382,11 +16358,6 @@ snapshots:
 
   lru-cache@11.5.3: {}
 
-  lru-cache@6.0.0:
-    dependencies:
-      yallist: 4.0.0
-    optional: true
-
   luxon@3.7.2:
     optional: true
 
@@ -16469,6 +16440,10 @@ snapshots:
   mimic-response@4.0.0: {}
 
   min-indent@1.0.1: {}
+
+  minimatch@10.2.3:
+    dependencies:
+      brace-expansion: 5.0.9
 
   minimatch@10.2.5:
     dependencies:
@@ -17358,13 +17333,7 @@ snapshots:
     dependencies:
       parseley: 0.13.1
 
-  semver@7.5.4:
-    dependencies:
-      lru-cache: 6.0.0
-    optional: true
-
-  semver@7.7.4:
-    optional: true
+  semver@7.7.4: {}
 
   semver@7.8.5: {}
 
@@ -17509,8 +17478,7 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
-  source-map@0.6.1:
-    optional: true
+  source-map@0.6.1: {}
 
   split-on-first@1.1.0: {}
 
@@ -17520,8 +17488,7 @@ snapshots:
     dependencies:
       through: 2.3.8
 
-  sprintf-js@1.0.3:
-    optional: true
+  sprintf-js@1.0.3: {}
 
   sqlite-vss-darwin-arm64@0.1.2:
     optional: true
@@ -17567,8 +17534,7 @@ snapshots:
 
   strict-uri-encode@2.0.0: {}
 
-  string-argv@0.3.2:
-    optional: true
+  string-argv@0.3.2: {}
 
   string-comparison@1.3.0: {}
 
@@ -17619,9 +17585,6 @@ snapshots:
     dependencies:
       min-indent: 1.0.1
 
-  strip-json-comments@3.1.1:
-    optional: true
-
   strnum@2.4.2:
     dependencies:
       anynum: 1.0.1
@@ -17644,7 +17607,6 @@ snapshots:
   supports-color@8.1.1:
     dependencies:
       has-flag: 4.0.0
-    optional: true
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
@@ -17874,9 +17836,6 @@ snapshots:
 
   typed-query-selector@2.12.2: {}
 
-  typescript@5.8.2:
-    optional: true
-
   typescript@5.9.3: {}
 
   uc.micro@2.1.0: {}
@@ -17908,7 +17867,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-dts@1.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)):
+  unplugin-dts@1.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)):
     dependencies:
       '@rollup/pluginutils': 5.3.0(rollup@4.59.0)
       '@volar/typescript': 2.4.28(typescript@5.9.3)
@@ -17921,7 +17880,7 @@ snapshots:
       typescript: 5.9.3
       unplugin: 2.3.11
     optionalDependencies:
-      '@microsoft/api-extractor': 7.57.6(@types/node@24.13.2)
+      '@microsoft/api-extractor': 7.59.1(@types/node@24.13.2)
       esbuild: 0.28.2
       rolldown: 1.1.4
       rollup: 4.59.0
@@ -17961,11 +17920,11 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite-plugin-dts@5.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)):
+  vite-plugin-dts@5.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)):
     dependencies:
-      unplugin-dts: 1.1.0(@microsoft/api-extractor@7.57.6(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
+      unplugin-dts: 1.1.0(@microsoft/api-extractor@7.59.1(@types/node@24.13.2))(esbuild@0.28.2)(rolldown@1.1.4)(rollup@4.59.0)(supports-color@10.2.2)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
     optionalDependencies:
-      '@microsoft/api-extractor': 7.57.6(@types/node@24.13.2)
+      '@microsoft/api-extractor': 7.59.1(@types/node@24.13.2)
       rollup: 4.59.0
       vite: 8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)
     transitivePeerDependencies:
@@ -18153,9 +18112,6 @@ snapshots:
   xtend@4.0.2: {}
 
   y18n@5.0.8: {}
-
-  yallist@4.0.0:
-    optional: true
 
   yallist@5.0.0: {}
 

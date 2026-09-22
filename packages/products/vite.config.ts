@@ -265,11 +265,11 @@ export default defineConfig(async ({ mode }) => {
 			smrt,
 			// TypeScript declarations
 			dts({
-				outDir: resolve(packageDir, 'dist/lib'),
+				outDirs: resolve(packageDir, 'dist/lib'),
 				include: [resolve(packageDir, 'src/**/*.ts')],
 				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts', '**/*.d.ts'],
 				insertTypesEntry: false,
-				rollupTypes: false,
+				bundleTypes: false,
 				entryRoot: resolve(packageDir, 'src'),
 				tsconfigPath: resolve(packageDir, 'tsconfig.json'),
 				aliasesExclude: [

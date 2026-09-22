@@ -36,6 +36,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@microsoft/api-extractor": "7.59.1",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "24.13.6",
     "typescript": "5.9.3",
