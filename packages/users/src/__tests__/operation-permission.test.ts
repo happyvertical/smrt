@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
+import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import '../models/index.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -366,6 +367,7 @@ describe('operation permission guards', () => {
     const userId = actor.user.id;
     if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
     const service = new ResourceGrantService(options);
+    const grants = await ResourceGrantCollection.create(options);
     const actorOperation = {
       ...options,
       collection: 'operation_permission_records',
@@ -422,10 +424,12 @@ describe('operation permission guards', () => {
           ...actorOperation,
           tenantId: unauthorized.tenant.id,
           userId: unauthorized.user.id,
+          onDeny: 'return',
         },
         verifyResource: () => true,
       }),
     ).rejects.toThrow(OperationPermissionError);
+    expect((await grants.get({ id: grant.id }))?.revokedAt).toBeFalsy();
     await expect(
       service.create({
         ...options,
@@ -433,6 +437,7 @@ describe('operation permission guards', () => {
           ...actorOperation,
           tenantId: unauthorized.tenant.id,
           userId: unauthorized.user.id,
+          onDeny: 'return',
         },
         authorization: {
           ...actorOperation,
@@ -446,6 +451,15 @@ describe('operation permission guards', () => {
         },
       }),
     ).rejects.toThrow(OperationPermissionError);
+    expect(
+      await grants.findExact(
+        tenantId,
+        userId,
+        resource.resourceType,
+        resource.resourceId,
+        'operation_permission_records.update',
+      ),
+    ).toHaveLength(1);
   });
 
   it('does not let a resource grant survive membership revocation (#3018)', async () => {
@@ -607,6 +621,51 @@ describe('operation permission guards', () => {
       await grant.save();
       parentGrantId = grant.id;
     }
+    await expect(
+      checkResourceOperationPermission({
+        ...options,
+        collection: 'operation_permission_records',
+        action: 'update',
+        tenantId,
+        userId,
+        verifyResource: () => true,
+        resource: {
+          tenantId,
+          resourceType: 'construction-project',
+          resourceId: 'project-a',
+        },
+      }),
+    ).resolves.toMatchObject({
+      allowed: false,
+      reason: 'resource_grant_missing',
+    });
+  });
+
+  it('fails closed for an orphaned persisted delegation grant (#3018)', async () => {
+    const actor = await createActor(['operation_permission_records.update']);
+    const tenantId = actor.tenant.id;
+    const userId = actor.user.id;
+    if (!tenantId || !userId) throw new Error('Expected persisted actor ids.');
+    const grants = await ResourceGrantCollection.create(options);
+    const orphan = await grants.create({
+      tenantId,
+      userId,
+      resourceType: 'construction-project',
+      resourceId: 'project-a',
+      permission: 'operation_permission_records.update',
+    });
+    await orphan.save();
+    if (!orphan.id) throw new Error('Expected persisted grant id.');
+    // Simulate stale/corrupt historical data that pre-dates the FK; the guard
+    // must still reject it rather than treating the unresolved parent as root.
+    const db = await getDatabase(options.db);
+    await db.query('PRAGMA foreign_keys = OFF');
+    await db.query(
+      'UPDATE resource_grants SET parent_grant_id = ? WHERE id = ?',
+      randomUUID(),
+      orphan.id,
+    );
+    await db.query('PRAGMA foreign_keys = ON');
     await expect(
       checkResourceOperationPermission({
         ...options,

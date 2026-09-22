@@ -112,6 +112,9 @@ export class ResourceGrantService {
       ...input.actor,
       ...this.options,
       tenantId: grant.tenantId,
+      // Grant administration must never accept an actor-selected return-mode
+      // denial: this mutation has no safe denied result to return.
+      onDeny: 'throw',
     });
     if (
       authorization.resource.tenantId !== grant.tenantId ||
@@ -152,6 +155,7 @@ export class ResourceGrantService {
       ...options.actor,
       ...this.options,
       tenantId: resource.tenantId,
+      onDeny: 'throw',
     });
     grant.revokedAt = new Date().toISOString();
     await grant.save();
@@ -211,9 +215,15 @@ async function hasActiveAncestors(
     )
       return false;
     visited.add(cursor.id);
-    cursor = cursor.parentGrantId
-      ? await collection.get({ id: cursor.parentGrantId })
-      : null;
+    if (!cursor.parentGrantId) {
+      cursor = null;
+      continue;
+    }
+    // A non-root record with an unresolved parent is malformed. Do not turn
+    // that lookup failure into a root grant, even if stale data bypassed the
+    // database foreign-key constraint.
+    cursor = await collection.get({ id: cursor.parentGrantId });
+    if (!cursor) return false;
   }
   return true;
 }
