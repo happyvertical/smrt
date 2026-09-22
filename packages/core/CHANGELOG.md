@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.17
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - detect and converge live json vs declared jsonb drift on PostgreSQL (#3043) (core)
+- @happyvertical/smrt-config@0.51.17
+  - @happyvertical/smrt-scanner@0.51.17
+  - @happyvertical/smrt-types@0.51.17
+
 ## 0.51.16
 
 ### Patch Changes
