@@ -252,6 +252,8 @@ describe.skipIf(!pgUrl)(
       expect(blocked?.advisory?.severity).toBe('warning');
       expect(blocked?.advisory?.message).toContain('2 JSON object(s)');
       expect(blocked?.advisory?.message).toContain('duplicate keys');
+      // The conversion would succeed and perform the loss: never offered.
+      expect(blocked?.advisory?.suggestedSql).toBeUndefined();
       expect(getSQLFromDiff(diff)).toEqual([]);
       expect(await liveType(table, 'payload')).toBe('json');
     });

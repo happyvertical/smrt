@@ -1791,13 +1791,25 @@ export class SchemaComparer {
                     jsonProbe.sample
                       ? maskSampleValue(jsonProbe.sample)
                       : 'unavailable'
-                  }). Repair or clear the offending value(s), then rerun ` +
+                  }). ${
+                    jsonProbe.reason === 'duplicate_keys'
+                      ? 'Converting keeps only the last value of each duplicated key; ' +
+                        'deduplicate the keys (deciding which value to keep), then rerun '
+                      : 'Repair or clear the offending value(s), then rerun '
+                  }` +
                   '`smrt db:migrate`.',
-                suggestedSql: renderJsonbColumnConversion(
-                  tableName,
-                  colName,
-                  conversionOptions,
-                ),
+                // #3041 review finding: for duplicate keys the conversion
+                // itself *succeeds* and performs the loss, so it is never
+                // offered as the remedy.
+                ...(jsonProbe.reason === 'duplicate_keys'
+                  ? {}
+                  : {
+                      suggestedSql: renderJsonbColumnConversion(
+                        tableName,
+                        colName,
+                        conversionOptions,
+                      ),
+                    }),
               },
             });
           } else if (

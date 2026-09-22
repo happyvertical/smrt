@@ -208,9 +208,12 @@ async function probeJsonbKeyPreservation(
     };
   }
   try {
-    const result = await db.transaction(async (tx) =>
-      tx.query(renderDuplicateKeyQuerySql(tableName, columnName)),
-    );
+    const result = await db.transaction(async (tx) => {
+      await tx.query(
+        `SET LOCAL statement_timeout = '${PRESERVATION_PROBE_TIMEOUT}'`,
+      );
+      return tx.query(renderDuplicateKeyQuerySql(tableName, columnName));
+    });
     const rows = (Array.isArray(result) ? result : (result?.rows ?? [])) as {
       invalid_count?: unknown;
       sample_value?: unknown;
@@ -233,21 +236,36 @@ function renderDuplicateKeyQuerySql(
 ): string {
   const column = quoteIdentifier(columnName);
   const table = quoteIdentifier(tableName);
+  // Only containers recurse (scalars are pruned at the edge), and each
+  // object node is checked from its own key list -- a duplicate is a key
+  // that appears more than once -- so no subtree is re-parsed as jsonb and
+  // the walk stays linear in the number of container nodes.
+  const containers = "json_typeof(value) IN ('object', 'array')";
   return (
     'WITH RECURSIVE nodes(v) AS (' +
-    `SELECT (${column}::text)::json FROM ${table} WHERE ${column} IS NOT NULL ` +
+    `SELECT (${column}::text)::json FROM ${table} ` +
+    `WHERE ${column} IS NOT NULL AND json_typeof((${column}::text)::json) IN ('object', 'array') ` +
     'UNION ALL ' +
     'SELECT child.value FROM nodes CROSS JOIN LATERAL (' +
     "SELECT value FROM json_each(CASE WHEN json_typeof(nodes.v) = 'object' THEN nodes.v ELSE '{}'::json END) " +
+    `WHERE ${containers} ` +
     'UNION ALL ' +
-    "SELECT value FROM json_array_elements(CASE WHEN json_typeof(nodes.v) = 'array' THEN nodes.v ELSE '[]'::json END)" +
+    "SELECT value FROM json_array_elements(CASE WHEN json_typeof(nodes.v) = 'array' THEN nodes.v ELSE '[]'::json END) " +
+    `WHERE ${containers}` +
     ') AS child) ' +
     'SELECT count(*) AS invalid_count, min(v::text) AS sample_value FROM nodes ' +
-    "WHERE json_typeof(v) = 'object' AND " +
-    '(SELECT count(*) FROM json_object_keys(v)) <> ' +
-    '(SELECT count(*) FROM jsonb_object_keys(v::jsonb))'
+    "WHERE json_typeof(v) = 'object' AND EXISTS (" +
+    'SELECT 1 FROM json_object_keys(v) AS k(key) GROUP BY k.key HAVING count(*) > 1)'
   );
 }
+
+/**
+ * Upper bound for the preservation walk. A timeout resolves to
+ * `unavailable` -- the conversion is then not proposed (never a silent
+ * collapse), and `db:status` live parity still reports the json/jsonb drift
+ * without probing, so the column does not disappear from view.
+ */
+const PRESERVATION_PROBE_TIMEOUT = '60s';
 
 async function probeCastOnly(
   db: DatabaseInterface,
