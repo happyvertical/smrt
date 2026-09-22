@@ -125,11 +125,20 @@ export class WebLLMAdapter implements LLMAdapter {
     }
 
     if (this._initState === 'initializing') {
+      // The executor form is required here: `Promise.withResolvers` is not in
+      // the `lib` this package's typecheck resolves against.
       return new Promise((resolve, reject) => {
         const check = () => {
           if (this._initState === 'ready') resolve();
           else if (this._initState === 'error')
             reject(new Error('Initialization failed'));
+          else if (this._initState !== 'initializing')
+            // A concurrent `unloadModel()` reset the state under this waiter.
+            // It settles only on `ready` or `error`, so without this branch the
+            // poll waits forever — and `unload()` is reachable at any time.
+            reject(
+              new Error('Initialization was released before it completed'),
+            );
           else setTimeout(check, 100);
         };
         check();
@@ -196,12 +205,24 @@ export class WebLLMAdapter implements LLMAdapter {
   }
 
   private async importWebLLM(): Promise<WebLLMModule> {
+    // A host-supplied loader is the only form that works in a browser: the
+    // default resolves a VARIABLE specifier (so this module never hard-depends
+    // on an optional peer), which the browser cannot resolve on its own.
+    const { loadModule } = this.options;
     try {
-      return await importOptional<WebLLMModule>('@mlc-ai/web-llm');
+      return (
+        loadModule
+          ? await loadModule()
+          : await importOptional<WebLLMModule>('@mlc-ai/web-llm')
+      ) as WebLLMModule;
     } catch {
       throw new InitializationError(
         'webllm',
-        '@mlc-ai/web-llm not installed. Run: npm install @mlc-ai/web-llm',
+        loadModule
+          ? 'The supplied WebLLM loader rejected while loading @mlc-ai/web-llm.'
+          : '@mlc-ai/web-llm could not be loaded. Install it, or pass a ' +
+              '`loadModule` that imports it statically: ' +
+              '`() => import("@mlc-ai/web-llm")`.',
       );
     }
   }

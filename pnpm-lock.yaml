@@ -619,6 +619,12 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@happyvertical/smrt-web':
+        specifier: workspace:*
+        version: link:../smrt-web
+      '@mlc-ai/web-llm':
+        specifier: ^0.2.85
+        version: 0.2.85
       '@sveltejs/kit':
         specifier: 2.69.1
         version: 2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.1)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1)))(svelte@5.57.1)(typescript@5.9.3)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -631,6 +637,9 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      bitgpu:
+        specifier: 0.19.1
+        version: 0.19.1
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
@@ -2481,6 +2490,9 @@ importers:
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2(@types/node@24.13.2)
+      bitgpu:
+        specifier: ^0.19.1
+        version: 0.19.1
       chrono-node:
         specifier: ^2.10.1
         version: 2.10.1
@@ -7029,6 +7041,9 @@ packages:
 
   bignumber.js@9.3.1:
     resolution: {integrity: sha512-Ko0uX15oIUS7wJ3Rb30Fs6SkVbLmPBAKdlm7q9+ak9bbIeFf0MwuBsQV6z7+X768/cHsfg+WlysDWJcmthjsjQ==}
+
+  bitgpu@0.19.1:
+    resolution: {integrity: sha512-N9mugPyfUd0bvKCMgbj7MW3Ukl2/TemRlZYo0ZAH34nkfjs/couAFvQFxpN3CGLya7O8kbBJSR+JlSlMS5b3Xg==}
 
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
@@ -14503,6 +14518,8 @@ snapshots:
       require-from-string: 2.0.2
 
   bignumber.js@9.3.1: {}
+
+  bitgpu@0.19.1: {}
 
   bl@4.1.0:
     dependencies:

@@ -161,6 +161,24 @@ export interface WebLLMOptions extends BaseBrowserAIOptions {
    * dependency's type into this package's public surface.
    */
   appConfig?: Record<string, unknown>;
+  /**
+   * Supply the `@mlc-ai/web-llm` module namespace.
+   *
+   * The default loader resolves the package through a variable specifier so
+   * this module never hard-depends on an optional peer — but a variable
+   * specifier is exactly what a BROWSER cannot resolve, so the default only
+   * works under a bundler that rewrites it. A host that has the dependency
+   * should inject its own loader with a STATIC specifier:
+   *
+   * ```ts
+   * createWebLlmInferenceBackend({ loadModule: () => import('@mlc-ai/web-llm') })
+   * ```
+   *
+   * Typed as `unknown` (the module namespace) for the same reason `appConfig`
+   * is opaque: importing the peer's type would put it on this package's public
+   * surface. The adapter narrows it at the point of use.
+   */
+  loadModule?: () => Promise<unknown>;
 }
 
 /**
