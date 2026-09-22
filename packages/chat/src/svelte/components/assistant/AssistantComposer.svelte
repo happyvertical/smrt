@@ -34,16 +34,19 @@ export interface Props {
   disabled?: boolean;
   /** Placeholder text for the empty textarea. */
   placeholder?: string;
+  /** The draft text (#2991). Bindable: a host can seed it with a prompt for
+   * the user to edit, and read back what they typed. Setting it never sends.
+   * Cleared after `onsend` resolves. */
+  value?: string;
 }
 
-const {
+let {
   onsend,
   onupload,
   disabled = false,
   placeholder = 'Ask the assistant…',
+  value: content = $bindable(''),
 }: Props = $props();
-
-let content = $state('');
 let stagedAttachments = $state<AssistantAttachmentRef[]>([]);
 let uploading = $state(false);
 let sending = $state(false);
@@ -61,6 +64,23 @@ let fileInputEl: HTMLInputElement | undefined;
 // Captured from the textarea's input event so auto-resize works without
 // binding to the Textarea primitive's inner DOM node.
 let textareaEl: HTMLTextAreaElement | undefined;
+// The Textarea primitive's own instance, for its public `getElement()`.
+let textareaComponent:
+  | { getElement(): HTMLTextAreaElement | null }
+  | undefined = $state();
+
+function resize(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+}
+
+// #2991: a seeded draft never fires the textarea's input event, so size the
+// textarea to it here. Typed input still resizes through handleInput.
+$effect(() => {
+  void content;
+  textareaEl ??= textareaComponent?.getElement() ?? undefined;
+  if (textareaEl) resize(textareaEl);
+});
 
 async function handleFileChange(event: Event) {
   const input = event.currentTarget as HTMLInputElement;
@@ -114,7 +134,9 @@ async function handleSend() {
   // user's message forever on a transport failure, with no visible error.
   try {
     await onsend(trimmed, stagedAttachments);
-    content = '';
+    // #2991: text typed while the send was in flight is newer than what was
+    // sent; keep it.
+    if (content.trim() === trimmed) content = '';
     stagedAttachments = [];
     if (textareaEl) {
       textareaEl.style.height = 'auto';
@@ -142,8 +164,7 @@ function handleKeydown(event: KeyboardEvent) {
 function handleInput(event: Event) {
   const el = event.currentTarget as HTMLTextAreaElement;
   textareaEl = el;
-  el.style.height = 'auto';
-  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  resize(el);
 }
 
 function removeAttachment(id: string) {
@@ -219,6 +240,7 @@ function removeAttachment(id: string) {
       aria-label={t(M['chat.assistant_composer.attach_files'])}
     />
     <Textarea
+      bind:this={textareaComponent}
       bind:value={content}
       class="assistant-composer-textarea"
       {placeholder}

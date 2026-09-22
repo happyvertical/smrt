@@ -85,6 +85,7 @@ export {
 export {
   ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS,
   type AssistantActionClient,
+  type AssistantActionOutcome,
   type AssistantActionState,
   type AssistantDockController,
   type AssistantDockControllerOptions,
