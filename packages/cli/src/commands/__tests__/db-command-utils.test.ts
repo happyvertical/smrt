@@ -165,6 +165,19 @@ describe('db command utilities', () => {
       ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
     });
 
+    it('redacts a password containing scheme-like text (#2985)', () => {
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://user:secret:https://suffix@host/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
+      expect(
+        redactConnectionStringsInText(
+          'TypeError: Invalid URL: postgres://user:se cret:https://suffix@host/db',
+        ),
+      ).toBe('TypeError: Invalid URL: postgres://user:***@host/db');
+    });
+
     it('never lets a whitespace-bearing password span into the next line (#2985)', () => {
       expect(
         redactConnectionStringsInText(

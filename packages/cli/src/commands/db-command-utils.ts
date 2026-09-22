@@ -17,15 +17,22 @@ const SENSITIVE_QUERY_PARAMS = new Set([
 // regex backtracking matches through the LAST `@` in its span. Free-form
 // error text is exactly where a malformed password shows up — a literal
 // unescaped `@`, raw whitespace (`user:secret pass@host`, the input that
-// makes URL parsing fail), or both (`user:sec ret@pa ss@host`) — and the
-// scrubber cannot tell where such a password ends, so it redacts up to the
-// last possible credential delimiter. The span is bounded by the end of the
-// line and by the start of the next `scheme://`, so a second connection
-// string keeps its own match and a stack trace's other frames survive. It
-// can still over-redact a DSN followed on the same line by an unrelated `@`
-// (an email); hiding too much text is the safe failure for a secret scrubber.
+// makes URL parsing fail), both (`user:sec ret@pa ss@host`), or scheme-like
+// text (`user:x:https://y@host`) — and the scrubber cannot tell where such a
+// password ends, so it redacts up to the last possible credential delimiter.
+// Two alternatives, tried in order:
+//
+// 1. Through the last `@` before the next `scheme://` on the line, so a
+//    second connection string on the same line keeps its own match.
+// 2. Otherwise (no `@` before that next `scheme://`, i.e. the scheme-like
+//    text is inside the password), through the last `@` on the line.
+//
+// Neither crosses a newline, so a stack trace's other frames survive. Both
+// can over-redact text between a DSN and a later unrelated `@` on the same
+// line (an email); hiding too much text is the safe failure for a secret
+// scrubber.
 const CONNECTION_STRING_USERINFO_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)(?:(?![a-z][a-z0-9+.-]*:\/\/)[^\n])*@/gi;
+  /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]*:)(?:(?:(?![a-z][a-z0-9+.-]*:\/\/)[^\n])*@|[^\n]*@)/gi;
 
 const SENSITIVE_QUERY_PARAM_PATTERN =
   /([?&](?:access_token|apikey|api_key|auth|auth_token|password|token)=)[^&\s]+/gi;
