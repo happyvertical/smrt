@@ -46,7 +46,18 @@ export class ResourceGrant extends SmrtObject {
   @field({ type: 'text' }) revokedAt?: string | null;
   constructor(options: ResourceGrantOptions = {}) {
     super(options);
-    Object.assign(this, options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.userId !== undefined) this.userId = options.userId;
+    if (options.resourceType !== undefined)
+      this.resourceType = options.resourceType;
+    if (options.resourceId !== undefined) this.resourceId = options.resourceId;
+    if (options.permission !== undefined) this.permission = options.permission;
+    if (options.effect !== undefined) this.effect = options.effect;
+    if (options.canDelegate !== undefined)
+      this.canDelegate = options.canDelegate;
+    if (options.parentGrantId !== undefined)
+      this.parentGrantId = options.parentGrantId;
+    if (options.revokedAt !== undefined) this.revokedAt = options.revokedAt;
   }
   isActive(): boolean {
     return !this.revokedAt;
