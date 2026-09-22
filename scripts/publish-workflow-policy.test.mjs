@@ -115,8 +115,18 @@ test('releases are published to the primary registry, with npmjs as a mirror', (
   // written for it or sent to it.
   const allowlist = publisher.indexOf("primaryRegistry();");
   assert.ok(allowlist > auth && allowlist < publisher.indexOf('_authToken=%s'));
-  // setup-node redirects npm's userconfig; the credential must follow it.
-  assert.match(publisher, /rc="\$\{NPM_CONFIG_USERCONFIG:-\$HOME\/\.npmrc\}"/);
+  // The credential goes into a fresh file of its own, never appended to
+  // setup-node's npmrc, which ends without a newline (#3005).
+  assert.match(publisher, /rc="\$RUNNER_TEMP\/release-npmrc"/);
+  assert.match(publisher, /_authToken=%s\\n' "\$host" "\$PRIMARY_TOKEN" > "\$rc"/);
+  const authStep = publisher.slice(
+    publisher.indexOf('- name: Authenticate to the primary registry'),
+    publisher.indexOf('- name: Configure Git'),
+  );
+  assert.doesNotMatch(authStep, />> "\$rc"/);
+  assert.match(publisher, /echo "NPM_CONFIG_USERCONFIG=\$rc" >> "\$GITHUB_ENV"/);
+  // Not in changesets mode: that path needs setup-node's npmjs credential.
+  assert.match(authStep, /if: inputs\.publish-mode != 'changesets'/);
 
   // A release must not depend on the npmjs credential existing.
   assert.doesNotMatch(job('prepare-release'), /NPM_TOKEN secret is required/);

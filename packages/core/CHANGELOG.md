@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.51.11
+
+### Patch Changes
+
+- ### Features
+
+  - publish releases to our registry first and mirror to npmjs (#3004) (ci)
+
+  ### Bug Fixes
+
+  - give the primary-registry credential its own npmrc (#3006) (ci)
+  - AssistantDock tool-call seam, host actions, unknown outcomes (#2988-#2990) (#3003) (chat)
+  - make AssistantDock usable in narrow shell docks (#3000) (#3001) (chat)
+  - author agent replies as a resolved bot Profile, not the agentId slug (#2996) (chat)
+  - enforce operation permissions on generated SvelteKit write routes (#2977) (#2987) (core)
+  - never expose credential-bearing tables through the change feed (#2948) (core)
+  - honour a permission snapshot in persona turns and delegation (#2983) (chat,agents)
+  - keep an aggregated manifest entry's own package on registration (#2974) (core)
+
+  ### Other Changes
+
+  - docs: fix broken links in core-migration-history, add historical banner to profiles-spec (#2930)
+  - docs: conflictColumns is a NULL-equal identity; nullables use a unique index (#2981) (core)
+  - docs: state paging, build-context, and the in-app dev-plane as current in the agent guide (#2967)
+  - chore: sync managed agent kernel to generation 45 (#2962) (policy)
+  - @happyvertical/smrt-config@0.51.11
+  - @happyvertical/smrt-types@0.51.11
+  - @happyvertical/smrt-scanner@0.51.11
+
 ## 0.51.10
 
 ### Patch Changes
