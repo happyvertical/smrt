@@ -123,6 +123,17 @@ function renderProbeQuerySql(
   );
 }
 
+/**
+ * One set-based jsonb cast over every non-null value: `count(expr)` forces
+ * the cast for each row, and any value jsonb rejects raises instead of
+ * returning, so success alone proves the column clean.
+ */
+function renderSetCastQuerySql(tableName: string, columnName: string): string {
+  const column = quoteIdentifier(columnName);
+  const table = quoteIdentifier(tableName);
+  return `SELECT count((${column}::text)::jsonb) AS cast_count FROM ${table}`;
+}
+
 function classifyProbeRows(
   rows: { invalid_count?: unknown; sample_value?: unknown }[],
 ): ShapeProbeResult {
@@ -164,6 +175,40 @@ export async function probeCastSafety(
       status: 'unavailable',
       reason: 'adapter does not support transactions',
     };
+  }
+  if (targetType === 'jsonb') {
+    // #3041 review finding: the per-row PL/pgSQL probe opens a
+    // subtransaction per value, and native `json` columns are the large
+    // legacy `_meta_data`-style ones. A jsonb cast has no silent-coercion
+    // traps (unlike the timestamptz special values above), so a single
+    // set-based cast that succeeds proves every value clean; only a failed
+    // cast falls through to the per-row probe for the count and sample.
+    try {
+      const castCount = await db.transaction(async (tx) => {
+        const result = await tx.query(
+          renderSetCastQuerySql(tableName, columnName),
+        );
+        const rows = (
+          Array.isArray(result) ? result : (result?.rows ?? [])
+        ) as {
+          cast_count?: unknown;
+        }[];
+        return rows[0]?.cast_count;
+      });
+      // Only a realistic answer counts as proof; anything else (an adapter
+      // or test double that does not return the count) takes the per-row
+      // probe below instead.
+      if (
+        castCount !== undefined &&
+        castCount !== null &&
+        Number.isFinite(Number(castCount))
+      ) {
+        return { status: 'clean' };
+      }
+    } catch {
+      // Fall through: the per-row probe classifies the failure (dirty
+      // values, or unavailable for a missing table / unrealistic adapter).
+    }
   }
   try {
     return await db.transaction(async (tx) => {

@@ -1682,7 +1682,12 @@ export class SchemaComparer {
           !isUuidTextEquivalent &&
           !isJsonTextEquivalent
         ) {
-          typeDrifted = true;
+          // #3041 review finding: a native `json` column whose probe is
+          // dirty never converges, so deferring its constraint drift behind
+          // the type repair (see `!typeDrifted` below) would hide default
+          // drift that was reported before json/jsonb became visible. Keep
+          // comparing constraints for that blocked case only.
+          typeDrifted = !(nativeJsonToJsonb && jsonProbe?.status === 'dirty');
 
           // #2771/#2772 review finding: PostgreSQL rejects `ALTER COLUMN
           // ... TYPE` outright whenever the column has ANY existing default
@@ -1714,6 +1719,15 @@ export class SchemaComparer {
             colDef.defaultValue === undefined &&
             !this.options.relaxColumns;
 
+          // #3041 review finding: `colDef.type` is the abstract 'JSON', which
+          // for a live `json` column would preview as `json -> JSON` -- a
+          // case-only change hiding a full-table rewrite. Report the engine
+          // type ('JSONB'), as the #2770 float-width branch does.
+          const jsonMismatch = {
+            expected: nativeJsonToJsonb ? expectedEngineType : colDef.type,
+            actual: dbCol.type,
+          };
+
           if (
             jsonUpgradeCandidate &&
             jsonProbe?.status === 'clean' &&
@@ -1724,7 +1738,7 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               advisory: {
                 severity: 'warning',
                 message:
@@ -1750,7 +1764,7 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               sql: statements[statements.length - 1],
               sqlStatements: statements,
             });
@@ -1760,7 +1774,7 @@ export class SchemaComparer {
               table: tableName,
               name: colName,
               column: colDef,
-              mismatch: { expected: colDef.type, actual: dbCol.type },
+              mismatch: jsonMismatch,
               advisory: {
                 severity: 'warning',
                 message:

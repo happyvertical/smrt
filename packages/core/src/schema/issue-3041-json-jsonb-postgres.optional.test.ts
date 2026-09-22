@@ -108,6 +108,8 @@ describe.skipIf(!pgUrl)(
           change.type === 'type_upgrade' && change.name === '_meta_data',
       );
       expect(upgrade?.advisory).toBeUndefined();
+      // The preview names the engine type, not a case-only `json -> JSON`.
+      expect(upgrade?.mismatch?.expected).toBe('JSONB');
       const sql = getSQLFromDiff(diff);
       expect(sql).toEqual([
         `ALTER TABLE "${table}" ALTER COLUMN "_meta_data" TYPE jsonb USING "_meta_data"::jsonb`,
@@ -223,6 +225,31 @@ describe.skipIf(!pgUrl)(
       expect(blocked?.advisory?.message).not.toContain('a\\u0000b');
       expect(getSQLFromDiff(diff)).toEqual([]);
       expect(await liveType(table, 'payload')).toBe('json');
+    });
+
+    it('keeps reporting default drift on a column whose conversion is blocked', async () => {
+      const table = `i3041_dirty_default_${suffix}`;
+      created.push(table);
+      await db.query(
+        `CREATE TABLE "${table}" (id text PRIMARY KEY, payload json DEFAULT '{}'::json)`,
+      );
+      await db.query(
+        `INSERT INTO "${table}" (id, payload) VALUES ('d1', '{"v":"a\\u0000b"}')`,
+      );
+      const schema = schemaFor(table, { payload: { type: 'JSON' } });
+
+      const diff = await new SchemaComparer(db, {
+        ignoreTypeMismatches: false,
+      }).compare(schema);
+      const payloadChanges = diff.changes.filter(
+        (change) => change.name === 'payload',
+      );
+      expect(
+        payloadChanges.some((change) => change.type === 'type_upgrade'),
+      ).toBe(true);
+      expect(
+        payloadChanges.some((change) => change.type !== 'type_upgrade'),
+      ).toBe(true);
     });
 
     it('keeps tolerating a native json column behind a TEXT manifest field (#1335)', async () => {
