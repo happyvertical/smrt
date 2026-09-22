@@ -31,6 +31,11 @@ export {
   Permission,
   parsePermissionSlug,
 } from './Permission.js';
+export {
+  ResourceGrant,
+  type ResourceGrantEffect,
+  type ResourceGrantOptions,
+} from './ResourceGrant.js';
 export { Role } from './Role.js';
 // Roles and permissions
 export { RolePermission } from './RolePermission.js';
