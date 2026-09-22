@@ -4,6 +4,7 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
@@ -108,6 +109,43 @@ export interface TenantPermissionInheritanceResult {
    * cascade.)
    */
   deniedPermissions: Set<string>;
+}
+
+/**
+ * Run a permission resolution outside the consumer's tenant row filter
+ * (smrt#3036).
+ *
+ * Resolution is an AUTHORIZATION computation, not a data read on the caller's
+ * behalf. Its answer must be a function of the `(userId, tenantId)` it was
+ * asked about and the rows that govern it — never of whichever tenant happens
+ * to be ambient. Several of its reads are deliberately cross-tenant and owned
+ * by the framework:
+ *
+ * - the batched `TenantPermissionOverride` read over the resolved tenant's
+ *   ancestor chain (the tenant cascade and the tenant-DENY hard block);
+ * - the principal's ACTIVE memberships on ANCESTOR tenants, which is how
+ *   `inheritsToDescendants` finds the authority it flows downward;
+ * - the principal's memberships on DESCENDANT tenants and the resolution of
+ *   each one at its own tenant, which is how the declared ancestor-read policy
+ *   finds what may travel upward;
+ * - the ancestor `Tenant` rows that verify a materialized `hierarchyPath`.
+ *
+ * With `TenantPermissionOverride` or `Membership` registered tenant-scoped
+ * (`autoFilter`), the interceptor either refused the first (throwing
+ * `TenantIsolationError`, which consumers commonly turn into an empty set) or
+ * narrowed the rest to the ambient tenant, so both hierarchy features silently
+ * did nothing and own-tenant resolution broke as soon as a hierarchy path was
+ * materialized.
+ *
+ * Why this is not a widening: every read here is keyed by the explicit
+ * arguments (the user, the resolved tenant, and ids derived from verified
+ * hierarchy links), the resolver invokes no caller code while inside, and it
+ * returns only permission slugs and the ids that produced them — never a row.
+ * The system context is scoped to this call via AsyncLocalStorage, so the
+ * caller's own reads before and after remain filtered exactly as before.
+ */
+async function resolveOutsideTenantFilter<T>(fn: () => Promise<T>): Promise<T> {
+  return await withSystemContext(fn);
 }
 
 /**
@@ -262,6 +300,14 @@ export class PermissionResolver {
   async resolveTenantPermissions(
     tenantId: string,
   ): Promise<TenantPermissionInheritanceResult> {
+    return await resolveOutsideTenantFilter(() =>
+      this.resolveTenantPermissionsInternal(tenantId),
+    );
+  }
+
+  private async resolveTenantPermissionsInternal(
+    tenantId: string,
+  ): Promise<TenantPermissionInheritanceResult> {
     const result: TenantPermissionInheritanceResult = {
       permissions: new Set<string>(),
       contributingTenantIds: [],
@@ -400,6 +446,14 @@ export class PermissionResolver {
   async getTenantInheritanceChain(
     tenantId: string,
   ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
+    return await resolveOutsideTenantFilter(() =>
+      this.getTenantInheritanceChainInternal(tenantId),
+    );
+  }
+
+  private async getTenantInheritanceChainInternal(
+    tenantId: string,
+  ): Promise<Array<{ tenant: Tenant; inherits: boolean; cascades: boolean }>> {
     const tenant = await this.tenantCollection.get({ id: tenantId });
     if (!tenant) {
       return [];
@@ -479,6 +533,16 @@ export class PermissionResolver {
     tenantId: string,
     options: PermissionResolutionOptions = {},
   ): Promise<PermissionResolutionResult> {
+    return await resolveOutsideTenantFilter(() =>
+      this.resolvePermissionsInternal(userId, tenantId, options),
+    );
+  }
+
+  private async resolvePermissionsInternal(
+    userId: string,
+    tenantId: string,
+    options: PermissionResolutionOptions,
+  ): Promise<PermissionResolutionResult> {
     const result: PermissionResolutionResult = {
       permissions: new Set<string>(),
       membershipId: null,
@@ -523,7 +587,8 @@ export class PermissionResolver {
     result.membershipId = membership.id ?? null;
     result.roleId = membership.roleId ?? null;
 
-    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    const tenantPermissions =
+      await this.resolveTenantPermissionsInternal(tenantId);
     for (const slug of tenantPermissions.permissions) {
       result.permissions.add(slug);
     }
@@ -836,9 +901,11 @@ export class PermissionResolver {
       // This cannot recurse: the contributing membership is passed explicitly,
       // so resolving the descendant takes the direct-membership branch and
       // never re-enters this policy.
-      const own = await this.resolvePermissions(userId, contributingTenantId, {
-        membership: contributing,
-      });
+      const own = await this.resolvePermissionsInternal(
+        userId,
+        contributingTenantId,
+        { membership: contributing },
+      );
 
       let contributed = false;
       for (const slug of own.permissions) {
@@ -859,7 +926,8 @@ export class PermissionResolver {
     }
 
     // A tenant-level DENY on the tenant being resolved still wins.
-    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    const tenantPermissions =
+      await this.resolveTenantPermissionsInternal(tenantId);
     for (const slug of tenantPermissions.deniedPermissions) {
       granted.delete(slug);
     }
