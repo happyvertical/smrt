@@ -482,7 +482,7 @@ function renderPackageDoc(
   if (!complete && paths.length > 0) {
     lines.push('#### Module documentation', '');
     lines.push(
-      'Read the relevant source file on demand, or regenerate with `--complete`.',
+      'Resolve each link under `node_modules/` (for example `node_modules/@happyvertical/smrt-core/agents/object-runtime.md`) and read it on demand, or regenerate with `--complete`.',
       '',
     );
     for (const path of paths) {

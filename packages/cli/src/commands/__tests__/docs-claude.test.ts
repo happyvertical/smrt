@@ -267,13 +267,14 @@ Gamma content.
           readme: null,
           agentMd: '# Windows\n\nGuidance',
           directory: String.raw`C:\project\node_modules\pkg`,
-          moduleDocPaths: ['agents/module.md'],
+          moduleDocPaths: [String.raw`agents\module.md`],
         },
       ]);
       expect(markdown).toContain(
         '- [agents/module.md](<@test/windows/agents/module.md>)',
       );
       expect(markdown).not.toContain('C:');
+      expect(markdown).not.toContain('\\');
     });
 
     it('should include footer with regeneration note', () => {
