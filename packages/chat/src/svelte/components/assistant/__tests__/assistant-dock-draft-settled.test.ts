@@ -124,6 +124,27 @@ describe('AssistantComposer value (#2991)', () => {
   });
 });
 
+describe('AssistantComposer in-flight edits (#2991)', () => {
+  it('keeps text typed while the send was in flight', async () => {
+    let release!: () => void;
+    const onsend = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    render(AssistantComposer, {
+      props: { onsend, onupload: vi.fn(), value: 'first' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await userEvent.type(textarea(), ' and more');
+    release();
+    await vi.waitFor(() => expect(onsend).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(textarea()).toHaveValue('first and more');
+  });
+});
+
 describe('controller draft (#2991)', () => {
   it('starts from initialDraft and setDraft replaces it without sending', async () => {
     const transport = createInMemoryAssistantTransport();
@@ -187,6 +208,25 @@ describe('controller draft (#2991)', () => {
     controller.setDraft('next message');
     await sending;
     expect(controller.draft).toBe('next message');
+    controller.dispose();
+  });
+
+  it('does not clear a kept draft when a send completes after a swap', async () => {
+    let transport = createInMemoryAssistantTransport();
+    const controller = createAssistantDockController({
+      get transport() {
+        return transport;
+      },
+      registry: registryWithSurface(),
+    });
+    const thread = await controller.createThread('t');
+    await controller.openThread(thread.id);
+    controller.setDraft('hello');
+    const sending = controller.send('hello');
+    transport = createInMemoryAssistantTransport();
+    controller.syncTransport();
+    await sending.catch(() => undefined);
+    expect(controller.draft).toBe('hello');
     controller.dispose();
   });
 

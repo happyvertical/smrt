@@ -995,9 +995,19 @@ export function createAssistantDockController(
     // #2991: the draft this send was taken from, so a successful send clears
     // it for a headless caller too. Text changed while the send was in
     // flight is newer than what was sent and is kept.
+    // Same epoch discipline as every other post-await write: a send that
+    // completes after a context swap must not empty the kept draft.
     const draftAtSend = draft;
+    const epoch = contextEpoch;
     await doSend(threadId, content, clientRequestId, attachments);
-    if (draft === draftAtSend && draft.trim() === content.trim()) draft = '';
+    if (
+      !disposed &&
+      epoch === contextEpoch &&
+      draft === draftAtSend &&
+      draft.trim() === content.trim()
+    ) {
+      draft = '';
+    }
   }
 
   // Cycle-2 second final finding 2: AssistantDock.svelte's Retry buttons call

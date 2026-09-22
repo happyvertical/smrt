@@ -134,7 +134,9 @@ async function handleSend() {
   // user's message forever on a transport failure, with no visible error.
   try {
     await onsend(trimmed, stagedAttachments);
-    content = '';
+    // #2991: text typed while the send was in flight is newer than what was
+    // sent; keep it.
+    if (content.trim() === trimmed) content = '';
     stagedAttachments = [];
     if (textareaEl) {
       textareaEl.style.height = 'auto';
