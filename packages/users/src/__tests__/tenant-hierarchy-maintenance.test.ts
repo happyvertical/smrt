@@ -15,12 +15,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getChangesSince, getTableVersion } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
   TenantCollection,
   TenantHierarchyError,
 } from '../collections/TenantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
+import { TenantPermissionEffect } from '../types/index.js';
 
 describe('Tenant hierarchy is maintained on save', () => {
   let dbPath: string;
@@ -242,7 +245,7 @@ describe('PermissionResolver chain when an ancestor read returns nothing', () =>
     if (existsSync(dbPath)) rmSync(dbPath, { force: true });
   });
 
-  it('display truncates root-first at the nearest readable ancestor; authorization fails closed', async () => {
+  it('walks the real chain root-first; display truncates at the nearest readable ancestor; authorization fails closed', async () => {
     dbPath = join(tmpdir(), `smrt-tenant-chain-${randomUUID()}.db`);
     const options = { db: { type: 'sqlite' as const, url: dbPath } };
     const tenants = await TenantCollection.create(options);
@@ -256,6 +259,34 @@ describe('PermissionResolver chain when an ancestor read returns nothing', () =>
       leaf.id,
     );
     const resolver = await PermissionResolver.create(options);
+
+    // With every row readable the walk returns the whole chain ROOT FIRST,
+    // and the cascade applies it in that order: the mid-level GRANT is more
+    // specific than the root DENY and wins. Both flip if the walk inverts.
+    expect(
+      (await resolver.getTenantInheritanceChain(leaf.id as string)).map(
+        (link) => link.tenant.id,
+      ),
+    ).toEqual([root.id, mid.id, leaf.id]);
+    const permissions = await PermissionCollection.create(options);
+    const overrides = await TenantPermissionOverrideCollection.create(options);
+    const permission = await permissions.create({
+      slug: 'articles.read',
+      name: 'articles.read',
+    });
+    await overrides.create({
+      tenantId: root.id,
+      permissionId: permission.id,
+      effect: TenantPermissionEffect.DENY,
+    });
+    await overrides.create({
+      tenantId: mid.id,
+      permissionId: permission.id,
+      effect: TenantPermissionEffect.GRANT,
+    });
+    const cascaded = await resolver.resolveTenantPermissions(leaf.id as string);
+    expect([...cascaded.permissions]).toEqual(['articles.read']);
+    expect([...cascaded.deniedPermissions]).toEqual([]);
 
     // A filter that silently hides the root row (as RLS would): no
     // interceptor registration can produce this, so stub the read.
