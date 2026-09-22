@@ -140,7 +140,8 @@ function renderProbeQuerySql(
 /**
  * One set-based jsonb cast over every non-null value: `count(expr)` forces
  * the cast for each row, and any value jsonb rejects raises instead of
- * returning, so success alone proves the column clean.
+ * returning, so success proves every value castable (not that the
+ * conversion preserves it -- see {@link probeJsonbKeyPreservation}).
  */
 function renderSetCastQuerySql(tableName: string, columnName: string): string {
   const column = quoteIdentifier(columnName);
@@ -168,15 +169,21 @@ function classifyProbeRows(
 }
 
 /**
- * Probe every non-null value of a candidate `text` column for whether it can
- * cast losslessly to `timestamptz` or `jsonb`, using a real, exception-safe
- * cast attempt (not a shape heuristic) so an invalid-calendar timestamp or a
- * structurally-malformed-but-bracket-balanced JSON document is caught the
- * same as an obviously wrong value. Any failure to run the probe (adapter
- * without transaction support, a missing table mid-run, a test double
- * without a realistic response) resolves to `unavailable` — callers must not
- * treat that as "clean"; SMRT never coerces or discards data on an unproven
- * assumption.
+ * Probe every non-null value of a candidate `text` (or, for `jsonb`, native
+ * `json`) column for whether it can cast losslessly to `timestamptz` or
+ * `jsonb`, in two stages:
+ *
+ * 1. Cast: a real, exception-safe cast attempt (not a shape heuristic) so an
+ *    invalid-calendar timestamp or a structurally-malformed-but-bracket-
+ *    balanced JSON document is caught the same as an obviously wrong value.
+ *    Any failure to run it (adapter without transaction support, a missing
+ *    table mid-run, a test double without a realistic response) resolves to
+ *    `unavailable` -- callers must not treat that as "clean".
+ * 2. Preservation (`jsonb` only, after a clean cast): duplicate object keys
+ *    are `dirty` with reason `duplicate_keys`; a walk that does not finish is
+ *    `dirty` with reason `preservation_unverified` and `count: 0`.
+ *
+ * SMRT never coerces or discards data on an unproven assumption.
  */
 export async function probeCastSafety(
   db: DatabaseInterface,
@@ -195,9 +202,9 @@ export async function probeCastSafety(
  * #3041 review finding: a successful jsonb cast proves castability, not
  * preservation. `jsonb` keeps only the last of duplicate object keys (it
  * also drops key order and insignificant whitespace, which SMRT never
- * treats as data). Walk every object node, nested ones included, and
- * compare its key count as `json` against `jsonb`; any object that would
- * lose a key makes the column dirty so the conversion stays a fail-closed
+ * treats as data). Walk every container node, nested ones included, and
+ * look for a key that appears more than once in an object's own `json` key
+ * list (no jsonb re-parse); any such object makes the column dirty so the conversion stays a fail-closed
  * advisory instead of a silent, irreversible rewrite. The result columns
  * reuse the cast probe's names so one classifier reads both.
  */
