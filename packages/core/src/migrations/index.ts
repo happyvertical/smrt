@@ -33,6 +33,7 @@ export {
   isAdvisoryOnlyChange,
   isInfoOnlyChange,
   isManualOrAdvisoryChange,
+  REQUIRED_COLUMN_NOT_ADDED,
   SchemaComparer,
   uniqueColumnIndexName,
 } from './differ.js';

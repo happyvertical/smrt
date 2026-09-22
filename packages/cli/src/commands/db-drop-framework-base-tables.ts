@@ -37,6 +37,7 @@ import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
   quoteIdentifier,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 
 interface DbDropFrameworkBaseTablesOptions {
@@ -192,7 +193,9 @@ export const dbDropFrameworkBaseTablesCommand: CLICommand = {
       );
     } catch (error) {
       console.error(
-        `\n❌ Framework base-table remediation failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        `\n❌ Framework base-table remediation failed: ${redactConnectionStringsInText(
+          error instanceof Error ? error.message : String(error),
+        )}\n`,
       );
       process.exitCode = 1;
     } finally {

@@ -14,6 +14,7 @@ import {
   dbPruneCommand,
   formatSweepResult,
   loadRetentionTaskPackages,
+  redactSweepResult,
   unmatchedSkipNames,
 } from '../db-prune.js';
 
@@ -194,6 +195,33 @@ describe('formatSweepResult (#2375)', () => {
 
     expect(output).toContain('would prune 4');
     expect(output).not.toContain('pruned 4');
+  });
+});
+
+describe('redactSweepResult (#2985)', () => {
+  it('scrubs connection-string credentials from per-task errors only', () => {
+    const redacted = redactSweepResult({
+      dryRun: false,
+      startedAt: '2026-08-17T00:00:00.000Z',
+      durationMs: 1,
+      pruned: 0,
+      failed: true,
+      tasks: [
+        { task: 'changes', pruned: 2 },
+        {
+          task: 'jobs',
+          pruned: 0,
+          error: 'connect failed: postgres://app:hunter2@db:5432/prod',
+        },
+      ],
+    });
+
+    expect(redacted.tasks[0]).toEqual({ task: 'changes', pruned: 2 });
+    expect(redacted.tasks[1]?.error).toBe(
+      'connect failed: postgres://app:***@db:5432/prod',
+    );
+    expect(JSON.stringify(redacted)).not.toContain('hunter2');
+    expect(formatSweepResult(redacted)).not.toContain('hunter2');
   });
 });
 

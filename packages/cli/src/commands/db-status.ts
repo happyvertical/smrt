@@ -23,6 +23,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  redactConnectionStringsInText,
 } from './db-command-utils.js';
 import {
   classifyTypeUpgradeSql,
@@ -522,7 +523,17 @@ export const dbStatusCommand: CLICommand = {
 
       // 5. Get applied migrations
       const applied = await tracker.getAppliedMigrations();
-      const failed = await tracker.getHistory({ status: 'failed' });
+      // `error_message` is the driver's failure text, which can echo the
+      // connection string; scrub it before it feeds any JSON or human output.
+      const failed = (await tracker.getHistory({ status: 'failed' })).map(
+        (row) =>
+          row.error_message
+            ? {
+                ...row,
+                error_message: redactConnectionStringsInText(row.error_message),
+              }
+            : row,
+      );
 
       // 6. Auto-discover manifests to get current definitions
       const { discovered, totalObjects } = await autoDiscoverAndLoad();
@@ -623,8 +634,9 @@ export const dbStatusCommand: CLICommand = {
               engineHint: dbType,
             });
           } catch (error) {
-            status.parityError =
-              error instanceof Error ? error.message : String(error);
+            status.parityError = redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            );
           }
         }
       } else if (options.parity) {
@@ -652,12 +664,16 @@ export const dbStatusCommand: CLICommand = {
         // failed probe and "zero orphans" would read identically in
         // `db:status`. `missing_table` skips stay silent here (expected,
         // benign); `smrt db:orphans` lists both kinds in full.
-        status.orphanProbeFailures = orphanReport.skipped.filter(
-          (skip) => skip.kind === 'probe_failed',
-        );
+        status.orphanProbeFailures = orphanReport.skipped
+          .filter((skip) => skip.kind === 'probe_failed')
+          .map((skip) => ({
+            ...skip,
+            reason: redactConnectionStringsInText(skip.reason),
+          }));
       } catch (error) {
-        status.orphansError =
-          error instanceof Error ? error.message : String(error);
+        status.orphansError = redactConnectionStringsInText(
+          error instanceof Error ? error.message : String(error),
+        );
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -895,13 +911,15 @@ export const dbStatusCommand: CLICommand = {
       if (options.json) {
         console.log(
           JSON.stringify({
-            error: error instanceof Error ? error.message : String(error),
+            error: redactConnectionStringsInText(
+              error instanceof Error ? error.message : String(error),
+            ),
           }),
         );
       } else {
         console.error('\n❌ Failed to get migration status:');
         if (error instanceof Error) {
-          console.error(`   ${error.message}`);
+          console.error(`   ${redactConnectionStringsInText(error.message)}`);
         }
       }
       process.exitCode = 1;
