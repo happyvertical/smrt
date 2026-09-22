@@ -14,7 +14,10 @@ services:
       timeout: 5s
       retries: 5
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # PostgreSQL 18+ images keep PGDATA under /var/lib/postgresql/18/docker and
+      # refuse a legacy /var/lib/postgresql/data mount. This is disposable test
+      # data: after the 16 -> 18 upgrade, reset it with `docker compose down -v`.
+      - postgres_data:/var/lib/postgresql
 
 volumes:
   postgres_data:
