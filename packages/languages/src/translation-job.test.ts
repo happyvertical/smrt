@@ -5,8 +5,8 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearLanguageCache } from './cache.js';
 import { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
+import { enqueueTranslationJob } from './jobs/translation-job.js';
 import { defineLanguageString, LanguageRegistry } from './language-registry.js';
-import { enqueueTranslationJob } from './translation-job.js';
 
 describe('@happyvertical/smrt-languages — translation-job dedup', () => {
   let db: DatabaseInterface;

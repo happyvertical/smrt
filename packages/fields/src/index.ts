@@ -72,6 +72,7 @@ export {
   MAX_DISTINCT_USERS_PER_BUCKET,
   MAX_VALUE_HISTOGRAM_BUCKETS,
 } from './models/FieldUsageCounter.js';
+export { FieldUsageReportReceipt } from './models/FieldUsageReportReceipt.js';
 export {
   ensureFieldPolicyPermissionsRegistered,
   FIELD_POLICY_PERMISSION_DEFINITIONS,

@@ -1,7 +1,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
+import { enqueueTranslationJob } from './jobs/translation-job.js';
 import { LanguageRegistry } from './language-registry.js';
-import { enqueueTranslationJob } from './translation-job.js';
 import { normalizeLocale } from './utils.js';
 
 /**

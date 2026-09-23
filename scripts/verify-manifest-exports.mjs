@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Publish-time guard: verify every object `dist/manifest.json` advertises is
+ * PR- and publish-time guard: verify every object `dist/manifest.json` advertises is
  * actually importable from the built package. A manifest can be *complete*
  * (see `verify-manifest-completeness.mjs`, issue #1483 — every source object
  * appears in the manifest) while still being *wrong*: an object scanned from
@@ -193,48 +193,8 @@ function isCollectionCompanion(objectDef) {
   );
 }
 
-/**
- * True for a manifest object whose `@smrt()` config closes every interactive
- * surface (`api: { include: [] }`, `cli: false`, `mcp: { include: [] }`).
- * Confirmed against `@happyvertical/smrt-fields`'
- * `FieldUsageReportReceipt` — a real, database-backed `SmrtObject` ("durable
- * daily receipt", per its own doc comment) that is genuinely never
- * re-exported from `src/index.ts`. An object that opts out of every consumer
- * surface this way is backend-only bookkeeping the manifest schema's
- * `visibility: 'internal'` field exists to mark, but nothing sets it here,
- * so the manifest still carries the object as `public`. Same reasoning as
- * `isCollectionCompanion`: no producer signal distinguishes this
- * intentional non-export from a genuine regression, so this guard does not
- * guess and skips verifying it.
- */
-function isFullyClosedSurface(objectDef) {
-  const config = objectDef.decoratorConfig;
-  if (!config) return false;
-
-  const apiClosed =
-    config.api === false ||
-    (config.api &&
-      typeof config.api === 'object' &&
-      Array.isArray(config.api.include) &&
-      config.api.include.length === 0);
-  const cliClosed =
-    config.cli === false ||
-    (config.cli &&
-      typeof config.cli === 'object' &&
-      Array.isArray(config.cli.include) &&
-      config.cli.include.length === 0);
-  const mcpClosed =
-    config.mcp === false ||
-    (config.mcp &&
-      typeof config.mcp === 'object' &&
-      Array.isArray(config.mcp.include) &&
-      config.mcp.include.length === 0);
-
-  return apiClosed && cliClosed && mcpClosed;
-}
-
 function isExcludedFromVerification(objectDef) {
-  return isCollectionCompanion(objectDef) || isFullyClosedSurface(objectDef);
+  return isCollectionCompanion(objectDef);
 }
 
 const failures = [];
@@ -244,13 +204,9 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
   // `isExcludedFromVerification` governs EXPORT-NAME verification only. The
   // plain-Node loadability of a non-root `importPath` is checked first, for
   // every object, because the two questions are independent: an object can be
-  // legitimately absent from the public export surface while the entry it
-  // names still has to import under plain Node. The #2924 objects are exactly
-  // that shape — `SmrtDataSurfaceActionTask`, `DataSurfaceActionTokenState`,
-  // and `DataSurfaceActionIdempotencyState` all declare
-  // `api: false, cli: false, mcp: false`, so a check placed after the
-  // exclusion never even attempts the import and passes a broken
-  // `@happyvertical/smrt-agents/server` (verified against this repo).
+  // legitimately absent as a collection companion while the entry it names
+  // still has to import under plain Node. API/CLI/MCP settings do not exempt
+  // public model exports: generated consumer registration imports them.
   const excludedFromExportCheck = isExcludedFromVerification(objectDef);
 
   const importPath = objectDef.importPath ?? packageName;
@@ -287,8 +243,8 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
         continue;
       }
       // A bundler-only ROOT barrel stays a warning (the documented
-      // smrt-products case). An excluded object contributes no warning
-      // because it was never going to be verified, and counting it would
+      // smrt-products case). A collection companion contributes no warning
+      // because its export name is not verified, and counting it would
       // skew the summary's verified/unverifiable split.
       if (excludedFromExportCheck) continue;
       warnings.push(
@@ -302,14 +258,10 @@ for (const [objectKey, objectDef] of Object.entries(objects)) {
     // missing in this environment, or similar). Do not tell the operator to
     // "fix the importPath" for a load error.
     //
-    // For a non-root importPath the exclusion does NOT apply, for the same
-    // reason as the unparseable-file-type branch above: the entry is
-    // unloadable under plain Node, so `.smrt/register.js` breaks in a
-    // consuming app regardless of whether this object also has an export name
-    // worth verifying. Restricting that to `ENVIRONMENT_LOAD_ERROR_CODES`
-    // would leave `ERR_MODULE_NOT_FOUND`, a missing named export, and every
-    // other import-time failure silently passing the guard for exactly the
-    // fully-closed objects #2924 is about.
+    // For a non-root importPath the collection exclusion does NOT apply: the
+    // entry is unloadable under plain Node, so `.smrt/register.js` breaks in a
+    // consuming app. This includes ordinary module errors as well as unknown
+    // file types.
     if (excludedFromExportCheck && isBundlerOnlyImportPath(importPath)) continue;
     failures.push({
       kind: 'load-error',
@@ -393,6 +345,6 @@ const excludedCount = Object.values(objects).filter(
 const verifiedCount =
   Object.keys(objects).length - warnings.length - excludedCount;
 console.log(
-  `[verify-manifest-exports] ✅ ${packageName}: ${verifiedCount} manifest object(s) resolve to real exports${warnings.length > 0 ? ` (${warnings.length} unverifiable)` : ''}${excludedCount > 0 ? ` (${excludedCount} not checked: collection companion or fully-closed-surface object)` : ''}.`,
+  `[verify-manifest-exports] ✅ ${packageName}: ${verifiedCount} manifest object(s) resolve to real exports${warnings.length > 0 ? ` (${warnings.length} unverifiable)` : ''}${excludedCount > 0 ? ` (${excludedCount} not checked: collection companion)` : ''}.`,
 );
 process.exit(0);

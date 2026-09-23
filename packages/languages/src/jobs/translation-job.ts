@@ -9,16 +9,19 @@ import {
 import { FeatureResolver } from '@happyvertical/smrt-features';
 import { SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { definePrompt, resolvePrompt } from '@happyvertical/smrt-prompts';
-import { invalidateLanguageCache } from './cache.js';
-import { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
-import { buildTenantGlossary } from './glossary.js';
-import { LanguageRegistry } from './language-registry.js';
-import type { LanguagesPackageConfig, TranslationJobPayload } from './types.js';
+import { invalidateLanguageCache } from '../cache.js';
+import { LanguageOverrideCollection } from '../collections/LanguageOverrideCollection.js';
+import { buildTenantGlossary } from '../glossary.js';
+import { LanguageRegistry } from '../language-registry.js';
+import type {
+  LanguagesPackageConfig,
+  TranslationJobPayload,
+} from '../types.js';
 import {
   buildTranslationJobId,
   computeSourceHash,
   normalizeLocale,
-} from './utils.js';
+} from '../utils.js';
 
 const logger = createLogger({ level: 'info' });
 
