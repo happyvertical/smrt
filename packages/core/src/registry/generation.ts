@@ -12,8 +12,9 @@
  * - the class registry and external-manifest cache maps (see
  *   {@link createGenerationTrackedMap}) on every `set`/`delete`/`clear`;
  * - in-place mutation of a registered class (`register()`,
- *   `registerFromManifest()`, tenant-scoped field injection, field-decorator
- *   capture, inheritance invalidation, `ObjectRegistry.clear()`);
+ *   `registerFromManifest()`, tenant-scoped field injection, inheritance
+ *   invalidation, `ObjectRegistry.clear()`). Field-decorator capture needs no
+ *   bump: it only stages metadata that a later `register()` consumes;
  * - the static/test/local-test manifest setters.
  *
  * The counter lives on `globalThis`, like the rest of the registry state, so

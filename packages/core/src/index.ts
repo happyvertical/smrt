@@ -360,6 +360,9 @@ export {
 } from './testing/database';
 // AI function calling tools
 export * from './tools/index';
+// IN-list chunking contract for loaders that build IN lists from data-sized
+// arrays (#2367); exported so owning packages chunk at the same bound (#3047).
+export { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 // JSON utilities with optional SIMD acceleration
 export {
   clone,

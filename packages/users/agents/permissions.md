@@ -126,7 +126,10 @@ collections' beforeList interceptors still run; no RolePermission/Permission
 is hydrated), so an owner mapped to the whole catalog costs two queries and
 no per-permission objects. Keep new resolver reads projections when only ids
 or slugs are needed, and do not add public collection methods for them — each
-becomes a custom-action slug in the manifest-derived catalog.
+becomes a custom-action slug in the manifest-derived catalog. The resolver's
+collections never inherit `defaultListLimit`/`maxListLimit` from the caller's
+options, and id-list reads chunk at `IN_LIST_CHUNK_SIZE` with an explicit
+limit: a truncated authorization read would narrow the result silently.
 `issue-3047-permission-resolution-cost-postgres.test.ts` pins the hydration
 budget and a golden equivalence matrix recorded on the hydrating resolver.
 

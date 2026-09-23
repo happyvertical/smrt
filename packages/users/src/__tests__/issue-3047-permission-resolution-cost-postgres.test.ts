@@ -21,7 +21,10 @@
  * Every assertion runs as a NON-super-admin principal.
  */
 
-import { SmrtObject } from '@happyvertical/smrt-core';
+import {
+  type SmrtCollectionOptions,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -338,6 +341,14 @@ describePostgres(
 
       turnTenancyOn();
       const resolver = await PermissionResolver.create(options);
+      // A caller's list bounds must never truncate authorization reads: build
+      // a second resolver from a bounded collection-options bag.
+      const boundedOptions: SmrtCollectionOptions = {
+        ...options,
+        defaultListLimit: 7,
+        maxListLimit: 7,
+      };
+      const boundedResolver = await PermissionResolver.create(boundedOptions);
       for (const roleId of roleIds) {
         // Role -> permission ids: projection vs the hydrated RolePermission rows.
         const projected = await rolePermissions.getPermissionIds(roleId);
@@ -362,6 +373,12 @@ describePostgres(
         );
         expect(resolved.permissions.size).toBeGreaterThan(0);
         expect([...resolved.permissions].sort()).toEqual([...expected].sort());
+
+        const bounded = await withTenant(
+          { tenantId: tenant.id as string, userId },
+          () => boundedResolver.resolvePermissions(userId, tenant.id as string),
+        );
+        expect([...bounded.permissions].sort()).toEqual([...expected].sort());
       }
     });
 
