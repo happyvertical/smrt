@@ -66,6 +66,20 @@ import {
 } from './tools/tool-executor';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
 
+/**
+ * Converts a hydration filter key to its column name, PRESERVING a leading
+ * underscore: framework columns such as the STI discriminator `_meta_type`
+ * genuinely carry one, and bare `toSnakeCase` strips it, so an interceptor
+ * injecting `_meta_type` would otherwise target a nonexistent `meta_type`
+ * column (#2417). Same rule as `SmrtCollection.toDbColumnName()` /
+ * `convertWhereKeys()`. Idempotent for keys already in column form.
+ */
+function toFilterColumnName(key: string): string {
+  return key.startsWith('_')
+    ? `_${toSnakeCase(key.slice(1))}`
+    : toSnakeCase(key);
+}
+
 // DEBUG_STI raises the level to 'debug' so the env-gated STI hydration traces
 // below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
 // otherwise they're filtered at the default 'info' level.
@@ -1293,7 +1307,7 @@ export class SmrtObject extends SmrtClass {
       const [, rawColumnName] =
         fieldName.match(/^(.*?)(?:\s+(?:not in|in|like|>=|<=|!=|>|<|=))?$/i) ??
         [];
-      const columnName = toSnakeCase(rawColumnName ?? fieldName);
+      const columnName = toFilterColumnName(rawColumnName ?? fieldName);
       if (!schema?.columns[columnName]) {
         throw RuntimeError.invalidState('Invalid persisted-row filter column', {
           className: this.getResolvedClassName(),
@@ -2054,20 +2068,11 @@ export class SmrtObject extends SmrtClass {
       typeof intercepted === 'string'
         ? resolveGetStringFilter(intercepted)
         : intercepted;
-    // Convert field-name keys to column form, PRESERVING a leading
-    // underscore: framework columns such as the STI discriminator
-    // `_meta_type` genuinely carry one, and bare `toSnakeCase` strips it, so
-    // an interceptor injecting `_meta_type` would otherwise target a
-    // nonexistent `meta_type` column (#2417). Same rule as
-    // `SmrtCollection.toDbColumnName()` / `convertWhereKeys()`.
     const columnFilter: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(
       resolved as Record<string, unknown>,
     )) {
-      const columnKey = key.startsWith('_')
-        ? `_${toSnakeCase(key.slice(1))}`
-        : toSnakeCase(key);
-      columnFilter[columnKey] = value;
+      columnFilter[toFilterColumnName(key)] = value;
     }
     return columnFilter;
   }

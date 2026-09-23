@@ -249,7 +249,15 @@ describe('read-path interceptor plumbing (#2365)', () => {
   });
 });
 
-describe('leading-underscore filter keys survive interception (#2417)', () => {
+// Both the adapter `db.get` path and the native-DuckDB canonical-row path
+// (which validates filter columns against the schema itself) must honour the
+// preserved underscore.
+describe.each([
+  { name: 'SQLite', type: 'sqlite' as const },
+  { name: 'DuckDB', type: 'duckdb' as const },
+])('leading-underscore filter keys survive interception on $name (#2417)', ({
+  type,
+}) => {
   // biome linting allows `any` in test files; shared db handle.
   let db: any;
   let alphaQualifiedName: string;
@@ -265,7 +273,7 @@ describe('leading-underscore filter keys survive interception (#2417)', () => {
       ReadPlumbingStiBetaCollection,
     );
     db = await getTestDatabase({
-      type: 'sqlite',
+      type,
       url: ':memory:',
       classes: [
         'ReadPlumbingStiBase',
