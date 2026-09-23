@@ -1,3 +1,5 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('features');
+export default createPackageConfig('features', {
+  svelte: 'svelte',
+});

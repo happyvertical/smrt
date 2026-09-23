@@ -22,6 +22,15 @@ export {
 } from './feature-override-service.js';
 export { FeatureOverrideCollection } from './feature-overrides.js';
 export { FeatureResolver } from './feature-resolver.js';
+export {
+  type FeatureSettingsRow,
+  FeatureSettingsService,
+  type FeatureSettingsServiceOptions,
+  featureOverrideEffectFromValue,
+  type ListFeatureSettingsOptions,
+  type SetFeatureOverrideRequest,
+  UnknownFeatureKeyError,
+} from './feature-settings.js';
 export { FeatureSyncService } from './feature-sync.js';
 
 export {
