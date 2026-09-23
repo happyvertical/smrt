@@ -1453,8 +1453,16 @@ export class SpendingPolicyEvaluator {
         currency: policy.currency,
       },
     });
+    // A delegated balance holds only credit its current parent granted: when
+    // a new parent takes over the policy, a former parent's grants stay with
+    // that former relationship instead of funding the new one.
+    const setBy = tenantKey(policy.setByTenantId);
     return grants
-      .filter((grant) => grant.spendingPolicyId === policy.id)
+      .filter(
+        (grant) =>
+          grant.spendingPolicyId === policy.id &&
+          (!setBy || tenantKey(grant.grantedByTenantId) === setBy),
+      )
       .reduce((sum, grant) => sum + grant.amount, 0);
   }
 

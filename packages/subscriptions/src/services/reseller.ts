@@ -72,6 +72,14 @@ export interface ResellerBillingServiceOptions extends SmrtClassOptions {
      */
     tenantId: string;
     childTenantId?: string;
+    /**
+     * For price-book assignments and child spending: the child's current
+     * reseller, which pays the wholesale leg. A host must confirm the caller
+     * holds `tenantId`'s authority and, for `assign_wholesale_price_book`,
+     * that the publisher is a legitimate provider for this reseller — the
+     * package can refuse only a payer-published book.
+     */
+    resellerTenantId?: string;
   }) => Promise<boolean>;
 }
 
@@ -342,6 +350,8 @@ export class ResellerBillingService {
         'assign_wholesale_price_book',
         publisher,
         childTenantId,
+        false,
+        resellerTenantId,
       );
     }
     if (input.retail) {
@@ -358,6 +368,8 @@ export class ResellerBillingService {
         'assign_retail_price_book',
         resellerTenantId,
         childTenantId,
+        false,
+        resellerTenantId,
       );
     }
 
@@ -590,6 +602,7 @@ export class ResellerBillingService {
     tenantId: string,
     childTenantId?: string,
     allowOwnTenant = false,
+    resellerTenantId?: string,
   ): Promise<void> {
     if (
       isSystemContext() ||
@@ -599,6 +612,7 @@ export class ResellerBillingService {
         action,
         tenantId,
         childTenantId,
+        ...(resellerTenantId ? { resellerTenantId } : {}),
       }))
     ) {
       return;

@@ -566,6 +566,7 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       action: 'assign_retail_price_book',
       tenantId: RESELLER,
       childTenantId: CHILD,
+      resellerTenantId: RESELLER,
     });
     // The wholesale leg is authorized by the book's publisher, not the reseller.
     authorize.mockClear();
@@ -579,6 +580,7 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       action: 'assign_wholesale_price_book',
       tenantId: PROVIDER,
       childTenantId: CHILD,
+      resellerTenantId: RESELLER,
     });
     expect(authorize).toHaveBeenCalledTimes(1);
     expect(
@@ -963,6 +965,64 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
         state: 'ok',
         projectedAmount: 20,
       });
+    });
+
+    it("does not carry a former parent's credit into a taken-over balance", async () => {
+      const balance = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          name: 'Prepaid',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          period: 'balance',
+          balanceFrom: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      await system(() =>
+        reseller.grantChildCredit({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          spendingPolicyId: String(balance.id),
+          amount: 500,
+          source: 'order',
+          sourceId: 'r1-order',
+        }),
+      );
+      await system(() =>
+        relationships.setRelationship({
+          childTenantId: CHILD,
+          resellerTenantId: OTHER_RESELLER,
+          billingOwnerMode: 'reseller',
+        }),
+      );
+      const taken = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: OTHER_RESELLER,
+          childTenantId: CHILD,
+          name: 'Prepaid',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          period: 'balance',
+        }),
+      );
+      expect(taken.id).toBe(balance.id);
+      const decision = await system(() =>
+        new SpendingPolicyEvaluator(policies, charges, adjustments, {
+          retailCharges,
+          credits,
+          billingRelationships: relationships,
+        }).evaluate({
+          tenantId: CHILD,
+          metricKey: 'ai.tokens',
+          estimatedAmount: 1,
+          currency: 'USD',
+          at: new Date(),
+        }),
+      );
+      expect(decision).toMatchObject({ state: 'blocked', balanceAmount: 0 });
     });
 
     it('guards delegated credit grants at the model', async () => {

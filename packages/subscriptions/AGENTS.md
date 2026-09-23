@@ -82,7 +82,9 @@ that reverted to DECIMAL passes every SQLite suite.
   `PriceBookAssignmentCollection` is deliberately not a root export.
 - `ResellerBillingService` authorizes first, then writes in a system context
   (parent writes land on child-owned rows). The wholesale leg is authorized by
-  the book's publisher and may never be published by the payer. The only
+  the book's publisher and may never be published by the payer; whether a
+  publisher is a legitimate provider for the reseller is a host obligation
+  (the model records no upstream seller). The only
   cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
 - `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
   be 0. Auto top-up is a host hook only — no payment provider calls.

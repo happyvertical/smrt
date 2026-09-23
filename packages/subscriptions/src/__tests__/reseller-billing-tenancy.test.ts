@@ -7,6 +7,7 @@ import {
   BillingRelationshipService,
   disableTenancy,
   enableTenancy,
+  getTenantId,
   TenantIsolationError,
   withSystemContext,
   withTenant,
@@ -69,17 +70,25 @@ describe('smrt#3059 reseller billing under the tenancy interceptor', () => {
     relationships = await BillingRelationshipService.create({
       db: usage.db,
       tenantExists: async (id) => [PROVIDER, RESELLER, CHILD].includes(id),
+      // The provider may read the relationships it sells wholesale into.
+      authorize: async ({ action }) =>
+        action === 'read' && getTenantId() === PROVIDER,
     });
-    // The host lets a parent manage its own children and lets the provider
-    // authorize wholesale assignments.
+    // A host binds each request to the caller: the caller must hold the
+    // authority of the tenant the action exercises. The reseller therefore
+    // manages its children and retail leg; only the provider picks the
+    // wholesale book that charges the reseller.
     reseller = await ResellerBillingService.create({
       db: usage.db,
       billingRelationships: relationships,
-      authorize: async ({ action, tenantId }) =>
-        action === 'manage_child_spending' ||
-        action === 'assign_retail_price_book'
-          ? tenantId === RESELLER
-          : action === 'assign_wholesale_price_book' && tenantId === PROVIDER,
+      authorize: async ({ action, tenantId, resellerTenantId }) => {
+        const caller = getTenantId();
+        if (caller !== tenantId) return false;
+        if (action === 'assign_wholesale_price_book') {
+          return caller === PROVIDER && resellerTenantId === RESELLER;
+        }
+        return caller === RESELLER;
+      },
     });
     await withSystemContext(async () => {
       wholesaleBook = await books.create({
@@ -117,10 +126,27 @@ describe('smrt#3059 reseller billing under the tenancy interceptor', () => {
   });
 
   it('runs host-authorized mutations from the parent context', async () => {
+    // The reseller cannot choose the wholesale book that charges it.
+    await expect(
+      withTenant({ tenantId: RESELLER }, () =>
+        reseller.assignPriceBooks({
+          childTenantId: CHILD,
+          wholesale: {
+            priceBookId: String(wholesaleBook.id),
+            currency: 'USD',
+          },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(TenantIsolationError);
+    await withTenant({ tenantId: PROVIDER }, () =>
+      reseller.assignPriceBooks({
+        childTenantId: CHILD,
+        wholesale: { priceBookId: String(wholesaleBook.id), currency: 'USD' },
+      }),
+    );
     await withTenant({ tenantId: RESELLER }, async () => {
       await reseller.assignPriceBooks({
         childTenantId: CHILD,
-        wholesale: { priceBookId: String(wholesaleBook.id), currency: 'USD' },
         retail: { priceBookId: String(retailBook.id), currency: 'USD' },
       });
       const balance = await reseller.setDelegatedSpendingPolicy({

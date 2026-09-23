@@ -153,11 +153,27 @@ Mutations require a system context, a super-admin bypass, or a host
 define prices in its own book under its own tenant context. The callback
 receives the tenant whose authority the action exercises: the book's publisher
 for `define_prices` and `assign_wholesale_price_book`, the parent for
-`assign_retail_price_book` and `manage_child_spending`. Never authorize a
-reseller for the wholesale leg that charges it; a wholesale book published by
-the reseller or child it would charge is always refused. Once authorized, the
-service writes in a system context, because a parent's writes land on rows the
-child owns.
+`assign_retail_price_book` and `manage_child_spending`. Bind every decision to
+the caller, and never authorize a reseller for the wholesale leg that charges
+it. The package refuses a wholesale book published by the reseller or child it
+would charge, but whether a publisher is a legitimate provider for that
+reseller (`resellerTenantId` in the request) is the host's decision. Once
+authorized, the service writes in a system context, because a parent's writes
+land on rows the child owns.
+
+```ts
+const reseller = await ResellerBillingService.create({
+  db,
+  billingRelationships: relationships,
+  authorize: async ({ action, tenantId, resellerTenantId }) => {
+    const caller = currentTenantId();
+    if (caller !== tenantId || !(await isBillingAdmin(caller))) return false;
+    return action === 'assign_wholesale_price_book'
+      ? isProviderFor(caller, resellerTenantId)
+      : true;
+  },
+});
+```
 
 Rating reads a seller's books across tenants, so run it where the host's
 tenancy rules allow that (typically a system context). Spending evaluation can
@@ -166,7 +182,8 @@ the sum of the parent's charges for that child's usage. Pass
 `billingRelationships` to `SpendingPolicyEvaluator.create()` so a former
 parent's delegated policies stop applying after the child changes reseller;
 without it they keep applying (fail closed), and the new parent may replace
-them by name. A parent's `retail` cap counts only what the child owes that
+them by name. A delegated balance counts only credit granted by its current
+parent, so a taken-over balance starts empty for the new parent. A parent's `retail` cap counts only what the child owes that
 parent.
 
 ## Svelte entry point
