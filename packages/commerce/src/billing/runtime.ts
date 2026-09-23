@@ -1,0 +1,466 @@
+/**
+ * One seller's billing wiring (#3060): its payment provider, ledger accounts,
+ * billing-owner reader, and the collections period close and provider events
+ * write through.
+ */
+import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import { ForgeDeliveryCollection } from '@happyvertical/smrt-jobs';
+import { JournalCollection } from '@happyvertical/smrt-ledgers';
+import {
+  BillingAdjustmentCollection,
+  type BillingRelationshipReader,
+  ClientChargeCollection,
+  PriceBookCollection,
+  RetailChargeCollection,
+  SpendingPolicyCollection,
+  SubscriptionPlanCollection,
+  TenantSubscriptionCollection,
+} from '@happyvertical/smrt-subscriptions';
+import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
+import { CustomerCollection } from '../collections/CustomerCollection.js';
+import { InvoiceCollection } from '../collections/InvoiceCollection.js';
+import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
+import {
+  type BillingAccount,
+  BillingAccountCollection,
+  type BillingCloseKind,
+  BillingLineSourceCollection,
+  BillingPeriodCloseCollection,
+  type BillingStanding,
+} from '../models/billing.js';
+import type { Invoice } from '../models/Invoice.js';
+import type { Address } from '../types/index.js';
+import {
+  type CreateCreditCheckoutInput,
+  createCreditCheckout,
+} from './credits.js';
+import { processBillingEvents } from './events.js';
+import {
+  type ClosePeriodInput,
+  closeBillingPeriod,
+  type PeriodCloseResult,
+} from './period-close.js';
+import type {
+  BillingProvider,
+  BillingProviderCheckoutSession,
+} from './provider.js';
+import { canonicalTenantId, deterministicId } from './units.js';
+
+/** Ledger accounts billing posts to, in the seller's books. */
+export interface BillingLedgerAccounts {
+  /** Accounts receivable (debited when an invoice is issued). */
+  arAccountId: string;
+  /** Revenue (credited with the invoice subtotal). */
+  revenueAccountId: string;
+  /** Tax payable (credited with provider-calculated tax). */
+  taxAccountId: string;
+  /** Cash or clearing account payments settle into. */
+  cashAccountId: string;
+  /** Liability credited when prepaid credit is purchased. */
+  prepaidCreditAccountId: string;
+}
+
+/** A payer's standing changed after a provider invoice event. */
+export interface PayerStandingChange {
+  sellerTenantId: string;
+  payerTenantId: string;
+  billingAccountId: string;
+  invoiceId: string;
+  previous: BillingStanding;
+  standing: BillingStanding;
+  /**
+   * The event transaction's database handle. Host writes made through it
+   * (for example suspending the tenant) commit or roll back with the event.
+   */
+  db: DatabaseInterface;
+}
+
+/**
+ * Host hook for suspension or reinstatement. It runs inside the event's
+ * transaction and may run again if the event is retried, so it must be
+ * idempotent.
+ */
+export type PayerStandingHook = (
+  change: PayerStandingChange,
+) => void | Promise<void>;
+
+export interface BillingRuntimeOptions extends SmrtClassOptions {
+  /** The tenant that issues invoices. */
+  sellerTenantId: string;
+  kind: BillingCloseKind;
+  provider: BillingProvider;
+  /** smrt-tenancy's `BillingRelationshipService` (read access required). */
+  billingRelationships: BillingRelationshipReader;
+  ledger: BillingLedgerAccounts;
+  /** Invoice number prefix (default `INV`). */
+  invoiceNumberPrefix?: string;
+  onPayerStanding?: PayerStandingHook;
+  /** How long one worker may hold a period close (default 10 minutes). */
+  leaseMs?: number;
+  /** Page size for charge scans (default 500). */
+  pageSize?: number;
+}
+
+export interface UpsertBillingAccountInput {
+  payerTenantId: string;
+  name: string;
+  email?: string;
+  /** The payer's tax location; required when `automaticTax` is on. */
+  billingAddress?: Address;
+  taxExempt?: boolean;
+  taxId?: string;
+  automaticTax?: boolean;
+  flatDiscountBasisPoints?: number;
+  paymentTermsDays?: number;
+  /** Link an existing provider customer (for example from checkout). */
+  providerCustomerId?: string;
+}
+
+/** A synced account: its provider customer id is always present. */
+export interface SyncedBillingAccount {
+  account: BillingAccount;
+  providerCustomerId: string;
+  automaticTax: boolean;
+}
+
+const DEFAULT_LEASE_MS = 10 * 60 * 1000;
+
+/**
+ * Billing for one seller. Construct once per process with
+ * {@link BillingRuntime.create}; register it with `registerBillingRuntime()`
+ * to drive it from smrt-jobs.
+ *
+ * Period close and event processing are privileged system operations: they
+ * read every payer's charges and write in a system context. Call them only
+ * from trusted host code (a job, an operator action), never from a
+ * tenant-facing route.
+ */
+export class BillingRuntime {
+  readonly sellerTenantId: string;
+  readonly kind: BillingCloseKind;
+  readonly provider: BillingProvider;
+  readonly billingRelationships: BillingRelationshipReader;
+  readonly ledger: BillingLedgerAccounts;
+  readonly invoiceNumberPrefix: string;
+  readonly onPayerStanding?: PayerStandingHook;
+  readonly leaseMs: number;
+  readonly pageSize: number;
+  /** The inbox provider namespace for this runtime's events. */
+  readonly eventProvider: string;
+
+  private constructor(
+    options: BillingRuntimeOptions,
+    readonly db: DatabaseInterface,
+    readonly accounts: BillingAccountCollection,
+    readonly closes: BillingPeriodCloseCollection,
+    readonly sources: BillingLineSourceCollection,
+    readonly customers: CustomerCollection,
+    readonly invoices: InvoiceCollection,
+    readonly lineItems: InvoiceLineItemCollection,
+    readonly journals: JournalCollection,
+    readonly charges: ClientChargeCollection,
+    readonly adjustments: BillingAdjustmentCollection,
+    readonly retailCharges: RetailChargeCollection,
+    readonly books: PriceBookCollection,
+    readonly subscriptions: TenantSubscriptionCollection,
+    readonly plans: SubscriptionPlanCollection,
+    readonly policies: SpendingPolicyCollection,
+  ) {
+    this.sellerTenantId = canonicalTenantId(
+      options.sellerTenantId,
+      'sellerTenantId',
+    );
+    if (options.kind !== 'provider' && options.kind !== 'reseller') {
+      throw new Error('Billing runtime kind must be provider or reseller.');
+    }
+    this.kind = options.kind;
+    this.provider = options.provider;
+    this.billingRelationships = options.billingRelationships;
+    this.ledger = options.ledger;
+    this.invoiceNumberPrefix = options.invoiceNumberPrefix || 'INV';
+    this.onPayerStanding = options.onPayerStanding;
+    this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
+    this.pageSize = options.pageSize ?? 500;
+    this.eventProvider = `${options.provider.name}-billing`;
+    if (!Number.isFinite(this.leaseMs) || this.leaseMs <= 0) {
+      throw new Error('leaseMs must be a positive number.');
+    }
+    if (!Number.isSafeInteger(this.pageSize) || this.pageSize <= 0) {
+      throw new Error('pageSize must be a positive integer.');
+    }
+    for (const [key, value] of Object.entries(options.ledger ?? {})) {
+      if (!value) throw new Error(`Ledger account ${key} is required.`);
+    }
+  }
+
+  static async create(options: BillingRuntimeOptions): Promise<BillingRuntime> {
+    const {
+      sellerTenantId: _seller,
+      kind: _kind,
+      provider: _provider,
+      billingRelationships: _relationships,
+      ledger: _ledger,
+      invoiceNumberPrefix: _prefix,
+      onPayerStanding: _hook,
+      leaseMs: _leaseMs,
+      pageSize: _pageSize,
+      ...classOptions
+    } = options;
+    const accounts = await BillingAccountCollection.create(classOptions);
+    const shared = { ...classOptions, db: accounts.db };
+    return new BillingRuntime(
+      options,
+      accounts.db,
+      accounts,
+      await BillingPeriodCloseCollection.create(shared),
+      await BillingLineSourceCollection.create(shared),
+      await CustomerCollection.create(shared),
+      await InvoiceCollection.create(shared),
+      await InvoiceLineItemCollection.create(shared),
+      await JournalCollection.create(shared),
+      await ClientChargeCollection.create(shared),
+      await BillingAdjustmentCollection.create(shared),
+      await RetailChargeCollection.create(shared),
+      await PriceBookCollection.create(shared),
+      await TenantSubscriptionCollection.create(shared),
+      await SubscriptionPlanCollection.create(shared),
+      await SpendingPolicyCollection.create(shared),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Accounts
+  // -------------------------------------------------------------------------
+
+  async getAccount(payerTenantId: string): Promise<BillingAccount | null> {
+    return this.accounts.get(await this.accountId(payerTenantId));
+  }
+
+  private accountId(payerTenantId: string): Promise<string> {
+    return deterministicId([
+      'billing-account',
+      this.sellerTenantId,
+      canonicalTenantId(payerTenantId, 'payerTenantId'),
+    ]);
+  }
+
+  /**
+   * Create or update a payer's account and its commerce `Customer` (in the
+   * seller's tenant). The customer's billing address is the payer's tax
+   * location for provider-calculated tax.
+   */
+  async upsertAccount(
+    input: UpsertBillingAccountInput,
+  ): Promise<BillingAccount> {
+    const payerTenantId = canonicalTenantId(
+      input.payerTenantId,
+      'payerTenantId',
+    );
+    const id = await this.accountId(payerTenantId);
+    const existing = await this.accounts.get(id);
+    const customerId = await withTenant(
+      { tenantId: this.sellerTenantId },
+      async () => {
+        const customer = existing?.customerId
+          ? await this.customers.get(existing.customerId)
+          : null;
+        const values = {
+          tenantId: this.sellerTenantId,
+          ...(input.billingAddress !== undefined
+            ? { defaultBillingAddress: input.billingAddress }
+            : {}),
+          ...(input.taxExempt !== undefined
+            ? { taxExempt: input.taxExempt }
+            : {}),
+          ...(input.taxId !== undefined ? { taxId: input.taxId } : {}),
+        };
+        if (customer) {
+          Object.assign(customer, values);
+          await customer.save();
+          return String(customer.id);
+        }
+        const created = await this.customers.create({
+          id: await deterministicId(['billing-customer', id]),
+          ...values,
+        });
+        return String(created.id);
+      },
+    );
+    const account =
+      existing ??
+      (await this.accounts.create({
+        id,
+        sellerTenantId: this.sellerTenantId,
+        payerTenantId,
+        customerId,
+        name: input.name,
+      }));
+    account.customerId = customerId;
+    account.name = input.name;
+    if (input.email !== undefined) account.email = input.email;
+    if (input.automaticTax !== undefined)
+      account.automaticTax = input.automaticTax;
+    if (input.flatDiscountBasisPoints !== undefined)
+      account.flatDiscountBasisPoints = input.flatDiscountBasisPoints;
+    if (input.paymentTermsDays !== undefined)
+      account.paymentTermsDays = input.paymentTermsDays;
+    if (input.providerCustomerId) {
+      account.provider = this.provider.name;
+      account.providerCustomerId = input.providerCustomerId;
+    }
+    await account.save();
+    return account;
+  }
+
+  /**
+   * Create or update the provider customer, including its tax location.
+   * Creating a customer is not idempotent at the provider; an attempt that
+   * dies between creation and this save leaves an unused provider customer.
+   */
+  async ensureProviderCustomer(
+    account: BillingAccount,
+  ): Promise<SyncedBillingAccount> {
+    const customer = await withTenant({ tenantId: this.sellerTenantId }, () =>
+      this.customers.get(account.customerId),
+    );
+    if (!customer) {
+      throw new Error(`Billing account ${account.id} has no customer.`);
+    }
+    const address = customer.defaultBillingAddress ?? {};
+    if (account.automaticTax && !customer.taxExempt && !address.country) {
+      throw new Error(
+        `Billing account ${account.id} has no tax location; set a billing address country.`,
+      );
+    }
+    const providerCustomerId =
+      account.provider === this.provider.name ? account.providerCustomerId : '';
+    const synced = await this.provider.syncCustomer({
+      accountId: String(account.id),
+      providerCustomerId: providerCustomerId || undefined,
+      name: account.name,
+      email: account.email || undefined,
+      billingAddress: address,
+      taxExempt: customer.taxExempt,
+    });
+    if (
+      account.provider !== this.provider.name ||
+      account.providerCustomerId !== synced.providerCustomerId
+    ) {
+      account.provider = this.provider.name;
+      account.providerCustomerId = synced.providerCustomerId;
+      await account.save();
+    }
+    return {
+      account,
+      providerCustomerId: synced.providerCustomerId,
+      automaticTax: account.automaticTax && !customer.taxExempt,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Period close
+  // -------------------------------------------------------------------------
+
+  /** Close a billing period (default: the previous calendar month, UTC). */
+  closePeriod(input: ClosePeriodInput = {}): Promise<PeriodCloseResult> {
+    return closeBillingPeriod(this, input);
+  }
+
+  async getInvoice(invoiceId: string): Promise<Invoice> {
+    const invoice = await withTenant({ tenantId: this.sellerTenantId }, () =>
+      this.invoices.get(invoiceId),
+    );
+    if (!invoice) throw new Error(`Invoice ${invoiceId} was not found.`);
+    return invoice;
+  }
+
+  /** Take the close's lease; returns the token, or null if another holds it. */
+  async acquireCloseLease(
+    closeId: string,
+    now = new Date(),
+  ): Promise<string | null> {
+    const token = crypto.randomUUID();
+    const nowIso = now.toISOString();
+    const expires = new Date(now.getTime() + this.leaseMs).toISOString();
+    const result = await this.db.query(
+      `UPDATE _smrt_billing_period_closes
+          SET lease_token = ?, lease_expires_at = ?, updated_at = ?
+        WHERE id = ?
+          AND (lease_token IS NULL OR lease_expires_at IS NULL
+               OR lease_expires_at < ?)
+        RETURNING id`,
+      token,
+      expires,
+      nowIso,
+      closeId,
+      nowIso,
+    );
+    return result.rows.length === 1 ? token : null;
+  }
+
+  async releaseCloseLease(closeId: string, token: string): Promise<void> {
+    await this.db.query(
+      `UPDATE _smrt_billing_period_closes
+          SET lease_token = NULL, lease_expires_at = NULL
+        WHERE id = ? AND lease_token = ?`,
+      closeId,
+      token,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Provider events
+  // -------------------------------------------------------------------------
+
+  /**
+   * Verify and durably enqueue a provider webhook. Returns `accepted: false`
+   * for a duplicate delivery or an event this package does not act on.
+   * Respond 2xx whenever this resolves; a verification failure throws
+   * `BillingWebhookVerificationError`.
+   */
+  async acceptWebhook(
+    payload: string,
+    signature: string,
+  ): Promise<{ accepted: boolean; eventId: string; kind: string }> {
+    const event = this.provider.verifyWebhook(payload, signature);
+    if (event.kind === 'ignored') {
+      return { accepted: false, eventId: event.eventId, kind: event.kind };
+    }
+    return withTenant({ tenantId: this.sellerTenantId }, async () => {
+      const inbox = await ForgeDeliveryCollection.create({ db: this.db });
+      const { accepted } = await inbox.accept({
+        provider: this.eventProvider,
+        deliveryId: event.eventId,
+        eventName: event.kind,
+        payload: { event },
+      });
+      return { accepted, eventId: event.eventId, kind: event.kind };
+    });
+  }
+
+  /** Apply up to `limit` queued provider events; returns how many ran. */
+  processEvents(limit = 25): Promise<number> {
+    return processBillingEvents(this, limit);
+  }
+
+  // -------------------------------------------------------------------------
+  // Prepaid credit
+  // -------------------------------------------------------------------------
+
+  /**
+   * Start a provider checkout that credits a prepaid balance policy when
+   * paid. The caller pays: the policy's tenant for its own balance, or the
+   * parent that set a delegated balance.
+   */
+  createCreditCheckout(
+    input: CreateCreditCheckoutInput,
+  ): Promise<BillingProviderCheckoutSession> {
+    return createCreditCheckout(this, input);
+  }
+
+  /** Run in a system context (cross-tenant reads and payer-owned writes). */
+  system<T>(operation: () => Promise<T>): Promise<T> {
+    return withSystemContext(operation);
+  }
+}

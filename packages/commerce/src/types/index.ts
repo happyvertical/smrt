@@ -317,7 +317,8 @@ export interface AccountingLineItemInput {
 
 /**
  * An invoice in the format expected by `@happyvertical/accounting` providers.
- * Mirrors the object built by {@link Invoice.toAccountingInput}.
+ * Mirrors the object built by {@link Invoice.toAccountingInput}; money is in
+ * currency **major** units, as the SDK expects.
  */
 export interface AccountingInvoiceInput {
   id: string;
@@ -457,6 +458,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   paidDate?: Date | null;
   subtotal?: number;
   taxAmount?: number;
+  providerTaxAmount?: number;
   totalAmount?: number;
   amountPaid?: number;
   currency?: string;

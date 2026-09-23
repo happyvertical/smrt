@@ -123,7 +123,8 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
    * Convert line items to accounting format for SDK sync
    *
    * @param invoiceId - Invoice ID
-   * @returns Array of line items in accounting format
+   * @returns Array of line items in accounting format, money in integer
+   *   minor units (`Invoice.toAccountingInput()` converts to major units)
    */
   async toAccountingLineItems(
     invoiceId: string,

@@ -99,6 +99,9 @@ await payment.recordPayment({
 | `PaymentAllocation` | Payment-to-invoice allocation |
 | `Fulfillment` | Shipment/delivery tracking with carrier and address |
 | `FulfillmentLineItem` | Individual fulfillment line item |
+| `BillingAccount` | A payer's account with a seller: customer, provider customer, terms, standing |
+| `BillingPeriodClose` | One payer's invoice for one period and currency; also the billing job target |
+| `BillingLineSource` | The claim that a charge or plan period is billed on exactly one close |
 
 ### Collections
 
@@ -138,10 +141,105 @@ Invoice and Payment integrate with `@happyvertical/smrt-ledgers` via dynamic imp
 
 Customer and Vendor link to `@happyvertical/smrt-profiles` via plain `profileId` string. Invoice and Payment reference `@happyvertical/smrt-ledgers` journals via plain string IDs (`arJournalId`, `revenueJournalId`, `journalId`). All models use `@TenantScoped({ mode: 'optional' })` with nullable `tenantId`.
 
+## Billing-period close
+
+`BillingRuntime` turns approved `@happyvertical/smrt-subscriptions` charges into
+invoices for each billing owner, pushes them to a payment provider with
+provider-calculated tax, posts revenue to the ledger, and applies the
+provider's webhook events. Every provider call goes through
+`@happyvertical/accounting`; `createStripeBillingProvider()` adapts its Stripe
+provider to the `BillingProvider` port. Money crossing the port is integer
+minor units.
+
+```ts
+import { getAccountingProvider } from '@happyvertical/accounting';
+import {
+  BillingRuntime,
+  createStripeBillingProvider,
+  enqueueBillingPeriodClose,
+  registerBillingRuntime,
+} from '@happyvertical/smrt-commerce';
+
+const stripe = await getAccountingProvider({ type: 'stripe', secretKey });
+const billing = await BillingRuntime.create({
+  db,
+  sellerTenantId: platformTenantId,
+  kind: 'provider', // or 'reseller' to bill a reseller's children
+  provider: createStripeBillingProvider({ stripe, webhookSecret }),
+  billingRelationships, // smrt-tenancy BillingRelationshipService
+  ledger: {
+    arAccountId,
+    revenueAccountId,
+    taxAccountId,
+    cashAccountId,
+    prepaidCreditAccountId,
+  },
+  onPayerStanding: async ({ payerTenantId, standing, db }) => {
+    // suspend or reinstate the payer; runs in the event transaction
+  },
+});
+
+// One account per payer: its customer, tax location, and terms.
+await billing.upsertAccount({
+  payerTenantId,
+  name: 'Network Co',
+  email: 'billing@example.test',
+  billingAddress: { country: 'CA', postalCode: 'T0L 0A0' },
+});
+
+// Close last month (default) — safe to run on every schedule tick.
+registerBillingRuntime('platform', billing);
+await enqueueBillingPeriodClose({ runtime: 'platform' });
+
+// Webhook route: verify, enqueue, respond 2xx.
+await billing.acceptWebhook(rawBody, request.headers.get('stripe-signature'));
+await billing.processEvents(); // or enqueueBillingEvents({ runtime: 'platform' })
+
+// Prepaid credit through provider checkout.
+const { url } = await billing.createCreditCheckout({
+  spendingPolicyId,
+  amount: 5000,
+  purchaseId: cartId,
+  successUrl,
+  cancelUrl,
+});
+```
+
+- **What is billed.** A `provider` runtime bills `ClientCharge`s (and their
+  `BillingAdjustment`s) to the payer each charge names, plus monthly flat plans
+  it owns, to each subscriber's billing owner. A `reseller` runtime bills the
+  `RetailCharge`s its children owe it plus its own flat plans. Charges approved
+  before the period end are billed once, whatever period that is; flat plans
+  are billed in arrears for a closed calendar month (trials and
+  provider-managed subscriptions are skipped). One invoice per payer and
+  currency carries both kinds of lines.
+- **Replay safety.** Close, invoice, and line ids are derived from the payer,
+  currency, and period; each charge is claimed by exactly one close; the
+  provider invoice uses the close id as its idempotency key; and every step is
+  persisted before the next, so a retry resumes where it stopped. A lease stops
+  two workers advancing the same close. A payer whose charges net to a credit
+  is carried forward.
+- **Tax** comes from the provider (Stripe Tax) using the account customer's
+  `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
+- **Events** are verified, stored in smrt-jobs' durable delivery inbox, and
+  applied against current provider state: paid invoices record a payment and
+  allocation; failures and overdue notices mark the payer `past_due` and its
+  flat-plan subscriptions `past_due`; payment reinstates them. Dunning is the
+  provider's.
+- **Prepaid credit** purchases credit a `period: 'balance'` spending policy
+  once per checkout session, paid by the policy's tenant or, for a delegated
+  balance, the parent that set it.
+
+See [`AGENTS.md`](./AGENTS.md#billing-period-close-3060) for invariants and
+known limits.
+
 ## Dependencies
 
 - `@happyvertical/smrt-core` -- ORM and code generation
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
+- `@happyvertical/smrt-subscriptions` -- charges, plans, and credit balances billed by period close
+- `@happyvertical/smrt-jobs` -- period-close jobs and the provider event inbox
+- `@happyvertical/accounting` -- payment-provider (Stripe) calls
 - `@happyvertical/smrt-types` -- shared type definitions
 - Peer: `@happyvertical/smrt-ledgers`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-svelte`
 

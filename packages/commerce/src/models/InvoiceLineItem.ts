@@ -10,6 +10,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { minorToMajorUnits } from '../billing/units.js';
 import type {
   AccountingLineItemInput,
   InvoiceLineItemOptions,
@@ -220,17 +221,23 @@ export class InvoiceLineItem extends SmrtObject {
   }
 
   /**
-   * Convert to line item format for SDK accounting provider
+   * Convert to line item format for SDK accounting provider.
+   *
+   * `@happyvertical/accounting` takes currency **major** units. Pass the
+   * invoice currency to convert (as {@link Invoice.toAccountingInput} does);
+   * without it, money stays in this package's integer minor units.
    */
-  toAccountingLineItem(): AccountingLineItemInput {
+  toAccountingLineItem(currency?: string): AccountingLineItemInput {
+    const money = (value: number) =>
+      currency ? minorToMajorUnits(value, currency) : value;
     return {
       description: this.description,
       sku: this.sku || undefined,
       quantity: this.quantity,
-      unitPrice: this.unitPrice,
-      discount: this.discount || undefined,
+      unitPrice: money(this.unitPrice),
+      discount: this.discount ? money(this.discount) : undefined,
       taxRate: this.taxRate || undefined,
-      amount: this.amount,
+      amount: money(this.amount),
       periodStart: this.periodStart || undefined,
       periodEnd: this.periodEnd || undefined,
     };

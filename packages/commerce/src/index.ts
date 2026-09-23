@@ -66,6 +66,8 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Billing-period close, provider events, prepaid credit (#3060)
+export * from './billing/index.js';
 // Collections
 export {
   ContractCollection,
@@ -98,6 +100,13 @@ export {
 // Models
 export {
   Agreement,
+  BillingAccount,
+  type BillingCloseKind,
+  BillingLineSource,
+  type BillingLineSourceType,
+  BillingPeriodClose,
+  type BillingPeriodCloseStatus,
+  type BillingStanding,
   Cart,
   Contract,
   ContractLineItem,
