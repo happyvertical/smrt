@@ -23,6 +23,7 @@ import {
 } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
   ClientChargeCollection,
   SpendingPolicyCollection,
@@ -40,6 +41,7 @@ describePostgres('subscriptions money columns on PostgreSQL (#2401)', () => {
     isolated = await createIsolatedTestDbFromManifest({
       includeObjects: [
         'SubscriptionPlan',
+        'TenantUsageMetric',
         'ClientCharge',
         'BillingAdjustment',
         'SpendingPolicy',
@@ -48,7 +50,7 @@ describePostgres('subscriptions money columns on PostgreSQL (#2401)', () => {
     if (isolated.config.type !== 'postgres') {
       throw new Error('Expected a PostgreSQL test database');
     }
-    db = isolated.baseDb;
+    db = isolated.db;
   });
 
   afterEach(async () => {
@@ -92,11 +94,23 @@ describePostgres('subscriptions money columns on PostgreSQL (#2401)', () => {
 
   it('round-trips charge amounts as exact integer minor units', async () => {
     const charges = await ClientChargeCollection.create({ db });
+    // `usageEventId` is a foreign key: a native `uuid` column on PostgreSQL
+    // (a readable slug fails with 22P02) whose constraint exists whenever
+    // another suite on this database has included TenantUsageMetric.
+    const usage = await (
+      await TenantUsageMetricCollection.create({ db })
+    ).recordUsage({
+      tenantId: TENANT_ID,
+      metricKey: 'ai.tokens',
+      quantity: 1.5,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'money-fields',
+      sourceId: randomUUID(),
+    });
     const charge = await charges.create({
       tenantId: TENANT_ID,
-      // `usageEventId` is a foreign key, which is a native `uuid` column on
-      // PostgreSQL — a readable slug fails with 22P02.
-      usageEventId: randomUUID(),
+      usageEventId: String(usage.id),
       quantity: 1.5,
       amount: 2159, // $21.59
       currency: 'USD',
