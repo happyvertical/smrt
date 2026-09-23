@@ -86,7 +86,7 @@ in-process graph lock. The new `_smrt_billing_relationships` table
 must be applied through the normal `smrt db:migrate` deployment flow.
 
 Generated API, MCP, and CLI mutation surfaces for these rows are disabled.
-`BillingRelationship` is a root export only because SMRT consumer registration
+`BillingRelationship` is a root export only because s-m-r-t consumer registration
 imports every published manifest model from the package root; saving it
 directly bypasses the service's tenant, cycle, and authorization checks.
 `BillingRelationshipCollection` is not exported. Callers use the service.
