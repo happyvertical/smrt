@@ -52,6 +52,16 @@ export {
   type ExpressMiddlewareOptions,
   type SvelteKitHandleOptions,
 } from './adapters/index.js';
+export {
+  type BillingOwnerMode,
+  BillingRelationship,
+  type BillingRelationshipAction,
+  BillingRelationshipCollection,
+  BillingRelationshipError,
+  BillingRelationshipService,
+  type BillingRelationshipServiceOptions,
+  type BillingRelationshipView,
+} from './billing-relationship.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Context Management
 // ─────────────────────────────────────────────────────────────────────────────

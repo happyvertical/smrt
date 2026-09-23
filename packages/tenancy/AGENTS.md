@@ -20,6 +20,16 @@ await withSystemContext(async () => { /* bypasses all tenant checks */ });
 
 **Duplication-safe storage**: the underlying `AsyncLocalStorage` is a `Symbol.for`-keyed singleton on `globalThis`, so context survives Vite/vitest/SvelteKit pipelines that evaluate the module more than once — context entered through one module instance is visible to guards in another (#2077).
 
+## Billing relationships (#3058)
+
+`src/billing-relationship.ts` owns a separate reseller parent graph. It never
+updates `smrt-users` `Tenant.parentTenantId` or tenant-scoped records. One row
+per child stores the reseller and `self`/`reseller` owner mode; owner queries
+derive one tenant ID. Mutations go through `BillingRelationshipService`, which
+serializes graph writes and rejects cycles. The host supplies tenant existence
+and optional authorization; no generated write surface is exposed. See the
+README for setup, access rules, and migration guidance.
+
 ## Interceptor System
 
 Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, runs first):

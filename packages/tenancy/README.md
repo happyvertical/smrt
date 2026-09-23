@@ -36,6 +36,62 @@ await withTenant({ tenantId: 'tenant-123' }, async () => {
 
 ## API
 
+### Billing relationships
+
+Billing parentage is separate from the `@happyvertical/smrt-users` tenant
+hierarchy. Reassigning a reseller or changing who pays does not reparent the
+tenant for permissions and does not move its records. A tenant with no billing
+relationship is self-billed. Each child has at most one relationship; its
+`billingOwnerMode` is `self` or `reseller`, and the owner is derived from that
+single row. A reseller can therefore manage a child that pays for itself.
+
+```typescript
+import {
+  BillingRelationshipService,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
+
+const billing = await BillingRelationshipService.create({
+  db,
+  // Resolve IDs against the application's tenant directory (for example,
+  // smrt-users TenantCollection). The tenancy package does not own Tenant.
+  tenantExists: async (id) => Boolean(await tenants.get({ id })),
+});
+
+await withSystemContext(() =>
+  billing.setRelationship({
+    childTenantId: childId,
+    resellerTenantId: resellerId,
+    billingOwnerMode: 'reseller',
+  }),
+);
+
+const ownerId = await withSystemContext(() =>
+  billing.resolveBillingOwner(childId),
+);
+const billedChildren = await withSystemContext(() =>
+  billing.listChildrenBilledTo(ownerId),
+);
+```
+
+`setRelationship()` changes parentage and the default owner together in a
+transaction. Setting `billingOwnerMode: 'self'` keeps reseller parentage while
+making the child pay for itself. `clearRelationship()` removes parentage and
+returns the child to self-billing. Cycles and self-parenting are rejected.
+Relationship changes are serialized on supported SQL adapters; PostgreSQL
+uses an advisory transaction lock. Local SQLite, DuckDB, and PostgreSQL are
+supported; remote LibSQL is rejected because its writers cannot share the
+in-process graph lock. The new `_smrt_billing_relationships` table
+must be applied through the normal `smrt db:migrate` deployment flow.
+
+Generated API, MCP, and CLI mutation surfaces for these rows are disabled.
+Without an `authorize` callback, mutations require explicit system context.
+Reads are limited to the child, its reseller, or system context; a host may
+provide `authorize` for additional permission-checked access. Supply a tenant
+resolver that does not depend on the caller's current tenant scope when the
+operation intentionally crosses tenants, and enforce actor permissions in the
+host callback before allowing relationship changes.
+
 ### Decorators
 
 | Export | Description |
