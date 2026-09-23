@@ -45,6 +45,7 @@ import {
   type MatchKind,
 } from './collision-policy.js';
 import { isFrameworkBaseClass } from './framework-base-classes.js';
+import { bumpRegistryGeneration } from './generation';
 import { buildInheritanceChain } from './inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -596,7 +597,24 @@ function setSmrtQualifiedName(
   });
 }
 
+/**
+ * Register (or re-register) a class. Every registration can add, replace or
+ * mutate a registered class in place, so it invalidates the generation-keyed
+ * registry memos before and after (#3047) — including when it throws partway.
+ */
 export function register(
+  ctor: typeof SmrtObject,
+  config: SmartObjectConfig = {},
+): void {
+  bumpRegistryGeneration();
+  try {
+    registerUntracked(ctor, config);
+  } finally {
+    bumpRegistryGeneration();
+  }
+}
+
+function registerUntracked(
   ctor: typeof SmrtObject,
   config: SmartObjectConfig = {},
 ): void {
@@ -654,6 +672,7 @@ export function register(
 
     existing.name = name;
     existing.packageName = nextPackageName;
+    bumpRegistryGeneration();
     existing.qualifiedName = nextPackageName
       ? (createQualifiedName(nextPackageName, name) as QualifiedClassName)
       : undefined;
@@ -1565,6 +1584,8 @@ export function ensureTenantScopedField(
   if (!tenantScopedConfig) {
     return;
   }
+  // Mutates a registered class's field map in place (#3047).
+  bumpRegistryGeneration();
 
   const fieldName = tenantScopedConfig.field;
   const existingField = fields.get(fieldName);
@@ -1743,6 +1764,7 @@ export function invalidateInheritanceEntries(
     qualifiedName?: string;
   },
 ): void {
+  bumpRegistryGeneration();
   const cache = getInheritanceCache();
   const affectedNames = new Set<string>();
 
@@ -1957,6 +1979,20 @@ function mergeManifestIntoExistingRegistration(
 }
 
 export function registerFromManifest(
+  name: string,
+  objectDef: SmartObjectDefinition,
+  manifestPackageName?: string,
+): void {
+  // Same invalidation contract as register() (#3047).
+  bumpRegistryGeneration();
+  try {
+    registerFromManifestUntracked(name, objectDef, manifestPackageName);
+  } finally {
+    bumpRegistryGeneration();
+  }
+}
+
+function registerFromManifestUntracked(
   name: string,
   objectDef: SmartObjectDefinition,
   manifestPackageName?: string,

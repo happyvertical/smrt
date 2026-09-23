@@ -17,6 +17,10 @@ import {
 } from '../config/global-config.js';
 import { LRUCache } from '../utils/lru-cache';
 import { isDecoratorRuntimeFramePath } from '../utils/stack-frames';
+import {
+  createGenerationTrackedMap,
+  isGenerationTrackedMap,
+} from './generation';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // Re-export the globalThis augmentation so it's visible everywhere
@@ -190,10 +194,16 @@ export function getSourceFileFromStack(
 // ── Shared state accessor functions ──────────────────────────────────────
 
 export function getClasses(): Map<string, RegisteredClass> {
-  if (!globalThis.__smrtRegistryClasses) {
-    globalThis.__smrtRegistryClasses = new Map<string, RegisteredClass>();
+  const current = globalThis.__smrtRegistryClasses;
+  if (current && isGenerationTrackedMap(current)) {
+    return current;
   }
-  return globalThis.__smrtRegistryClasses;
+  // Every add/remove/replace of a registration invalidates the
+  // generation-keyed registry memos (#3047). A plain map left by an older
+  // smrt-core copy is adopted, entries intact.
+  const tracked = createGenerationTrackedMap<string, RegisteredClass>(current);
+  globalThis.__smrtRegistryClasses = tracked;
+  return tracked;
 }
 
 export function getCollections(): Map<string, typeof SmrtCollection> {

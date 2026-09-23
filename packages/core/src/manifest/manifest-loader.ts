@@ -25,6 +25,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
+import { bumpRegistryGeneration } from '../registry/generation.js';
 import type { SmrtObjectConstructor } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type {
@@ -114,6 +115,7 @@ function setStaticManifestCache(
   manifest: SmartObjectManifest | null | undefined,
 ): void {
   globalThis.__smrtManifestStatic = manifest;
+  bumpRegistryGeneration();
 }
 
 function getStaticManifestLoadAttempted(): boolean {
@@ -128,6 +130,7 @@ function setTestManifestCache(
   manifest: SmartObjectManifest | null | undefined,
 ): void {
   globalThis.__smrtManifestTest = manifest;
+  bumpRegistryGeneration();
 }
 
 function getTestManifestLoadAttempted(): boolean {
@@ -142,6 +145,7 @@ function setLocalTestManifestCache(
   manifest: SmartObjectManifest | null | undefined,
 ): void {
   globalThis.__smrtManifestLocalTest = manifest;
+  bumpRegistryGeneration();
 }
 
 /**

@@ -20,6 +20,11 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
+import {
+  bumpRegistryGeneration,
+  createGenerationTrackedMap,
+  isGenerationTrackedMap,
+} from '../registry/generation.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -191,10 +196,17 @@ function getManifestGlobals(): ManifestGlobals {
  */
 export function getManifestCache(): Map<string, SmartObjectManifest> {
   const globals = getManifestGlobals();
-  if (!globals.__smrtManifestCache) {
-    globals.__smrtManifestCache = new Map();
+  const current = globals.__smrtManifestCache;
+  if (current && isGenerationTrackedMap(current)) {
+    return current;
   }
-  return globals.__smrtManifestCache;
+  // A newly cached manifest can change what manifest discovery returns, so
+  // it invalidates the generation-keyed registry memos (#3047).
+  const tracked = createGenerationTrackedMap<string, SmartObjectManifest>(
+    current,
+  );
+  globals.__smrtManifestCache = tracked;
+  return tracked;
 }
 
 /** Read-only snapshot of the static manifest, if cached. */
@@ -566,6 +578,7 @@ export function loadStaticManifestSyncWithNode(): SmartObjectManifest | null {
   if (!builtins) {
     const fallbackManifest = createEmptyStaticManifest();
     globals.__smrtManifestStatic = fallbackManifest;
+    bumpRegistryGeneration();
     return fallbackManifest;
   }
 
@@ -597,6 +610,7 @@ export function loadStaticManifestSyncWithNode(): SmartObjectManifest | null {
         ? manifest
         : { ...manifest, packageName: '@happyvertical/smrt-core' };
       globals.__smrtManifestStatic = cachedManifest;
+      bumpRegistryGeneration();
       return cachedManifest;
     } catch {
       // Try the next candidate and fall back to the empty manifest if needed.
@@ -605,6 +619,7 @@ export function loadStaticManifestSyncWithNode(): SmartObjectManifest | null {
 
   const fallbackManifest = createEmptyStaticManifest();
   globals.__smrtManifestStatic = fallbackManifest;
+  bumpRegistryGeneration();
   return fallbackManifest;
 }
 
