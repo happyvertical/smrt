@@ -2,7 +2,8 @@ name: PostgreSQL Tests
 
 # Every package's registered `test:postgres` suite, against a real
 # PostgreSQL, as an ordinary role (#2659, #2868). `postgres-required` is the
-# single status the repository ruleset requires: it always reports, passes
+# lane's one aggregate status, the context a ruleset requires (added once the
+# lane is proven green on main; .github/CI.md tracks it): it always reports, passes
 # when the change cannot affect a suite, and fails when any package's suite
 # fails. See .github/CI.md, "PostgreSQL isolation".
 on:

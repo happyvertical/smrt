@@ -335,8 +335,8 @@ PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.
 
 `Required CI` is the aggregate repository-validation status; the PostgreSQL
-lane's `postgres-required` is proposed as the second required context once it
-is proven green on `main` (#2659). Seven jobs must
+lane's `postgres-required` becomes the second required context once the lane
+is proven green on `main` (#2659; see Rollout status). Seven jobs must
 succeed for both PR and merge-group events; Publish Dry Run is required only for
 `merge_group`, where it runs. The aggregator still fails if it reports anything
 other than `skipped` or `success` on a PR, so re-enabling it there cannot
@@ -350,7 +350,9 @@ Rollout status:
    every same-repository PR, every merge group, and nightly, ungated. If the
    repository still defines the variable it is inert and can be deleted.
 3. Done. `CI_MERGE_QUEUE_ENABLED` is `true`.
-4. Done. The required status list is exactly `Required CI`.
+4. Done. The required status list is `Required CI`. Pending (#2659): add
+   `postgres-required` once `postgres-tests.yml` is proven green on `main`;
+   until then it reports but does not gate a merge.
 5. Done. The repository merge queue uses squash merges, up to five entries
    building concurrently, one entry merged at a time, zero wait, all-green
    behavior, and a 60-minute timeout.
@@ -387,8 +389,9 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
   every package's suite even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
   summary.
-- **`postgres-required`** (hosted) is the single status context the ruleset
-  requires. It always reports: it passes when `scope` skipped the suites for a
+- **`postgres-required`** (hosted) is the lane's single aggregate status, the
+  context the ruleset requires once Rollout status item 4 is complete. It
+  always reports: it passes when `scope` skipped the suites for a
   docs-only PR, and fails when the suites did not succeed or the PR is from a
   fork (the same policy `Required CI` applies).
 
@@ -504,8 +507,8 @@ capacity only in runner-pool policy, not workflow labels. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
 PostgreSQL is not part of the `Required CI` aggregator: its lane reports its
-own `postgres-required` status (see PostgreSQL isolation), so removing that
-context from the ruleset never alters SQLite coverage. The artifact publisher can
+own `postgres-required` status (see PostgreSQL isolation), so adding or
+removing that ruleset context never alters SQLite coverage. The artifact publisher can
 temporarily fall back to Changesets through manual dispatch.
 
 The hosted Turbo cache lane has two independent clearable levers:
