@@ -375,6 +375,25 @@ export const MAX_CHANGES_LIMIT = 5_000;
 const MAX_APPEND_ATTEMPTS = 20;
 
 /**
+ * Jittered pause before an append (or a settling drain) re-contends for the
+ * sequence head (#3062).
+ *
+ * Retrying a lost `MAX(seq)+1` race immediately lets a writer in a tight loop
+ * win every round: the loser re-reads the head just as the winner commits its
+ * next row, and on a contended host one writer was starved for all
+ * {@link MAX_APPEND_ATTEMPTS}. A random delay, growing to a small cap,
+ * desynchronizes the writers. Worst case across every retry stays well under
+ * a second, and inside a caller transaction the append helper has already
+ * rolled its own subtransaction back, so the pause holds no feed locks.
+ */
+function waitBeforeAppendRetry(attempt: number): Promise<void> {
+  const ceilingMs = Math.min(2 ** attempt, 40);
+  return new Promise((resolve) =>
+    setTimeout(resolve, Math.random() * ceilingMs),
+  );
+}
+
+/**
  * Maximum bounded drain batches one {@link drainChangeFeed} call sequences.
  * A cap rather than "until empty" so a pathological writer cannot make one
  * reader drain forever; the remainder is picked up by the next drain.
@@ -955,6 +974,7 @@ export async function appendChange(
       }
       // Sequence head contention: another append won the value. Re-running
       // recomputes MAX(seq) against the now-committed head.
+      await waitBeforeAppendRetry(attempt);
     }
   }
 
@@ -1115,6 +1135,7 @@ export async function appendChanges(
         queueDeferredSignals(db, drainedSignals);
         throw error;
       }
+      await waitBeforeAppendRetry(attempt);
     }
   }
   throw new Error(
@@ -1217,9 +1238,16 @@ async function drainChangeFeedDetailed(
       error.code = String(failure.error_code);
       // A concurrent autocommit append can win the head between this drain's
       // MAX(seq) read and its insert. The whole batch rolled back, so the
-      // staged rows are still there — recompute and try again, exactly like
-      // the appender's own conflict retry.
-      if (isUniqueViolation(error)) continue;
+      // staged rows are still there — recompute and try again. Like the
+      // appender's own conflict retry, a settling drain pauses first so a
+      // tight-loop appender cannot win every pass (#3062); the write-path
+      // drain (`settle: false`, one pass) never pauses.
+      if (isUniqueViolation(error)) {
+        if (settle && pass + 1 < maxPasses) {
+          await waitBeforeAppendRetry(pass + 1);
+        }
+        continue;
+      }
       throw error;
     }
     const sequenced = rows.filter((row) => row.drained_seq != null);
