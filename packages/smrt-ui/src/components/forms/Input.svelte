@@ -220,6 +220,7 @@ export function getElement(): HTMLInputElement | null {
 
 <style>
 	.input {
+		box-sizing: border-box;
 		display: block;
 		width: 100%;
 		padding: 0.5rem 0.75rem;

@@ -202,3 +202,48 @@ test('shared host stays interactive while switching package previews', async ({
 
   expect(errors).toEqual([]);
 });
+
+test('form controls stay within their grid cells without a global box-sizing reset', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('playground-preview-title')).toHaveText(
+    'Base Controls',
+  );
+
+  await page.addStyleTag({
+    content:
+      ':where(.preview-stage) input, :where(.preview-stage) select, :where(.preview-stage) textarea { box-sizing: content-box; }',
+  });
+
+  const stage = page.getByTestId('playground-preview-stage');
+  const controls = [
+    stage.locator('input[name="name"]'),
+    stage.locator('select[name="role"]'),
+    stage.locator('textarea[name="notes"]'),
+  ];
+
+  for (const control of controls) {
+    await expect(control).toBeVisible();
+    await expect(control).toHaveJSProperty(
+      'offsetWidth',
+      await control.evaluate((element) => element.parentElement?.clientWidth),
+    );
+  }
+
+  await page
+    .locator(
+      '[data-playground-entry="@happyvertical/smrt-ui:interactive-controls"]',
+    )
+    .click();
+  const combobox = stage.getByRole('combobox', { name: 'Country' });
+  await expect(combobox).toBeVisible();
+  await expect(combobox).toHaveJSProperty(
+    'offsetWidth',
+    await combobox.evaluate((element) => element.parentElement?.clientWidth),
+  );
+
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(stage).toHaveJSProperty(
+    'scrollWidth',
+    await stage.evaluate((element) => element.clientWidth),
+  );
+});
