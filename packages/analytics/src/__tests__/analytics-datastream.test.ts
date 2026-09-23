@@ -8,6 +8,7 @@ import { AnalyticsDataStream } from '../models/AnalyticsDataStream.js';
 import { DataStreamStatus, DataStreamType } from '../types/index.js';
 import {
   createTestDb,
+  fixtureId,
   getAdapterDisplayName,
   getTestAdapter,
   isPostgresAvailable,
@@ -32,14 +33,14 @@ describe('AnalyticsDataStream', () => {
 
     it('should create a web stream with options', () => {
       const stream = new AnalyticsDataStream({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         displayName: 'Main Website',
         streamType: DataStreamType.WEB,
         measurementId: 'G-ABCD1234',
         defaultUri: 'https://example.com',
       });
 
-      expect(stream.propertyId).toBe('prop-123');
+      expect(stream.propertyId).toBe(fixtureId('prop-123'));
       expect(stream.displayName).toBe('Main Website');
       expect(stream.streamType).toBe(DataStreamType.WEB);
       expect(stream.measurementId).toBe('G-ABCD1234');
@@ -48,7 +49,7 @@ describe('AnalyticsDataStream', () => {
 
     it('should create an iOS stream with options', () => {
       const stream = new AnalyticsDataStream({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         displayName: 'iOS App',
         streamType: DataStreamType.IOS,
         firebaseAppId: '1:123456789:ios:abc123',
@@ -62,7 +63,7 @@ describe('AnalyticsDataStream', () => {
 
     it('should create an Android stream with options', () => {
       const stream = new AnalyticsDataStream({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         displayName: 'Android App',
         streamType: DataStreamType.ANDROID,
         firebaseAppId: '1:123456789:android:def456',
@@ -153,14 +154,14 @@ describe.skipIf(skipTests)(
       const testDb = await createTestDb();
       cleanup = testDb.cleanup;
       await seedAnalyticsProperties(testDb.db, [
-        'prop-123',
-        'prop-types',
-        'prop-mobile',
-        'prop-active',
-        'prop-1',
-        'prop-2',
-        'prop-test',
-        'prop-external',
+        fixtureId('prop-123'),
+        fixtureId('prop-types'),
+        fixtureId('prop-mobile'),
+        fixtureId('prop-active'),
+        fixtureId('prop-1'),
+        fixtureId('prop-2'),
+        fixtureId('prop-test'),
+        fixtureId('prop-external'),
       ]);
       collection = await AnalyticsDataStreamCollection.create({
         db: testDb.db,
@@ -173,7 +174,7 @@ describe.skipIf(skipTests)(
 
     it('should create and list streams', async () => {
       const stream = await collection.create({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         externalId: 'stream-123',
         displayName: 'Web Stream',
         streamType: DataStreamType.WEB,
@@ -188,7 +189,7 @@ describe.skipIf(skipTests)(
 
     it('should find stream by measurement ID', async () => {
       const stream = await collection.create({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         externalId: 'stream-unique',
         displayName: 'Web Stream',
         streamType: DataStreamType.WEB,
@@ -203,7 +204,7 @@ describe.skipIf(skipTests)(
 
     it('should find streams by type', async () => {
       const web = await collection.create({
-        propertyId: 'prop-types',
+        propertyId: fixtureId('prop-types'),
         externalId: 'stream-web',
         displayName: 'Web',
         streamType: DataStreamType.WEB,
@@ -211,7 +212,7 @@ describe.skipIf(skipTests)(
       await web.save();
 
       const ios = await collection.create({
-        propertyId: 'prop-types',
+        propertyId: fixtureId('prop-types'),
         externalId: 'stream-ios',
         displayName: 'iOS',
         streamType: DataStreamType.IOS,
@@ -219,7 +220,7 @@ describe.skipIf(skipTests)(
       await ios.save();
 
       const android = await collection.create({
-        propertyId: 'prop-types',
+        propertyId: fixtureId('prop-types'),
         externalId: 'stream-android',
         displayName: 'Android',
         streamType: DataStreamType.ANDROID,
@@ -241,7 +242,7 @@ describe.skipIf(skipTests)(
 
     it('should find mobile streams (iOS + Android)', async () => {
       const web = await collection.create({
-        propertyId: 'prop-mobile',
+        propertyId: fixtureId('prop-mobile'),
         externalId: 'stream-web-mobile',
         displayName: 'Web',
         streamType: DataStreamType.WEB,
@@ -249,7 +250,7 @@ describe.skipIf(skipTests)(
       await web.save();
 
       const ios = await collection.create({
-        propertyId: 'prop-mobile',
+        propertyId: fixtureId('prop-mobile'),
         externalId: 'stream-ios-mobile',
         displayName: 'iOS App',
         streamType: DataStreamType.IOS,
@@ -257,7 +258,7 @@ describe.skipIf(skipTests)(
       await ios.save();
 
       const android = await collection.create({
-        propertyId: 'prop-mobile',
+        propertyId: fixtureId('prop-mobile'),
         externalId: 'stream-android-mobile',
         displayName: 'Android App',
         streamType: DataStreamType.ANDROID,
@@ -274,7 +275,7 @@ describe.skipIf(skipTests)(
 
     it('should find active streams', async () => {
       const active = await collection.create({
-        propertyId: 'prop-active',
+        propertyId: fixtureId('prop-active'),
         externalId: 'stream-active',
         displayName: 'Active Stream',
         status: DataStreamStatus.ACTIVE,
@@ -282,7 +283,7 @@ describe.skipIf(skipTests)(
       await active.save();
 
       const inactive = await collection.create({
-        propertyId: 'prop-active',
+        propertyId: fixtureId('prop-active'),
         externalId: 'stream-inactive',
         displayName: 'Inactive Stream',
         status: DataStreamStatus.INACTIVE,
@@ -296,32 +297,32 @@ describe.skipIf(skipTests)(
 
     it('should find streams by property', async () => {
       const stream1 = await collection.create({
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
         externalId: 'stream-1',
         displayName: 'Stream 1',
       });
       await stream1.save();
 
       const stream2 = await collection.create({
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
         externalId: 'stream-2',
         displayName: 'Stream 2',
       });
       await stream2.save();
 
       const stream3 = await collection.create({
-        propertyId: 'prop-2',
+        propertyId: fixtureId('prop-2'),
         externalId: 'stream-3',
         displayName: 'Stream 3',
       });
       await stream3.save();
 
-      const prop1Streams = await collection.findByProperty('prop-1');
+      const prop1Streams = await collection.findByProperty(fixtureId('prop-1'));
       expect(prop1Streams).toHaveLength(2);
     });
 
     it('should find active streams by property', async () => {
-      const propertyId = 'prop-test';
+      const propertyId = fixtureId('prop-test');
 
       const active = await collection.create({
         propertyId,
@@ -346,7 +347,7 @@ describe.skipIf(skipTests)(
 
     it('should find stream by external ID', async () => {
       const stream = await collection.create({
-        propertyId: 'prop-external',
+        propertyId: fixtureId('prop-external'),
         displayName: 'External Stream',
         externalId: 'dataStreams/123456789',
       });

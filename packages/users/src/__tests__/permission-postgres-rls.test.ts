@@ -10,6 +10,7 @@ import {
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { applyPostgresPermissionPolicies } from '../services/index.js';
+import { resetPostgresPermissionPolicies } from './helpers/postgres-rls-reset.js';
 
 @smrt({
   api: { include: ['list', 'create', 'update', 'delete'] },
@@ -169,16 +170,23 @@ describePostgres('Postgres permission RLS', () => {
       }
     }
 
+    if (adminDb) {
+      // Policies are committed DDL that outlive the rolled-back isolated
+      // transaction; never leave them for the package's other suites.
+      await resetPostgresPermissionPolicies(adminDb);
+    }
     roleName = '';
-    await closeDatabase(adminDb);
-    adminDb = undefined;
-
     clearCache();
-
+    // Roll the isolated transaction back first. `adminDb` shares the cached
+    // pool for this URL, and ending a pg pool waits for every checked-out
+    // client — including the isolated transaction's — so closing it first
+    // hangs the hook until it times out.
     if (isolated) {
       await isolated.cleanup();
       isolated = undefined;
     }
+    await closeDatabase(adminDb);
+    adminDb = undefined;
   });
 
   async function withRoleTransaction(
