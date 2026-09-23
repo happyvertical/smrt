@@ -48,7 +48,9 @@ describe('FeatureSettingsService', () => {
   });
 
   /** A database with the two feature tables and the three seeded definitions. */
-  async function setup(options: { authorize?: any } = {}) {
+  async function setup(
+    options: { authorize?: any; tenantHierarchyLoader?: any } = {},
+  ) {
     const db = await getTestDatabase({
       classes: ['FeatureDefinition', 'FeatureOverride'],
     });
@@ -84,7 +86,10 @@ describe('FeatureSettingsService', () => {
       { db },
       {
         authorize: options.authorize,
-        resolver: { tenantHierarchyLoader: async () => null },
+        resolver: {
+          tenantHierarchyLoader:
+            options.tenantHierarchyLoader ?? (async () => null),
+        },
       },
     );
 
@@ -219,6 +224,89 @@ describe('FeatureSettingsService', () => {
 
       expect(drafts.effectiveEnabled).toBe(true);
       expect(drafts.tenantEffect).toBeNull();
+      // No tenant was requested, so nothing tenant-inherited was computed. The
+      // global state is not an answer to a question about a tenant.
+      expect(drafts.inheritedEnabled).toBeNull();
+    });
+  });
+
+  describe('listFeatureSettings under a tenant hierarchy', () => {
+    /** root → child, with the cascade flags that let an override flow down. */
+    const hierarchy = async () => ({
+      async getChain(tenantId: string) {
+        return tenantId === 'child'
+          ? [
+              {
+                id: 'root',
+                inheritPermissions: false,
+                cascadePermissions: true,
+              },
+              {
+                id: 'child',
+                inheritPermissions: true,
+                cascadePermissions: false,
+              },
+            ]
+          : [
+              {
+                id: tenantId,
+                inheritPermissions: true,
+                cascadePermissions: true,
+              },
+            ];
+      },
+    });
+
+    it('reports an ancestor-inherited state that no global-layer derivation could produce', async () => {
+      const { overrides, service } = await setup({
+        tenantHierarchyLoader: hierarchy,
+      });
+      // Only the ancestor holds an override. Global says nothing and the code
+      // default is false, so anything derived from `globalEffect` and
+      // `defaultEnabled` alone would report "disabled" for the child.
+      await overrides.setTenantOverride(
+        DRAFTS,
+        'root',
+        FeatureOverrideEffect.ENABLE,
+      );
+
+      const [drafts] = await service.listFeatureSettings({
+        packageName: PACKAGE_NAME,
+        tenantId: 'child',
+      });
+
+      expect(drafts.globalEffect).toBeNull();
+      expect(drafts.tenantEffect).toBeNull();
+      expect(drafts.defaultEnabled).toBe(false);
+      expect(drafts.effectiveEnabled).toBe(true);
+      expect(drafts.inheritedEnabled).toBe(true);
+    });
+
+    it('claims nothing for a child that holds its own override', async () => {
+      const { overrides, service } = await setup({
+        tenantHierarchyLoader: hierarchy,
+      });
+      await overrides.setTenantOverride(
+        DRAFTS,
+        'root',
+        FeatureOverrideEffect.ENABLE,
+      );
+      await overrides.setTenantOverride(
+        DRAFTS,
+        'child',
+        FeatureOverrideEffect.DISABLE,
+      );
+
+      const [drafts] = await service.listFeatureSettings({
+        packageName: PACKAGE_NAME,
+        tenantId: 'child',
+      });
+
+      expect(drafts.effectiveEnabled).toBe(false);
+      expect(drafts.tenantEffect).toBe(FeatureOverrideEffect.DISABLE);
+      // The inherited state depends on the ancestor chain, which one resolution
+      // pass with the child's own override in place cannot isolate.
+      expect(drafts.inheritedEnabled).toBeNull();
     });
   });
 
