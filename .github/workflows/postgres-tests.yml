@@ -1,29 +1,99 @@
 name: PostgreSQL Tests
 
+# Every package's registered `test:postgres` suite, against a real
+# PostgreSQL, as an ordinary role (#2659, #2868). `postgres-required` is the
+# single status the repository ruleset requires: it always reports, passes
+# when the change cannot affect a suite, and fails when any package's suite
+# fails. See .github/CI.md, "PostgreSQL isolation".
 on:
+  # Loads this file from the trusted base branch, like on-pull-request.yml, so
+  # an external fork cannot rewrite runner selection or the fork guard below.
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  merge_group:
+    types: [checks_requested]
   workflow_call:
   workflow_dispatch:
   schedule:
     - cron: '0 8 * * *'
 
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event.pull_request.number ||
+      github.event.merge_group.head_sha ||
+      github.ref
+    }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # Only same-repository PRs check out their head; see on-pull-request.yml.
+  CHECKOUT_REF: >-
+    ${{ github.event.pull_request.head.repo.full_name == github.repository &&
+    github.event.pull_request.head.sha || github.sha }}
 
 permissions:
   contents: read
   packages: read
+  pull-requests: read
 
 jobs:
+  scope:
+    name: PostgreSQL Scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      trusted: ${{ steps.decide.outputs.trusted }}
+    steps:
+      # A PR whose every changed file is documentation cannot change a suite's
+      # outcome. Every other event (merge groups included) always runs.
+      - name: Detect code changes
+        id: filter
+        if: github.event_name == 'pull_request_target'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+          CODE_CHANGED: ${{ steps.filter.outputs.code }}
+        run: |
+          set -euo pipefail
+          trusted=true
+          run=true
+          if [ "$EVENT_NAME" = pull_request_target ]; then
+            # Fork code never runs on the self-hosted lane.
+            if [ "$HEAD_REPO" != "$REPOSITORY" ]; then trusted=false; fi
+            if [ "$CODE_CHANGED" != true ]; then run=false; fi
+          fi
+          if [ "$trusted" != true ]; then run=false; fi
+          echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "trusted=$trusted run=$run"
+
   postgres:
     name: Registered PostgreSQL Suites
-    if: github.event_name == 'workflow_dispatch' || vars.CI_POSTGRES_ENABLED == 'true'
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    # The `services:` container needs the dind sidecar, so this stays on the
+    # general lane rather than arc-happyvertical-nodocker.
     runs-on: arc-happyvertical
     timeout-minutes: 45
-    # The general lane does not mount the cluster-local database URL that
-    # arc-happyvertical-node provided, so the suite brings its own PostgreSQL.
-    # CI_POSTGRES_BASE_URL keeps scripts/run-with-ci-postgres.mjs on its managed
-    # path, so each package still gets a uniquely named database that is dropped
-    # afterwards rather than sharing one under `--concurrency=2`.
+    # One shared service. CI_POSTGRES_BASE_URL keeps
+    # scripts/run-with-ci-postgres.mjs on its managed path, so each package
+    # still gets its own uniquely named database, dropped afterwards.
     services:
       postgres:
         image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
@@ -41,6 +111,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
@@ -51,9 +123,85 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run registered PostgreSQL suites
-        run: pnpm turbo run test:postgres --concurrency=2
+      # The suites connect as `smrt_ci`: it may create the per-package
+      # databases and the roles the RLS fixtures log in as, but it is neither
+      # a superuser nor BYPASSRLS, so row-level security is actually enforced.
+      # The superuser URL is exported separately (SMRT_TEST_POSTGRES_ADMIN_URL)
+      # for the few fixtures that forge catalog state or administer roles.
+      - name: Provision the unprivileged test role
         env:
-          CI_POSTGRES_BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          for binary in createdb dropdb psql; do
+            command -v "$binary" >/dev/null || {
+              echo "::error::$binary is missing from this runner image; the" \
+                   "PostgreSQL test wrapper cannot create a disposable database"
+              exit 1
+            }
+          done
+          psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres <<'SQL'
+          CREATE ROLE smrt_ci LOGIN PASSWORD 'smrt_ci'
+            CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS;
+          SQL
+          flags=$(psql -At -h 127.0.0.1 -p 5432 -U postgres -d postgres -c \
+            "SELECT rolsuper::text || ',' || rolbypassrls::text FROM pg_roles WHERE rolname = 'smrt_ci'")
+          if [ "$flags" != "false,false" ]; then
+            echo "::error::smrt_ci must be NOSUPERUSER NOBYPASSRLS (got $flags)"
+            exit 1
+          fi
+
+      # --continue: one package's failure must not hide another's result.
+      - name: Run registered PostgreSQL suites
+        run: pnpm turbo run test:postgres --concurrency=2 --continue --summarize
+        env:
+          CI_POSTGRES_BASE_URL: postgresql://smrt_ci:smrt_ci@127.0.0.1:5432/postgres
+          CI_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
+
+      - name: Report per-package results
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -d .turbo/runs ]; then
+            node scripts/postgres-lane-summary.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Turbo produced no run summary"
+          fi
+
+  postgres-required:
+    # The required status context. Always reports, so a required check can
+    # never sit "expected": a docs-only PR passes with the suites skipped.
+    name: postgres-required
+    needs: [scope, postgres]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every PostgreSQL suite to pass
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          TRUSTED: ${{ needs.scope.outputs.trusted }}
+          RUN: ${{ needs.scope.outputs.run }}
+          POSTGRES: ${{ needs.postgres.result }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" != success ]; then
+            echo "::error::PostgreSQL scope detection did not succeed ($SCOPE)"
+            exit 1
+          fi
+          if [ "$TRUSTED" != true ]; then
+            echo "::error::External fork PRs are not validated on the" \
+                 "self-hosted PostgreSQL lane; a maintainer must land the change" \
+                 "from a same-repository branch."
+            exit 1
+          fi
+          if [ "$RUN" != true ]; then
+            echo "Documentation-only change; PostgreSQL suites not needed."
+            exit 0
+          fi
+          if [ "$POSTGRES" != success ]; then
+            echo "::error::PostgreSQL suites did not succeed ($POSTGRES)"
+            exit 1
+          fi
