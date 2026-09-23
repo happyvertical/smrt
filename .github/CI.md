@@ -335,8 +335,8 @@ PostgreSQL-free; the registered PostgreSQL suites live in
 `postgres-tests.yml`, described under PostgreSQL isolation below.
 
 `Required CI` is the aggregate repository-validation status; the PostgreSQL
-lane's `postgres-required` becomes the second required context once the lane
-is proven green on `main` (#2659; see Rollout status). Seven jobs must
+lane's `postgres-required` is the second required context (#2659, #3068).
+Seven jobs must
 succeed for both PR and merge-group events; Publish Dry Run is required only for
 `merge_group`, where it runs. The aggregator still fails if it reports anything
 other than `skipped` or `success` on a PR, so re-enabling it there cannot
@@ -350,9 +350,9 @@ Rollout status:
    every same-repository PR, every merge group, and nightly, ungated. If the
    repository still defines the variable it is inert and can be deleted.
 3. Done. `CI_MERGE_QUEUE_ENABLED` is `true`.
-4. Done. The required status list is `Required CI`. Pending (#2659): add
-   `postgres-required` once `postgres-tests.yml` is proven green on `main`;
-   until then it reports but does not gate a merge.
+4. Done. The required status list is `Required CI` and `postgres-required`
+   (the latter added to the `Repository CI / required` ruleset on 2026-09-23,
+   after the lane was proven green on `main`: run 35875902114).
 5. Done. The repository merge queue uses squash merges, up to five entries
    building concurrently, one entry merged at a time, zero wait, all-green
    behavior, and a 60-minute timeout.
@@ -389,9 +389,8 @@ dispatch-only `on-demand-validation.yml`. There is no enabling variable.
   every package's suite even after one fails, and
   `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
   summary.
-- **`postgres-required`** (hosted) is the lane's single aggregate status, the
-  context the ruleset requires once Rollout status item 4 is complete. It
-  always reports: it passes when `scope` skipped the suites for a
+- **`postgres-required`** (hosted) is the lane's single aggregate status and
+  the context the ruleset requires. It always reports: it passes when `scope` skipped the suites for a
   docs-only PR, and fails when the suites did not succeed or the PR is from a
   fork (the same policy `Required CI` applies).
 
