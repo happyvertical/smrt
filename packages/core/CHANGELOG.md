@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.51.18
+
+### Patch Changes
+
+- ### Other Changes
+  
+  - perf: cheap permission resolution and per-class hydration work (#3047) (#3049)
+  - test: cover db:status probe diagnosis; accurate jsonb probe docs (#3044) (cli)
+- @happyvertical/smrt-config@0.51.18
+  - @happyvertical/smrt-scanner@0.51.18
+  - @happyvertical/smrt-types@0.51.18
+
 ## 0.51.17
 
 ### Patch Changes

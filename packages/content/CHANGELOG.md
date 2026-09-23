@@ -1,5 +1,23 @@
 # @happyvertical/smrt-content
 
+## 0.51.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.18
+  - @happyvertical/smrt-agents@0.51.18
+  - @happyvertical/smrt-assets@0.51.18
+  - @happyvertical/smrt-chat@0.51.18
+  - @happyvertical/smrt-facts@0.51.18
+  - @happyvertical/smrt-images@0.51.18
+  - @happyvertical/smrt-messages@0.51.18
+  - @happyvertical/smrt-profiles@0.51.18
+  - @happyvertical/smrt-prompts@0.51.18
+  - @happyvertical/smrt-tenancy@0.51.18
+  - @happyvertical/smrt-ui@0.51.18
+  - @happyvertical/smrt-types@0.51.18
+
 ## 0.51.17
 
 ### Patch Changes
