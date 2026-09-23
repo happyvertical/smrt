@@ -71,8 +71,8 @@ export class BillingRelationship extends SmrtObject {
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
-    assertTenantId(this.childTenantId);
-    assertTenantId(this.resellerTenantId);
+    this.childTenantId = canonicalTenantId(this.childTenantId);
+    this.resellerTenantId = canonicalTenantId(this.resellerTenantId);
     assertMode(this.billingOwnerMode);
     if (this.childTenantId === this.resellerTenantId) {
       throw new BillingRelationshipError(
@@ -99,6 +99,11 @@ function assertTenantId(id: string): void {
   }
 }
 
+function canonicalTenantId(id: string): string {
+  assertTenantId(id);
+  return id.toLowerCase();
+}
+
 function assertMode(mode: BillingOwnerMode): void {
   if (mode !== 'self' && mode !== 'reseller') {
     throw new BillingRelationshipError(
@@ -109,17 +114,15 @@ function assertMode(mode: BillingOwnerMode): void {
 }
 
 function view(row: BillingRelationship): BillingRelationshipView {
-  assertTenantId(row.childTenantId);
-  assertTenantId(row.resellerTenantId);
+  const childTenantId = canonicalTenantId(row.childTenantId);
+  const resellerTenantId = canonicalTenantId(row.resellerTenantId);
   assertMode(row.billingOwnerMode);
   return {
-    childTenantId: row.childTenantId,
-    resellerTenantId: row.resellerTenantId,
+    childTenantId,
+    resellerTenantId,
     billingOwnerMode: row.billingOwnerMode,
     billingOwnerTenantId:
-      row.billingOwnerMode === 'reseller'
-        ? row.resellerTenantId
-        : row.childTenantId,
+      row.billingOwnerMode === 'reseller' ? resellerTenantId : childTenantId,
   };
 }
 
@@ -154,7 +157,7 @@ export class BillingRelationshipService {
 
   /** A tenant without a relationship always pays for itself. */
   async resolveBillingOwner(childTenantId: string): Promise<string> {
-    assertTenantId(childTenantId);
+    childTenantId = canonicalTenantId(childTenantId);
     const row = await this.relationships.get({ childTenantId });
     await this.assertReadable(childTenantId, row?.resellerTenantId);
     await this.assertExists(childTenantId);
@@ -165,7 +168,7 @@ export class BillingRelationshipService {
   async getRelationship(
     childTenantId: string,
   ): Promise<BillingRelationshipView | null> {
-    assertTenantId(childTenantId);
+    childTenantId = canonicalTenantId(childTenantId);
     const row = await this.relationships.get({ childTenantId });
     await this.assertReadable(childTenantId, row?.resellerTenantId);
     await this.assertExists(childTenantId);
@@ -175,7 +178,7 @@ export class BillingRelationshipService {
 
   /** List direct children billed to an owner, with no collection page limit. */
   async listChildrenBilledTo(ownerTenantId: string): Promise<string[]> {
-    assertTenantId(ownerTenantId);
+    ownerTenantId = canonicalTenantId(ownerTenantId);
     await this.assertReadable(ownerTenantId);
     await this.assertExists(ownerTenantId);
     const result = await this.relationships.db.query(
@@ -184,9 +187,7 @@ export class BillingRelationshipService {
       'reseller',
     );
     return result.rows.map((row) => {
-      const childTenantId = String(row.child_tenant_id);
-      assertTenantId(childTenantId);
-      return childTenantId;
+      return canonicalTenantId(String(row.child_tenant_id));
     });
   }
 
@@ -196,9 +197,9 @@ export class BillingRelationshipService {
     resellerTenantId: string;
     billingOwnerMode: BillingOwnerMode;
   }): Promise<BillingRelationshipView> {
-    const { childTenantId, resellerTenantId, billingOwnerMode } = input;
-    assertTenantId(childTenantId);
-    assertTenantId(resellerTenantId);
+    const childTenantId = canonicalTenantId(input.childTenantId);
+    const resellerTenantId = canonicalTenantId(input.resellerTenantId);
+    const { billingOwnerMode } = input;
     assertMode(billingOwnerMode);
     await this.assertManage(childTenantId, resellerTenantId);
     await this.assertExists(childTenantId);
@@ -245,7 +246,7 @@ export class BillingRelationshipService {
 
   /** Remove reseller parentage. The child becomes self-billed. */
   async clearRelationship(childTenantId: string): Promise<void> {
-    assertTenantId(childTenantId);
+    childTenantId = canonicalTenantId(childTenantId);
     await withEmbeddedWriteTransaction(
       this.relationships.db,
       isEmbeddedDatabase(this.relationships.db),
@@ -286,7 +287,7 @@ export class BillingRelationshipService {
       }
       visited.add(cursor);
       const row = await relationships.get({ childTenantId: cursor });
-      cursor = row?.resellerTenantId;
+      cursor = row ? canonicalTenantId(row.resellerTenantId) : undefined;
     }
   }
 
@@ -307,8 +308,8 @@ export class BillingRelationshipService {
     if (
       isSystemContext() ||
       isSuperAdminBypass() ||
-      getTenantId() === childTenantId ||
-      (resellerTenantId && getTenantId() === resellerTenantId) ||
+      getTenantId()?.toLowerCase() === childTenantId ||
+      (resellerTenantId && getTenantId()?.toLowerCase() === resellerTenantId) ||
       (await this.options.authorize?.({
         action: 'read',
         childTenantId,

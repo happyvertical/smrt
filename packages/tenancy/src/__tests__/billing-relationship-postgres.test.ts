@@ -77,6 +77,45 @@ describePostgres('smrt#3058 PostgreSQL billing relationships', () => {
     }
   });
 
+  it('canonicalizes mixed-case UUIDs before self-link and owner checks', async () => {
+    const isolated = await createIsolatedTestDbFromManifest({
+      includeObjects: ['BillingRelationship'],
+    });
+    try {
+      const service = await BillingRelationshipService.create({
+        db: isolated.db,
+        tenantExists: async (id) => [A, B].includes(id.toLowerCase()),
+      });
+      await withSystemContext(async () => {
+        await expect(
+          service.setRelationship({
+            childTenantId: A.toUpperCase(),
+            resellerTenantId: A,
+            billingOwnerMode: 'reseller',
+          }),
+        ).rejects.toMatchObject({ code: 'CIRCULAR_RELATIONSHIP' });
+        expect(await service.resolveBillingOwner(A)).toBe(A);
+
+        await service.setRelationship({
+          childTenantId: B.toUpperCase(),
+          resellerTenantId: A,
+          billingOwnerMode: 'reseller',
+        });
+        expect(await service.resolveBillingOwner(B)).toBe(A);
+        expect(await service.resolveBillingOwner(B.toUpperCase())).toBe(A);
+        expect(await service.listChildrenBilledTo(A.toUpperCase())).toEqual([
+          B,
+        ]);
+        const rows = await isolated.db.query(
+          'SELECT child_tenant_id FROM _smrt_billing_relationships',
+        );
+        expect(rows.rows).toHaveLength(1);
+      });
+    } finally {
+      await isolated.cleanup();
+    }
+  });
+
   it('serializes opposing concurrent links so only one can commit', async () => {
     const isolated = await createIsolatedTestDbFromManifest({
       includeObjects: ['BillingRelationship'],

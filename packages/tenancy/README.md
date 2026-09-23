@@ -43,7 +43,8 @@ hierarchy. Reassigning a reseller or changing who pays does not reparent the
 tenant for permissions and does not move its records. A tenant with no billing
 relationship is self-billed. Each child has at most one relationship; its
 `billingOwnerMode` is `self` or `reseller`, and the owner is derived from that
-single row. A reseller can therefore manage a child that pays for itself.
+single row. Tenant UUIDs are normalized to lowercase before storage and lookup.
+A reseller can therefore manage a child that pays for itself.
 
 ```typescript
 import {
