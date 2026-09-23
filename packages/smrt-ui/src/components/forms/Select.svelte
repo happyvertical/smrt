@@ -152,6 +152,7 @@ export function getElement(): HTMLSelectElement | null {
 
 <style>
 	.select {
+		box-sizing: border-box;
 		display: block;
 		width: 100%;
 		padding: 0.5rem 2rem 0.5rem 0.75rem;
