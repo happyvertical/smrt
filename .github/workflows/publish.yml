@@ -214,6 +214,17 @@ jobs:
           find packages -type d -name dist -prune -exec rm -rf {} +
           TURBO_FORCE=true pnpm run build
 
+          # Library builds do not regenerate these tracked SvelteKit snapshots.
+          # Sync them against the freshly built manifests and carry their full
+          # generated contents into the release commit.
+          pnpm --filter @happyvertical/smrt-assets exec svelte-kit sync
+          pnpm --filter @happyvertical/smrt-content exec svelte-kit sync
+          pnpm --filter @happyvertical/smrt-images exec svelte-kit sync
+          git diff --binary -- \
+            packages/assets/src/lib/server/smrt-register.ts \
+            packages/content/src/lib/server/smrt-register.ts \
+            packages/images/src/lib/server/smrt-register.ts >> release-version.patch
+
       - name: Create versioned workspace archive
         if: steps.prepare.outputs.should_publish == 'true'
         run: |
@@ -453,7 +464,7 @@ jobs:
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
-          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' \) -print | sort)
+          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -name 'smrt-register.ts' \) -print | sort)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then

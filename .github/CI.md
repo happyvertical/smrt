@@ -463,7 +463,11 @@ membership and uniform versions.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
-retains a 45-minute recovery window for sequential registry writes. Registry
+retains a 45-minute recovery window for sequential registry writes. The
+version preparation regenerates the tracked `smrt-register.ts` snapshots from
+the freshly built manifests. It appends their complete diffs to the version
+patch, and the release commit stages them with package metadata so later local
+generation does not rewrite their version stamps or dependency lists. Registry
 reads prefer fresh metadata, and post-publish verification retries six times
 with bounded exponential backoff so temporary npm propagation or stale negative
 cache entries do not strand the release before its Git refs are written. After

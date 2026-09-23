@@ -45,6 +45,33 @@ test('final publisher skips workspace installation and allows recovery headroom'
   );
 });
 
+test('release regenerates and commits tracked SvelteKit registration snapshots', () => {
+  const prepare = job('prepare-release');
+  const publisher = job('publish-release');
+  const versionPatch = prepare.indexOf('git diff --binary > release-version.patch');
+  const build = prepare.indexOf('TURBO_FORCE=true pnpm run build');
+  const snapshotPatch = prepare.indexOf('>> release-version.patch');
+  assert.ok(versionPatch >= 0 && build >= 0 && snapshotPatch >= 0);
+  assert.ok(versionPatch < build);
+  for (const name of ['assets', 'content', 'images']) {
+    const sync = prepare.indexOf(
+      `pnpm --filter @happyvertical/smrt-${name} exec svelte-kit sync`,
+    );
+    assert.ok(sync >= 0);
+    assert.ok(build < sync);
+    assert.ok(sync < snapshotPatch);
+    assert.match(
+      prepare,
+      new RegExp(`packages/${name}/src/lib/server/smrt-register\\.ts`),
+    );
+  }
+  assert.match(publisher, /-name 'smrt-register\.ts'/);
+  assert.ok(
+    publisher.indexOf("-name 'smrt-register.ts'") <
+      publisher.indexOf('git commit -m "chore(release):'),
+  );
+});
+
 test('routine releases batch instead of publishing after every main push', () => {
   const publisher = job('publish-release');
 
