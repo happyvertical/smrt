@@ -1029,6 +1029,40 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       });
     });
 
+    it('refuses to move a balance policy to another currency or period', async () => {
+      await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          name: 'Prepaid',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          period: 'balance',
+        }),
+      );
+      await expect(
+        system(() =>
+          reseller.setDelegatedSpendingPolicy({
+            parentTenantId: RESELLER,
+            childTenantId: CHILD,
+            name: 'Prepaid',
+            basis: 'retail',
+            currency: 'CAD',
+            behavior: 'block',
+            period: 'balance',
+          }),
+        ),
+      ).rejects.toThrow();
+      const [row] = await policies.list({ where: { name: 'Prepaid' } });
+      if (!row) throw new Error('missing policy');
+      row.period = 'month';
+      await expect(system(() => row.save())).rejects.toThrow();
+      expect(
+        (await policies.list({ where: { name: 'Prepaid' } }))[0],
+      ).toMatchObject({ currency: 'USD', period: 'balance' });
+    });
+
     it('guards delegated credit grants at the model', async () => {
       const balance = await system(() =>
         reseller.setDelegatedSpendingPolicy({

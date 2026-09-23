@@ -88,7 +88,8 @@ that reverted to DECIMAL passes every SQLite suite.
   authorization and stay under smrt-tenancy's own read rules. The only
   cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
 - `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
-  be 0. Auto top-up is a host hook only — no payment provider calls.
+  be 0, and currency and period are fixed once saved (the ledger is scoped to
+  them). Auto top-up is a host hook only — no payment provider calls.
 
 ## Notes
 

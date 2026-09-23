@@ -338,7 +338,24 @@ export class SpendingPolicy extends SmrtObject {
       }
       if (!this.balanceFrom) this.balanceFrom = new Date();
     }
+    await this.assertBalanceLedgerStable();
     await this.assertDelegationAuthority();
+  }
+
+  /**
+   * A balance policy's credit grants are scoped to its currency and period;
+   * changing either would silently detach the ledger, so create a new
+   * balance instead.
+   */
+  protected async assertBalanceLedgerStable(): Promise<void> {
+    if (!this.id) return;
+    const row = await this.getCanonicalPersistedRow({ id: this.id });
+    if (row?.period !== 'balance') return;
+    if (this.period !== 'balance' || row.currency !== this.currency) {
+      throw new Error(
+        'A balance policy cannot change currency or period; create a new balance policy.',
+      );
+    }
   }
 
   /**
