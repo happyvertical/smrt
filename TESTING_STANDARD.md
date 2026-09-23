@@ -11,6 +11,10 @@ This document outlines testing standards and best practices for the SMRT framewo
 
 ## Release Gate For Touched Packages
 
+The root `pnpm test` command limits Turbo to four concurrent package suites.
+Each package keeps its own Vitest worker settings; this cap prevents unrelated
+packages from exhausting CPU while short setup hooks run.
+
 When a feature or refactor touches a package, the testing bar applies to the
 entire touched package, not just the new tests added for the change.
 
