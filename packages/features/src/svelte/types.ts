@@ -55,9 +55,26 @@ export function toFeatureSettingsEffect(value: unknown): FeatureSettingsEffect {
   return value === 'enable' || value === 'disable' ? value : 'inherit';
 }
 
-/** Label for the "back to default" option, naming the default it returns to. */
-export function defaultOptionLabel(defaultEnabled: boolean): string {
-  return `Default (${defaultEnabled ? 'enabled' : 'disabled'})`;
+/** Label for the "back to default" option, naming the state it returns to. */
+export function defaultOptionLabel(enabledWhenDefault: boolean): string {
+  return `Default (${enabledWhenDefault ? 'enabled' : 'disabled'})`;
+}
+
+/**
+ * What a feature resolves to for a tenant with no override of its own — the
+ * global override when there is one, otherwise the code default.
+ *
+ * This, not `defaultEnabled`, is what returning the *tenant* scope to Default
+ * actually produces. Labelling that option from `defaultEnabled` would tell an
+ * operator "Default (disabled)" for a feature a global override has enabled,
+ * and choosing it would leave the feature on.
+ *
+ * A row that omits `globalEffect` is read as having no global override.
+ */
+export function inheritedEnabled(feature: FeatureSettingsView): boolean {
+  if (feature.globalEffect === 'enable') return true;
+  if (feature.globalEffect === 'disable') return false;
+  return feature.defaultEnabled;
 }
 
 /** Badge text for a feature's effective state. */

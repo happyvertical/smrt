@@ -14,14 +14,11 @@
  * change to the host.
  */
 import { Badge, Button, Card } from '@happyvertical/smrt-ui/ui';
-import type {
-  FeatureSettingsChange,
-  FeatureSettingsEffect,
-  FeatureSettingsView,
-} from '../types.js';
+import type { FeatureSettingsChange, FeatureSettingsView } from '../types.js';
 import {
   defaultOptionLabel,
   effectiveStateLabel,
+  inheritedEnabled,
   toFeatureSettingsEffect,
 } from '../types.js';
 
@@ -51,6 +48,14 @@ export interface Props {
   error?: string | null;
   /** Text for the empty state. */
   emptyMessage?: string;
+  /**
+   * Identity of what is being edited (typically the tenant id). Unsaved edits
+   * are discarded whenever this changes — or, when it is omitted, whenever
+   * `features` is replaced with a new array, which is what a reloaded server
+   * load produces. Without that, a row edited for one tenant would carry its
+   * unsaved choice into the next tenant's rows under the same feature key.
+   */
+  contextKey?: unknown;
   /** Label for each row's submit control. */
   saveLabel?: string;
   /**
@@ -72,6 +77,7 @@ const {
   globalEditable = false,
   globalLabel = 'Global',
   busy = false,
+  contextKey,
   message = null,
   error = null,
   emptyMessage = 'No features are registered yet. Definitions appear here once they are synced from code.',
@@ -80,63 +86,36 @@ const {
   onSave,
 }: Props = $props();
 
-/** Operator edits that have not been submitted yet, keyed by feature key. */
-let drafts = $state<
-  Record<
-    string,
-    { tenant?: FeatureSettingsEffect; global?: FeatureSettingsEffect }
-  >
->({});
-
 const globalIsEditable = $derived(showGlobal && globalEditable);
 const canSubmit = $derived(!busy && (onSave != null || formAction != null));
 
-function tenantDraft(feature: FeatureSettingsView): FeatureSettingsEffect {
-  return (
-    drafts[feature.featureKey]?.tenant ??
-    toFeatureSettingsEffect(feature.tenantEffect)
-  );
-}
-
-function globalDraft(feature: FeatureSettingsView): FeatureSettingsEffect {
-  return (
-    drafts[feature.featureKey]?.global ??
-    toFeatureSettingsEffect(feature.globalEffect)
-  );
-}
-
-function setDraft(
-  featureKey: string,
-  scope: 'tenant' | 'global',
-  value: string,
-): void {
-  drafts = {
-    ...drafts,
-    [featureKey]: {
-      ...drafts[featureKey],
-      [scope]: toFeatureSettingsEffect(value),
-    },
-  };
-}
+/**
+ * Remount the rows when the editing context changes, discarding unsaved edits.
+ * The selects are uncontrolled — their `selected` attributes seed them from
+ * `features` and the browser owns the value afterwards — so without this an
+ * operator's unsaved choice would survive a reload or a tenant switch and then
+ * be submitted against the new rows.
+ */
+const resetKey = $derived(contextKey ?? features);
 
 function submit(event: SubmitEvent, feature: FeatureSettingsView): void {
   if (!onSave) return;
   event.preventDefault();
+  const fields = new FormData(event.currentTarget as HTMLFormElement);
   onSave({
     featureKey: feature.featureKey,
-    tenantEffect: tenantDraft(feature),
-    ...(globalIsEditable ? { globalEffect: globalDraft(feature) } : {}),
+    tenantEffect: toFeatureSettingsEffect(fields.get('tenantEffect')),
+    ...(globalIsEditable
+      ? { globalEffect: toFeatureSettingsEffect(fields.get('globalEffect')) }
+      : {}),
   });
 }
 
 /** Read-only rendering of an override level that this operator cannot change. */
-function readOnlyEffectLabel(
-  effect: FeatureSettingsEffect,
-  defaultEnabled: boolean,
-): string {
-  if (effect === 'enable') return 'Enabled';
-  if (effect === 'disable') return 'Disabled';
-  return defaultOptionLabel(defaultEnabled);
+function readOnlyEffectLabel(feature: FeatureSettingsView): string {
+  if (feature.globalEffect === 'enable') return 'Enabled';
+  if (feature.globalEffect === 'disable') return 'Disabled';
+  return defaultOptionLabel(feature.defaultEnabled);
 }
 </script>
 
@@ -148,116 +127,104 @@ function readOnlyEffectLabel(
     <p class="fs-flash fs-flash-error" role="alert">{error}</p>
   {/if}
 
-  {#each features as feature (feature.featureKey)}
-    <Card variant="outlined">
-      <div class="fs-row">
-        <div class="fs-copy">
-          <div class="fs-title-row">
-            <h3 class="fs-title">{feature.label || feature.featureKey}</h3>
-            <Badge
-              variant={feature.effectiveEnabled ? 'success' : 'default'}
-              size="sm"
-            >
-              {effectiveStateLabel(feature.effectiveEnabled)}
-            </Badge>
-          </div>
-          <p class="fs-description">{feature.description || feature.featureKey}</p>
-          <code class="fs-key">{feature.featureKey}</code>
-          {#if feature.packageName}
-            <span class="fs-package">{feature.packageName}</span>
-          {/if}
-        </div>
-
-        <form
-          class="fs-controls"
-          method="POST"
-          action={formAction}
-          onsubmit={(event) => submit(event, feature)}
-        >
-          <input type="hidden" name="featureKey" value={feature.featureKey} />
-
-          {#if showGlobal}
-            {#if globalIsEditable}
-              <label class="fs-field">
-                <span class="fs-field-label">{globalLabel}</span>
-                <select
-                  name="globalEffect"
-                  disabled={busy}
-                  onchange={(event) =>
-                    setDraft(
-                      feature.featureKey,
-                      'global',
-                      event.currentTarget.value,
-                    )}
-                >
-                  <option
-                    value="inherit"
-                    selected={globalDraft(feature) === 'inherit'}
-                  >
-                    {defaultOptionLabel(feature.defaultEnabled)}
-                  </option>
-                  <option
-                    value="enable"
-                    selected={globalDraft(feature) === 'enable'}
-                  >
-                    Enable
-                  </option>
-                  <option
-                    value="disable"
-                    selected={globalDraft(feature) === 'disable'}
-                  >
-                    Disable
-                  </option>
-                </select>
-              </label>
-            {:else}
-              <div class="fs-field">
-                <span class="fs-field-label">{globalLabel}</span>
-                <p class="fs-readonly">
-                  {readOnlyEffectLabel(
-                    globalDraft(feature),
-                    feature.defaultEnabled,
-                  )}
-                </p>
-              </div>
+  {#key resetKey}
+    {#each features as feature (feature.featureKey)}
+      <Card variant="outlined">
+        <div class="fs-row">
+          <div class="fs-copy">
+            <div class="fs-title-row">
+              <h3 class="fs-title">{feature.label || feature.featureKey}</h3>
+              <Badge
+                variant={feature.effectiveEnabled ? 'success' : 'default'}
+                size="sm"
+              >
+                {effectiveStateLabel(feature.effectiveEnabled)}
+              </Badge>
+            </div>
+            <p class="fs-description">{feature.description || feature.featureKey}</p>
+            <code class="fs-key">{feature.featureKey}</code>
+            {#if feature.packageName}
+              <span class="fs-package">{feature.packageName}</span>
             {/if}
-          {/if}
+          </div>
 
-          <label class="fs-field">
-            <span class="fs-field-label">{tenantLabel}</span>
-            <select
-              name="tenantEffect"
-              disabled={busy}
-              onchange={(event) =>
-                setDraft(feature.featureKey, 'tenant', event.currentTarget.value)}
-            >
-              <option
-                value="inherit"
-                selected={tenantDraft(feature) === 'inherit'}
-              >
-                {defaultOptionLabel(feature.defaultEnabled)}
-              </option>
-              <option value="enable" selected={tenantDraft(feature) === 'enable'}>
-                Enable
-              </option>
-              <option
-                value="disable"
-                selected={tenantDraft(feature) === 'disable'}
-              >
-                Disable
-              </option>
-            </select>
-          </label>
+          <form
+            class="fs-controls"
+            method="POST"
+            action={formAction}
+            onsubmit={(event) => submit(event, feature)}
+          >
+            <input type="hidden" name="featureKey" value={feature.featureKey} />
 
-          <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
-            {saveLabel}
-          </Button>
-        </form>
-      </div>
-    </Card>
-  {:else}
-    <p class="fs-empty">{emptyMessage}</p>
-  {/each}
+            {#if showGlobal}
+              {#if globalIsEditable}
+                <label class="fs-field">
+                  <span class="fs-field-label">{globalLabel}</span>
+                  <select name="globalEffect" disabled={busy}>
+                    <option
+                      value="inherit"
+                      selected={feature.globalEffect !== 'enable' &&
+                        feature.globalEffect !== 'disable'}
+                    >
+                      {defaultOptionLabel(feature.defaultEnabled)}
+                    </option>
+                    <option
+                      value="enable"
+                      selected={feature.globalEffect === 'enable'}
+                    >
+                      Enable
+                    </option>
+                    <option
+                      value="disable"
+                      selected={feature.globalEffect === 'disable'}
+                    >
+                      Disable
+                    </option>
+                  </select>
+                </label>
+              {:else}
+                <div class="fs-field">
+                  <span class="fs-field-label">{globalLabel}</span>
+                  <p class="fs-readonly">{readOnlyEffectLabel(feature)}</p>
+                </div>
+              {/if}
+            {/if}
+
+            <label class="fs-field">
+              <span class="fs-field-label">{tenantLabel}</span>
+              <select name="tenantEffect" disabled={busy}>
+                <option
+                  value="inherit"
+                  selected={feature.tenantEffect !== 'enable' &&
+                    feature.tenantEffect !== 'disable'}
+                >
+                  <!-- The tenant scope inherits the global override when there is
+                       one, so this names the state returning to Default actually
+                       produces, not the bare code default. -->
+                  {defaultOptionLabel(inheritedEnabled(feature))}
+                </option>
+                <option value="enable" selected={feature.tenantEffect === 'enable'}>
+                  Enable
+                </option>
+                <option
+                  value="disable"
+                  selected={feature.tenantEffect === 'disable'}
+                >
+                  Disable
+                </option>
+              </select>
+            </label>
+
+            <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+              {saveLabel}
+            </Button>
+          </form>
+        </div>
+      </Card>
+    {:else}
+      <p class="fs-empty">{emptyMessage}</p>
+    {/each}
+  {/key}
 </section>
 
 <style>

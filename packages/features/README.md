@@ -107,6 +107,7 @@ export async function load(event) {
   const auth = requirePermission(event, APP_PERMISSIONS.tenantAdmin);
   const settings = await FeatureSettingsService.create(dbOptions);
   return {
+    tenantId: auth.tenantId,
     features: await settings.listFeatureSettings({
       tenantId: auth.tenantId,
       packageName: '@your/app',
@@ -132,6 +133,7 @@ at each level. The row is structurally assignable to the panel's
 <FeatureSettingsPanel
   features={data.features}
   tenantLabel="Shop"
+  contextKey={data.tenantId}
   formAction="?/saveFeature"
   message={form?.message}
   error={form?.error}
@@ -145,6 +147,17 @@ override row and returns the feature to whatever the level above resolves to.
 Pass `showGlobal` (and `globalEditable`) only if your app has a platform-admin
 tier; apps without one omit the column entirely. Supply `onSave` instead of
 `formAction` to drive it from a client handler.
+
+Two details worth knowing:
+
+- The tenant column's *Default* option names the state it actually produces,
+  which is the global override when there is one — not the bare code default.
+  The global column's *Default* names the code default, because the global
+  scope inherits nothing.
+- Unsaved edits are discarded whenever `contextKey` changes, or, when you omit
+  it, whenever `features` is replaced with a new array. Pass the tenant id as
+  `contextKey` so a half-made choice for one tenant can never be submitted
+  against another's rows.
 
 **5. Wire the write with your own permission check.** `setFeatureOverride()`
 refuses any key without a definition, then delegates to

@@ -24,5 +24,6 @@ export {
   type FeatureSettingsChange,
   type FeatureSettingsEffect,
   type FeatureSettingsView,
+  inheritedEnabled,
   toFeatureSettingsEffect,
 } from './types.js';

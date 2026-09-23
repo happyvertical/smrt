@@ -3,6 +3,7 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeatureSettingsView } from '../types.js';
+import PanelContextHarness from './__tests__/panel-context-harness.svelte';
 import FeatureSettingsPanel from './FeatureSettingsPanel.svelte';
 
 const mounted: Array<ReturnType<typeof mount>> = [];
@@ -13,6 +14,25 @@ function render(props: Record<string, unknown> = {}): HTMLElement {
   mounted.push(mount(FeatureSettingsPanel, { target, props }));
   flushSync();
   return target;
+}
+
+/** Mount the panel behind a harness that can replace `features` afterwards. */
+function renderWithHarness(props: Record<string, unknown>): {
+  target: HTMLElement;
+  harness: {
+    setFeatures: (next: FeatureSettingsView[]) => void;
+    setContextKey: (next: unknown) => void;
+  };
+} {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  const harness = mount(PanelContextHarness, { target, props }) as unknown as {
+    setFeatures: (next: FeatureSettingsView[]) => void;
+    setContextKey: (next: unknown) => void;
+  };
+  mounted.push(harness as unknown as ReturnType<typeof mount>);
+  flushSync();
+  return { target, harness };
 }
 
 afterEach(() => {
@@ -285,6 +305,90 @@ describe('FeatureSettingsPanel', () => {
     expect(target.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
       'Not permitted.',
     );
+  });
+
+  it('names the inherited value, not the code default, when a global override applies', () => {
+    // A tenant with no override of its own inherits the global override, so
+    // returning the tenant scope to Default leaves this feature ENABLED even
+    // though its code default is disabled.
+    const target = render({
+      features: [{ ...DRAFTS, globalEffect: 'enable', effectiveEnabled: true }],
+      showGlobal: true,
+      globalEditable: true,
+    });
+
+    expect(optionLabels(selectNamed(target, 'tenantEffect'))[0]).toBe(
+      'Default (enabled)',
+    );
+    // The global scope inherits nothing, so its Default still names the code default.
+    expect(optionLabels(selectNamed(target, 'globalEffect'))[0]).toBe(
+      'Default (disabled)',
+    );
+  });
+
+  it('names the code default for the tenant when a global override disables it', () => {
+    const target = render({
+      features: [
+        {
+          ...DRAFTS,
+          defaultEnabled: true,
+          globalEffect: 'disable',
+          effectiveEnabled: false,
+        },
+      ],
+    });
+
+    expect(optionLabels(selectNamed(target, 'tenantEffect'))[0]).toBe(
+      'Default (disabled)',
+    );
+  });
+
+  it('discards an unsaved edit when the feature rows are replaced', () => {
+    const onSave = vi.fn();
+    const { target, harness } = renderWithHarness({
+      initial: [DRAFTS],
+      onSave,
+    });
+
+    choose(selectNamed(target, 'tenantEffect'), 'enable');
+    // A reload, or a switch to another tenant whose rows carry the same keys.
+    harness.setFeatures([{ ...DRAFTS }]);
+    flushSync();
+
+    expect(selectNamed(target, 'tenantEffect').value).toBe('inherit');
+    submitFirstForm(target);
+    expect(onSave).toHaveBeenCalledWith({
+      featureKey: DRAFTS.featureKey,
+      tenantEffect: 'inherit',
+    });
+  });
+
+  it('discards an unsaved edit when contextKey changes', () => {
+    const { target, harness } = renderWithHarness({
+      initial: [DRAFTS],
+      contextKey: 'tenant-a',
+      onSave: vi.fn(),
+    });
+
+    choose(selectNamed(target, 'tenantEffect'), 'disable');
+    harness.setContextKey('tenant-b');
+    flushSync();
+
+    expect(selectNamed(target, 'tenantEffect').value).toBe('inherit');
+  });
+
+  it('keeps an unsaved edit while the context is unchanged', () => {
+    const { target, harness } = renderWithHarness({
+      initial: [DRAFTS],
+      contextKey: 'tenant-a',
+      onSave: vi.fn(),
+    });
+
+    choose(selectNamed(target, 'tenantEffect'), 'enable');
+    harness.setFeatures([{ ...DRAFTS }]);
+    flushSync();
+
+    expect(selectNamed(target, 'tenantEffect').value).toBe('enable');
   });
 
   it('fetches nothing: the panel is presentational', () => {
