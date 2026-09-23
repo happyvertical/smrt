@@ -20,7 +20,8 @@ that reverted to DECIMAL passes every SQLite suite.
 ## Money
 
 - **Money is integer minor units** (cents) — `$19.99` is `1999`.
-  `SubscriptionPlan.priceAmount`, `ClientCharge.amount`,
+  `SubscriptionPlan.priceAmount`, `ClientCharge.amount`, `RetailCharge.amount`,
+  `CreditGrant.amount`,
   `BillingAdjustment.amount` and `SpendingPolicy.limitAmount` all initialize
   `= 0`, never `= 0.0`: the integer literal is what maps them to INTEGER
   columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373). `ClientCharge.quantity` and `TenantUsageMetric.quantity` are
@@ -62,6 +63,33 @@ that reverted to DECIMAL passes every SQLite suite.
 - **Range and existing deployments**: fresh PostgreSQL/DuckDB INTEGER columns
   are BIGINT, and hydration rejects values outside JavaScript's safe-integer
   range. Existing PostgreSQL `int4` columns require the explicit widening in #2424.
+
+## Reseller billing (#3059)
+
+- Billing ownership is consumed from `smrt-tenancy`'s
+  `BillingRelationshipService` (`BillingRelationshipReader`); never re-derive
+  parentage or owners here.
+- `ClientCharge` stays one row per usage event (`usage_event_id` unique) and
+  `tenantId` is always the payer. That uniqueness is the double-billing guard
+  across owner changes; do not widen its conflict key. The retail leg lives in
+  `RetailCharge` (also one per event), written in the same transaction.
+- Price-book rules are `PricingRule` rows with `priceBookId`; `price()` must
+  keep ignoring them, and `rateUsage()` only trusts rules whose tenant owns the
+  book.
+- Delegated `SpendingPolicy` rows (`setByTenantId`) are guarded in
+  `validateBeforeSave` and a `beforeDelete` hook, by id and by conflict key;
+  `CreditGrant` applies the same parent-only rule to delegated balances.
+  `PriceBookAssignmentCollection` is deliberately not a root export.
+- `ResellerBillingService` authorizes first, then writes in a system context
+  (parent writes land on child-owned rows). The wholesale leg is authorized by
+  the book's publisher and may never be published by the payer; whether a
+  publisher is a legitimate provider for the reseller is a host obligation
+  (the model records no upstream seller). Relationship reads precede
+  authorization and stay under smrt-tenancy's own read rules. The only
+  cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
+- `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
+  be 0, and currency and period are fixed once saved (the ledger is scoped to
+  them). Auto top-up is a host hook only — no payment provider calls.
 
 ## Notes
 

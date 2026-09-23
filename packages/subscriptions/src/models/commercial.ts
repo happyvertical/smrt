@@ -1,10 +1,18 @@
 import {
+  crossPackageRef,
   foreignKey,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isSystemContext,
+  TenantIsolationError,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 
 export type PricingStrategy =
   | 'fixed_unit'
@@ -19,7 +27,28 @@ export type SpendingPolicyBehavior =
   | 'warn'
   | 'block'
   | 'approval_required';
-export type SpendingPeriod = 'day' | 'week' | 'month' | 'year' | 'rolling';
+/**
+ * `balance` is a prepaid credit balance: the policy's limit is the sum of its
+ * {@link CreditGrant}s and spend accumulates from `balanceFrom` onward.
+ */
+export type SpendingPeriod =
+  | 'day'
+  | 'week'
+  | 'month'
+  | 'year'
+  | 'rolling'
+  | 'balance';
+/**
+ * Which charges a spending policy counts (#3059).
+ *
+ * - `billed`: provider charges payable by the policy tenant (`ClientCharge`
+ *   rows whose `tenantId` is the tenant) — the pre-#3059 behavior.
+ * - `retail`: what the tenant owes its reseller (`RetailCharge` rows).
+ * - `wholesale`: what the policy's parent (`setByTenantId`) pays the provider
+ *   for this tenant's usage (`ClientCharge` rows billed to the parent with
+ *   `usageTenantId` = the tenant). Requires a delegated policy.
+ */
+export type SpendingBasis = 'billed' | 'retail' | 'wholesale';
 
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -40,6 +69,13 @@ export class PricingRule extends SmrtObject {
   priority: number = 0;
   terms: string = '{}';
   active: boolean = true;
+  /**
+   * The price book this rule belongs to (#3059), or empty for a tenant's
+   * direct pricing. Book rules are priced only through
+   * `CommercialUsageService.rateUsage()`; `price()` ignores them.
+   */
+  @foreignKey('PriceBook')
+  priceBookId: string = '';
 
   getTerms(): Record<string, unknown> {
     try {
@@ -62,9 +98,13 @@ export class PricingRule extends SmrtObject {
   conflictColumns: ['usage_event_id'],
 })
 export class ClientCharge extends SmrtObject {
+  /** The payer: the usage tenant, or its billing owner when parent-billed. */
   @tenantId() tenantId?: string;
   @foreignKey('TenantUsageMetric')
   usageEventId: string = '';
+  /** The tenant whose usage was charged; differs from `tenantId` for wholesale. */
+  @crossPackageRef('@happyvertical/smrt-users:Tenant')
+  usageTenantId: string = '';
   subscriberKind: string = 'tenant';
   subscriberExternalId: string = '';
   projectId: string = '';
@@ -90,6 +130,9 @@ export class ClientCharge extends SmrtObject {
   currency: string = 'USD';
   @foreignKey('PricingRule')
   pricingRuleId: string = '';
+  /** Wholesale book that priced this charge, or empty for direct pricing. */
+  @foreignKey('PriceBook')
+  priceBookId: string = '';
   pricingSnapshot: string = '{}';
   status: 'draft' | 'approved' | 'adjusted' = 'draft';
   approvedAt: Date | null = null;
@@ -135,6 +178,8 @@ export class ClientCharge extends SmrtObject {
       row.pricing_rule_id,
       row.pricing_snapshot,
       row.approved_at,
+      row.usage_tenant_id,
+      row.price_book_id,
     ];
     const current = [
       this.tenantId,
@@ -153,6 +198,8 @@ export class ClientCharge extends SmrtObject {
       this.pricingRuleId,
       this.pricingSnapshot,
       this.approvedAt,
+      this.usageTenantId,
+      this.priceBookId,
     ];
     if (
       persisted.some(
@@ -219,6 +266,7 @@ export class BillingAdjustment extends SmrtObject {
   api: true,
   cli: true,
   mcp: true,
+  hooks: { beforeDelete: 'assertDelegationAuthority' },
 })
 export class SpendingPolicy extends SmrtObject {
   @tenantId() tenantId?: string;
@@ -234,12 +282,24 @@ export class SpendingPolicy extends SmrtObject {
    * Spending cap in **integer minor units** of {@link currency}. Compared
    * directly against the sum of `ClientCharge.amount` + `BillingAdjustment`s
    * plus the caller's estimate, so it must carry the same unit (#2401).
+   * Must be zero for a `balance` policy, whose limit is its credit grants.
    */
   limitAmount: number = 0;
   currency: string = 'USD';
   behavior: SpendingPolicyBehavior = 'observe';
   priority: number = 0;
   active: boolean = true;
+  /** Which charges count toward the policy; see {@link SpendingBasis}. */
+  basis: SpendingBasis = 'billed';
+  /**
+   * The parent tenant that set this policy on its child (#3059), or empty for
+   * a tenant's own policy. A delegated policy can be changed or deleted only
+   * by that parent, a system context, or a super-admin bypass.
+   */
+  @crossPackageRef('@happyvertical/smrt-users:Tenant')
+  setByTenantId: string = '';
+  /** Start of the spend window for a `balance` policy; defaults to creation. */
+  balanceFrom: Date | null = null;
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
@@ -256,6 +316,103 @@ export class SpendingPolicy extends SmrtObject {
         'Rolling spending policies require rollingSeconds greater than zero.',
       );
     }
+    if (
+      this.basis !== 'billed' &&
+      this.basis !== 'retail' &&
+      this.basis !== 'wholesale'
+    ) {
+      throw new Error(
+        'Spending policy basis must be billed, retail, or wholesale.',
+      );
+    }
+    if (this.basis === 'wholesale' && !this.setByTenantId) {
+      throw new Error(
+        'Wholesale spending policies must be delegated by a parent (setByTenantId).',
+      );
+    }
+    if (this.period === 'balance') {
+      if (this.limitAmount !== 0) {
+        throw new Error(
+          'Balance spending policies take their limit from credit grants; limitAmount must be 0.',
+        );
+      }
+      if (!this.balanceFrom) this.balanceFrom = new Date();
+    }
+    const targets = await this.persistedTargets();
+    await this.assertBalanceLedgerStable(targets);
+    await this.assertDelegationAuthority(targets);
+  }
+
+  /**
+   * A balance policy's credit grants are scoped to its currency and period;
+   * changing either would silently detach the ledger, so create a new
+   * balance instead.
+   */
+  protected async assertBalanceLedgerStable(
+    rows: Array<Record<string, unknown> | null>,
+  ): Promise<void> {
+    for (const row of rows) {
+      if (row?.period !== 'balance') continue;
+      if (this.period !== 'balance' || row.currency !== this.currency) {
+        throw new Error(
+          'A balance policy cannot change currency or period; create a new balance policy.',
+        );
+      }
+    }
+  }
+
+  /**
+   * The rows this save can overwrite: by id and, because a new object may
+   * already carry a generated id, by conflict key (an upsert target).
+   */
+  protected async persistedTargets(): Promise<
+    Array<Record<string, unknown> | null>
+  > {
+    const byId = this.id
+      ? await this.getCanonicalPersistedRow({ id: this.id })
+      : null;
+    const byKey = this.tenantId
+      ? await this.getCanonicalPersistedRow({
+          tenant_id: this.tenantId,
+          subscriber_kind: this.subscriberKind,
+          subscriber_external_id: this.subscriberExternalId,
+          project_id: this.projectId,
+          service_key: this.serviceKey,
+          metric_key: this.metricKey,
+          period: this.period,
+          name: this.name,
+        })
+      : null;
+    return [byId, byKey];
+  }
+
+  /**
+   * A delegated policy belongs to the parent that set it: the constrained
+   * child cannot create one in a parent's name, loosen it, or delete it.
+   * The parent's-own-context allowance applies only where no tenancy
+   * interceptor is registered; with one, the interceptor refuses a parent
+   * writing the child's row, so parents change delegated policies through
+   * `ResellerBillingService.setDelegatedSpendingPolicy()` (set
+   * `active: false` to retire one).
+   * Checks both the persisted row (by id, or by conflict key for an upsert)
+   * and the incoming value.
+   */
+  protected async assertDelegationAuthority(
+    targets?: Array<Record<string, unknown> | null>,
+  ): Promise<void> {
+    const [byId, byKey] = targets ?? (await this.persistedTargets());
+    const owners = new Set(
+      [byId?.set_by_tenant_id, byKey?.set_by_tenant_id, this.setByTenantId]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => String(value).toLowerCase()),
+    );
+    if (owners.size === 0) return;
+    if (isSystemContext() || isSuperAdminBypass()) return;
+    const current = getTenantId()?.toLowerCase();
+    if (owners.size === 1 && current && owners.has(current)) return;
+    throw new TenantIsolationError(
+      'Delegated spending policies can be changed only by the parent that set them.',
+    );
   }
 }
 

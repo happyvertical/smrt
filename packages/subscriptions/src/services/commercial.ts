@@ -5,6 +5,15 @@ import {
   type SmrtClassOptions,
   withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
+import {
+  type BillingRelationshipService,
+  type BillingRelationshipView,
+  getTenantId,
+  isSuperAdminBypass,
+  isSystemContext,
+  TenantIsolationError,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import type { SqlAdapterType } from '@happyvertical/sql';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
@@ -14,20 +23,63 @@ import {
   type PricingRule,
   PricingRuleCollection,
   type PricingStrategy,
+  type SpendingBasis,
   type SpendingPolicy,
   SpendingPolicyCollection,
 } from '../models/commercial.js';
+import {
+  type CreditGrant,
+  CreditGrantCollection,
+  type PriceBook,
+  PriceBookAssignmentCollection,
+  PriceBookCollection,
+  type PriceBookKind,
+  type RetailCharge,
+  RetailChargeCollection,
+} from '../models/reseller.js';
+import type { TenantUsageMetric } from '../models/TenantUsageMetric.js';
 import type { RecordUsageOptions, SubscriberKind } from '../types.js';
 import {
   deterministicUuid,
   normalizeSubscriber,
   subscriberToColumns,
+  tenantKey,
 } from '../utils.js';
+import { ResellerBillingError } from './reseller-errors.js';
 
 export interface PriceUsageOptions {
   usageEventId: string;
   approved?: boolean;
   at?: Date;
+}
+
+/** The released smrt-tenancy billing-owner read this package depends on. */
+export type BillingRelationshipReader = Pick<
+  BillingRelationshipService,
+  'getRelationship'
+>;
+
+export interface RateUsageOptions extends PriceUsageOptions {
+  /** Resolves the usage tenant's reseller relationship and billing owner. */
+  billingRelationships: BillingRelationshipReader;
+}
+
+/**
+ * The outcome of rating one usage event (#3059). A usage event is rated
+ * exactly once: the first rating fixes the payer and price books, and later
+ * calls return the same records even if the billing owner has since changed.
+ */
+export interface UsageRating {
+  /** The tenant that produced the usage. */
+  usageTenantId: string;
+  /** Who pays the provider: the usage tenant, or its reseller. */
+  billingOwnerTenantId: string;
+  /** `direct` for self-billed usage, `wholesale` for reseller-billed usage. */
+  mode: 'direct' | 'wholesale';
+  /** The provider's charge, payable by {@link billingOwnerTenantId}. */
+  charge: ClientCharge;
+  /** The reseller's retail charge to the child, when a retail book applies. */
+  retailCharge: RetailCharge | null;
 }
 export interface CustomPricingContext {
   usage: { quantity: number; dimensions: Record<string, unknown> };
@@ -337,8 +389,15 @@ function normalizedCommercialClassOptions(
   return classOptions;
 }
 
+interface ResellerCollections {
+  books: PriceBookCollection;
+  assignments: PriceBookAssignmentCollection;
+  retailCharges: RetailChargeCollection;
+}
+
 export class CommercialUsageService {
   private readonly customStrategies = new Map<string, CustomPricingStrategy>();
+  private resellerCollections?: Promise<ResellerCollections>;
   constructor(
     private readonly usage: TenantUsageMetricCollection,
     private readonly rules: PricingRuleCollection,
@@ -401,7 +460,13 @@ export class CommercialUsageService {
         active: true,
       },
     });
-    const rule = selectRule(rules, at, String(dimensions.serviceKey ?? ''));
+    // Price-book rules are published by a seller for rateUsage(); they are
+    // never a tenant's own direct pricing.
+    const rule = selectRule(
+      rules.filter((candidate) => !candidate.priceBookId),
+      at,
+      String(dimensions.serviceKey ?? ''),
+    );
     if (!rule)
       throw new Error(
         `No effective pricing rule for metric '${usage.metricKey}'.`,
@@ -423,6 +488,7 @@ export class CommercialUsageService {
         id: chargeId,
         tenantId: usage.tenantId,
         usageEventId: String(usage.id),
+        usageTenantId: usage.tenantId,
         subscriberKind: usage.subscriberKind,
         subscriberExternalId: usage.subscriberExternalId,
         projectId: usage.projectId,
@@ -450,6 +516,337 @@ export class CommercialUsageService {
       if (!concurrent) throw error;
       return this.approveCharge(concurrent, options.approved);
     }
+  }
+
+  /**
+   * Rate one usage event under its billing owner's price books (#3059).
+   *
+   * - No reseller relationship, or a `self`-billed one: the usage tenant pays
+   *   the provider directly, priced exactly as {@link price} prices it.
+   * - `reseller`-billed: the reseller pays the provider from the child's
+   *   assigned wholesale book (a {@link ClientCharge} with `tenantId` = the
+   *   reseller and `usageTenantId` = the child) and, when the child has a
+   *   retail book assigned, the child owes the reseller a
+   *   {@link RetailCharge}. Both records commit in one transaction.
+   *
+   * Rating is idempotent per usage event and frozen at first rating: a later
+   * billing-owner change never re-prices or double-charges an event that
+   * already has a provider charge, because `ClientCharge` holds exactly one
+   * row per usage event.
+   *
+   * Rating reads the seller's books across tenants; run it where the host's
+   * tenancy rules allow that (typically a system context).
+   */
+  async rateUsage(options: RateUsageOptions): Promise<UsageRating> {
+    const { retailCharges } = await this.getResellerCollections();
+    const existing = await this.charges.list({
+      where: { usageEventId: options.usageEventId },
+      limit: 1,
+    });
+    if (existing[0]) {
+      return this.frozenRating(existing[0], retailCharges, options.approved);
+    }
+    const usage = await this.usage.get(options.usageEventId);
+    if (!usage)
+      throw new Error(`Usage event ${options.usageEventId} was not found.`);
+    if (!usage.id || !usage.tenantId)
+      throw new Error(
+        `Usage event ${options.usageEventId} has no persisted tenant id.`,
+      );
+    const relationship = await options.billingRelationships.getRelationship(
+      usage.tenantId,
+    );
+    if (relationship?.billingOwnerMode !== 'reseller') {
+      const charge = await this.price(options);
+      return this.frozenRating(charge, retailCharges, options.approved);
+    }
+    let failure: unknown;
+    try {
+      await this.rateResellerBilled(usage, relationship, options);
+    } catch (error) {
+      failure = error;
+    }
+    // Return root-bound records (never the committed transaction's handles).
+    // After a failure, a concurrent rating of the same event may have won the
+    // one-row-per-event insert; its transaction wrote the complete rating.
+    const rated = await this.charges.list({
+      where: { usageEventId: String(usage.id) },
+      limit: 1,
+    });
+    if (!rated[0]) throw failure ?? new Error('Rating was not persisted.');
+    return this.frozenRating(rated[0], retailCharges, options.approved);
+  }
+
+  private async rateResellerBilled(
+    usage: TenantUsageMetric,
+    relationship: BillingRelationshipView,
+    options: RateUsageOptions,
+  ): Promise<UsageRating> {
+    const { books, assignments } = await this.getResellerCollections();
+    const childTenantId = relationship.childTenantId;
+    const resellerTenantId = relationship.resellerTenantId;
+    const assignment = await assignments.get({ childTenantId });
+    if (
+      !assignment?.wholesalePriceBookId ||
+      tenantKey(assignment.resellerTenantId) !== resellerTenantId
+    ) {
+      throw new ResellerBillingError(
+        `No wholesale price book is assigned to tenant ${childTenantId} under reseller ${resellerTenantId}.`,
+        'PRICE_BOOK_NOT_ASSIGNED',
+      );
+    }
+    const at = options.at ?? usage.windowStart;
+    const dimensions = usage.getDimensions();
+    const serviceKey = String(dimensions.serviceKey ?? '');
+    const wholesaleBook = await loadBook(
+      books,
+      assignment.wholesalePriceBookId,
+      'wholesale',
+    );
+    assertWholesalePublisher(wholesaleBook, resellerTenantId, childTenantId);
+    const wholesaleRule = await this.selectBookRule(
+      wholesaleBook,
+      usage.metricKey,
+      serviceKey,
+      assignment.wholesaleCurrency,
+      at,
+    );
+    let retail: { book: PriceBook; rule: PricingRule } | null = null;
+    if (assignment.retailPriceBookId) {
+      const retailBook = await loadBook(
+        books,
+        assignment.retailPriceBookId,
+        'retail',
+      );
+      if (tenantKey(retailBook.tenantId) !== resellerTenantId) {
+        throw new ResellerBillingError(
+          `Retail price book '${retailBook.bookKey}' is not published by reseller ${resellerTenantId}.`,
+          'PRICE_BOOK_OWNER_MISMATCH',
+        );
+      }
+      retail = {
+        book: retailBook,
+        rule: await this.selectBookRule(
+          retailBook,
+          usage.metricKey,
+          serviceKey,
+          assignment.retailCurrency,
+          at,
+        ),
+      };
+    }
+    const wholesaleAmount = await this.calculateAmount(
+      wholesaleRule,
+      usage.quantity,
+      dimensions,
+    );
+    const retailAmount = retail
+      ? await this.calculateAmount(retail.rule, usage.quantity, dimensions)
+      : 0;
+    const usageEventId = String(usage.id);
+    const chargeId = await deterministicUuid([
+      'client-charge',
+      String(usage.tenantId),
+      usageEventId,
+    ]);
+    const retailChargeId = await deterministicUuid([
+      'retail-charge',
+      String(usage.tenantId),
+      usageEventId,
+    ]);
+    const approvedAt = options.approved ? new Date() : null;
+    const status = options.approved ? 'approved' : 'draft';
+    const usageColumns = {
+      usageEventId,
+      subscriberKind: usage.subscriberKind,
+      subscriberExternalId: usage.subscriberExternalId,
+      projectId: usage.projectId,
+      workRefType: usage.workRefType,
+      workRefId: usage.workRefId,
+      provider: usage.provider,
+      serviceKey,
+      metricKey: usage.metricKey,
+      quantity: usage.quantity,
+    };
+    const snapshot = (book: PriceBook, rule: PricingRule) =>
+      JSON.stringify({
+        ruleKey: rule.ruleKey,
+        strategy: rule.strategy,
+        terms: rule.getTerms(),
+        effectiveFrom: rule.effectiveFrom,
+        priceBookKey: book.bookKey,
+        priceBookKind: book.kind,
+        usageTenantId: childTenantId,
+        billingOwnerTenantId: resellerTenantId,
+      });
+    const db = this.charges.db;
+    return withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      async (transaction) => {
+        const charges = await ClientChargeCollection.create({
+          db: transaction,
+        });
+        const retailCharges = await RetailChargeCollection.create({
+          db: transaction,
+        });
+        const charge = await charges.create({
+          id: chargeId,
+          tenantId: resellerTenantId,
+          usageTenantId: childTenantId,
+          ...usageColumns,
+          amount: wholesaleAmount,
+          currency: wholesaleRule.currency,
+          pricingRuleId: String(wholesaleRule.id),
+          priceBookId: String(wholesaleBook.id),
+          pricingSnapshot: snapshot(wholesaleBook, wholesaleRule),
+          status,
+          approvedAt,
+          _insertOnly: true,
+        });
+        const retailCharge = retail
+          ? await retailCharges.create({
+              id: retailChargeId,
+              tenantId: childTenantId,
+              resellerTenantId,
+              clientChargeId: chargeId,
+              ...usageColumns,
+              amount: retailAmount,
+              currency: retail.rule.currency,
+              priceBookId: String(retail.book.id),
+              pricingRuleId: String(retail.rule.id),
+              pricingSnapshot: snapshot(retail.book, retail.rule),
+              status,
+              approvedAt,
+              _insertOnly: true,
+            })
+          : null;
+        return {
+          usageTenantId: childTenantId,
+          billingOwnerTenantId: resellerTenantId,
+          mode: 'wholesale' as const,
+          charge,
+          retailCharge,
+        };
+      },
+    );
+  }
+
+  private async selectBookRule(
+    book: PriceBook,
+    metricKey: string,
+    serviceKey: string,
+    currency: string,
+    at: Date,
+  ): Promise<PricingRule> {
+    const rules = await this.rules.list({
+      where: {
+        tenantId: book.tenantId,
+        priceBookId: book.id,
+        metricKey,
+        currency,
+        active: true,
+      },
+    });
+    const rule = selectRule(
+      // The owner check keeps a rule filed under someone else's book (the
+      // rules API is tenant-writable) from pricing that book.
+      rules.filter(
+        (candidate) =>
+          candidate.priceBookId === book.id &&
+          candidate.tenantId === book.tenantId &&
+          candidate.currency === currency,
+      ),
+      at,
+      serviceKey,
+    );
+    if (!rule?.id) {
+      throw new ResellerBillingError(
+        `Price book '${book.bookKey}' has no effective ${currency} price for metric '${metricKey}'.`,
+        'NO_EFFECTIVE_PRICE',
+      );
+    }
+    return rule;
+  }
+
+  private async frozenRating(
+    charge: ClientCharge,
+    retailCharges: RetailChargeCollection,
+    approved = false,
+  ): Promise<UsageRating> {
+    const retail = await retailCharges.list({
+      where: { usageEventId: charge.usageEventId },
+      limit: 1,
+    });
+    let providerCharge = charge;
+    let retailCharge: RetailCharge | null = retail[0] ?? null;
+    if (
+      approved &&
+      (providerCharge.status === 'draft' || retailCharge?.status === 'draft')
+    ) {
+      // Approve both legs in one transaction so they never disagree.
+      const db = this.charges.db;
+      [providerCharge, retailCharge] = await withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (transaction) => {
+          const charges = await ClientChargeCollection.create({
+            db: transaction,
+          });
+          const retails = await RetailChargeCollection.create({
+            db: transaction,
+          });
+          const provider = await charges.get(String(charge.id));
+          if (!provider) {
+            throw new Error(`Client charge ${charge.id} was not found.`);
+          }
+          const leg = retailCharge
+            ? await retails.get(String(retailCharge.id))
+            : null;
+          const approvedAt = new Date();
+          if (provider.status === 'draft') {
+            provider.status = 'approved';
+            provider.approvedAt = approvedAt;
+            await provider.save();
+          }
+          if (leg?.status === 'draft') {
+            leg.status = 'approved';
+            leg.approvedAt = approvedAt;
+            await leg.save();
+          }
+          return [provider, leg ?? null] as const;
+        },
+      );
+      // Hand back root-bound records, not the committed transaction's.
+      providerCharge = (await this.charges.get(String(charge.id))) ?? charge;
+      retailCharge = retailCharge?.id
+        ? ((await retailCharges.get(String(retailCharge.id))) ?? null)
+        : null;
+    }
+    return {
+      usageTenantId:
+        tenantKey(providerCharge.usageTenantId) ||
+        tenantKey(providerCharge.tenantId),
+      billingOwnerTenantId: tenantKey(providerCharge.tenantId),
+      mode: providerCharge.priceBookId ? 'wholesale' : 'direct',
+      charge: providerCharge,
+      retailCharge,
+    };
+  }
+
+  private getResellerCollections(): Promise<ResellerCollections> {
+    this.resellerCollections ??= (async () => {
+      const options = { db: this.charges.db };
+      return {
+        books: await PriceBookCollection.create(options),
+        assignments: await PriceBookAssignmentCollection.create(options),
+        retailCharges: await RetailChargeCollection.create(options),
+      };
+    })();
+    this.resellerCollections.catch(() => {
+      this.resellerCollections = undefined;
+    });
+    return this.resellerCollections;
   }
 
   private async approveCharge(
@@ -658,9 +1055,14 @@ export interface SpendingDecision {
    */
   projectedAmount: number;
   matchedPolicyId: string | null;
+  /**
+   * For a prepaid `balance` policy: credit remaining before this estimate
+   * (grants minus spend), in integer minor units. Absent for other periods.
+   */
+  balanceAmount?: number;
 }
 
-interface SpendingEvaluationInput {
+export interface SpendingEvaluationInput {
   tenantId: string;
   subscriberKind?: SubscriberKind;
   subscriberExternalId?: string;
@@ -669,23 +1071,121 @@ interface SpendingEvaluationInput {
   metricKey: string;
   /** Estimated cost of the pending call, in integer minor units (#2401). */
   estimatedAmount: number;
+  /**
+   * Per-basis estimates, in integer minor units, for policies whose basis
+   * prices the call differently (a retail estimate for `retail` policies, a
+   * wholesale estimate for `wholesale` ones). Falls back to
+   * {@link estimatedAmount}.
+   */
+  estimatedAmounts?: Partial<Record<SpendingBasis, number>>;
   currency: string;
   at?: Date;
 }
 
+/** Context handed to an {@link AutoTopUpHook} when a balance would run out. */
+export interface AutoTopUpRequest {
+  policyId: string;
+  tenantId: string;
+  /** The parent that set the policy, or empty for the tenant's own policy. */
+  setByTenantId: string;
+  currency: string;
+  /** Credit remaining before the estimate, in integer minor units. */
+  balanceAmount: number;
+  estimatedAmount: number;
+  /** How far the estimate overshoots the balance, in integer minor units. */
+  shortfall: number;
+}
+
+/**
+ * A top-up the hook has secured. `sourceId` makes it idempotent: the same
+ * `source`/`sourceId` pair is credited once however often it is returned.
+ */
+export interface AutoTopUpGrant {
+  amount: number;
+  sourceId: string;
+  source?: string;
+  reason?: string;
+}
+
+/**
+ * Host hook for prepaid balances. Called when a pending charge would exhaust a
+ * `balance` policy; return a grant to credit it (after the host has secured
+ * the funds) or nothing to let the policy's behavior apply. The evaluator
+ * never calls a payment provider itself.
+ */
+export type AutoTopUpHook = (
+  request: AutoTopUpRequest,
+) =>
+  | AutoTopUpGrant
+  | null
+  | undefined
+  | Promise<AutoTopUpGrant | null | undefined>;
+
+export interface SpendingPolicyEvaluatorOptions extends SmrtClassOptions {
+  autoTopUp?: AutoTopUpHook;
+  /**
+   * The smrt-tenancy relationship reader. When supplied, a delegated policy
+   * applies only while its `setByTenantId` is the tenant's current reseller;
+   * without it every delegated policy applies (fail closed).
+   */
+  billingRelationships?: BillingRelationshipReader;
+}
+
+export interface GrantCreditInput {
+  spendingPolicyId: string;
+  /** Signed, nonzero credit in integer minor units of the policy currency. */
+  amount: number;
+  reason?: string;
+  /** With `sourceId`, makes the grant idempotent (a payment or order id). */
+  source?: string;
+  sourceId?: string;
+  /** The parent granting credit on its child's delegated policy. */
+  grantedByTenantId?: string;
+}
+
+export interface SpendingPolicyEvaluatorExtensions {
+  retailCharges?: RetailChargeCollection;
+  credits?: CreditGrantCollection;
+  autoTopUp?: AutoTopUpHook;
+  billingRelationships?: BillingRelationshipReader;
+}
+
+interface LedgerRow {
+  id?: string | null;
+  amount: number;
+  status: string;
+  projectId: string;
+  serviceKey: string;
+  metricKey: string;
+  subscriberKind: string;
+  subscriberExternalId: string;
+}
+
 export class SpendingPolicyEvaluator {
+  private ledgers?: Promise<{
+    retailCharges: RetailChargeCollection;
+    credits: CreditGrantCollection;
+  }>;
   constructor(
     private readonly policies: SpendingPolicyCollection,
     private readonly charges: ClientChargeCollection,
     private readonly adjustments: BillingAdjustmentCollection,
+    private readonly extensions: SpendingPolicyEvaluatorExtensions = {},
   ) {}
-  static async create(options: SmrtClassOptions = {}) {
-    const policies = await SpendingPolicyCollection.create(options);
-    const sharedOptions = { ...options, db: policies.db };
+  static async create(options: SpendingPolicyEvaluatorOptions = {}) {
+    const { autoTopUp, billingRelationships, ...classOptions } = options;
+    const policies = await SpendingPolicyCollection.create(classOptions);
+    const sharedOptions = { ...classOptions, db: policies.db };
     return new SpendingPolicyEvaluator(
       policies,
       await ClientChargeCollection.create(sharedOptions),
       await BillingAdjustmentCollection.create(sharedOptions),
+      {
+        retailCharges: await RetailChargeCollection.create(sharedOptions),
+        credits: await CreditGrantCollection.create(sharedOptions),
+        autoTopUp,
+        billingRelationships,
+      },
     );
   }
 
@@ -708,7 +1208,10 @@ export class SpendingPolicyEvaluator {
         active: true,
       },
     });
-    const matchingPolicies = selectPolicies(candidates, normalizedInput);
+    const matchingPolicies = await this.withoutStaleDelegations(
+      input.tenantId,
+      selectPolicies(candidates, normalizedInput),
+    );
     if (matchingPolicies.length === 0)
       return {
         allowed: true,
@@ -729,29 +1232,233 @@ export class SpendingPolicyEvaluator {
     );
   }
 
+  /**
+   * Drop delegated policies whose parent is no longer the tenant's reseller,
+   * when a relationship reader is configured.
+   */
+  private async withoutStaleDelegations(
+    tenantId: string,
+    policies: SpendingPolicy[],
+  ): Promise<SpendingPolicy[]> {
+    const reader = this.extensions.billingRelationships;
+    if (!reader || !policies.some((policy) => tenantKey(policy.setByTenantId)))
+      return policies;
+    const relationship = await reader.getRelationship(tenantId);
+    const currentParent = tenantKey(relationship?.resellerTenantId);
+    return policies.filter((policy) => {
+      const setBy = tenantKey(policy.setByTenantId);
+      return !setBy || setBy === currentParent;
+    });
+  }
+
+  /**
+   * Credit a prepaid `balance` policy. A delegated policy accepts grants only
+   * from the parent that set it (or a system context / super-admin bypass).
+   */
+  async grantCredit(input: GrantCreditInput): Promise<CreditGrant> {
+    const policy = await this.policies.get(input.spendingPolicyId);
+    if (!policy?.id) {
+      throw new ResellerBillingError(
+        `Spending policy ${input.spendingPolicyId} was not found.`,
+        'POLICY_NOT_FOUND',
+      );
+    }
+    const setBy = tenantKey(policy.setByTenantId);
+    if (
+      setBy &&
+      !isSystemContext() &&
+      !isSuperAdminBypass() &&
+      getTenantId()?.toLowerCase() !== setBy
+    ) {
+      throw new TenantIsolationError(
+        'Only the parent that set a delegated policy can grant it credit.',
+      );
+    }
+    if (
+      input.grantedByTenantId &&
+      setBy &&
+      tenantKey(input.grantedByTenantId) !== setBy
+    ) {
+      throw new TenantIsolationError(
+        'Delegated policy credit must be granted by the parent that set it.',
+      );
+    }
+    return this.recordGrant(policy, {
+      ...input,
+      grantedByTenantId: input.grantedByTenantId || setBy,
+    });
+  }
+
+  private async recordGrant(
+    policy: SpendingPolicy,
+    input: GrantCreditInput,
+  ): Promise<CreditGrant> {
+    if (policy.period !== 'balance') {
+      throw new ResellerBillingError(
+        `Spending policy '${policy.name}' is not a balance policy.`,
+        'POLICY_NOT_BALANCE',
+      );
+    }
+    if (!Number.isSafeInteger(input.amount) || input.amount === 0) {
+      throw new ResellerBillingError(
+        `Credit amount must be a nonzero integer number of minor units — got ${input.amount}.`,
+        'INVALID_AMOUNT',
+      );
+    }
+    const { credits } = await this.getLedgers();
+    const source = input.source ?? '';
+    const sourceId = input.sourceId ?? '';
+    const id =
+      source && sourceId
+        ? await deterministicUuid([
+            'credit-grant',
+            String(policy.tenantId),
+            String(policy.id),
+            source,
+            sourceId,
+          ])
+        : undefined;
+    if (id) {
+      const existing = await credits.get(id);
+      if (existing) return existing;
+    }
+    try {
+      return await credits.create({
+        ...(id ? { id } : {}),
+        tenantId: policy.tenantId,
+        spendingPolicyId: String(policy.id),
+        amount: input.amount,
+        currency: policy.currency,
+        reason: input.reason ?? '',
+        source,
+        sourceId,
+        grantedByTenantId: input.grantedByTenantId ?? '',
+        _insertOnly: Boolean(id),
+      });
+    } catch (error) {
+      const concurrent = id ? await credits.get(id) : undefined;
+      if (concurrent) return concurrent;
+      throw error;
+    }
+  }
+
   private async evaluatePolicy(
     policy: SpendingPolicy,
     input: SpendingEvaluationInput,
     at: Date,
   ): Promise<SpendingDecision> {
+    const estimatedAmount =
+      input.estimatedAmounts?.[policy.basis] ?? input.estimatedAmount;
     const [start, end] = policyWindow(policy, at);
-    const chargeWhere: Record<string, unknown> = {
-      tenantId: input.tenantId,
+    const spent = await this.spentFor(policy, input.tenantId, start, end);
+    if (policy.period !== 'balance') {
+      return decide(policy, spent + estimatedAmount, policy.limitAmount);
+    }
+    let credit = await this.creditFor(policy);
+    const projectedAmount = spent + estimatedAmount;
+    const policyId = policy.id;
+    if (projectedAmount > credit && this.extensions.autoTopUp && policyId) {
+      const grant = await this.extensions.autoTopUp({
+        policyId,
+        tenantId: String(policy.tenantId),
+        setByTenantId: tenantKey(policy.setByTenantId),
+        currency: policy.currency,
+        balanceAmount: credit - spent,
+        estimatedAmount,
+        shortfall: projectedAmount - credit,
+      });
+      if (grant) {
+        // The hook is host code configured on this evaluator; its grant is
+        // recorded with the policy's own grantor even when evaluation runs in
+        // the constrained child's tenant context.
+        await withSystemContext(() =>
+          this.recordGrant(policy, {
+            spendingPolicyId: policyId,
+            amount: grant.amount,
+            reason: grant.reason ?? 'auto top-up',
+            source: grant.source ?? 'auto_top_up',
+            sourceId: grant.sourceId,
+            grantedByTenantId: tenantKey(policy.setByTenantId),
+          }),
+        );
+        credit = await this.creditFor(policy);
+      }
+    }
+    return {
+      ...decide(policy, projectedAmount, credit),
+      balanceAmount: credit - spent,
+    };
+  }
+
+  /** Approved spend in the policy's window, currency, scope, and basis. */
+  private async spentFor(
+    policy: SpendingPolicy,
+    tenantId: string,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const scope: Record<string, unknown> = {
       currency: policy.currency,
-      status: ['approved', 'adjusted'],
       'approvedAt >=': start.toISOString(),
       'approvedAt <': end.toISOString(),
     };
-    if (policy.metricKey) chargeWhere.metricKey = policy.metricKey;
-    if (policy.projectId) chargeWhere.projectId = policy.projectId;
-    if (policy.serviceKey) chargeWhere.serviceKey = policy.serviceKey;
-    if (policy.subscriberKind)
-      chargeWhere.subscriberKind = policy.subscriberKind;
+    if (policy.metricKey) scope.metricKey = policy.metricKey;
+    if (policy.projectId) scope.projectId = policy.projectId;
+    if (policy.serviceKey) scope.serviceKey = policy.serviceKey;
+    if (policy.subscriberKind) scope.subscriberKind = policy.subscriberKind;
     if (policy.subscriberExternalId)
-      chargeWhere.subscriberExternalId = policy.subscriberExternalId;
-    const rows = await this.charges.list({ where: chargeWhere });
+      scope.subscriberExternalId = policy.subscriberExternalId;
+
+    const setBy = tenantKey(policy.setByTenantId);
+    if (policy.basis === 'retail') {
+      const { retailCharges } = await this.getLedgers();
+      const where: Record<string, unknown> = {
+        ...scope,
+        tenantId,
+        status: 'approved',
+      };
+      // A parent's cap counts only what the child owes that parent.
+      if (setBy) where.resellerTenantId = setBy;
+      const rows = await retailCharges.list({ where });
+      return sumScoped(
+        policy,
+        rows.filter(
+          (row) => !setBy || tenantKey(row.resellerTenantId) === setBy,
+        ),
+        ['approved'],
+      );
+    }
+
+    if (policy.basis === 'wholesale') {
+      if (!setBy) return 0;
+      // Reviewed cross-tenant read: the parent's provider charges for this
+      // child's usage, bounded to (payer = setBy, usageTenantId = tenant) and
+      // reduced to a sum, so a child-context evaluation can enforce its
+      // parent's wholesale cap without reading the parent's other rows.
+      return withSystemContext(() =>
+        this.sumProviderCharges(policy, scope, setBy, tenantId),
+      );
+    }
+    return this.sumProviderCharges(policy, scope, tenantId);
+  }
+
+  private async sumProviderCharges(
+    policy: SpendingPolicy,
+    scope: Record<string, unknown>,
+    payer: string,
+    usageTenantId?: string,
+  ): Promise<number> {
+    const where: Record<string, unknown> = {
+      ...scope,
+      tenantId: payer,
+      status: ['approved', 'adjusted'],
+    };
+    if (usageTenantId) where.usageTenantId = usageTenantId;
+    const rows = await this.charges.list({ where });
     const scopedCharges = rows.filter(
       (charge) =>
+        (!usageTenantId ||
+          tenantKey(charge.usageTenantId) === tenantKey(usageTenantId)) &&
         (charge.status === 'approved' || charge.status === 'adjusted') &&
         matchesChargeScope(policy, charge),
     );
@@ -763,52 +1470,160 @@ export class SpendingPolicyEvaluator {
       chargeIds.length > 0
         ? await this.adjustments.list({
             where: {
-              tenantId: input.tenantId,
+              tenantId: payer,
               currency: policy.currency,
               clientChargeId: chargeIds,
             },
           })
         : [];
     const spent = scopedCharges.reduce((sum, charge) => sum + charge.amount, 0);
-    const correctedSpent =
+    return (
       spent +
       adjustmentRows
         .filter((adjustment) => chargeIdSet.has(adjustment.clientChargeId))
-        .reduce((sum, adjustment) => sum + adjustment.amount, 0);
-    const projectedAmount = correctedSpent + input.estimatedAmount;
-    const exceeded = projectedAmount > policy.limitAmount;
-    if (!exceeded || policy.behavior === 'observe')
+        .reduce((sum, adjustment) => sum + adjustment.amount, 0)
+    );
+  }
+
+  private async creditFor(policy: SpendingPolicy): Promise<number> {
+    const { credits } = await this.getLedgers();
+    const grants = await credits.list({
+      where: {
+        tenantId: policy.tenantId,
+        spendingPolicyId: policy.id,
+        currency: policy.currency,
+      },
+    });
+    // A delegated balance holds only credit its current parent granted: when
+    // a new parent takes over the policy, a former parent's grants stay with
+    // that former relationship instead of funding the new one.
+    const setBy = tenantKey(policy.setByTenantId);
+    return grants
+      .filter(
+        (grant) =>
+          grant.spendingPolicyId === policy.id &&
+          (!setBy || tenantKey(grant.grantedByTenantId) === setBy),
+      )
+      .reduce((sum, grant) => sum + grant.amount, 0);
+  }
+
+  private getLedgers(): Promise<{
+    retailCharges: RetailChargeCollection;
+    credits: CreditGrantCollection;
+  }> {
+    this.ledgers ??= (async () => {
+      const options = { db: this.policies.db };
       return {
-        allowed: true,
-        approvalRequired: false,
-        state: exceeded ? 'observed' : 'ok',
-        projectedAmount,
-        matchedPolicyId: policy.id ?? null,
+        retailCharges:
+          this.extensions.retailCharges ??
+          (await RetailChargeCollection.create(options)),
+        credits:
+          this.extensions.credits ??
+          (await CreditGrantCollection.create(options)),
       };
-    if (policy.behavior === 'warn')
-      return {
-        allowed: true,
-        approvalRequired: false,
-        state: 'warned',
-        projectedAmount,
-        matchedPolicyId: policy.id ?? null,
-      };
-    if (policy.behavior === 'approval_required')
-      return {
-        allowed: false,
-        approvalRequired: true,
-        state: 'approval_required',
-        projectedAmount,
-        matchedPolicyId: policy.id ?? null,
-      };
+    })();
+    this.ledgers.catch(() => {
+      this.ledgers = undefined;
+    });
+    return this.ledgers;
+  }
+}
+
+function decide(
+  policy: SpendingPolicy,
+  projectedAmount: number,
+  limitAmount: number,
+): SpendingDecision {
+  const exceeded = projectedAmount > limitAmount;
+  const matchedPolicyId = policy.id ?? null;
+  if (!exceeded || policy.behavior === 'observe')
+    return {
+      allowed: true,
+      approvalRequired: false,
+      state: exceeded ? 'observed' : 'ok',
+      projectedAmount,
+      matchedPolicyId,
+    };
+  if (policy.behavior === 'warn')
+    return {
+      allowed: true,
+      approvalRequired: false,
+      state: 'warned',
+      projectedAmount,
+      matchedPolicyId,
+    };
+  if (policy.behavior === 'approval_required')
     return {
       allowed: false,
-      approvalRequired: false,
-      state: 'blocked',
+      approvalRequired: true,
+      state: 'approval_required',
       projectedAmount,
-      matchedPolicyId: policy.id ?? null,
+      matchedPolicyId,
     };
+  return {
+    allowed: false,
+    approvalRequired: false,
+    state: 'blocked',
+    projectedAmount,
+    matchedPolicyId,
+  };
+}
+
+function sumScoped(
+  policy: SpendingPolicy,
+  rows: LedgerRow[],
+  statuses: string[],
+): number {
+  return rows
+    .filter(
+      (row) => statuses.includes(row.status) && matchesChargeScope(policy, row),
+    )
+    .reduce((sum, row) => sum + row.amount, 0);
+}
+
+/**
+ * The provider leg must be priced by someone other than the payer: a reseller
+ * (or its child) never publishes the wholesale book it is charged from.
+ */
+export function assertWholesalePublisher(
+  book: PriceBook,
+  resellerTenantId: string,
+  childTenantId: string,
+): void {
+  const publisher = tenantKey(book.tenantId);
+  if (publisher === resellerTenantId || publisher === childTenantId) {
+    throw new ResellerBillingError(
+      `Wholesale price book '${book.bookKey}' is published by the tenant it would charge.`,
+      'PRICE_BOOK_OWNER_MISMATCH',
+    );
   }
+}
+
+async function loadBook(
+  books: PriceBookCollection,
+  id: string,
+  kind: PriceBookKind,
+): Promise<PriceBook> {
+  const book = await books.get(id);
+  if (!book?.id) {
+    throw new ResellerBillingError(
+      `Price book ${id} was not found.`,
+      'PRICE_BOOK_NOT_FOUND',
+    );
+  }
+  if (book.kind !== kind) {
+    throw new ResellerBillingError(
+      `Price book '${book.bookKey}' is a ${book.kind} book, not ${kind}.`,
+      'PRICE_BOOK_KIND_MISMATCH',
+    );
+  }
+  if (!book.active) {
+    throw new ResellerBillingError(
+      `Price book '${book.bookKey}' is inactive.`,
+      'PRICE_BOOK_INACTIVE',
+    );
+  }
+  return book;
 }
 
 function selectRule(
@@ -882,7 +1697,7 @@ function scopeScore(p: SpendingPolicy): number {
     Number(Boolean(p.metricKey))
   );
 }
-function matchesChargeScope(p: SpendingPolicy, c: ClientCharge): boolean {
+function matchesChargeScope(p: SpendingPolicy, c: LedgerRow): boolean {
   return (
     hasValidSubscriberScope(p) &&
     (!p.projectId || p.projectId === c.projectId) &&
@@ -900,7 +1715,11 @@ function hasValidSubscriberScope(p: SpendingPolicy): boolean {
 function policyWindow(policy: SpendingPolicy, at: Date): [Date, Date] {
   const end = new Date(at);
   const start = new Date(at);
-  if (policy.period === 'rolling')
+  if (policy.period === 'balance')
+    start.setTime(
+      new Date(policy.balanceFrom ?? policy.created_at ?? 0).getTime(),
+    );
+  else if (policy.period === 'rolling')
     start.setTime(at.getTime() - policy.rollingSeconds * 1000);
   else if (policy.period === 'day') start.setUTCHours(0, 0, 0, 0);
   else if (policy.period === 'week') {

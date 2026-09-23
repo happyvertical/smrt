@@ -324,3 +324,8 @@ function utcWindow(now: Date, unit: 'day' | 'week' | 'month' | 'year') {
 
   return { start, end };
 }
+
+/** Canonical comparison key for a possibly-null hydrated tenant id. */
+export function tenantKey(value: string | null | undefined): string {
+  return String(value ?? '').toLowerCase();
+}
