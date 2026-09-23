@@ -99,13 +99,14 @@ Parentage and the billing owner come from `smrt-tenancy`'s
 - **Delegated spending.** `setDelegatedSpendingPolicy()` writes a
   `SpendingPolicy` on the child with `setByTenantId` = the parent. The ordinary
   `SpendingPolicyEvaluator` enforces it (observe, warn, approval, block), and
-  the child cannot edit, delete, or overwrite it. A policy's `basis` selects
+  the child cannot edit, delete, or overwrite it. Parents change or retire
+  (`active: false`) their policies through the same method. A policy's `basis` selects
   what it counts: `billed` (what the tenant pays the provider, the default),
   `retail` (what it owes its reseller), or `wholesale` (what the parent pays
   for this child's usage).
 - **Prepaid credit.** A `period: 'balance'` policy's limit is the sum of its
   `CreditGrant`s; spend accumulates from `balanceFrom`. Its currency and
-  period cannot change once saved; create a new balance instead. Grants are append-only
+  period cannot change once saved; create a new balance instead. Grants are append-only (updates and deletes are refused)
   and idempotent per `source`/`sourceId`. Pass `autoTopUp` to
   `SpendingPolicyEvaluator.create()` to be called when a charge would exhaust a
   balance; return a grant once the host has secured the funds. The evaluator

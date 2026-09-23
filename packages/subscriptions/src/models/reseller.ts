@@ -226,6 +226,7 @@ export class RetailCharge extends SmrtObject {
   api: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
+  hooks: { beforeDelete: 'refuseDelete' },
 })
 export class CreditGrant extends SmrtObject {
   /** The tenant whose balance is credited (the policy's tenant). */
@@ -241,6 +242,13 @@ export class CreditGrant extends SmrtObject {
   /** A parent tenant that granted the credit, or empty when self-granted. */
   @crossPackageRef('@happyvertical/smrt-users:Tenant')
   grantedByTenantId: string = '';
+
+  /** Append-only: history is corrected by a reversing grant, never removed. */
+  protected refuseDelete(): void {
+    throw new Error(
+      'Credit grants are append-only; record a reversing grant instead of deleting.',
+    );
+  }
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();

@@ -11,7 +11,8 @@ export type ResellerBillingErrorCode =
   | 'RELATIONSHIP_REQUIRED'
   | 'POLICY_NOT_FOUND'
   | 'POLICY_NOT_BALANCE'
-  | 'POLICY_CONFLICT';
+  | 'POLICY_CONFLICT'
+  | 'ASSIGNMENT_CONFLICT';
 
 /** A reseller price book, rating, or delegated-spending rule was violated. */
 export class ResellerBillingError extends Error {

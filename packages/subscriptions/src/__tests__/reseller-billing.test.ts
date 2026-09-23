@@ -229,6 +229,61 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
     ).rejects.toMatchObject({ code: 'INVALID_CURRENCY' });
   });
 
+  it('keeps service-specific prices with the same rule key distinct', async () => {
+    const define = (serviceKey: string, unitPrice: number) =>
+      system(() =>
+        reseller.definePrice({
+          priceBookId: String(retailBook.id),
+          ruleKey: 'svc',
+          metricKey: 'ai.requests',
+          serviceKey,
+          strategy: 'fixed_unit',
+          effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+          prices: [{ currency: 'USD', terms: { unitPrice } }],
+        }),
+      );
+    const [a] = await define('chat', 1);
+    const [b] = await define('images', 2);
+    expect(a?.id).not.toBe(b?.id);
+    const rows = await rules.list({
+      where: { priceBookId: String(retailBook.id), metricKey: 'ai.requests' },
+    });
+    expect(
+      rows.map((rule) => [rule.serviceKey, rule.getTerms().unitPrice]).sort(),
+    ).toEqual([
+      ['chat', 1],
+      ['images', 2],
+    ]);
+  });
+
+  it('merges concurrent single-leg assignment updates without losing a leg', async () => {
+    await system(() =>
+      reseller.assignPriceBooks({
+        childTenantId: CHILD,
+        wholesale: null,
+        retail: null,
+      }),
+    );
+    await system(() =>
+      Promise.all([
+        reseller.assignPriceBooks({
+          childTenantId: CHILD,
+          wholesale: { priceBookId: String(wholesaleBook.id), currency: 'CAD' },
+        }),
+        reseller.assignPriceBooks({
+          childTenantId: CHILD,
+          retail: { priceBookId: String(retailBook.id), currency: 'EUR' },
+        }),
+      ]),
+    );
+    expect(
+      await system(() => reseller.getPriceBookAssignment(CHILD)),
+    ).toMatchObject({
+      wholesale: { priceBookId: wholesaleBook.id, currency: 'CAD' },
+      retail: { priceBookId: retailBook.id, currency: 'EUR' },
+    });
+  });
+
   it('rates reseller-billed usage as wholesale to the reseller and retail to the child', async () => {
     const event = await recordUsage(CHILD, 10);
     const rating = await system(() =>
@@ -1112,6 +1167,16 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
         ),
       ).rejects.toThrow();
       expect(await credits.list({ where: {} })).toHaveLength(0);
+      const grant = await system(() =>
+        reseller.grantChildCredit({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          spendingPolicyId: String(balance.id),
+          amount: 10,
+        }),
+      );
+      await expect(system(() => grant.delete())).rejects.toThrow(/append-only/);
+      expect(await credits.list({ where: {} })).toHaveLength(1);
     });
 
     it('rejects credit on a non-balance policy', async () => {

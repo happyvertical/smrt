@@ -6,7 +6,12 @@
  * on `CommercialUsageService.rateUsage()`, enforcement on
  * `SpendingPolicyEvaluator` — this service manages the records they read.
  */
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isEmbeddedDatabase,
+  isPostgresDatabase,
+  type SmrtClassOptions,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
 import {
   type BillingRelationshipView,
   getTenantId,
@@ -283,6 +288,8 @@ export class ResellerBillingService {
           'price-book-rule',
           String(book.id),
           input.ruleKey,
+          input.metricKey,
+          input.serviceKey ?? '',
           currency,
           effectiveFrom.toISOString(),
         ]);
@@ -373,28 +380,60 @@ export class ResellerBillingService {
       );
     }
 
-    const wholesale =
-      input.wholesale === undefined
-        ? (current?.wholesale ?? null)
-        : input.wholesale;
-    const retail =
-      input.retail === undefined ? (current?.retail ?? null) : input.retail;
-    const values = {
-      childTenantId,
-      resellerTenantId,
-      wholesalePriceBookId: wholesale?.priceBookId ?? '',
-      wholesaleCurrency: wholesale?.currency ?? '',
-      retailPriceBookId: retail?.priceBookId ?? '',
-      retailCurrency: retail?.currency ?? '',
-    };
-    return authorized(async () => {
-      if (existing) {
-        Object.assign(existing, values);
-        await existing.save();
-        return assignmentView(existing);
-      }
-      return assignmentView(await this.assignments.create(values));
-    });
+    // Read-merge-write under one lock so concurrent single-leg updates
+    // cannot overwrite each other's leg.
+    const db = this.assignments.db;
+    return authorized(() =>
+      withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (transaction) => {
+          if (isPostgresDatabase(transaction)) {
+            await transaction.query(
+              "SELECT pg_advisory_xact_lock(hashtext('smrt-price-book-assignments'))",
+            );
+          }
+          const assignments = await PriceBookAssignmentCollection.create({
+            db: transaction,
+          });
+          const row = await assignments.get({ childTenantId });
+          const fresh =
+            row && tenantKey(row.resellerTenantId) === resellerTenantId
+              ? assignmentView(row)
+              : null;
+          if (
+            input.wholesale === null &&
+            fresh?.wholesale?.priceBookId !== current?.wholesale?.priceBookId
+          ) {
+            // The clear was authorized against a different wholesale book.
+            throw new ResellerBillingError(
+              'The wholesale assignment changed concurrently; retry.',
+              'ASSIGNMENT_CONFLICT',
+            );
+          }
+          const wholesale =
+            input.wholesale === undefined
+              ? (fresh?.wholesale ?? null)
+              : input.wholesale;
+          const retail =
+            input.retail === undefined ? (fresh?.retail ?? null) : input.retail;
+          const values = {
+            childTenantId,
+            resellerTenantId,
+            wholesalePriceBookId: wholesale?.priceBookId ?? '',
+            wholesaleCurrency: wholesale?.currency ?? '',
+            retailPriceBookId: retail?.priceBookId ?? '',
+            retailCurrency: retail?.currency ?? '',
+          };
+          if (row) {
+            Object.assign(row, values);
+            await row.save();
+            return assignmentView(row);
+          }
+          return assignmentView(await assignments.create(values));
+        },
+      ),
+    );
   }
 
   /** The child's assignment under its current reseller, if any. */

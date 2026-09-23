@@ -775,20 +775,53 @@ export class CommercialUsageService {
       where: { usageEventId: charge.usageEventId },
       limit: 1,
     });
-    const retailCharge = retail[0] ?? null;
-    const approvedCharge = await this.approveCharge(charge, approved);
-    if (approved && retailCharge?.status === 'draft') {
-      retailCharge.status = 'approved';
-      retailCharge.approvedAt = new Date();
-      await retailCharge.save();
+    let providerCharge = charge;
+    let retailCharge: RetailCharge | null = retail[0] ?? null;
+    if (
+      approved &&
+      (providerCharge.status === 'draft' || retailCharge?.status === 'draft')
+    ) {
+      // Approve both legs in one transaction so they never disagree.
+      const db = this.charges.db;
+      [providerCharge, retailCharge] = await withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (transaction) => {
+          const charges = await ClientChargeCollection.create({
+            db: transaction,
+          });
+          const retails = await RetailChargeCollection.create({
+            db: transaction,
+          });
+          const provider = await charges.get(String(charge.id));
+          if (!provider) {
+            throw new Error(`Client charge ${charge.id} was not found.`);
+          }
+          const leg = retailCharge
+            ? await retails.get(String(retailCharge.id))
+            : null;
+          const approvedAt = new Date();
+          if (provider.status === 'draft') {
+            provider.status = 'approved';
+            provider.approvedAt = approvedAt;
+            await provider.save();
+          }
+          if (leg?.status === 'draft') {
+            leg.status = 'approved';
+            leg.approvedAt = approvedAt;
+            await leg.save();
+          }
+          return [provider, leg ?? null] as const;
+        },
+      );
     }
     return {
       usageTenantId:
-        tenantKey(approvedCharge.usageTenantId) ||
-        tenantKey(approvedCharge.tenantId),
-      billingOwnerTenantId: tenantKey(approvedCharge.tenantId),
-      mode: approvedCharge.priceBookId ? 'wholesale' : 'direct',
-      charge: approvedCharge,
+        tenantKey(providerCharge.usageTenantId) ||
+        tenantKey(providerCharge.tenantId),
+      billingOwnerTenantId: tenantKey(providerCharge.tenantId),
+      mode: providerCharge.priceBookId ? 'wholesale' : 'direct',
+      charge: providerCharge,
       retailCharge,
     };
   }

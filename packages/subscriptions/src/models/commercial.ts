@@ -389,6 +389,11 @@ export class SpendingPolicy extends SmrtObject {
   /**
    * A delegated policy belongs to the parent that set it: the constrained
    * child cannot create one in a parent's name, loosen it, or delete it.
+   * The parent's-own-context allowance applies only where no tenancy
+   * interceptor is registered; with one, the interceptor refuses a parent
+   * writing the child's row, so parents change delegated policies through
+   * `ResellerBillingService.setDelegatedSpendingPolicy()` (set
+   * `active: false` to retire one).
    * Checks both the persisted row (by id, or by conflict key for an upsert)
    * and the incoming value.
    */

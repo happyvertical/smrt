@@ -248,6 +248,31 @@ describePostgres('smrt#3059 reseller billing on PostgreSQL', () => {
     ).toHaveLength(1);
   });
 
+  it('serializes concurrent single-leg assignment updates', async () => {
+    const assignment = await withSystemContext(() =>
+      reseller.getPriceBookAssignment(CHILD),
+    );
+    const wholesale = assignment?.wholesale;
+    const retail = assignment?.retail;
+    if (!wholesale || !retail) throw new Error('missing assignment');
+    await withSystemContext(() =>
+      reseller.assignPriceBooks({
+        childTenantId: CHILD,
+        wholesale: null,
+        retail: null,
+      }),
+    );
+    await withSystemContext(() =>
+      Promise.all([
+        reseller.assignPriceBooks({ childTenantId: CHILD, wholesale }),
+        reseller.assignPriceBooks({ childTenantId: CHILD, retail }),
+      ]),
+    );
+    expect(
+      await withSystemContext(() => reseller.getPriceBookAssignment(CHILD)),
+    ).toMatchObject({ wholesale, retail });
+  });
+
   it('enforces a delegated prepaid balance with exact minor units', async () => {
     const policy = await withSystemContext(() =>
       reseller.setDelegatedSpendingPolicy({
