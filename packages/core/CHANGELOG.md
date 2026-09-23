@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.19
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - authorization reads never inherit caller list bounds (#3048) (#3051) (users)
+- @happyvertical/smrt-config@0.51.19
+  - @happyvertical/smrt-scanner@0.51.19
+  - @happyvertical/smrt-types@0.51.19
+
 ## 0.51.18
 
 ### Patch Changes
