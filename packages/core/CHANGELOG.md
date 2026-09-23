@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.21
+
+### Patch Changes
+
+- ### Features
+  
+  - add reseller billing relationships (#3074) (tenancy)
+- @happyvertical/smrt-config@0.51.21
+  - @happyvertical/smrt-scanner@0.51.21
+  - @happyvertical/smrt-types@0.51.21
+
 ## 0.51.20
 
 ### Patch Changes
