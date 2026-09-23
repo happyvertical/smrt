@@ -21,6 +21,8 @@ import {
 } from 'node:path';
 import {
   AGENT_SURFACE_HASH_PREFIX,
+  checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
   discoverScopedPackageDirectories,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
@@ -918,6 +920,7 @@ export async function checkKnowledgeFreshnessFromIndex(
   }
 
   issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
+  issues.push(...findKnowledgeGraphIssues(index.rootDir));
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
@@ -947,6 +950,47 @@ export async function checkKnowledgeFreshnessFromIndex(
     warningCount,
     issues: effectiveIssues,
   };
+}
+
+/** Where `pnpm knowledge:graph` writes the merged cross-package graph (#2863). */
+const KNOWLEDGE_GRAPH_PATH = '.smrt/smrt-knowledge-graph.json';
+
+/**
+ * The merged cross-package graph (#2863) is generated from the per-package
+ * artifacts checked above, so it goes missing or stale the same way they do.
+ * Checking it here, rather than only in `scripts/check-knowledge.ts`, makes
+ * every consumer of this function — the MCP `check-knowledge-freshness` /
+ * `reflect-*` tools and `smrt dev:knowledge-check` — report it too (#3070).
+ *
+ * A missing graph is only an error in a repository that generates one (its
+ * root `package.json` declares a `knowledge:graph` script) and has
+ * per-package artifacts to merge: consumer apps never run the generator, so
+ * requiring the file there would make their freshness gate unpassable. A graph
+ * that does exist is always checked. Invalid or stale graphs surface as
+ * `stale-knowledge-graph`, which the caller downgrades to a warning outside
+ * strict mode like every other `stale-*` finding.
+ */
+function findKnowledgeGraphIssues(rootDir: string): KnowledgeIssue[] {
+  const requireArtifact =
+    rootDeclaresKnowledgeGraphScript(rootDir) &&
+    discoverKnowledgeArtifactPaths(rootDir).length > 0;
+  return checkKnowledgeGraphFreshness(rootDir, KNOWLEDGE_GRAPH_PATH, {
+    requireArtifact,
+  });
+}
+
+function rootDeclaresKnowledgeGraphScript(rootDir: string): boolean {
+  const packageJsonPath = join(rootDir, 'package.json');
+  if (!existsSync(packageJsonPath)) return false;
+  let packageJson: { scripts?: Record<string, unknown> };
+  try {
+    packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+  } catch {
+    // An unparseable root package.json is not an opt-in; the graph is still
+    // checked whenever it exists.
+    return false;
+  }
+  return typeof packageJson?.scripts?.['knowledge:graph'] === 'string';
 }
 
 function checkDomainKnowledgeArtifact(

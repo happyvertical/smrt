@@ -602,7 +602,12 @@ built repo always has a current graph). `pnpm knowledge:check --strict`
 additionally treats the graph as stale — the same `sourceHashes` mechanism a
 single package's artifact uses — whenever any per-package artifact it was
 built from has changed since generation; the check is a no-op until at least
-one package has a built `smrt-knowledge.json` to merge. `smrt docs:agents`
+one package has a built `smrt-knowledge.json` to merge. The same check runs
+inside the shared freshness function, so the smrt-dev-mcp
+`check-knowledge-freshness` / `reflect-*` tools and `smrt dev:knowledge-check`
+report a missing, invalid, or stale graph too; a missing graph is only
+required where the root `package.json` declares a `knowledge:graph` script,
+so consumer apps that never generate one are unaffected. `smrt docs:agents`
 exports the graph alongside its per-package snapshot when run inside a
 monorepo that has generated one. Implementation:
 `packages/core/src/knowledge-graph.ts`, `scripts/generate-knowledge-graph.ts`.

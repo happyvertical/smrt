@@ -2,6 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import {
+  buildKnowledgeGraph,
+  stableStringify,
+} from '@happyvertical/smrt-core/knowledge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildArchitectureContext,
@@ -2145,6 +2149,178 @@ describe('workspace discovery', () => {
         .filter((issue) => issue.packageName === '@acme/ui-host')
         .map((issue) => issue.code),
     ).toEqual(['nested-agents-md']);
+  });
+});
+
+describe('merged knowledge graph freshness (#3070)', () => {
+  const GRAPH_CODES = new Set([
+    'missing-knowledge-graph',
+    'stale-knowledge-graph',
+    'knowledge-graph-source-missing',
+  ]);
+  const graphIssues = (issues: { code: string }[]) =>
+    issues.filter((issue) => GRAPH_CODES.has(issue.code));
+
+  let rootDir: string;
+
+  beforeEach(async () => {
+    rootDir = join(tmpdir(), `smrt-graph-${Date.now()}-${counter++}`);
+    await mkdir(rootDir, { recursive: true });
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+  });
+
+  afterEach(async () => {
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  /** Root package.json; `optIn` declares the `knowledge:graph` generator. */
+  async function writeRoot(optIn: boolean): Promise<void> {
+    await writeFile(
+      join(rootDir, 'package.json'),
+      JSON.stringify({
+        name: '@acme/root',
+        version: '1.0.0',
+        private: true,
+        scripts: optIn
+          ? { 'knowledge:graph': 'tsx scripts/generate-knowledge-graph.ts' }
+          : {},
+      }),
+    );
+  }
+
+  async function writeArtifact(pkg: string, objects: unknown[] = []) {
+    const manifest = {
+      schemaVersion: 1,
+      packageName: `@acme/${pkg}`,
+      summary: '',
+      tags: [],
+      risks: [],
+      objects,
+    };
+    await mkdir(join(rootDir, 'packages', pkg, '.smrt'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'packages', pkg, '.smrt', 'smrt-knowledge.json'),
+      JSON.stringify(manifest),
+    );
+    return manifest;
+  }
+
+  async function writeGraph(content: string): Promise<void> {
+    await mkdir(join(rootDir, '.smrt'), { recursive: true });
+    await writeFile(
+      join(rootDir, '.smrt', 'smrt-knowledge-graph.json'),
+      content,
+    );
+  }
+
+  async function writeFreshGraph(manifest: unknown): Promise<void> {
+    const graph = buildKnowledgeGraph([
+      {
+        artifactPath: 'packages/core/.smrt/smrt-knowledge.json',
+        // biome linting allows `any` in test files; minimal manifest fixture.
+        manifest: manifest as any,
+      },
+    ]);
+    await writeGraph(`${stableStringify(graph)}\n`);
+  }
+
+  it('reports a missing graph as an error when the repo generates one', async () => {
+    await writeRoot(true);
+    await writeArtifact('core');
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+
+    expect(graphIssues(result.issues)).toEqual([
+      expect.objectContaining({
+        code: 'missing-knowledge-graph',
+        severity: 'error',
+        file: '.smrt/smrt-knowledge-graph.json',
+      }),
+    ]);
+    expect(result.ok).toBe(false);
+  });
+
+  it('does not require a graph in a repo that never generates one', async () => {
+    await writeRoot(false);
+    await writeArtifact('core');
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+
+    expect(graphIssues(result.issues)).toEqual([]);
+  });
+
+  it('reports an invalid graph (warning, error under strict)', async () => {
+    await writeRoot(true);
+    await writeArtifact('core');
+    await writeGraph('{ not json');
+
+    const loose = await checkKnowledgeFreshness({ rootDir });
+    expect(graphIssues(loose.issues)).toEqual([
+      expect.objectContaining({
+        code: 'stale-knowledge-graph',
+        severity: 'warning',
+      }),
+    ]);
+    expect(graphIssues(loose.issues)[0]).toMatchObject({
+      message: expect.stringContaining('not valid JSON'),
+    });
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+    expect(graphIssues(strict.issues)).toEqual([
+      expect.objectContaining({
+        code: 'stale-knowledge-graph',
+        severity: 'error',
+      }),
+    ]);
+    expect(strict.ok).toBe(false);
+  });
+
+  it('reports a graph whose source artifact changed as stale', async () => {
+    await writeRoot(true);
+    const manifest = await writeArtifact('core');
+    await writeFreshGraph(manifest);
+    await writeArtifact('core', [{ name: 'Invoice' }]);
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+
+    expect(graphIssues(strict.issues)).toEqual([
+      expect.objectContaining({
+        code: 'stale-knowledge-graph',
+        severity: 'error',
+        message: expect.stringContaining(
+          'packages/core/.smrt/smrt-knowledge.json changed',
+        ),
+      }),
+    ]);
+    expect(strict.ok).toBe(false);
+  });
+
+  it('reports a newly built package artifact as stale', async () => {
+    await writeRoot(true);
+    const manifest = await writeArtifact('core');
+    await writeFreshGraph(manifest);
+    await writeArtifact('billing');
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+
+    expect(graphIssues(strict.issues)).toEqual([
+      expect.objectContaining({
+        code: 'stale-knowledge-graph',
+        message: expect.stringContaining(
+          'packages/billing/.smrt/smrt-knowledge.json',
+        ),
+      }),
+    ]);
+  });
+
+  it('reports nothing for a fresh graph', async () => {
+    await writeRoot(true);
+    const manifest = await writeArtifact('core');
+    await writeFreshGraph(manifest);
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+
+    expect(graphIssues(strict.issues)).toEqual([]);
   });
 });
 
