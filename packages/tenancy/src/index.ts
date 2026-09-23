@@ -54,9 +54,7 @@ export {
 } from './adapters/index.js';
 export {
   type BillingOwnerMode,
-  BillingRelationship,
   type BillingRelationshipAction,
-  BillingRelationshipCollection,
   BillingRelationshipError,
   BillingRelationshipService,
   type BillingRelationshipServiceOptions,
