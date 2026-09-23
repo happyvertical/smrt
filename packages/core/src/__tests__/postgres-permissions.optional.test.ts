@@ -15,8 +15,17 @@ import {
   planPostgresPermissions,
 } from '../postgres-permissions.js';
 
-const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
-const pgDescribe = pgUrl ? describe.sequential : describe.skip;
+// This suite plays the cluster administrator: it creates LOGIN roles and a
+// database per case, reads catalog ACLs, and probes parameter authority. It
+// therefore connects through the wrapper's privileged URL, while every role it
+// exercises is an ordinary one it created. The CI suites otherwise run as a
+// NOSUPERUSER/NOBYPASSRLS role (see .github/CI.md, PostgreSQL isolation).
+const pgUrl =
+  process.env.SMRT_TEST_POSTGRES_ADMIN_URL ??
+  process.env.SMRT_TEST_POSTGRES_URL;
+const pgDescribe = process.env.SMRT_TEST_POSTGRES_URL
+  ? describe.sequential
+  : describe.skip;
 const rolePassword = 'smrt-test-password';
 
 pgDescribe('PostgreSQL permission contract (#2701)', () => {
