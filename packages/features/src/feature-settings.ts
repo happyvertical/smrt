@@ -123,6 +123,29 @@ export class UnknownFeatureKeyError extends Error {
   }
 }
 
+/**
+ * Thrown when a write names a scope the resolver would never read back: an
+ * unknown `scopeType`, a global write under anything but
+ * {@link GLOBAL_FEATURE_SCOPE_ID}, or a tenant write with a blank or untrimmed
+ * `scopeId`. Nothing is written.
+ *
+ * `FeatureOverride` rows are looked up by the exact `(featureKey, scopeType,
+ * scopeId)` triple, so a row stored under a scope nothing queries is invisible
+ * state: it never takes effect, and it silently reappears if the scope naming
+ * is ever corrected.
+ */
+export class InvalidFeatureScopeError extends Error {
+  readonly status = 400;
+  constructor(
+    readonly scopeType: string,
+    readonly scopeId: string,
+    reason: string,
+  ) {
+    super(`Invalid feature override scope (${scopeType}): ${reason}`);
+    this.name = 'InvalidFeatureScopeError';
+  }
+}
+
 /** Options for {@link FeatureSettingsService.create}. */
 export interface FeatureSettingsServiceOptions {
   /**
@@ -238,13 +261,15 @@ export class FeatureSettingsService {
   /**
    * Apply one override change.
    *
-   * Refuses any `featureKey` without a {@link FeatureDefinition} row, then
-   * delegates to {@link FeatureOverrideService} so the host authorizer decides
-   * whether this caller may write this scope. `INHERIT` removes the row.
+   * Refuses any `featureKey` without a {@link FeatureDefinition} row and any
+   * scope the resolver would never read back, then delegates to
+   * {@link FeatureOverrideService} so the host authorizer decides whether this
+   * caller may write this scope. `INHERIT` removes the row.
    *
    * @returns the stored override, or `null` when the row was removed (or was
    *   already absent).
    * @throws {UnknownFeatureKeyError} when the key has no definition.
+   * @throws {InvalidFeatureScopeError} when the scope is not one the resolver reads.
    * @throws `FeatureOverrideAuthorizationError` when the authorizer declines.
    */
   async setFeatureOverride(
@@ -255,6 +280,7 @@ export class FeatureSettingsService {
     if (!KNOWN_EFFECTS.has(effect)) {
       throw new TypeError(`Unknown feature override effect: ${String(effect)}`);
     }
+    assertValidFeatureScope(scopeType, scopeId);
     await this.assertKnownFeatureKey(featureKey);
 
     if (effect === FeatureOverrideEffect.INHERIT) {
@@ -348,6 +374,54 @@ export class FeatureSettingsService {
       tenantEffect: tenantOverride?.effect ?? null,
       inheritedEnabled: tenantId && !tenantOverride ? effectiveEnabled : null,
     };
+  }
+}
+
+/**
+ * Reject a scope the resolver would never read back.
+ *
+ * `FeatureResolver` looks overrides up by the exact `(featureKey, scopeType,
+ * scopeId)` triple: the global scope only ever at {@link GLOBAL_FEATURE_SCOPE_ID},
+ * and the tenant scope only at ids it gets from the session or the tenant
+ * hierarchy. A row written anywhere else is never read, so it is invisible
+ * state rather than a setting — and the host authorizer cannot catch it,
+ * because `scopeType: 'global'` with someone else's tenant id looks like an
+ * ordinary global write to an authorizer that only gates the global scope.
+ */
+function assertValidFeatureScope(
+  scopeType: FeatureScopeType,
+  scopeId: string,
+): void {
+  if (scopeType !== 'global' && scopeType !== 'tenant') {
+    throw new InvalidFeatureScopeError(
+      String(scopeType),
+      String(scopeId),
+      'scope type must be "global" or "tenant"',
+    );
+  }
+  if (typeof scopeId !== 'string') {
+    throw new InvalidFeatureScopeError(
+      scopeType,
+      String(scopeId),
+      'scope id must be a string',
+    );
+  }
+  if (scopeType === 'global' && scopeId !== GLOBAL_FEATURE_SCOPE_ID) {
+    throw new InvalidFeatureScopeError(
+      scopeType,
+      scopeId,
+      `the global scope is only ever "${GLOBAL_FEATURE_SCOPE_ID}"`,
+    );
+  }
+  if (
+    scopeType === 'tenant' &&
+    (!scopeId.trim() || scopeId !== scopeId.trim())
+  ) {
+    throw new InvalidFeatureScopeError(
+      scopeType,
+      scopeId,
+      'a tenant scope id must be non-blank and already trimmed',
+    );
   }
 }
 

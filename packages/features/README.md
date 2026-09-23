@@ -164,7 +164,9 @@ Two details worth knowing:
   against another's rows.
 
 **5. Wire the write with your own permission check.** `setFeatureOverride()`
-refuses any key without a definition, then delegates to
+refuses any key without a definition and any scope the resolver would never
+read back — an unknown `scopeType`, a global write under anything but
+`GLOBAL_FEATURE_SCOPE_ID`, or a blank/untrimmed tenant id — then delegates to
 `FeatureOverrideService`, which asks your authorizer and fails closed:
 
 ```typescript
@@ -186,6 +188,7 @@ export const actions = {
       );
     } catch (error) {
       if (error instanceof UnknownFeatureKeyError) return fail(400, { error: 'Unknown feature.' });
+      if (error instanceof InvalidFeatureScopeError) return fail(400, { error: 'Invalid scope.' });
       if (error instanceof FeatureOverrideAuthorizationError) return fail(403, { error: 'Not permitted.' });
       throw error;
     }

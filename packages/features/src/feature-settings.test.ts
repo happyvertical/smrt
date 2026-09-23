@@ -6,6 +6,7 @@ import { FeatureOverrideCollection } from './feature-overrides.js';
 import {
   FeatureSettingsService,
   featureOverrideEffectFromValue,
+  InvalidFeatureScopeError,
   UnknownFeatureKeyError,
 } from './feature-settings.js';
 import {
@@ -437,6 +438,76 @@ describe('FeatureSettingsService', () => {
           ),
         ).rejects.toBeInstanceOf(UnknownFeatureKeyError);
       }
+    });
+
+    it('refuses a global write under any id but the canonical global scope', async () => {
+      const authorize = vi.fn().mockReturnValue(true);
+      const { overrides, service } = await setup({ authorize });
+
+      // The resolver only ever reads the global scope at GLOBAL_FEATURE_SCOPE_ID,
+      // and a host authorizer that gates the global scope sees nothing wrong
+      // with this — so the row would be invisible state, not a setting.
+      await expect(
+        service.setFeatureOverride({
+          featureKey: DRAFTS,
+          scopeType: 'global',
+          scopeId: 'tenant-a',
+          effect: FeatureOverrideEffect.ENABLE,
+        }),
+      ).rejects.toBeInstanceOf(InvalidFeatureScopeError);
+
+      expect(authorize).not.toHaveBeenCalled();
+      await expect(overrides.findByFeatureKey(DRAFTS)).resolves.toEqual([]);
+    });
+
+    it('refuses a scope type the resolver never reads', async () => {
+      const authorize = vi.fn().mockReturnValue(true);
+      const { overrides, service } = await setup({ authorize });
+
+      for (const scopeType of ['user', 'GLOBAL', '', undefined]) {
+        await expect(
+          service.setFeatureOverride({
+            featureKey: DRAFTS,
+            scopeType: scopeType as any,
+            scopeId: 'tenant-a',
+            effect: FeatureOverrideEffect.ENABLE,
+          }),
+        ).rejects.toBeInstanceOf(InvalidFeatureScopeError);
+      }
+
+      expect(authorize).not.toHaveBeenCalled();
+      await expect(overrides.findByFeatureKey(DRAFTS)).resolves.toEqual([]);
+    });
+
+    it('refuses a blank or untrimmed tenant scope id', async () => {
+      const authorize = vi.fn().mockReturnValue(true);
+      const { overrides, service } = await setup({ authorize });
+
+      for (const scopeId of ['', '   ', ' tenant-a', 'tenant-a ']) {
+        await expect(
+          service.setTenantFeatureOverride(
+            DRAFTS,
+            scopeId,
+            FeatureOverrideEffect.ENABLE,
+          ),
+        ).rejects.toBeInstanceOf(InvalidFeatureScopeError);
+      }
+
+      expect(authorize).not.toHaveBeenCalled();
+      await expect(overrides.findByFeatureKey(DRAFTS)).resolves.toEqual([]);
+    });
+
+    it('refuses an invalid scope on removal too', async () => {
+      const { service } = await setup({ authorize: () => true });
+
+      await expect(
+        service.setFeatureOverride({
+          featureKey: DRAFTS,
+          scopeType: 'global',
+          scopeId: 'tenant-a',
+          effect: FeatureOverrideEffect.INHERIT,
+        }),
+      ).rejects.toBeInstanceOf(InvalidFeatureScopeError);
     });
 
     it('rejects an effect value that is not a FeatureOverrideEffect', async () => {
