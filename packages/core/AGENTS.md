@@ -55,7 +55,9 @@ and repository rules.
   metadata after rollback. Do not use a bound instance concurrently.
 - `ensureSystemTables(db, typeHint?)` provisions framework tables idempotently;
   call it on a base PostgreSQL connection before caller-owned transactions.
-  Bootstrap uses an advisory lock. Application tables still require migrations;
+  Bootstrap uses a transaction-scoped advisory lock, taken only when the
+  PostgreSQL schema version is not yet stamped: inside a caller's transaction it
+  is held until that transaction ends (#2868). Application tables still require migrations;
   runtime table verification checks existence only.
 - Manifest generation fails closed on scanner errors, including unresolved
   decorator spreads. Never emit partial, default-open registration.

@@ -352,6 +352,22 @@ export async function ensureSystemTables(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<void> {
+  // Lock-free fast path for an already-provisioned PostgreSQL database. The
+  // bootstrap lock is transaction-scoped, and on a handle that is already
+  // inside a caller's transaction it is held until *that* transaction ends —
+  // even when the version probe below finds nothing to install. First use of
+  // a model inside concurrent request transactions therefore serialized every
+  // one of them behind the first to commit (#2868: the PostgreSQL OIDC
+  // provisioning scenarios wait on exactly that lock). A committed version
+  // stamp means every table exists, so only the helper probe remains; it
+  // takes the same lock server-side, and only when it has to install.
+  if (
+    getDatabaseEngine(db, typeHint) === 'postgres' &&
+    (await isSystemSchemaVersionApplied(db, typeHint))
+  ) {
+    await ensurePostgresChangeFeedHelpers(db, typeHint);
+    return;
+  }
   await runSerializedAgainstSystemTableBootstrap(db, typeHint, (scopedDb) =>
     bootstrapSystemTables(scopedDb, typeHint),
   );
