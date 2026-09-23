@@ -356,7 +356,15 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
     const retail = approved.retailCharge;
     if (!retail) throw new Error('missing retail charge');
     retail.amount = 1;
-    await expect(retail.save()).rejects.toThrow();
+    // The framework wraps model errors; assert the immutability guard is the
+    // cause, not a closed-transaction or other save failure.
+    const failure = await retail.save().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(String((failure as Error | null)?.cause ?? failure)).toMatch(
+      /Approved retail charges are immutable/,
+    );
   });
 
   it('charges each leg in the currency selected for the relationship', async () => {

@@ -560,18 +560,21 @@ export class CommercialUsageService {
       const charge = await this.price(options);
       return this.frozenRating(charge, retailCharges, options.approved);
     }
+    let failure: unknown;
     try {
-      return await this.rateResellerBilled(usage, relationship, options);
+      await this.rateResellerBilled(usage, relationship, options);
     } catch (error) {
-      // A concurrent rating of the same event won the one-row-per-event
-      // insert; its transaction wrote the complete rating.
-      const concurrent = await this.charges.list({
-        where: { usageEventId: String(usage.id) },
-        limit: 1,
-      });
-      if (!concurrent[0]) throw error;
-      return this.frozenRating(concurrent[0], retailCharges, options.approved);
+      failure = error;
     }
+    // Return root-bound records (never the committed transaction's handles).
+    // After a failure, a concurrent rating of the same event may have won the
+    // one-row-per-event insert; its transaction wrote the complete rating.
+    const rated = await this.charges.list({
+      where: { usageEventId: String(usage.id) },
+      limit: 1,
+    });
+    if (!rated[0]) throw failure ?? new Error('Rating was not persisted.');
+    return this.frozenRating(rated[0], retailCharges, options.approved);
   }
 
   private async rateResellerBilled(
@@ -814,6 +817,11 @@ export class CommercialUsageService {
           return [provider, leg ?? null] as const;
         },
       );
+      // Hand back root-bound records, not the committed transaction's.
+      providerCharge = (await this.charges.get(String(charge.id))) ?? charge;
+      retailCharge = retailCharge?.id
+        ? ((await retailCharges.get(String(retailCharge.id))) ?? null)
+        : null;
     }
     return {
       usageTenantId:
