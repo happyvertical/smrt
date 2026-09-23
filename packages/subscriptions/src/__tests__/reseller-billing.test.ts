@@ -967,7 +967,7 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       });
     });
 
-    it("does not carry a former parent's credit into a taken-over balance", async () => {
+    it("keeps a former parent's balance and its credit out of reach of a new parent", async () => {
       const balance = await system(() =>
         reseller.setDelegatedSpendingPolicy({
           parentTenantId: RESELLER,
@@ -997,32 +997,36 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
           billingOwnerMode: 'reseller',
         }),
       );
-      const taken = await system(() =>
-        reseller.setDelegatedSpendingPolicy({
-          parentTenantId: OTHER_RESELLER,
-          childTenantId: CHILD,
-          name: 'Prepaid',
-          basis: 'retail',
-          currency: 'USD',
-          behavior: 'block',
-          period: 'balance',
-        }),
-      );
-      expect(taken.id).toBe(balance.id);
-      const decision = await system(() =>
+      await expect(
+        system(() =>
+          reseller.setDelegatedSpendingPolicy({
+            parentTenantId: OTHER_RESELLER,
+            childTenantId: CHILD,
+            name: 'Prepaid',
+            basis: 'retail',
+            currency: 'USD',
+            behavior: 'block',
+            period: 'balance',
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'POLICY_CONFLICT' });
+      // The former parent's credit stays attributed and reversible.
+      const reversal = await system(() =>
         new SpendingPolicyEvaluator(policies, charges, adjustments, {
           retailCharges,
           credits,
-          billingRelationships: relationships,
-        }).evaluate({
-          tenantId: CHILD,
-          metricKey: 'ai.tokens',
-          estimatedAmount: 1,
-          currency: 'USD',
-          at: new Date(),
+        }).grantCredit({
+          spendingPolicyId: String(balance.id),
+          amount: -500,
+          grantedByTenantId: RESELLER,
+          source: 'refund',
+          sourceId: 'r1-order',
         }),
       );
-      expect(decision).toMatchObject({ state: 'blocked', balanceAmount: 0 });
+      expect(reversal).toMatchObject({
+        amount: -500,
+        grantedByTenantId: RESELLER,
+      });
     });
 
     it('guards delegated credit grants at the model', async () => {

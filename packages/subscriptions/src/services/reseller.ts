@@ -422,8 +422,9 @@ export class ResellerBillingService {
    * Create or replace a spending policy that a parent sets on its child. The
    * row belongs to the child (so the ordinary evaluator enforces it for the
    * child) and records the parent in `setByTenantId`, which locks it against
-   * changes by the child. A delegated policy left by a former parent may be
-   * replaced; one the child set for itself may not. Use `period: 'balance'`
+   * changes by the child. A delegated limit left by a former parent may be
+   * replaced (not a former parent's prepaid balance, which keeps its credit
+   * ledger); one the child set for itself may not. Use `period: 'balance'`
    * for a prepaid credit balance and fund it with {@link grantChildCredit}.
    */
   async setDelegatedSpendingPolicy(
@@ -438,6 +439,8 @@ export class ResellerBillingService {
       'manage_child_spending',
       parentTenantId,
       relationship.childTenantId,
+      false,
+      relationship.resellerTenantId,
     );
     assertCurrency(input.currency);
     if (
@@ -487,9 +490,19 @@ export class ResellerBillingService {
         })
       )[0];
       if (existing) {
-        if (!tenantKey(existing.setByTenantId)) {
+        const owner = tenantKey(existing.setByTenantId);
+        if (!owner) {
           throw new ResellerBillingError(
             `Spending policy '${input.name}' already exists for this child and was set by the child.`,
+            'POLICY_CONFLICT',
+          );
+        }
+        // A former parent's prepaid balance keeps its credit ledger: taking
+        // it over would strand that credit (or revive it if the child
+        // returns), so the new parent must use a different name.
+        if (owner !== parentTenantId && existing.period === 'balance') {
+          throw new ResellerBillingError(
+            `Balance policy '${input.name}' belongs to a former parent; choose another name.`,
             'POLICY_CONFLICT',
           );
         }
@@ -512,6 +525,8 @@ export class ResellerBillingService {
       'manage_child_spending',
       parentTenantId,
       relationship.childTenantId,
+      false,
+      relationship.resellerTenantId,
     );
     return authorized(async () => {
       const policy = await this.policies.get(input.spendingPolicyId);

@@ -157,7 +157,10 @@ for `define_prices` and `assign_wholesale_price_book`, the parent for
 the caller, and never authorize a reseller for the wholesale leg that charges
 it. The package refuses a wholesale book published by the reseller or child it
 would charge, but whether a publisher is a legitimate provider for that
-reseller (`resellerTenantId` in the request) is the host's decision. Once
+reseller (`resellerTenantId` in the request) is the host's decision. The
+calls first read the child's relationship through `BillingRelationshipService`
+in the caller's context, so a provider assigning a wholesale leg also needs
+that service's `authorize` to grant it `read` for the child. Once
 authorized, the service writes in a system context, because a parent's writes
 land on rows the child owns.
 
@@ -183,7 +186,9 @@ the sum of the parent's charges for that child's usage. Pass
 parent's delegated policies stop applying after the child changes reseller;
 without it they keep applying (fail closed), and the new parent may replace
 them by name. A delegated balance counts only credit granted by its current
-parent, so a taken-over balance starts empty for the new parent. A parent's `retail` cap counts only what the child owes that
+parent. A former parent's prepaid balance cannot be taken over by name; it
+keeps its credit ledger (reversible in a system context), and the new parent
+creates its own balance. A parent's `retail` cap counts only what the child owes that
 parent.
 
 ## Svelte entry point

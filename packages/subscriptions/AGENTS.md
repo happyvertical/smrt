@@ -84,7 +84,8 @@ that reverted to DECIMAL passes every SQLite suite.
   (parent writes land on child-owned rows). The wholesale leg is authorized by
   the book's publisher and may never be published by the payer; whether a
   publisher is a legitimate provider for the reseller is a host obligation
-  (the model records no upstream seller). The only
+  (the model records no upstream seller). Relationship reads precede
+  authorization and stay under smrt-tenancy's own read rules. The only
   cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
 - `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
   be 0. Auto top-up is a host hook only — no payment provider calls.
