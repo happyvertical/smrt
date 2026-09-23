@@ -12,7 +12,8 @@
  *    to `{ id }`).
  * 2. `loadFromId()` / `loadFromSlug()` / `getSavedId()` run their filters
  *    through the `beforeGet` interceptor pipeline, converting interceptor
- *    field-name keys (camelCase) to column form.
+ *    field-name keys (camelCase) to column form, preserving a leading
+ *    underscore (`_meta_type`, #2417).
  * 3. Collection memory (`remember()`/`recall()`) keys its `_smrt_contexts`
  *    owner id per tenant via the dispatch tenant hooks when the item class is
  *    tenant-scoped.
@@ -61,6 +62,36 @@ class ReadPlumbingDoc extends SmrtObject {
 
 class ReadPlumbingDocCollection extends SmrtCollection<ReadPlumbingDoc> {
   static readonly _itemClass = ReadPlumbingDoc;
+}
+
+// STI hierarchy for the leading-underscore column contract: an interceptor
+// injecting the `_meta_type` discriminator must reach the real `_meta_type`
+// column — bare toSnakeCase would strip the underscore and target a
+// nonexistent `meta_type` column (#2417).
+@smrt({ tableStrategy: 'sti' })
+class ReadPlumbingStiBase extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+
+  // biome linting allows `any` in test files; mirrors the loose options bag.
+  constructor(options: any = {}) {
+    super(options);
+    if (options.title !== undefined) this.title = options.title;
+  }
+}
+
+@smrt()
+class ReadPlumbingStiAlpha extends ReadPlumbingStiBase {}
+
+@smrt()
+class ReadPlumbingStiBeta extends ReadPlumbingStiBase {}
+
+class ReadPlumbingStiAlphaCollection extends SmrtCollection<ReadPlumbingStiAlpha> {
+  static readonly _itemClass = ReadPlumbingStiAlpha;
+}
+
+class ReadPlumbingStiBetaCollection extends SmrtCollection<ReadPlumbingStiBeta> {
+  static readonly _itemClass = ReadPlumbingStiBeta;
 }
 
 describe('resolveGetStringFilter (#2365)', () => {
@@ -215,6 +246,96 @@ describe('read-path interceptor plumbing (#2365)', () => {
       GlobalInterceptors.unregister(rewriting);
       GlobalInterceptors.register(groupInterceptor);
     }
+  });
+});
+
+// Both the adapter `db.get` path and the native-DuckDB canonical-row path
+// (which validates filter columns against the schema itself) must honour the
+// preserved underscore.
+describe.each([
+  { name: 'SQLite', type: 'sqlite' as const },
+  { name: 'DuckDB', type: 'duckdb' as const },
+])('leading-underscore filter keys survive interception on $name (#2417)', ({
+  type,
+}) => {
+  // biome linting allows `any` in test files; shared db handle.
+  let db: any;
+  let alphaQualifiedName: string;
+  let stiInterceptor: CollectionInterceptor;
+
+  beforeAll(async () => {
+    ObjectRegistry.registerCollection(
+      'ReadPlumbingStiAlpha',
+      ReadPlumbingStiAlphaCollection,
+    );
+    ObjectRegistry.registerCollection(
+      'ReadPlumbingStiBeta',
+      ReadPlumbingStiBetaCollection,
+    );
+    db = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: [
+        'ReadPlumbingStiBase',
+        'ReadPlumbingStiAlpha',
+        'ReadPlumbingStiBeta',
+      ],
+    });
+
+    const alphas = await ReadPlumbingStiAlphaCollection.create({ db });
+    const betas = await ReadPlumbingStiBetaCollection.create({ db });
+    await alphas.create({ slug: 'sti-alpha', title: 'alpha sti row' });
+    await betas.create({ slug: 'sti-beta', title: 'beta sti row' });
+
+    alphaQualifiedName =
+      ObjectRegistry.getClassByConstructor(ReadPlumbingStiAlpha)
+        ?.qualifiedName ?? 'ReadPlumbingStiAlpha';
+
+    // Pins every read to the alpha discriminator — the injected key carries
+    // a real leading underscore and must reach the `_meta_type` column.
+    stiInterceptor = {
+      name: 'issue-2365-sti-discriminator-scope',
+      priority: 50,
+      beforeGet: (className, filter) => {
+        if (
+          className !== 'ReadPlumbingStiAlpha' &&
+          className !== 'ReadPlumbingStiBeta'
+        ) {
+          return;
+        }
+        if (typeof filter === 'string') {
+          return {
+            ...resolveGetStringFilter(filter),
+            _meta_type: alphaQualifiedName,
+          };
+        }
+        if (!('_meta_type' in filter)) {
+          return { ...filter, _meta_type: alphaQualifiedName };
+        }
+        return;
+      },
+    };
+    GlobalInterceptors.register(stiInterceptor);
+  });
+
+  afterAll(async () => {
+    GlobalInterceptors.unregister(stiInterceptor);
+    await db?.close?.();
+  });
+
+  it('an injected _meta_type discriminator reaches the real column during hydration', async () => {
+    // In scope: the alpha row matches the pinned discriminator. With the
+    // stripped-underscore bug this query targeted a nonexistent `meta_type`
+    // column and errored instead.
+    const inScope = new ReadPlumbingStiAlpha({ db, slug: 'sti-alpha' });
+    await inScope.initialize();
+    expect(inScope.title).toBe('alpha sti row');
+
+    // Out of scope: the beta row exists but carries the beta discriminator,
+    // so the pinned filter must miss it.
+    const outOfScope = new ReadPlumbingStiBeta({ db, slug: 'sti-beta' });
+    await outOfScope.initialize();
+    expect(outOfScope.title).toBe('');
   });
 });
 
