@@ -375,7 +375,8 @@ export const MAX_CHANGES_LIMIT = 5_000;
 const MAX_APPEND_ATTEMPTS = 20;
 
 /**
- * Jittered pause before an append re-contends for the sequence head (#3062).
+ * Jittered pause before an append (or a settling drain) re-contends for the
+ * sequence head (#3062).
  *
  * Retrying a lost `MAX(seq)+1` race immediately lets a writer in a tight loop
  * win every round: the loser re-reads the head just as the winner commits its
@@ -1237,9 +1238,16 @@ async function drainChangeFeedDetailed(
       error.code = String(failure.error_code);
       // A concurrent autocommit append can win the head between this drain's
       // MAX(seq) read and its insert. The whole batch rolled back, so the
-      // staged rows are still there — recompute and try again, exactly like
-      // the appender's own conflict retry.
-      if (isUniqueViolation(error)) continue;
+      // staged rows are still there — recompute and try again. Like the
+      // appender's own conflict retry, a settling drain pauses first so a
+      // tight-loop appender cannot win every pass (#3062); the write-path
+      // drain (`settle: false`, one pass) never pauses.
+      if (isUniqueViolation(error)) {
+        if (settle && pass + 1 < maxPasses) {
+          await waitBeforeAppendRetry(pass + 1);
+        }
+        continue;
+      }
       throw error;
     }
     const sequenced = rows.filter((row) => row.drained_seq != null);
