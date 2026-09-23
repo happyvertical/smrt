@@ -218,7 +218,7 @@ const { url } = await billing.createCreditCheckout({
   provider invoice uses the close id as its idempotency key; and every step is
   persisted before the next, so a retry resumes where it stopped. A lease stops
   two workers advancing the same close. A payer whose charges net to a credit
-  is carried forward.
+  gets no invoice; the credit is carried to its next invoice.
 - **Tax** comes from the provider (Stripe Tax) using the account customer's
   `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and

@@ -425,7 +425,7 @@ export class BillingRuntime {
     payload: string,
     signature: string,
   ): Promise<{ accepted: boolean; eventId: string; kind: string }> {
-    const event = this.provider.verifyWebhook(payload, signature);
+    const event = await this.provider.verifyWebhook(payload, signature);
     if (event.kind === 'ignored') {
       return { accepted: false, eventId: event.eventId, kind: event.kind };
     }

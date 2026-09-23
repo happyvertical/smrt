@@ -152,10 +152,14 @@ export interface BillingProvider {
     input: BillingProviderCheckoutInput,
   ): Promise<BillingProviderCheckoutSession>;
   /**
-   * Verify a webhook signature and normalize the event. Throws
-   * {@link BillingWebhookVerificationError} when the signature is invalid.
+   * Verify a webhook signature and normalize the event. Rejects with
+   * {@link BillingWebhookVerificationError} when the signature is invalid;
+   * anything verified but not actionable is returned as `ignored`.
    */
-  verifyWebhook(payload: string, signature: string): BillingProviderEvent;
+  verifyWebhook(
+    payload: string,
+    signature: string,
+  ): Promise<BillingProviderEvent>;
 }
 
 export class BillingWebhookVerificationError extends Error {

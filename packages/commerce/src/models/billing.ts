@@ -32,20 +32,24 @@ export type BillingStanding = 'current' | 'past_due' | 'uncollectible';
 
 /**
  * `collecting` → `invoiced` → `pushed` → `sent` → `completed`. Every step is
- * resumable: a retry continues from the persisted status.
+ * resumable: a retry continues from the persisted status. A close whose
+ * claimed sources net to a credit ends `carried_forward`: its `subtotal` is
+ * billed as a credit line by the payer's next close.
  */
 export type BillingPeriodCloseStatus =
   | 'collecting'
   | 'invoiced'
   | 'pushed'
   | 'sent'
-  | 'completed';
+  | 'completed'
+  | 'carried_forward';
 
 export type BillingLineSourceType =
   | 'client_charge'
   | 'billing_adjustment'
   | 'retail_charge'
-  | 'subscription_period';
+  | 'subscription_period'
+  | 'credit_carry_forward';
 
 const STANDINGS: readonly BillingStanding[] = [
   'current',

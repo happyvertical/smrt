@@ -219,25 +219,32 @@ export function createStripeBillingProvider(
             },
           },
         ],
-        metadata: input.metadata,
+        metadata: await signMetadata(input.metadata, webhookSecret),
         idempotencyKey: input.idempotencyKey,
       });
       return { sessionId: session.externalId, url: session.url };
     },
 
-    verifyWebhook(payload: string, signature: string): BillingProviderEvent {
+    async verifyWebhook(
+      payload: string,
+      signature: string,
+    ): Promise<BillingProviderEvent> {
       if (!stripe.webhooks.verify(payload, signature, webhookSecret)) {
         throw new BillingWebhookVerificationError();
       }
-      return normalizeStripeEvent(stripe.webhooks.parse(payload));
+      return normalizeStripeEvent(
+        stripe.webhooks.parse(payload),
+        webhookSecret,
+      );
     },
   };
 }
 
 /** Normalize a verified, parsed Stripe event. Exported for tests. */
-export function normalizeStripeEvent(
+export async function normalizeStripeEvent(
   event: WebhookEvent,
-): BillingProviderEvent {
+  webhookSecret: string,
+): Promise<BillingProviderEvent> {
   const eventId = event.id;
   if (!eventId) {
     throw new BillingWebhookVerificationError(
@@ -266,13 +273,16 @@ export function normalizeStripeEvent(
   if (CHECKOUT_EVENTS.has(event.type)) {
     const session = stripeObject(event);
     // Only sessions this package created are stored, and only their smrt_*
-    // metadata: other integrations' checkouts never enter the inbox.
+    // metadata: other integrations' checkouts never enter the inbox. The
+    // metadata is signed with the endpoint secret at creation, so another
+    // integration on the same account cannot forge a credit purchase.
     const metadata = smrtMetadata(session.metadata);
     const id = session.id;
     const amount = session.amount_subtotal;
     if (
       session.mode !== 'payment' ||
       metadata.smrt_purpose !== CREDIT_PURCHASE_PURPOSE ||
+      !(await metadataSignatureValid(metadata, webhookSecret)) ||
       typeof id !== 'string' ||
       typeof session.currency !== 'string' ||
       typeof amount !== 'number' ||
@@ -301,6 +311,62 @@ function stripeObject(event: WebhookEvent): Record<string, unknown> {
   return object && typeof object === 'object'
     ? (object as Record<string, unknown>)
     : {};
+}
+
+const SIGNATURE_KEY = 'smrt_sig';
+
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+function canonicalMetadata(metadata: Record<string, string>): string {
+  return JSON.stringify(
+    Object.entries(metadata)
+      .filter(([key]) => key.startsWith('smrt_') && key !== SIGNATURE_KEY)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
+
+async function signMetadata(
+  metadata: Record<string, string>,
+  secret: string,
+): Promise<Record<string, string>> {
+  return {
+    ...metadata,
+    [SIGNATURE_KEY]: await hmacHex(
+      `smrt-checkout:${secret}`,
+      canonicalMetadata(metadata),
+    ),
+  };
+}
+
+async function metadataSignatureValid(
+  metadata: Record<string, string>,
+  secret: string,
+): Promise<boolean> {
+  const given = metadata[SIGNATURE_KEY];
+  if (!given) return false;
+  const expected = await hmacHex(
+    `smrt-checkout:${secret}`,
+    canonicalMetadata(metadata),
+  );
+  if (given.length !== expected.length) return false;
+  let diff = 0;
+  for (let index = 0; index < given.length; index += 1) {
+    diff |= given.charCodeAt(index) ^ expected.charCodeAt(index);
+  }
+  return diff === 0;
 }
 
 function smrtMetadata(value: unknown): Record<string, string> {

@@ -209,7 +209,12 @@ export async function closeBillingPeriod(
   }
   // Resume closes whose sources were all claimed on an earlier attempt.
   for (const close of existing) {
-    if (!close.id || seen.has(close.id) || close.status === 'completed') {
+    if (
+      !close.id ||
+      seen.has(close.id) ||
+      close.status === 'completed' ||
+      close.status === 'carried_forward'
+    ) {
       continue;
     }
     results.push(
@@ -255,6 +260,7 @@ async function collectGroups(
   if (isCalendarMonth(period)) {
     candidates.push(...(await collectFlatPlans(runtime, period)));
   }
+  candidates.push(...(await collectCarriedCredits(runtime, period)));
 
   const byGroup = new Map<string, CandidateGroup>();
   for (const candidate of candidates) {
@@ -527,6 +533,42 @@ async function collectRetailCharges(
     }));
 }
 
+/** Net credits carried forward by this seller's earlier closes. */
+async function collectCarriedCredits(
+  runtime: BillingRuntime,
+  period: BillingPeriod,
+): Promise<Candidate[]> {
+  const carried = await runtime.closes.list({
+    where: {
+      sellerTenantId: runtime.sellerTenantId,
+      kind: runtime.kind,
+      status: 'carried_forward',
+    },
+  });
+  return carried
+    .filter(
+      (close) =>
+        close.id &&
+        close.periodEnd.getTime() <= period.periodStart.getTime() &&
+        Number(close.subtotal) < 0,
+    )
+    .map((close) => ({
+      sourceType: 'credit_carry_forward' as const,
+      sourceId: String(close.id),
+      payerTenantId: tenantKey(close.payerTenantId),
+      currency: normalizeCurrency(close.currency),
+      lineKey: `carry-forward|${close.id}`,
+      lineDescription: `Credit carried forward from ${isoDate(
+        close.periodStart,
+      )} to ${isoDate(new Date(close.periodEnd.getTime() - 1))}`,
+      amount: Number(close.subtotal),
+      quantity: 0,
+      discountable: false,
+      periodStart: null,
+      periodEnd: null,
+    }));
+}
+
 function isoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -647,16 +689,6 @@ async function closeGroup(
   let leaseToken: string | null = null;
   try {
     const existing = await runtime.closes.get(group.closeId);
-    if (!existing) {
-      const net = group.candidates.reduce(
-        (sum, candidate) => sum + candidate.amount,
-        0,
-      );
-      if (net < 0) {
-        // A net credit is carried into a later period rather than invoiced.
-        return { ...base, closeId: undefined, outcome: 'carried_forward' };
-      }
-    }
     const account = await runtime.getAccount(group.payerTenantId);
     if (!account?.id) {
       throw new Error(
@@ -665,8 +697,8 @@ async function closeGroup(
     }
     const close =
       existing ?? (await createClose(runtime, period, group, account, now));
-    if (close.status === 'completed') {
-      return resultOf(base, close, 'completed');
+    if (close.status === 'completed' || close.status === 'carried_forward') {
+      return resultOf(base, close, close.status);
     }
     leaseToken = await runtime.acquireCloseLease(String(close.id), now);
     if (!leaseToken) return { ...base, outcome: 'busy' };
@@ -748,12 +780,18 @@ async function advance(
   account: BillingAccount,
 ): Promise<PeriodCloseOutcome> {
   if (close.status === 'collecting') {
-    const lines = await collectAndInvoice(runtime, close, candidates, account);
-    if (lines === 0) {
+    const collected = await collectAndInvoice(
+      runtime,
+      close,
+      candidates,
+      account,
+    );
+    if (collected === 'empty') {
       close.status = 'completed';
       await close.save();
       return 'empty';
     }
+    if (collected === 'carried_forward') return 'carried_forward';
   }
   const invoice = await runtime.getInvoice(close.invoiceId);
   if (close.status === 'invoiced') {
@@ -777,7 +815,7 @@ async function collectAndInvoice(
   close: BillingPeriodClose,
   candidates: Candidate[],
   account: BillingAccount,
-): Promise<number> {
+): Promise<'empty' | 'carried_forward' | 'invoiced'> {
   const closeId = String(close.id);
   for (const candidate of candidates) {
     const id = await sourceId(candidate.sourceType, candidate.sourceId);
@@ -818,16 +856,21 @@ async function collectAndInvoice(
       offset,
     }),
   );
-  if (sources.length === 0) return 0;
+  if (sources.length === 0) return 'empty';
   const lines = groupLines(sources);
   const subtotal = lines.reduce(
     (sum, line) => sum + line.amount - line.discount,
     0,
   );
   if (subtotal < 0) {
-    throw new Error(
-      `Claimed sources net to ${subtotal} ${close.currency}; a negative invoice needs operator review.`,
-    );
+    // A net credit is not invoiced. The claims stay with this close, so a
+    // source's later eligibility cannot change the balance, and the credit
+    // itself becomes a source the payer's next close bills.
+    close.subtotal = subtotal;
+    close.lineCount = lines.length;
+    close.status = 'carried_forward';
+    await close.save();
+    return 'carried_forward';
   }
 
   const invoiceId = await deterministicId(['billing-invoice', closeId]);
@@ -887,7 +930,7 @@ async function collectAndInvoice(
   close.lineCount = lines.length;
   close.status = 'invoiced';
   await close.save();
-  return lines.length;
+  return 'invoiced';
 }
 
 interface InvoiceLineGroup {

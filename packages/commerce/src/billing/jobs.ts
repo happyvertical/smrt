@@ -145,7 +145,7 @@ export function enqueueBillingEvents(
   return enqueue(
     runtime,
     'processBillingEvents',
-    options.limit ? { limit: options.limit } : {},
+    options.limit !== undefined ? { limit: options.limit } : {},
     options,
   );
 }

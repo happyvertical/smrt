@@ -23,6 +23,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  enqueueBillingEvents,
   enqueueBillingPeriodClose,
   registerBillingRuntime,
   unregisterBillingRuntime,
@@ -313,6 +314,32 @@ describe('smrt#3060 billing-period close', () => {
       result.groups.find((group) => group.payerTenantId === SOLO)?.outcome,
     ).toBe('carried_forward');
     expect(await invoiceFor(world, PROVIDER, SOLO)).toEqual([]);
+    // A re-run keeps the credit; nothing is re-collected.
+    await world.provider.closePeriod(period);
+    // The plan is canceled before the next month: the credit must survive
+    // the source that offset it becoming ineligible.
+    const [solo] = await system(() =>
+      world.subscriptions.list({ where: { tenantId: SOLO } }),
+    );
+    await system(async () => {
+      if (!solo) throw new Error('missing subscription');
+      solo.status = 'canceled';
+      solo.canceledAt = period.periodEnd;
+      await solo.save();
+    });
+    await world.usage(SOLO);
+    const next = nextMonth(period);
+    const later = await world.provider.closePeriod(next);
+    // 2500 + 70 - 3000 = -430 carried; next month bills 70 more usage.
+    expect(
+      later.groups.find((group) => group.payerTenantId === SOLO)?.outcome,
+    ).toBe('carried_forward');
+    const third = nextMonth(next);
+    await world.usage(SOLO, 100);
+    await world.provider.closePeriod(third);
+    const [invoice] = await invoiceFor(world, PROVIDER, SOLO);
+    // -360 carried from the second month, plus 700 of usage.
+    expect(invoice?.subtotal).toBe(700 - 360);
   });
 
   it('reports a payer without an account and still closes the others', async () => {
@@ -463,6 +490,40 @@ describe('smrt#3060 billing-period close', () => {
       expect((await invoiceFor(world, PROVIDER, NETWORK))[0]?.status).toBe(
         InvoiceStatus.PAID,
       );
+    });
+
+    it('ignores a checkout carrying forged credit metadata', async () => {
+      const policy = await system(async () =>
+        (await SpendingPolicyCollection.create({ db: world.db })).create({
+          tenantId: SOLO,
+          name: 'credit',
+          period: 'balance',
+          currency: 'USD',
+          behavior: 'block',
+        }),
+      );
+      const account = await world.provider.getAccount(SOLO);
+      const forged = signedEvent(
+        checkoutEvent({
+          id: 'cs_forged',
+          currency: 'usd',
+          amount_subtotal: 100,
+          metadata: {
+            smrt_purpose: 'credit_purchase',
+            smrt_seller: PROVIDER,
+            smrt_payer: SOLO,
+            smrt_account: String(account?.id),
+            smrt_policy: String(policy.id),
+            smrt_granted_by: '',
+            smrt_amount: '100',
+            smrt_currency: 'USD',
+            smrt_sig: 'f'.repeat(64),
+          },
+        }),
+      );
+      expect(
+        await world.provider.acceptWebhook(forged.payload, forged.signature),
+      ).toMatchObject({ accepted: false, kind: 'ignored' });
     });
 
     it('acknowledges checkouts it did not create without storing them', async () => {
@@ -881,6 +942,11 @@ describe('smrt#3060 billing-period close', () => {
           periodEnd: lastMonth.periodEnd,
         });
         expect(job.method).toBe('runPeriodClose');
+        const events = await enqueueBillingEvents({
+          runtime: 'test-provider',
+          limit: 0,
+        });
+        expect(events.args).toMatchObject({ limit: 0 });
         expect(
           isBackgroundEligibleMethod(BillingPeriodClose, 'runPeriodClose'),
         ).toBe(true);
@@ -894,7 +960,7 @@ describe('smrt#3060 billing-period close', () => {
         };
         expect(result.groups).toHaveLength(2);
         const jobs = await SmrtJobCollection.create({ db: world.db });
-        expect(await jobs.list({})).toHaveLength(1);
+        expect(await jobs.list({})).toHaveLength(2);
       } finally {
         unregisterBillingRuntime('test-provider');
       }
