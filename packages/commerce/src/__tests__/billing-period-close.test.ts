@@ -327,19 +327,30 @@ describe('smrt#3060 billing-period close', () => {
       solo.canceledAt = period.periodEnd;
       await solo.save();
     });
-    await world.usage(SOLO);
+    // A month with no activity leaves the credit where it is: no new close.
     const next = nextMonth(period);
-    const later = await world.provider.closePeriod(next);
-    // 2500 + 70 - 3000 = -430 carried; next month bills 70 more usage.
+    const quiet = await world.provider.closePeriod(next);
     expect(
-      later.groups.find((group) => group.payerTenantId === SOLO)?.outcome,
-    ).toBe('carried_forward');
+      quiet.groups.find((group) => group.payerTenantId === SOLO),
+    ).toBeUndefined();
+    const closes = await BillingPeriodCloseCollection.create({ db: world.db });
+    expect(await closes.list({ where: { payerTenantId: SOLO } })).toHaveLength(
+      1,
+    );
+    // The next billed month absorbs it, and the credit is consumed.
     const third = nextMonth(next);
     await world.usage(SOLO, 100);
     await world.provider.closePeriod(third);
     const [invoice] = await invoiceFor(world, PROVIDER, SOLO);
-    // -360 carried from the second month, plus 700 of usage.
-    expect(invoice?.subtotal).toBe(700 - 360);
+    // 2500 + 70 - 3000 = -430 carried, then 700 of usage.
+    expect(invoice?.subtotal).toBe(700 - 430);
+    const statuses = (
+      await closes.list({ where: { payerTenantId: SOLO } })
+    ).map((close) => close.status);
+    expect(statuses.sort()).toEqual(['completed', 'completed']);
+    // Nothing is carried twice.
+    await world.provider.closePeriod(nextMonth(third));
+    expect(await invoiceFor(world, PROVIDER, SOLO)).toHaveLength(1);
   });
 
   it('reports a payer without an account and still closes the others', async () => {
@@ -907,6 +918,12 @@ describe('smrt#3060 billing-period close', () => {
       if (!session) throw new Error('missing session');
       await deliver(world, checkoutEvent({ ...session, amount_subtotal: 1 }));
       expect(await grants(SOLO)).toEqual([]);
+      // A discounted session reports the full subtotal but collects less.
+      await deliver(
+        world,
+        checkoutEvent({ ...session, id: 'cs_discounted', amount_total: 0 }),
+      );
+      expect(await grants(SOLO)).toEqual([]);
       const rows = await world.db.query(
         'SELECT status, last_error FROM _smrt_forge_deliveries',
       );
@@ -942,11 +959,9 @@ describe('smrt#3060 billing-period close', () => {
           periodEnd: lastMonth.periodEnd,
         });
         expect(job.method).toBe('runPeriodClose');
-        const events = await enqueueBillingEvents({
-          runtime: 'test-provider',
-          limit: 0,
-        });
-        expect(events.args).toMatchObject({ limit: 0 });
+        await expect(
+          enqueueBillingEvents({ runtime: 'test-provider', limit: 0 }),
+        ).rejects.toThrow('limit must be a positive integer');
         expect(
           isBackgroundEligibleMethod(BillingPeriodClose, 'runPeriodClose'),
         ).toBe(true);
@@ -960,7 +975,7 @@ describe('smrt#3060 billing-period close', () => {
         };
         expect(result.groups).toHaveLength(2);
         const jobs = await SmrtJobCollection.create({ db: world.db });
-        expect(await jobs.list({})).toHaveLength(2);
+        expect(await jobs.list({})).toHaveLength(1);
       } finally {
         unregisterBillingRuntime('test-provider');
       }

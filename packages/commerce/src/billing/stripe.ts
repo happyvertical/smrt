@@ -279,6 +279,7 @@ export async function normalizeStripeEvent(
     const metadata = smrtMetadata(session.metadata);
     const id = session.id;
     const amount = session.amount_subtotal;
+    const collected = session.amount_total;
     if (
       session.mode !== 'payment' ||
       metadata.smrt_purpose !== CREDIT_PURCHASE_PURPOSE ||
@@ -286,9 +287,16 @@ export async function normalizeStripeEvent(
       typeof id !== 'string' ||
       typeof session.currency !== 'string' ||
       typeof amount !== 'number' ||
-      !Number.isSafeInteger(amount)
+      !Number.isSafeInteger(amount) ||
+      typeof collected !== 'number' ||
+      !Number.isSafeInteger(collected)
     ) {
-      return ignored;
+      // A session that claims to be a credit purchase but fails these checks
+      // is reported distinctly so the host can alert on it.
+      return metadata.smrt_purpose === CREDIT_PURCHASE_PURPOSE &&
+        session.mode === 'payment'
+        ? { ...ignored, type: `${event.type}:unverified_credit_purchase` }
+        : ignored;
     }
     return {
       kind: 'checkout_completed',
@@ -299,6 +307,7 @@ export async function normalizeStripeEvent(
       // visibly instead of failing intake.
       currency: session.currency.toUpperCase(),
       amountSubtotal: amount,
+      amountTotal: collected,
       metadata,
     };
   }
@@ -333,7 +342,11 @@ async function hmacHex(secret: string, message: string): Promise<string> {
 function canonicalMetadata(metadata: Record<string, string>): string {
   return JSON.stringify(
     Object.entries(metadata)
-      .filter(([key]) => key.startsWith('smrt_') && key !== SIGNATURE_KEY)
+      // Empty values are dropped by the provider, so they are never signed.
+      .filter(
+        ([key, value]) =>
+          key.startsWith('smrt_') && key !== SIGNATURE_KEY && value !== '',
+      )
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
 }

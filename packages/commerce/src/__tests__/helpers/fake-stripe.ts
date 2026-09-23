@@ -300,7 +300,12 @@ export class FakeStripe {
         amount_subtotal:
           Number(line.price_data.unit_amount) * Number(line.quantity ?? 1),
         customer: body.customer ? String(body.customer) : null,
-        metadata: (body.metadata as Record<string, string>) ?? {},
+        // Stripe treats an empty metadata value as unset.
+        metadata: Object.fromEntries(
+          Object.entries(
+            (body.metadata as Record<string, string>) ?? {},
+          ).filter(([, value]) => value !== ''),
+        ),
       };
       this.sessions.set(session.id, session);
       return { status: 200, body: { ...session } };
@@ -423,6 +428,7 @@ export function checkoutEvent(
     id: string;
     currency: string;
     amount_subtotal: number;
+    amount_total?: number;
     metadata: Record<string, string>;
   },
   paymentStatus = 'paid',
@@ -441,6 +447,7 @@ export function checkoutEvent(
         payment_status: paymentStatus,
         currency: session.currency,
         amount_subtotal: session.amount_subtotal,
+        amount_total: session.amount_total ?? session.amount_subtotal,
         metadata: session.metadata,
       },
     },

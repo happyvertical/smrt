@@ -52,7 +52,7 @@ export interface CreditPurchaseMetadata {
 function encodeMetadata(
   metadata: CreditPurchaseMetadata,
 ): Record<string, string> {
-  return {
+  const encoded: Record<string, string> = {
     smrt_purpose: metadata.purpose,
     smrt_seller: metadata.sellerTenantId,
     smrt_payer: metadata.payerTenantId,
@@ -62,6 +62,12 @@ function encodeMetadata(
     smrt_amount: String(metadata.amount),
     smrt_currency: metadata.currency,
   };
+  // Providers drop empty metadata values (Stripe treats "" as unset), so an
+  // empty key is omitted rather than signed and then lost in transit.
+  for (const [key, value] of Object.entries(encoded)) {
+    if (!value) delete encoded[key];
+  }
+  return encoded;
 }
 
 /** Parse checkout metadata written by {@link createCreditCheckout}. */

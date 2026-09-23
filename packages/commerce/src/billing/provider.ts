@@ -122,8 +122,10 @@ export type BillingProviderEvent =
       /** Only `paid` sessions settle a credit purchase. */
       paid: boolean;
       currency: string;
-      /** Pre-tax amount collected, minor units. */
+      /** Line-item amount before discounts and tax, minor units. */
       amountSubtotal: number;
+      /** Amount actually collected (after discounts, with tax), minor units. */
+      amountTotal: number;
       metadata: Record<string, string>;
     }
   | { kind: 'ignored'; eventId: string; type: string };

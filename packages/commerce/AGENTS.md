@@ -40,7 +40,8 @@ for usage.
   source without claiming it, and never widen that key. Each close step is
   persisted before the next; `acquireCloseLease()` serializes workers. A
   close that nets to a credit keeps its claims and ends `carried_forward`;
-  its subtotal is a `credit_carry_forward` source for the payer's next close.
+  its subtotal is a `credit_carry_forward` source for the payer's next billed
+  close, which marks the carried close `completed`.
 - **System tables.** `BillingAccount`, `BillingPeriodClose`, and
   `BillingLineSource` are not tenant-scoped and have no generated surface.
   Collections stay unexported; models are root exports (#3082). Invoices,
@@ -53,8 +54,10 @@ for usage.
   events; any other runtime sharing the inbox must pass `providers` too. Only
   events this package acts on are stored: foreign checkouts are `ignored`,
   and only `smrt_*` checkout metadata is kept; it is
-  HMAC-signed with the webhook secret at creation, so another integration on
-  the same account cannot forge a credit purchase. `observe()` re-reads provider state, so
+  HMAC-signed with the webhook secret at creation (empty values are omitted:
+  Stripe drops them), so another integration on the same account cannot forge
+  a credit purchase; credit is granted only when the collected total equals
+  it. Rotating the webhook secret strands in-flight checkouts (up to 24 h). `observe()` re-reads provider state, so
   ordering never depends on delivery order. The standing hook runs inside the
   event transaction and must be idempotent.
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is

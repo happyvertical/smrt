@@ -310,7 +310,13 @@ async function collectGroups(
       return owner === undefined || owner === group.closeId;
     });
   }
-  return groups.filter((group) => group.candidates.length > 0);
+  // A carried credit alone is not new activity: it stays claimable at its
+  // original close until the payer is next billed.
+  return groups.filter((group) =>
+    group.candidates.some(
+      (candidate) => candidate.sourceType !== 'credit_carry_forward',
+    ),
+  );
 }
 
 async function listAll<T>(
@@ -538,13 +544,20 @@ async function collectCarriedCredits(
   runtime: BillingRuntime,
   period: BillingPeriod,
 ): Promise<Candidate[]> {
-  const carried = await runtime.closes.list({
-    where: {
-      sellerTenantId: runtime.sellerTenantId,
-      kind: runtime.kind,
-      status: 'carried_forward',
-    },
-  });
+  // Only unconsumed credits: a close is marked completed once a later close
+  // claims its credit, so this scan stays proportional to open credits.
+  const carried = await listAll(runtime.pageSize, (limit, offset) =>
+    runtime.closes.list({
+      where: {
+        sellerTenantId: runtime.sellerTenantId,
+        kind: runtime.kind,
+        status: 'carried_forward',
+      },
+      orderBy: 'id ASC',
+      limit,
+      offset,
+    }),
+  );
   return carried
     .filter(
       (close) =>
@@ -857,6 +870,15 @@ async function collectAndInvoice(
     }),
   );
   if (sources.length === 0) return 'empty';
+  // Credits this close absorbed are consumed at their original close.
+  for (const source of sources) {
+    if (source.sourceType !== 'credit_carry_forward') continue;
+    const carried = await runtime.closes.get(source.sourceId);
+    if (carried?.status === 'carried_forward') {
+      carried.status = 'completed';
+      await carried.save();
+    }
+  }
   const lines = groupLines(sources);
   const subtotal = lines.reduce(
     (sum, line) => sum + line.amount - line.discount,

@@ -141,6 +141,12 @@ export function enqueueBillingPeriodClose(
 export function enqueueBillingEvents(
   options: EnqueueBillingJobOptions & { limit?: number },
 ): Promise<SmrtJob> {
+  if (
+    options.limit !== undefined &&
+    (!Number.isSafeInteger(options.limit) || options.limit <= 0)
+  ) {
+    return Promise.reject(new Error('limit must be a positive integer.'));
+  }
   const runtime = getBillingRuntime(options.runtime);
   return enqueue(
     runtime,

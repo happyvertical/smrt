@@ -426,10 +426,13 @@ async function applyCheckout(
   }
   if (
     event.currency !== metadata.currency ||
-    event.amountSubtotal !== metadata.amount
+    event.amountSubtotal !== metadata.amount ||
+    // Credit is granted only for money collected in full: a discounted
+    // session reports the undiscounted subtotal.
+    event.amountTotal !== metadata.amount
   ) {
     throw new Error(
-      `Checkout ${event.sessionId} collected ${event.amountSubtotal} ${event.currency}; ` +
+      `Checkout ${event.sessionId} collected ${event.amountTotal} of ${event.amountSubtotal} ${event.currency}; ` +
         `expected ${metadata.amount} ${metadata.currency}.`,
     );
   }
