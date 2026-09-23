@@ -89,6 +89,10 @@ transitions and monotonic checkpoints in
 `_smrt_forge_projection_checkpoints`.
 
 - Inbox identity is `(tenant_id, provider, delivery_id)`.
+- Runtimes sharing the inbox pass `providers` (to `ForgeProjectionRuntime` or
+  `claimReady`) so each claims and dead-letters only its own deliveries;
+  unfiltered claims take every provider (smrt-commerce billing uses
+  `<name>-billing`, #3060).
 - Tenant-facing accept/replay requires ambient tenant context. Worker claim is
   cross-tenant, then runtime restores the captured context before observation.
 - Projection callbacks must write through `ForgeProjectionContext.db`; the

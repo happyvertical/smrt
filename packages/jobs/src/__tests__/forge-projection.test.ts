@@ -382,6 +382,71 @@ describe('durable forge delivery projection', () => {
   });
 });
 
+describe('forge delivery provider filter (#3060)', () => {
+  it('claims and dead-letters only the runtime providers it names', async () => {
+    const db = await testDb();
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    const epoch = new Date('2026-07-26T12:00:00.000Z');
+    const now = new Date(epoch.getTime() + 1_000);
+    await withTenant({ tenantId: TENANT_A }, async () => {
+      await inbox.accept({ ...deliveryInput('gh-1'), receivedAt: epoch });
+      await inbox.accept({
+        ...deliveryInput('billing-1'),
+        provider: 'stripe-billing',
+        receivedAt: new Date(epoch.getTime() + 1),
+      });
+    });
+    const claimed = await inbox.claimReady({
+      workerId: 'billing-worker',
+      leaseMs: 1_000,
+      now,
+      providers: ['stripe-billing'],
+    });
+    expect(claimed?.deliveryId).toBe('billing-1');
+    expect(
+      await inbox.claimReady({
+        workerId: 'billing-worker',
+        leaseMs: 1_000,
+        now,
+        providers: ['stripe-billing'],
+      }),
+    ).toBeNull();
+
+    // An unfiltered claim still sees the other provider's delivery.
+    const other = await inbox.claimReady({
+      workerId: 'forge-worker',
+      leaseMs: 1_000,
+      now,
+    });
+    expect(other?.deliveryId).toBe('gh-1');
+
+    // Expiring a final-attempt lease is scoped by the same filter.
+    await db.query('UPDATE _smrt_forge_deliveries SET max_attempts = 1');
+    const later = new Date(epoch.getTime() + 60_000);
+    await inbox.claimReady({
+      workerId: 'billing-worker',
+      leaseMs: 1_000,
+      now: later,
+      providers: ['stripe-billing'],
+    });
+    const rows = await db.query(
+      'SELECT delivery_id, status FROM _smrt_forge_deliveries ORDER BY delivery_id',
+    );
+    expect(rows.rows).toEqual([
+      { delivery_id: 'billing-1', status: 'dead_letter' },
+      { delivery_id: 'gh-1', status: 'leased' },
+    ]);
+
+    await expect(
+      inbox.claimReady({
+        workerId: 'x',
+        leaseMs: 1_000,
+        providers: [],
+      }),
+    ).rejects.toThrow('providers must name at least one provider');
+  });
+});
+
 function deliveryInput(deliveryId: string) {
   return {
     provider: 'github',

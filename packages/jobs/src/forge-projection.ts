@@ -232,6 +232,12 @@ export interface ClaimForgeDeliveryOptions {
   workerId: string;
   leaseMs: number;
   now?: Date;
+  /**
+   * Claim only deliveries from these providers. Runtimes that share the inbox
+   * with other projections must set it so each claims only its own
+   * deliveries; omitted, every provider is claimable.
+   */
+  providers?: readonly string[];
 }
 
 /**
@@ -317,6 +323,17 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
       getDatabaseEngine(this.db) === 'postgres'
         ? ' FOR UPDATE SKIP LOCKED'
         : '';
+    const providers = options.providers;
+    if (providers !== undefined) {
+      if (providers.length === 0) {
+        throw new Error('providers must name at least one provider');
+      }
+      for (const provider of providers) assertNonEmpty('providers[]', provider);
+    }
+    const providerClause = providers
+      ? ` AND provider IN (${providers.map(() => '?').join(', ')})`
+      : '';
+    const providerParams = providers ? [...providers] : [];
 
     // An expired final attempt cannot be safely re-run. Move it to the
     // operator-recoverable terminal state before selecting another candidate.
@@ -330,8 +347,8 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
               updated_at = ?
         WHERE status = 'leased'
           AND lease_expires_at < ?
-          AND attempts >= max_attempts`,
-      [nowIso, nowIso],
+          AND attempts >= max_attempts${providerClause}`,
+      [nowIso, nowIso, ...providerParams],
       { allowRawOnTenantScoped: true },
     );
 
@@ -346,7 +363,7 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
         WHERE id IN (
           SELECT id
             FROM _smrt_forge_deliveries
-           WHERE attempts < max_attempts
+           WHERE attempts < max_attempts${providerClause}
              AND (
                (status IN ('pending', 'retry') AND next_attempt_at <= ?)
                OR (status = 'leased' AND lease_expires_at < ?)
@@ -364,6 +381,7 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
         token,
         leaseExpiresAt,
         nowIso,
+        ...providerParams,
         nowIso,
         nowIso,
         nowIso,
@@ -434,6 +452,8 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
 export interface ForgeProjectionRuntimeOptions {
   db: DatabaseInterface;
   workerId: string;
+  /** Claim only these providers' deliveries; see {@link ClaimForgeDeliveryOptions}. */
+  providers?: readonly string[];
   leaseMs?: number;
   retryBaseMs?: number;
   retryMaxMs?: number;
@@ -451,6 +471,7 @@ export interface ForgeProjectionRuntimeOptions {
 export class ForgeProjectionRuntime {
   readonly db: DatabaseInterface;
   readonly workerId: string;
+  readonly providers?: readonly string[];
   readonly leaseMs: number;
   readonly retryBaseMs: number;
   readonly retryMaxMs: number;
@@ -459,6 +480,7 @@ export class ForgeProjectionRuntime {
   constructor(options: ForgeProjectionRuntimeOptions) {
     this.db = options.db;
     this.workerId = options.workerId;
+    this.providers = options.providers;
     this.leaseMs = options.leaseMs ?? 30_000;
     this.retryBaseMs = options.retryBaseMs ?? 1_000;
     this.retryMaxMs = options.retryMaxMs ?? 300_000;
@@ -478,6 +500,7 @@ export class ForgeProjectionRuntime {
         workerId: this.workerId,
         leaseMs: this.leaseMs,
         now: options.now,
+        providers: this.providers,
       },
       this.audit,
     );
