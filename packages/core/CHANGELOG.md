@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.51.22
+
+### Patch Changes
+
+- ### Features
+  
+  - reseller price books, child-usage rating, and delegated spend limits (#3091) (subscriptions)
+  
+  ### Bug Fixes
+  
+  - cap root test package concurrency (#3087)
+- @happyvertical/smrt-config@0.51.22
+  - @happyvertical/smrt-scanner@0.51.22
+  - @happyvertical/smrt-types@0.51.22
+
 ## 0.51.21
 
 ### Patch Changes
