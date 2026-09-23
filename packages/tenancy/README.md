@@ -86,7 +86,10 @@ in-process graph lock. The new `_smrt_billing_relationships` table
 must be applied through the normal `smrt db:migrate` deployment flow.
 
 Generated API, MCP, and CLI mutation surfaces for these rows are disabled.
-The persistence model and collection are internal; callers use the service.
+`BillingRelationship` is a root export only because SMRT consumer registration
+imports every published manifest model from the package root; saving it
+directly bypasses the service's tenant, cycle, and authorization checks.
+`BillingRelationshipCollection` is not exported. Callers use the service.
 Without an `authorize` callback, mutations require explicit system context.
 Reads are limited to the child, its reseller, or system context; a host may
 provide `authorize` for additional permission-checked access. Supply a tenant

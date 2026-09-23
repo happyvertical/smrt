@@ -27,8 +27,12 @@ updates `smrt-users` `Tenant.parentTenantId` or tenant-scoped records. One row
 per child stores the reseller and `self`/`reseller` owner mode; owner queries
 derive one tenant ID. Mutations go through `BillingRelationshipService`, which
 serializes graph writes and rejects cycles. The host supplies tenant existence
-and optional authorization; no generated write surface is exposed. See the
-README for setup, access rules, and migration guidance.
+and optional authorization; no generated write surface is exposed. The model
+stays a root export because generated consumer registration imports every
+public non-collection manifest object from the root; withholding it breaks
+every dependent's `register.js` (publish dry run, smrt#3074). The collection
+stays unexported, as in smrt-chat. See the README for setup, access rules, and
+migration guidance.
 
 ## Interceptor System
 

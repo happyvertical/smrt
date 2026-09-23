@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BillingRelationship,
   BillingRelationshipError,
   BillingRelationshipService,
 } from '../billing-relationship.js';
 import { withSystemContext, withTenant } from '../context.js';
+import * as tenancyRoot from '../index.js';
 
 const A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const B = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
@@ -20,6 +22,15 @@ async function setup(ids = [A, B, C, D]) {
 }
 
 describe('smrt#3058 billing relationships', () => {
+  it('exports the manifest model from the root and withholds the raw collection', () => {
+    // Generated consumer registration imports every public non-collection
+    // manifest object from the package root; omitting the model broke every
+    // dependent's register.js (smrt#3074). The collection stays unexported so
+    // callers cannot bypass the service's checks through create().
+    expect(tenancyRoot.BillingRelationship).toBe(BillingRelationship);
+    expect('BillingRelationshipCollection' in tenancyRoot).toBe(false);
+  });
+
   it('defaults to self billing and switches owners without changing child identity', async () => {
     const service = await setup();
     await withSystemContext(async () => {
