@@ -27,6 +27,7 @@ export {
   FeatureSettingsService,
   type FeatureSettingsServiceOptions,
   featureOverrideEffectFromValue,
+  InvalidFeatureScopeError,
   type ListFeatureSettingsOptions,
   type SetFeatureOverrideRequest,
   UnknownFeatureKeyError,
