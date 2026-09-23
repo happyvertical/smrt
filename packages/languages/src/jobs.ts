@@ -14,5 +14,5 @@ export {
   enqueueTranslationJob,
   LanguageTranslationTask,
   TRANSLATION_PROMPT_KEY,
-} from './translation-job.js';
+} from './jobs/translation-job.js';
 export type { TranslationJobPayload } from './types.js';

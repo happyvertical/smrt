@@ -43,8 +43,8 @@ import { resolveLanguageString } from './language-resolver.js';
 // Side-effect import: registers `LanguageTranslationTask` with the
 // ObjectRegistry so the test can pull a constructor from
 // `ObjectRegistry.getClass(...)` and exercise the runner contract.
-import './translation-job.js';
-import type { LanguageTranslationTask } from './translation-job.js';
+import './jobs/translation-job.js';
+import type { LanguageTranslationTask } from './jobs/translation-job.js';
 
 describe('@happyvertical/smrt-languages — miss → enqueue → run → resolved', () => {
   let db: DatabaseInterface;

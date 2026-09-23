@@ -292,7 +292,7 @@ export async function resolveLanguageString(
  * Best-effort enqueue of an AI translation job. Wrapped so resolution never
  * fails because of an enqueue error, missing optional dependency, etc.
  *
- * The actual job machinery lives in `./translation-job.ts` and is loaded
+ * The actual job machinery lives in `./jobs/translation-job.ts` and is loaded
  * lazily so the resolver does not pull `@happyvertical/ai` into the import
  * graph for synchronous resolves that never miss.
  */
@@ -312,7 +312,7 @@ async function tryEnqueueTranslation(args: {
   }
 
   try {
-    const { enqueueTranslationJob } = await import('./translation-job.js');
+    const { enqueueTranslationJob } = await import('./jobs/translation-job.js');
     await enqueueTranslationJob({
       key: args.key,
       targetLocale: args.requestedLocale,

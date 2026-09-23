@@ -171,10 +171,8 @@ test('verify-manifest-exports (smrt#2924): still checks plain-Node loadability f
   // Regression for the exact shape of the three real #2924 objects, which the
   // first cut of this guard silently skipped: `SmrtDataSurfaceActionTask`,
   // `DataSurfaceActionTokenState`, and `DataSurfaceActionIdempotencyState` all
-  // declare `api: false, cli: false, mcp: false`, so `isFullyClosedSurface`
-  // classifies them as excluded. Export-NAME verification is rightly skipped
-  // for them (no producer signal distinguishes an intentional non-export), but
-  // loadability is an independent question: the consumer plugin still emits
+  // declare `api: false, cli: false, mcp: false`. These settings do not stop
+  // the consumer plugin from emitting
   // their `./server` importPath into `.smrt/register.js`, which the CLI still
   // loads under plain Node. Excluding them from the load attempt let a broken
   // `@happyvertical/smrt-agents/server` pass the guard with exit 0.
@@ -246,8 +244,7 @@ test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object behind a non
 test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object whose non-root importPath matches no exports entry still fails', () => {
   // Same reachability, one step earlier: Node answers
   // ERR_PACKAGE_PATH_NOT_EXPORTED for a subpath the package does not export,
-  // so the generated register.js cannot load it. An excluded object has no
-  // export name to verify, but the entry it names must still resolve.
+  // so the generated register.js cannot load it. The entry must resolve.
   const packageDir = createPackageFixture({
     rootExports: ['RootThing'],
     serverExports: ['DataSurfaceActionIdempotencyState'],
@@ -267,10 +264,7 @@ test('verify-manifest-exports (smrt#2924 F1): a FULLY-CLOSED object whose non-ro
   assert.match(result.stderr, /does not match any package.json "exports" entry/);
 });
 
-test('verify-manifest-exports (smrt#2924 F1): a fully-closed object at the ROOT importPath keeps its pre-existing tolerance', () => {
-  // The exclusion must survive for the ROOT barrel, which is legitimately
-  // bundler-only (the documented smrt-products case). A fully-closed root
-  // object whose entry fails to load is still not release-blocking.
+test('verify-manifest-exports (smrt#3082): a fully-closed public root object still requires a loadable entry', () => {
   const packageDir = createPackageFixture({
     rootExports: ['RootThing'],
     serverExports: ['Unused'],
@@ -289,14 +283,11 @@ test('verify-manifest-exports (smrt#2924 F1): a fully-closed object at the ROOT 
   });
 
   const result = runGuard(packageDir);
-  assert.equal(result.status, 0);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /failed to load/);
 });
 
-test('verify-manifest-exports (smrt#2924): a fully-closed object behind a LOADABLE non-root importPath still skips export-name verification', () => {
-  // The other half of the contract: moving the load attempt ahead of the
-  // exclusion must not start enforcing export names on excluded objects. This
-  // fixture's ./server module loads cleanly but deliberately does NOT export
-  // the advertised class, and that must still pass.
+test('verify-manifest-exports (smrt#3082): a fully-closed public object behind a loadable subpath still requires its export', () => {
   const packageDir = createPackageFixture({
     rootExports: ['RootThing'],
     serverExports: ['SomethingElse'],
@@ -312,8 +303,24 @@ test('verify-manifest-exports (smrt#2924): a fully-closed object behind a LOADAB
   });
 
   const result = runGuard(packageDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /does not export it/);
+});
+
+test('verify-manifest-exports (smrt#3082): a fully-closed public model resolves from its declared subpath', () => {
+  const packageDir = createPackageFixture({ serverExports: ['Task'] });
+  writeManifest(packageDir, {
+    task: {
+      className: 'Task',
+      exportName: 'Task',
+      importPath: '@happyvertical/smrt-fixture/server',
+      decoratorConfig: { api: false, cli: false, mcp: false },
+    },
+  });
+
+  const result = runGuard(packageDir);
   assert.equal(result.status, 0);
-  assert.doesNotMatch(result.stderr, /does not export it/);
+  assert.match(result.stdout, /1 manifest object\(s\) resolve to real exports/);
 });
 
 test('verify-manifest-exports (smrt#2845): does not verify a SmrtCollection companion class deliberately withheld from the public export surface', () => {
@@ -345,12 +352,8 @@ test('verify-manifest-exports (smrt#2845): does not verify a SmrtCollection comp
   assert.match(result.stdout, /1 not checked: collection companion/);
 });
 
-test('verify-manifest-exports (smrt#2845): does not verify an object whose @smrt() config closes every interactive surface (api/cli/mcp)', () => {
-  // Mirrors @happyvertical/smrt-fields: FieldUsageReportReceipt sets
-  // api: { include: [] }, cli: false, mcp: { include: [] } — a real,
-  // database-backed SmrtObject that is genuinely never re-exported from
-  // src/index.ts. No producer marks this "backend-only" intent with
-  // visibility: 'internal', so the manifest still carries it as public.
+test('verify-manifest-exports (smrt#3082): verifies an object whose @smrt() config closes every interactive surface', () => {
+  // Such a public manifest object is still imported by consumer registration.
   const packageDir = createPackageFixture({
     rootExports: ['RootThing'], // FieldUsageReportReceipt deliberately absent
   });
@@ -373,15 +376,13 @@ test('verify-manifest-exports (smrt#2845): does not verify an object whose @smrt
   });
 
   const result = runGuard(packageDir);
-  assert.equal(result.status, 0);
-  assert.match(result.stdout, /1 not checked: collection companion/);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /FieldUsageReportReceipt/);
+  assert.match(result.stderr, /does not export it/);
 });
 
 test('verify-manifest-exports (smrt#2845): still verifies an object whose @smrt() config only partially closes its surface', () => {
-  // A single closed surface (e.g. cli: false alone) is not the strong
-  // "backend-only, no consumer touches this" signal the fully-closed
-  // pattern is — it must not become a blanket escape hatch. This object's
-  // api/mcp remain open, so it should still be checked and fail here.
+  // A partially closed surface also requires the public model export.
   const packageDir = createPackageFixture({
     rootExports: [], // Thing is genuinely missing
   });

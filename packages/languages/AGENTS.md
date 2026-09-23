@@ -18,6 +18,9 @@ auto-translation for missing locales.
 - `enqueueTranslationJob({ key, targetLocale })` writes a `LanguageTranslationTask`
   job into the `languages` queue with a deterministic dedup ID so concurrent
   resolver misses collapse into one job.
+- Keep `LanguageTranslationTask` under `src/jobs/`: the manifest generator uses
+  that path to stamp its `@happyvertical/smrt-languages/jobs` import path. The
+  package root intentionally excludes the translation-worker dependency tree.
 
 ## Locale-miss flow
 
