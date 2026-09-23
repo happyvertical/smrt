@@ -92,7 +92,7 @@ transitions and monotonic checkpoints in
 - Runtimes sharing the inbox pass `providers` (to `ForgeProjectionRuntime` or
   `claimReady`) so each claims and dead-letters only its own deliveries;
   unfiltered claims take every provider (smrt-commerce billing uses
-  `<name>-billing`, #3060).
+  `<name>-billing:<sellerTenantId>`, #3060).
 - Tenant-facing accept/replay requires ambient tenant context. Worker claim is
   cross-tenant, then runtime restores the captured context before observation.
 - Projection callbacks must write through `ForgeProjectionContext.db`; the

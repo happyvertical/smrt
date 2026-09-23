@@ -45,9 +45,12 @@ for usage.
   payments, and journals are written in the seller's tenant; payer-owned
   subscriptions and credit grants in a system context, only after
   verification.
-- **Events** use smrt-jobs' delivery inbox under provider `<name>-billing` and
-  a provider-filtered `ForgeProjectionRuntime`; any other runtime sharing the
-  inbox must pass `providers` too. `observe()` re-reads provider state, so
+- **Events** use smrt-jobs' delivery inbox under provider
+  `<name>-billing:<sellerTenantId>` and a provider-filtered
+  `ForgeProjectionRuntime`, so a runtime never claims another seller's
+  events; any other runtime sharing the inbox must pass `providers` too. Only
+  events this package acts on are stored: foreign checkouts are `ignored`,
+  and only `smrt_*` checkout metadata is kept. `observe()` re-reads provider state, so
   ordering never depends on delivery order. The standing hook runs inside the
   event transaction and must be idempotent.
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is

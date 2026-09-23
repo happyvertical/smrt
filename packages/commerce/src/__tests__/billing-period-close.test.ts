@@ -428,6 +428,72 @@ describe('smrt#3060 billing-period close', () => {
       ).toMatchObject({ accepted: false, kind: 'ignored' });
     });
 
+    it('keeps each seller runtime to its own events in a shared inbox', async () => {
+      await world.usage(SITE);
+      await world.provider.closePeriod(period);
+      await world.reseller.closePeriod(period);
+      const [site] = await invoiceFor(world, NETWORK, SITE);
+      const [network] = await invoiceFor(world, PROVIDER, NETWORK);
+      for (const invoice of [site, network]) {
+        world.stripe.pay(String(invoice?.externalId));
+      }
+      const resellerEvent = signedEvent(
+        invoiceEvent('invoice.paid', String(site?.externalId)),
+      );
+      await world.reseller.acceptWebhook(
+        resellerEvent.payload,
+        resellerEvent.signature,
+      );
+      const providerEvent = signedEvent(
+        invoiceEvent('invoice.paid', String(network?.externalId)),
+      );
+      await world.provider.acceptWebhook(
+        providerEvent.payload,
+        providerEvent.signature,
+      );
+      // The provider polls first and must not consume the reseller's event.
+      expect(await world.provider.processEvents()).toBe(1);
+      expect((await invoiceFor(world, NETWORK, SITE))[0]?.status).toBe(
+        InvoiceStatus.SENT,
+      );
+      expect(await world.reseller.processEvents()).toBe(1);
+      expect((await invoiceFor(world, NETWORK, SITE))[0]?.status).toBe(
+        InvoiceStatus.PAID,
+      );
+      expect((await invoiceFor(world, PROVIDER, NETWORK))[0]?.status).toBe(
+        InvoiceStatus.PAID,
+      );
+    });
+
+    it('acknowledges checkouts it did not create without storing them', async () => {
+      const foreign = signedEvent(
+        checkoutEvent({
+          id: 'cs_foreign',
+          currency: 'jpy',
+          amount_subtotal: 1200,
+          metadata: { order_id: 'o-1', email: 'person@example.test' },
+        }),
+      );
+      expect(
+        await world.provider.acceptWebhook(foreign.payload, foreign.signature),
+      ).toMatchObject({ accepted: false, kind: 'ignored' });
+      const malformed = signedEvent({
+        id: 'evt_no_invoice',
+        type: 'invoice.paid',
+        data: { object: {} },
+      });
+      expect(
+        await world.provider.acceptWebhook(
+          malformed.payload,
+          malformed.signature,
+        ),
+      ).toMatchObject({ accepted: false, kind: 'ignored' });
+      const rows = await world.db.query(
+        'SELECT COUNT(*) AS count FROM _smrt_forge_deliveries',
+      );
+      expect(Number(rows.rows[0]?.count)).toBe(0);
+    });
+
     it('settles a paid invoice once: payment, allocation, cash journal, PAID', async () => {
       await world.usage(SOLO);
       await world.provider.closePeriod(period);
@@ -687,7 +753,17 @@ describe('smrt#3060 billing-period close', () => {
       const session = world.stripe.sessions.get(checkout.sessionId);
       if (!session) throw new Error('missing session');
 
-      await deliver(world, checkoutEvent(session, 'unpaid'));
+      await deliver(
+        world,
+        checkoutEvent(
+          { ...session, metadata: { ...session.metadata, note: 'not ours' } },
+          'unpaid',
+        ),
+      );
+      const stored = await world.db.query(
+        'SELECT payload FROM _smrt_forge_deliveries',
+      );
+      expect(String(stored.rows[0]?.payload)).not.toContain('not ours');
       expect(await grants(SOLO)).toEqual([]);
       await deliver(world, checkoutEvent(session));
       await deliver(

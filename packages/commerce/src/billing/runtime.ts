@@ -146,7 +146,7 @@ export class BillingRuntime {
   readonly onPayerStanding?: PayerStandingHook;
   readonly leaseMs: number;
   readonly pageSize: number;
-  /** The inbox provider namespace for this runtime's events. */
+  /** The inbox provider namespace for this runtime's events (per seller). */
   readonly eventProvider: string;
 
   private constructor(
@@ -182,7 +182,9 @@ export class BillingRuntime {
     this.onPayerStanding = options.onPayerStanding;
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
     this.pageSize = options.pageSize ?? 500;
-    this.eventProvider = `${options.provider.name}-billing`;
+    // One inbox namespace per seller: the delivery claim is cross-tenant, so
+    // a runtime must never be able to claim another seller's events.
+    this.eventProvider = `${options.provider.name}-billing:${this.sellerTenantId}`;
     if (!Number.isFinite(this.leaseMs) || this.leaseMs <= 0) {
       throw new Error('leaseMs must be a positive number.');
     }

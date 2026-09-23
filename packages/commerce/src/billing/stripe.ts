@@ -11,6 +11,7 @@ import type {
   WebhookEvent,
 } from '@happyvertical/accounting';
 import type { SubscriptionStatus } from '@happyvertical/smrt-subscriptions';
+import { CREDIT_PURCHASE_PURPOSE } from './credits.js';
 import {
   type BillingInvoiceEventType,
   type BillingProvider,
@@ -243,11 +244,13 @@ export function normalizeStripeEvent(
       'Stripe webhook event has no id; it cannot be deduplicated.',
     );
   }
+  // After verification, anything this package cannot act on is `ignored`
+  // (acknowledged, not stored) rather than thrown: a throw here would fail
+  // the host's webhook response for an event that is not ours.
+  const ignored = { kind: 'ignored' as const, eventId, type: event.type };
   const invoiceType = INVOICE_EVENTS[event.type];
   if (invoiceType) {
-    if (!event.resourceId) {
-      throw new Error(`Stripe ${event.type} event has no invoice id.`);
-    }
+    if (!event.resourceId) return ignored;
     return {
       kind: 'invoice',
       eventId,
@@ -257,36 +260,39 @@ export function normalizeStripeEvent(
   }
   if (SUBSCRIPTION_EVENTS.has(event.type)) {
     const id = stripeObject(event).id;
-    if (typeof id !== 'string' || !id) {
-      throw new Error(`Stripe ${event.type} event has no subscription id.`);
-    }
+    if (typeof id !== 'string' || !id) return ignored;
     return { kind: 'subscription', eventId, providerSubscriptionId: id };
   }
   if (CHECKOUT_EVENTS.has(event.type)) {
     const session = stripeObject(event);
-    if (session.mode !== 'payment') {
-      return { kind: 'ignored', eventId, type: event.type };
-    }
+    // Only sessions this package created are stored, and only their smrt_*
+    // metadata: other integrations' checkouts never enter the inbox.
+    const metadata = smrtMetadata(session.metadata);
     const id = session.id;
     const amount = session.amount_subtotal;
-    if (typeof id !== 'string' || typeof session.currency !== 'string') {
-      throw new Error(`Stripe ${event.type} event is missing its session.`);
-    }
-    const currency = assertCheckoutCurrency(session.currency);
-    if (typeof amount !== 'number' || !Number.isSafeInteger(amount)) {
-      throw new Error(`Stripe ${event.type} event has no subtotal.`);
+    if (
+      session.mode !== 'payment' ||
+      metadata.smrt_purpose !== CREDIT_PURCHASE_PURPOSE ||
+      typeof id !== 'string' ||
+      typeof session.currency !== 'string' ||
+      typeof amount !== 'number' ||
+      !Number.isSafeInteger(amount)
+    ) {
+      return ignored;
     }
     return {
       kind: 'checkout_completed',
       eventId,
       sessionId: id,
       paid: session.payment_status === 'paid',
-      currency,
+      // Validated when the event is applied, so a bad value dead-letters
+      // visibly instead of failing intake.
+      currency: session.currency.toUpperCase(),
       amountSubtotal: amount,
-      metadata: stringRecord(session.metadata),
+      metadata,
     };
   }
-  return { kind: 'ignored', eventId, type: event.type };
+  return ignored;
 }
 
 function stripeObject(event: WebhookEvent): Record<string, unknown> {
@@ -297,11 +303,13 @@ function stripeObject(event: WebhookEvent): Record<string, unknown> {
     : {};
 }
 
-function stringRecord(value: unknown): Record<string, string> {
+function smrtMetadata(value: unknown): Record<string, string> {
   const result: Record<string, string> = {};
   if (!value || typeof value !== 'object') return result;
   for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'string') result[key] = entry;
+    if (key.startsWith('smrt_') && typeof entry === 'string') {
+      result[key] = entry;
+    }
   }
   return result;
 }

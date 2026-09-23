@@ -42,7 +42,12 @@ import type {
   BillingProviderSubscriptionState,
 } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
-import { deterministicId, normalizeCurrency, tenantKey } from './units.js';
+import {
+  currencyMinorUnitExponent,
+  deterministicId,
+  normalizeCurrency,
+  tenantKey,
+} from './units.js';
 
 type InvoiceEvent = Extract<BillingProviderEvent, { kind: 'invoice' }>;
 type SubscriptionEvent = Extract<
@@ -95,7 +100,16 @@ export function createBillingEventProjector(
     async observe(
       delivery: ForgeDelivery,
     ): Promise<ForgeObservation<ObservedEvent> | null> {
-      if (delivery.provider !== runtime.eventProvider) return null;
+      // The claim is filtered to this seller's namespace; anything else is
+      // released for retry rather than acknowledged as if it were applied.
+      if (
+        delivery.provider !== runtime.eventProvider ||
+        tenantKey(delivery.tenantId) !== runtime.sellerTenantId
+      ) {
+        throw new Error(
+          `Billing delivery ${delivery.deliveryId} belongs to another seller.`,
+        );
+      }
       const event = readEvent(delivery);
       let value: ObservedEvent;
       if (event.kind === 'invoice') {
@@ -405,6 +419,11 @@ async function applyCheckout(
   if (!metadata || metadata.purpose !== CREDIT_PURCHASE_PURPOSE) return;
   if (metadata.sellerTenantId !== runtime.sellerTenantId) return;
   if (!event.paid) return; // An async payment settles on a later event.
+  if (currencyMinorUnitExponent(event.currency) !== 2) {
+    throw new Error(
+      `Checkout ${event.sessionId} is in ${event.currency}; credit purchases are two-decimal only.`,
+    );
+  }
   if (
     event.currency !== metadata.currency ||
     event.amountSubtotal !== metadata.amount
