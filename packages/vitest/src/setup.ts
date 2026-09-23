@@ -197,6 +197,13 @@ interface SmrtCoreSchemaModule {
     indexes: string[];
     triggers: string[];
   };
+  planForeignKeyCreation?(
+    schemas: readonly SchemaDefinition[],
+    engine: 'postgres',
+  ): {
+    schemas: SchemaDefinition[];
+    deferredStatements: string[];
+  };
 }
 
 const preparedSchemasByDb = new WeakMap<object, string>();
@@ -348,7 +355,14 @@ interface SchemaSqlBatch {
   columnNames: string[];
   indexNames: string[];
   hasTriggers: boolean;
+  /** Statements `syncSchema` can parse: CREATE TABLE and plain CREATE INDEX. */
   sql: string;
+  /** Dollar-quoted statements executed whole, after `sql`. */
+  procedural: string[];
+}
+
+function isDollarQuoted(statement: string): boolean {
+  return /\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/.test(statement);
 }
 
 function buildSchemaSqlBatches(
@@ -358,6 +372,7 @@ function buildSchemaSqlBatches(
 ): {
   engine: 'sqlite' | 'duckdb' | 'json' | 'postgres';
   batches: SchemaSqlBatch[];
+  deferredStatements: string[];
 } {
   const dbConfig =
     options && typeof options === 'object' && !('query' in options)
@@ -372,6 +387,7 @@ function buildSchemaSqlBatches(
         );
 
   const batches: SchemaSqlBatch[] = [];
+  const renderable: SchemaDefinition[] = [];
   for (const schema of Object.values(
     smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
   )) {
@@ -394,28 +410,80 @@ function buildSchemaSqlBatches(
     // skip only the offending schema so every other registered class,
     // including the one under test, still gets its table.
     try {
-      const ddl = smrtCore.generateDDLForEngine(schema, engine);
-      const triggerStatements =
-        engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers;
-      const sql = [ddl.createTable, ...ddl.indexes, ...triggerStatements]
-        .filter(Boolean)
-        .map(normalizeSchemaStatement)
-        .join('\n');
-      if (!sql) {
-        continue;
-      }
-      batches.push({
-        tableName: schema.tableName,
-        columnNames: Object.keys(schema.columns ?? {}),
-        indexNames: (schema.indexes ?? []).map((index) => index.name),
-        hasTriggers: triggerStatements.length > 0,
-        sql,
-      });
+      smrtCore.generateDDLForEngine(schema, engine);
+      renderable.push(schema);
     } catch (error) {
       warnOnceForSchemaDdlFailure(schema.tableName, engine, error);
     }
   }
-  return { engine, batches };
+
+  // PostgreSQL resolves every inline `REFERENCES` target when the CREATE
+  // TABLE runs, so tables must be created parents-first; SQLite and DuckDB
+  // tolerated the registry's arbitrary order, PostgreSQL does not (a child
+  // such as `oidc_identities` or `agent_schedules` failed with `relation
+  // "…" does not exist` whenever it sorted ahead of its parent — #2868).
+  // Use the production planner so ordering and cycle handling match
+  // `smrt db:migrate` and `getTestDatabase()` (#2413): members of an FK
+  // cycle are created without the cyclic constraint, which is added after.
+  let ordered = renderable;
+  let deferredStatements: string[] = [];
+  if (engine === 'postgres' && smrtCore.planForeignKeyCreation) {
+    const plan = smrtCore.planForeignKeyCreation(renderable, 'postgres');
+    ordered = plan.schemas;
+    deferredStatements = plan.deferredStatements;
+  }
+
+  for (const schema of ordered) {
+    const ddl = smrtCore.generateDDLForEngine(schema, engine);
+    const triggerStatements =
+      engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers;
+    const statements = [
+      ddl.createTable,
+      ...ddl.indexes,
+      ...triggerStatements,
+    ].filter(Boolean);
+    // `syncSchema` splits its input on every `;`, so a dollar-quoted body
+    // (the PostgreSQL null-equal unique index is emitted as a `DO` block
+    // that picks `NULLS NOT DISTINCT` by server version) is cut apart and
+    // each fragment fails, leaving the unique index — and every UPSERT that
+    // targets it — missing. Those statements are self-guarded and run whole.
+    const procedural = statements.filter(isDollarQuoted);
+    const sql = statements
+      .filter((statement) => !isDollarQuoted(statement))
+      .map(normalizeSchemaStatement)
+      .join('\n');
+    if (!sql && procedural.length === 0) {
+      continue;
+    }
+    batches.push({
+      tableName: schema.tableName,
+      columnNames: Object.keys(schema.columns ?? {}),
+      indexNames: (schema.indexes ?? []).map((index) => index.name),
+      hasTriggers: triggerStatements.length > 0,
+      sql,
+      procedural,
+    });
+  }
+  return { engine, batches, deferredStatements };
+}
+
+/**
+ * Adds the PostgreSQL FK-cycle constraints the planner held back from
+ * CREATE TABLE. `syncSchema` only executes CREATE statements, so these run
+ * directly. Each is wrapped so an already-present constraint (a re-prepared
+ * database, or a sibling worker that added it first) raises PostgreSQL's
+ * `duplicate_object` and is left as is; every other error propagates.
+ */
+async function applyDeferredForeignKeys(
+  database: { query: (sql: string, params?: unknown) => Promise<unknown> },
+  deferred: readonly string[],
+): Promise<void> {
+  for (const sql of deferred) {
+    await database.query(
+      `DO $smrt$ BEGIN ${sql.trim().replace(/;$/, '')}; ` +
+        'EXCEPTION WHEN duplicate_object THEN NULL; END $smrt$',
+    );
+  }
 }
 
 /**
@@ -633,22 +701,29 @@ vi.mock('@happyvertical/sql', async () => {
           ? undefined
           : await actual.getDatabase(options);
       let schemaSqlBatches: SchemaSqlBatch[] = [];
+      let deferredForeignKeys: string[] = [];
       let schemaEngine: 'sqlite' | 'duckdb' | 'json' | 'postgres' = 'sqlite';
 
       try {
         const smrtCore = await loadSmrtCoreModule();
         if (canUseSqliteSchemaTemplate) {
           const dbConfig = options as { url?: string };
-          ({ engine: schemaEngine, batches: schemaSqlBatches } =
-            buildSchemaSqlBatches(smrtCore, { url: dbConfig.url }, options));
+          ({
+            engine: schemaEngine,
+            batches: schemaSqlBatches,
+            deferredStatements: deferredForeignKeys,
+          } = buildSchemaSqlBatches(smrtCore, { url: dbConfig.url }, options));
         } else {
           db ??= await actual.getDatabase(options);
-          ({ engine: schemaEngine, batches: schemaSqlBatches } =
-            buildSchemaSqlBatches(
-              smrtCore,
-              db as { url?: string; exportTable?: unknown },
-              options,
-            ));
+          ({
+            engine: schemaEngine,
+            batches: schemaSqlBatches,
+            deferredStatements: deferredForeignKeys,
+          } = buildSchemaSqlBatches(
+            smrtCore,
+            db as { url?: string; exportTable?: unknown },
+            options,
+          ));
         }
       } catch {
         const fallbackDb = db ?? (await actual.getDatabase(options));
@@ -656,8 +731,13 @@ vi.mock('@happyvertical/sql', async () => {
         return fallbackDb;
       }
 
-      const schemaSql = schemaSqlBatches
-        .map((batch) => batch.sql)
+      const schemaSql = [
+        ...schemaSqlBatches.flatMap((batch) => [
+          batch.sql,
+          ...batch.procedural,
+        ]),
+        ...deferredForeignKeys,
+      ]
         .filter(Boolean)
         .join('\n-- smrt --\n');
       if (!schemaSql) {
@@ -697,10 +777,24 @@ vi.mock('@happyvertical/sql', async () => {
               )
             : schemaSqlBatches;
         for (const schemaBatch of batchesToSync) {
-          if (!schemaBatch.sql) {
-            continue;
+          if (schemaBatch.sql) {
+            await actual.syncSchema({ db: database, schema: schemaBatch.sql });
           }
-          await actual.syncSchema({ db: database, schema: schemaBatch.sql });
+          for (const statement of schemaBatch.procedural) {
+            await (
+              database as unknown as {
+                query: (sql: string) => Promise<unknown>;
+              }
+            ).query(statement);
+          }
+        }
+        if (deferredForeignKeys.length > 0) {
+          await applyDeferredForeignKeys(
+            database as unknown as {
+              query: (sql: string, params?: unknown) => Promise<unknown>;
+            },
+            deferredForeignKeys,
+          );
         }
       };
 
