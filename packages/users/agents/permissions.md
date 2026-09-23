@@ -120,6 +120,16 @@ appropriate authority; mismatched supplied membership/tenant fails closed.
 Inherited root-admin authority can then authorize descendant resources without
 application-side membership fan-out.
 
+Resolution cost must not scale with catalog size in objects (#3047): role →
+permission ids and ids → slugs are `list({ select })` projection reads (the
+collections' beforeList interceptors still run; no RolePermission/Permission
+is hydrated), so an owner mapped to the whole catalog costs two queries and
+no per-permission objects. Keep new resolver reads projections when only ids
+or slugs are needed, and do not add public collection methods for them — each
+becomes a custom-action slug in the manifest-derived catalog.
+`issue-3047-permission-resolution-cost-postgres.test.ts` pins the hydration
+budget and a golden equivalence matrix recorded on the hydrating resolver.
+
 PermissionResolver runs every resolution inside smrt-tenancy's system context
 (#3036). Its reads are deliberately cross-tenant and framework-owned — the
 ancestor TenantPermissionOverride batch, ancestor memberships for

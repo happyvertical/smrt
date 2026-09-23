@@ -410,15 +410,13 @@ export class PermissionResolver {
 
     // Batch fetch all permissions to get slugs
     if (allPermissionIds.size > 0) {
-      const permissionsMap = await this.permissionCollection.findByIds(
-        Array.from(allPermissionIds),
-      );
+      const slugById = await this.findPermissionSlugsByIds(allPermissionIds);
 
       // Convert IDs to slugs in the result
       for (const permId of inheritedPermissions) {
-        const perm = permissionsMap.get(permId);
-        if (perm?.slug) {
-          result.permissions.add(perm.slug);
+        const slug = slugById.get(permId);
+        if (slug) {
+          result.permissions.add(slug);
         }
       }
 
@@ -431,9 +429,9 @@ export class PermissionResolver {
       // slug would wrongly override the child GRANT and any role/group grant.
       for (const permId of deniedPermissionIds) {
         if (inheritedPermissions.has(permId)) continue;
-        const perm = permissionsMap.get(permId);
-        if (perm?.slug) {
-          result.deniedPermissions.add(perm.slug);
+        const slug = slugById.get(permId);
+        if (slug) {
+          result.deniedPermissions.add(slug);
         }
       }
     }
@@ -747,18 +745,10 @@ export class PermissionResolver {
       allPermissionIds.add(id);
     }
 
-    // 3. Batch fetch all permissions in a single query
-    const permissionsMap = await this.permissionCollection.findByIds(
-      Array.from(allPermissionIds),
-    );
-
-    // Build ID to slug mapping
-    const permissionIdToSlug = new Map<string, string>();
-    for (const [id, perm] of permissionsMap) {
-      if (perm.slug) {
-        permissionIdToSlug.set(id, perm.slug);
-      }
-    }
+    // 3. Batch resolve every permission id to its slug in a single
+    // projection query (no Permission hydration, #3047).
+    const permissionIdToSlug =
+      await this.findPermissionSlugsByIds(allPermissionIds);
 
     // 4. Apply permissions from role
     for (const permId of rolePermissionIds) {
@@ -809,6 +799,37 @@ export class PermissionResolver {
   }
 
   /**
+   * Batch resolve permission ids to slugs with one projection read.
+   *
+   * Authorization only needs `id -> slug`, and an owner role maps the whole
+   * catalog, so hydrating one `Permission` per id dominated resolution
+   * (#3047). The projection still runs the collection's beforeList
+   * interceptors; the resolver's reads already run in system context. Rows
+   * with an empty slug are omitted, exactly as the hydrating lookup skipped
+   * them. Kept private (not a collection method) so it does not add a
+   * custom-action slug to the manifest-derived permission catalog.
+   */
+  private async findPermissionSlugsByIds(
+    ids: Iterable<string>,
+  ): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(ids)];
+    const slugById = new Map<string, string>();
+    if (uniqueIds.length === 0) {
+      return slugById;
+    }
+    const rows = await this.permissionCollection.list({
+      where: { 'id in': uniqueIds },
+      select: ['id', 'slug'],
+    });
+    for (const { id, slug } of rows) {
+      if (typeof id === 'string' && id && typeof slug === 'string' && slug) {
+        slugById.set(id, slug);
+      }
+    }
+    return slugById;
+  }
+
+  /**
    * The permission slugs a role grants through the role-permission catalog,
    * excluding every per-tenant, per-group, and per-membership override.
    */
@@ -822,12 +843,9 @@ export class PermissionResolver {
     if (permissionIds.length === 0) {
       return slugs;
     }
-    const permissionsMap =
-      await this.permissionCollection.findByIds(permissionIds);
-    for (const permission of permissionsMap.values()) {
-      if (permission?.slug) {
-        slugs.add(permission.slug);
-      }
+    const slugById = await this.findPermissionSlugsByIds(permissionIds);
+    for (const slug of slugById.values()) {
+      slugs.add(slug);
     }
     return slugs;
   }

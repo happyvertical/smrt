@@ -21,7 +21,6 @@
  * Every assertion runs as a NON-super-admin principal.
  */
 
-import { createHash } from 'node:crypto';
 import { SmrtObject } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
@@ -95,16 +94,51 @@ function turnTenancyOff() {
   }
 }
 
-/** Stable, compact rendering of a slug set for the golden snapshot. */
-function describeSlugs(slugs: Iterable<string>) {
-  const sorted = [...slugs].sort();
-  if (sorted.length <= 40) {
-    return sorted;
+/**
+ * Stable rendering of a slug set for the golden snapshot.
+ *
+ * The manifest-derived catalog depends on every manifest loaded into the
+ * test process (other packages' test manifests included), so a raw digest
+ * would drift with the environment. The snapshot therefore pins the exact
+ * CRUD slugs of the identity/RBAC resources the fixture exercises, and
+ * classifies everything else against the live catalog as none/some/all.
+ * The exact, full-catalog comparison lives in the primitive-equivalence test.
+ */
+const CORE_RESOURCES = new Set([
+  'tenants',
+  'users',
+  'roles',
+  'permissions',
+  'memberships',
+  'groups',
+  'rolepermissions',
+  'resourcegrants',
+]);
+const CORE_ACTIONS = new Set(['read', 'create', 'update', 'delete']);
+
+function isCoreSlug(slug: string): boolean {
+  const [resource, action, ...rest] = slug.split('.');
+  return (
+    rest.length === 0 &&
+    CORE_RESOURCES.has(resource ?? '') &&
+    CORE_ACTIONS.has(action ?? '')
+  );
+}
+
+function describeSlugs(slugs: Iterable<string>, catalog: Set<string>) {
+  const all = [...slugs];
+  const outside = all.filter((slug) => !isCoreSlug(slug));
+  const catalogOutside = [...catalog].filter((slug) => !isCoreSlug(slug));
+  let outsideCore: 'none' | 'some' | 'all' = 'some';
+  if (outside.length === 0) {
+    outsideCore = 'none';
+  } else if (
+    outside.length === catalogOutside.length &&
+    outside.every((slug) => catalog.has(slug))
+  ) {
+    outsideCore = 'all';
   }
-  return {
-    count: sorted.length,
-    sha256: createHash('sha256').update(sorted.join('\n')).digest('hex'),
-  };
+  return { core: all.filter(isCoreSlug).sort(), outsideCore };
 }
 
 describePostgres(
@@ -271,6 +305,66 @@ describePostgres(
       expect(best).toBeLessThan(250);
     });
 
+    it('projection reads return exactly what the hydrating reads returned', async () => {
+      const tenant = await tenants.create({ name: 'Primitive site' });
+      await growOwnerCatalog();
+      const custom = await roles.create({
+        name: 'Primitive custom',
+        slug: 'primitive-custom',
+        tenantId: tenant.id,
+      });
+      await custom.save();
+      await rolePermissions.addPermission(
+        custom.id as string,
+        await permissionId('tenants.read'),
+      );
+      const roleIds = [
+        await systemRoleId('owner'),
+        await systemRoleId('admin'),
+        await systemRoleId('member'),
+        await systemRoleId('viewer'),
+        custom.id as string,
+      ];
+
+      const principals = new Map<string, string>();
+      for (const roleId of roleIds) {
+        const { userId } = await addMember(
+          tenant,
+          roleId,
+          `primitive-${roleId}@example.com`,
+        );
+        principals.set(roleId, userId);
+      }
+
+      turnTenancyOn();
+      const resolver = await PermissionResolver.create(options);
+      for (const roleId of roleIds) {
+        // Role -> permission ids: projection vs the hydrated RolePermission rows.
+        const projected = await rolePermissions.getPermissionIds(roleId);
+        const hydrated = (await rolePermissions.findByRole(roleId)).map(
+          (row) => row.permissionId as string,
+        );
+        expect([...projected].sort()).toEqual([...hydrated].sort());
+
+        // Ids -> slugs: the resolver's projection vs hydrated Permission rows,
+        // observed through a membership holding exactly this role (the tenant
+        // has no overrides, so the resolved set is the role's slugs).
+        const expected = new Set<string>();
+        for (const permission of (
+          await permissions.findByIds(hydrated)
+        ).values()) {
+          if (permission.slug) expected.add(permission.slug);
+        }
+        const userId = principals.get(roleId) as string;
+        const resolved = await withTenant(
+          { tenantId: tenant.id as string, userId },
+          () => resolver.resolvePermissions(userId, tenant.id as string),
+        );
+        expect(resolved.permissions.size).toBeGreaterThan(0);
+        expect([...resolved.permissions].sort()).toEqual([...expected].sort());
+      }
+    });
+
     it('resolves the scenario matrix exactly as the pre-#3047 resolver did', async () => {
       const labels = new Map<string, string>();
       const label = (id: string | null | undefined) =>
@@ -431,7 +525,10 @@ describePostgres(
 
       function render(result: PermissionResolutionResult) {
         return {
-          permissions: describeSlugs(result.permissions),
+          permissions: describeSlugs(
+            result.permissions,
+            new Set(permissionSlugById.values()),
+          ),
           hasMembership: result.membershipId !== null,
           role: result.roleId === null ? null : 'set',
           groups: result.groupIds.length,
