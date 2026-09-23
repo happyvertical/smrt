@@ -137,8 +137,19 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     expect(second.profile.id).toBe(first.profile.id);
     expect(second.user.id).toBe(first.user.id);
     expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
-    first.user.recordLogin();
-    await expect(first.user.save()).resolves.toBe(first.user);
+    // The observer records its login on the winner's User row, so whichever
+    // result settled first holds a revision the other flow has since
+    // replaced, and the revision guard correctly refuses to overwrite it.
+    // Which flow wins is a race, so save the result carrying the current
+    // revision: it still proves the returned model is rebound to its root
+    // handle rather than the released transaction client.
+    const [latestUser] = [first.user, second.user].sort(
+      (left, right) =>
+        new Date(right.updated_at ?? 0).getTime() -
+        new Date(left.updated_at ?? 0).getTime(),
+    );
+    latestUser.recordLogin();
+    await expect(latestUser.save()).resolves.toBe(latestUser);
     await expect(first.profile.getOidcIdentities()).resolves.toHaveLength(1);
     await expect(first.oidcIdentity.recordUsage()).resolves.toBeUndefined();
     await expect(countRows(firstDb, 'profiles')).resolves.toBe(1);
@@ -1017,8 +1028,14 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
       // construction rather than by the server's default, matching
       // packages/core/src/__tests__/postgres-permissions.optional.test.ts.
       await rootDb.query('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
-      await ensureSystemTables(rootDb);
     }
+    // Provision the framework system tables (change feed and its helpers)
+    // before any flow opens a provisioning transaction. Left cold, the first
+    // save in each concurrent flow installs them inside its own transaction
+    // under the transaction-scoped `('smrt', 'system-tables')` advisory
+    // lock, so the second flow waits on the first's commit and never reaches
+    // the lookup barrier these scenarios synchronize on.
+    await ensureSystemTables(rootDb);
     await prepareOidcEmailKeyBackfills(rootDb);
     return { config, rootDb, schemaName };
   }

@@ -10,7 +10,11 @@ import {
   getOwnedAssetsFromCollection,
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
-import { SmrtCollection, ValidationError } from '@happyvertical/smrt-core';
+import {
+  RuntimeError,
+  SmrtCollection,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import { BackfillTracker } from '@happyvertical/smrt-core/migrations';
 import {
   queryGlobal,
@@ -581,6 +585,11 @@ async function saveIdentityEmailReservation(
     if (
       (error instanceof ValidationError &&
         error.code === 'VALIDATION_UNIQUE_CONSTRAINT') ||
+      // A persisted reservation saves through the revision compare-and-swap
+      // (#2620), so a concurrent flow that swapped it since this one loaded it
+      // surfaces as a revision conflict — the same race, retried the same way.
+      (error instanceof RuntimeError &&
+        error.code === 'RUNTIME_REVISION_CONFLICT') ||
       isOidcAbortedTransactionError(error)
     ) {
       throw new CanonicalPersonProfileError(

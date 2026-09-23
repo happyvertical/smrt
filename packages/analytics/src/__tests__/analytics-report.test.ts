@@ -8,6 +8,7 @@ import { AnalyticsReport } from '../models/AnalyticsReport.js';
 import { ReportFrequency, ReportStatus } from '../types/index.js';
 import {
   createTestDb,
+  fixtureId,
   getAdapterDisplayName,
   getTestAdapter,
   isPostgresAvailable,
@@ -32,13 +33,13 @@ describe('AnalyticsReport', () => {
 
     it('should create a report with options', () => {
       const report = new AnalyticsReport({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         name: 'Weekly Traffic',
         frequency: ReportFrequency.WEEKLY,
         status: ReportStatus.SCHEDULED,
       });
 
-      expect(report.propertyId).toBe('prop-123');
+      expect(report.propertyId).toBe(fixtureId('prop-123'));
       expect(report.name).toBe('Weekly Traffic');
       expect(report.frequency).toBe(ReportFrequency.WEEKLY);
       expect(report.status).toBe(ReportStatus.SCHEDULED);
@@ -197,11 +198,11 @@ describe.skipIf(skipTests)(
       const testDb = await createTestDb();
       cleanup = testDb.cleanup;
       await seedAnalyticsProperties(testDb.db, [
-        'prop-123',
-        'prop-1',
-        'prop-2',
-        'prop-status',
-        'prop-recurring',
+        fixtureId('prop-123'),
+        fixtureId('prop-1'),
+        fixtureId('prop-2'),
+        fixtureId('prop-status'),
+        fixtureId('prop-recurring'),
       ]);
       collection = await AnalyticsReportCollection.create({
         db: testDb.db,
@@ -214,7 +215,7 @@ describe.skipIf(skipTests)(
 
     it('should create and list reports', async () => {
       const report = await collection.create({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         name: 'Test Report',
       });
       await report.save();
@@ -226,32 +227,32 @@ describe.skipIf(skipTests)(
 
     it('should find reports by property', async () => {
       const report1 = await collection.create({
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
         name: 'Report 1',
       });
       await report1.save();
 
       const report2 = await collection.create({
-        propertyId: 'prop-2',
+        propertyId: fixtureId('prop-2'),
         name: 'Report 2',
       });
       await report2.save();
 
-      const prop1Reports = await collection.findByProperty('prop-1');
+      const prop1Reports = await collection.findByProperty(fixtureId('prop-1'));
       expect(prop1Reports).toHaveLength(1);
       expect(prop1Reports[0].name).toBe('Report 1');
     });
 
     it('should find reports by status', async () => {
       const draft = await collection.create({
-        propertyId: 'prop-status',
+        propertyId: fixtureId('prop-status'),
         name: 'Draft Report',
         status: ReportStatus.DRAFT,
       });
       await draft.save();
 
       const scheduled = await collection.create({
-        propertyId: 'prop-status',
+        propertyId: fixtureId('prop-status'),
         name: 'Scheduled Report',
         status: ReportStatus.SCHEDULED,
       });
@@ -268,14 +269,14 @@ describe.skipIf(skipTests)(
 
     it('should find recurring reports', async () => {
       const oneTime = await collection.create({
-        propertyId: 'prop-recurring',
+        propertyId: fixtureId('prop-recurring'),
         name: 'One Time',
         frequency: ReportFrequency.ONCE,
       });
       await oneTime.save();
 
       const daily = await collection.create({
-        propertyId: 'prop-recurring',
+        propertyId: fixtureId('prop-recurring'),
         name: 'Daily Report',
         frequency: ReportFrequency.DAILY,
       });

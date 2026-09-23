@@ -15,12 +15,26 @@ const table = '_smrt_agent_schedules';
 
 postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
   let db: Awaited<ReturnType<typeof getDatabase>>;
+  let admin: Awaited<ReturnType<typeof getDatabase>>;
+  // A private schema: the package's other suites share this database and
+  // provision the current `_smrt_agent_schedules` shape, while every case
+  // here builds a legacy one under the same name.
+  const schema = `agent_schedule_slugs_${randomUUID().replaceAll('-', '')}`;
 
   beforeAll(async () => {
-    db = await getDatabase({
+    admin = await getDatabase({
       type: 'postgres',
       url: pgUrl,
+      dbid: `smrt-test-2738-admin-${randomUUID()}`,
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+    await admin.query(`CREATE SCHEMA "${schema}"`);
+    const separator = (pgUrl as string).includes('?') ? '&' : '?';
+    db = await getDatabase({
+      type: 'postgres',
+      url: `${pgUrl}${separator}options=-c%20search_path%3D${schema}`,
       dbid: `smrt-test-2738-${randomUUID()}`,
+      __smrtSkipVitestSchemaPreparation: true,
     } as Parameters<typeof getDatabase>[0]);
   });
 
@@ -33,7 +47,9 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
   });
 
   afterAll(async () => {
-    await db.close?.();
+    await db?.close?.();
+    await admin?.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await admin?.close?.();
   });
 
   async function legacyTable(extra = '') {
@@ -78,24 +94,16 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
       ran: true,
       updated: 1,
     });
+    // Byte order, not the server's default collation: a glibc `en_US.UTF-8`
+    // cluster sorts `existing-id` first and a `C`/musl one (the CI service
+    // image) sorts `Schedule Alpha!` first.
     expect(
       (
         await db.query(
-          `SELECT id, slug, context, agent_type, cron, enabled, status, run_count, payload FROM "${table}" ORDER BY id`,
+          `SELECT id, slug, context, agent_type, cron, enabled, status, run_count, payload FROM "${table}" ORDER BY id COLLATE "C"`,
         )
       ).rows,
     ).toEqual([
-      {
-        id: 'existing-id',
-        slug: 'custom legacy value',
-        context: 'ops',
-        agent_type: 'Agent',
-        cron: '1 * * * *',
-        enabled: false,
-        status: 'disabled',
-        run_count: 2,
-        payload: '{"preserve":false}',
-      },
       {
         id: 'Schedule Alpha!',
         slug: 'schedule-alpha',
@@ -106,6 +114,17 @@ postgresDescribe('legacy AgentSchedule slug migration (#2738)', () => {
         status: 'paused',
         run_count: 7,
         payload: '{"preserve":true}',
+      },
+      {
+        id: 'existing-id',
+        slug: 'custom legacy value',
+        context: 'ops',
+        agent_type: 'Agent',
+        cron: '1 * * * *',
+        enabled: false,
+        status: 'disabled',
+        run_count: 2,
+        payload: '{"preserve":false}',
       },
       {
         id: 'whitespace-id',

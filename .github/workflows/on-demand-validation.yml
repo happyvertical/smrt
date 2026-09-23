@@ -1,8 +1,8 @@
 name: On-Demand Validation
 
-# PostgreSQL validation is disabled in repository CI (CI_POSTGRES_ENABLED
-# is unset); run it on demand here. Validation-workflow jobs must run
-# unconditionally under the agent policy.
+# Re-run the PostgreSQL lane on demand (it also runs on every PR, merge
+# group, and nightly — see postgres-tests.yml). Validation-workflow jobs must
+# run unconditionally under the agent policy.
 on:
   workflow_dispatch:
 
@@ -16,3 +16,4 @@ jobs:
     permissions:
       contents: read
       packages: read
+      pull-requests: read

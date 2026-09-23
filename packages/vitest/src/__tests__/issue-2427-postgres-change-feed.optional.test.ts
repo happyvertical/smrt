@@ -59,16 +59,20 @@ postgresDescribe('PostgreSQL isolated change-feed bootstrap (#2427)', () => {
       await widget.initialize();
       await expect(widget.save()).resolves.toBeDefined();
 
+      // The row write assigned the isolated transaction an id, so the append
+      // is staged in `_smrt_changes_pending` rather than sequenced inline
+      // (#2649); it is sequenced by a drain after commit. Either way exactly
+      // one entry for this table must exist inside the transaction.
       const feedResult = await result.db.query(
-        'SELECT seq, table_name FROM _smrt_changes ORDER BY seq ASC',
+        `SELECT 'sequenced' AS path, table_name FROM _smrt_changes
+         UNION ALL
+         SELECT 'staged' AS path, table_name FROM _smrt_changes_pending`,
       );
       const feedRows = Array.isArray(feedResult)
         ? feedResult
         : ((feedResult as { rows?: Array<Record<string, unknown>> }).rows ??
           []);
-      expect(feedRows).toHaveLength(1);
-      expect(Number(feedRows[0]?.seq)).toBe(1);
-      expect(feedRows[0]?.table_name).toBe(tableName);
+      expect(feedRows).toEqual([{ path: 'staged', table_name: tableName }]);
 
       // A missing helper raises 42883 and aborts the surrounding transaction.
       // This probe proves the write succeeded without leaving it in 25P02.

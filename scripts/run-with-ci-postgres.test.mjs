@@ -57,6 +57,20 @@ test('exports the isolated URL for SMRT and libpq clients', () => {
   assert.equal(environment.PGAPPNAME, 'smrt ci');
 });
 
+test('exports a privileged URL only when one is supplied', () => {
+  const url = 'postgresql://smrt_ci:secret@db:5432/smrt_ci_1';
+  assert.equal(
+    databaseEnvironment(url, {}).SMRT_TEST_POSTGRES_ADMIN_URL,
+    url,
+  );
+  const admin = 'postgresql://postgres:secret@db:5432/smrt_ci_1';
+  const environment = databaseEnvironment(url, {}, true, admin);
+  assert.equal(environment.SMRT_TEST_POSTGRES_ADMIN_URL, admin);
+  // libpq clients and every SMRT URL still connect as the unprivileged role.
+  assert.equal(environment.DATABASE_URL, url);
+  assert.equal(environment.PGUSER, 'smrt_ci');
+});
+
 test('builds the vitest PostgreSQL lane manifest fixtures through Turbo', () => {
   const turbo = JSON.parse(
     readFileSync(new URL('../turbo.json', import.meta.url), 'utf8'),

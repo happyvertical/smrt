@@ -2,9 +2,9 @@
  * PostgreSQL coverage for the three source-scoped capabilities:
  *
  * - #1986 EarnerSourceAttribution — indexed lookups, natural-key upsert, and
- *   the PG-specific NULL-tenant duplicate gap (unique indexes treat NULLs as
- *   distinct, so duplicate GLOBAL mappings are representable → resolution
- *   must fail closed).
+ *   the NULL-tenant duplicate case (PostgreSQL 15+ refuses it through the
+ *   NULL-equal index; on older servers duplicate GLOBAL mappings are
+ *   representable, so resolution must fail closed).
  * - #1985 source-scoped payout history — stamping and verified pagination on
  *   native-uuid columns.
  * - #1987 transactional lifecycle transitions — the real `SELECT … FOR
@@ -147,7 +147,7 @@ describePostgres('Source-scoped commissions APIs on PostgreSQL', () => {
       ]);
     });
 
-    it('NULL-tenant registrations dedup through the null-aware upsert; true duplicates still fail closed', async () => {
+    it('NULL-tenant registrations dedup through the null-aware upsert; true duplicates are refused or fail closed', async () => {
       const kind = `pg_kind_${randomUUID().slice(0, 8)}`;
       const first = await createActiveEarner();
       const second = await createActiveEarner();
@@ -170,20 +170,37 @@ describePostgres('Source-scoped commissions APIs on PostgreSQL', () => {
       expect(deduped).toHaveLength(1);
       expect(deduped[0].earnerId).toBe(second.id);
 
-      // A TRUE duplicate can still arrive outside the model layer (raw-SQL
-      // imports, pre-null-aware data) because the index itself does not
-      // dedup NULLs — resolution must fail closed, never guess.
-      await db.query(
-        `INSERT INTO earner_source_attributions (
-          id, slug, context, tenant_id, earner_id, source_kind, source_id,
-          status, metadata
-        ) VALUES ($1, $2, '', NULL, $3, $4, $5, 'active', '{}')`,
-        randomUUID(),
-        `import-dup-${randomUUID().slice(0, 8)}`,
-        first.id,
-        kind,
-        'prop-dup',
+      // A TRUE duplicate arriving outside the model layer (raw-SQL imports,
+      // pre-null-aware data). On PostgreSQL 15+ the natural-key index is
+      // NULL-equal (`NULLS NOT DISTINCT`, #2839), so the database itself now
+      // refuses it. Older servers still admit it, and there resolution must
+      // fail closed rather than guess.
+      const insertRawDuplicate = () =>
+        db.query(
+          `INSERT INTO earner_source_attributions (
+            id, slug, context, tenant_id, earner_id, source_kind, source_id,
+            status, metadata
+          ) VALUES ($1, $2, '', NULL, $3, $4, $5, 'active', '{}')`,
+          randomUUID(),
+          `import-dup-${randomUUID().slice(0, 8)}`,
+          first.id,
+          kind,
+          'prop-dup',
+        );
+      const version = await db.query(
+        "SELECT current_setting('server_version_num')::int AS version",
       );
+      if (Number(version.rows[0]?.version) >= 150000) {
+        await expect(insertRawDuplicate()).rejects.toMatchObject({
+          message: expect.stringMatching(/duplicate key value/),
+        });
+        await expect(
+          attributions.findBySource(kind, 'prop-dup'),
+        ).resolves.toHaveLength(1);
+        return;
+      }
+
+      await insertRawDuplicate();
       const rows = await attributions.findBySource(kind, 'prop-dup');
       expect(rows).toHaveLength(2);
 

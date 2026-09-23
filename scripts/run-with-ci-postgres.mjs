@@ -70,11 +70,18 @@ export function databaseUrl(baseUrl, databaseName) {
  *   will drop afterwards. Stamped into the child environment as
  *   `CI_POSTGRES_MANAGED` so a consumer never has to re-derive the decision
  *   from `CI_POSTGRES_BASE_URL`/`CI_POSTGRES_BASE_URL_FILE` and drift from it.
+ * @param adminUrl a superuser URL for the same database, exported as
+ *   `SMRT_TEST_POSTGRES_ADMIN_URL`. The suites run as `testUrl`'s role, which
+ *   in CI is deliberately NOSUPERUSER/NOBYPASSRLS so row-level security is
+ *   enforced; the admin URL exists only for the few fixtures that must forge
+ *   catalog state no ordinary role can (an INVALID index, a system trigger).
+ *   Defaults to `testUrl` when the connecting role is already privileged.
  */
 export function databaseEnvironment(
   testUrl,
   environment = process.env,
   managed = false,
+  adminUrl = testUrl,
 ) {
   const url = new URL(testUrl);
   const libpqEnvironment = {
@@ -96,6 +103,7 @@ export function databaseEnvironment(
     TEST_DB_URL: testUrl,
     TEST_DB_ADAPTER: 'postgres',
     SMRT_TEST_POSTGRES_URL: testUrl,
+    SMRT_TEST_POSTGRES_ADMIN_URL: adminUrl,
     CI_POSTGRES_MANAGED: managed ? '1' : '',
     ...libpqEnvironment,
   };
@@ -141,11 +149,14 @@ export async function main(argv = process.argv.slice(2)) {
 
   const [command, ...args] = commandArgs;
   const base = await resolveBaseUrl();
+  const adminBaseUrl = process.env.CI_POSTGRES_ADMIN_URL || undefined;
   let testUrl = base.url;
+  let adminUrl;
   let databaseName;
 
   if (process.env.GITHUB_ACTIONS === 'true') {
     console.log(`::add-mask::${base.url}`);
+    if (adminBaseUrl) console.log(`::add-mask::${adminBaseUrl}`);
   }
 
   try {
@@ -160,13 +171,17 @@ export async function main(argv = process.argv.slice(2)) {
       }
       testUrl = databaseUrl(base.url, databaseName);
     }
+    adminUrl = adminBaseUrl
+      ? databaseUrl(adminBaseUrl, new URL(testUrl).pathname.slice(1))
+      : testUrl;
 
     if (process.env.GITHUB_ACTIONS === 'true') {
       console.log(`::add-mask::${testUrl}`);
+      console.log(`::add-mask::${adminUrl}`);
     }
 
     const status = run(command, args, {
-      env: databaseEnvironment(testUrl, process.env, base.managed),
+      env: databaseEnvironment(testUrl, process.env, base.managed, adminUrl),
     });
     return status;
   } finally {

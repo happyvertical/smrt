@@ -296,7 +296,11 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
     // the third a no-op.
     await db.query('DROP TABLE IF EXISTS _smrt_backfills');
     BackfillTracker.invalidateInitialization(db);
-    await db.query('DROP TABLE IF EXISTS payments');
+    // CASCADE: the suite above provisions the current `payments` table in
+    // this same database, and `payment_allocations` holds a foreign key to
+    // it. The constraint is restored by the manifest reconciliation the next
+    // time an isolated database is built from the full commerce manifest.
+    await db.query('DROP TABLE IF EXISTS payments CASCADE');
     await db.query(
       `CREATE TABLE payments (
          id TEXT PRIMARY KEY NOT NULL,
@@ -309,6 +313,9 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
   });
 
   afterEach(async () => {
+    // Never leave the hand-built legacy table behind for a later suite to
+    // reconcile against.
+    await db?.query('DROP TABLE IF EXISTS payments CASCADE');
     await isolated?.cleanup();
     isolated = undefined;
   });
@@ -358,10 +365,18 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
       `SELECT data_type FROM information_schema.columns
        WHERE table_name = 'payments' AND column_name = 'amount'`,
     );
-    expect((type.rows[0] as { data_type: string }).data_type).toBe('integer');
+    // BIGINT, like every fresh SMRT integer column since #2425 — and so
+    // `pg` returns the raw value as a string; SMRT hydration is what turns it
+    // back into a safe JavaScript integer.
+    expect((type.rows[0] as { data_type: string }).data_type).toBe('bigint');
 
     const rows = await db.query('SELECT id, amount FROM payments ORDER BY id');
-    expect(rows.rows).toEqual([
+    expect(
+      (rows.rows as { id: string; amount: string }[]).map((row) => ({
+        id: row.id,
+        amount: Number(row.amount),
+      })),
+    ).toEqual([
       { id: 'p1', amount: 1999 },
       { id: 'p2', amount: 160 },
     ]);
@@ -372,7 +387,7 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
       'SELECT amount FROM payments WHERE id = ?',
       'p1',
     );
-    expect((after.rows[0] as { amount: number }).amount).toBe(1999);
+    expect(Number((after.rows[0] as { amount: string }).amount)).toBe(1999);
   });
 
   it('refuses to convert a row that would be rounded away', async () => {
@@ -418,7 +433,7 @@ describePostgres('commerce money minor-units migration (#2401)', () => {
       'SELECT amount FROM payments WHERE id = ?',
       'credit',
     );
-    expect((row.rows[0] as { amount: number }).amount).toBe(-1);
+    expect(Number((row.rows[0] as { amount: string }).amount)).toBe(-1);
   });
 
   it('leaves payments.native_amount alone — its scale is per-asset', async () => {

@@ -8,6 +8,7 @@ import { AnalyticsEvent } from '../models/AnalyticsEvent.js';
 import { TrackingEventStatus } from '../types/index.js';
 import {
   createTestDb,
+  fixtureId,
   getAdapterDisplayName,
   getTestAdapter,
   isPostgresAvailable,
@@ -37,14 +38,14 @@ describe('AnalyticsEvent', () => {
 
     it('should create an event with options', () => {
       const event = new AnalyticsEvent({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         eventName: 'purchase',
         clientId: 'client-456',
         userId: 'user-789',
         params: JSON.stringify({ value: 99.99, currency: 'USD' }),
       });
 
-      expect(event.propertyId).toBe('prop-123');
+      expect(event.propertyId).toBe(fixtureId('prop-123'));
       expect(event.eventName).toBe('purchase');
       expect(event.clientId).toBe('client-456');
       expect(event.userId).toBe('user-789');
@@ -221,20 +222,20 @@ describe.skipIf(skipTests)(
       const testDb = await createTestDb();
       cleanup = testDb.cleanup;
       await seedAnalyticsProperties(testDb.db, [
-        'prop-123',
-        'prop-1',
-        'prop-a',
-        'prop-b',
-        'prop-retry',
-        'prop-status',
-        'prop-stats',
-        'prop-count',
-        'prop-trend',
-        'prop-flat',
-        'prop-filter',
-        'prop-tz',
-        'prop-dst',
-        'prop-zero-baseline',
+        fixtureId('prop-123'),
+        fixtureId('prop-1'),
+        fixtureId('prop-a'),
+        fixtureId('prop-b'),
+        fixtureId('prop-retry'),
+        fixtureId('prop-status'),
+        fixtureId('prop-stats'),
+        fixtureId('prop-count'),
+        fixtureId('prop-trend'),
+        fixtureId('prop-flat'),
+        fixtureId('prop-filter'),
+        fixtureId('prop-tz'),
+        fixtureId('prop-dst'),
+        fixtureId('prop-zero-baseline'),
       ]);
       collection = await AnalyticsEventCollection.create({
         db: testDb.db,
@@ -247,7 +248,7 @@ describe.skipIf(skipTests)(
 
     it('should create and list events', async () => {
       const event = await collection.create({
-        propertyId: 'prop-123',
+        propertyId: fixtureId('prop-123'),
         eventName: 'purchase',
         clientId: 'client-456',
       });
@@ -261,13 +262,13 @@ describe.skipIf(skipTests)(
     it('should find events by event name', async () => {
       const purchase = await collection.create({
         eventName: 'purchase',
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
       });
       await purchase.save();
 
       const pageView = await collection.create({
         eventName: 'page_view',
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
       });
       await pageView.save();
 
@@ -278,21 +279,21 @@ describe.skipIf(skipTests)(
 
     it('should find events by status', async () => {
       const pending = await collection.create({
-        propertyId: 'prop-status',
+        propertyId: fixtureId('prop-status'),
         eventName: 'event1',
         status: TrackingEventStatus.PENDING,
       });
       await pending.save();
 
       const sent = await collection.create({
-        propertyId: 'prop-status',
+        propertyId: fixtureId('prop-status'),
         eventName: 'event2',
         status: TrackingEventStatus.SENT,
       });
       await sent.save();
 
       const failed = await collection.create({
-        propertyId: 'prop-status',
+        propertyId: fixtureId('prop-status'),
         eventName: 'event3',
         status: TrackingEventStatus.FAILED,
       });
@@ -313,7 +314,7 @@ describe.skipIf(skipTests)(
 
     it('should find events for retry', async () => {
       const retriable = await collection.create({
-        propertyId: 'prop-retry',
+        propertyId: fixtureId('prop-retry'),
         eventName: 'retriable',
         status: TrackingEventStatus.FAILED,
         retryCount: 1,
@@ -321,7 +322,7 @@ describe.skipIf(skipTests)(
       await retriable.save();
 
       const exhausted = await collection.create({
-        propertyId: 'prop-retry',
+        propertyId: fixtureId('prop-retry'),
         eventName: 'exhausted',
         status: TrackingEventStatus.FAILED,
         retryCount: 5,
@@ -336,23 +337,23 @@ describe.skipIf(skipTests)(
     it('should find conversion events', async () => {
       const purchase = await collection.create({
         eventName: 'purchase',
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
       });
       await purchase.save();
 
       const pageView = await collection.create({
         eventName: 'page_view',
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
       });
       await pageView.save();
 
       const signUp = await collection.create({
         eventName: 'sign_up',
-        propertyId: 'prop-1',
+        propertyId: fixtureId('prop-1'),
       });
       await signUp.save();
 
-      const conversions = await collection.findConversions('prop-1');
+      const conversions = await collection.findConversions(fixtureId('prop-1'));
       expect(conversions).toHaveLength(2);
       expect(conversions.map((e) => e.eventName).sort()).toEqual([
         'purchase',
@@ -361,7 +362,7 @@ describe.skipIf(skipTests)(
     });
 
     it('should get property stats', async () => {
-      const propertyId = 'prop-stats';
+      const propertyId = fixtureId('prop-stats');
 
       await (
         await collection.create({
@@ -406,7 +407,7 @@ describe.skipIf(skipTests)(
     });
 
     it('should count events by event name', async () => {
-      const propertyId = 'prop-count';
+      const propertyId = fixtureId('prop-count');
 
       await (
         await collection.create({ propertyId, eventName: 'page_view' })
@@ -426,7 +427,7 @@ describe.skipIf(skipTests)(
 
     describe('getPropertyStatsWithTrend', () => {
       it('should compute day-over-day stats with upward trend', async () => {
-        const propertyId = 'prop-trend';
+        const propertyId = fixtureId('prop-trend');
         const now = new Date('2024-06-15T12:00:00Z');
         const todayStart = new Date('2024-06-15T00:00:00Z');
         const yesterdayMid = new Date('2024-06-14T12:00:00Z');
@@ -473,7 +474,7 @@ describe.skipIf(skipTests)(
       it(
         'should report flat trend when change is within 5%',
         async () => {
-          const propertyId = 'prop-flat';
+          const propertyId = fixtureId('prop-flat');
           const now = new Date('2024-06-15T12:00:00Z');
           const todayTs = new Date('2024-06-15T06:00:00Z');
           const yesterdayTs = new Date('2024-06-14T06:00:00Z');
@@ -515,7 +516,7 @@ describe.skipIf(skipTests)(
       );
 
       it('should ignore non-pageview events', async () => {
-        const propertyId = 'prop-filter';
+        const propertyId = fixtureId('prop-filter');
         const now = new Date('2024-06-15T12:00:00Z');
         const todayTs = new Date('2024-06-15T06:00:00Z');
 
@@ -538,7 +539,7 @@ describe.skipIf(skipTests)(
       });
 
       it('should bucket an event near local midnight using the property time zone', async () => {
-        const propertyId = 'prop-tz';
+        const propertyId = fixtureId('prop-tz');
         // now = 2024-06-15T12:00:00Z = 2024-06-15 05:00 PDT (UTC-7).
         const now = new Date('2024-06-15T12:00:00Z');
         // 2024-06-15T06:30:00Z = 2024-06-14 23:30 PDT -> "yesterday" in LA, but
@@ -573,7 +574,7 @@ describe.skipIf(skipTests)(
       });
 
       it('should keep yesterday correct across a spring-forward DST boundary', async () => {
-        const propertyId = 'prop-dst';
+        const propertyId = fixtureId('prop-dst');
         // 2024-03-10 02:00 -> 03:00 in America/Los_Angeles (Mar 10 has 23h).
         // now = 2024-03-11T09:00:00Z = 2024-03-11 02:00 PDT.
         const now = new Date('2024-03-11T09:00:00Z');
@@ -603,7 +604,7 @@ describe.skipIf(skipTests)(
       });
 
       it('should classify growth from a zero baseline as up with a null percent', async () => {
-        const propertyId = 'prop-zero-baseline';
+        const propertyId = fixtureId('prop-zero-baseline');
         const now = new Date('2024-06-15T12:00:00Z');
         const todayTs = new Date('2024-06-15T06:00:00Z');
 
@@ -641,7 +642,7 @@ describe.skipIf(skipTests)(
         for (const ts of [todayTs, todayTs]) {
           await (
             await collection.create({
-              propertyId: 'prop-a',
+              propertyId: fixtureId('prop-a'),
               eventName: 'page_view',
               clientId: 'client-1',
               eventTimestamp: ts,
@@ -650,7 +651,7 @@ describe.skipIf(skipTests)(
         }
         await (
           await collection.create({
-            propertyId: 'prop-a',
+            propertyId: fixtureId('prop-a'),
             eventName: 'page_view',
             clientId: 'client-1',
             eventTimestamp: yesterdayTs,
@@ -661,7 +662,7 @@ describe.skipIf(skipTests)(
         for (let i = 0; i < 3; i++) {
           await (
             await collection.create({
-              propertyId: 'prop-b',
+              propertyId: fixtureId('prop-b'),
               eventName: 'page_view',
               clientId: `client-${i}`,
               eventTimestamp: yesterdayTs,
@@ -670,19 +671,19 @@ describe.skipIf(skipTests)(
         }
 
         const batch = await collection.getBatchPropertyStats(
-          ['prop-a', 'prop-b'],
+          [fixtureId('prop-a'), fixtureId('prop-b')],
           now,
         );
 
         expect(batch.size).toBe(2);
 
-        const statsA = batch.get('prop-a');
+        const statsA = batch.get(fixtureId('prop-a'));
         expect(statsA).toBeDefined();
         expect(statsA?.todayPageviews).toBe(2);
         expect(statsA?.yesterdayPageviews).toBe(1);
         expect(statsA?.trend).toBe('up');
 
-        const statsB = batch.get('prop-b');
+        const statsB = batch.get(fixtureId('prop-b'));
         expect(statsB).toBeDefined();
         expect(statsB?.todayPageviews).toBe(0);
         expect(statsB?.yesterdayPageviews).toBe(3);

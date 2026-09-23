@@ -35,17 +35,17 @@ never prevent the tests from running.
   from 26 GiB to 14 on a memory-bound fleet, and none of the jobs on it speak
   to Docker.
 - `arc-happyvertical` remains the selector for jobs that need the dind
-  sidecar. Two jobs do: the dormant `postgres-tests.yml` (gated on
-  `vars.CI_POSTGRES_ENABLED`, unset) and `test-suite.yml`'s
-  `m5-reference-gate` (#2579), which is not dormant. Both declare a
+  sidecar. Two jobs do: `postgres-tests.yml`'s suite job (#2659, on every
+  same-repository PR and merge group) and `test-suite.yml`'s
+  `m5-reference-gate` (#2579). Both declare a
   `services:` PostgreSQL container and so need a Docker daemon until the
   node-level CI Postgres (willgriffin/nixos-config#224) is adopted in its own
   change. `m5-reference-gate` is the milestone-M5 acceptance gate: the
   PostgreSQL portability, parity, and external-worker cases are part of what
   it proves, so it cannot sit behind an opt-in variable without recreating the
-  silent-skip failure it exists to prevent. It preflights `createdb`/`dropdb`
+  silent-skip failure it exists to prevent. Both preflight `createdb`/`dropdb`
   and service reachability before doing any work, so a lane that cannot serve
-  it fails with a named cause rather than deep inside a test wrapper.
+  them fails with a named cause rather than deep inside a test wrapper.
 - `arc-happyvertical-node` is retired and must not be selected. Nothing
   registers it, and because iac quiesced the scale set to `minRunners`/
   `maxRunners` 0 — GitHub's queue-drain mode — a job naming it is still assigned
@@ -331,10 +331,12 @@ blast radius is template-sveltekit's whole workspace closure, and a
 hand-maintained list of that closure is a silent-skip generator. It therefore
 runs in `affected` mode as well as in `full`, which is every merge group.
 Every other lane in `on-pull-request.yml` and `test-suite.yml` is
-PostgreSQL-free, and the scheduled PostgreSQL suites still live only in
-`postgres-tests.yml`, described below.
+PostgreSQL-free; the registered PostgreSQL suites live in
+`postgres-tests.yml`, described under PostgreSQL isolation below.
 
-`Required CI` is the sole required repository-validation status. Seven jobs must
+`Required CI` is the aggregate repository-validation status; the PostgreSQL
+lane's `postgres-required` becomes the second required context once the lane
+is proven green on `main` (#2659; see Rollout status). Seven jobs must
 succeed for both PR and merge-group events; Publish Dry Run is required only for
 `merge_group`, where it runs. The aggregator still fails if it reports anything
 other than `skipped` or `success` on a PR, so re-enabling it there cannot
@@ -344,14 +346,13 @@ Rollout status:
 
 1. Done. The `arc-happyvertical` broker landed in #2124, and every self-hosted
    job selects it.
-2. Pending. `CI_POSTGRES_ENABLED` is still unset, so the *scheduled*
-   PostgreSQL lane stays skipped. Set it to `true` after a manual
-   `postgres-tests.yml` dispatch passes on `arc-happyvertical`. Since #2579,
-   `m5-reference-gate` exercises a `services:` PostgreSQL container on that
-   same lane on every merge group, so the lane's dind capability is proven
-   continuously rather than only by that one-off dispatch.
+2. Done. `CI_POSTGRES_ENABLED` is gone (#2659): `postgres-tests.yml` runs on
+   every same-repository PR, every merge group, and nightly, ungated. If the
+   repository still defines the variable it is inert and can be deleted.
 3. Done. `CI_MERGE_QUEUE_ENABLED` is `true`.
-4. Done. The required status list is exactly `Required CI`.
+4. Done. The required status list is `Required CI`. Pending (#2659): add
+   `postgres-required` once `postgres-tests.yml` is proven green on `main`;
+   until then it reports but does not gate a merge.
 5. Done. The repository merge queue uses squash merges, up to five entries
    building concurrently, one entry merged at a time, zero wait, all-green
    behavior, and a 60-minute timeout.
@@ -362,33 +363,76 @@ and documentation deployment remain on main.
 
 ## PostgreSQL isolation
 
-Packages opt in with a `test:postgres` script. The wrapper obtains the
-disposable URL from `CI_POSTGRES_BASE_URL` or the read-only file named by
+Packages opt in with a `test:postgres` script. The wrapper
+(`scripts/run-with-ci-postgres.mjs`) obtains the server URL from
+`CI_POSTGRES_BASE_URL` or the read-only file named by
 `CI_POSTGRES_BASE_URL_FILE`, creates a uniquely named database, exports all
 supported PostgreSQL test URL variables plus libpq's `PG*` connection
 variables, including supported URI query parameters, and drops the database
-afterward.
+afterward. With `CI_POSTGRES_ADMIN_URL` (a superuser on the same server) it
+also exports `SMRT_TEST_POSTGRES_ADMIN_URL` for that database; without it,
+that variable equals the ordinary test URL.
 
-`postgres-tests.yml` runs on `arc-happyvertical` and supplies its own PostgreSQL
-service container, passing `CI_POSTGRES_BASE_URL`. The general lane does not
-mount the cluster-local URL that `CI_POSTGRES_BASE_URL_FILE` names, and its
-runner image already provides the libpq client binaries the wrapper needs for
-`createdb`/`dropdb`. The wrapper stays on its managed path, so each package
-still gets its own database under `--concurrency=2`; no job depends on a
-cluster-local credential, and there is no production database secret access.
+`postgres-tests.yml` (#2659) is the lane. It triggers on
+`pull_request_target` (base-branch YAML, like `on-pull-request.yml`, so a fork
+cannot rewrite the runner selection or the fork guard), `merge_group`, a
+nightly `schedule`, `workflow_dispatch`, and `workflow_call` from the
+dispatch-only `on-demand-validation.yml`. There is no enabling variable.
 
-The only PR- and merge-triggered PostgreSQL lane is `test-suite.yml`'s
-`m5-reference-gate`, which brings its own service container and, like the
-suites below, never touches a cluster-local credential or a production
-database. `postgres-tests.yml` triggers on
-`workflow_call`, `workflow_dispatch`, and a nightly `schedule`, and its only
-caller, `on-demand-validation.yml`, is dispatch-only. The scheduled run stays
-skipped until the repository variable `CI_POSTGRES_ENABLED` is `true`, which it
-currently is not. Manual dispatch bypasses that variable and remains available
-for validation before the lane is required.
+- **`scope`** (hosted) decides whether suites run: a same-repository PR runs
+  them unless every changed file is Markdown or under `docs/`; merge groups and
+  every other event always run them. External fork PRs never reach the
+  self-hosted lane.
+- **Registered PostgreSQL Suites** runs on `arc-happyvertical` (its
+  `services:` container needs dind) with one shared PostgreSQL 18 service.
+  `pnpm turbo run test:postgres --concurrency=2 --continue --summarize` runs
+  every package's suite even after one fails, and
+  `scripts/postgres-lane-summary.mjs` writes a per-package table to the job
+  summary.
+- **`postgres-required`** (hosted) is the lane's single aggregate status, the
+  context the ruleset requires once Rollout status item 4 is complete. It
+  always reports: it passes when `scope` skipped the suites for a
+  docs-only PR, and fails when the suites did not succeed or the PR is from a
+  fork (the same policy `Required CI` applies).
 
-Interrupted jobs are cleaned hourly after six hours. Tests must never use a
-fixed shared database name or remove the wrapper from their package script.
+The suites connect as `smrt_ci`, created per run as `LOGIN CREATEDB CREATEROLE
+NOSUPERUSER NOBYPASSRLS` and asserted before use. A superuser bypasses
+row-level security, so running as one hid RLS defects (and cross-suite policy
+leakage) from the users suites; `smrt_ci` can still create the per-package
+databases and the roles the RLS fixtures log in as. The superuser URL reaches a
+test only through `SMRT_TEST_POSTGRES_ADMIN_URL`, and only three fixtures use
+it: forging an INVALID index (`core` live parity), re-enabling an RI system
+trigger (`cli` `db:migrate-uuid`), and the cluster-administrator side of the
+`core` permission-contract suite. Admin connections must pass
+`__smrtSkipVitestSchemaPreparation: true` so smrt-vitest never provisions a
+table the test role cannot then alter.
+
+Tests share one database per package, so a suite that commits DDL — legacy
+tables, RLS policies, altered catalog state — must confine it to a schema of
+its own (`options=-c search_path=<schema>` in the URL, as the analytics,
+agents and core #2649 suites do) or undo it on teardown, and the package must
+run its PostgreSQL files serially (`fileParallelism: false`, or
+`--no-file-parallelism` in the script, as `cli` does: two of its files running
+`db:migrate` at once deadlocked on the shared `_smrt_*` tables). Never use a fixed
+shared database name or remove the wrapper from a package script.
+Interrupted jobs' databases are cleaned hourly after six hours.
+
+### Running the lane locally
+
+Any PostgreSQL 15+ server works; the CI image is `postgres:18-alpine`.
+
+```bash
+docker run -d --name smrt-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:18-alpine
+PGPASSWORD=postgres psql -h 127.0.0.1 -p 55432 -U postgres -c \
+  "CREATE ROLE smrt_ci LOGIN PASSWORD 'smrt_ci' CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS"
+export CI_POSTGRES_BASE_URL=postgresql://smrt_ci:smrt_ci@127.0.0.1:55432/postgres
+export CI_POSTGRES_ADMIN_URL=postgresql://postgres:postgres@127.0.0.1:55432/postgres
+pnpm turbo run test:postgres --concurrency=2 --continue   # every package
+pnpm --filter @happyvertical/smrt-users test:postgres     # one package
+```
+
+Pointing `CI_POSTGRES_BASE_URL` at the superuser instead still works, but it
+silently bypasses RLS, so a green result there is not the lane's evidence.
 
 ## Release artifacts
 
@@ -462,8 +506,9 @@ Runner placement remains brokered through `arc-happyvertical`; change backing
 capacity only in runner-pool policy, not workflow labels. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
-PostgreSQL is not part of the required aggregator, so toggling
-`CI_POSTGRES_ENABLED` never alters SQLite coverage. The artifact publisher can
+PostgreSQL is not part of the `Required CI` aggregator: its lane reports its
+own `postgres-required` status (see PostgreSQL isolation), so adding or
+removing that ruleset context never alters SQLite coverage. The artifact publisher can
 temporarily fall back to Changesets through manual dispatch.
 
 The hosted Turbo cache lane has two independent clearable levers:

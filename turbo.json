@@ -134,10 +134,12 @@
       ],
       "env": [
         "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
         "DATABASE_URL",
         "TEST_DB_URL",
         "TEST_DB_ADAPTER",
-        "SMRT_TEST_POSTGRES_URL"
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
       ],
       "cache": false
     },
@@ -150,10 +152,12 @@
       ],
       "env": [
         "CI_POSTGRES_BASE_URL",
+        "CI_POSTGRES_ADMIN_URL",
         "DATABASE_URL",
         "TEST_DB_URL",
         "TEST_DB_ADAPTER",
-        "SMRT_TEST_POSTGRES_URL"
+        "SMRT_TEST_POSTGRES_URL",
+        "SMRT_TEST_POSTGRES_ADMIN_URL"
       ],
       "cache": false
     },

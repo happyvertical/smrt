@@ -2602,7 +2602,24 @@ describePostgres(
           '22222222-2222-2222-2222-222222222222',
           '11111111-1111-1111-1111-111111111111',
         );
-        if (foreignKeyTriggerSql) await connection.query(foreignKeyTriggerSql);
+        if (foreignKeyTriggerSql) {
+          // Re-enabling an RI system trigger is superuser-only; the suite
+          // runs as an ordinary role in CI, so forge it as the admin.
+          const admin = await getDatabase({
+            type: 'postgres',
+            url:
+              process.env.SMRT_TEST_POSTGRES_ADMIN_URL ??
+              (process.env.DATABASE_URL as string),
+            dbid: `mu-bridge-reject-admin-${stem}`,
+            // Never let smrt-vitest provision tables as the superuser.
+            __smrtSkipVitestSchemaPreparation: true,
+          } as Parameters<typeof getDatabase>[0]);
+          try {
+            await admin.query(foreignKeyTriggerSql);
+          } finally {
+            await admin.close?.();
+          }
+        }
         clearCache();
         setConfig({
           packages: {

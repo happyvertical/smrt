@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,7 +70,33 @@ export async function createTestDb(): Promise<{
   cleanup: () => Promise<void>;
 }> {
   const config = getTestDbConfig();
-  const db = await getDatabase(config);
+  // SQLite and JSON get a fresh file per call; PostgreSQL gets a fresh
+  // schema, reached through the pool's `search_path`, so no test inherits
+  // rows from an earlier one in the package's shared database.
+  let admin: DatabaseInterface | undefined;
+  let schema: string | undefined;
+  if (config.type === 'postgres') {
+    schema = `analytics_${randomUUID().replaceAll('-', '')}`;
+    admin = await getDatabase({
+      type: 'postgres',
+      url: config.url,
+      dbid: `analytics-admin-${schema}`,
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+    await admin.query(`CREATE SCHEMA "${schema}"`);
+    const url = new URL(config.url);
+    url.searchParams.set('options', `-c search_path=${schema}`);
+    config.url = url.toString();
+  }
+  // The schema starts empty; getTestDatabase() below provisions exactly the
+  // tables this package needs, so skip smrt-vitest's whole-registry pass.
+  const db = schema
+    ? await getDatabase({
+        ...config,
+        dbid: `analytics-${schema}`,
+        __smrtSkipVitestSchemaPreparation: true,
+      } as Parameters<typeof getDatabase>[0])
+    : await getDatabase(config);
 
   await getTestDatabase({
     db,
@@ -112,6 +138,11 @@ export async function createTestDb(): Promise<{
       }
     }
 
+    if (admin && schema) {
+      await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await admin.close?.();
+    }
+
     if (config.type === 'json' && config.url && existsSync(config.url)) {
       try {
         rmSync(config.url, { recursive: true, force: true });
@@ -122,6 +153,25 @@ export async function createTestDb(): Promise<{
   };
 
   return { db, config, cleanup };
+}
+
+/**
+ * Deterministic UUID for a readable fixture label. Property ids are native
+ * UUID columns on PostgreSQL, so a literal such as `'prop-123'` is rejected
+ * there (22P02) while SQLite's text ids accept it; routing every fixture id
+ * through this keeps the same readable label valid on all three adapters.
+ */
+export function fixtureId(label: string): string {
+  const hex = createHash('sha256')
+    .update(`smrt-analytics:${label}`)
+    .digest('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${((Number.parseInt(hex[16] as string, 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join('-');
 }
 
 /** Seed explicit real parents for collection fixtures that exercise child rows. */

@@ -143,10 +143,23 @@ describe.skipIf(!pgUrl)('live-schema parity (PostgreSQL)', () => {
       `CREATE INDEX ${TABLE}_tenant_id_idx ON ${TABLE} (tenant_id)`,
     );
     // Simulate the residue of an interrupted CREATE INDEX CONCURRENTLY.
-    await db?.query(
-      `UPDATE pg_index SET indisvalid = false
-        WHERE indexrelid = '${TABLE}_tenant_id_idx'::regclass`,
-    );
+    // Writing `pg_index` needs a superuser; the suite itself runs as an
+    // ordinary role in CI, so forge it through the wrapper's admin URL.
+    const admin = await getDatabase({
+      type: 'postgres',
+      url: process.env.SMRT_TEST_POSTGRES_ADMIN_URL ?? (pgUrl as string),
+      dbid: `issue-2368-parity-admin-${Date.now()}`,
+      // Never let smrt-vitest provision tables as the superuser.
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+    try {
+      await admin.query(
+        `UPDATE pg_index SET indisvalid = false
+          WHERE indexrelid = '${TABLE}_tenant_id_idx'::regclass`,
+      );
+    } finally {
+      await admin.close?.();
+    }
 
     const report = await checkLiveSchemaParity({
       db: db as DatabaseInterface,

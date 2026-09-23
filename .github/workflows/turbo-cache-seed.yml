@@ -45,7 +45,7 @@ jobs:
   seed:
     name: Seed Hosted Turbo Cache
     # Dispatch bypasses the variable so the lane can be validated before it
-    # is enabled, mirroring postgres-tests.yml.
+    # is enabled.
     if: github.event_name == 'workflow_dispatch' || vars.CI_HOSTED_TURBO_CACHE_ENABLED == 'true'
     runs-on: ubuntu-latest
     # Hosted job: the value tracks observed runtime rather than the
