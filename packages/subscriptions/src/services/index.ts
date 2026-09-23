@@ -1,11 +1,21 @@
 export type { EntitlementResolutionContext } from '../types.js';
 export type {
+  AutoTopUpGrant,
+  AutoTopUpHook,
+  AutoTopUpRequest,
+  BillingRelationshipReader,
   CommercialBillingStorage,
   CommercialUsageServiceOptions,
   CustomPricingContext,
   CustomPricingStrategy,
+  GrantCreditInput,
   PriceUsageOptions,
+  RateUsageOptions,
   SpendingDecision,
+  SpendingEvaluationInput,
+  SpendingPolicyEvaluatorExtensions,
+  SpendingPolicyEvaluatorOptions,
+  UsageRating,
 } from './commercial.js';
 export {
   assertCommercialBillingStorageSupported,
@@ -14,6 +24,21 @@ export {
   SpendingPolicyEvaluator,
   UnsupportedCommercialBillingStorageError,
 } from './commercial.js';
+export {
+  type AssignPriceBooksInput,
+  type DefinePriceBookPriceInput,
+  type DelegatedSpendingPolicyInput,
+  type GrantChildCreditInput,
+  type PriceBookAssignmentView,
+  type PriceBookLeg,
+  type ResellerBillingAction,
+  ResellerBillingService,
+  type ResellerBillingServiceOptions,
+} from './reseller.js';
+export {
+  ResellerBillingError,
+  type ResellerBillingErrorCode,
+} from './reseller-errors.js';
 export {
   type SubscriptionPlanReader,
   SubscriptionResolver,
