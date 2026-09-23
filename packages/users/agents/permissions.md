@@ -133,6 +133,14 @@ limit: a truncated authorization read would narrow the result silently.
 `issue-3047-permission-resolution-cost-postgres.test.ts` pins the hydration
 budget and a golden equivalence matrix recorded on the hydrating resolver.
 
+The same rule holds for every framework-internal authorization read (#3048):
+collections that back a decision — the resolver's, the ResourceGrant exact-tuple
+read in `checkResourceOperationPermission()` (DENY wins only if every row is
+read), and TenantService's owned-tenant quota count — are created through
+`withoutListBounds()` (`src/services/authorization-read-options.ts`), which
+strips only the caller's list bounds. Use it for any new decision read;
+`issue-3048-authorization-list-bounds-postgres.test.ts` pins it.
+
 PermissionResolver runs every resolution inside smrt-tenancy's system context
 (#3036). Its reads are deliberately cross-tenant and framework-owned — the
 ancestor TenantPermissionOverride batch, ancestor memberships for
