@@ -10,6 +10,10 @@
  * a few hundred classes at most, so the linear scan is negligible and
  * removes an entire class of cache-sync bugs (#584, #847, #951).
  *
+ * #3047: hydration resolves names per row, so the scan now runs once per
+ * registry generation into a derived (never hand-maintained) index; see
+ * `getSimpleNameIndex()` and `registry/generation.ts`.
+ *
  * Extracted from registry.ts as part of issue #1006.
  * @see https://github.com/happyvertical/smrt/issues/1006
  * @see https://github.com/happyvertical/smrt/issues/1133
@@ -22,6 +26,7 @@ import {
   isQualifiedName,
   parseQualifiedName,
 } from '../utils/qualified-names.js';
+import { getRegistryGeneration } from './generation';
 import { getClasses, getConstructorIndex, verboseLog } from './shared-state';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
@@ -44,12 +49,51 @@ import type { RegisteredClass, SmrtObjectConstructor } from './types';
  * When that happens, the qualified key wins over the simple one.
  */
 function registryKeysBySimpleName(simpleName: string): string[] {
-  const lower = simpleName.toLowerCase();
-  const classes = getClasses();
-  const seen = new Map<unknown, string>();
+  const keys = getSimpleNameIndex().get(simpleName.toLowerCase());
+  return keys ? [...keys] : [];
+}
 
+/**
+ * Lower-cased simple name → registry keys, rebuilt once per registry
+ * generation (#3047).
+ *
+ * #1133 removed an eagerly-maintained name index because every writer had to
+ * keep it in sync. This one is derived, not maintained: it is rebuilt from
+ * the `classes` map whenever the registry generation moves, and every
+ * registry mutation bumps the generation (the map itself is
+ * generation-tracked; in-place identity changes bump explicitly). Hydration
+ * resolves names several times per row, so the O(registered classes) scan
+ * per lookup dominated large result sets.
+ */
+let simpleNameIndex:
+  | {
+      generation: number;
+      classes: Map<string, RegisteredClass>;
+      keysByName: Map<string, string[]>;
+    }
+  | undefined;
+
+function getSimpleNameIndex(): Map<string, string[]> {
+  const classes = getClasses();
+  const generation = getRegistryGeneration();
+  if (
+    simpleNameIndex &&
+    simpleNameIndex.generation === generation &&
+    simpleNameIndex.classes === classes
+  ) {
+    return simpleNameIndex.keysByName;
+  }
+
+  const byName = new Map<string, Map<RegisteredClass, string>>();
   for (const [key, value] of classes.entries()) {
-    if (value.name?.toLowerCase() !== lower) continue;
+    const lower = value.name?.toLowerCase();
+    if (!lower) continue;
+
+    let seen = byName.get(lower);
+    if (!seen) {
+      seen = new Map<RegisteredClass, string>();
+      byName.set(lower, seen);
+    }
 
     const existing = seen.get(value);
     if (!existing) {
@@ -63,7 +107,12 @@ function registryKeysBySimpleName(simpleName: string): string[] {
     }
   }
 
-  return [...seen.values()];
+  const keysByName = new Map<string, string[]>();
+  for (const [lower, seen] of byName) {
+    keysByName.set(lower, [...seen.values()]);
+  }
+  simpleNameIndex = { generation, classes, keysByName };
+  return keysByName;
 }
 
 // ── Lookup functions ────────────────────────────────────────
@@ -84,11 +133,7 @@ export function getCanonicalClassName(name: string): string | undefined {
  * Check if a class exists by name (case-insensitive).
  */
 export function hasClassCaseInsensitive(name: string): boolean {
-  const lower = name.toLowerCase();
-  for (const value of getClasses().values()) {
-    if (value.name?.toLowerCase() === lower) return true;
-  }
-  return false;
+  return getSimpleNameIndex().has(name.toLowerCase());
 }
 
 /**
@@ -306,19 +351,19 @@ export function getClassInPackage(
  * Find all registered classes with a given simple class name.
  */
 export function findClassesByName(className: string): RegisteredClass[] {
-  const matches = new Set<RegisteredClass>();
-  const lowerName = className.toLowerCase();
-
-  for (const registered of getClasses().values()) {
-    if (registered.name.toLowerCase() === lowerName) {
-      // A source registration can retain its simple key while manifest
-      // hydration adds its canonical qualified key. Both aliases designate
-      // one class, so ambiguity means distinct RegisteredClass identities.
-      matches.add(registered);
+  // A source registration can retain its simple key while manifest hydration
+  // adds its canonical qualified key. Both aliases designate one class, so
+  // ambiguity means distinct RegisteredClass identities — which is what the
+  // index's per-name keys already are (one key per identity).
+  const classes = getClasses();
+  const matches: RegisteredClass[] = [];
+  for (const key of getSimpleNameIndex().get(className.toLowerCase()) ?? []) {
+    const registered = classes.get(key);
+    if (registered) {
+      matches.push(registered);
     }
   }
-
-  return [...matches];
+  return matches;
 }
 
 /**

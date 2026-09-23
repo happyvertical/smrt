@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  chunkArray,
+  IN_LIST_CHUNK_SIZE,
+  type SmrtClassOptions,
+  type SmrtCollectionOptions,
+} from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
@@ -266,21 +271,28 @@ export class PermissionResolver {
    * factory, which is generically typed to return the concrete subclass instance.
    */
   async initialize(): Promise<void> {
-    this.membershipCollection = await MembershipCollection.create(this.options);
-    this.roleCollection = await RoleCollection.create(this.options);
-    this.rolePermissionCollection = await RolePermissionCollection.create(
-      this.options,
-    );
+    // Authorization reads must be complete: a list bound carried in by the
+    // caller's options (e.g. a bounded collection's own options bag) would
+    // silently drop memberships, overrides or permission ids and narrow the
+    // resolved set without error (#3047 review). The resolver's own
+    // collections therefore never inherit defaultListLimit/maxListLimit.
+    const options: SmrtCollectionOptions = {
+      ...this.options,
+      defaultListLimit: undefined,
+      maxListLimit: undefined,
+    };
+    this.membershipCollection = await MembershipCollection.create(options);
+    this.roleCollection = await RoleCollection.create(options);
+    this.rolePermissionCollection =
+      await RolePermissionCollection.create(options);
     this.membershipOverrideCollection =
-      await MembershipOverrideCollection.create(this.options);
-    this.groupMemberCollection = await GroupMemberCollection.create(
-      this.options,
-    );
-    this.groupRoleCollection = await GroupRoleCollection.create(this.options);
-    this.permissionCollection = await PermissionCollection.create(this.options);
-    this.tenantCollection = await TenantCollection.create(this.options);
+      await MembershipOverrideCollection.create(options);
+    this.groupMemberCollection = await GroupMemberCollection.create(options);
+    this.groupRoleCollection = await GroupRoleCollection.create(options);
+    this.permissionCollection = await PermissionCollection.create(options);
+    this.tenantCollection = await TenantCollection.create(options);
     this.tenantPermissionOverrideCollection =
-      await TenantPermissionOverrideCollection.create(this.options);
+      await TenantPermissionOverrideCollection.create(options);
   }
 
   // ============= Tenant Hierarchy Permission Resolution =============
@@ -410,15 +422,13 @@ export class PermissionResolver {
 
     // Batch fetch all permissions to get slugs
     if (allPermissionIds.size > 0) {
-      const permissionsMap = await this.permissionCollection.findByIds(
-        Array.from(allPermissionIds),
-      );
+      const slugById = await this.findPermissionSlugsByIds(allPermissionIds);
 
       // Convert IDs to slugs in the result
       for (const permId of inheritedPermissions) {
-        const perm = permissionsMap.get(permId);
-        if (perm?.slug) {
-          result.permissions.add(perm.slug);
+        const slug = slugById.get(permId);
+        if (slug) {
+          result.permissions.add(slug);
         }
       }
 
@@ -431,9 +441,9 @@ export class PermissionResolver {
       // slug would wrongly override the child GRANT and any role/group grant.
       for (const permId of deniedPermissionIds) {
         if (inheritedPermissions.has(permId)) continue;
-        const perm = permissionsMap.get(permId);
-        if (perm?.slug) {
-          result.deniedPermissions.add(perm.slug);
+        const slug = slugById.get(permId);
+        if (slug) {
+          result.deniedPermissions.add(slug);
         }
       }
     }
@@ -747,18 +757,10 @@ export class PermissionResolver {
       allPermissionIds.add(id);
     }
 
-    // 3. Batch fetch all permissions in a single query
-    const permissionsMap = await this.permissionCollection.findByIds(
-      Array.from(allPermissionIds),
-    );
-
-    // Build ID to slug mapping
-    const permissionIdToSlug = new Map<string, string>();
-    for (const [id, perm] of permissionsMap) {
-      if (perm.slug) {
-        permissionIdToSlug.set(id, perm.slug);
-      }
-    }
+    // 3. Batch resolve every permission id to its slug in a single
+    // projection query (no Permission hydration, #3047).
+    const permissionIdToSlug =
+      await this.findPermissionSlugsByIds(allPermissionIds);
 
     // 4. Apply permissions from role
     for (const permId of rolePermissionIds) {
@@ -809,6 +811,42 @@ export class PermissionResolver {
   }
 
   /**
+   * Batch resolve permission ids to slugs with one projection read.
+   *
+   * Authorization only needs `id -> slug`, and an owner role maps the whole
+   * catalog, so hydrating one `Permission` per id dominated resolution
+   * (#3047). The projection still runs the collection's beforeList
+   * interceptors; the resolver's reads already run in system context. Rows
+   * with an empty slug are omitted, exactly as the hydrating lookup skipped
+   * them. Kept private (not a collection method) so it does not add a
+   * custom-action slug to the manifest-derived permission catalog.
+   */
+  private async findPermissionSlugsByIds(
+    ids: Iterable<string>,
+  ): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(ids)];
+    const slugById = new Map<string, string>();
+    if (uniqueIds.length === 0) {
+      return slugById;
+    }
+    // Chunked with an explicit per-chunk limit, like listByIds(): an owner's
+    // id list is catalog-sized, and the IN-list contract bounds every query.
+    for (const chunk of chunkArray(uniqueIds, IN_LIST_CHUNK_SIZE)) {
+      const rows = await this.permissionCollection.list({
+        where: { 'id in': chunk },
+        select: ['id', 'slug'],
+        limit: chunk.length,
+      });
+      for (const { id, slug } of rows) {
+        if (typeof id === 'string' && id && typeof slug === 'string' && slug) {
+          slugById.set(id, slug);
+        }
+      }
+    }
+    return slugById;
+  }
+
+  /**
    * The permission slugs a role grants through the role-permission catalog,
    * excluding every per-tenant, per-group, and per-membership override.
    */
@@ -822,12 +860,9 @@ export class PermissionResolver {
     if (permissionIds.length === 0) {
       return slugs;
     }
-    const permissionsMap =
-      await this.permissionCollection.findByIds(permissionIds);
-    for (const permission of permissionsMap.values()) {
-      if (permission?.slug) {
-        slugs.add(permission.slug);
-      }
+    const slugById = await this.findPermissionSlugsByIds(permissionIds);
+    for (const slug of slugById.values()) {
+      slugs.add(slug);
     }
     return slugs;
   }

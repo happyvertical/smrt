@@ -50,6 +50,7 @@ import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.j
 import {
   cloneManifestSchemaColumns,
   discoverCachedManifestSync,
+  getManifestCache,
   getNodeBuiltins,
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
@@ -78,6 +79,10 @@ import {
   hasEmbeddings as _hasEmbeddings,
   resolveEmbeddingConfig as _resolveEmbeddingConfig,
 } from './registry/embedding-manager';
+import {
+  bumpRegistryGeneration,
+  getRegistryGeneration,
+} from './registry/generation';
 import {
   getAllFields as _getAllFields,
   getAllMethods as _getAllMethods,
@@ -207,9 +212,36 @@ function getManifestLoaderSpecifier(): string {
     : './manifest/index.js';
 }
 
-async function importManifestLoader(): Promise<ManifestLoaderModule> {
-  return (await import(getManifestLoaderSpecifier())) as ManifestLoaderModule;
+let manifestLoaderModule: Promise<ManifestLoaderModule> | undefined;
+
+/**
+ * The manifest loader, imported once per module instance (#3047).
+ *
+ * The import is dynamic to keep the loader out of the registry's static
+ * graph, but it sits on every hydration path; under a Vite module runner an
+ * uncached `import()` is a synchronous resolve per call. A rejected import is
+ * not cached, so a transient failure is retried on the next call.
+ */
+function importManifestLoader(): Promise<ManifestLoaderModule> {
+  if (!manifestLoaderModule) {
+    manifestLoaderModule = (
+      import(getManifestLoaderSpecifier()) as Promise<ManifestLoaderModule>
+    ).catch((error: unknown) => {
+      manifestLoaderModule = undefined;
+      throw error;
+    });
+  }
+  return manifestLoaderModule;
 }
+
+/**
+ * Registered classes whose manifest has been reconciled, keyed to the registry
+ * generation it was reconciled at (#3047). `ensureManifestLoaded()` sits on
+ * every hydration path; once a class agrees with its manifest there is nothing
+ * to redo until the registry or manifest state changes, which bumps the
+ * generation (see `registry/generation.ts`).
+ */
+const manifestEnsuredAtGeneration = new WeakMap<RegisteredClass, number>();
 
 /**
  * Loose view of a stored field's option bag. Field entries are heterogeneous
@@ -1820,14 +1852,8 @@ export class ObjectRegistry {
 
     // Seed the manifest cache so discoverManifestSync() finds entries when
     // @smrt() decorators run for classes in this package.
-    const manifestGlobals = globalThis as typeof globalThis & {
-      __smrtManifestCache?: Map<string, SmartObjectManifest>;
-    };
-    if (!manifestGlobals.__smrtManifestCache) {
-      manifestGlobals.__smrtManifestCache = new Map();
-    }
     const cacheKey = packageName || sourceLabel;
-    manifestGlobals.__smrtManifestCache.set(cacheKey, manifest);
+    getManifestCache().set(cacheKey, manifest);
 
     // Merge manifest fields into any already-registered classes. This covers
     // the case where class modules were evaluated before the package's
@@ -1890,6 +1916,7 @@ export class ObjectRegistry {
    * Clear all registered classes (mainly for testing)
    */
   static clear(): void {
+    bumpRegistryGeneration();
     ObjectRegistry.classes.clear();
     ObjectRegistry.collections.clear();
     ObjectRegistry.collectionCache.clear();
@@ -1924,6 +1951,7 @@ export class ObjectRegistry {
    * ```
    */
   static invalidateInheritanceCache(className: string): void {
+    bumpRegistryGeneration();
     // Delegate to the stronger sweep in class-registration.ts. The previous
     // implementation here recursed via `childClass.extends === className`
     // — a simple-string exact match — so qualified-extends descendants
@@ -1955,6 +1983,7 @@ export class ObjectRegistry {
    * ```
    */
   static invalidateAllInheritanceCaches(): void {
+    bumpRegistryGeneration();
     ObjectRegistry.getInheritanceCache().clear();
     ObjectRegistry.getDiscoveryAttemptCache().clear();
 
@@ -2226,7 +2255,23 @@ export class ObjectRegistry {
    * ```
    */
   static async ensureManifestLoaded(className: string): Promise<void> {
+    const startGeneration = getRegistryGeneration();
     let registered = ObjectRegistry.findClass(className);
+    if (
+      registered &&
+      manifestEnsuredAtGeneration.get(registered) === startGeneration
+    ) {
+      // Already reconciled against the current registry/manifest state.
+      return;
+    }
+    // Record a reconciliation only when it observed a stable state: if
+    // anything (including this call's own hydration) changed the registry
+    // meanwhile, the next call re-checks once and records then.
+    const markEnsured = (target: RegisteredClass) => {
+      if (getRegistryGeneration() === startGeneration) {
+        manifestEnsuredAtGeneration.set(target, startGeneration);
+      }
+    };
     if (!registered) {
       const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
       if (loaded) {
@@ -2284,6 +2329,7 @@ export class ObjectRegistry {
           ObjectRegistry.invalidateInheritanceCache(className);
         }
       }
+      markEnsured(registered);
       return;
     }
 
@@ -2323,6 +2369,7 @@ export class ObjectRegistry {
         !needsMethodHydration &&
         !needsRegistrationHydration
       ) {
+        markEnsured(registered);
         return;
       }
 

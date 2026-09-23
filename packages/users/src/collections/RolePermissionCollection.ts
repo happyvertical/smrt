@@ -260,8 +260,14 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
    * Get permission IDs for a role
    */
   async getPermissionIds(roleId: string): Promise<string[]> {
-    const rolePermissions = await this.findByRole(roleId);
-    return rolePermissions.map((rp) => rp.permissionId as string);
+    // Projection read: only the id column is needed, and an owner role maps
+    // the whole catalog, so hydrating one RolePermission per row dominated
+    // permission resolution (#3047).
+    const rows = await this.list({
+      where: { roleId },
+      select: ['permissionId'],
+    });
+    return rows.map((row) => row.permissionId as string);
   }
 
   /**
