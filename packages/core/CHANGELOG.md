@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.51.20
+
+### Patch Changes
+
+- ### Features
+  
+  - ship feature-flag management upstream — ./svelte panel + settings service (#3054) (features)
+  
+  ### Bug Fixes
+  
+  - report the merged knowledge graph in the shared freshness check (#3070) (#3073) (smrt-dev-mcp)
+  - preserve leading underscore in intercepted hydration filter keys (#2417) (#3072) (core)
+  - keep full-width form controls inside their containers (#3067) (smrt-ui)
+  - back off between change-feed head-race retries (#3062) (#3066) (core)
+  
+  ### Other Changes
+  
+  - docs: record postgres-required as a required context (#3068) (#3069) (ci)
+  - ci: repair the PostgreSQL lane and gate it behind postgres-required (#2659, #2868) (#3057)
+- @happyvertical/smrt-config@0.51.20
+  - @happyvertical/smrt-scanner@0.51.20
+  - @happyvertical/smrt-types@0.51.20
+
 ## 0.51.19
 
 ### Patch Changes

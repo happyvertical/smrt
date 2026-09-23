@@ -1,5 +1,9 @@
 # @happyvertical/smrt-scanner
 
+## 0.51.20
+
+No changes in this release.
+
 ## 0.51.19
 
 No changes in this release.
