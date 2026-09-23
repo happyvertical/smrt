@@ -5,6 +5,7 @@ import type {
   ResourceGrant,
   ResourceGrantEffect,
 } from '../models/ResourceGrant.js';
+import { withoutListBounds } from './authorization-read-options.js';
 import {
   assertOperationPermission,
   type OperationPermissionOptions,
@@ -76,16 +77,19 @@ export async function checkResourceOperationPermission(
     return { allowed: false, reason: 'tenant_permission_denied' };
   const userId = options.userId ?? getCurrentSessionPermissionContext()?.userId;
   if (!userId) return { allowed: false, reason: 'resource_grant_missing' };
-  const grants = await (
-    await ResourceGrantCollection.create(options)
-  ).findExact(
+  // DENY wins only if every exact-tuple row is read: a list bound carried in
+  // by the caller's options would drop a DENY past the bound while keeping a
+  // GRANT, widening the decision (#3048).
+  const collection = await ResourceGrantCollection.create(
+    withoutListBounds(options),
+  );
+  const grants = await collection.findExact(
     options.resource.tenantId,
     userId,
     options.resource.resourceType,
     options.resource.resourceId,
     tenant.permission,
   );
-  const collection = await ResourceGrantCollection.create(options);
   const active: ResourceGrant[] = [];
   for (const grant of grants)
     if (await hasActiveAncestors(collection, grant)) active.push(grant);

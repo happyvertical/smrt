@@ -15,6 +15,7 @@ import {
   MembershipStatus,
   type TenantPolicy,
 } from '../types/index.js';
+import { withoutListBounds } from './authorization-read-options.js';
 
 /**
  * Result of tenant creation with ownership
@@ -84,9 +85,12 @@ export class TenantService {
    * Initialize collections
    */
   async initialize(): Promise<void> {
-    this.tenantCollection = await TenantCollection.create(this.options);
-    this.membershipCollection = await MembershipCollection.create(this.options);
-    this.roleCollection = await RoleCollection.create(this.options);
+    // Tenant quota and ownership checks count memberships; a list bound in
+    // the caller's options would undercount and lift maxTenants (#3048).
+    const options = withoutListBounds(this.options);
+    this.tenantCollection = await TenantCollection.create(options);
+    this.membershipCollection = await MembershipCollection.create(options);
+    this.roleCollection = await RoleCollection.create(options);
 
     // Seed system roles if needed
     await this.roleCollection.seedSystemRoles();

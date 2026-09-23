@@ -7,7 +7,6 @@ import {
   chunkArray,
   IN_LIST_CHUNK_SIZE,
   type SmrtClassOptions,
-  type SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
@@ -29,6 +28,7 @@ import {
   type NormalizedAncestorReadPolicy,
   normalizeAncestorReadPolicy,
 } from './AncestorReadPolicy.js';
+import { withoutListBounds } from './authorization-read-options.js';
 
 /**
  * Permission resolution result
@@ -276,11 +276,7 @@ export class PermissionResolver {
     // silently drop memberships, overrides or permission ids and narrow the
     // resolved set without error (#3047 review). The resolver's own
     // collections therefore never inherit defaultListLimit/maxListLimit.
-    const options: SmrtCollectionOptions = {
-      ...this.options,
-      defaultListLimit: undefined,
-      maxListLimit: undefined,
-    };
+    const options = withoutListBounds(this.options);
     this.membershipCollection = await MembershipCollection.create(options);
     this.roleCollection = await RoleCollection.create(options);
     this.rolePermissionCollection =
