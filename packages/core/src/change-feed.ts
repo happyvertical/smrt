@@ -375,6 +375,24 @@ export const MAX_CHANGES_LIMIT = 5_000;
 const MAX_APPEND_ATTEMPTS = 20;
 
 /**
+ * Jittered pause before an append re-contends for the sequence head (#3062).
+ *
+ * Retrying a lost `MAX(seq)+1` race immediately lets a writer in a tight loop
+ * win every round: the loser re-reads the head just as the winner commits its
+ * next row, and on a contended host one writer was starved for all
+ * {@link MAX_APPEND_ATTEMPTS}. A random delay, growing to a small cap,
+ * desynchronizes the writers. Worst case across every retry stays well under
+ * a second, and inside a caller transaction the append helper has already
+ * rolled its own subtransaction back, so the pause holds no feed locks.
+ */
+function waitBeforeAppendRetry(attempt: number): Promise<void> {
+  const ceilingMs = Math.min(2 ** attempt, 40);
+  return new Promise((resolve) =>
+    setTimeout(resolve, Math.random() * ceilingMs),
+  );
+}
+
+/**
  * Maximum bounded drain batches one {@link drainChangeFeed} call sequences.
  * A cap rather than "until empty" so a pathological writer cannot make one
  * reader drain forever; the remainder is picked up by the next drain.
@@ -955,6 +973,7 @@ export async function appendChange(
       }
       // Sequence head contention: another append won the value. Re-running
       // recomputes MAX(seq) against the now-committed head.
+      await waitBeforeAppendRetry(attempt);
     }
   }
 
@@ -1115,6 +1134,7 @@ export async function appendChanges(
         queueDeferredSignals(db, drainedSignals);
         throw error;
       }
+      await waitBeforeAppendRetry(attempt);
     }
   }
   throw new Error(

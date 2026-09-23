@@ -361,6 +361,9 @@ describe.skipIf(!pgUrl)(
     it('racing appends across two connections yields contiguous sequences — no gaps, no duplicates', async () => {
       const PER_WRITER = 150;
       const TOTAL = PER_WRITER * 2;
+      // Start from an empty log so a CI retry of this case is meaningful: the
+      // feed is otherwise only cleared in beforeAll (#3062).
+      await writerA.query('DELETE FROM _smrt_changes');
 
       const race = async (db: DatabaseInterface, label: string) => {
         for (let i = 0; i < PER_WRITER; i++) {
