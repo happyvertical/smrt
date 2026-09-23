@@ -35,6 +35,17 @@ export interface FeatureSettingsView {
   globalEffect?: FeatureSettingsEffect | null;
   /** Effect of the tenant override row, or `null`/absent when there is none. */
   tenantEffect?: FeatureSettingsEffect | null;
+  /**
+   * What this feature resolves to for this tenant with **no override of its
+   * own** — the state returning the tenant scope to Default actually produces.
+   *
+   * Only the server can know this: with a tenant hierarchy configured, an
+   * ancestor tenant's override sits between the global scope and this tenant,
+   * so it is not derivable from `defaultEnabled` and `globalEffect`. Leave it
+   * `null`/absent when it is not known and the panel says "Default (inherited)"
+   * rather than naming a state it cannot vouch for.
+   */
+  inheritedEnabled?: boolean | null;
 }
 
 /** One override change requested from the panel. */
@@ -61,20 +72,18 @@ export function defaultOptionLabel(enabledWhenDefault: boolean): string {
 }
 
 /**
- * What a feature resolves to for a tenant with no override of its own — the
- * global override when there is one, otherwise the code default.
+ * Label for the option that removes the **tenant** override.
  *
- * This, not `defaultEnabled`, is what returning the *tenant* scope to Default
- * actually produces. Labelling that option from `defaultEnabled` would tell an
- * operator "Default (disabled)" for a feature a global override has enabled,
- * and choosing it would leave the feature on.
- *
- * A row that omits `globalEffect` is read as having no global override.
+ * `defaultEnabled` is the wrong thing to name here: the tenant scope inherits
+ * whatever the levels above it resolve to — the global override, and, when a
+ * tenant hierarchy is configured, any ancestor tenant's override. So this names
+ * the inherited state only when the row carries one, and otherwise says
+ * "Default (inherited)" rather than claiming a state it cannot know.
  */
-export function inheritedEnabled(feature: FeatureSettingsView): boolean {
-  if (feature.globalEffect === 'enable') return true;
-  if (feature.globalEffect === 'disable') return false;
-  return feature.defaultEnabled;
+export function inheritedOptionLabel(feature: FeatureSettingsView): string {
+  return typeof feature.inheritedEnabled === 'boolean'
+    ? defaultOptionLabel(feature.inheritedEnabled)
+    : 'Default (inherited)';
 }
 
 /** Badge text for a feature's effective state. */

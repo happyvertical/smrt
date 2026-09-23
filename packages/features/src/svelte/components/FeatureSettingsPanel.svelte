@@ -18,7 +18,7 @@ import type { FeatureSettingsChange, FeatureSettingsView } from '../types.js';
 import {
   defaultOptionLabel,
   effectiveStateLabel,
-  inheritedEnabled,
+  inheritedOptionLabel,
   toFeatureSettingsEffect,
 } from '../types.js';
 
@@ -198,10 +198,9 @@ function readOnlyEffectLabel(feature: FeatureSettingsView): string {
                   selected={feature.tenantEffect !== 'enable' &&
                     feature.tenantEffect !== 'disable'}
                 >
-                  <!-- The tenant scope inherits the global override when there is
-                       one, so this names the state returning to Default actually
-                       produces, not the bare code default. -->
-                  {defaultOptionLabel(inheritedEnabled(feature))}
+                  <!-- The tenant scope inherits from the levels above it, so
+                       this never names the bare code default. -->
+                  {inheritedOptionLabel(feature)}
                 </option>
                 <option value="enable" selected={feature.tenantEffect === 'enable'}>
                   Enable

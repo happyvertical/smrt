@@ -139,16 +139,18 @@ describe('FeatureSettingsPanel', () => {
       'disable',
     ]);
     expect(optionLabels(tenant)).toEqual([
-      'Default (disabled)',
+      'Default (inherited)',
       'Enable',
       'Disable',
     ]);
     expect(tenant.value).toBe('inherit');
   });
 
-  it('labels the default option from defaultEnabled', () => {
+  it('names the inherited state when the row supplies it', () => {
     const target = render({
-      features: [{ ...DRAFTS, defaultEnabled: true, effectiveEnabled: true }],
+      features: [
+        { ...DRAFTS, inheritedEnabled: true, tenantEffect: 'disable' },
+      ],
     });
 
     expect(optionLabels(selectNamed(target, 'tenantEffect'))[0]).toBe(
@@ -307,33 +309,43 @@ describe('FeatureSettingsPanel', () => {
     );
   });
 
-  it('names the inherited value, not the code default, when a global override applies', () => {
-    // A tenant with no override of its own inherits the global override, so
-    // returning the tenant scope to Default leaves this feature ENABLED even
-    // though its code default is disabled.
+  it('never names the code default for the tenant scope, which inherits', () => {
+    // A tenant inherits the global override — and, with a tenant hierarchy, any
+    // ancestor's override. Labelling this option "Default (disabled)" from
+    // defaultEnabled would tell the operator the opposite of what choosing it
+    // does for a feature something above has enabled.
     const target = render({
-      features: [{ ...DRAFTS, globalEffect: 'enable', effectiveEnabled: true }],
+      features: [
+        {
+          ...DRAFTS,
+          globalEffect: 'enable',
+          tenantEffect: 'disable',
+          effectiveEnabled: false,
+        },
+      ],
       showGlobal: true,
       globalEditable: true,
     });
 
     expect(optionLabels(selectNamed(target, 'tenantEffect'))[0]).toBe(
-      'Default (enabled)',
+      'Default (inherited)',
     );
-    // The global scope inherits nothing, so its Default still names the code default.
+    // The global scope inherits nothing, so its Default does name the code default.
     expect(optionLabels(selectNamed(target, 'globalEffect'))[0]).toBe(
       'Default (disabled)',
     );
   });
 
-  it('names the code default for the tenant when a global override disables it', () => {
+  it('names an inherited disabled state when the row supplies it', () => {
     const target = render({
       features: [
         {
           ...DRAFTS,
           defaultEnabled: true,
           globalEffect: 'disable',
-          effectiveEnabled: false,
+          tenantEffect: 'enable',
+          inheritedEnabled: false,
+          effectiveEnabled: true,
         },
       ],
     });

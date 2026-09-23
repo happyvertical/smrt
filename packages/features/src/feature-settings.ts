@@ -61,6 +61,21 @@ export interface FeatureSettingsRow {
    * is none (or when no `tenantId` was requested).
    */
   tenantEffect: FeatureOverrideEffect | null;
+  /**
+   * What this feature resolves to for the requested tenant with **no override
+   * of its own** — the state that removing the tenant override would produce,
+   * which is what a management UI must name on its "back to Default" control.
+   *
+   * `null` when it is not knowable from one resolution pass: with a tenant
+   * override present, the inherited state depends on the levels above this
+   * tenant, and with a `FeatureTenantHierarchyProvider` configured those
+   * include ancestor tenants' overrides, so it is not derivable from
+   * `defaultEnabled` and `globalEffect`. With no tenant override, the inherited
+   * state *is* the effective state, so it is reported exactly. Consumers that
+   * leave it `null` get the neutral "Default (inherited)" label in the panel,
+   * never a claim about a state nothing computed.
+   */
+  inheritedEnabled: boolean | null;
 }
 
 /** Selection for {@link FeatureSettingsService.listFeatureSettings}. */
@@ -330,6 +345,7 @@ export class FeatureSettingsService {
       effectiveEnabled,
       globalEffect: globalOverride?.effect ?? null,
       tenantEffect: tenantOverride?.effect ?? null,
+      inheritedEnabled: tenantOverride ? null : effectiveEnabled,
     };
   }
 }

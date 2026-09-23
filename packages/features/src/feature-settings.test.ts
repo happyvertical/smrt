@@ -115,6 +115,7 @@ describe('FeatureSettingsService', () => {
         effectiveEnabled: false,
         globalEffect: null,
         tenantEffect: null,
+        inheritedEnabled: false,
       });
     });
 
@@ -169,6 +170,7 @@ describe('FeatureSettingsService', () => {
       expect(drafts.globalEffect).toBe(FeatureOverrideEffect.ENABLE);
       expect(drafts.tenantEffect).toBeNull();
       expect(drafts.defaultEnabled).toBe(false);
+      expect(drafts.inheritedEnabled).toBe(true);
     });
 
     it('lets a tenant override win over the global override', async () => {
@@ -187,6 +189,9 @@ describe('FeatureSettingsService', () => {
       expect(forTenantA.effectiveEnabled).toBe(false);
       expect(forTenantA.globalEffect).toBe(FeatureOverrideEffect.ENABLE);
       expect(forTenantA.tenantEffect).toBe(FeatureOverrideEffect.DISABLE);
+      // The tenant has an override of its own, so what it would inherit is not
+      // knowable from this pass — the panel must not name a state.
+      expect(forTenantA.inheritedEnabled).toBeNull();
 
       // A different tenant still sees the global override.
       const [forTenantB] = await service.listFeatureSettings({
@@ -195,6 +200,8 @@ describe('FeatureSettingsService', () => {
       });
       expect(forTenantB.effectiveEnabled).toBe(true);
       expect(forTenantB.tenantEffect).toBeNull();
+      // With no override of its own, the inherited state is the effective one.
+      expect(forTenantB.inheritedEnabled).toBe(true);
     });
 
     it('reports a global-only view when no tenant is requested', async () => {

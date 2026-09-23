@@ -150,10 +150,14 @@ tier; apps without one omit the column entirely. Supply `onSave` instead of
 
 Two details worth knowing:
 
-- The tenant column's *Default* option names the state it actually produces,
-  which is the global override when there is one — not the bare code default.
-  The global column's *Default* names the code default, because the global
-  scope inherits nothing.
+- The tenant column's *Default* option never names the code default, because
+  the tenant scope inherits — from the global override, and, when a
+  `FeatureTenantHierarchyProvider` is configured, from ancestor tenants too. It
+  names the inherited state when the row carries `inheritedEnabled` (the helper
+  sets it whenever it is exactly knowable, i.e. when the tenant has no override
+  of its own) and otherwise reads "Default (inherited)". The global column's
+  *Default* does name the code default, because the global scope inherits
+  nothing.
 - Unsaved edits are discarded whenever `contextKey` changes, or, when you omit
   it, whenever `features` is replaced with a new array. Pass the tenant id as
   `contextKey` so a half-made choice for one tenant can never be submitted
