@@ -77,8 +77,13 @@ that reverted to DECIMAL passes every SQLite suite.
   keep ignoring them, and `rateUsage()` only trusts rules whose tenant owns the
   book.
 - Delegated `SpendingPolicy` rows (`setByTenantId`) are guarded in
-  `validateBeforeSave` and a `beforeDelete` hook, by id and by conflict key.
+  `validateBeforeSave` and a `beforeDelete` hook, by id and by conflict key;
+  `CreditGrant` applies the same parent-only rule to delegated balances.
   `PriceBookAssignmentCollection` is deliberately not a root export.
+- `ResellerBillingService` authorizes first, then writes in a system context
+  (parent writes land on child-owned rows). The wholesale leg is authorized by
+  the book's publisher and may never be published by the payer. The only
+  cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
 - `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
   be 0. Auto top-up is a host hook only — no payment provider calls.
 

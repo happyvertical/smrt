@@ -13,6 +13,7 @@ import {
   isSuperAdminBypass,
   isSystemContext,
   TenantIsolationError,
+  withSystemContext,
 } from '@happyvertical/smrt-tenancy';
 import {
   BillingAdjustmentCollection,
@@ -40,6 +41,7 @@ import {
 import type { SubscriberKind } from '../types.js';
 import { deterministicUuid, tenantKey } from '../utils.js';
 import {
+  assertWholesalePublisher,
   type BillingRelationshipReader,
   SpendingPolicyEvaluator,
 } from './commercial.js';
@@ -47,7 +49,8 @@ import { ResellerBillingError } from './reseller-errors.js';
 
 export type ResellerBillingAction =
   | 'define_prices'
-  | 'assign_price_books'
+  | 'assign_wholesale_price_book'
+  | 'assign_retail_price_book'
   | 'manage_child_spending';
 
 export interface ResellerBillingServiceOptions extends SmrtClassOptions {
@@ -56,15 +59,19 @@ export interface ResellerBillingServiceOptions extends SmrtClassOptions {
   /**
    * Optional host permission check. Without it, only a system context or a
    * super-admin bypass may mutate reseller billing records, mirroring
-   * `BillingRelationshipService`.
+   * `BillingRelationshipService`. Once it (or the context) authorizes a call,
+   * the service performs that call's writes in a system context, because
+   * they span tenants (a parent writes rows owned by its child).
    */
   authorize?: (request: {
     action: ResellerBillingAction;
-    /** The seller (price definitions) or parent (assignments, spending). */
+    /**
+     * The tenant whose authority the action exercises: the book's seller for
+     * `define_prices` and `assign_wholesale_price_book`, the parent for
+     * `assign_retail_price_book` and `manage_child_spending`.
+     */
     tenantId: string;
     childTenantId?: string;
-    /** For `assign_price_books`: which legs the call changes. */
-    kinds?: PriceBookKind[];
   }) => Promise<boolean>;
 }
 
@@ -175,6 +182,14 @@ function assignmentView(row: PriceBookAssignment): PriceBookAssignmentView {
 }
 
 /**
+ * Run an already-authorized operation in a system context. Only called after
+ * `assertManage()` (or for a book metadata read that precedes it).
+ */
+function authorized<T>(operation: () => Promise<T>): Promise<T> {
+  return withSystemContext(operation);
+}
+
+/**
  * Manages price books, their per-relationship assignment, and the spending
  * policies and credits a parent tenant sets on its children.
  */
@@ -229,7 +244,7 @@ export class ResellerBillingService {
    * currency, and effective date replaces that rule's terms.
    */
   async definePrice(input: DefinePriceBookPriceInput): Promise<PricingRule[]> {
-    const book = await this.requireBook(input.priceBookId);
+    const book = await this.readBook(input.priceBookId);
     const sellerTenantId = canonicalTenantId(String(book.tenantId));
     await this.assertManage('define_prices', sellerTenantId, undefined, true);
     if (!input.ruleKey.trim() || !input.metricKey.trim()) {
@@ -253,81 +268,99 @@ export class ResellerBillingService {
       currencies.add(currency);
     }
     const effectiveFrom = input.effectiveFrom ?? new Date();
-    const saved: PricingRule[] = [];
-    for (const { currency, terms } of input.prices) {
-      const id = await deterministicUuid([
-        'price-book-rule',
-        String(book.id),
-        input.ruleKey,
-        currency,
-        effectiveFrom.toISOString(),
-      ]);
-      const values = {
-        tenantId: book.tenantId,
-        priceBookId: String(book.id),
-        ruleKey: input.ruleKey,
-        metricKey: input.metricKey,
-        serviceKey: input.serviceKey ?? '',
-        strategy: input.strategy,
-        currency,
-        effectiveFrom,
-        effectiveTo: input.effectiveTo ?? null,
-        priority: input.priority ?? 0,
-        terms: JSON.stringify(terms),
-        active: true,
-      };
-      const existing = await this.rules.get(id);
-      if (existing) {
-        Object.assign(existing, values);
-        await existing.save();
-        saved.push(existing);
-      } else {
-        saved.push(await this.rules.create({ id, ...values }));
+    return authorized(async () => {
+      const saved: PricingRule[] = [];
+      for (const { currency, terms } of input.prices) {
+        const id = await deterministicUuid([
+          'price-book-rule',
+          String(book.id),
+          input.ruleKey,
+          currency,
+          effectiveFrom.toISOString(),
+        ]);
+        const values = {
+          tenantId: book.tenantId,
+          priceBookId: String(book.id),
+          ruleKey: input.ruleKey,
+          metricKey: input.metricKey,
+          serviceKey: input.serviceKey ?? '',
+          strategy: input.strategy,
+          currency,
+          effectiveFrom,
+          effectiveTo: input.effectiveTo ?? null,
+          priority: input.priority ?? 0,
+          terms: JSON.stringify(terms),
+          active: true,
+        };
+        const existing = await this.rules.get(id);
+        if (existing) {
+          Object.assign(existing, values);
+          await existing.save();
+          saved.push(existing);
+        } else {
+          saved.push(await this.rules.create({ id, ...values }));
+        }
       }
-    }
-    return saved;
+      return saved;
+    });
   }
 
   /**
    * Select the wholesale and/or retail book that rates a child's usage under
    * its current reseller relationship. The retail book must be published by
-   * that reseller.
+   * that reseller; the wholesale book must be published by someone other
+   * than the reseller or child it charges. Each leg is authorized separately:
+   * the wholesale leg by its publisher (`assign_wholesale_price_book`), the
+   * retail leg by the reseller (`assign_retail_price_book`).
    */
   async assignPriceBooks(
     input: AssignPriceBooksInput,
   ): Promise<PriceBookAssignmentView> {
     const relationship = await this.requireRelationship(input.childTenantId);
-    const kinds: PriceBookKind[] = [];
-    if (input.wholesale !== undefined) kinds.push('wholesale');
-    if (input.retail !== undefined) kinds.push('retail');
-    await this.assertManage(
-      'assign_price_books',
-      relationship.resellerTenantId,
-      relationship.childTenantId,
-      false,
-      kinds,
+    const { childTenantId, resellerTenantId } = relationship;
+    const existing = await authorized(() =>
+      this.assignments.get({ childTenantId }),
     );
-    if (input.wholesale) {
-      await this.requireLeg(input.wholesale, 'wholesale');
+    // An assignment made under a previous reseller does not carry over.
+    const current =
+      existing && tenantKey(existing.resellerTenantId) === resellerTenantId
+        ? assignmentView(existing)
+        : null;
+
+    if (input.wholesale !== undefined) {
+      let publisher = resellerTenantId;
+      if (input.wholesale) {
+        const book = await this.requireLeg(input.wholesale, 'wholesale');
+        assertWholesalePublisher(book, resellerTenantId, childTenantId);
+        publisher = tenantKey(book.tenantId);
+      } else if (current?.wholesale) {
+        publisher = tenantKey(
+          (await this.readBook(current.wholesale.priceBookId)).tenantId,
+        );
+      }
+      await this.assertManage(
+        'assign_wholesale_price_book',
+        publisher,
+        childTenantId,
+      );
     }
     if (input.retail) {
       const book = await this.requireLeg(input.retail, 'retail');
-      if (tenantKey(book.tenantId) !== relationship.resellerTenantId) {
+      if (tenantKey(book.tenantId) !== resellerTenantId) {
         throw new ResellerBillingError(
           `Retail price book '${book.bookKey}' is not published by the child's reseller.`,
           'PRICE_BOOK_OWNER_MISMATCH',
         );
       }
     }
-    const existing = await this.assignments.get({
-      childTenantId: relationship.childTenantId,
-    });
-    // An assignment made under a previous reseller does not carry over.
-    const current =
-      existing &&
-      tenantKey(existing.resellerTenantId) === relationship.resellerTenantId
-        ? assignmentView(existing)
-        : null;
+    if (input.retail !== undefined || input.wholesale === undefined) {
+      await this.assertManage(
+        'assign_retail_price_book',
+        resellerTenantId,
+        childTenantId,
+      );
+    }
+
     const wholesale =
       input.wholesale === undefined
         ? (current?.wholesale ?? null)
@@ -335,19 +368,21 @@ export class ResellerBillingService {
     const retail =
       input.retail === undefined ? (current?.retail ?? null) : input.retail;
     const values = {
-      childTenantId: relationship.childTenantId,
-      resellerTenantId: relationship.resellerTenantId,
+      childTenantId,
+      resellerTenantId,
       wholesalePriceBookId: wholesale?.priceBookId ?? '',
       wholesaleCurrency: wholesale?.currency ?? '',
       retailPriceBookId: retail?.priceBookId ?? '',
       retailCurrency: retail?.currency ?? '',
     };
-    if (existing) {
-      Object.assign(existing, values);
-      await existing.save();
-      return assignmentView(existing);
-    }
-    return assignmentView(await this.assignments.create(values));
+    return authorized(async () => {
+      if (existing) {
+        Object.assign(existing, values);
+        await existing.save();
+        return assignmentView(existing);
+      }
+      return assignmentView(await this.assignments.create(values));
+    });
   }
 
   /** The child's assignment under its current reseller, if any. */
@@ -375,8 +410,9 @@ export class ResellerBillingService {
    * Create or replace a spending policy that a parent sets on its child. The
    * row belongs to the child (so the ordinary evaluator enforces it for the
    * child) and records the parent in `setByTenantId`, which locks it against
-   * changes by the child. Use `period: 'balance'` for a prepaid credit
-   * balance and fund it with {@link grantChildCredit}.
+   * changes by the child. A delegated policy left by a former parent may be
+   * replaced; one the child set for itself may not. Use `period: 'balance'`
+   * for a prepaid credit balance and fund it with {@link grantChildCredit}.
    */
   async setDelegatedSpendingPolicy(
     input: DelegatedSpendingPolicyInput,
@@ -420,33 +456,37 @@ export class ResellerBillingService {
       setByTenantId: parentTenantId,
       ...(input.balanceFrom ? { balanceFrom: input.balanceFrom } : {}),
     };
-    const existing = (
-      await this.policies.list({
-        where: {
-          tenantId: values.tenantId,
-          subscriberKind: values.subscriberKind,
-          subscriberExternalId: values.subscriberExternalId,
-          projectId: values.projectId,
-          serviceKey: values.serviceKey,
-          metricKey: values.metricKey,
-          period: values.period,
-          name: values.name,
-        },
-        limit: 1,
-      })
-    )[0];
-    if (existing) {
-      if (tenantKey(existing.setByTenantId) !== parentTenantId) {
-        throw new ResellerBillingError(
-          `Spending policy '${input.name}' already exists for this child and was not set by this parent.`,
-          'POLICY_CONFLICT',
-        );
+    // Authorized above; the row belongs to the child, so write it outside
+    // the parent's own tenant scope.
+    return authorized(async () => {
+      const existing = (
+        await this.policies.list({
+          where: {
+            tenantId: values.tenantId,
+            subscriberKind: values.subscriberKind,
+            subscriberExternalId: values.subscriberExternalId,
+            projectId: values.projectId,
+            serviceKey: values.serviceKey,
+            metricKey: values.metricKey,
+            period: values.period,
+            name: values.name,
+          },
+          limit: 1,
+        })
+      )[0];
+      if (existing) {
+        if (!tenantKey(existing.setByTenantId)) {
+          throw new ResellerBillingError(
+            `Spending policy '${input.name}' already exists for this child and was set by the child.`,
+            'POLICY_CONFLICT',
+          );
+        }
+        Object.assign(existing, values);
+        await existing.save();
+        return existing;
       }
-      Object.assign(existing, values);
-      await existing.save();
-      return existing;
-    }
-    return this.policies.create(values);
+      return this.policies.create(values);
+    });
   }
 
   /** Credit a prepaid balance policy the parent set on its child. */
@@ -461,24 +501,26 @@ export class ResellerBillingService {
       parentTenantId,
       relationship.childTenantId,
     );
-    const policy = await this.policies.get(input.spendingPolicyId);
-    if (
-      !policy ||
-      tenantKey(policy.tenantId) !== relationship.childTenantId ||
-      tenantKey(policy.setByTenantId) !== parentTenantId
-    ) {
-      throw new ResellerBillingError(
-        `Spending policy ${input.spendingPolicyId} is not a policy this parent set on the child.`,
-        'POLICY_NOT_FOUND',
-      );
-    }
-    return this.evaluator.grantCredit({
-      spendingPolicyId: input.spendingPolicyId,
-      amount: input.amount,
-      reason: input.reason,
-      source: input.source,
-      sourceId: input.sourceId,
-      grantedByTenantId: parentTenantId,
+    return authorized(async () => {
+      const policy = await this.policies.get(input.spendingPolicyId);
+      if (
+        !policy ||
+        tenantKey(policy.tenantId) !== relationship.childTenantId ||
+        tenantKey(policy.setByTenantId) !== parentTenantId
+      ) {
+        throw new ResellerBillingError(
+          `Spending policy ${input.spendingPolicyId} is not a policy this parent set on the child.`,
+          'POLICY_NOT_FOUND',
+        );
+      }
+      return this.evaluator.grantCredit({
+        spendingPolicyId: input.spendingPolicyId,
+        amount: input.amount,
+        reason: input.reason,
+        source: input.source,
+        sourceId: input.sourceId,
+        grantedByTenantId: parentTenantId,
+      });
     });
   }
 
@@ -512,8 +554,13 @@ export class ResellerBillingService {
     return relationship;
   }
 
-  private async requireBook(id: string): Promise<PriceBook> {
-    const book = await this.books.get(id);
+  /**
+   * Read a book's metadata to learn its publisher and kind before deciding
+   * authorization. Books belong to their seller, so the read is not scoped to
+   * the caller; nothing beyond a validation error is returned on denial.
+   */
+  private async readBook(id: string): Promise<PriceBook> {
+    const book = await authorized(() => this.books.get(id));
     if (!book?.id) {
       throw new ResellerBillingError(
         `Price book ${id} was not found.`,
@@ -528,7 +575,7 @@ export class ResellerBillingService {
     kind: PriceBookKind,
   ): Promise<PriceBook> {
     assertCurrency(leg.currency);
-    const book = await this.requireBook(leg.priceBookId);
+    const book = await this.readBook(leg.priceBookId);
     if (book.kind !== kind) {
       throw new ResellerBillingError(
         `Price book '${book.bookKey}' is a ${book.kind} book, not ${kind}.`,
@@ -543,7 +590,6 @@ export class ResellerBillingService {
     tenantId: string,
     childTenantId?: string,
     allowOwnTenant = false,
-    kinds?: PriceBookKind[],
   ): Promise<void> {
     if (
       isSystemContext() ||
@@ -553,7 +599,6 @@ export class ResellerBillingService {
         action,
         tenantId,
         childTenantId,
-        kinds,
       }))
     ) {
       return;

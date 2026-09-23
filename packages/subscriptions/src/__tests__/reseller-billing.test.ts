@@ -526,6 +526,24 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
     expect(rating.charge.amount).toBe(20);
   });
 
+  it('never lets the reseller or child publish the wholesale book that charges it', async () => {
+    const own = await system(() =>
+      books.create({
+        tenantId: RESELLER,
+        bookKey: 'self-wholesale',
+        kind: 'wholesale',
+      }),
+    );
+    await expect(
+      system(() =>
+        reseller.assignPriceBooks({
+          childTenantId: CHILD,
+          wholesale: { priceBookId: String(own.id), currency: 'USD' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'PRICE_BOOK_OWNER_MISMATCH' });
+  });
+
   it('requires system context or host authorization for reseller mutations', async () => {
     await expect(
       withTenant({ tenantId: RESELLER }, () =>
@@ -545,15 +563,28 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       authorized.assignPriceBooks({ childTenantId: CHILD, retail: null }),
     );
     expect(authorize).toHaveBeenCalledWith({
-      action: 'assign_price_books',
+      action: 'assign_retail_price_book',
       tenantId: RESELLER,
       childTenantId: CHILD,
-      kinds: ['retail'],
     });
+    // The wholesale leg is authorized by the book's publisher, not the reseller.
+    authorize.mockClear();
+    await withTenant({ tenantId: RESELLER }, () =>
+      authorized.assignPriceBooks({
+        childTenantId: CHILD,
+        wholesale: { priceBookId: String(wholesaleBook.id), currency: 'CAD' },
+      }),
+    );
+    expect(authorize).toHaveBeenCalledWith({
+      action: 'assign_wholesale_price_book',
+      tenantId: PROVIDER,
+      childTenantId: CHILD,
+    });
+    expect(authorize).toHaveBeenCalledTimes(1);
     expect(
       await system(() => reseller.getPriceBookAssignment(CHILD)),
     ).toMatchObject({
-      wholesale: { priceBookId: wholesaleBook.id, currency: 'USD' },
+      wholesale: { priceBookId: wholesaleBook.id, currency: 'CAD' },
       retail: null,
     });
     // A seller may define prices in its own book under its own context.
@@ -869,6 +900,106 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
           }),
         ),
       ).rejects.toThrow();
+    });
+
+    it("retires a former parent's delegated policy when the child changes reseller", async () => {
+      const staleCap = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          name: 'Cap',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          limitAmount: 60,
+        }),
+      );
+      await rateApproved(10); // 50 retail owed to RESELLER
+      await system(async () => {
+        await relationships.setRelationship({
+          childTenantId: CHILD,
+          resellerTenantId: OTHER_RESELLER,
+          billingOwnerMode: 'reseller',
+        });
+      });
+      const at = new Date();
+      const input = {
+        tenantId: CHILD,
+        metricKey: 'ai.tokens',
+        estimatedAmount: 20,
+        currency: 'USD',
+        at,
+      };
+      // Without a relationship reader delegated policies fail closed.
+      expect(await evaluator().evaluate(input)).toMatchObject({
+        state: 'blocked',
+        matchedPolicyId: staleCap.id,
+      });
+      const aware = new SpendingPolicyEvaluator(
+        policies,
+        charges,
+        adjustments,
+        { retailCharges, credits, billingRelationships: relationships },
+      );
+      expect(await system(() => aware.evaluate(input))).toMatchObject({
+        state: 'ok',
+        matchedPolicyId: null,
+      });
+      // The new parent may take over the name; its cap ignores retail owed to
+      // the former reseller.
+      const replaced = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: OTHER_RESELLER,
+          childTenantId: CHILD,
+          name: 'Cap',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          limitAmount: 30,
+        }),
+      );
+      expect(replaced.id).toBe(staleCap.id);
+      expect(await system(() => aware.evaluate(input))).toMatchObject({
+        state: 'ok',
+        projectedAmount: 20,
+      });
+    });
+
+    it('guards delegated credit grants at the model', async () => {
+      const balance = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          name: 'Prepaid',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          period: 'balance',
+        }),
+      );
+      await withTenant({ tenantId: CHILD }, async () => {
+        await expect(
+          credits.create({
+            tenantId: CHILD,
+            spendingPolicyId: String(balance.id),
+            amount: 1000,
+            currency: 'USD',
+            grantedByTenantId: RESELLER,
+          }),
+        ).rejects.toThrow();
+      });
+      await expect(
+        system(() =>
+          credits.create({
+            tenantId: CHILD,
+            spendingPolicyId: String(balance.id),
+            amount: 1000,
+            currency: 'EUR',
+            grantedByTenantId: RESELLER,
+          }),
+        ),
+      ).rejects.toThrow();
+      expect(await credits.list({ where: {} })).toHaveLength(0);
     });
 
     it('rejects credit on a non-balance policy', async () => {

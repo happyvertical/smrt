@@ -150,9 +150,24 @@ const rating = await commercial.rateUsage({
 
 Mutations require a system context, a super-admin bypass, or a host
 `authorize` callback, like `BillingRelationshipService`; a seller may also
-define prices in its own book under its own tenant context. Rating reads a
-seller's books across tenants, so run it where the host's tenancy rules allow
-that (typically a system context).
+define prices in its own book under its own tenant context. The callback
+receives the tenant whose authority the action exercises: the book's publisher
+for `define_prices` and `assign_wholesale_price_book`, the parent for
+`assign_retail_price_book` and `manage_child_spending`. Never authorize a
+reseller for the wholesale leg that charges it; a wholesale book published by
+the reseller or child it would charge is always refused. Once authorized, the
+service writes in a system context, because a parent's writes land on rows the
+child owns.
+
+Rating reads a seller's books across tenants, so run it where the host's
+tenancy rules allow that (typically a system context). Spending evaluation can
+run in the child's own tenant context: a `wholesale`-basis policy reads only
+the sum of the parent's charges for that child's usage. Pass
+`billingRelationships` to `SpendingPolicyEvaluator.create()` so a former
+parent's delegated policies stop applying after the child changes reseller;
+without it they keep applying (fail closed), and the new parent may replace
+them by name. A parent's `retail` cap counts only what the child owes that
+parent.
 
 ## Svelte entry point
 

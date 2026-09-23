@@ -12,6 +12,7 @@ import {
   isSuperAdminBypass,
   isSystemContext,
   TenantIsolationError,
+  withSystemContext,
 } from '@happyvertical/smrt-tenancy';
 import type { SqlAdapterType } from '@happyvertical/sql';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
@@ -599,6 +600,7 @@ export class CommercialUsageService {
       assignment.wholesalePriceBookId,
       'wholesale',
     );
+    assertWholesalePublisher(wholesaleBook, resellerTenantId, childTenantId);
     const wholesaleRule = await this.selectBookRule(
       wholesaleBook,
       usage.metricKey,
@@ -1080,6 +1082,12 @@ export type AutoTopUpHook = (
 
 export interface SpendingPolicyEvaluatorOptions extends SmrtClassOptions {
   autoTopUp?: AutoTopUpHook;
+  /**
+   * The smrt-tenancy relationship reader. When supplied, a delegated policy
+   * applies only while its `setByTenantId` is the tenant's current reseller;
+   * without it every delegated policy applies (fail closed).
+   */
+  billingRelationships?: BillingRelationshipReader;
 }
 
 export interface GrantCreditInput {
@@ -1098,6 +1106,7 @@ export interface SpendingPolicyEvaluatorExtensions {
   retailCharges?: RetailChargeCollection;
   credits?: CreditGrantCollection;
   autoTopUp?: AutoTopUpHook;
+  billingRelationships?: BillingRelationshipReader;
 }
 
 interface LedgerRow {
@@ -1123,7 +1132,7 @@ export class SpendingPolicyEvaluator {
     private readonly extensions: SpendingPolicyEvaluatorExtensions = {},
   ) {}
   static async create(options: SpendingPolicyEvaluatorOptions = {}) {
-    const { autoTopUp, ...classOptions } = options;
+    const { autoTopUp, billingRelationships, ...classOptions } = options;
     const policies = await SpendingPolicyCollection.create(classOptions);
     const sharedOptions = { ...classOptions, db: policies.db };
     return new SpendingPolicyEvaluator(
@@ -1134,6 +1143,7 @@ export class SpendingPolicyEvaluator {
         retailCharges: await RetailChargeCollection.create(sharedOptions),
         credits: await CreditGrantCollection.create(sharedOptions),
         autoTopUp,
+        billingRelationships,
       },
     );
   }
@@ -1157,7 +1167,10 @@ export class SpendingPolicyEvaluator {
         active: true,
       },
     });
-    const matchingPolicies = selectPolicies(candidates, normalizedInput);
+    const matchingPolicies = await this.withoutStaleDelegations(
+      input.tenantId,
+      selectPolicies(candidates, normalizedInput),
+    );
     if (matchingPolicies.length === 0)
       return {
         allowed: true,
@@ -1176,6 +1189,25 @@ export class SpendingPolicyEvaluator {
         ? decision
         : mostRestrictive,
     );
+  }
+
+  /**
+   * Drop delegated policies whose parent is no longer the tenant's reseller,
+   * when a relationship reader is configured.
+   */
+  private async withoutStaleDelegations(
+    tenantId: string,
+    policies: SpendingPolicy[],
+  ): Promise<SpendingPolicy[]> {
+    const reader = this.extensions.billingRelationships;
+    if (!reader || !policies.some((policy) => tenantKey(policy.setByTenantId)))
+      return policies;
+    const relationship = await reader.getRelationship(tenantId);
+    const currentParent = tenantKey(relationship?.resellerTenantId);
+    return policies.filter((policy) => {
+      const setBy = tenantKey(policy.setByTenantId);
+      return !setBy || setBy === currentParent;
+    });
   }
 
   /**
@@ -1283,9 +1315,10 @@ export class SpendingPolicyEvaluator {
     }
     let credit = await this.creditFor(policy);
     const projectedAmount = spent + estimatedAmount;
-    if (projectedAmount > credit && this.extensions.autoTopUp && policy.id) {
+    const policyId = policy.id;
+    if (projectedAmount > credit && this.extensions.autoTopUp && policyId) {
       const grant = await this.extensions.autoTopUp({
-        policyId: policy.id,
+        policyId,
         tenantId: String(policy.tenantId),
         setByTenantId: tenantKey(policy.setByTenantId),
         currency: policy.currency,
@@ -1294,14 +1327,19 @@ export class SpendingPolicyEvaluator {
         shortfall: projectedAmount - credit,
       });
       if (grant) {
-        await this.recordGrant(policy, {
-          spendingPolicyId: policy.id,
-          amount: grant.amount,
-          reason: grant.reason ?? 'auto top-up',
-          source: grant.source ?? 'auto_top_up',
-          sourceId: grant.sourceId,
-          grantedByTenantId: tenantKey(policy.setByTenantId),
-        });
+        // The hook is host code configured on this evaluator; its grant is
+        // recorded with the policy's own grantor even when evaluation runs in
+        // the constrained child's tenant context.
+        await withSystemContext(() =>
+          this.recordGrant(policy, {
+            spendingPolicyId: policyId,
+            amount: grant.amount,
+            reason: grant.reason ?? 'auto top-up',
+            source: grant.source ?? 'auto_top_up',
+            sourceId: grant.sourceId,
+            grantedByTenantId: tenantKey(policy.setByTenantId),
+          }),
+        );
         credit = await this.creditFor(policy);
       }
     }
@@ -1330,28 +1368,56 @@ export class SpendingPolicyEvaluator {
     if (policy.subscriberExternalId)
       scope.subscriberExternalId = policy.subscriberExternalId;
 
+    const setBy = tenantKey(policy.setByTenantId);
     if (policy.basis === 'retail') {
       const { retailCharges } = await this.getLedgers();
-      const rows = await retailCharges.list({
-        where: { ...scope, tenantId, status: 'approved' },
-      });
-      return sumScoped(policy, rows, ['approved']);
+      const where: Record<string, unknown> = {
+        ...scope,
+        tenantId,
+        status: 'approved',
+      };
+      // A parent's cap counts only what the child owes that parent.
+      if (setBy) where.resellerTenantId = setBy;
+      const rows = await retailCharges.list({ where });
+      return sumScoped(
+        policy,
+        rows.filter(
+          (row) => !setBy || tenantKey(row.resellerTenantId) === setBy,
+        ),
+        ['approved'],
+      );
     }
 
-    const payer =
-      policy.basis === 'wholesale' ? tenantKey(policy.setByTenantId) : tenantId;
-    if (!payer) return 0;
+    if (policy.basis === 'wholesale') {
+      if (!setBy) return 0;
+      // Reviewed cross-tenant read: the parent's provider charges for this
+      // child's usage, bounded to (payer = setBy, usageTenantId = tenant) and
+      // reduced to a sum, so a child-context evaluation can enforce its
+      // parent's wholesale cap without reading the parent's other rows.
+      return withSystemContext(() =>
+        this.sumProviderCharges(policy, scope, setBy, tenantId),
+      );
+    }
+    return this.sumProviderCharges(policy, scope, tenantId);
+  }
+
+  private async sumProviderCharges(
+    policy: SpendingPolicy,
+    scope: Record<string, unknown>,
+    payer: string,
+    usageTenantId?: string,
+  ): Promise<number> {
     const where: Record<string, unknown> = {
       ...scope,
       tenantId: payer,
       status: ['approved', 'adjusted'],
     };
-    if (policy.basis === 'wholesale') where.usageTenantId = tenantId;
+    if (usageTenantId) where.usageTenantId = usageTenantId;
     const rows = await this.charges.list({ where });
     const scopedCharges = rows.filter(
       (charge) =>
-        (policy.basis !== 'wholesale' ||
-          tenantKey(charge.usageTenantId) === tenantKey(tenantId)) &&
+        (!usageTenantId ||
+          tenantKey(charge.usageTenantId) === tenantKey(usageTenantId)) &&
         (charge.status === 'approved' || charge.status === 'adjusted') &&
         matchesChargeScope(policy, charge),
     );
@@ -1464,6 +1530,24 @@ function sumScoped(
       (row) => statuses.includes(row.status) && matchesChargeScope(policy, row),
     )
     .reduce((sum, row) => sum + row.amount, 0);
+}
+
+/**
+ * The provider leg must be priced by someone other than the payer: a reseller
+ * (or its child) never publishes the wholesale book it is charged from.
+ */
+export function assertWholesalePublisher(
+  book: PriceBook,
+  resellerTenantId: string,
+  childTenantId: string,
+): void {
+  const publisher = tenantKey(book.tenantId);
+  if (publisher === resellerTenantId || publisher === childTenantId) {
+    throw new ResellerBillingError(
+      `Wholesale price book '${book.bookKey}' is published by the tenant it would charge.`,
+      'PRICE_BOOK_OWNER_MISMATCH',
+    );
+  }
 }
 
 async function loadBook(

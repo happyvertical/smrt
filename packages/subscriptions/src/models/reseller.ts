@@ -12,7 +12,15 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  isSuperAdminBypass,
+  isSystemContext,
+  TenantIsolationError,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
+import { tenantKey } from '../utils.js';
 
 /**
  * `wholesale` books price what a service provider charges a reseller for its
@@ -241,11 +249,43 @@ export class CreditGrant extends SmrtObject {
         'Credit grant amounts must be nonzero integer minor units (cents).',
       );
     }
-    if (!this.id) return;
-    const row = await this.db.get(this.tableName, { id: this.id });
-    if (row) {
+    if (this.id) {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      if (row) {
+        throw new Error(
+          'Credit grants are append-only; record a reversing grant instead.',
+        );
+      }
+    }
+    const policy = this.spendingPolicyId
+      ? ((await this.db.get('_smrt_spending_policies', {
+          id: this.spendingPolicyId,
+        })) as Record<string, unknown> | null)
+      : null;
+    if (
+      policy?.period !== 'balance' ||
+      tenantKey(policy.tenant_id as string) !== tenantKey(this.tenantId) ||
+      policy.currency !== this.currency
+    ) {
       throw new Error(
-        'Credit grants are append-only; record a reversing grant instead.',
+        'Credit grants must credit a balance policy of the same tenant and currency.',
+      );
+    }
+    // A parent's delegated balance is funded only by that parent.
+    const setBy = tenantKey(policy.set_by_tenant_id as string);
+    if (!setBy) return;
+    if (tenantKey(this.grantedByTenantId) !== setBy) {
+      throw new TenantIsolationError(
+        'Delegated balance credit must be granted by the parent that set it.',
+      );
+    }
+    if (
+      !isSystemContext() &&
+      !isSuperAdminBypass() &&
+      tenantKey(getTenantId()) !== setBy
+    ) {
+      throw new TenantIsolationError(
+        'Only the parent that set a delegated policy can grant it credit.',
       );
     }
   }
