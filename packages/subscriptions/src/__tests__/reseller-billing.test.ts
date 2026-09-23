@@ -1058,6 +1058,20 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
       if (!row) throw new Error('missing policy');
       row.period = 'month';
       await expect(system(() => row.save())).rejects.toThrow();
+      // An upsert onto the same conflict key cannot change it either.
+      await expect(
+        system(() =>
+          policies.create({
+            tenantId: CHILD,
+            name: 'Prepaid',
+            basis: 'retail',
+            currency: 'EUR',
+            behavior: 'block',
+            period: 'balance',
+            setByTenantId: RESELLER,
+          }),
+        ),
+      ).rejects.toThrow();
       expect(
         (await policies.list({ where: { name: 'Prepaid' } }))[0],
       ).toMatchObject({ currency: 'USD', period: 'balance' });

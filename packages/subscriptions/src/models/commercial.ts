@@ -338,8 +338,9 @@ export class SpendingPolicy extends SmrtObject {
       }
       if (!this.balanceFrom) this.balanceFrom = new Date();
     }
-    await this.assertBalanceLedgerStable();
-    await this.assertDelegationAuthority();
+    const targets = await this.persistedTargets();
+    await this.assertBalanceLedgerStable(targets);
+    await this.assertDelegationAuthority(targets);
   }
 
   /**
@@ -347,27 +348,26 @@ export class SpendingPolicy extends SmrtObject {
    * changing either would silently detach the ledger, so create a new
    * balance instead.
    */
-  protected async assertBalanceLedgerStable(): Promise<void> {
-    if (!this.id) return;
-    const row = await this.getCanonicalPersistedRow({ id: this.id });
-    if (row?.period !== 'balance') return;
-    if (this.period !== 'balance' || row.currency !== this.currency) {
-      throw new Error(
-        'A balance policy cannot change currency or period; create a new balance policy.',
-      );
+  protected async assertBalanceLedgerStable(
+    rows: Array<Record<string, unknown> | null>,
+  ): Promise<void> {
+    for (const row of rows) {
+      if (row?.period !== 'balance') continue;
+      if (this.period !== 'balance' || row.currency !== this.currency) {
+        throw new Error(
+          'A balance policy cannot change currency or period; create a new balance policy.',
+        );
+      }
     }
   }
 
   /**
-   * A delegated policy belongs to the parent that set it: the constrained
-   * child cannot create one in a parent's name, loosen it, or delete it.
-   * Checks both the persisted row (by id, or by conflict key for an upsert)
-   * and the incoming value.
+   * The rows this save can overwrite: by id and, because a new object may
+   * already carry a generated id, by conflict key (an upsert target).
    */
-  protected async assertDelegationAuthority(): Promise<void> {
-    // A new object may already carry a generated id, so look the row up by
-    // both its id and its conflict key: an upsert onto a delegated policy's
-    // key would otherwise overwrite it.
+  protected async persistedTargets(): Promise<
+    Array<Record<string, unknown> | null>
+  > {
     const byId = this.id
       ? await this.getCanonicalPersistedRow({ id: this.id })
       : null;
@@ -383,6 +383,19 @@ export class SpendingPolicy extends SmrtObject {
           name: this.name,
         })
       : null;
+    return [byId, byKey];
+  }
+
+  /**
+   * A delegated policy belongs to the parent that set it: the constrained
+   * child cannot create one in a parent's name, loosen it, or delete it.
+   * Checks both the persisted row (by id, or by conflict key for an upsert)
+   * and the incoming value.
+   */
+  protected async assertDelegationAuthority(
+    targets?: Array<Record<string, unknown> | null>,
+  ): Promise<void> {
+    const [byId, byKey] = targets ?? (await this.persistedTargets());
     const owners = new Set(
       [byId?.set_by_tenant_id, byKey?.set_by_tenant_id, this.setByTenantId]
         .filter((value): value is string => Boolean(value))
