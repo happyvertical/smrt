@@ -7,8 +7,10 @@
  * lock, one FIFO queue. This sharing is REQUIRED for correctness, not an
  * optimization: if each collection held its OWN leader lock, two tabs could each
  * win a different collection's lock and both replay the (shared) queue,
- * double-POSTing. One lock per namespace ⇒ one replayer per namespace across all
- * tabs.
+ * double-POSTing. One lock per namespace route ⇒ one replayer per route across
+ * all tabs. Since #3021 a route is `sync-apply` (every sync-apply collection;
+ * keeps the pre-#3021 lock name) or one consumer-declared transport, and a tab
+ * leads only routes it has a binding for, so FIFO and backoff are per route.
  *
  * Replay maps sync-apply results onto durable transitions per the contract's
  * "Web outbox (#1762)" consumer notes
@@ -129,6 +131,30 @@ interface OutboxBindingRecord {
   onSyncStateChange?: (event: SyncStateEvent) => void;
   onConflict?: (conflict: OutboxConflict) => void;
   transport?: OutboxCommandTransport;
+  /** The replay route this binding serves, if any (see {@link routeOf}). */
+  route?: string;
+}
+
+/** The route every sync-apply row replays through. */
+const SYNC_APPLY_ROUTE = 'sync-apply';
+
+/**
+ * The replay route a row belongs to: `sync-apply`, or `transport:<name>`.
+ * Leadership, FIFO, and backoff gating are all per route (#3021): a tab leads
+ * only routes it can actually serve, so a leader lacking a route never strands
+ * another tab's rows for it.
+ */
+function routeOf(row: { transport?: string }): string {
+  return row.transport === undefined
+    ? SYNC_APPLY_ROUTE
+    : `transport:${row.transport}`;
+}
+
+/** Cross-tab leadership for one route in this tab. */
+interface RouteLeadership {
+  release: LeadershipHandle;
+  isLeader: boolean;
+  refs: number;
 }
 
 /** A read-only view of one queued item, for {@link OutboxEngine.snapshot}. */
@@ -180,7 +206,8 @@ export class OutboxEngine {
   >();
   /**
    * The sync-apply endpoint, adopted from the first binding that declares one.
-   * Until then, sync-apply rows are HELD (never dropped) — see `drainOnce`.
+   * A tab without one never leads the sync-apply route, so its rows wait for a
+   * tab that does (never dropped) — see `drainOnce`.
    */
   private syncApply: OutboxSyncApplyTarget | undefined;
 
@@ -192,10 +219,12 @@ export class OutboxEngine {
   private readonly ready: Promise<void>;
   /** True when IndexedDB was unavailable and the engine is a durable no-op. */
   private degraded = false;
-  /** Leadership handle; set once we've requested the leader lock. */
-  private leadership: LeadershipHandle | undefined;
-  /** True while this tab holds leadership. */
-  private isLeader = false;
+  /**
+   * Per-route leadership, requested when the first binding serving a route
+   * attaches and released when the last one detaches. Exactly one tab replays a
+   * given route; a tab never leads a route it has no binding for.
+   */
+  private readonly leaders = new Map<string, RouteLeadership>();
   /** Unregister fn from the durable-store registry. */
   private unregisterResource: (() => void) | undefined;
   /** True once dispose() ran — guards late async continuations. */
@@ -219,7 +248,6 @@ export class OutboxEngine {
     this.config = config;
     this.ready = this.open();
     this.wireOnlineListener();
-    this.requestLeadership();
     // Kick a drain once the queue has finished opening. Leadership can be
     // granted (single-tab fallback: a microtask; Web Locks: whenever the lock
     // frees) BEFORE the async `open()` resolves — in which case that early
@@ -280,19 +308,51 @@ export class OutboxEngine {
     this.onlineListener = listener;
   }
 
-  /** Request cross-tab leadership; drain whenever we hold it. */
-  private requestLeadership(): void {
-    const lockName = `smrt-web-outbox-leader:${this.config.namespace}`;
-    this.leadership = acquireLeadership(
+  /**
+   * Request cross-tab leadership for `route` (ref-counted per tab). The
+   * sync-apply route keeps the pre-#3021 lock name, so it stays mutually
+   * exclusive with tabs running an older build; each transport route has its
+   * own lock.
+   */
+  private acquireRoute(route: string): void {
+    const existing = this.leaders.get(route);
+    if (existing) {
+      existing.refs += 1;
+      return;
+    }
+    const root = `smrt-web-outbox-leader:${this.config.namespace}`;
+    const lockName = route === SYNC_APPLY_ROUTE ? root : `${root}:${route}`;
+    const entry: RouteLeadership = {
+      release: () => {},
+      isLeader: false,
+      refs: 1,
+    };
+    this.leaders.set(route, entry);
+    entry.release = acquireLeadership(
       lockName,
       () => {
-        this.isLeader = true;
+        entry.isLeader = true;
         void this.drain();
       },
       () => {
-        this.isLeader = false;
+        entry.isLeader = false;
       },
     );
+  }
+
+  /** Drop one reference to `route`; the last one releases its lock. */
+  private releaseRoute(route: string): void {
+    const entry = this.leaders.get(route);
+    if (!entry) return;
+    entry.refs -= 1;
+    if (entry.refs > 0) return;
+    this.leaders.delete(route);
+    entry.release();
+  }
+
+  /** Does this tab currently lead `route`? */
+  private leads(route: string): boolean {
+    return this.leaders.get(route)?.isLeader === true;
   }
 
   /**
@@ -305,10 +365,16 @@ export class OutboxEngine {
    */
   registerCollection(binding: OutboxCollectionBinding): object {
     this.refCount += 1;
+    const route = binding.transport
+      ? routeOf({ transport: binding.object })
+      : binding.syncApply
+        ? SYNC_APPLY_ROUTE
+        : undefined;
     const record: OutboxBindingRecord = {
       onSyncStateChange: binding.onSyncStateChange,
       onConflict: binding.onConflict,
       transport: binding.transport,
+      route,
     };
     let set = this.listenersByObject.get(binding.object);
     if (!set) {
@@ -319,14 +385,9 @@ export class OutboxEngine {
     if (binding.syncApply && !this.syncApply) {
       this.syncApply = binding.syncApply;
     }
-    // A newly declared route may unblock rows held for it — a transport name
-    // or the sync-apply endpoint reloaded from disk before this binding
-    // attached. Drain is gated, so this is a no-op when nothing is due.
-    if ((binding.transport || binding.syncApply) && !this.disposed) {
-      void this.ready.then(() => {
-        if (!this.disposed) void this.drain();
-      });
-    }
+    // Leading a newly served route drains its backlog (the grant callback
+    // drains; the constructor's post-open drain covers an early grant).
+    if (route && !this.disposed) this.acquireRoute(route);
     return record;
   }
 
@@ -349,9 +410,10 @@ export class OutboxEngine {
    */
   async unregisterCollection(object: string, record: object): Promise<boolean> {
     const set = this.listenersByObject.get(object);
-    if (set) {
-      set.delete(record as never);
+    if (set?.delete(record as OutboxBindingRecord)) {
       if (set.size === 0) this.listenersByObject.delete(object);
+      const route = (record as OutboxBindingRecord).route;
+      if (route) this.releaseRoute(route);
     }
     this.refCount = Math.max(0, this.refCount - 1);
     if (this.refCount > 0) return false;
@@ -492,11 +554,11 @@ export class OutboxEngine {
   }
 
   /**
-   * The replay loop. Gated on: (a) holding leadership, (b) not paused by an
+   * The replay loop. Gated on: (a) leading at least one route, (b) not paused by an
    * auth failure, (c) `navigator.onLine !== false`, (d) IndexedDB usable. Drains
-   * all rows due now (`nextAttemptAt <= now`), oldest-first, chunked into
-   * batches of ≤1000 per POST, one POST at a time to preserve FIFO across
-   * chunks. Concurrency-coalesced: a drain requested while one runs sets a flag
+   * every led route's rows due now (`nextAttemptAt <= now`), oldest-first per
+   * route; sync-apply chunks into batches of ≤1000 per POST, one send at a time
+   * to preserve each route's FIFO. Concurrency-coalesced: a drain requested while one runs sets a flag
    * to run exactly one more pass, so overlapping triggers never interleave.
    */
   private async drain(): Promise<void> {
@@ -521,59 +583,48 @@ export class OutboxEngine {
   /** One drain pass: send every currently-due batch, then schedule backoff. */
   private async drainOnce(): Promise<void> {
     if (this.disposed) return;
-    if (!this.isLeader) return;
     if (this.paused) return;
     if (this.degraded || !this.queue) return;
     if (isDefinitelyOffline()) return;
 
-    const pending = (await this.queue.all()).filter(
-      (row) => row.state === 'pending',
-    );
-    if (pending.length === 0) return;
-
-    const now = Date.now();
-    const firstBlocked = pending.findIndex((row) => row.nextAttemptAt > now);
-    const due = firstBlocked === -1 ? pending : pending.slice(0, firstBlocked);
-    if (due.length === 0) {
-      // The oldest pending row is backed off; FIFO forbids draining newer rows.
-      await this.scheduleNextBackoff();
-      return;
+    // Group pending rows by route, oldest-first, keeping only routes this tab
+    // leads. A row whose route no tab here serves is simply not ours: it waits
+    // for the tab that leads its route (or for its queue/collection to attach
+    // after a reload) and never blocks another route. A transport row is never
+    // re-routed to `sync/apply` — that is exactly the path its consumer closed.
+    const byRoute = new Map<string, OutboxRow[]>();
+    for (const row of await this.queue.all()) {
+      if (row.state !== 'pending') continue;
+      const route = routeOf(row);
+      if (!this.leads(route)) continue;
+      const rows = byRoute.get(route);
+      if (rows) rows.push(row);
+      else byRoute.set(route, [row]);
     }
 
-    // Walk oldest-first. Contiguous sync-apply rows chunk into ≤1000-item
-    // batches; a transport row (#3021) replays alone through its declared
-    // transport. One send at a time, so FIFO holds across both routes. A row
-    // whose route is not declared in this tab yet (a reload rehydrated it
-    // before its queue/collection attached) is HELD: the pass stops behind it
-    // WITHOUT scheduling a backoff wake (that would hot-spin at delay 0) and
-    // WITHOUT re-routing it — a transport row must never fall back to
-    // `sync/apply`, which is exactly the path its consumer closed. The binding
-    // that declares the route kicks the next drain.
-    let i = 0;
-    while (i < due.length) {
-      if (this.disposed || this.paused || !this.isLeader) break;
-      const head = due[i];
-      if (head.transport !== undefined) {
-        const transport = this.transportFor(head.transport);
-        if (!transport) return;
-        const drained = await this.sendCommand(head, transport);
-        i += 1;
-        if (!drained) break;
-        continue;
+    const now = Date.now();
+    for (const [route, rows] of byRoute) {
+      // FIFO per route: the oldest backed-off row gates every newer one.
+      const firstBlocked = rows.findIndex((row) => row.nextAttemptAt > now);
+      const due = firstBlocked === -1 ? rows : rows.slice(0, firstBlocked);
+      if (route === SYNC_APPLY_ROUTE) {
+        const syncApply = this.syncApply;
+        if (!syncApply) continue;
+        // Chunk into ≤1000-item batches, one POST at a time.
+        for (let i = 0; i < due.length; i += MAX_SYNC_APPLY_BATCH_SIZE) {
+          if (this.disposed || this.paused || !this.leads(route)) break;
+          const chunk = due.slice(i, i + MAX_SYNC_APPLY_BATCH_SIZE);
+          if (!(await this.sendBatch(chunk, syncApply))) break;
+        }
+      } else {
+        for (const row of due) {
+          if (this.disposed || this.paused || !this.leads(route)) break;
+          const transport = this.transportFor(row.transport ?? row.object);
+          if (!transport) break;
+          if (!(await this.sendCommand(row, transport))) break;
+        }
       }
-      const syncApply = this.syncApply;
-      if (!syncApply) return;
-      let end = i;
-      while (
-        end < due.length &&
-        end - i < MAX_SYNC_APPLY_BATCH_SIZE &&
-        due[end].transport === undefined
-      ) {
-        end += 1;
-      }
-      const drained = await this.sendBatch(due.slice(i, end), syncApply);
-      i = end;
-      if (!drained) break;
+      if (this.disposed || this.paused) return;
     }
 
     // After processing, some rows may have been re-queued with a backoff gate;
@@ -586,7 +637,8 @@ export class OutboxEngine {
    * and map the outcome through the SAME transitions as a sync-apply result. A
    * throw is the ambiguous path (request may or may not have landed): the row
    * stays `pending` with backoff and is resent under the same idempotency key.
-   * Returns false when the row remains pending, stopping this pass (FIFO).
+   * Returns false when the row remains pending, stopping this route's pass
+   * (FIFO per route).
    */
   private async sendCommand(
     row: OutboxRow,
@@ -838,13 +890,24 @@ export class OutboxEngine {
    */
   private async scheduleNextBackoff(): Promise<void> {
     if (this.disposed || this.paused || !this.queue) return;
-    const rows = await this.queue.all();
-    const firstPending = rows.find((r) => r.state === 'pending');
-    if (!firstPending) return;
-    const now = Date.now();
-    // FIFO: the oldest pending row gates every newer row, even if a newer row
-    // has no backoff delay.
-    const delay = Math.max(0, firstPending.nextAttemptAt - now);
+    // FIFO per route: each led route's oldest pending row gates it, even if a
+    // newer row has no backoff delay. Routes this tab does not lead are not
+    // ours to wake for.
+    let nextAt: number | undefined;
+    const seen = new Set<string>();
+    for (const row of await this.queue.all()) {
+      if (row.state !== 'pending') continue;
+      const route = routeOf(row);
+      if (seen.has(route)) continue;
+      seen.add(route);
+      if (!this.leads(route)) continue;
+      nextAt =
+        nextAt === undefined
+          ? row.nextAttemptAt
+          : Math.min(nextAt, row.nextAttemptAt);
+    }
+    if (nextAt === undefined) return;
+    const delay = Math.max(0, nextAt - Date.now());
     if (this.backoffTimer) clearTimeout(this.backoffTimer);
     const timers = globalThis as {
       setTimeout?: typeof setTimeout;
@@ -881,8 +944,8 @@ export class OutboxEngine {
       target.removeEventListener('online', this.onlineListener);
       this.onlineListener = undefined;
     }
-    this.leadership?.();
-    this.leadership = undefined;
+    for (const entry of this.leaders.values()) entry.release();
+    this.leaders.clear();
     this.unregisterResource?.();
     this.unregisterResource = undefined;
     // Wait for any in-flight open to settle before closing.

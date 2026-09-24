@@ -116,6 +116,22 @@ describe('persistDataSurface', () => {
     expect(await s.load()).toBeUndefined();
   });
 
+  it('drops a save still pending when the namespace is wiped, then persists new saves', async () => {
+    const k = key();
+    const s = surface({ namespace: k, identity, debounceMs: 60_000 });
+    await s.load(); // store open and registered
+    s.save([{ id: 'p1', at: '08:00' }]);
+    await wipeDurableStore(durableStoreNamespace(k));
+    await s.flush();
+    expect(await s.load()).toBeUndefined();
+
+    s.save([{ id: 'p2', at: '09:00' }]);
+    await s.dispose();
+    expect(await surface({ namespace: k, identity }).load()).toEqual([
+      { id: 'p2', at: '09:00' },
+    ]);
+  });
+
   it('rejects an identity without a surfaceId', () => {
     expect(() =>
       persistDataSurface({

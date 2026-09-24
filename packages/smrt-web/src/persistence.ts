@@ -121,6 +121,12 @@ interface SharedSnapshotEngine {
   refCount: number;
   /** Unregister the durable resource registered on first attach. */
   unregister: (() => void) | undefined;
+  /**
+   * Bumped synchronously when a `wipeDurableStore` clears this namespace, so a
+   * data-surface save captured before the wipe can tell it is stale and must
+   * not write the wiped rows back (#3021).
+   */
+  wipeEpoch: number;
 }
 
 /** Registry mapping a namespace string to its shared snapshot engine. */
@@ -158,6 +164,7 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
     refCount: 1,
     unregister: undefined,
     ready: Promise.resolve(undefined),
+    wipeEpoch: 0,
   };
   engine.ready = (async () => {
     const usable = await probeIndexedDb();
@@ -173,7 +180,10 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
       // outbox's own registered resource.
       engine.unregister = registerDurableResource(namespace, {
         kind: 'persisted-collection',
-        clear: () => store.clear(),
+        clear: () => {
+          engine.wipeEpoch += 1;
+          return store.clear();
+        },
       });
       return store;
     } catch {
@@ -446,7 +456,9 @@ export function persistDataSurface<TRow extends object = object>(
   const debounceMs = config.debounceMs ?? DEFAULT_PERSIST_DEBOUNCE_MS;
   let engine: SharedSnapshotEngine | undefined =
     acquireSnapshotEngine(namespace);
-  let pending: Array<Record<string, unknown>> | undefined;
+  let pending:
+    | { rows: Array<Record<string, unknown>>; wipeEpoch: number }
+    | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Serialize writes so a slower earlier save can never land after a later one.
   let writing: Promise<void> = Promise.resolve();
@@ -456,15 +468,20 @@ export function persistDataSurface<TRow extends object = object>(
       clearTimeout(timer);
       timer = undefined;
     }
-    const rows = pending;
+    const next = pending;
     pending = undefined;
     const current = engine;
-    if (!rows || !current) return writing;
+    if (!next || !current) return writing;
     writing = writing.then(async () => {
       const store = await current.ready;
-      if (!store) return;
+      // A wipe since this save was captured (logout, tenant switch) means these
+      // rows belong to a cleared scope: drop them rather than resurrect them.
+      // No await between this check and `save` opening its transaction, and
+      // IndexedDB runs readwrite transactions on one store in creation order,
+      // so a later wipe's clear always lands after this write.
+      if (!store || current.wipeEpoch !== next.wipeEpoch) return;
       try {
-        await store.save(key, rows);
+        await store.save(key, next.rows);
       } catch {
         // Best-effort, like persistCollection: a failed write only means the
         // next load does not warm.
@@ -490,7 +507,10 @@ export function persistDataSurface<TRow extends object = object>(
           'persistDataSurface.save requires an array of rows',
         );
       }
-      pending = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+      pending = {
+        rows: rows.map((row) => ({ ...(row as Record<string, unknown>) })),
+        wipeEpoch: engine.wipeEpoch,
+      };
       if (timer) clearTimeout(timer);
       timer = setTimeout(
         () => {

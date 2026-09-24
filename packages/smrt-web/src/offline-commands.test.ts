@@ -22,6 +22,7 @@ import {
   durableStoreNamespace,
   wipeDurableStore,
 } from './durable-store.js';
+import { OutboxEngine } from './offline/engine.js';
 import {
   getOutboxHandle,
   type OfflineCommandQueue,
@@ -294,7 +295,7 @@ describe('offlineCommandQueue — writes with no generated collection', () => {
     expect(sent).toEqual(['a', 'a']);
   });
 
-  it('keeps one FIFO across transport and sync-apply rows, and a command queue never pins the sync-apply base path', async () => {
+  it('keeps FIFO per route across transport and sync-apply rows, and a command queue never pins the sync-apply base path', async () => {
     vi.stubGlobal('navigator', { onLine: false });
     const key = uniqueKey();
     const order: string[] = [];
@@ -335,10 +336,15 @@ describe('offlineCommandQueue — writes with no generated collection', () => {
 
     vi.stubGlobal('navigator', { onLine: true });
     await q.retry(commandId as string);
-    await waitFor(() => posted.length === 2);
+    await waitFor(() => posted.length === 1 && order.includes('command:c-1'));
 
-    expect(urls).toEqual(['/api/sync/apply', '/api/sync/apply']);
-    expect(order).toEqual(['sync:n-1', 'command:c-1', 'sync:n-2']);
+    // FIFO is per route: sync-apply rows keep their order (one batch here) and
+    // the command replays through its own route.
+    expect(urls).toEqual(['/api/sync/apply']);
+    expect(order.filter((o) => o.startsWith('sync:'))).toEqual([
+      'sync:n-1,n-2',
+    ]);
+    expect(order).toContain('command:c-1');
     expect(await q.snapshot()).toEqual([]);
   });
 
@@ -584,5 +590,93 @@ describe('dataSurfaceActionCommandTransport', () => {
       reason: 'denied',
     });
     expect(r(false)).toEqual({ status: 'rejected', reason: 'rejected' });
+  });
+});
+
+/** A minimal exclusive Web Locks stub shared by simulated tabs. */
+class StubLocks {
+  private readonly held = new Set<string>();
+  private readonly waiting = new Map<string, Array<() => void>>();
+  request(
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<unknown>,
+  ): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const run = () => {
+        this.held.add(name);
+        void callback().then((value) => {
+          this.held.delete(name);
+          this.waiting.get(name)?.shift()?.();
+          resolve(value);
+        });
+      };
+      if (!this.held.has(name)) {
+        queueMicrotask(run);
+        return;
+      }
+      const queue = this.waiting.get(name) ?? [];
+      queue.push(run);
+      this.waiting.set(name, queue);
+      options.signal?.addEventListener('abort', () => {
+        const at = queue.indexOf(run);
+        if (at >= 0) queue.splice(at, 1);
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      });
+    });
+  }
+}
+
+describe('offline outbox — per-route cross-tab leadership', () => {
+  it("a tab leading only sync-apply never strands another tab's command rows", async () => {
+    vi.stubGlobal('navigator', { onLine: true, locks: new StubLocks() });
+    const namespace = durableStoreNamespace(uniqueKey());
+    const config = {
+      namespace,
+      backoff: { initialDelayMs: 100_000, multiplier: 2, maxDelayMs: 100_000 },
+      registerResource: () => () => {},
+    };
+    const urls: string[] = [];
+    const posted: string[][] = [];
+    // Tab A: a sync-apply collection only — it takes the namespace's
+    // sync-apply lock first.
+    const tabA = new OutboxEngine(config);
+    const recordA = tabA.registerCollection({
+      object: 'notes',
+      syncApply: { basePath: '/api', fetchFn: recordingFetch(urls, posted) },
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    // Tab B: a command queue only, sharing the same durable queue.
+    const sent: string[] = [];
+    const tabB = new OutboxEngine(config);
+    const recordB = tabB.registerCollection({
+      object: 'punch',
+      transport: async (command) => {
+        sent.push(command.idempotencyKey);
+        return { status: 'applied' };
+      },
+    });
+    try {
+      const commandId = await tabB.enqueue({
+        kind: 'insert',
+        object: 'punch',
+        rowId: '',
+        data: { at: 't' },
+        transport: 'punch',
+      });
+      await tabA.enqueue({
+        kind: 'insert',
+        object: 'notes',
+        rowId: 'n-1',
+        data: { id: 'n-1' },
+      });
+      await waitFor(() => sent.length === 1 && posted.length === 1);
+      expect(sent).toEqual([commandId]);
+      expect(posted).toEqual([['n-1']]);
+      expect(await tabA.snapshot()).toEqual([]);
+    } finally {
+      await tabB.unregisterCollection('punch', recordB);
+      await tabA.unregisterCollection('notes', recordA);
+    }
   });
 });

@@ -127,7 +127,8 @@ export interface OfflineOutboxConfig<TData extends object = object> {
    * generated write verbs are closed because a hand-written, permission-gated
    * service owns its write rules. Rows are queued under `object.name` and replay
    * ONLY through this transport (never `sync/apply`), each carrying its durable
-   * `idempotencyKey`, with the same four-state machine, FIFO order, and backoff.
+   * `idempotencyKey`, with the same four-state machine, per-route FIFO, and
+   * backoff.
    * See {@link offlineCommandQueue} for writes with no collection at all.
    */
   transport?: OutboxCommandTransport;
@@ -241,9 +242,9 @@ function getPayloadUpdatedAt(
  * is unaffected (the seam's no-op guarantee — the "opt-in per model" AC).
  *
  * The same `namespace` across multiple collections shares ONE engine (one IDB
- * db, one leader lock, one FIFO queue) — so cross-collection ordering and the
- * multi-tab single-replayer guarantee hold across every opted-in collection of a
- * given identity.
+ * db, one queue) — so cross-collection ordering and the multi-tab
+ * single-replayer guarantee hold across every sync-apply collection of a given
+ * identity (one route). A collection with a `transport` is its own route.
  */
 export function offlineOutbox<TData extends object = object>(
   config: OfflineOutboxConfig<TData>,
@@ -326,9 +327,9 @@ export function offlineOutbox<TData extends object = object>(
 export interface OfflineCommandQueueConfig {
   /**
    * The queue's name — the key queued writes are stored and routed under. It
-   * shares the namespace's ONE FIFO with every collection outbox, so it MUST
-   * NOT equal a sibling collection's `definition.name` (their events would
-   * cross). Durable: a write queued under a name replays only once a queue
+   * shares the namespace's durable queue and per-object event routing with
+   * every collection outbox, so it MUST NOT equal a sibling collection's
+   * `definition.name` (their events would cross). Durable: a write queued under a name replays only once a queue
    * with that name (and a transport) is attached again, e.g. after a reload.
    */
   name: string;
@@ -382,7 +383,7 @@ export interface OfflineCommandQueue {
  * permission-gated service — rather than a generated collection (#3021).
  *
  * Shares the namespace's outbox engine with every {@link offlineOutbox}: one
- * IndexedDB queue, one cross-tab leader, one FIFO across both routes, the
+ * IndexedDB queue, a cross-tab leader per route, FIFO within the route, the
  * `pending → uploading → synced | failed` state machine, backoff, auth pause,
  * and the `wipeDurableStore` registration. Each replay carries the write's
  * durable `idempotencyKey`, which the server operation must dedupe on — that

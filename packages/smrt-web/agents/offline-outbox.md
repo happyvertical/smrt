@@ -58,15 +58,18 @@ response → whole batch stays `pending`.
 
 **Shared, namespace-keyed engine** (`offline/engine.ts`,
 `getOrCreateOutboxEngine`): N collections under the same `namespace` share ONE
-ref-counted engine = ONE IndexedDB db + ONE leader lock + ONE FIFO queue. This
+ref-counted engine = ONE IndexedDB db + ONE queue, with one leader lock per
+replay route (see #3021 below; all sync-apply collections are one route). This
 is REQUIRED for correctness, not an optimization — independent per-collection
 locks would let two tabs each win a different collection's lock and both replay.
 The last collection to detach (via `teardown`) disposes the engine; the durable
 ROWS survive for the next load.
 
 **Web Locks leader election** (`offline/leader.ts`): with multiple tabs, exactly
-one replays the queue. A tab requests an EXCLUSIVE `navigator.locks` lock keyed
-`smrt-web-outbox-leader:<namespace>` and holds it while leader; the browser
+one replays each route. A tab requests an EXCLUSIVE `navigator.locks` lock keyed
+`smrt-web-outbox-leader:<namespace>` (sync-apply; unchanged name) or
+`smrt-web-outbox-leader:<namespace>:transport:<name>` for each route it has a
+binding for, and holds it while leader; the browser
 auto-releases on tab crash/close (no heartbeat) so the next tab takes over
 instantly. **Single-tab fallback (documented gap):** no `navigator.locks` →
 warn once + acquire leadership unconditionally; the outbox still replays but the
@@ -116,14 +119,17 @@ anything else incl. `denied` → terminal).
 Invariants:
 
 - **Durable route, never re-routed.** The row stores the transport NAME
-  (functions are not durable). A due row whose name has no attached transport,
-  or a sync-apply row before any binding declared a sync-apply endpoint, is
-  HELD: the pass stops behind it (FIFO) without scheduling a backoff wake — a
-  0 ms wake would hot-spin — and the binding that later declares the route
-  kicks the drain. A transport row never falls back to `sync/apply`: that is
-  the path its consumer closed.
-- **One FIFO across routes.** Contiguous sync-apply rows still batch (≤1000);
-  a transport row replays alone, in order between them.
+  (functions are not durable). A transport row never falls back to
+  `sync/apply`: that is the path its consumer closed.
+- **Per-route leadership, FIFO, and backoff.** Leadership is one Web Lock per
+  route, requested by a tab only while it has a binding serving that route
+  (sync-apply keeps the legacy lock name, so it stays exclusive with older
+  builds). A tab that cannot serve a route never leads it, so it can never
+  strand another tab's rows for that route — the failure a single
+  namespace-wide lock had. Rows of a route no attached tab serves (e.g. after
+  a reload, before its queue re-attaches) simply wait; they gate nothing else.
+  FIFO and backoff gating hold within a route, not across routes; sync-apply
+  rows still batch (≤1000), a transport row replays alone.
 - **Sync-apply endpoint comes from bindings, not the engine creator.** A
   command queue may create the shared engine first; the first sync-apply
   binding supplies `basePath`/`fetchFn`.

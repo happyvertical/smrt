@@ -133,10 +133,10 @@ if (!itemId) {
 ```
 
 Each replay carries the write's durable `idempotencyKey`, which the server
-operation must dedupe on. Both routes share one FIFO, leader lock, backoff, and
-the `pending → uploading → synced | failed` state machine. A reloaded write
-waits until a queue with its name attaches; it is never re-routed to
-`sync/apply`.
+operation must dedupe on. Each route replays FIFO under its own cross-tab
+leader, with the same backoff and `pending → uploading → synced | failed` state
+machine. A reloaded write waits until a queue with its name attaches; it is
+never re-routed to `sync/apply`.
 
 ### Persisted read cache
 
