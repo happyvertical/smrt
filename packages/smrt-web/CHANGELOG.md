@@ -1,5 +1,9 @@
 # @happyvertical/smrt-web
 
+## 0.51.26
+
+No changes in this release.
+
 ## 0.51.25
 
 No changes in this release.

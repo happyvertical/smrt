@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.51.26
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - same-name manifest/table guards missed by #3111 (#3112) (#3113) (core)
+  - consumer class identity regressions from 0.51.25 (#3109, #3110, #3106) (#3111) (core)
+- @happyvertical/smrt-config@0.51.26
+  - @happyvertical/smrt-scanner@0.51.26
+  - @happyvertical/smrt-types@0.51.26
+
 ## 0.51.25
 
 ### Patch Changes
