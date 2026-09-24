@@ -31,7 +31,8 @@
         "scripts/generate-smrt-types.js",
         "AGENTS.md",
         "package.json",
-        "tsconfig*.json"
+        "tsconfig*.json",
+        "!src/**/smrt-generated/**"
       ],
       "outputs": [
         "src/manifest/static-manifest.ts",
@@ -75,7 +76,11 @@
         "package.json",
         "tsconfig*.json",
         "vite.config.ts",
-        "vite.config.js"
+        "vite.config.js",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**"
       ],
       "outputs": [
         "dist/**",
@@ -116,7 +121,15 @@
         "conformance-baseline.yml",
         "package.json",
         "vitest.config.ts",
-        "vitest.config.js"
+        "vitest.config.js",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
+        "!dist/**",
+        "!**/.svelte-kit/**"
       ],
       "outputs": [
         "coverage/**"
@@ -171,7 +184,15 @@
         "src/**",
         "test/**",
         "**/*.ts",
-        "tsconfig*.json"
+        "tsconfig*.json",
+        "!src/manifest/static-manifest.ts",
+        "!src/manifest/static-manifest.json",
+        "!src/manifest/smrt-knowledge.json",
+        "!src/**/smrt-generated/**",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
+        "!dist/**",
+        "!**/.svelte-kit/**"
       ],
       "cache": true
     },

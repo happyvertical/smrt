@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+    },
+    "generate:test": {
+      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+    },
+    "build": {
+      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+    },
+    "typecheck": {
+      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+    },
+    "test": {
+      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+    }
+  }
+}
