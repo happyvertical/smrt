@@ -182,10 +182,7 @@ async function classify(
  * the manifests point at `ledger_accounts` (the references that pointed at
  * `accounts` before #3098) and at `accounts` (messaging's own references).
  */
-function registeredReferenceColumns(): {
-  ledger: Set<string>;
-  accounts: Set<string>;
-} {
+export function registeredReferenceColumns(): RegisteredReferences {
   const ledger = new Set<string>();
   const accounts = new Set<string>();
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
@@ -203,15 +200,98 @@ function registeredReferenceColumns(): {
   return { ledger, accounts };
 }
 
+/** Registered `table.column` references, by the table they point at. */
+export interface RegisteredReferences {
+  ledger: Set<string>;
+  accounts: Set<string>;
+}
+
+/** One foreign key into the legacy table (`column` is its first column). */
+export interface LegacyForeignKey {
+  constraint: string;
+  table: string;
+  column: string;
+  arity: number;
+}
+
+/** What the move does with each foreign key into the legacy table. */
+export interface ForeignKeyDisposition {
+  /** Composite keys: never a registered single-column reference. */
+  composite: LegacyForeignKey[];
+  /** Single-column keys no registered model declares. */
+  undeclared: LegacyForeignKey[];
+  /** Ledger references: detached, re-added against ledger_accounts. */
+  detach: LegacyForeignKey[];
+  /** Kept (messaging's and the table's own parent link): must not reference a moving row. */
+  keep: LegacyForeignKey[];
+}
+
+/**
+ * Sort every foreign key into the legacy table before anything is written.
+ * A constraint no registered model declares would keep pointing at accounts
+ * after the move (blocking later writes), and a CASCADE or SET NULL action on
+ * it would delete or clear rows instead of refusing, so the move refuses
+ * `composite` and `undeclared` outright (#3098).
+ */
+export function classifyForeignKeys(
+  inbound: readonly LegacyForeignKey[],
+  references: RegisteredReferences,
+): ForeignKeyDisposition {
+  const disposition: ForeignKeyDisposition = {
+    composite: [],
+    undeclared: [],
+    detach: [],
+    keep: [],
+  };
+  for (const fk of inbound) {
+    const key = `${fk.table}.${fk.column}`;
+    if (fk.arity > 1) disposition.composite.push(fk);
+    else if (references.ledger.has(key)) disposition.detach.push(fk);
+    else if (fk.table === LEGACY_ACCOUNTS_TABLE || references.accounts.has(key))
+      disposition.keep.push(fk);
+    else disposition.undeclared.push(fk);
+  }
+  return disposition;
+}
+
+/** The refusal for foreign keys the move cannot account for, if any. */
+export function foreignKeyRefusal(
+  disposition: ForeignKeyDisposition,
+): string | undefined {
+  if (disposition.composite.length > 0) {
+    return `Composite foreign key(s) ${disposition.composite.map((fk) => `${fk.constraint} on ${fk.table} (${fk.arity} columns)`).join(', ')} reference "${LEGACY_ACCOUNTS_TABLE}"; no model can declare one, so the move cannot carry it. Nothing was moved. Drop it, or replace it with a single-column reference, then rerun.`;
+  }
+  if (disposition.undeclared.length > 0) {
+    return `Foreign key(s) ${disposition.undeclared.map((fk) => `${fk.table}.${fk.column}`).join(', ')} reference "${LEGACY_ACCOUNTS_TABLE}" but no registered model declares them; nothing was moved. Run the move from the application whose models declare them, or retarget each to "${LEDGER_ACCOUNTS_TABLE}" (or drop it) by hand, then rerun.`;
+  }
+  return undefined;
+}
+
+/**
+ * The SELECT list copying legacy columns into ledger_accounts: values as they
+ * are, converting through text only a column whose legacy type differs from
+ * the manifest's (e.g. TEXT ids where ledger_accounts declares UUID).
+ */
+export function copySelectList(
+  columns: readonly string[],
+  targetTypes: Readonly<Record<string, string | undefined>>,
+  legacyTypes: Readonly<Record<string, string | undefined>>,
+): string {
+  return columns
+    .map((column) => {
+      const to = targetTypes[column];
+      return sameType(legacyTypes[column], to)
+        ? quote(column)
+        : `CAST(CAST(${quote(column)} AS TEXT) AS ${targetType(to)})`;
+    })
+    .join(', ');
+}
+
 /**
  * Every foreign key into the legacy table, composite ones included (`arity`
  * > 1): the move must account for all of them before it writes (#3098).
  */
-async function legacyForeignKeys(
-  db: Queryable,
-): Promise<
-  Array<{ constraint: string; table: string; column: string; arity: number }>
-> {
+async function legacyForeignKeys(db: Queryable): Promise<LegacyForeignKey[]> {
   const result = await db.query(
     `SELECT con.conname AS constraint_name,
             rel.relname AS table_name,
@@ -241,11 +321,13 @@ async function legacyForeignKeys(
   }));
 }
 
-/** Inspect the legacy table without changing anything. */
+/**
+ * Inspect the legacy table without changing anything. Read-only portable SQL,
+ * so it also reports what a SQLite database would need moved.
+ */
 export async function planLedgerAccountsTableMove(
   db: DatabaseInterface,
 ): Promise<LedgerAccountsTableMovePlan> {
-  assertPostgres(db);
   const shape = await readLegacyShape(db);
   if (!shape) return { legacyTable: false, pending: 0, messagingRows: 0 };
   return { legacyTable: true, ...(await classify(db, shape)) };
@@ -329,29 +411,16 @@ export async function migrateLedgerAccountsTable(
       );
     }
 
-    // Account for every foreign key into accounts before writing anything.
-    // Ledger references are detached below; messaging's and the table's own
-    // parent link stay. A constraint no registered model declares would keep
-    // pointing at accounts after the move (blocking later writes), and a
-    // CASCADE or SET NULL action would silently delete or clear rows instead
-    // of refusing, so both refuse here. A kept constraint may not reference a
-    // row that moves.
-    const inbound = await legacyForeignKeys(tx);
-    // A composite key can never be a registered single-column reference.
-    const undeclared = inbound.filter(
-      (fk) =>
-        fk.arity > 1 ||
-        (fk.table !== LEGACY_ACCOUNTS_TABLE &&
-          !references.ledger.has(`${fk.table}.${fk.column}`) &&
-          !references.accounts.has(`${fk.table}.${fk.column}`)),
+    // Account for every foreign key into accounts before writing anything:
+    // refuse what the move cannot carry, and a kept constraint may not
+    // reference a row that moves.
+    const disposition = classifyForeignKeys(
+      await legacyForeignKeys(tx),
+      references,
     );
-    if (undeclared.length > 0) {
-      throw new LedgerAccountsTableMoveError(
-        `Foreign key(s) ${undeclared.map((fk) => `${fk.table}.${fk.column}`).join(', ')} reference "${LEGACY_ACCOUNTS_TABLE}" but no registered model declares them; nothing was moved. Run the move from the application whose models declare them, or retarget each to "${LEDGER_ACCOUNTS_TABLE}" (or drop it) by hand, then rerun.`,
-      );
-    }
-    for (const fk of inbound) {
-      if (references.ledger.has(`${fk.table}.${fk.column}`)) continue;
+    const refusal = foreignKeyRefusal(disposition);
+    if (refusal) throw new LedgerAccountsTableMoveError(refusal);
+    for (const fk of disposition.keep) {
       const survivor =
         fk.table === LEGACY_ACCOUNTS_TABLE ? ` AND NOT ${ledger}` : '';
       const pointing = await tx.query(
@@ -366,18 +435,11 @@ export async function migrateLedgerAccountsTable(
       }
     }
 
-    // Copy values as they are; convert only a column whose legacy type
-    // differs from the manifest's (e.g. TEXT ids where ledger_accounts now
-    // declares UUID), through its text form.
-    const selectList = copyColumns
-      .map((column) => {
-        const to = target.columns[column]?.type;
-        const from = legacy?.columns[column]?.type;
-        return sameType(from, to)
-          ? quote(column)
-          : `CAST(CAST(${quote(column)} AS TEXT) AS ${targetType(to)})`;
-      })
-      .join(', ');
+    const selectList = copySelectList(
+      copyColumns,
+      columnTypes(target),
+      columnTypes(legacy),
+    );
     await tx.query(
       `INSERT INTO ${quote(LEDGER_ACCOUNTS_TABLE)} (${copyColumns
         .map(quote)
@@ -390,13 +452,11 @@ export async function migrateLedgerAccountsTable(
     // next db:migrate adds them against ledger_accounts. References owned by
     // messaging (emails, messages, routes) keep pointing at accounts.
     const detached: string[] = [];
-    for (const foreignKey of inbound) {
-      const key = `${foreignKey.table}.${foreignKey.column}`;
-      if (!references.ledger.has(key)) continue;
+    for (const foreignKey of disposition.detach) {
       await tx.query(
         `ALTER TABLE ${quote(foreignKey.table)} DROP CONSTRAINT ${quote(foreignKey.constraint)}`,
       );
-      detached.push(key);
+      detached.push(`${foreignKey.table}.${foreignKey.column}`);
     }
 
     // Every remaining constraint was checked above; a violation here is a
@@ -420,6 +480,17 @@ export async function migrateLedgerAccountsTable(
 }
 
 const SQL_TYPE = /^[A-Za-z][A-Za-z0-9 _]*(\(\d+(,\s*\d+)?\))?(\[\])?$/;
+
+function columnTypes(
+  schema: { columns: Record<string, { type?: string }> } | null | undefined,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(schema?.columns ?? {}).map(([name, column]) => [
+      name,
+      column.type,
+    ]),
+  );
+}
 
 function sameType(from: string | undefined, to: string | undefined): boolean {
   return (

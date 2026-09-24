@@ -220,7 +220,7 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
       cash.id,
     );
     await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
-      /app_composite_refs\.account_slug/,
+      /Composite foreign key.* on app_composite_refs \(2 columns\)/,
     );
     const refs = await db.query('SELECT COUNT(*) AS n FROM app_composite_refs');
     expect(Number((refs.rows[0] as { n: string }).n)).toBe(1);
