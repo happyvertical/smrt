@@ -5,6 +5,13 @@
  */
 export type { CreateCreditCheckoutInput } from './credits.js';
 export {
+  addBillingMonths,
+  billingPeriodContaining,
+  lastEndedBillingPeriod,
+  prorateMinorUnits,
+  type ScheduledBillingPeriod,
+} from './cycles.js';
+export {
   type EnqueueBillingJobOptions,
   enqueueBillingEvents,
   enqueueBillingPeriodClose,

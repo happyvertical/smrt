@@ -93,6 +93,23 @@ export class BillingAccount extends SmrtObject {
   flatDiscountBasisPoints: number = 0;
   paymentTermsDays: number = 30;
   standing: BillingStanding = 'current';
+  /**
+   * Billing-cycle anchor (#3116). Null bills UTC calendar months; a date bills
+   * monthly periods from it (its day and UTC time of day, clamped to shorter
+   * months), with calendar months before it and a stub period from its month
+   * start to the anchor. Moving it never bills time twice: flat-plan claims
+   * record the time they cover.
+   */
+  @field({ type: 'datetime', nullable: true })
+  billingAnchorAt: Date | null = null;
+  /**
+   * Prorate flat plans to the time they were active inside a period
+   * (#3116): a subscription starting, leaving trial, or canceled mid-period
+   * is billed `price × covered / cycle`, rounded half up to minor units.
+   * Off, a flat plan active at any point of a period is billed in full (the
+   * pre-#3116 behavior).
+   */
+  prorateFlatPlans: boolean = false;
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
@@ -125,6 +142,13 @@ export class BillingAccount extends SmrtObject {
     }
     if (!STANDINGS.includes(this.standing)) {
       throw new Error('standing must be current, past_due, or uncollectible.');
+    }
+    if (
+      this.billingAnchorAt !== null &&
+      (!(this.billingAnchorAt instanceof Date) ||
+        !Number.isFinite(this.billingAnchorAt.getTime()))
+    ) {
+      throw new Error('billingAnchorAt must be a valid date or null.');
     }
   }
 }
@@ -196,8 +220,8 @@ export class BillingPeriodClose extends SmrtObject {
   /**
    * smrt-jobs entry point: close a period for a registered billing runtime.
    * Args: `{ runtime, periodStart?, periodEnd? }` (ISO strings); without a
-   * period the previous calendar month (UTC) is closed, so a daily schedule
-   * is safe.
+   * period each payer's last ended period on its own schedule is closed
+   * (#3116), so a daily schedule is safe.
    */
   @backgroundEligible()
   async runPeriodClose(
@@ -223,13 +247,25 @@ export class BillingPeriodClose extends SmrtObject {
 }
 
 /**
- * A claim that one billable source — a charge, an adjustment, or one period
- * of a flat plan — is billed on exactly one period close. The id is derived
- * from `(sourceType, sourceId)`, so a source can never be claimed twice.
+ * A claim that one billable source — a charge, an adjustment, or a window of
+ * a flat plan — is billed on exactly one period close. The id is derived
+ * from `(sourceType, sourceId)`, so a source can never be claimed twice. A
+ * flat plan's claims record the window they cover and are numbered per
+ * subscription (`<subscriptionId>:seq:<n>`, #3116): only one claimer can take
+ * the next number, so no two cover the same time. Claims written before #3116
+ * are `<subscriptionId>:<periodStart>` with number 0.
  */
 @smrt({
   tableName: '_smrt_billing_line_sources',
   conflictColumns: ['source_type', 'source_id'],
+  // Flat-plan claims are read per subscription line, newest number first
+  // (#3116).
+  indexes: [
+    {
+      name: '_smrt_billing_line_sources_line_key_chain_sequence_idx',
+      columns: ['lineKey', 'chainSequence'],
+    },
+  ],
   api: false,
   cli: false,
   mcp: false,
@@ -251,7 +287,16 @@ export class BillingLineSource extends SmrtObject {
   discount: number = 0;
   /** Metered quantity, informational; fractional like the charge's. */
   quantity: number = 0.0;
+  /**
+   * A flat-plan claim's number within its subscription (1, 2, …; #3116). 0
+   * for other sources and for flat-plan claims written before #3116.
+   */
+  chainSequence: number = 0;
   currency: string = 'USD';
+  /**
+   * The billed window. For a flat plan this is the time the claim covers
+   * (#3116), which later claims for the same subscription never overlap.
+   */
   periodStart: Date | null = null;
   periodEnd: Date | null = null;
 }

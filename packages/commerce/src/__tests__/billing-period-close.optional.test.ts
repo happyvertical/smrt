@@ -27,12 +27,24 @@ import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { InvoiceStatus, PaymentStatus } from '../types/index.js';
 import {
+  addNetworkSite,
+  at,
+  claimedWindows,
+  holdFlatClaim,
+  invoicesOf,
+  overlappingClaims,
+  parkNetwork,
+  updateSubscription,
+} from './helpers/anchor-fixture.js';
+import {
+  type BillingWorld,
   createBillingWorld,
   currentMonth,
   NETWORK,
   PROVIDER,
   SITE,
   SOLO,
+  STRANGER,
 } from './helpers/billing-fixture.js';
 import {
   checkoutEvent,
@@ -240,6 +252,171 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
     expect(grants.map((grant) => grant.amount)).toEqual([5000]);
     expect((await world.provider.getAccount(NETWORK))?.standing).toBe(
       'current',
+    );
+  });
+
+  /** A world on one connection and a peer runtime on a second. */
+  async function twoWorkers(): Promise<{
+    world: BillingWorld;
+    peer: BillingRuntime;
+  }> {
+    const url = String(process.env.DATABASE_URL);
+    const firstDb = await getTestDatabase({
+      type: 'postgres',
+      url,
+      classes: OBJECTS,
+    });
+    connections.push(firstDb);
+    const secondDb = await getTestDatabase({
+      type: 'postgres',
+      url,
+      classes: [],
+      includeSystemTables: false,
+    });
+    connections.push(secondDb);
+    const world = await createBillingWorld(firstDb);
+    const peer = await BillingRuntime.create({
+      db: secondDb,
+      sellerTenantId: PROVIDER,
+      kind: 'provider',
+      provider: world.provider.provider,
+      billingRelationships: world.relationships,
+      ledger: world.ledger,
+    });
+    // Sync provider customers up front so racing workers never write the
+    // accounts themselves.
+    for (const payer of [NETWORK, SOLO]) {
+      const account = await world.provider.getAccount(payer);
+      if (account) await world.provider.ensureProviderCustomer(account);
+    }
+    return { world, peer };
+  }
+
+  it('closes payers on different anchors and a calendar-to-anchor transition concurrently, once (#3116)', async () => {
+    const { world, peer } = await twoWorkers();
+    const networkAnchor = at('2030-03-23T09:30:00Z');
+    await withSystemContext(async () => {
+      await world.provider.upsertAccount({
+        payerTenantId: NETWORK,
+        name: 'Network Co',
+        billingAnchorAt: networkAnchor,
+        prorateFlatPlans: true,
+      });
+    });
+    await updateSubscription(world, SITE, { startedAt: networkAnchor });
+    const added = await addNetworkSite(
+      world,
+      STRANGER,
+      at('2030-04-08T00:00:00Z'),
+    );
+    const solo = await updateSubscription(world, SOLO, {
+      startedAt: at('2030-01-01T00:00:00Z'),
+    });
+    const race = async (now: Date) => {
+      const results = await Promise.all([
+        world.provider.closePeriod({ now }),
+        peer.closePeriod({ now }),
+        peer.closePeriod({ now }),
+      ]);
+      expect(
+        results.flatMap((result) =>
+          result.groups.filter((group) => group.outcome === 'failed'),
+        ),
+      ).toEqual([]);
+    };
+
+    // SOLO is billed February on calendar months, then moves to an anchor.
+    await race(at('2030-03-02T00:00:00Z'));
+    await withSystemContext(() =>
+      peer.upsertAccount({
+        payerTenantId: SOLO,
+        name: 'Solo LLC',
+        billingAnchorAt: at('2030-03-20T00:00:00Z'),
+      }),
+    );
+    for (const day of [
+      '2030-03-21T00:00:00Z',
+      '2030-04-21T00:00:00Z',
+      '2030-04-24T00:00:00Z',
+      '2030-04-25T00:00:00Z',
+    ]) {
+      await race(at(day));
+    }
+    // Retry any close a racing worker found busy.
+    await world.provider.closePeriod({ now: at('2030-04-25T00:00:00Z') });
+
+    expect(await claimedWindows(world, String(solo.id))).toEqual([
+      ['2030-02-01T00:00:00.000Z', '2030-03-01T00:00:00.000Z', 2500],
+      ['2030-03-01T00:00:00.000Z', '2030-03-20T00:00:00.000Z', 1532],
+      ['2030-03-20T00:00:00.000Z', '2030-04-20T00:00:00.000Z', 2500],
+    ]);
+    expect(await claimedWindows(world, String(added.id))).toEqual([
+      ['2030-04-08T00:00:00.000Z', '2030-04-23T09:30:00.000Z', 1242],
+    ]);
+    expect(await overlappingClaims(world)).toEqual([]);
+    expect((await invoicesOf(world, SOLO)).map((i) => i.subtotal)).toEqual([
+      2500, 1532, 2500,
+    ]);
+    expect((await invoicesOf(world, NETWORK)).map((i) => i.subtotal)).toEqual([
+      2500 + 1242,
+    ]);
+    expect(world.stripe.invoices.size).toBe(4);
+  });
+
+  it('serializes flat-plan claims across connections when a schedule changes mid-close (#3116)', async () => {
+    const { world, peer } = await twoWorkers();
+    await parkNetwork(world);
+    await withSystemContext(() =>
+      world.provider.upsertAccount({
+        payerTenantId: SOLO,
+        name: 'Solo LLC',
+        billingAnchorAt: at('2030-02-15T00:00:00Z'),
+      }),
+    );
+    const solo = await updateSubscription(world, SOLO, {
+      startedAt: at('2030-01-01T00:00:00Z'),
+    });
+    const now = at('2030-03-16T00:00:00Z');
+    const hold = holdFlatClaim(world.provider, `subscription|${solo.id}`);
+    try {
+      const stale = world.provider.closePeriod({ now });
+      await hold.reached;
+      await withSystemContext(() =>
+        peer.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          billingAnchorAt: null,
+        }),
+      );
+      await peer.closePeriod({ now });
+      hold.release();
+      await stale;
+    } finally {
+      hold.restore();
+    }
+    expect(await claimedWindows(world, String(solo.id))).toEqual([
+      ['2030-02-01T00:00:00.000Z', '2030-03-01T00:00:00.000Z', 2500],
+      ['2030-03-01T00:00:00.000Z', '2030-03-15T00:00:00.000Z', 1250],
+    ]);
+    const typed = await world.db.query(
+      `SELECT data_type FROM information_schema.columns
+        WHERE (table_name = '_smrt_billing_accounts'
+               AND column_name IN ('billing_anchor_at', 'prorate_flat_plans'))
+           OR (table_name = '_smrt_billing_line_sources'
+               AND column_name = 'chain_sequence')
+        ORDER BY column_name`,
+    );
+    expect(typed.rows.map((row) => row.data_type)).toEqual([
+      'timestamp with time zone',
+      'bigint',
+      'boolean',
+    ]);
+    const index = await world.db.query(
+      `SELECT indexdef FROM pg_indexes
+        WHERE indexname = '_smrt_billing_line_sources_line_key_chain_sequence_idx'`,
+    );
+    expect(String(index.rows[0]?.indexdef)).toContain(
+      '(line_key, chain_sequence)',
     );
   });
 

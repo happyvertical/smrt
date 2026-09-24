@@ -42,6 +42,20 @@ for usage.
   close that nets to a credit keeps its claims and ends `carried_forward`;
   its subtotal is a `credit_carry_forward` source for the payer's next billed
   close, which marks the carried close `completed`.
+- **Cycles and flat-plan coverage (#3116).** `cycles.ts` is the schedule
+  (pure; `BillingAccount.billingAnchorAt`, null = calendar months). A close
+  with no period closes each payer's `lastEndedBillingPeriod()`. Flat-plan
+  claims are the exception to "id from the source": their `sourceId` is
+  `<subscriptionId>:seq:<chainSequence>` and their `periodStart/End` is the
+  exact time they bill. `claimFlatWindow()` reads the last number, then the
+  coverage (claims ending after the window start), claims one gap as number
+  n + 1, and retries on conflict; reading in that order is what makes it
+  safe. That numbering, not the period, stops overlaps when schedules or
+  payers change — never claim a flat plan outside it, and keep both reads
+  bounded (no whole-history scans). Each numbered claim is its own invoice
+  line keyed `lineKey|periodStart` (a function of the claim alone, so a
+  resumed close rebuilds the same line ids). Proration is
+  `prorateMinorUnits()` (half up, BigInt) against the period's full cycle.
 - **System tables.** `BillingAccount`, `BillingPeriodClose`, and
   `BillingLineSource` are not tenant-scoped and have no generated surface.
   Collections stay unexported; models are root exports (#3082). Invoices,
@@ -67,7 +81,9 @@ for usage.
   two-decimal only (sdk#1269); `autoTopUp` cannot charge a saved card
   (sdk#1270); Stripe line discounts and uncollectible status are worked around
   as negative lines and event types (sdk#1271). `RetailCharge` has no
-  adjustment ledger. Flat plans are monthly, in arrears, without proration.
+  adjustment ledger. Flat plans are monthly, in arrears; plan changes are not
+  prorated (#3119). The Stripe adapter passes line service periods but
+  the accounting SDK does not send them to Stripe yet (happyvertical/sdk#1274).
 
 ## Cross-Package References
 

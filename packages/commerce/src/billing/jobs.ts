@@ -115,8 +115,10 @@ async function enqueue(
 }
 
 /**
- * Queue a period close. Without a period the job closes the previous
- * calendar month when it runs, so enqueueing it daily is safe.
+ * Queue a period close. Without a period the job closes each payer's last
+ * ended period on its own schedule when it runs (the previous calendar month,
+ * or the last anchor-to-anchor period for an anchored account, #3116), so
+ * enqueueing it daily is safe.
  */
 export function enqueueBillingPeriodClose(
   options: EnqueueBillingJobOptions & { periodStart?: Date; periodEnd?: Date },
