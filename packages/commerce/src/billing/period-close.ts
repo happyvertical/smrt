@@ -1385,16 +1385,14 @@ interface InvoiceLineGroup {
 
 function groupLines(sources: BillingLineSource[]): InvoiceLineGroup[] {
   const lines = new Map<string, InvoiceLineGroup & { quantity: number }>();
-  // A close holding several flat claims for one subscription (#3116: time
-  // around an already billed window) shows each with its own service period.
-  const flatCounts = new Map<string, number>();
   for (const source of sources) {
-    if (source.sourceType !== 'subscription_period') continue;
-    flatCounts.set(source.lineKey, (flatCounts.get(source.lineKey) ?? 0) + 1);
-  }
-  for (const source of sources) {
+    // Each numbered flat claim (#3116) is its own line with its own service
+    // period, keyed by the claim alone so a resumed close rebuilds the same
+    // line ids whatever other claims it gained; pre-#3116 claims (number 0)
+    // keep their original key.
     const key =
-      (flatCounts.get(source.lineKey) ?? 0) > 1
+      source.sourceType === 'subscription_period' &&
+      Number(source.chainSequence) > 0
         ? `${source.lineKey}|${source.periodStart?.toISOString() ?? ''}`
         : source.lineKey;
     let line = lines.get(key);

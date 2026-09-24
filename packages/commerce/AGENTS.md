@@ -52,8 +52,10 @@ for usage.
   n + 1, and retries on conflict; reading in that order is what makes it
   safe. That numbering, not the period, stops overlaps when schedules or
   payers change — never claim a flat plan outside it, and keep both reads
-  bounded (no whole-history scans). Proration is `prorateMinorUnits()` (half
-  up, BigInt) against the period's full cycle.
+  bounded (no whole-history scans). Each numbered claim is its own invoice
+  line keyed `lineKey|periodStart` (a function of the claim alone, so a
+  resumed close rebuilds the same line ids). Proration is
+  `prorateMinorUnits()` (half up, BigInt) against the period's full cycle.
 - **System tables.** `BillingAccount`, `BillingPeriodClose`, and
   `BillingLineSource` are not tenant-scoped and have no generated surface.
   Collections stay unexported; models are root exports (#3082). Invoices,

@@ -8,7 +8,7 @@
 
 import { TenantUsageMetricCollection } from '@happyvertical/smrt-subscriptions';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addBillingMonths,
   billingPeriodContaining,
@@ -433,6 +433,67 @@ describe('smrt#3116 anchored period close', () => {
       ['2030-03-05T00:00:00.000Z', '2030-03-12T00:00:00.000Z', 565],
       ['2030-03-20T00:00:00.000Z', '2030-04-05T00:00:00.000Z', 1290],
     ]);
+  });
+
+  it('resumes a close whose window widened without leaving a stale line', async () => {
+    const networkAnchor = at('2030-03-23T09:30:00Z');
+    await anchor(NETWORK, networkAnchor, true);
+    await updateSubscription(world, SITE, { startedAt: networkAnchor });
+    await updateSubscription(world, SOLO, { startedAt: at('2040-01-01') });
+    const added = await addNetworkSite(
+      world,
+      STRANGER,
+      at('2030-04-08T00:00:00Z'),
+    );
+    const now = at('2030-04-24T00:00:00Z');
+    // The first attempt claims and writes every invoice line, then dies
+    // before recording the close as invoiced.
+    const closes = world.provider.closes;
+    const get = closes.get.bind(closes);
+    let armed = true;
+    const spy = vi
+      .spyOn(closes, 'get')
+      .mockImplementation(async (...args: Parameters<typeof get>) => {
+        const close = await get(...args);
+        if (close && armed) {
+          const save = close.save.bind(close);
+          Object.assign(close, {
+            save: async () => {
+              if (armed && close.status === 'invoiced') {
+                armed = false;
+                throw new Error('worker died');
+              }
+              return save();
+            },
+          });
+        }
+        return close;
+      });
+    try {
+      await expect(world.provider.closePeriod({ now })).rejects.toThrow(
+        'worker died',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    // Proration is switched off before the retry: the added site's window
+    // widens to the whole period and the retry claims the rest of it.
+    await anchor(NETWORK, networkAnchor, false);
+    await world.provider.closePeriod({ now });
+    expect(await claimedWindows(world, String(added.id))).toEqual([
+      ['2030-03-23T09:30:00.000Z', '2030-04-08T00:00:00.000Z', 1258],
+      ['2030-04-08T00:00:00.000Z', '2030-04-23T09:30:00.000Z', 1242],
+    ]);
+    const [invoice] = await invoicesOf(world, NETWORK);
+    const lines = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceLineItemCollection.create({ db: world.db })).findByInvoice(
+        String(invoice?.id),
+      ),
+    );
+    expect(lines).toHaveLength(3);
+    expect(lines.reduce((sum, line) => sum + line.amount, 0)).toBe(5000);
+    expect(invoice?.subtotal).toBe(5000);
+    expect(world.stripe.invoices.size).toBe(1);
   });
 
   it('closes an explicit period only for payers whose schedule has it', async () => {
