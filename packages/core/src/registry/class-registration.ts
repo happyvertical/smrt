@@ -53,6 +53,7 @@ import {
 } from './manifest-field-merge.js';
 import {
   findClass,
+  findClassesByName,
   getCanonicalClassName,
   hasClassCaseInsensitive,
   qualifyExtendsName,
@@ -950,9 +951,20 @@ function registerUntracked(
     // A class whose own package is known resolves its manifest by qualified
     // identity only; a simple-name lookup could return another package's
     // same-named class (#3098).
+    // When that identity has no manifest entry (e.g. an explicit
+    // `packageName` on a class scanned into another package's manifest), the
+    // simple-name entry still applies unless another package registers a
+    // class of this name.
     manifestEntry =
       ownQualifiedKey && ownPackageDeclaresClass
-        ? discoverManifestSync(ownQualifiedKey)
+        ? (discoverManifestSync(ownQualifiedKey) ??
+          (findClassesByName(name).some(
+            (candidate) =>
+              !!candidate.packageName &&
+              candidate.packageName !== newPackageName,
+          )
+            ? undefined
+            : discoverManifestSync(name)))
         : discoverManifestSync(name);
   }
   const runtimeTenantScopedDeclaration =
