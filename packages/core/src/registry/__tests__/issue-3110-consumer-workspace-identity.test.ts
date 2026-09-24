@@ -182,6 +182,25 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     ws.writeModel('packages/market/src/LicenseSale.js', 'LicenseSale', {
       tableName: 'license_sales',
     });
+    ws.writeModel('packages/market/src/BareLicenseSale.js', 'LicenseSale');
+    // No scoped package.json above it: its package cannot be derived.
+    ws.writeModel('scripts/UnscopedLicenseSale.js', 'LicenseSale');
+    ws.writeModel('apps/app/build/server/chunks/order.js', 'Order', {
+      tableStrategy: 'sti',
+    });
+    ws.write(
+      'apps/app/build/server/chunks/consumer-contract.js',
+      [
+        'export function define({ smrt, SmrtObject }) {',
+        "  const ConsumerContract = smrt({ tableName: 'consumer_contracts', tableStrategy: 'sti' })(class ConsumerContract extends SmrtObject {});",
+        "  return smrt({ tableStrategy: 'sti' })(class LicenseSale extends ConsumerContract {});",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    ws.writeModel('packages/market/src/ExplicitLicenseSale.js', 'LicenseSale', {
+      packageName: '@fixture/market',
+    });
     // Bundled output of the app (adapter-node / SvelteKit build).
     ws.writeModel(
       'apps/app/build/server/chunks/license-sale.js',
@@ -400,9 +419,102 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     expect(stub?.constructor).not.toBe(consumer);
   });
 
-  it("does not take a dependency's cached, unregistered manifest entry", async () => {
-    // An app manifest declaring the dependency makes discovery load its
-    // manifest before any of its classes (or stubs) register.
+  for (const variant of [
+    'stack-derived',
+    'stack-derived, no table',
+    'explicit packageName',
+    'bundled, no table',
+  ] as const) {
+    it(`does not take a dependency's cached, unregistered manifest entry (${variant})`, async () => {
+      // An app manifest declaring the dependency makes discovery load its
+      // manifest before any of its classes (or stubs) register.
+      getManifestCache().set('@fixture/commerce', {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/commerce',
+        objects: {
+          '@fixture/commerce:LicenseSale': manifestEntry({
+            className: 'LicenseSale',
+            packageName: '@fixture/commerce',
+            filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+            tableName: 'contracts',
+            fields: { contractNumber: { type: 'text' } },
+          }),
+        },
+      } as never);
+      try {
+        const consumer = await defineFrom(
+          ws.path(
+            {
+              'stack-derived': 'packages/market/src/LicenseSale.js',
+              'stack-derived, no table':
+                'packages/market/src/BareLicenseSale.js',
+              'explicit packageName':
+                'packages/market/src/ExplicitLicenseSale.js',
+              'bundled, no table':
+                'apps/app/build/server/chunks/license-sale-bare.js',
+            }[variant],
+          ),
+        );
+        expect(identity(consumer)?.qualifiedName).toBe(
+          variant === 'bundled, no table'
+            ? '@fixture/app:LicenseSale'
+            : '@fixture/market:LicenseSale',
+        );
+        expect(identity(consumer)?.schema?.tableName).not.toBe('contracts');
+        expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
+          'contractNumber',
+        );
+      } finally {
+        getManifestCache().delete('@fixture/commerce');
+      }
+    });
+  }
+
+  for (const shape of [
+    {
+      name: 'its own STI base',
+      file: 'apps/app/build/server/chunks/order.js',
+      className: 'Order',
+      foreignTable: 'commerce_orders',
+      table: 'orders',
+    },
+    {
+      name: 'a subtype of its own registered STI base',
+      file: 'apps/app/build/server/chunks/consumer-contract.js',
+      className: 'LicenseSale',
+      foreignTable: 'contracts',
+      table: 'consumer_contracts',
+    },
+  ]) {
+    it(`gives a bundled consumer STI class (${shape.name}) its own table, not a cached dependency entry's`, async () => {
+      getManifestCache().set('@fixture/commerce', {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/commerce',
+        objects: {
+          [`@fixture/commerce:${shape.className}`]: manifestEntry({
+            className: shape.className,
+            packageName: '@fixture/commerce',
+            filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+            tableName: shape.foreignTable,
+            fields: { contractNumber: { type: 'text' } },
+          }),
+        },
+      } as never);
+      try {
+        const ctor = await defineFrom(ws.path(shape.file));
+        expect(identity(ctor)?.qualifiedName).toBe(
+          `@fixture/app:${shape.className}`,
+        );
+        expect(identity(ctor)?.schema?.tableName).toBe(shape.table);
+      } finally {
+        getManifestCache().delete('@fixture/commerce');
+      }
+    });
+  }
+
+  it("does not give a class of unknown package a cached dependency entry's table", async () => {
     getManifestCache().set('@fixture/commerce', {
       version: '1',
       timestamp: 0,
@@ -418,16 +530,8 @@ describe('consumer workspace registration (#3106, #3110)', () => {
       },
     } as never);
     try {
-      const consumer = await defineFrom(
-        ws.path('packages/market/src/LicenseSale.js'),
-      );
-      expect(identity(consumer)?.qualifiedName).toBe(
-        '@fixture/market:LicenseSale',
-      );
-      expect(identity(consumer)?.schema?.tableName).toBe('license_sales');
-      expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
-        'contractNumber',
-      );
+      const ctor = await defineFrom(ws.path('scripts/UnscopedLicenseSale.js'));
+      expect(ctor.SMRT_TABLE_NAME).not.toBe('contracts');
     } finally {
       getManifestCache().delete('@fixture/commerce');
     }

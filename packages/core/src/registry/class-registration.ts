@@ -116,7 +116,7 @@ function pluralizeCollection(className: string): string {
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
  */
-function isBundledOutputPath(sourceFile: string | undefined): boolean {
+export function isBundledOutputPath(sourceFile: string | undefined): boolean {
   if (!sourceFile) return false;
   return (
     sourceFile.includes('.svelte-kit/output/') ||
@@ -175,9 +175,9 @@ export function isSameSourcePath(
   const [absolute, relative] = aAbsolute ? [a, b] : [b, a];
   const path = getNodeBuiltins()?.path;
   if (!path) return false;
+  // Platform `resolve` keeps a Windows drive-letter root absolute.
   return relativeSourceRoots().some(
-    (root) =>
-      normalizeSourcePath(path.posix.resolve(root, relative)) === absolute,
+    (root) => normalizeSourcePath(path.resolve(root, relative)) === absolute,
   );
 }
 
@@ -1158,6 +1158,20 @@ function registerUntracked(
   // the dependency's identity, fields and table (#3106). In bundled output
   // (where the stack package is the bundle's) the entry is refused only when
   // the table the decorator resolved for the class differs from the entry's.
+  // A class whose package is unknown still refuses a packaged entry that
+  // describes another file (#3112): bundled output keeps it, where the stack
+  // cannot name the declaring package, as for a stack-derived identity.
+  const unknownPackageManifestEntry = () => {
+    const entry = discoverManifestSync(name);
+    if (
+      !entry?.packageName ||
+      newInBundledContext ||
+      isSameSourcePath(newSourceFile, entry.filePath)
+    ) {
+      return entry;
+    }
+    return undefined;
+  };
   const simpleNameManifestFallback = () => {
     if (
       findClassesByName(name).some(
@@ -1170,7 +1184,13 @@ function registerUntracked(
     const entry = discoverManifestSync(name);
     const foreignEntry =
       !!entry?.packageName && entry.packageName !== newPackageName;
-    if (!foreignEntry || ownPackageDeclaresClass) return entry;
+    if (!foreignEntry) return entry;
+    // Another package's entry describes this class only when it describes
+    // this class's own file: a class scanned into another package's
+    // manifest under that package's key (core's own fixtures with an
+    // explicit `packageName`, #3098).
+    if (isSameSourcePath(newSourceFile, entry?.filePath)) return entry;
+    if (ownPackageDeclaresClass) return undefined;
     const entryTable =
       entry?.schema?.tableName || entry?.decoratorConfig?.tableName;
     const declaresOtherTable =
@@ -1201,7 +1221,7 @@ function registerUntracked(
       ? (discoverManifestSync(ownQualifiedKey) ??
         sourceManifestPackage?.entry ??
         simpleNameManifestFallback())
-      : discoverManifestSync(name);
+      : unknownPackageManifestEntry();
   }
   const runtimeTenantScopedDeclaration =
     getConstructorTenantScopedDeclarations().get(ctor);

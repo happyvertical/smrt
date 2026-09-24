@@ -64,6 +64,8 @@ import {
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
   ensureTenantScopedField,
+  isBundledOutputPath,
+  isSameSourcePath,
 } from './registry/class-registration';
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
@@ -139,6 +141,7 @@ import {
   getLegacyFieldDecorators,
   getMethodDecorators,
   getNextDbId,
+  getSourceFileFromStack,
   getStiSiblingsLoaded,
   setNextDbId,
   verboseLog,
@@ -3748,6 +3751,29 @@ export class ObjectRegistry {
   }
 }
 
+/** Whether `ctor` directly extends a framework base, i.e. is its own STI base. */
+function isOwnStiBase(ctor: unknown): boolean {
+  const parent = Object.getPrototypeOf(ctor) as { name?: string } | null;
+  return (
+    !parent?.name || parent.name === 'SmrtObject' || parent.name === 'SmrtClass'
+  );
+}
+
+/** Whether a registered ancestor of `ctor` uses single-table inheritance. */
+function extendsStiClass(ctor: unknown): boolean {
+  for (
+    let parent = Object.getPrototypeOf(ctor);
+    parent && parent !== Function.prototype;
+    parent = Object.getPrototypeOf(parent)
+  ) {
+    const registered = ObjectRegistry.getClassByConstructor(
+      parent as typeof SmrtObject,
+    );
+    if (registered?.config?.tableStrategy === 'sti') return true;
+  }
+  return false;
+}
+
 /**
  * Registers a `SmrtObject` or `SmrtCollection` subclass with the global `ObjectRegistry`.
  *
@@ -3934,11 +3960,34 @@ export function smrt(config: SmartObjectConfig = {}) {
         const ownQualifiedKey = ownPackage
           ? createQualifiedName(ownPackage, ctor.name)
           : undefined;
-        const manifestEntry = discoverCachedManifestSync(
+        const lookedUp = discoverCachedManifestSync(
           ownQualifiedKey && getClasses().has(ownQualifiedKey)
             ? ownQualifiedKey
             : ctor.name,
         );
+        // Another package's same-named entry (its manifest loaded before its
+        // classes register) is not this class's table unless it describes
+        // this very file (#3106). Bundled output with a stack-derived package
+        // keeps it only when nothing else can resolve the table: a declared
+        // STI subtype whose STI base is not registered yet (an inlined subtype
+        // evaluated before its base). Every other class resolves its own table
+        // below — its explicit or derived name, or its registered STI base's —
+        // so an inlined copy of a dependency's class resolves the same table
+        // and a consumer's same-named class a different one.
+        // A class whose own package is unknown cannot claim a packaged entry
+        // either; the same-file and STI exceptions below still apply.
+        const foreignEntry =
+          !!lookedUp?.packageName && lookedUp.packageName !== ownPackage;
+        const sourceFile = foreignEntry ? getSourceFileFromStack() : undefined;
+        const keepForeignEntry =
+          !foreignEntry ||
+          isSameSourcePath(sourceFile, lookedUp?.filePath) ||
+          (!config.packageName &&
+            isBundledOutputPath(sourceFile) &&
+            config.tableStrategy === 'sti' &&
+            !isOwnStiBase(ctor) &&
+            !extendsStiClass(ctor));
+        const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {
