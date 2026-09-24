@@ -3819,6 +3819,14 @@ export class ObjectRegistry {
  * @see {@link SmartObjectConfig} for all available configuration options
  * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
+/** Whether `ctor` directly extends a framework base, i.e. is its own STI base. */
+function isOwnStiBase(ctor: unknown): boolean {
+  const parent = Object.getPrototypeOf(ctor) as { name?: string } | null;
+  return (
+    !parent?.name || parent.name === 'SmrtObject' || parent.name === 'SmrtClass'
+  );
+}
+
 /** Whether a registered ancestor of `ctor` uses single-table inheritance. */
 function extendsStiClass(ctor: unknown): boolean {
   for (
@@ -3960,11 +3968,12 @@ export function smrt(config: SmartObjectConfig = {}) {
         // Another package's same-named entry (its manifest loaded before its
         // classes register) is not this class's table unless it describes
         // this very file (#3106). Bundled output with a stack-derived package
-        // keeps it only for a single-table-inheritance class: an inlined STI
-        // subtype may precede its registered base and needs the base's table
-        // from the manifest, while any other class resolves its own table
-        // below — an inlined copy of a dependency's class resolves the same
-        // one, and a consumer's same-named class a different one.
+        // keeps it only when nothing else can resolve the table: a declared
+        // STI subtype whose STI base is not registered yet (an inlined subtype
+        // evaluated before its base). Every other class resolves its own table
+        // below — its explicit or derived name, or its registered STI base's —
+        // so an inlined copy of a dependency's class resolves the same table
+        // and a consumer's same-named class a different one.
         const foreignEntry =
           !!lookedUp?.packageName &&
           !!ownPackage &&
@@ -3975,7 +3984,9 @@ export function smrt(config: SmartObjectConfig = {}) {
           isSameSourcePath(sourceFile, lookedUp?.filePath) ||
           (!config.packageName &&
             isBundledOutputPath(sourceFile) &&
-            (config.tableStrategy === 'sti' || extendsStiClass(ctor)));
+            config.tableStrategy === 'sti' &&
+            !isOwnStiBase(ctor) &&
+            !extendsStiClass(ctor));
         const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;

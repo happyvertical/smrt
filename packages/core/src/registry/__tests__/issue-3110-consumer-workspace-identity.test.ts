@@ -183,6 +183,19 @@ describe('consumer workspace registration (#3106, #3110)', () => {
       tableName: 'license_sales',
     });
     ws.writeModel('packages/market/src/BareLicenseSale.js', 'LicenseSale');
+    ws.writeModel('apps/app/build/server/chunks/order.js', 'Order', {
+      tableStrategy: 'sti',
+    });
+    ws.write(
+      'apps/app/build/server/chunks/consumer-contract.js',
+      [
+        'export function define({ smrt, SmrtObject }) {',
+        "  const ConsumerContract = smrt({ tableName: 'consumer_contracts', tableStrategy: 'sti' })(class ConsumerContract extends SmrtObject {});",
+        "  return smrt({ tableStrategy: 'sti' })(class LicenseSale extends ConsumerContract {});",
+        '}',
+        '',
+      ].join('\n'),
+    );
     ws.writeModel('packages/market/src/ExplicitLicenseSale.js', 'LicenseSale', {
       packageName: '@fixture/market',
     });
@@ -450,6 +463,49 @@ describe('consumer workspace registration (#3106, #3110)', () => {
         expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
           'contractNumber',
         );
+      } finally {
+        getManifestCache().delete('@fixture/commerce');
+      }
+    });
+  }
+
+  for (const shape of [
+    {
+      name: 'its own STI base',
+      file: 'apps/app/build/server/chunks/order.js',
+      className: 'Order',
+      foreignTable: 'commerce_orders',
+      table: 'orders',
+    },
+    {
+      name: 'a subtype of its own registered STI base',
+      file: 'apps/app/build/server/chunks/consumer-contract.js',
+      className: 'LicenseSale',
+      foreignTable: 'contracts',
+      table: 'consumer_contracts',
+    },
+  ]) {
+    it(`gives a bundled consumer STI class (${shape.name}) its own table, not a cached dependency entry's`, async () => {
+      getManifestCache().set('@fixture/commerce', {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/commerce',
+        objects: {
+          [`@fixture/commerce:${shape.className}`]: manifestEntry({
+            className: shape.className,
+            packageName: '@fixture/commerce',
+            filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+            tableName: shape.foreignTable,
+            fields: { contractNumber: { type: 'text' } },
+          }),
+        },
+      } as never);
+      try {
+        const ctor = await defineFrom(ws.path(shape.file));
+        expect(identity(ctor)?.qualifiedName).toBe(
+          `@fixture/app:${shape.className}`,
+        );
+        expect(identity(ctor)?.schema?.tableName).toBe(shape.table);
       } finally {
         getManifestCache().delete('@fixture/commerce');
       }
