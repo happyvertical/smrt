@@ -146,6 +146,7 @@ ci-debug-*.log
 
 **/.claude/settings.local.json
 **/.claude/mcp-config.json
+.claude/worktrees/
 **/scripts/mcp-smrt.sh
 repomix-output.xml
 
