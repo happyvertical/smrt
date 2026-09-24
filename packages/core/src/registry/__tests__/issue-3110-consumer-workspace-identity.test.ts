@@ -182,6 +182,9 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     ws.writeModel('packages/market/src/LicenseSale.js', 'LicenseSale', {
       tableName: 'license_sales',
     });
+    ws.writeModel('packages/market/src/ExplicitLicenseSale.js', 'LicenseSale', {
+      packageName: '@fixture/market',
+    });
     // Bundled output of the app (adapter-node / SvelteKit build).
     ws.writeModel(
       'apps/app/build/server/chunks/license-sale.js',
@@ -400,38 +403,44 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     expect(stub?.constructor).not.toBe(consumer);
   });
 
-  it("does not take a dependency's cached, unregistered manifest entry", async () => {
-    // An app manifest declaring the dependency makes discovery load its
-    // manifest before any of its classes (or stubs) register.
-    getManifestCache().set('@fixture/commerce', {
-      version: '1',
-      timestamp: 0,
-      packageName: '@fixture/commerce',
-      objects: {
-        '@fixture/commerce:LicenseSale': manifestEntry({
-          className: 'LicenseSale',
-          packageName: '@fixture/commerce',
-          filePath: '/build-host/packages/commerce/src/models/Contract.ts',
-          tableName: 'contracts',
-          fields: { contractNumber: { type: 'text' } },
-        }),
-      },
-    } as never);
-    try {
-      const consumer = await defineFrom(
-        ws.path('packages/market/src/LicenseSale.js'),
-      );
-      expect(identity(consumer)?.qualifiedName).toBe(
-        '@fixture/market:LicenseSale',
-      );
-      expect(identity(consumer)?.schema?.tableName).toBe('license_sales');
-      expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
-        'contractNumber',
-      );
-    } finally {
-      getManifestCache().delete('@fixture/commerce');
-    }
-  });
+  for (const variant of ['stack-derived', 'explicit packageName'] as const) {
+    it(`does not take a dependency's cached, unregistered manifest entry (${variant})`, async () => {
+      // An app manifest declaring the dependency makes discovery load its
+      // manifest before any of its classes (or stubs) register.
+      getManifestCache().set('@fixture/commerce', {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/commerce',
+        objects: {
+          '@fixture/commerce:LicenseSale': manifestEntry({
+            className: 'LicenseSale',
+            packageName: '@fixture/commerce',
+            filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+            tableName: 'contracts',
+            fields: { contractNumber: { type: 'text' } },
+          }),
+        },
+      } as never);
+      try {
+        const consumer = await defineFrom(
+          ws.path(
+            variant === 'stack-derived'
+              ? 'packages/market/src/LicenseSale.js'
+              : 'packages/market/src/ExplicitLicenseSale.js',
+          ),
+        );
+        expect(identity(consumer)?.qualifiedName).toBe(
+          '@fixture/market:LicenseSale',
+        );
+        expect(identity(consumer)?.schema?.tableName).not.toBe('contracts');
+        expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
+          'contractNumber',
+        );
+      } finally {
+        getManifestCache().delete('@fixture/commerce');
+      }
+    });
+  }
 
   it("keeps an app bundle's class apart from an installed dependency's", async () => {
     const dependency = await defineFrom(

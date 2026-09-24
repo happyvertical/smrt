@@ -64,6 +64,7 @@ import {
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
   ensureTenantScopedField,
+  isSameSourcePath,
 } from './registry/class-registration';
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
 import {
@@ -139,6 +140,7 @@ import {
   getLegacyFieldDecorators,
   getMethodDecorators,
   getNextDbId,
+  getSourceFileFromStack,
   getStiSiblingsLoaded,
   setNextDbId,
   verboseLog,
@@ -3934,11 +3936,21 @@ export function smrt(config: SmartObjectConfig = {}) {
         const ownQualifiedKey = ownPackage
           ? createQualifiedName(ownPackage, ctor.name)
           : undefined;
-        const manifestEntry = discoverCachedManifestSync(
+        const lookedUp = discoverCachedManifestSync(
           ownQualifiedKey && getClasses().has(ownQualifiedKey)
             ? ownQualifiedKey
             : ctor.name,
         );
+        // An explicit `packageName` is authoritative: another package's
+        // same-named entry (loaded before its classes register) is not this
+        // class's table unless it describes this very file (#3106).
+        const manifestEntry =
+          config.packageName &&
+          lookedUp?.packageName &&
+          lookedUp.packageName !== config.packageName &&
+          !isSameSourcePath(getSourceFileFromStack(), lookedUp.filePath)
+            ? undefined
+            : lookedUp;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {

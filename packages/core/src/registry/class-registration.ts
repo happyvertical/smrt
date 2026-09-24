@@ -175,9 +175,9 @@ export function isSameSourcePath(
   const [absolute, relative] = aAbsolute ? [a, b] : [b, a];
   const path = getNodeBuiltins()?.path;
   if (!path) return false;
+  // Platform `resolve` keeps a Windows drive-letter root absolute.
   return relativeSourceRoots().some(
-    (root) =>
-      normalizeSourcePath(path.posix.resolve(root, relative)) === absolute,
+    (root) => normalizeSourcePath(path.resolve(root, relative)) === absolute,
   );
 }
 
@@ -1170,7 +1170,13 @@ function registerUntracked(
     const entry = discoverManifestSync(name);
     const foreignEntry =
       !!entry?.packageName && entry.packageName !== newPackageName;
-    if (!foreignEntry || ownPackageDeclaresClass) return entry;
+    if (!foreignEntry) return entry;
+    // Another package's entry describes this class only when it describes
+    // this class's own file: a class scanned into another package's
+    // manifest under that package's key (core's own fixtures with an
+    // explicit `packageName`, #3098).
+    if (isSameSourcePath(newSourceFile, entry?.filePath)) return entry;
+    if (ownPackageDeclaresClass) return undefined;
     const entryTable =
       entry?.schema?.tableName || entry?.decoratorConfig?.tableName;
     const declaresOtherTable =
