@@ -93,10 +93,7 @@ jobs:
           deleted=0
           while IFS= read -r ref; do
             [ -n "$ref" ] || continue
-            if [ "$deleted" -ge "$DELETE_LIMIT" ]; then
-              echo "::warning::cache deletion limit ${DELETE_LIMIT} reached; the next sweep continues"
-              break
-            fi
+            [ "$deleted" -lt "$DELETE_LIMIT" ] || break
             branch="${ref#refs/heads/}"
             encoded=$(printf '%s' "$branch" | jq -sRr @uri)
             if probe=$(gh api "repos/$REPO/branches/$encoded" 2>&1); then
@@ -106,7 +103,7 @@ jobs:
               *"HTTP 404"*) ;;
               *) echo "skipping caches of $ref: branch probe failed non-404"; continue ;;
             esac
-            ids=$(gh api "repos/$REPO/actions/caches?ref=$ref&per_page=100" \
+            ids=$(gh api --paginate "repos/$REPO/actions/caches?ref=$ref&per_page=100" \
               --jq '.actions_caches[].id')
             for id in $ids; do
               [ "$deleted" -lt "$DELETE_LIMIT" ] || break
@@ -114,6 +111,9 @@ jobs:
                 deleted=$((deleted + 1))
               fi
             done
-            echo "deleted caches of dead merge-group ref $ref"
+            echo "processed caches of dead merge-group ref $ref"
           done <<< "$refs"
           echo "deleted $deleted cache entr(ies) of deleted merge-group branches"
+          if [ "$deleted" -ge "$DELETE_LIMIT" ]; then
+            echo "::warning::cache deletion limit ${DELETE_LIMIT} reached; the next sweep continues"
+          fi
