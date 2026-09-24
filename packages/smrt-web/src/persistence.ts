@@ -176,11 +176,10 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
   const existing = enginesByNamespace.get(namespace);
   if (existing) {
     existing.refCount += 1;
-    void existing.ready.then(() => {
-      if (enginesByNamespace.get(namespace) === existing) {
-        registerForWipe(existing, namespace);
-      }
-    });
+    // Re-register synchronously when the store is already open, so a wipe
+    // issued right after this acquire cannot miss it; a store still opening
+    // registers itself when the open completes.
+    registerForWipe(existing, namespace);
     return existing;
   }
 

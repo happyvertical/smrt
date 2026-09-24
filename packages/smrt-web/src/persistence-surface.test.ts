@@ -150,6 +150,23 @@ describe('persistDataSurface', () => {
     expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
   });
 
+  it('a wipe issued right after a post-wipe acquire still clears its save', async () => {
+    const k = key();
+    const ns = durableStoreNamespace(k);
+    const holder = surface({
+      namespace: k,
+      identity: { ...identity, surfaceId: 'other' },
+    });
+    await holder.load();
+    await wipeDurableStore(ns);
+
+    const s = surface({ namespace: k, identity, debounceMs: 60_000 });
+    s.save([{ id: 'p2', at: '09:00' }]);
+    await wipeDurableStore(ns); // no intervening await for registration
+    await s.dispose();
+    expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
+  });
+
   it('rejects an identity without a surfaceId', () => {
     expect(() =>
       persistDataSurface({
