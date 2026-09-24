@@ -8,6 +8,7 @@ overrides:
   '@happyvertical/smrt-types': 'workspace:*'
   '@happyvertical/smrt-config': 'workspace:*'
   '@happyvertical/smrt-core': 'workspace:*'
+  '@happyvertical/accounting': ^0.90.0
   '@happyvertical/ai': ^0.90.0
   '@happyvertical/cache': ^0.90.0
   '@happyvertical/documents': ^0.90.0
@@ -120,6 +121,7 @@ auditConfig:
   ignoreGhsas: []
 
 minimumReleaseAgeExclude:
+  - '@happyvertical/accounting@0.90.0'
   - '@happyvertical/ai@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12 || 0.90.0'
   - '@happyvertical/cache@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12 || 0.90.0'
   - '@happyvertical/documents@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12 || 0.90.0'
@@ -144,6 +146,7 @@ minimumReleaseAgeExclude:
 catalog:
   '@aws-sdk/client-sqs': ^3.1136.0
   '@google-cloud/tasks': ^7.1.1
+  '@happyvertical/accounting': ^0.90.0
   '@happyvertical/ai': ^0.90.0
   '@happyvertical/cache': ^0.90.0
   '@happyvertical/documents': ^0.90.0

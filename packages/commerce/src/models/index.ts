@@ -4,6 +4,15 @@
  */
 
 export {
+  BillingAccount,
+  type BillingCloseKind,
+  BillingLineSource,
+  type BillingLineSourceType,
+  BillingPeriodClose,
+  type BillingPeriodCloseStatus,
+  type BillingStanding,
+} from './billing.js';
+export {
   Agreement,
   Cart,
   Contract,

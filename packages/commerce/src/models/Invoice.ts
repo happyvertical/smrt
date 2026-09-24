@@ -11,6 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { minorToMajorUnits } from '../billing/units.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
@@ -248,9 +249,19 @@ export class Invoice extends SmrtObject {
   subtotal: number = 0;
 
   /**
-   * Tax amount, in integer minor units (#2361).
+   * Tax amount, in integer minor units (#2361). With line items this is the
+   * sum of their rate-based tax plus {@link providerTaxAmount}.
    */
   taxAmount: number = 0;
+
+  /**
+   * Tax calculated by the payment provider (for example Stripe Tax) from the
+   * customer's tax location, in integer minor units (#3060). Server-managed:
+   * billing-period close records it after the provider finalizes the invoice.
+   * It is added to the line items' tax, so `taxAmount` and `totalAmount` stay
+   * authoritative from line items plus this one provider figure.
+   */
+  providerTaxAmount: number = 0;
 
   /**
    * Total amount due (subtotal + tax), in integer minor units (#2361).
@@ -373,6 +384,8 @@ export class Invoice extends SmrtObject {
     if (options.paidDate !== undefined) this.paidDate = options.paidDate;
     if (options.subtotal !== undefined) this.subtotal = options.subtotal;
     if (options.taxAmount !== undefined) this.taxAmount = options.taxAmount;
+    if (options.providerTaxAmount !== undefined)
+      this.providerTaxAmount = options.providerTaxAmount;
     if (options.totalAmount !== undefined)
       this.totalAmount = options.totalAmount;
     if (options.amountPaid !== undefined) this.amountPaid = options.amountPaid;
@@ -505,10 +518,11 @@ export class Invoice extends SmrtObject {
           (sum: number, item: InvoiceLineItem) => sum + item.getSubtotal(),
           0,
         );
-        const taxAmount = lineItems.reduce(
-          (sum: number, item: InvoiceLineItem) => sum + item.getTaxAmount(),
-          0,
-        );
+        const taxAmount =
+          lineItems.reduce(
+            (sum: number, item: InvoiceLineItem) => sum + item.getTaxAmount(),
+            0,
+          ) + this.providerTaxAmount;
         // Totals are AUTHORITATIVE from the line items (S5 audit #1390). Any
         // caller-supplied subtotal / tax / total is ignored and overwritten —
         // that is the security goal (a forged total can never be persisted)
@@ -674,6 +688,7 @@ export class Invoice extends SmrtObject {
       [
         ['subtotal', this.subtotal],
         ['taxAmount', this.taxAmount],
+        ['providerTaxAmount', this.providerTaxAmount],
         ['totalAmount', this.totalAmount],
         ['amountPaid', this.amountPaid],
       ],
@@ -685,6 +700,7 @@ export class Invoice extends SmrtObject {
     const amounts = [
       ['subtotal', this.subtotal],
       ['taxAmount', this.taxAmount],
+      ['providerTaxAmount', this.providerTaxAmount],
       ['totalAmount', this.totalAmount],
       ['amountPaid', this.amountPaid],
     ] as const;
@@ -1013,7 +1029,9 @@ export class Invoice extends SmrtObject {
    * Convert to InvoiceInput for SDK accounting provider sync.
    *
    * Fetches line items and maps all fields to the format expected
-   * by @happyvertical/accounting providers.
+   * by @happyvertical/accounting providers. The SDK takes currency **major**
+   * units (`12.34` USD), so every amount is converted from this package's
+   * integer minor units with the currency's ISO 4217 exponent (#3060).
    *
    * @returns InvoiceInput compatible with @happyvertical/accounting
    *
@@ -1055,11 +1073,11 @@ export class Invoice extends SmrtObject {
       issueDate: this.issueDate,
       dueDate: this.dueDate,
       lineItems: lineItems.map((item: InvoiceLineItem) =>
-        item.toAccountingLineItem(),
+        item.toAccountingLineItem(this.currency),
       ),
-      subtotal: this.subtotal,
-      taxAmount: this.taxAmount,
-      totalAmount: this.totalAmount,
+      subtotal: minorToMajorUnits(this.subtotal, this.currency),
+      taxAmount: minorToMajorUnits(this.taxAmount, this.currency),
+      totalAmount: minorToMajorUnits(this.totalAmount, this.currency),
       currency: this.currency,
       reference: this.reference || undefined,
       memo: this.customerNotes || undefined,

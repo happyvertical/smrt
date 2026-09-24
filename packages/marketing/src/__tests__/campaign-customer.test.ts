@@ -652,9 +652,12 @@ describe('Campaign customer scope', () => {
     ]);
     expect(transaction).toHaveBeenCalledOnce();
     expect(transactionDb).not.toBe(db);
-    const transactionSql =
-      transactionQuery?.mock.calls.map(([sql]) => String(sql)) ?? [];
-    expect(transactionSql).toHaveLength(6);
+    // Framework readiness probes (`FROM _smrt_…`) depend on which packages
+    // the process has already imported; only the scope queries are bounded.
+    const transactionSql = (
+      transactionQuery?.mock.calls.map(([sql]) => String(sql)) ?? []
+    ).filter((sql) => !/\bFROM _smrt_/.test(sql));
+    expect(transactionSql).toHaveLength(2);
     expect(
       transactionSql.filter(
         (sql) =>

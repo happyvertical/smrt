@@ -23,6 +23,52 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 
 `@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.
 
+## Billing-period close (#3060)
+
+`src/billing/` closes periods from smrt-subscriptions charges; see the README
+for usage.
+
+- **Port, not provider.** Period close, events, and credit checkout call only
+  the `BillingProvider` port (integer minor units). `stripe.ts` adapts
+  `@happyvertical/accounting`, which takes currency *major* units; convert with
+  `units.ts` (ISO 4217 exponent) and never hand-roll a Stripe call here.
+  `sendAndReconcile` refuses a provider invoice whose subtotal or total
+  disagrees with the local invoice.
+- **Replay safety is identity.** Close, invoice, line, payment, allocation,
+  and claim ids are `deterministicId()`s; `BillingLineSource` (conflict key
+  `source_type, source_id`) is the only double-billing guard, so never bill a
+  source without claiming it, and never widen that key. Each close step is
+  persisted before the next; `acquireCloseLease()` serializes workers. A
+  close that nets to a credit keeps its claims and ends `carried_forward`;
+  its subtotal is a `credit_carry_forward` source for the payer's next billed
+  close, which marks the carried close `completed`.
+- **System tables.** `BillingAccount`, `BillingPeriodClose`, and
+  `BillingLineSource` are not tenant-scoped and have no generated surface.
+  Collections stay unexported; models are root exports (#3082). Invoices,
+  payments, and journals are written in the seller's tenant; payer-owned
+  subscriptions and credit grants in a system context, only after
+  verification.
+- **Events** use smrt-jobs' delivery inbox under provider
+  `<name>-billing:<sellerTenantId>` and a provider-filtered
+  `ForgeProjectionRuntime`, so a runtime never claims another seller's
+  events; any other runtime sharing the inbox must pass `providers` too. Only
+  events this package acts on are stored: foreign checkouts are `ignored`,
+  and only `smrt_*` checkout metadata is kept; it is
+  HMAC-signed with the webhook secret at creation (empty values are omitted:
+  Stripe drops them), so another integration on the same account cannot forge
+  a credit purchase; credit is granted only when the collected total equals
+  it. Rotating the webhook secret strands in-flight checkouts (up to 24 h). `observe()` re-reads provider state, so
+  ordering never depends on delivery order. The standing hook runs inside the
+  event transaction and must be idempotent.
+- **`Invoice.providerTaxAmount`** is added to line-item tax; it is
+  server-managed (not API-writable). `toAccountingInput()` emits major units.
+- **Known limits** (each tracked upstream): provider customer creation is not
+  idempotent (happyvertical/sdk#1268); credit checkouts are untaxed and
+  two-decimal only (sdk#1269); `autoTopUp` cannot charge a saved card
+  (sdk#1270); Stripe line discounts and uncollectible status are worked around
+  as negative lines and event types (sdk#1271). `RetailCharge` has no
+  adjustment ledger. Flat plans are monthly, in arrears, without proration.
+
 ## Cross-Package References
 
 - `customerId` → `@foreignKey('Customer')` (hard reference within package)
@@ -31,6 +77,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 - `skuId` (on `PaymentIntent`, `LicenseSale`) → plain string to smrt-products
 - `paymentId` (on `PaymentIntent`, `Payout`, `LicenseSale`) → plain string to `Payment` (same package, but kept as plain string for cross-model consistency)
 - `vendorId` on `Payout` → `@foreignKey(Vendor)` (hard reference within package)
+- Billing records reference tenants with `@crossPackageRef('@happyvertical/smrt-users:Tenant')` and charges, plan periods, and adjustments by plain `sourceId`
 
 ## Gotchas
 
