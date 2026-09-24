@@ -312,6 +312,25 @@ export function lookupCachedManifestEntry(
       ? createQualifiedName(packageName, requestedClassName)
       : undefined);
 
+  // A qualified request names one package's class. Another package's
+  // manifest can only answer it by an exact qualified key (aggregated
+  // manifests); a simple-name hit there is a different class (#3098).
+  const requestedPackage = requestedQualifiedName
+    ? parseQualifiedName(requestedQualifiedName).packageName
+    : undefined;
+  if (
+    requestedQualifiedName &&
+    packageName !== undefined &&
+    packageName !== requestedPackage
+  ) {
+    const direct = manifest.objects[requestedQualifiedName];
+    return direct &&
+      (direct.packageName === undefined ||
+        direct.packageName === requestedPackage)
+      ? direct
+      : undefined;
+  }
+
   return (
     (qualifiedKey ? manifest.objects[qualifiedKey] : undefined) ||
     manifest.objects[requestedClassName] ||

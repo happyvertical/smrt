@@ -11,6 +11,10 @@ import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
+  // Own table, never the derived `accounts`: smrt-messages declares an
+  // unrelated `Account` on that table (#3098). Existing `accounts`-hosted
+  // ledgers move with `smrt db:migrate-ledger-accounts`.
+  tableName: 'ledger_accounts',
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create'] },
   cli: { skipApiCheck: true },

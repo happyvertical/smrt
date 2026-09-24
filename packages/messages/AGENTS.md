@@ -72,6 +72,15 @@ import '@happyvertical/smrt-messages/providers/all';     // all of the above
 
 ## Gotchas
 
+- **Manifest before decorators**: every decorated model imports
+  `../__smrt-register__.js`, and `package.json#sideEffects` lists
+  `./src/__smrt-register__.ts`. Without both, the library build dropped or
+  reordered the self-registration, so dist classes registered with only their
+  decorated fields and could adopt smrt-ledgers' same-named `Account` (#3098).
+- **`Account` is not unique**: smrt-ledgers also declares `Account` (on
+  `ledger_accounts`). Resolve by constructor or qualified name; the
+  coexistence tests (`ledger-account-identity-*`, and the PostgreSQL lane
+  `pnpm test:postgres`) load both packages in both orders.
 - **STI `_meta_type`**: qualified format `@happyvertical/smrt-messages:Email`
 - **JSON fields**: all address/metadata fields are JSON strings with `getX()`/`setX()` helpers
 - **RFC 822 threading**: Email uses `inReplyTo`/`messageId`/`references` — manual management required

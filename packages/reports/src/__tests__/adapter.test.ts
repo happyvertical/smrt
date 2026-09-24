@@ -706,8 +706,11 @@ describe('report adapter', () => {
       }),
     ).resolves.toEqual({
       version: 1,
-      resourceId: '@happyvertical/smrt-reports:AdapterReport#current',
-      reportClassName: '@happyvertical/smrt-reports:AdapterReport',
+      // The fixture registers AdapterReport under `@test/reports`. This once
+      // read `@happyvertical/smrt-reports`: the package's own scanned test
+      // manifest was merged into that registration by simple name (#3098).
+      resourceId: '@test/reports:AdapterReport#current',
+      reportClassName: '@test/reports:AdapterReport',
       sourceClassName: 'AdapterInvoice',
       constraints: [
         {

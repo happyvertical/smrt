@@ -44,6 +44,7 @@ import {
 import {
   isDecoratorRuntimeFramePath,
   isDecoratorRuntimePackageName,
+  isModuleRunnerFramePath,
 } from '../utils/stack-frames.js';
 import { ManifestManager } from './manager.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
@@ -486,6 +487,22 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  *   `Error().stack`. Used by tests to simulate a lowered call pattern.
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
+/**
+ * Whether a stack frame is smrt-core's own code, which applies decorators but
+ * never declares an application class. Matched by location rather than by a
+ * bare `registry` substring, which also skipped any caller file so named —
+ * including core's own `*registry*.test.ts` suites (#3098).
+ */
+function isCoreInternalFramePath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    lower.includes('manifest-loader') ||
+    lower.includes('/smrt-core/dist/') ||
+    lower.includes('/packages/core/dist/') ||
+    (lower.includes('/packages/core/src/') && !lower.includes('__tests__'))
+  );
+}
+
 export function getPackageName(
   ctor: SmrtObjectConstructor,
   skipRegistry: boolean = false,
@@ -520,16 +537,23 @@ export function getPackageName(
       // Find the first line with a file path that's NOT from smrt-core
       // Skip manifest-loader, registry, and other smrt-core files
       for (const line of stackLines) {
-        const fileMatch = line.match(/\(([^)]+\.(?:js|ts))/);
+        // Both frame forms: `at fn (path:line:col)` and the anonymous
+        // `at path:line:col` a module's top level reports. Under a module
+        // runner (Vitest, Vite SSR) the class-declaring module is the
+        // anonymous one; matching only the parenthesized form skipped it and
+        // attributed the class to the runner's package (#3098).
+        const fileMatch = line.match(
+          /(?:\(|\bat\s+)((?:file:\/\/)?[^()\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?\)?\s*$/,
+        );
         if (fileMatch) {
           const filePath = fileMatch[1];
           // Skip smrt-core internal files and decorator-lowering runtime
           // helpers (#1785) — the class is declared in neither.
+          const normalizedPath = filePath.replace(/\\/g, '/');
           if (
-            filePath.includes('manifest-loader') ||
-            filePath.includes('registry') ||
-            filePath.includes('/smrt-core/dist/') ||
-            isDecoratorRuntimeFramePath(filePath.replace(/\\/g, '/'))
+            isCoreInternalFramePath(normalizedPath) ||
+            isDecoratorRuntimeFramePath(normalizedPath) ||
+            isModuleRunnerFramePath(normalizedPath)
           ) {
             continue; // Skip smrt-core files, look for external package
           }
@@ -580,7 +604,10 @@ export function getPackageName(
         // Skip decorator-lowering runtime helpers (e.g. @oxc-project/runtime) —
         // the compiler inserts them between @smrt() and the declaring module, so
         // attributing to them is wrong; keep walking to the real package (#1785).
-        if (isDecoratorRuntimePackageName(match[1])) {
+        if (
+          isDecoratorRuntimePackageName(match[1]) ||
+          isModuleRunnerFramePath(line)
+        ) {
           continue;
         }
         return match[1];
@@ -1044,10 +1071,15 @@ export function lookupInManifest(
   // This is the key optimization for issue #729
   const classNameIndex = getClassNameIndex(manifest);
 
-  // 3. If input is a qualified name, extract className and use index
+  // 3. If input is a qualified name, extract className and use index. The
+  // package half of a qualified name is identity, not decoration: a simple-
+  // name hit that belongs to a DIFFERENT package is a different class (both
+  // smrt-ledgers and smrt-messages declare `Account`, #3098), so it is a miss.
   if (isQualifiedName(nameOrQualified)) {
-    const { className } = parseQualifiedName(nameOrQualified);
-    return classNameIndex.get(className.toLowerCase());
+    const { className, packageName } = parseQualifiedName(nameOrQualified);
+    const entry = classNameIndex.get(className.toLowerCase());
+    const entryPackage = entry?.packageName ?? manifest.packageName;
+    return entryPackage && entryPackage !== packageName ? undefined : entry;
   }
 
   // 4. For simple class names, try constructing qualified name if manifest has packageName

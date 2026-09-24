@@ -4,6 +4,9 @@
  * Retains email-specific fields and sync capability.
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
 import { smrt } from '@happyvertical/smrt-core';
 import type {

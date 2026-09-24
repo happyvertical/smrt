@@ -43,6 +43,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-dev-mcp": "workspace:*",
+    "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",

@@ -305,7 +305,9 @@ describe('collectRegistryConflictTargets', () => {
         const name = collectionClass.name;
         const source = ObjectRegistry.getClass(name)?.qualifiedName ?? name;
         const tableName = ObjectRegistry.getTableName(name);
-        expect(targets[tableName as string]).not.toContainEqual({
+        // A collection's own slot may name no planned table at all (its item
+        // keeps an explicit tableName, #3098); either way it contributes none.
+        expect(targets[tableName as string] ?? []).not.toContainEqual({
           columns: ObjectRegistry.getConflictColumns(source),
           source,
         });

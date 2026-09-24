@@ -5,6 +5,9 @@
  * while inheriting common message fields from Message.
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import { smrt } from '@happyvertical/smrt-core';
 import type { EmailOptions } from '../types';
 import { Message } from './Message';

@@ -4,6 +4,9 @@
  * Uses messageId instead of emailId for cross-type support.
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import {
   foreignKey,
   importOptionalDependency,

@@ -29,6 +29,9 @@ class ListOnlyRestFixtureCollection extends SmrtCollection<ListOnlyRestFixture> 
 const GetOnlyCollisionRestFixture = (() => {
   @smrt({
     packageName: '@test/smrt-features-collision-a',
+    // Same simple name, different package: it needs its own table, or the
+    // schema planner refuses to merge the two classes into one (#3098).
+    tableName: 'collision_rest_fixtures_a',
     api: { include: ['get'] },
     cli: false,
     mcp: false,

@@ -1,4 +1,7 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import type { WhitelistOptions } from '../types';
 
 /**

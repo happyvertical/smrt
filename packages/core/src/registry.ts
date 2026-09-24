@@ -45,6 +45,7 @@ import type {
 } from './embeddings/types';
 import type { ValidationError } from './errors';
 import { ConfigurationError } from './errors';
+import { getPackageName } from './manifest/manifest-loader.js';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
@@ -3873,9 +3874,23 @@ export function smrt(config: SmartObjectConfig = {}) {
           }
         }
 
-        ObjectRegistry.register(itemClass, { ...config, tableName });
+        // The derived name above is the COLLECTION's (routes and lookups key
+        // off it). Re-registering the item must not move an item that already
+        // resolved its own table (an explicit `@smrt({ tableName })`) onto that
+        // derived name, which any same-named class also derives (#3098).
+        const itemTableName = config.tableName
+          ? tableName
+          : ObjectRegistry.getClassByConstructor(itemClass)?.schema
+              ?.tableName || tableName;
+        ObjectRegistry.register(itemClass, {
+          ...config,
+          tableName: itemTableName,
+        });
 
-        const registeredItemClass = ObjectRegistry.getClass(itemClass.name);
+        // By constructor: the simple name can resolve to another package's
+        // same-named class and register this collection under its key (#3098).
+        const registeredItemClass =
+          ObjectRegistry.getClassByConstructor(itemClass);
 
         // Register the collection constructor under the item class identity first.
         // This ensures ObjectRegistry.getCollection('ItemClass') uses the explicit
@@ -3909,7 +3924,21 @@ export function smrt(config: SmartObjectConfig = {}) {
         // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
         // This handles the case where a child class sets tableStrategy: 'sti' explicitly
         // but should still inherit the parent's table name
-        const manifestEntry = discoverCachedManifestSync(ctor.name);
+        // A class whose own package already declared it (manifest stub under
+        // the qualified key) resolves by that identity: a simple-name lookup
+        // could return another package's same-named class (#3098).
+        const ownPackage =
+          config.packageName ??
+          getPackageName(ctor as unknown as SmrtObjectConstructor, true) ??
+          undefined;
+        const ownQualifiedKey = ownPackage
+          ? createQualifiedName(ownPackage, ctor.name)
+          : undefined;
+        const manifestEntry = discoverCachedManifestSync(
+          ownQualifiedKey && getClasses().has(ownQualifiedKey)
+            ? ownQualifiedKey
+            : ctor.name,
+        );
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {

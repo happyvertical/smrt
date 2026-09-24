@@ -3,9 +3,15 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import { requireTenant, withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  enableTenancy,
+  requireTenant,
+  TenantContextError,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ForgeDeliveryCollection,
   type ForgeObservation,
@@ -444,6 +450,75 @@ describe('forge delivery provider filter (#3060)', () => {
         providers: [],
       }),
     ).rejects.toThrow('providers must name at least one provider');
+  });
+});
+
+describe('forge delivery inbox under strict tenancy (#3100)', () => {
+  // Production hosts run the tenancy interceptor with rawQueryPolicy 'throw'.
+  // The inbox must accept and project deliveries there without bypassing it.
+  beforeEach(() => {
+    enableTenancy({ rawQueryPolicy: 'throw' });
+  });
+  afterEach(() => {
+    disableTenancy();
+  });
+
+  it('accepts, deduplicates and projects deliveries with the interceptor enforcing', async () => {
+    const db = await testDb();
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    await db.query(
+      'CREATE TABLE projection_sink (version INTEGER NOT NULL, tenant_id TEXT NOT NULL)',
+    );
+
+    const first = await withTenant({ tenantId: TENANT_A }, () =>
+      inbox.accept({ ...deliveryInput('strict-1'), payload: { version: 3 } }),
+    );
+    expect(first.accepted).toBe(true);
+    expect(first.delivery.tenantId).toBe(TENANT_A);
+    expect(first.delivery.payload).toEqual({ version: 3 });
+    const duplicate = await withTenant({ tenantId: TENANT_A }, () =>
+      inbox.accept({ ...deliveryInput('strict-1'), payload: { version: 3 } }),
+    );
+    expect(duplicate).toMatchObject({ accepted: false });
+    expect(duplicate.delivery.id).toBe(first.delivery.id);
+
+    // The same provider delivery id in another tenant is that tenant's own
+    // row, and each tenant reads back only its own.
+    const other = await withTenant({ tenantId: TENANT_B }, () =>
+      inbox.accept({ ...deliveryInput('strict-1'), payload: { version: 9 } }),
+    );
+    expect(other.accepted).toBe(true);
+    expect(other.delivery.id).not.toBe(first.delivery.id);
+    expect(other.delivery.tenantId).toBe(TENANT_B);
+
+    // Accepting still requires an explicit tenant context.
+    await expect(inbox.accept(deliveryInput('no-tenant'))).rejects.toThrow(
+      TenantContextError,
+    );
+
+    // A raw read without the bypass is still refused: nothing was weakened.
+    await expect(
+      withTenant({ tenantId: TENANT_A }, () =>
+        inbox.query('SELECT * FROM _smrt_forge_deliveries', []),
+      ),
+    ).rejects.toThrow(/Raw SQL query attempted on tenant-scoped class/);
+
+    const projected: number[] = [];
+    const runtime = new ForgeProjectionRuntime({
+      db,
+      workerId: 'strict-worker',
+    });
+    await runtime.processNext(versionProjector(projected));
+    await runtime.processNext(versionProjector(projected));
+    expect(await runtime.processNext(versionProjector(projected))).toBeNull();
+    expect(projected.sort()).toEqual([3, 9]);
+    const sink = await db.query(
+      'SELECT version, tenant_id FROM projection_sink ORDER BY version',
+    );
+    expect(sink.rows).toEqual([
+      { version: 3, tenant_id: TENANT_A },
+      { version: 9, tenant_id: TENANT_B },
+    ]);
   });
 });
 

@@ -48,7 +48,37 @@ export const DECORATOR_RUNTIME_PACKAGES: readonly string[] = [
  */
 export function isDecoratorRuntimeFramePath(path: string): boolean {
   const lower = path.toLowerCase();
-  return DECORATOR_RUNTIME_PACKAGES.some((pkg) => lower.includes(`/${pkg}/`));
+  return DECORATOR_RUNTIME_PACKAGES.some(
+    (pkg) =>
+      lower.includes(`/${pkg}/`) ||
+      // Vite serves the helper as a virtual module whose id flattens the
+      // scope separator and appends the version, e.g.
+      // `<root>/\0@oxc-project+runtime@0.138.0/helpers/esm/decorate.js`.
+      // Missing it attributed every class Vitest loads to the project root's
+      // package (#3098).
+      lower.includes(`\0${pkg.replace('/', '+')}@`),
+  );
+}
+
+/**
+ * Module and test runners that evaluate a module and so appear below it on
+ * the stack. Like decorator helpers, they never declare a class.
+ */
+const MODULE_RUNNER_PATH_SEGMENTS: readonly string[] = [
+  '/node_modules/@vitest/',
+  '/node_modules/vitest/',
+  '/node_modules/vite/dist/node/module-runner',
+];
+
+/**
+ * Whether a stack-frame path belongs to a module or test runner (Vitest, the
+ * Vite module runner) rather than to code that could declare a class (#3098).
+ *
+ * @param path - A file path from a stack frame (already normalized to `/`).
+ */
+export function isModuleRunnerFramePath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return MODULE_RUNNER_PATH_SEGMENTS.some((segment) => lower.includes(segment));
 }
 
 /**
