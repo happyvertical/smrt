@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.51.27
+
+### Patch Changes
+
+- ### Features
+  
+  - billing-cycle anchors and flat-plan proration (#3116) (#3121) (commerce)
+  
+  ### Other Changes
+  
+  - ci: stop hosted Turbo cache churn — state-independent task hashes and pruning (#3118) (#3120)
+- @happyvertical/smrt-config@0.51.27
+  - @happyvertical/smrt-scanner@0.51.27
+  - @happyvertical/smrt-types@0.51.27
+
 ## 0.51.26
 
 ### Patch Changes
