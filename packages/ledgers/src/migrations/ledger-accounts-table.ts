@@ -203,20 +203,26 @@ function registeredReferenceColumns(): {
   return { ledger, accounts };
 }
 
+/**
+ * Every foreign key into the legacy table, composite ones included (`arity`
+ * > 1): the move must account for all of them before it writes (#3098).
+ */
 async function legacyForeignKeys(
   db: Queryable,
-): Promise<Array<{ constraint: string; table: string; column: string }>> {
+): Promise<
+  Array<{ constraint: string; table: string; column: string; arity: number }>
+> {
   const result = await db.query(
     `SELECT con.conname AS constraint_name,
             rel.relname AS table_name,
-            att.attname AS column_name
+            att.attname AS column_name,
+            array_length(con.conkey, 1) AS arity
        FROM pg_constraint con
        JOIN pg_class rel ON rel.oid = con.conrelid
        JOIN pg_attribute att
          ON att.attrelid = con.conrelid AND att.attnum = con.conkey[1]
       WHERE con.contype = 'f'
         AND con.confrelid = to_regclass(?)
-        AND array_length(con.conkey, 1) = 1
       ORDER BY rel.relname, con.conname`,
     quote(LEGACY_ACCOUNTS_TABLE),
   );
@@ -225,11 +231,13 @@ async function legacyForeignKeys(
       constraint_name: string;
       table_name: string;
       column_name: string;
+      arity: number | string;
     }>
   ).map((row) => ({
     constraint: row.constraint_name,
     table: row.table_name,
     column: row.column_name,
+    arity: Number(row.arity),
   }));
 }
 
@@ -329,11 +337,13 @@ export async function migrateLedgerAccountsTable(
     // of refusing, so both refuse here. A kept constraint may not reference a
     // row that moves.
     const inbound = await legacyForeignKeys(tx);
+    // A composite key can never be a registered single-column reference.
     const undeclared = inbound.filter(
       (fk) =>
-        fk.table !== LEGACY_ACCOUNTS_TABLE &&
-        !references.ledger.has(`${fk.table}.${fk.column}`) &&
-        !references.accounts.has(`${fk.table}.${fk.column}`),
+        fk.arity > 1 ||
+        (fk.table !== LEGACY_ACCOUNTS_TABLE &&
+          !references.ledger.has(`${fk.table}.${fk.column}`) &&
+          !references.accounts.has(`${fk.table}.${fk.column}`)),
     );
     if (undeclared.length > 0) {
       throw new LedgerAccountsTableMoveError(

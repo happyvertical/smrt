@@ -204,6 +204,28 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     expect(Number((legacyRows.rows[0] as { n: string }).n)).toBe(3);
   });
 
+  it('refuses a composite cascading reference instead of deleting its rows', async () => {
+    const db = await scratch.database();
+    const { cash } = await legacyLedger(db);
+    await dbMigrate(db);
+    await db.query(
+      'ALTER TABLE accounts ADD CONSTRAINT accounts_slug_id_key UNIQUE (slug, id)',
+    );
+    await db.query(`CREATE TABLE app_composite_refs (
+      account_slug TEXT, account_id UUID,
+      FOREIGN KEY (account_slug, account_id)
+        REFERENCES accounts (slug, id) ON DELETE CASCADE)`);
+    await db.query(
+      'INSERT INTO app_composite_refs (account_slug, account_id) SELECT slug, id FROM accounts WHERE id = ?',
+      cash.id,
+    );
+    await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
+      /app_composite_refs\.account_slug/,
+    );
+    const refs = await db.query('SELECT COUNT(*) AS n FROM app_composite_refs');
+    expect(Number((refs.rows[0] as { n: string }).n)).toBe(1);
+  });
+
   it('refuses an undeclared reference even when no row uses it yet', async () => {
     // Left in place it would keep pointing at the emptied accounts table and
     // reject every later write of a ledger account id.
@@ -270,6 +292,15 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
       '1010',
     );
     expect(moved.rows).toEqual([{ id: cash.id, parent_id: assets.id }]);
+
+    // Step 3 converges the detached text reference to UUID and restores it.
+    await dbMigrate(db);
+    expect(
+      await foreignKeyTargets(db, 'journal_entries', 'account_id'),
+    ).toEqual(['ledger_accounts']);
+    const ledger = await AccountCollection.create({ db });
+    const [movedCash] = await ledger.list({ where: { number: '1010' } });
+    expect(await movedCash?.getBalance()).toBe(250);
   });
 
   it('refuses to overwrite ids already present in ledger_accounts, changing nothing', async () => {
