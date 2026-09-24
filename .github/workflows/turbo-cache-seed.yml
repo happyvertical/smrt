@@ -30,9 +30,10 @@ env:
 permissions:
   contents: read
   packages: read
-  # For the cache-usage report step only; cache save/restore inside the job
-  # uses the Actions runtime token and needs no permission grant.
-  actions: read
+  # For the cache-usage report and the prune step (deleting superseded
+  # entries needs write); cache save/restore inside the job uses the Actions
+  # runtime token and needs no permission grant.
+  actions: write
 
 # Spelled out because the string shorthand silently defaults
 # cancel-in-progress to false. Cancelling is correct here: a newer main
@@ -53,6 +54,14 @@ jobs:
     # tighten after ten runs.
     timeout-minutes: 45
     steps:
+      # Anything in this run's cache scope that the seed neither restores
+      # nor writes after this instant is superseded; see the prune step.
+      # Five minutes of slack absorbs runner/API clock skew.
+      - name: Record seed start
+        id: seed-start
+        shell: bash
+        run: echo "at=$(date -u -d '-5 minutes' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -90,6 +99,61 @@ jobs:
         shell: bash
         run: pnpm turbo run typecheck
 
+      # Bounds the pool. Turbo keys one entry per task hash by design, and
+      # the shim cannot prune its GitHub provider (its max-age/max-files/
+      # max-size options are S3-only), so without this every main commit
+      # leaves its superseded task hashes behind until GitHub's 7-day idle
+      # eviction. A successful seed has restored (refreshing
+      # last_accessed_at) or written every build, generate, generate:test and
+      # typecheck entry the current commit needs, so an entry in this ref
+      # untouched since the seed started belongs to an older commit.
+      # Only this run's own ref is pruned, only after a successful seed, and
+      # at most PRUNE_LIMIT deletions per run to stay inside the
+      # GITHUB_TOKEN rate limit; leftovers go on the next run or expire.
+      # last_accessed_at carries fractional seconds, so the string compare
+      # is conservative by under a second.
+      - name: Prune superseded Turbo cache entries
+        if: success()
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUTOFF: ${{ steps.seed-start.outputs.at }}
+          PRUNE_LIMIT: '300'
+        run: |
+          set -euo pipefail
+          # The shim step is continue-on-error: if it failed to start, the
+          # seed built cold, touched nothing, and every entry would look
+          # superseded. Require the shim's exported endpoint and evidence
+          # that this run actually restored or wrote entries in this ref.
+          if [ -z "${TURBO_API:-}" ]; then
+            echo "::warning::Turbo cache shim not active; skipping prune"
+            exit 0
+          fi
+          caches=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/caches?key=turbogha_&ref=${GITHUB_REF}&per_page=100" \
+            --jq '.actions_caches[] | [.id, .last_accessed_at] | @tsv')
+          touched=$(printf '%s\n' "$caches" | awk -F'\t' -v c="$CUTOFF" 'NF && $2 >= c' | grep -c . || true)
+          if [ "$touched" -eq 0 ]; then
+            echo "::warning::this seed restored or wrote no turbogha_ entries in ${GITHUB_REF}; skipping prune"
+            exit 0
+          fi
+          ids=$(printf '%s\n' "$caches" | awk -F'\t' -v c="$CUTOFF" 'NF && $2 < c {print $1}')
+          total=$(printf '%s' "$ids" | grep -c . || true)
+          deleted=0
+          failed=0
+          for id in $(printf '%s\n' "$ids" | head -n "$PRUNE_LIMIT"); do
+            if gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches/${id}" --silent; then
+              deleted=$((deleted + 1))
+            else
+              failed=$((failed + 1))
+            fi
+          done
+          echo "pruned ${deleted} of ${total} superseded turbogha_ entries in ${GITHUB_REF} (cutoff ${CUTOFF}, ${touched} touched, ${failed} failed)"
+          if [ "$failed" -gt 0 ]; then
+            echo "::warning::${failed} turbogha_ cache deletions failed; they will be retried by the next seed or expire"
+          fi
+
       # Cheap observability: the turbogha_ pool shares the repository's
       # 10 GiB Actions cache quota with mobile.yml's Gradle entries under
       # LRU eviction. Watch this before trusting the fallback lane.
@@ -101,4 +165,7 @@ jobs:
         run: |
           gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" || true
           echo
+          echo "turbogha_ entries in ${GITHUB_REF}: $(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/caches?key=turbogha_&ref=${GITHUB_REF}&per_page=100" \
+            --jq '.actions_caches[].id' | grep -c . || true)"
           gh cache list --key turbogha_ --limit 20 --sort size_in_bytes --order desc || true

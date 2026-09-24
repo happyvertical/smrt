@@ -6,9 +6,7 @@
       "inputs": ["$TURBO_DEFAULT$"]
     },
     "generate:test": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$"],
-      "cache": false
+      "inputs": ["$TURBO_DEFAULT$"]
     },
     "build": {
       "inputs": ["$TURBO_DEFAULT$"]
