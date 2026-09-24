@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-messages": "workspace:*",

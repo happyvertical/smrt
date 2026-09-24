@@ -34,9 +34,12 @@ import { getSourceFileFromStack } from '../shared-state.js';
 // lowering inserts when it applies a class decorator.
 const OXC_FRAME =
   '    at applyDecoratedDescriptor (/nonexistent-1785/node_modules/.pnpm/@oxc-project+runtime@0.138.0/node_modules/@oxc-project/runtime/src/helpers/esm/applyDecoratedDescriptor.js:12:3)';
-// A smrt-core internal frame (the registration entry point).
-const CORE_FRAME =
-  '    at register (/repo/packages/core/src/registry/class-registration.ts:581:10)';
+// A smrt-core internal frame (the registration entry point). Core frames are
+// recognized by this core's real package directory, not by a `packages/core`
+// substring a consumer's own workspace package could also contain (#3110).
+const CORE_FRAME = `    at register (${fileURLToPath(
+  new URL('../class-registration.ts', import.meta.url),
+)}:581:10)`;
 
 describe('#1785: decorator-runtime frame detection', () => {
   it('recognizes @oxc-project/runtime as a decorator-runtime package', () => {

@@ -16,7 +16,10 @@ import {
   type SmrtGlobalConfig,
 } from '../config/global-config.js';
 import { LRUCache } from '../utils/lru-cache';
-import { isDecoratorRuntimeFramePath } from '../utils/stack-frames';
+import {
+  isDecoratorRuntimeFramePath,
+  isSmrtCoreFramePath,
+} from '../utils/stack-frames';
 import {
   createGenerationTrackedMap,
   isGenerationTrackedMap,
@@ -155,9 +158,12 @@ export function getSourceFileFromStack(
   // Stack trace format: "    at FunctionName (file:///path/to/file.ts:line:col)"
   // or "    at file:///path/to/file.ts:line:col"
   for (const line of stackLines) {
-    // Match file paths in stack trace (include all JS/TS file extensions)
+    // Match file paths in stack trace (include all JS/TS file extensions).
+    // The path excludes parentheses: a named frame's `(file:///...)` must not
+    // leave its opening parenthesis on the path, or it never equals the same
+    // file reported elsewhere (#3109).
     const fileMatch = line.match(
-      /(?:file:\/\/)?([^)\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?/,
+      /(?:file:\/\/)?([^()\s]+\.(?:js|ts|mjs|mts|jsx|tsx|cjs|cts))(?::\d+:\d+)?/,
     );
     if (fileMatch) {
       const rawPath = fileMatch[1];
@@ -167,20 +173,12 @@ export function getSourceFileFromStack(
       const normalizedPath = rawPath
         .replace(/^file:\/+/, '')
         .replace(/\\/g, '/');
-      const lowerPath = normalizedPath.toLowerCase();
 
-      // Skip smrt-core internal files using specific path patterns
-      // to avoid false positives with user files containing "registry" in name
+      // Skip smrt-core's own frames (including source-mapped installed
+      // paths, #3109) and decorator-lowering runtime helpers (#1785): the
+      // class is declared in neither.
       if (
-        // Installed package form: node_modules/@happyvertical/smrt-core/...
-        lowerPath.includes('/node_modules/@happyvertical/smrt-core/') ||
-        // Monorepo/workspace form: packages/core/src/...
-        (lowerPath.includes('/packages/core/src/') &&
-          !lowerPath.includes('__tests__')) ||
-        // Specific manifest loader internals
-        lowerPath.includes('/manifest/manifest-loader') ||
-        // Decorator-lowering runtime helper (oxc/tslib/swc/babel) — the frame
-        // the compiler inserts between @smrt() and the declaring module (#1785)
+        isSmrtCoreFramePath(normalizedPath) ||
         isDecoratorRuntimeFramePath(normalizedPath)
       ) {
         continue;

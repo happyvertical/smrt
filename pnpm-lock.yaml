@@ -553,6 +553,9 @@ importers:
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core

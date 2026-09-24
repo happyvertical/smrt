@@ -17,8 +17,17 @@ import {
   discoverSTISiblingsSync,
   getPackageName,
   lookupInManifest,
+  readProjectManifestSync,
 } from '../manifest/manifest-loader.js';
-import { cloneManifestSchemaColumns } from '../manifest/store.js';
+import {
+  cloneManifestSchemaColumns,
+  findWorkspaceRootSync,
+  getLocalTestManifestCache,
+  getManifestCache,
+  getNodeBuiltins,
+  getStaticManifestCache,
+  getTestManifestCache,
+} from '../manifest/store.js';
 import { SmrtObject } from '../object';
 import type {
   FieldDefinition,
@@ -38,6 +47,7 @@ import { tableNameFromClass, toSnakeCase } from '../utils';
 import {
   createQualifiedName,
   isQualifiedName,
+  parseQualifiedName,
 } from '../utils/qualified-names.js';
 import {
   type CollisionInputs,
@@ -117,6 +127,157 @@ function isBundledOutputPath(sourceFile: string | undefined): boolean {
   );
 }
 
+function normalizeSourcePath(path: string): string {
+  return path
+    .replace(/^file:\/\//, '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '');
+}
+
+function isAbsoluteSourcePath(path: string): boolean {
+  return path.startsWith('/') || /^[a-z]:\//i.test(path);
+}
+
+/**
+ * Directories a relative manifest `filePath` can be relative to: the scanned
+ * project (the process's working directory) and its workspace root.
+ */
+function relativeSourceRoots(): string[] {
+  if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
+    return [];
+  }
+  const cwd = normalizeSourcePath(process.cwd());
+  const workspaceRoot = findWorkspaceRootSync(process.cwd());
+  return workspaceRoot && normalizeSourcePath(workspaceRoot) !== cwd
+    ? [cwd, normalizeSourcePath(workspaceRoot)]
+    : [cwd];
+}
+
+/**
+ * Whether two source paths name the same file. A stack frame reports an
+ * absolute path; a manifest's `filePath` is absolute or relative to the
+ * project or workspace root it was scanned from (anytown scans
+ * `packages/cloud-network/src/models/*.ts` into the dashboard's manifest,
+ * #3110), so a relative path is resolved against those roots, never matched by
+ * suffix alone.
+ */
+export function isSameSourcePath(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  if (!left || !right) return false;
+  const a = normalizeSourcePath(left);
+  const b = normalizeSourcePath(right);
+  if (a === b) return true;
+  const aAbsolute = isAbsoluteSourcePath(a);
+  const bAbsolute = isAbsoluteSourcePath(b);
+  if (aAbsolute === bAbsolute) return false;
+  const [absolute, relative] = aAbsolute ? [a, b] : [b, a];
+  const path = getNodeBuiltins()?.path;
+  if (!path) return false;
+  return relativeSourceRoots().some(
+    (root) =>
+      normalizeSourcePath(path.posix.resolve(root, relative)) === absolute,
+  );
+}
+
+/**
+ * The package whose loaded manifest describes the class declared in
+ * `sourceFile` — the class's identity when its nearest `package.json` is not
+ * the package that scanned it (#3110). An app manifest commonly scans workspace
+ * packages' sources under the app's own package name (anytown's
+ * `packages/cloud-network` models are `@anytown/dashboard:*`), so the
+ * stack-derived package of a source-consumed class (Vite dev server, Vitest,
+ * tsx) never declares it.
+ *
+ * When several packages' entries describe the file, the stack-derived package
+ * wins if it is one of them; otherwise a single candidate, or the one owned by
+ * the manifest it appears in. Anything else is ambiguous and yields
+ * `undefined`.
+ */
+function findManifestPackageForSource(
+  name: string,
+  sourceFile: string | undefined,
+  stackPackageName: string | undefined,
+): SourceManifestMatch | undefined {
+  if (!sourceFile) return undefined;
+  const manifests = new Set<SmartObjectManifest>();
+  for (const manifest of [
+    getLocalTestManifestCache(),
+    getTestManifestCache(),
+    getStaticManifestCache(),
+    ...getManifestCache().values(),
+  ]) {
+    if (manifest?.objects) manifests.add(manifest);
+  }
+
+  const resolved = resolveSourceManifestPackage(
+    name,
+    sourceFile,
+    stackPackageName,
+    manifests,
+  );
+  if (resolved) return resolved;
+  // No loaded manifest describes the file: a plain Node/tsx script has not
+  // loaded the project's manifest yet (#3109).
+  const projectManifest = readProjectManifestSync();
+  return projectManifest?.objects && !manifests.has(projectManifest)
+    ? resolveSourceManifestPackage(
+        name,
+        sourceFile,
+        stackPackageName,
+        new Set([projectManifest]),
+      )
+    : undefined;
+}
+
+interface SourceManifestMatch {
+  packageName: string;
+  /** The describing entry, used when the package's own manifest is not loaded. */
+  entry: SmartObjectDefinition;
+}
+
+function resolveSourceManifestPackage(
+  name: string,
+  sourceFile: string,
+  stackPackageName: string | undefined,
+  manifests: Set<SmartObjectManifest>,
+): SourceManifestMatch | undefined {
+  const candidates = new Map<string, SmartObjectDefinition>();
+  const ownedByTheirManifest = new Set<string>();
+  for (const manifest of manifests) {
+    for (const [key, entry] of Object.entries(manifest.objects)) {
+      const qualified = isQualifiedName(key)
+        ? parseQualifiedName(key)
+        : undefined;
+      const className = entry.className ?? qualified?.className ?? key;
+      if (className !== name) continue;
+      if (!isSameSourcePath(sourceFile, entry.filePath)) continue;
+      const entryPackage =
+        entry.packageName ?? qualified?.packageName ?? manifest.packageName;
+      if (!entryPackage) continue;
+      if (!candidates.has(entryPackage)) {
+        candidates.set(entryPackage, { ...entry, packageName: entryPackage });
+      }
+      if (entryPackage === manifest.packageName) {
+        ownedByTheirManifest.add(entryPackage);
+      }
+    }
+  }
+
+  const pick = (packageName: string): SourceManifestMatch => ({
+    packageName,
+    entry: candidates.get(packageName) as SmartObjectDefinition,
+  });
+  if (stackPackageName && candidates.has(stackPackageName)) {
+    return pick(stackPackageName);
+  }
+  if (candidates.size === 1) return pick([...candidates.keys()][0]);
+  if (ownedByTheirManifest.size === 1)
+    return pick([...ownedByTheirManifest][0]);
+  return undefined;
+}
+
 /**
  * Build `CollisionInputs` for the decorator-origin path (`register()`).
  * Manifest-origin inputs are built separately inside `registerFromManifest`.
@@ -127,6 +288,7 @@ function buildDecoratorCollisionInputs(args: {
   newPackageName: string | undefined;
   newSourceFile: string | undefined;
   newInBundledContext: boolean;
+  newDeclaredTableName: string | undefined;
   existing: RegisteredClass;
   existingKey: string;
   matchKind: MatchKind;
@@ -137,10 +299,13 @@ function buildDecoratorCollisionInputs(args: {
     newPackageName,
     newSourceFile,
     newInBundledContext,
+    newDeclaredTableName,
     existing,
     existingKey,
     matchKind,
   } = args;
+  const existingTableName =
+    existing.schema?.tableName || existing.config?.tableName;
 
   let newExtendsExisting = false;
   let existingExtendsNew = false;
@@ -153,7 +318,8 @@ function buildDecoratorCollisionInputs(args: {
 
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
   const sameSourceFile =
-    bothSourceFilesKnown && newSourceFile === existing.sourceFilePath;
+    bothSourceFilesKnown &&
+    isSameSourcePath(newSourceFile, existing.sourceFilePath);
   const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
   const samePackage =
     !!newPackageName &&
@@ -184,6 +350,10 @@ function buildDecoratorCollisionInputs(args: {
     hasManifestContent: false,
     registrationKeyDiffersFromExistingKey: false,
     existingHasNoPackage: !existing.packageName,
+    declaresDifferentTable:
+      !!newDeclaredTableName &&
+      !!existingTableName &&
+      newDeclaredTableName !== existingTableName,
   };
 }
 
@@ -202,6 +372,7 @@ function applyRegisterCollisionPolicy(args: {
   newPackageName: string | undefined;
   newSourceFile: string | undefined;
   newInBundledContext: boolean;
+  newDeclaredTableName: string | undefined;
   existing: RegisteredClass;
   existingKey: string;
   matchKind: MatchKind;
@@ -254,10 +425,16 @@ function applyRegisterCollisionPolicy(args: {
           `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
       );
     }
-    case 'merge-manifest':
     case 'coexist-qualified':
-      // These policies are only reachable from the manifest path; if we
-      // somehow get here from `register()`, something is miswired.
+      // A different package's class: leave its entry alone and let the new
+      // class register under its own qualified key (#3106).
+      verboseLog(
+        `[registry] ${decision.scenario}: '${args.name}' coexists with '${args.existingKey}' (${decision.reason})`,
+      );
+      return false;
+    case 'merge-manifest':
+      // Only reachable from the manifest path; if we somehow get here from
+      // `register()`, something is miswired.
       throw new Error(
         `decideCollisionPolicy returned '${decision.policy}' for decorator origin (scenario: ${decision.scenario}). This is a bug.`,
       );
@@ -354,6 +531,7 @@ function buildManifestCollisionInputs(args: {
     ),
     registrationKeyDiffersFromExistingKey: registrationKey !== existingKey,
     existingHasNoPackage: !existing.packageName,
+    declaresDifferentTable: false,
   };
   // Note: manifest-origin sets hasNewQualifiedKey from the final
   // registrationKey (not packageName) because registerFromManifest accepts
@@ -731,6 +909,16 @@ function registerUntracked(
       };
     }
     existing.schema.tableName = nextTableName;
+    // A manifest stub carries the manifest's `filePath` (a build-time source
+    // path). Once a real class takes the entry over, later collision checks
+    // compare against where that class actually loaded from (#3106).
+    if (
+      (existing.constructor as { _isManifestStub?: boolean })
+        ._isManifestStub === true &&
+      newSourceFile
+    ) {
+      existing.sourceFilePath = newSourceFile;
+    }
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
     declareSensitiveTable(
@@ -779,8 +967,6 @@ function registerUntracked(
   // case-insensitive paths now routes through decideCollisionPolicy, which
   // consolidates the 11-branch if/else tree from pre-C.
   const newSourceFile = getSourceFileFromStack();
-  const newPackageName =
-    explicitPackageName || getPackageName(ctor, true) || undefined;
   const newInBundledContext = isBundledOutputPath(newSourceFile);
 
   // Generated consumer registration carries both an explicit package and the
@@ -842,6 +1028,29 @@ function registerUntracked(
     }
   }
 
+  // The class's package identity: an explicit `packageName`; else the
+  // package owning the declaring file (stack-derived) when that package
+  // declares the class; else the package whose loaded manifest describes the
+  // declaring file (a workspace package's source scanned into an app's
+  // manifest, #3110); else the stack-derived package, unconfirmed.
+  const stackPackageName = explicitPackageName
+    ? undefined
+    : getPackageName(ctor, true) || undefined;
+  const stackPackageDeclaresClass =
+    !!stackPackageName &&
+    packageDeclaresClass(
+      stackPackageName,
+      createQualifiedName(stackPackageName, name),
+    );
+  const sourceManifestPackage =
+    explicitPackageName || stackPackageDeclaresClass
+      ? undefined
+      : findManifestPackageForSource(name, newSourceFile, stackPackageName);
+  const newPackageName =
+    explicitPackageName ||
+    sourceManifestPackage?.packageName ||
+    stackPackageName;
+
   // #3098: when this constructor's own package is known and that package
   // declares this class (its manifest stub or an earlier registration sits
   // under the qualified key, or its manifest describes it), never adopt
@@ -853,9 +1062,9 @@ function registerUntracked(
     : undefined;
   const ownPackageDeclaresClass =
     !!ownQualifiedKey &&
-    !!newPackageName &&
     (!!explicitPackageName ||
-      packageDeclaresClass(newPackageName, ownQualifiedKey));
+      stackPackageDeclaresClass ||
+      !!sourceManifestPackage);
   const belongsToAnotherPackage = (existing: RegisteredClass): boolean =>
     ownPackageDeclaresClass &&
     !!existing.packageName &&
@@ -871,6 +1080,7 @@ function registerUntracked(
       newPackageName,
       newSourceFile,
       newInBundledContext,
+      newDeclaredTableName: config.tableName,
       existing,
       existingKey: name,
       matchKind: 'exact-key',
@@ -910,6 +1120,7 @@ function registerUntracked(
       newPackageName,
       newSourceFile,
       newInBundledContext,
+      newDeclaredTableName: config.tableName,
       existing,
       existingKey,
       matchKind: 'case-insensitive',
@@ -923,8 +1134,7 @@ function registerUntracked(
   // includes the external package file path. Later calls won't have this context.
   // Skip registry check to avoid circular dependency - class isn't registered yet!
   // This solves issue #159 where external package manifests couldn't be loaded.
-  const packageNameFromStack =
-    explicitPackageName || getPackageName(ctor, true) || undefined;
+  const packageNameFromStack = newPackageName;
 
   // Capture source file path for collision detection during module re-evaluation
   // (Issue #555: Test isolation - class name collision during vitest collection)
@@ -938,6 +1148,35 @@ function registerUntracked(
   // 4. Cached external manifests (if already loaded)
   // For external packages not yet loaded, manifest discovery happens lazily during schema generation
   // Issue #713: Use lookupInManifest for qualified name support
+  // The simple-name entry is a last resort for a class with a known package
+  // identity. It never applies while another package registers a class of
+  // this name, and a stack-derived identity nothing confirmed (outside
+  // bundled output, where the stack package is the declaring file's own) also
+  // refuses an entry another package owns: an app manifest that declares a
+  // dependency loads that dependency's manifest before any of its classes
+  // register, and its same-named entry would otherwise hand a consumer class
+  // the dependency's identity, fields and table (#3106). In bundled output
+  // (where the stack package is the bundle's) the entry is refused only when
+  // the table the decorator resolved for the class differs from the entry's.
+  const simpleNameManifestFallback = () => {
+    if (
+      findClassesByName(name).some(
+        (candidate) =>
+          !!candidate.packageName && candidate.packageName !== newPackageName,
+      )
+    ) {
+      return undefined;
+    }
+    const entry = discoverManifestSync(name);
+    const foreignEntry =
+      !!entry?.packageName && entry.packageName !== newPackageName;
+    if (!foreignEntry || ownPackageDeclaresClass) return entry;
+    const entryTable =
+      entry?.schema?.tableName || entry?.decoratorConfig?.tableName;
+    const declaresOtherTable =
+      !!config.tableName && !!entryTable && config.tableName !== entryTable;
+    return !newInBundledContext || declaresOtherTable ? undefined : entry;
+  };
   let manifestEntry: ReturnType<typeof lookupInManifest> | undefined;
   if (config._manifest) {
     manifestEntry = lookupRegistrationManifest(
@@ -955,17 +1194,14 @@ function registerUntracked(
     // `packageName` on a class scanned into another package's manifest), the
     // simple-name entry still applies unless another package registers a
     // class of this name.
-    manifestEntry =
-      ownQualifiedKey && ownPackageDeclaresClass
-        ? (discoverManifestSync(ownQualifiedKey) ??
-          (findClassesByName(name).some(
-            (candidate) =>
-              !!candidate.packageName &&
-              candidate.packageName !== newPackageName,
-          )
-            ? undefined
-            : discoverManifestSync(name)))
-        : discoverManifestSync(name);
+    // The same guard applies to an unconfirmed package identity: another
+    // package's same-named entry must not become this class's manifest
+    // (#3106).
+    manifestEntry = ownQualifiedKey
+      ? (discoverManifestSync(ownQualifiedKey) ??
+        sourceManifestPackage?.entry ??
+        simpleNameManifestFallback())
+      : discoverManifestSync(name);
   }
   const runtimeTenantScopedDeclaration =
     getConstructorTenantScopedDeclarations().get(ctor);
@@ -1330,12 +1566,15 @@ function registerUntracked(
   // The manifest's tableName is computed at build-time when full class hierarchy is known,
   // which correctly handles STI inheritance. The decorator may derive wrong tableName
   // if parent class isn't registered yet at decorator execution time.
-  const tableName = resolveTableName(ctor, name, {
-    ...config,
-    ...(ownPackageDeclaresClass && newPackageName
-      ? { packageName: newPackageName }
-      : {}),
-  });
+  // The table comes from the manifest entry selected above, which already
+  // refuses another package's same-named entry: a fresh simple-name lookup
+  // here bound a consumer's `LicenseSale` (`license_sales`) to smrt-commerce's
+  // `contracts` table (#3106).
+  const tableName =
+    manifestEntry?.schema?.tableName ||
+    manifestEntry?.decoratorConfig?.tableName ||
+    config.tableName ||
+    tableNameFromClass(ctor);
   setSmrtTableName(ctor, tableName);
 
   // Load pre-generated schema from manifest if available, otherwise placeholder

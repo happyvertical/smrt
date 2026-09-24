@@ -42,6 +42,7 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     registrationKeyDiffersFromExistingKey: false,
     existingHasNoPackage: false,
     existingHasAnyPackage: false,
+    declaresDifferentTable: false,
     ...overrides,
   };
 }
@@ -323,6 +324,113 @@ describe('decideCollisionPolicy', () => {
       );
       expect(result.policy).toBe('accept');
       expect(result.scenario).toBe('decorator-unknown-source-fallback');
+    });
+  });
+
+  describe('decorator-different-packages-qualified-coexist (#3106)', () => {
+    const differentPackages = {
+      origin: 'decorator' as const,
+      matchKind: 'case-insensitive' as const,
+      hasNewQualifiedKey: true,
+      existingHasAnyPackage: true,
+      existingIsPackageQualified: true,
+      existingKeyIsQualified: true,
+      sameName: true,
+    };
+
+    it('a source class of another package coexists instead of throwing', () => {
+      const result = decideCollisionPolicy(baseline(differentPackages));
+      expect(result.policy).toBe('coexist-qualified');
+      expect(result.scenario).toBe(
+        'decorator-different-packages-qualified-coexist',
+      );
+    });
+
+    it('also when the existing entry has no comparable source file', () => {
+      const result = decideCollisionPolicy(
+        baseline({ ...differentPackages, bothSourceFilesKnown: false }),
+      );
+      expect(result.policy).toBe('coexist-qualified');
+    });
+
+    it('bundled output coexists only when the class declares another table', () => {
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, newInBundledContext: true }),
+        ).scenario,
+      ).toBe('decorator-bundled-context-known-package');
+      expect(
+        decideCollisionPolicy(
+          baseline({
+            ...differentPackages,
+            newInBundledContext: true,
+            declaresDifferentTable: true,
+          }),
+        ).policy,
+      ).toBe('coexist-qualified');
+    });
+
+    it('leaves same-package duplicates, same files and STI pairs to their rows', () => {
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, samePackage: true }),
+        ).scenario,
+      ).toBe('decorator-case-insensitive-pnpm-duplicate');
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, sameSourceFile: true }),
+        ).scenario,
+      ).toBe('decorator-same-source-file');
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, newExtendsExisting: true }),
+        ).scenario,
+      ).toBe('sti-child-wins');
+    });
+
+    it('an unknown package on either side is still a true collision', () => {
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, hasNewQualifiedKey: false }),
+        ).scenario,
+      ).toBe('true-collision');
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...differentPackages, existingHasAnyPackage: false }),
+        ).scenario,
+      ).toBe('true-collision');
+    });
+
+    it("another package's manifest stub is not taken over by a different class", () => {
+      const stub = { ...differentPackages, existingIsManifestStub: true };
+      expect(decideCollisionPolicy(baseline(stub)).policy).toBe(
+        'coexist-qualified',
+      );
+      // Bundled output: the stack package is the bundle's, so the stub is
+      // still replaced unless the class declares another table.
+      expect(
+        decideCollisionPolicy(baseline({ ...stub, newInBundledContext: true }))
+          .scenario,
+      ).toBe('manifest-stub-replacement');
+      expect(
+        decideCollisionPolicy(
+          baseline({
+            ...stub,
+            newInBundledContext: true,
+            declaresDifferentTable: true,
+          }),
+        ).policy,
+      ).toBe('coexist-qualified');
+      // A stub without a source file (or of the same file) is replaced.
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...stub, bothSourceFilesKnown: false }),
+        ).scenario,
+      ).toBe('manifest-stub-replacement');
+      expect(
+        decideCollisionPolicy(baseline({ ...stub, sameSourceFile: true }))
+          .scenario,
+      ).toBe('manifest-stub-replacement');
     });
   });
 

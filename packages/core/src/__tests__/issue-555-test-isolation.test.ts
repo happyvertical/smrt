@@ -61,40 +61,41 @@ describe('Issue #555: Test isolation - class name collision', () => {
       expect(secondRegistration?.constructor).toBe(TestIsolation555B);
     });
 
-    it('should throw collision error for same name from different source files', () => {
+    it('keeps a same-named class from another package and source file apart', () => {
       // Register first class
       @smrt()
       class CollisionTest555 extends SmrtObject {
         field1: string = '';
       }
 
-      // Get the registered entry and modify the source file to simulate
-      // a class from a different file
       const registered = ObjectRegistry.getClass('CollisionTest555');
       expect(registered).toBeDefined();
 
       // Simulate the first class being from a different source file
       registered!.sourceFilePath = '/different/path/to/file.ts';
 
-      // Create a different constructor with the same name
-      // This simulates a different class with the same name from another file.
-      // It must also come from another package: within one package, a second
-      // constructor of the same name from another file is indistinguishable
-      // from a pnpm-duplicated copy (accepted). This test used to get that
-      // package difference by accident — the registry attributed the call to
-      // the test runner's package until #3098 fixed stack attribution.
+      // A different constructor with the same name from another package.
+      // Within one package, a second constructor of the same name from another
+      // file is indistinguishable from a pnpm-duplicated copy (accepted). From
+      // another package it is a different class: both keep their own qualified
+      // identity instead of one adopting the other's registration (#3106).
       const OtherClass = class CollisionTest555 extends SmrtObject {
         static readonly __package__ = '@test/issue-555-other';
         field2: string = '';
       };
 
-      // Try to register the class with the same name from a "different" source file
-      // This should throw because source files differ
-      expect(() => {
-        ObjectRegistry.register(OtherClass as any, {
-          name: 'CollisionTest555',
-        });
-      }).toThrow(/SMRT Class Name Collision/);
+      ObjectRegistry.register(OtherClass as any, {
+        name: 'CollisionTest555',
+      });
+
+      expect(ObjectRegistry.getClassByConstructor(CollisionTest555)).toBe(
+        registered,
+      );
+      const other = ObjectRegistry.getClassByConstructor(OtherClass as any);
+      expect(other?.qualifiedName).toBe(
+        '@test/issue-555-other:CollisionTest555',
+      );
+      expect(other).not.toBe(registered);
     });
 
     it('should allow re-registration when source file tracking is unavailable (fallback)', () => {

@@ -24,8 +24,14 @@ export interface CollectionRegistrationLookup {
  * creates a base-columns-only table, dropping the junction's FK columns
  * (#1342 — `place_assets` vs `profile_assets` asymmetry).
  *
+ * `SmrtReportCollection` (`@happyvertical/smrt-reports`) is the same case: a
+ * framework collection base that is never registered, so a report collection
+ * (`class XCollection extends SmrtReportCollection<X>`) was classified as a
+ * table-bearing class and claimed its item's table. The schema planner then
+ * rejected the pair as two unrelated owners of one table (#3110).
+ *
  * Keep in sync with the collection bases that extend `SmrtCollection` in
- * `packages/core/src/junction.ts`. (`SmrtHierarchical` and
+ * `packages/core/src/junction.ts` and `packages/reports/src/report.ts`. (`SmrtHierarchical` and
  * `SmrtPolymorphicAssociation` extend `SmrtObject`, not `SmrtCollection`, so
  * they deliberately do NOT belong here.)
  *
@@ -44,6 +50,7 @@ export interface CollectionRegistrationLookup {
 export const SMRT_COLLECTION_BASE_NAMES = [
   'SmrtCollection',
   'SmrtJunction',
+  'SmrtReportCollection',
 ] as const;
 
 export function isSmrtCollectionExtendsName(

@@ -21,7 +21,7 @@
  * paths or load JavaScript manifest modules.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
@@ -45,6 +45,7 @@ import {
   isDecoratorRuntimeFramePath,
   isDecoratorRuntimePackageName,
   isModuleRunnerFramePath,
+  isSmrtCoreFramePath,
 } from '../utils/stack-frames.js';
 import { ManifestManager } from './manager.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
@@ -462,6 +463,54 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   return null;
 }
 
+let projectManifestRead:
+  | { path: string; mtimeMs: number; manifest: SmartObjectManifest | null }
+  | undefined;
+
+/**
+ * The manifest of the project the process runs in (the first of
+ * `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
+ * `<cwd>/src/manifest/manifest.json`, as `ManifestManager.loadLocal()` reads
+ * them), never seeded into the lookup caches. Only consulted to attribute a
+ * decorated class whose declaring file that manifest describes, when no loaded
+ * manifest does: a plain Node/tsx script importing an app's workspace-package
+ * models has not loaded the app's manifest yet (#3109). The read is reused
+ * only while that file is unchanged, so a dev server that regenerates it is
+ * seen; a missing manifest is never cached.
+ */
+export function readProjectManifestSync(): SmartObjectManifest | null {
+  if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
+    return null;
+  }
+  const manager = new ManifestManager(process.cwd());
+  const path = [
+    manager.getOutputPath('dev'),
+    manager.getOutputPath('build'),
+    manager.getOutputPath('source'),
+  ].find((candidate) => existsSync(candidate));
+  if (!path) return null;
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+  if (
+    projectManifestRead?.path === path &&
+    projectManifestRead.mtimeMs === mtimeMs
+  ) {
+    return projectManifestRead.manifest;
+  }
+  let manifest: SmartObjectManifest | null = null;
+  try {
+    manifest = parse<SmartObjectManifest>(readFileSync(path, 'utf-8'));
+  } catch {
+    manifest = null;
+  }
+  projectManifestRead = { path, mtimeMs, manifest };
+  return manifest;
+}
+
 /**
  * Extract package name from class constructor
  *
@@ -487,22 +536,6 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  *   `Error().stack`. Used by tests to simulate a lowered call pattern.
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
-/**
- * Whether a stack frame is smrt-core's own code, which applies decorators but
- * never declares an application class. Matched by location rather than by a
- * bare `registry` substring, which also skipped any caller file so named —
- * including core's own `*registry*.test.ts` suites (#3098).
- */
-function isCoreInternalFramePath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return (
-    lower.includes('manifest-loader') ||
-    lower.includes('/smrt-core/dist/') ||
-    lower.includes('/packages/core/dist/') ||
-    (lower.includes('/packages/core/src/') && !lower.includes('__tests__'))
-  );
-}
-
 export function getPackageName(
   ctor: SmrtObjectConstructor,
   skipRegistry: boolean = false,
@@ -551,7 +584,7 @@ export function getPackageName(
           // helpers (#1785) — the class is declared in neither.
           const normalizedPath = filePath.replace(/\\/g, '/');
           if (
-            isCoreInternalFramePath(normalizedPath) ||
+            isSmrtCoreFramePath(normalizedPath) ||
             isDecoratorRuntimeFramePath(normalizedPath) ||
             isModuleRunnerFramePath(normalizedPath)
           ) {
@@ -1437,6 +1470,7 @@ export function clearManifestCache(): void {
   getManifestCacheMap().clear();
   getManifestCollisionsMap().clear();
   getSTISiblingCache().clear();
+  projectManifestRead = undefined;
 }
 
 /**

@@ -173,6 +173,17 @@ export interface CollisionInputs {
    * treats it as promotion rather than collision.
    */
   readonly existingHasNoPackage: boolean;
+
+  /**
+   * Decorator-origin only: the table the `@smrt()` decorator resolved for the
+   * new class (its explicit `tableName`, its STI parent's table, or the name
+   * derived from the class) differs from the existing entry's table. A
+   * duplicate of one class — pnpm copy, inlined chunk — resolves the same
+   * table, so this is positive evidence of a different class (#3106): ergot's
+   * `LicenseSale` resolves `license_sales` where smrt-commerce's STI subtype
+   * resolves `contracts`.
+   */
+  readonly declaresDifferentTable: boolean;
 }
 
 export interface PolicyDecision {
@@ -215,11 +226,24 @@ const ROWS: readonly Row[] = [
     // pre-registered a stub placeholder under this name. The real class
     // takes over. Manifest-origin stub-to-stub arrivals fall through to
     // the source-file / STI rows instead.
+    // A stub another package's manifest registered is that package's class:
+    // a class from another package that is known not to be the stub's — its
+    // source file differs (outside bundled output, whose stack package is the
+    // bundle's, not the declaring package's) or it declares another table —
+    // is a different class and coexists instead (#3106).
     scenario: 'manifest-stub-replacement',
     match: (i) =>
       i.origin === 'decorator' &&
       i.existingIsManifestStub &&
-      !i.sameConstructor,
+      !i.sameConstructor &&
+      !(
+        i.hasNewQualifiedKey &&
+        i.existingHasAnyPackage &&
+        !i.samePackage &&
+        !i.sameSourceFile &&
+        ((i.bothSourceFilesKnown && !i.newInBundledContext) ||
+          i.declaresDifferentTable)
+      ),
     policy: 'replace',
     reason: () =>
       'Existing entry is a manifest stub placeholder; the real implementation takes over.',
@@ -338,6 +362,34 @@ const ROWS: readonly Row[] = [
     policy: 'accept',
     reason: () =>
       'pnpm store duplicated the same package; different physical constructors but semantically identical.',
+  },
+
+  {
+    // The decorator-path counterpart of
+    // `manifest-different-packages-qualified-coexist` (#3106): a class whose
+    // own package is known and differs from the existing entry's package is a
+    // different class, not a duplicate — e.g. a consumer's `LicenseSale` next
+    // to smrt-commerce's. Both live under their qualified keys. Inheritance
+    // between them is left to the STI rows. In bundled output the declaring
+    // package is only trusted when the new class declares another table: a
+    // consumer bundle that inlined a dependency reports the consumer's
+    // package for the dependency's classes, and the same class may also load
+    // from the installed dependency (a SvelteKit build's analysis step does),
+    // so neither the package nor the file location tells a duplicate apart.
+    // Those duplicates are what the next row accepts.
+    scenario: 'decorator-different-packages-qualified-coexist',
+    match: (i) =>
+      i.origin === 'decorator' &&
+      i.hasNewQualifiedKey &&
+      i.existingHasAnyPackage &&
+      !i.samePackage &&
+      !i.sameSourceFile &&
+      !i.newExtendsExisting &&
+      !i.existingExtendsNew &&
+      (!i.newInBundledContext || i.declaresDifferentTable),
+    policy: 'coexist-qualified',
+    reason: () =>
+      'Different packages declare the same simple name; both registrations live under their qualified keys (issue #3106).',
   },
 
   {
