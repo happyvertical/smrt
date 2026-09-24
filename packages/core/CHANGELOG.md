@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.51.23
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - verify exports for public models with closed surfaces (#3089)
+  - regenerate tracked register snapshots in releases (#3088)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.90.0 (#3095) (deps)
+- @happyvertical/smrt-config@0.51.23
+  - @happyvertical/smrt-scanner@0.51.23
+  - @happyvertical/smrt-types@0.51.23
+
 ## 0.51.22
 
 ### Patch Changes
