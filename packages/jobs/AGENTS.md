@@ -95,6 +95,9 @@ transitions and monotonic checkpoints in
   `<name>-billing:<sellerTenantId>`, #3060).
 - Tenant-facing accept/replay requires ambient tenant context. Worker claim is
   cross-tenant, then runtime restores the captured context before observation.
+  Reads in the accept path go through the tenant-scoped collection (`list()`),
+  so intake works under the interceptor's `rawQueryPolicy: 'throw'` production
+  default without a bypass (#3100); keep new tenant-facing reads that way.
 - Projection callbacks must write through `ForgeProjectionContext.db`; the
   application projection, checkpoint, and inbox completion share one
   transaction.

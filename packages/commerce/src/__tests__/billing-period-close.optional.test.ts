@@ -14,7 +14,12 @@ import {
   CreditGrantCollection,
   SpendingPolicyCollection,
 } from '@happyvertical/smrt-subscriptions';
-import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  enableTenancy,
+  withSystemContext,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BillingRuntime } from '../billing/runtime.js';
@@ -236,5 +241,44 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
     expect((await world.provider.getAccount(NETWORK))?.standing).toBe(
       'current',
     );
+  });
+
+  it('accepts and applies a verified webhook under strict tenancy (#3100)', async () => {
+    const db = await getTestDatabase({
+      type: 'postgres',
+      url: String(process.env.DATABASE_URL),
+      classes: OBJECTS,
+    });
+    connections.push(db);
+    const world = await createBillingWorld(db);
+    const period = currentMonth();
+    await world.usage(SOLO);
+    await world.provider.closePeriod(period);
+    const [invoice] = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceCollection.create({ db })).list({}),
+    );
+    world.stripe.pay(String(invoice?.externalId));
+    const { payload, signature } = signedEvent(
+      invoiceEvent('invoice.paid', String(invoice?.externalId)),
+    );
+
+    // The production host setting: the interceptor refuses unflagged raw SQL
+    // on tenant-scoped classes.
+    enableTenancy({ rawQueryPolicy: 'throw' });
+    try {
+      expect(
+        (await world.provider.acceptWebhook(payload, signature)).accepted,
+      ).toBe(true);
+      expect(
+        (await world.provider.acceptWebhook(payload, signature)).accepted,
+      ).toBe(false);
+      expect(await world.provider.processEvents()).toBe(1);
+    } finally {
+      disableTenancy();
+    }
+    const settled = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceCollection.create({ db })).get(String(invoice?.id)),
+    );
+    expect(settled?.status).toBe(InvoiceStatus.PAID);
   });
 });

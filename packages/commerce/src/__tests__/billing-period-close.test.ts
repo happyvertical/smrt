@@ -17,11 +17,13 @@ import {
   TenantUsageMetricCollection,
 } from '@happyvertical/smrt-subscriptions';
 import {
+  disableTenancy,
+  enableTenancy,
   TenantIsolationError,
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   enqueueBillingEvents,
   enqueueBillingPeriodClose,
@@ -780,6 +782,47 @@ describe('smrt#3060 billing-period close', () => {
       // A provider-managed subscription is not billed by period close.
       await world.provider.closePeriod(period);
       expect(await invoiceFor(world, PROVIDER, SOLO)).toEqual([]);
+    });
+  });
+
+  describe('provider events under strict tenancy (#3100)', () => {
+    // Production hosts enable the tenancy interceptor with rawQueryPolicy
+    // 'throw'. Webhook intake and event processing must work there without
+    // any caller-supplied bypass.
+    beforeEach(() => {
+      enableTenancy({ rawQueryPolicy: 'throw' });
+    });
+    afterEach(() => {
+      disableTenancy();
+    });
+
+    it('accepts, deduplicates and settles a paid invoice with the interceptor enforcing', async () => {
+      await world.usage(SOLO);
+      await world.provider.closePeriod(period);
+      const [solo] = await invoiceFor(world, PROVIDER, SOLO);
+      world.stripe.pay(String(solo?.externalId));
+      const { payload, signature } = signedEvent(
+        invoiceEvent('invoice.paid', String(solo?.externalId)),
+      );
+      expect(
+        (await world.provider.acceptWebhook(payload, signature)).accepted,
+      ).toBe(true);
+      expect(
+        (await world.provider.acceptWebhook(payload, signature)).accepted,
+      ).toBe(false);
+      expect(await world.provider.processEvents()).toBe(1);
+      expect(await world.provider.processEvents()).toBe(0);
+
+      const [paid] = await invoiceFor(world, PROVIDER, SOLO);
+      expect(paid).toMatchObject({
+        status: InvoiceStatus.PAID,
+        amountPaid: paid?.totalAmount,
+      });
+      const payments = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await PaymentCollection.create({ db: world.db })).list({}),
+      );
+      expect(payments).toHaveLength(1);
+      expect(payments[0]?.status).toBe(PaymentStatus.COMPLETED);
     });
   });
 

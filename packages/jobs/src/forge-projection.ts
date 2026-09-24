@@ -290,13 +290,17 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
       now.toISOString(),
     );
     const accepted = inserted.rows.length === 1;
-    const row = await this.query(
-      `SELECT * FROM _smrt_forge_deliveries
-        WHERE tenant_id = ? AND provider = ? AND delivery_id = ?
-        LIMIT 1`,
-      [tenant, input.provider, input.deliveryId],
-    );
-    const delivery = row[0];
+    // Read back through the tenant-scoped collection path, not raw SQL: the
+    // tenancy interceptor applies the ambient tenant filter itself, so this
+    // works under `rawQueryPolicy: 'throw'` without any bypass (#3100).
+    const [delivery] = await this.list({
+      where: {
+        tenantId: tenant,
+        provider: input.provider,
+        deliveryId: input.deliveryId,
+      },
+      limit: 1,
+    });
     if (!delivery) throw new Error('Forge delivery insert could not be read');
     await audit?.({
       type: accepted ? 'delivery.accepted' : 'delivery.duplicate',
