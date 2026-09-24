@@ -413,6 +413,22 @@ describe('offlineCommandQueue — writes with no generated collection', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('a second wipe still clears commands queued after the first', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    const key = uniqueKey();
+    const q = queue({
+      name: 'punch',
+      namespace: key,
+      transport: async () => ({ status: 'applied' }),
+    });
+    await q.enqueue({ rowId: 'x' });
+    await wipeDurableStore(durableStoreNamespace(key));
+    await q.enqueue({ rowId: 'y' });
+    expect(await q.snapshot()).toHaveLength(1);
+    await wipeDurableStore(durableStoreNamespace(key));
+    expect(await q.snapshot()).toEqual([]);
+  });
+
   it('returns undefined instead of acknowledging when IndexedDB is unavailable, and after dispose', async () => {
     vi.stubGlobal('indexedDB', undefined);
     const q = offlineCommandQueue({
@@ -677,6 +693,60 @@ describe('offline outbox — per-route cross-tab leadership', () => {
     } finally {
       await tabB.unregisterCollection('punch', recordB);
       await tabA.unregisterCollection('notes', recordA);
+    }
+  });
+
+  it('detaching a route mid-replay keeps its lock until the send settles', async () => {
+    vi.stubGlobal('navigator', { onLine: true, locks: new StubLocks() });
+    const namespace = durableStoreNamespace(uniqueKey());
+    const config = {
+      namespace,
+      backoff: { initialDelayMs: 100_000, multiplier: 2, maxDelayMs: 100_000 },
+      registerResource: () => () => {},
+    };
+    let settle: (() => void) | undefined;
+    const sentA: string[] = [];
+    const tabA = new OutboxEngine(config);
+    // A second binding keeps tab A's engine alive after the route detaches.
+    const keepAlive = tabA.registerCollection({ object: 'notes' });
+    const recordA = tabA.registerCollection({
+      object: 'punch',
+      transport: (command) =>
+        new Promise((resolve) => {
+          sentA.push(command.idempotencyKey);
+          settle = () => resolve({ status: 'applied' });
+        }),
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const sentB: string[] = [];
+    const tabB = new OutboxEngine(config);
+    const recordB = tabB.registerCollection({
+      object: 'punch',
+      transport: async (command) => {
+        sentB.push(command.idempotencyKey);
+        return { status: 'applied' };
+      },
+    });
+    try {
+      await tabA.enqueue({
+        kind: 'insert',
+        object: 'punch',
+        rowId: '',
+        data: {},
+        transport: 'punch',
+      });
+      await waitFor(() => sentA.length === 1);
+      await tabA.unregisterCollection('punch', recordA);
+      await new Promise((r) => setTimeout(r, 30));
+      expect(sentB).toEqual([]); // tab B cannot take over mid-send
+
+      settle?.();
+      await new Promise((r) => setTimeout(r, 30));
+      expect(await tabB.snapshot()).toEqual([]);
+      expect(sentB).toEqual([]); // settled by A; nothing left to replay
+    } finally {
+      await tabB.unregisterCollection('punch', recordB);
+      await tabA.unregisterCollection('notes', keepAlive);
     }
   });
 });

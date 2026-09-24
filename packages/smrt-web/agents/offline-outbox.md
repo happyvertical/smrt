@@ -129,7 +129,14 @@ Invariants:
   namespace-wide lock had. Rows of a route no attached tab serves (e.g. after
   a reload, before its queue re-attaches) simply wait; they gate nothing else.
   FIFO and backoff gating hold within a route, not across routes; sync-apply
-  rows still batch (≤1000), a transport row replays alone.
+  rows still batch (≤1000), a transport row replays alone. Detaching a route's
+  last binding (or disposing the engine) stops new sends at once but holds the
+  lock until the in-flight send and its durable transition settle, so another
+  tab never replays a row this one is still settling.
+- **Wipe re-registration.** `wipeDurableStore` drops a namespace's
+  registrations, so the queue's clear callback forgets its registration and
+  the next enqueue re-registers; a later wipe still clears rows written after
+  the first.
 - **Sync-apply endpoint comes from bindings, not the engine creator.** A
   command queue may create the shared engine first; the first sync-apply
   binding supplies `basePath`/`fetchFn`.

@@ -116,20 +116,38 @@ describe('persistDataSurface', () => {
     expect(await s.load()).toBeUndefined();
   });
 
-  it('drops a save still pending when the namespace is wiped, then persists new saves', async () => {
+  it('a wipe makes existing handles inert, including a save pending at the wipe', async () => {
     const k = key();
     const s = surface({ namespace: k, identity, debounceMs: 60_000 });
     await s.load(); // store open and registered
     s.save([{ id: 'p1', at: '08:00' }]);
     await wipeDurableStore(durableStoreNamespace(k));
     await s.flush();
-    expect(await s.load()).toBeUndefined();
-
     s.save([{ id: 'p2', at: '09:00' }]);
     await s.dispose();
-    expect(await surface({ namespace: k, identity }).load()).toEqual([
-      { id: 'p2', at: '09:00' },
-    ]);
+    expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
+  });
+
+  it('a handle created after a wipe persists, and a second wipe still clears it', async () => {
+    const k = key();
+    const ns = durableStoreNamespace(k);
+    // Keep the shared store open across both wipes, as a mounted app would.
+    const holder = surface({
+      namespace: k,
+      identity: { ...identity, surfaceId: 'other' },
+    });
+    await holder.load();
+    await wipeDurableStore(ns);
+
+    const s = surface({ namespace: k, identity, debounceMs: 60_000 });
+    s.save([{ id: 'p2', at: '09:00' }]);
+    await s.flush();
+    expect(await s.load()).toEqual([{ id: 'p2', at: '09:00' }]);
+
+    s.save([{ id: 'p3', at: '10:00' }]); // pending across the second wipe
+    await wipeDurableStore(ns);
+    await s.dispose();
+    expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
   });
 
   it('rejects an identity without a surfaceId', () => {

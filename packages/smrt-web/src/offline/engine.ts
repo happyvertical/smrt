@@ -237,6 +237,8 @@ export class OutboxEngine {
   private paused = false;
   /** True while a drain pass is running, to coalesce concurrent triggers. */
   private draining = false;
+  /** The running drain, while `draining`. */
+  private activeDrain: Promise<void> | undefined;
   /** A drain requested while one was in flight — run one more pass after. */
   private drainQueued = false;
   /** Timer for the next backoff-scheduled drain, if any. */
@@ -274,10 +276,7 @@ export class OutboxEngine {
     try {
       this.queue = await openDurableOutboxQueue(this.config.namespace);
       // Register for wipeDurableStore now that the queue exists.
-      this.unregisterResource = this.config.registerResource(async () => {
-        // A wipe clears the durable rows; drop the in-flight schedule too.
-        await this.queue?.clear();
-      });
+      this.registerForWipe();
       if (this.disposed) {
         // Disposed while opening — tear the just-opened queue back down.
         this.queue.close();
@@ -291,6 +290,20 @@ export class OutboxEngine {
       // biome-ignore lint/suspicious/noConsole: surface an outbox open failure (#1762)
       console.warn('[smrt-web] failed to open the offline outbox', error);
     }
+  }
+
+  /**
+   * Register the queue as a durable resource. A wipe drops the namespace's
+   * registrations, so the clear callback forgets ours and the next enqueue
+   * registers again — otherwise a second wipe would miss rows written after
+   * the first.
+   */
+  private registerForWipe(): void {
+    if (this.unregisterResource || !this.queue || this.disposed) return;
+    this.unregisterResource = this.config.registerResource(async () => {
+      this.unregisterResource = undefined;
+      await this.queue?.clear();
+    });
   }
 
   /** Wake the drain loop immediately when connectivity returns. */
@@ -346,8 +359,10 @@ export class OutboxEngine {
     if (!entry) return;
     entry.refs -= 1;
     if (entry.refs > 0) return;
+    // Stop leading at once (`leads()` is false, so no new send starts), but
+    // hold the lock until an in-flight send and its durable transition settle.
     this.leaders.delete(route);
-    entry.release();
+    void this.settled().then(() => entry.release());
   }
 
   /** Does this tab currently lead `route`? */
@@ -441,6 +456,7 @@ export class OutboxEngine {
   async enqueue(request: OutboxEnqueueRequest): Promise<string | undefined> {
     await this.ready;
     if (!this.queue || this.degraded) return undefined;
+    this.registerForWipe();
 
     const itemId = newItemId();
     const op = envelopeKindToOp(request.kind);
@@ -561,23 +577,36 @@ export class OutboxEngine {
    * to preserve each route's FIFO. Concurrency-coalesced: a drain requested while one runs sets a flag
    * to run exactly one more pass, so overlapping triggers never interleave.
    */
-  private async drain(): Promise<void> {
+  private drain(): Promise<void> {
     if (this.draining) {
       this.drainQueued = true;
-      return;
+      return this.activeDrain ?? Promise.resolve();
     }
     this.draining = true;
-    try {
-      // Loop so a queued re-request (or a freshly-eligible backoff row) runs
-      // without re-entrancy.
-      for (;;) {
-        this.drainQueued = false;
-        await this.drainOnce();
-        if (!this.drainQueued) break;
+    this.activeDrain = (async () => {
+      try {
+        // Loop so a queued re-request (or a freshly-eligible backoff row) runs
+        // without re-entrancy.
+        for (;;) {
+          this.drainQueued = false;
+          await this.drainOnce();
+          if (!this.drainQueued) break;
+        }
+      } finally {
+        this.draining = false;
+        this.activeDrain = undefined;
       }
-    } finally {
-      this.draining = false;
-    }
+    })();
+    return this.activeDrain;
+  }
+
+  /**
+   * Settles once the drain in flight (if any) has finished its request AND its
+   * durable result transition. A route's lock is released only after this, so
+   * another tab can never replay a row this tab is still settling.
+   */
+  private settled(): Promise<void> {
+    return (this.activeDrain ?? Promise.resolve()).catch(() => undefined);
   }
 
   /** One drain pass: send every currently-due batch, then schedule backoff. */
@@ -944,8 +973,13 @@ export class OutboxEngine {
       target.removeEventListener('online', this.onlineListener);
       this.onlineListener = undefined;
     }
-    for (const entry of this.leaders.values()) entry.release();
+    // `disposed` stops the drain loop before its next send; let an in-flight
+    // send settle (request + durable transition) before giving up the locks
+    // and closing the queue it writes to.
+    const leaders = [...this.leaders.values()];
     this.leaders.clear();
+    await this.settled();
+    for (const entry of leaders) entry.release();
     this.unregisterResource?.();
     this.unregisterResource = undefined;
     // Wait for any in-flight open to settle before closing.

@@ -122,11 +122,33 @@ interface SharedSnapshotEngine {
   /** Unregister the durable resource registered on first attach. */
   unregister: (() => void) | undefined;
   /**
-   * Bumped synchronously when a `wipeDurableStore` clears this namespace, so a
-   * data-surface save captured before the wipe can tell it is stale and must
-   * not write the wiped rows back (#3021).
+   * Bumped synchronously when a `wipeDurableStore` clears this namespace. A
+   * data-surface handle created before the wipe compares it to go inert, so
+   * it never writes the wiped scope's rows back (#3021).
    */
   wipeEpoch: number;
+}
+
+/**
+ * Register the shared store for `wipeDurableStore`. A wipe drops the
+ * namespace's registrations, so the clear callback forgets ours and the next
+ * acquire registers again — otherwise a second wipe would miss rows written
+ * after the first.
+ */
+function registerForWipe(
+  engine: SharedSnapshotEngine,
+  namespace: string,
+): void {
+  const store = engine.store;
+  if (!store || engine.unregister) return;
+  engine.unregister = registerDurableResource(namespace, {
+    kind: 'persisted-collection',
+    clear: () => {
+      engine.wipeEpoch += 1;
+      engine.unregister = undefined;
+      return store.clear();
+    },
+  });
 }
 
 /** Registry mapping a namespace string to its shared snapshot engine. */
@@ -154,6 +176,11 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
   const existing = enginesByNamespace.get(namespace);
   if (existing) {
     existing.refCount += 1;
+    void existing.ready.then(() => {
+      if (enginesByNamespace.get(namespace) === existing) {
+        registerForWipe(existing, namespace);
+      }
+    });
     return existing;
   }
 
@@ -178,13 +205,7 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
       // Register the shared store as a durable resource so a logout wipe clears
       // every persisted collection under this namespace at once — alongside the
       // outbox's own registered resource.
-      engine.unregister = registerDurableResource(namespace, {
-        kind: 'persisted-collection',
-        clear: () => {
-          engine.wipeEpoch += 1;
-          return store.clear();
-        },
-      });
+      registerForWipe(engine, namespace);
       return store;
     } catch {
       warnNoIndexedDbOnce();
@@ -400,7 +421,9 @@ export interface PersistedDataSurface<TRow extends object = object> {
   /**
    * The rows last saved for this surface under this namespace, or `undefined`
    * when none exist (first load, a different principal/tenant/manifest, a
-   * wipe, or no IndexedDB). Render them as stale, then revalidate.
+   * wipe, or no IndexedDB). Render them as stale, then revalidate. After a
+   * `wipeDurableStore` of its namespace a handle is inert (`load` finds
+   * nothing, `save` is ignored); create a new one for the next scope.
    */
   load(): Promise<TRow[] | undefined>;
   /**
@@ -456,9 +479,13 @@ export function persistDataSurface<TRow extends object = object>(
   const debounceMs = config.debounceMs ?? DEFAULT_PERSIST_DEBOUNCE_MS;
   let engine: SharedSnapshotEngine | undefined =
     acquireSnapshotEngine(namespace);
-  let pending:
-    | { rows: Array<Record<string, unknown>>; wipeEpoch: number }
-    | undefined;
+  // The handle belongs to the scope it was created in: once that namespace is
+  // wiped (logout, tenant switch) it is inert — `load` finds nothing and
+  // `save` is ignored — and the caller acquires a new handle.
+  const bornEpoch = engine.wipeEpoch;
+  const wiped = (current: SharedSnapshotEngine) =>
+    current.wipeEpoch !== bornEpoch;
+  let pending: Array<Record<string, unknown>> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Serialize writes so a slower earlier save can never land after a later one.
   let writing: Promise<void> = Promise.resolve();
@@ -468,20 +495,20 @@ export function persistDataSurface<TRow extends object = object>(
       clearTimeout(timer);
       timer = undefined;
     }
-    const next = pending;
+    const rows = pending;
     pending = undefined;
     const current = engine;
-    if (!next || !current) return writing;
+    if (!rows || !current) return writing;
     writing = writing.then(async () => {
       const store = await current.ready;
-      // A wipe since this save was captured (logout, tenant switch) means these
-      // rows belong to a cleared scope: drop them rather than resurrect them.
-      // No await between this check and `save` opening its transaction, and
-      // IndexedDB runs readwrite transactions on one store in creation order,
-      // so a later wipe's clear always lands after this write.
-      if (!store || current.wipeEpoch !== next.wipeEpoch) return;
+      // A wipe since this handle was created means these rows belong to a
+      // cleared scope: drop them rather than resurrect them. No await between
+      // this check and `save` opening its transaction, and IndexedDB runs
+      // readwrite transactions on one store in creation order, so a later
+      // wipe's clear always lands after this write.
+      if (!store || wiped(current)) return;
       try {
-        await store.save(key, next.rows);
+        await store.save(key, rows);
       } catch {
         // Best-effort, like persistCollection: a failed write only means the
         // next load does not warm.
@@ -495,7 +522,7 @@ export function persistDataSurface<TRow extends object = object>(
       const current = engine;
       if (!current) return undefined;
       const store = await current.ready;
-      if (!store) return undefined;
+      if (!store || wiped(current)) return undefined;
       const rows = await store.load(key);
       if (!rows || rows.length === 0) return undefined;
       return rows as TRow[];
@@ -507,10 +534,8 @@ export function persistDataSurface<TRow extends object = object>(
           'persistDataSurface.save requires an array of rows',
         );
       }
-      pending = {
-        rows: rows.map((row) => ({ ...(row as Record<string, unknown>) })),
-        wipeEpoch: engine.wipeEpoch,
-      };
+      if (wiped(engine)) return;
+      pending = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
       if (timer) clearTimeout(timer);
       timer = setTimeout(
         () => {
