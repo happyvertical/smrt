@@ -69,6 +69,14 @@ export interface OutboxRow {
   payload?: Record<string, unknown>;
   /** The server `updated_at` the client last saw — the conflict guard base. */
   baseUpdatedAt?: string;
+  /**
+   * The consumer-declared replay transport this row routes through (#3021),
+   * by name. Absent ⇒ the row replays through `sync/apply`. Present ⇒ it
+   * replays ONLY through the transport registered under this name, and is held
+   * (never re-routed to `sync/apply`) until one is. Additive: rows written
+   * before #3021 lack it and keep their sync-apply meaning, so no schema bump.
+   */
+  transport?: string;
   /** On-disk lifecycle state. */
   state: OutboxRowState;
   /** How many replay attempts this row has made (drives backoff). */
@@ -89,6 +97,7 @@ export interface EnqueueInput {
   id: string;
   payload?: Record<string, unknown>;
   baseUpdatedAt?: string;
+  transport?: string;
 }
 
 /**
@@ -183,6 +192,7 @@ export class DurableOutboxQueue {
       id: input.id,
       payload: input.payload,
       baseUpdatedAt: input.baseUpdatedAt,
+      ...(input.transport === undefined ? {} : { transport: input.transport }),
       state: 'pending',
       attempts: 0,
       nextAttemptAt: 0,

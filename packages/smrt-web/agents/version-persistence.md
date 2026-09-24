@@ -59,6 +59,18 @@ omit the capability and never touch disk.**
   nothing, write-back is a no-op). Never throws — the outbox's `probeIndexedDb`
   posture.
 
+### Data-surface persistence — `persistDataSurface(config)` (#3021)
+
+For a mounted surface (e.g. `mountListDataSurface`) whose rows come from a
+principal-scoped data-surface query rather than a generated `list` route. The
+page owns its rows, so this is a handle, not a capability: `load()`, debounced
+`save(rows)` (last call wins; writes serialized), `flush()`, and `dispose()`
+(flushes, then releases). It reuses the namespace's shared snapshot engine —
+same database, durable-resource registration, wipe, and no-IndexedDB degrade.
+Rows are keyed `data-surface:` + JSON of `[kind, surfaceId, subject.type,
+subject.id]`, which cannot collide with a collection name. Principal scoping
+comes from the namespace's `identityId`; nothing here widens a server scope.
+
 ### `updateAvailable` primitive — `createUpdateState(config)` (framework-free)
 
 A tiny pub/sub (`update-state.ts`) with TWO INDEPENDENT signals; `updateAvailable

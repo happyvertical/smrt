@@ -6,6 +6,12 @@
  * confirmation-token validation; this boundary only rejects malformed replies.
  */
 
+import type {
+  OutboxCommand,
+  OutboxCommandResult,
+  OutboxCommandTransport,
+} from './offline/types.js';
+
 export type SmrtWebDataSurfaceJsonPrimitive = string | number | boolean | null;
 export type SmrtWebDataSurfaceJsonValue =
   | SmrtWebDataSurfaceJsonPrimitive
@@ -286,4 +292,111 @@ export async function executeSmrtWebDataSurfaceAction(
     );
   }
   return result;
+}
+
+/**
+ * The replay-time request for {@link dataSurfaceActionCommandTransport}: every
+ * action-request field except those the adapter owns — `version`, `phase`,
+ * `requestId`, `idempotencyKey`, and `confirmationToken`.
+ */
+export type SmrtWebDataSurfaceActionCommandRequest = Omit<
+  SmrtWebDataSurfaceActionRequest,
+  'version' | 'phase' | 'requestId' | 'idempotencyKey' | 'confirmationToken'
+>;
+
+export interface SmrtWebDataSurfaceActionCommandTransportOptions {
+  /** The same action transport the mounted surface uses online. */
+  transport: SmrtWebDataSurfaceActionTransport;
+  /**
+   * Build the action request for a queued write AT REPLAY TIME, so it carries
+   * the surface's current `expectedRevision` rather than the one at capture.
+   */
+  request: (
+    command: OutboxCommand,
+  ) =>
+    | SmrtWebDataSurfaceActionCommandRequest
+    | Promise<SmrtWebDataSurfaceActionCommandRequest>;
+  /**
+   * Run `preview` first and apply with its `confirmationToken` — for actions
+   * whose server adapter requires confirmation. Default false (apply only).
+   */
+  preview?: boolean;
+  /** Map a non-throwing result onto an outbox outcome. Default below. */
+  classify?: (result: SmrtWebDataSurfaceActionResult) => OutboxCommandResult;
+}
+
+const RETRYABLE_ACTION_REASONS = new Set([
+  'idempotency_in_progress',
+  'background_unavailable',
+  'execution_failed',
+]);
+const AUTH_ACTION_REASONS = new Set([
+  'auth_required',
+  'unauthenticated',
+  'unauthorized',
+]);
+const STALE_ACTION_REASONS = new Set(['stale_revision', 'stale_preview']);
+
+/**
+ * Default outcome mapping for a data-surface action result. `ok` → applied; a
+ * transient server reason → retryable `write_failed`; an authentication reason
+ * → pause for re-auth; a stale revision/preview → `conflict` (a RESOLVED
+ * outcome the app rebases from); anything else — including `denied` — is a
+ * terminal rejection surfaced as `failed`.
+ */
+export function classifySmrtWebDataSurfaceActionResult(
+  result: SmrtWebDataSurfaceActionResult,
+): OutboxCommandResult {
+  if (result.ok) return { status: 'applied' };
+  const reason = result.reason ?? 'rejected';
+  if (RETRYABLE_ACTION_REASONS.has(reason)) {
+    return { status: 'rejected', reason: 'write_failed' };
+  }
+  if (AUTH_ACTION_REASONS.has(reason)) {
+    return { status: 'rejected', reason: 'auth_required' };
+  }
+  if (STALE_ACTION_REASONS.has(reason)) {
+    return { status: 'conflict', reason: 'stale_write' };
+  }
+  return { status: 'rejected', reason };
+}
+
+/**
+ * An {@link OutboxCommandTransport} that replays a queued write as a
+ * data-surface action `apply` (optionally preceded by `preview`) through the
+ * surface's own server adapter — its authority, allowlist, and principal
+ * scoping stay on the server path (#3021). The outbox's durable idempotency
+ * key becomes the action's `idempotencyKey`, so a resend after a lost response
+ * replays the server's recorded result instead of applying twice. Malformed or
+ * mismatched replies throw, which the outbox treats as retryable.
+ */
+export function dataSurfaceActionCommandTransport(
+  options: SmrtWebDataSurfaceActionCommandTransportOptions,
+): OutboxCommandTransport {
+  const classify = options.classify ?? classifySmrtWebDataSurfaceActionResult;
+  return async (command) => {
+    const base = await options.request(command);
+    const requestId = (phase: string) =>
+      `${command.idempotencyKey}:${command.attempt}:${phase}`;
+    let confirmationToken: string | undefined;
+    if (options.preview) {
+      const preview = await executeSmrtWebDataSurfaceAction(options.transport, {
+        ...base,
+        version: 1,
+        phase: 'preview',
+        requestId: requestId('preview'),
+      });
+      if (!preview.ok) return classify(preview);
+      confirmationToken = preview.confirmationToken;
+    }
+    const applied = await executeSmrtWebDataSurfaceAction(options.transport, {
+      ...base,
+      version: 1,
+      phase: 'apply',
+      requestId: requestId('apply'),
+      idempotencyKey: command.idempotencyKey,
+      ...(confirmationToken === undefined ? {} : { confirmationToken }),
+    });
+    return classify(applied);
+  };
 }

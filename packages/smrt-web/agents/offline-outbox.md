@@ -34,7 +34,9 @@ runtime dependency (only `fake-indexeddb` as a test devDep). The public surface
 is engine-free by construction (the boundary check is the proof).
 
 **Replay is sync-apply-ONLY** (`offline/engine.ts` → `POST
-{basePath}/sync/apply`), never `ctx.fetchers.create`. This is load-bearing:
+{basePath}/sync/apply`), never `ctx.fetchers.create` — unless the consumer
+declared its own replay transport (see "Consumer-declared replay transports"
+below). This is load-bearing:
 the normal REST create strips the client id (#1540) and mints a NEW server id,
 which would orphan the optimistic row the outbox is keeping; sync-apply's
 strict-insert path preserves the client UUID, so replay reconciles the exact
@@ -89,3 +91,45 @@ durable → exactly-once replay) is complete here.
 `DurableResource` under `durableStoreNamespace(config.namespace)`, so
 `wipeDurableStore(namespace)` (a logout / tenant-switch) empties the queue; the
 namespace is also the IndexedDB dbName and the leader-lock root.
+
+## Consumer-declared replay transports (#3021)
+
+Sync-apply calls `collection.create()` directly, so it cannot carry a write
+whose rules live in a hand-written, permission-gated service (or a model whose
+generated verbs are closed). Two entry points replay through the consumer's own
+operation instead, on the SAME engine:
+
+- `offlineOutbox({ transport })` — a collection's writes queue with
+  `row.transport = object.name`; `syncApplyBasePath` is ignored.
+- `offlineCommandQueue({ name, namespace, transport })` — no collection;
+  `enqueue()` returns the idempotency key, or `undefined` when the write was
+  not captured durably (the caller performs it online). Its `name` shares the
+  per-object event routing, so it must not equal a sibling collection name.
+
+`dataSurfaceActionCommandTransport` adapts a data-surface action transport:
+the request is built at REPLAY time (current `expectedRevision`), `apply`
+carries `idempotencyKey`, `preview: true` runs preview first for its
+`confirmationToken`, and `classifySmrtWebDataSurfaceActionResult` maps reasons
+(transient → `write_failed`, auth → `auth_required`, stale → `conflict`,
+anything else incl. `denied` → terminal).
+
+Invariants:
+
+- **Durable route, never re-routed.** The row stores the transport NAME
+  (functions are not durable). A due row whose name has no attached transport,
+  or a sync-apply row before any binding declared a sync-apply endpoint, is
+  HELD: the pass stops behind it (FIFO) without scheduling a backoff wake — a
+  0 ms wake would hot-spin — and the binding that later declares the route
+  kicks the drain. A transport row never falls back to `sync/apply`: that is
+  the path its consumer closed.
+- **One FIFO across routes.** Contiguous sync-apply rows still batch (≤1000);
+  a transport row replays alone, in order between them.
+- **Sync-apply endpoint comes from bindings, not the engine creator.** A
+  command queue may create the shared engine first; the first sync-apply
+  binding supplies `basePath`/`fetchFn`.
+- **Same state machine.** `OutboxCommandResult` uses the sync-apply result
+  vocabulary and goes through `applyResult`; a thrown transport is the
+  ambiguous path (backoff, resend with the SAME `idempotencyKey`, `attempt`
+  incremented). The server operation must dedupe on that key.
+- Rows written before #3021 lack `transport` and keep their sync-apply
+  meaning, so no IndexedDB schema bump.

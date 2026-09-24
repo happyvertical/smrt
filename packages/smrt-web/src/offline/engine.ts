@@ -43,6 +43,8 @@ import { acquireLeadership, type LeadershipHandle } from './leader.js';
 import {
   computeBackoffDelay,
   MAX_SYNC_APPLY_BATCH_SIZE,
+  type OutboxCommandResult,
+  type OutboxCommandTransport,
   type OutboxConflict,
   type ResolvedBackoff,
   SYNC_APPLY_ROUTE_SEGMENTS,
@@ -50,6 +52,7 @@ import {
   type SyncApplyItem,
   type SyncApplyItemResult,
   type SyncApplyOp,
+  type SyncApplyReason,
   type SyncStateEvent,
 } from './types.js';
 
@@ -70,10 +73,6 @@ export function envelopeKindToOp(
 export interface OutboxEngineConfig {
   /** The durable-store namespace string — the IDB dbName + lock-name root. */
   namespace: string;
-  /** Absolute base path the sync-apply endpoint lives under (e.g. `/api/v1`). */
-  syncApplyBasePath: string;
-  /** Fetch implementation (injectable for tests/SSR). */
-  fetchFn: typeof fetch;
   /** Resolved backoff parameters. */
   backoff: ResolvedBackoff;
   /**
@@ -96,12 +95,40 @@ export interface OutboxEnqueueRequest {
   kind: 'insert' | 'update' | 'delete';
   /** The collection route segment (definition.name). */
   object: string;
-  /** The client-generated row UUID (the optimistic row's id). */
+  /**
+   * The client-generated row UUID (the optimistic row's id). Empty ⇒ the
+   * minted item id stands in (a transport command with no target row).
+   */
   rowId: string;
   /** Full row (insert) / changed fields (update) / ignored (delete). */
   data: Record<string, unknown>;
   /** The server updated_at last seen for this row, for the conflict guard. */
   baseUpdatedAt?: string;
+  /**
+   * Replay through the transport registered under this name instead of
+   * `sync/apply` (#3021). Absent ⇒ sync-apply.
+   */
+  transport?: string;
+}
+
+/**
+ * Where a namespace's sync-apply rows are POSTed. Supplied by the binding that
+ * replays through sync-apply (an `offlineOutbox` without a `transport`), not by
+ * the engine's creator: a command-only queue may create the shared engine
+ * first, and must not pin a sync-apply base path it never declared.
+ */
+export interface OutboxSyncApplyTarget {
+  /** Absolute base path the sync-apply endpoint lives under (e.g. `/api/v1`). */
+  basePath: string;
+  /** Fetch implementation (injectable for tests/SSR). */
+  fetchFn: typeof fetch;
+}
+
+/** The exact record {@link OutboxEngine.registerCollection} registered. */
+interface OutboxBindingRecord {
+  onSyncStateChange?: (event: SyncStateEvent) => void;
+  onConflict?: (conflict: OutboxConflict) => void;
+  transport?: OutboxCommandTransport;
 }
 
 /** A read-only view of one queued item, for {@link OutboxEngine.snapshot}. */
@@ -114,6 +141,8 @@ export interface OutboxSnapshotItem {
   attempts: number;
   nextAttemptAt: number;
   lastError?: string;
+  /** The replay transport name, when the item replays through one (#3021). */
+  transport?: string;
 }
 
 /** Generate a fresh UUID itemId, falling back when crypto.randomUUID is absent. */
@@ -147,11 +176,13 @@ export class OutboxEngine {
    */
   private readonly listenersByObject = new Map<
     string,
-    Set<{
-      onSyncStateChange?: (event: SyncStateEvent) => void;
-      onConflict?: (conflict: OutboxConflict) => void;
-    }>
+    Set<OutboxBindingRecord>
   >();
+  /**
+   * The sync-apply endpoint, adopted from the first binding that declares one.
+   * Until then, sync-apply rows are HELD (never dropped) — see `drainOnce`.
+   */
+  private syncApply: OutboxSyncApplyTarget | undefined;
 
   /** Ref count: number of collections currently attached to this engine. */
   private refCount = 0;
@@ -272,18 +303,12 @@ export class OutboxEngine {
    * by `object` is what lets rehydrated rows (reloaded from IDB) reach this
    * collection's callbacks even though this session never enqueued them.
    */
-  registerCollection(binding: {
-    object: string;
-    onSyncStateChange?: (event: SyncStateEvent) => void;
-    onConflict?: (conflict: OutboxConflict) => void;
-  }): {
-    onSyncStateChange?: (event: SyncStateEvent) => void;
-    onConflict?: (conflict: OutboxConflict) => void;
-  } {
+  registerCollection(binding: OutboxCollectionBinding): object {
     this.refCount += 1;
-    const record = {
+    const record: OutboxBindingRecord = {
       onSyncStateChange: binding.onSyncStateChange,
       onConflict: binding.onConflict,
+      transport: binding.transport,
     };
     let set = this.listenersByObject.get(binding.object);
     if (!set) {
@@ -291,7 +316,28 @@ export class OutboxEngine {
       this.listenersByObject.set(binding.object, set);
     }
     set.add(record);
+    if (binding.syncApply && !this.syncApply) {
+      this.syncApply = binding.syncApply;
+    }
+    // A newly declared route may unblock rows held for it — a transport name
+    // or the sync-apply endpoint reloaded from disk before this binding
+    // attached. Drain is gated, so this is a no-op when nothing is due.
+    if ((binding.transport || binding.syncApply) && !this.disposed) {
+      void this.ready.then(() => {
+        if (!this.disposed) void this.drain();
+      });
+    }
     return record;
+  }
+
+  /** The first live transport registered under `name`, if any. */
+  private transportFor(name: string): OutboxCommandTransport | undefined {
+    const set = this.listenersByObject.get(name);
+    if (!set) return undefined;
+    for (const record of set) {
+      if (record.transport) return record.transport;
+    }
+    return undefined;
   }
 
   /**
@@ -336,22 +382,30 @@ export class OutboxEngine {
 
     const itemId = newItemId();
     const op = envelopeKindToOp(request.kind);
+    // A command with no target row (#3021) is identified by its own item id.
+    const rowId = request.rowId || itemId;
 
-    // A delete carries no payload; create/update carry the row/changed fields.
-    const payload = op === 'delete' ? undefined : request.data;
+    // A sync-apply delete carries no payload; create/update carry the
+    // row/changed fields. A transport row keeps its payload for every op: the
+    // consumer's operation, not sync-apply, defines what a delete needs.
+    const payload =
+      op === 'delete' && request.transport === undefined
+        ? undefined
+        : request.data;
 
     await this.queue.enqueue({
       itemId,
       object: request.object,
       op,
-      id: request.rowId,
+      id: rowId,
       payload,
       baseUpdatedAt: request.baseUpdatedAt,
+      transport: request.transport,
     });
 
     this.emit({
       itemId,
-      rowId: request.rowId,
+      rowId,
       object: request.object,
       state: 'pending',
       attempts: 0,
@@ -400,6 +454,7 @@ export class OutboxEngine {
       attempts: row.attempts,
       nextAttemptAt: row.nextAttemptAt,
       lastError: row.lastError,
+      ...(row.transport === undefined ? {} : { transport: row.transport }),
     }));
   }
 
@@ -485,18 +540,88 @@ export class OutboxEngine {
       return;
     }
 
-    // Chunk oldest-first into ≤1000-item batches; send one at a time so FIFO
-    // holds across chunks.
-    for (let i = 0; i < due.length; i += MAX_SYNC_APPLY_BATCH_SIZE) {
+    // Walk oldest-first. Contiguous sync-apply rows chunk into ≤1000-item
+    // batches; a transport row (#3021) replays alone through its declared
+    // transport. One send at a time, so FIFO holds across both routes. A row
+    // whose route is not declared in this tab yet (a reload rehydrated it
+    // before its queue/collection attached) is HELD: the pass stops behind it
+    // WITHOUT scheduling a backoff wake (that would hot-spin at delay 0) and
+    // WITHOUT re-routing it — a transport row must never fall back to
+    // `sync/apply`, which is exactly the path its consumer closed. The binding
+    // that declares the route kicks the next drain.
+    let i = 0;
+    while (i < due.length) {
       if (this.disposed || this.paused || !this.isLeader) break;
-      const chunk = due.slice(i, i + MAX_SYNC_APPLY_BATCH_SIZE);
-      const drained = await this.sendBatch(chunk);
+      const head = due[i];
+      if (head.transport !== undefined) {
+        const transport = this.transportFor(head.transport);
+        if (!transport) return;
+        const drained = await this.sendCommand(head, transport);
+        i += 1;
+        if (!drained) break;
+        continue;
+      }
+      const syncApply = this.syncApply;
+      if (!syncApply) return;
+      let end = i;
+      while (
+        end < due.length &&
+        end - i < MAX_SYNC_APPLY_BATCH_SIZE &&
+        due[end].transport === undefined
+      ) {
+        end += 1;
+      }
+      const drained = await this.sendBatch(due.slice(i, end), syncApply);
+      i = end;
       if (!drained) break;
     }
 
     // After processing, some rows may have been re-queued with a backoff gate;
     // schedule the next wake.
     await this.scheduleNextBackoff();
+  }
+
+  /**
+   * Replay one transport row through its consumer-declared transport (#3021)
+   * and map the outcome through the SAME transitions as a sync-apply result. A
+   * throw is the ambiguous path (request may or may not have landed): the row
+   * stays `pending` with backoff and is resent under the same idempotency key.
+   * Returns false when the row remains pending, stopping this pass (FIFO).
+   */
+  private async sendCommand(
+    row: OutboxRow,
+    transport: OutboxCommandTransport,
+  ): Promise<boolean> {
+    this.emit({
+      itemId: row.itemId,
+      rowId: row.id,
+      object: row.object,
+      state: 'uploading',
+      attempts: row.attempts,
+    });
+    let outcome: OutboxCommandResult;
+    try {
+      outcome = await transport({
+        idempotencyKey: row.itemId,
+        name: row.transport ?? row.object,
+        op: row.op,
+        rowId: row.id,
+        ...(row.payload === undefined ? {} : { payload: row.payload }),
+        ...(row.baseUpdatedAt === undefined
+          ? {}
+          : { baseUpdatedAt: row.baseUpdatedAt }),
+        attempt: row.attempts + 1,
+      });
+    } catch {
+      await this.requeueRow(row, 'network error during command replay');
+      return false;
+    }
+    const result = commandResultToApplyResult(row, outcome);
+    if (!result) {
+      await this.requeueRow(row, 'unexpected command result shape');
+      return false;
+    }
+    return this.applyResult(row, result);
   }
 
   /**
@@ -507,7 +632,10 @@ export class OutboxEngine {
    * doesn't hot-spin. Returns false when a retryable row remains pending, which
    * stops this drain pass so newer FIFO chunks do not overtake it.
    */
-  private async sendBatch(chunk: OutboxRow[]): Promise<boolean> {
+  private async sendBatch(
+    chunk: OutboxRow[],
+    syncApply: OutboxSyncApplyTarget,
+  ): Promise<boolean> {
     // Mark the chunk uploading (observable), build the request items in order.
     for (const row of chunk) {
       this.emit({
@@ -529,7 +657,7 @@ export class OutboxEngine {
 
     let results: SyncApplyItemResult[] | undefined;
     try {
-      results = await this.postBatch(items);
+      results = await this.postBatch(items, syncApply);
     } catch {
       // Network reject / non-200 / lost response: keep the whole batch pending.
       await this.requeueBatch(chunk, 'network error during sync');
@@ -565,9 +693,10 @@ export class OutboxEngine {
    */
   private async postBatch(
     items: SyncApplyItem[],
+    syncApply: OutboxSyncApplyTarget,
   ): Promise<SyncApplyItemResult[] | undefined> {
-    const url = `${this.config.syncApplyBasePath}/${SYNC_APPLY_ROUTE_SEGMENTS.join('/')}`;
-    const response = await this.config.fetchFn(url, {
+    const url = `${syncApply.basePath}/${SYNC_APPLY_ROUTE_SEGMENTS.join('/')}`;
+    const response = await syncApply.fetchFn(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
@@ -796,11 +925,56 @@ export function getOrCreateOutboxEngine(
   return engine;
 }
 
-/** The per-collection callback binding registered when a collection attaches. */
+/**
+ * The per-collection (or per-command-queue) binding registered on attach.
+ * `object` is the event-routing key AND, for a `transport` binding, the name
+ * transport rows are queued under.
+ */
 export interface OutboxCollectionBinding {
   object: string;
   onSyncStateChange?: (event: SyncStateEvent) => void;
   onConflict?: (conflict: OutboxConflict) => void;
+  /** Replay rows queued under `object` through this transport (#3021). */
+  transport?: OutboxCommandTransport;
+  /** Declares the sync-apply endpoint (sync-apply bindings only). */
+  syncApply?: OutboxSyncApplyTarget;
+}
+
+/**
+ * Translate a transport's {@link OutboxCommandResult} into the positional
+ * sync-apply result shape `applyResult` already maps, so both routes share one
+ * state machine. `undefined` for a malformed outcome (treated as retryable,
+ * like a malformed sync-apply body).
+ */
+function commandResultToApplyResult(
+  row: OutboxRow,
+  outcome: unknown,
+): SyncApplyItemResult | undefined {
+  if (!outcome || typeof outcome !== 'object') return undefined;
+  const { status, reason, updatedAt } = outcome as {
+    status?: unknown;
+    reason?: unknown;
+    updatedAt?: unknown;
+  };
+  const base = {
+    itemId: row.itemId,
+    id: row.id,
+    ...(typeof updatedAt === 'string' ? { updatedAt } : {}),
+  };
+  if (status === 'applied') return { ...base, status };
+  if (status === 'conflict') {
+    return {
+      ...base,
+      status,
+      reason: reason === 'create_conflict' ? 'create_conflict' : 'stale_write',
+    };
+  }
+  if (status === 'rejected' && typeof reason === 'string' && reason) {
+    // Unknown reasons are carried verbatim; `applyResult` treats anything that
+    // is not write_failed / auth_required / forbidden as terminal.
+    return { ...base, status, reason: reason as SyncApplyReason };
+  }
+  return undefined;
 }
 
 /**

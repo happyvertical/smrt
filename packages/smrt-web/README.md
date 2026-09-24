@@ -98,12 +98,57 @@ Client UUIDs and idempotent strict inserts reconcile the optimistic row instead
 of creating a second server identity. Web Locks elect one replay leader across
 tabs when supported.
 
+### Offline writes through your own server operation
+
+When a model's generated write verbs are closed because a permission-gated
+service owns its write rules, replay through that operation instead of
+`sync/apply`. Pass `transport` to `offlineOutbox()` for a collection, or use
+`offlineCommandQueue()` for writes with no collection:
+
+```ts
+import {
+  dataSurfaceActionCommandTransport,
+  offlineCommandQueue,
+} from '@happyvertical/smrt-web';
+
+const punches = offlineCommandQueue({
+  name: 'clock_in',
+  namespace, // the same DurableStoreKey as the app's other outboxes
+  transport: dataSurfaceActionCommandTransport({
+    transport: actionTransport, // the surface's online action transport
+    request: (command) => ({
+      identity: descriptor.identity,
+      actionId: 'clock-in',
+      expectedRevision: currentRevision(), // read at replay time
+      selection: { scope: 'current-page' },
+      payload: command.payload,
+    }),
+  }),
+});
+
+const itemId = await punches.enqueue({ payload: { note } });
+if (!itemId) {
+  // Not captured durably (no IndexedDB): perform the action online instead.
+}
+```
+
+Each replay carries the write's durable `idempotencyKey`, which the server
+operation must dedupe on. Both routes share one FIFO, leader lock, backoff, and
+the `pending → uploading → synced | failed` state machine. A reloaded write
+waits until a queue with its name attaches; it is never re-routed to
+`sync/apply`.
+
 ### Persisted read cache
 
 `persistCollection()` warm-starts from an IndexedDB snapshot, then revalidates
 in the background. Its namespace includes API, tenant, identity, and manifest
 hash, so user switches and contract changes cannot hydrate another scope's rows.
 Sensitive collections should omit this capability.
+
+`persistDataSurface({ namespace, identity })` does the same for a mounted data
+surface whose rows come from a principal-scoped query rather than a generated
+`list` route: `load()` before the first fetch, `save(rows)` after each refresh.
+It shares the namespace, so the same wipe clears it.
 
 ### Live invalidation
 
@@ -132,10 +177,10 @@ core.
 | --- | --- |
 | Collections | `createSmrtCollection`, `createSmrtWebClient`, `newLocalId` |
 | Remote queries | `createSmrtWebQuery`, `SmrtWebQueryTransport` |
-| Data-surface actions | `executeSmrtWebDataSurfaceAction`, `SmrtWebDataSurfaceActionTransport` |
+| Data-surface actions | `executeSmrtWebDataSurfaceAction`, `SmrtWebDataSurfaceActionTransport`, `dataSurfaceActionCommandTransport` |
 | HTTP | `createDefinitionFetchers`, `unwrapListResult`, `unwrapItemResult` |
-| Offline | `offlineOutbox`, `getOutboxHandle` |
-| Persistence | `persistCollection`, `wipeDurableStore` |
+| Offline | `offlineOutbox`, `offlineCommandQueue`, `getOutboxHandle` |
+| Persistence | `persistCollection`, `persistDataSurface`, `wipeDurableStore` |
 | Live updates | `createSmrtWebEventSubscriber`, `liveInvalidation` |
 | Version awareness | `createUpdateState` |
 | WebMCP | `registerWebMcpTools`, `registerWebMcpBespokeTool`, `registerViewIntent`, `reserveWebMcpToolNames` |

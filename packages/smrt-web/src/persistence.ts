@@ -58,6 +58,7 @@
  */
 
 import type { SmrtWebCapability } from './capability.js';
+import type { SmrtWebDataSurfaceIdentity } from './data-surface-actions.js';
 import {
   type DurableStoreKey,
   durableStoreNamespace,
@@ -364,6 +365,148 @@ export function persistCollection<TData extends object = object>(
       if (current) {
         await releaseSnapshotEngine(namespace);
       }
+    },
+  };
+}
+
+/** Configuration for {@link persistDataSurface}. */
+export interface PersistDataSurfaceConfig {
+  /**
+   * The durable-store identity — the SAME key the app's collections and
+   * outbox use. It folds the principal (`identityId`) and tenant, so a surface
+   * whose rows the server scopes per principal lands on a per-principal
+   * database: another user on the device never reads them, and one
+   * `wipeDurableStore(namespace)` on logout clears them with everything else.
+   */
+  namespace: DurableStoreKey;
+  /** The mounted surface's identity (`descriptor.identity`) — the store key. */
+  identity: SmrtWebDataSurfaceIdentity;
+  /** Trailing-debounce window for `save` (ms). Default {@link DEFAULT_PERSIST_DEBOUNCE_MS}. */
+  debounceMs?: number;
+}
+
+/** A durable row snapshot for one mounted data surface (#3021). */
+export interface PersistedDataSurface<TRow extends object = object> {
+  /**
+   * The rows last saved for this surface under this namespace, or `undefined`
+   * when none exist (first load, a different principal/tenant/manifest, a
+   * wipe, or no IndexedDB). Render them as stale, then revalidate.
+   */
+  load(): Promise<TRow[] | undefined>;
+  /**
+   * Replace the persisted rows (debounced, trailing; last call wins). Pass the
+   * surface's CURRENT rows whenever the page refreshes them. Rows must be
+   * structured-clone-safe plain objects.
+   */
+  save(rows: readonly TRow[]): void;
+  /** Write any pending `save` now. */
+  flush(): Promise<void>;
+  /** Flush a pending `save`, then release the shared store. */
+  dispose(): Promise<void>;
+}
+
+/** Store key for a surface identity — cannot collide with a collection name. */
+function dataSurfaceSnapshotKey(identity: SmrtWebDataSurfaceIdentity): string {
+  if (
+    !identity ||
+    typeof identity.surfaceId !== 'string' ||
+    identity.surfaceId.length === 0 ||
+    typeof identity.kind !== 'string'
+  ) {
+    throw new TypeError(
+      'persistDataSurface requires an identity with a surfaceId and kind',
+    );
+  }
+  return `data-surface:${JSON.stringify([
+    identity.kind,
+    identity.surfaceId,
+    identity.subject?.type ?? null,
+    identity.subject?.id ?? null,
+  ])}`;
+}
+
+/**
+ * Persist and rehydrate a mounted data surface's rows (#3021) — the
+ * `persistCollection` twin for a surface (e.g. one registered with
+ * `mountListDataSurface`) whose rows come from a server-scoped data-surface
+ * query rather than a generated `list` route. The page owns its rows, so it
+ * owns the calls: `load()` before the first fetch to paint stale rows, then
+ * `save(rows)` whenever it refreshes them.
+ *
+ * Shares the namespace's snapshot database, durable-resource registration,
+ * and IndexedDB-unavailable degrade with {@link persistCollection}: a
+ * manifest-hash, tenant, or identity change lands on a different database, and
+ * `wipeDurableStore(namespace)` clears the surface's rows with the rest.
+ */
+export function persistDataSurface<TRow extends object = object>(
+  config: PersistDataSurfaceConfig,
+): PersistedDataSurface<TRow> {
+  const namespace = durableStoreNamespace(config.namespace);
+  const key = dataSurfaceSnapshotKey(config.identity);
+  const debounceMs = config.debounceMs ?? DEFAULT_PERSIST_DEBOUNCE_MS;
+  let engine: SharedSnapshotEngine | undefined =
+    acquireSnapshotEngine(namespace);
+  let pending: Array<Record<string, unknown>> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Serialize writes so a slower earlier save can never land after a later one.
+  let writing: Promise<void> = Promise.resolve();
+
+  const writePending = (): Promise<void> => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    const rows = pending;
+    pending = undefined;
+    const current = engine;
+    if (!rows || !current) return writing;
+    writing = writing.then(async () => {
+      const store = await current.ready;
+      if (!store) return;
+      try {
+        await store.save(key, rows);
+      } catch {
+        // Best-effort, like persistCollection: a failed write only means the
+        // next load does not warm.
+      }
+    });
+    return writing;
+  };
+
+  return {
+    async load() {
+      const current = engine;
+      if (!current) return undefined;
+      const store = await current.ready;
+      if (!store) return undefined;
+      const rows = await store.load(key);
+      if (!rows || rows.length === 0) return undefined;
+      return rows as TRow[];
+    },
+    save(rows) {
+      if (!engine) return;
+      if (!Array.isArray(rows)) {
+        throw new TypeError(
+          'persistDataSurface.save requires an array of rows',
+        );
+      }
+      pending = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          void writePending();
+        },
+        Math.max(0, debounceMs),
+      );
+      (timer as { unref?: () => void }).unref?.();
+    },
+    flush: () => writePending(),
+    async dispose() {
+      if (!engine) return;
+      await writePending();
+      engine = undefined;
+      await releaseSnapshotEngine(namespace);
     },
   };
 }

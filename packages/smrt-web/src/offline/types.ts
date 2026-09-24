@@ -157,6 +157,65 @@ export interface OutboxConflict {
   serverUpdatedAt?: string;
 }
 
+/**
+ * One queued write handed to a consumer-declared {@link OutboxCommandTransport}
+ * at replay time (#3021). The transport replays it through a server operation
+ * the consumer owns — a data-surface action, a named remote command, a
+ * hand-written permission-gated service — instead of the generated
+ * `sync/apply`, which calls `collection.create()` directly.
+ */
+export interface OutboxCommand {
+  /**
+   * The durable, client-minted idempotency key (the queue row's `itemId`). It
+   * is IDENTICAL on every attempt of this write — including a blind resend
+   * after a lost response — so the server operation MUST dedupe on it; that is
+   * what makes the outbox's ambiguous-failure retries safe on this path.
+   */
+  idempotencyKey: string;
+  /** The transport name the write was queued under. */
+  name: string;
+  /** The mutation kind in sync-apply terms. */
+  op: SyncApplyOp;
+  /** The client-generated row id the write targets. */
+  rowId: string;
+  /** Row / changed fields (create, update); absent for delete. */
+  payload?: Record<string, unknown>;
+  /** The server `updated_at` the client last saw, when the caller supplied one. */
+  baseUpdatedAt?: string;
+  /** 1-based number of this attempt (`1` on the first send). */
+  attempt: number;
+}
+
+/**
+ * The server's outcome for one {@link OutboxCommand}, in the SAME vocabulary
+ * the sync-apply replay maps — so the four-state machine and backoff are
+ * shared, not re-derived:
+ *
+ * - `applied` → removed, `synced`.
+ * - `conflict` → removed, `onConflict` fired, `synced` (a RESOLVED outcome).
+ * - `rejected` with `write_failed` → kept, backoff, `pending` (retryable).
+ * - `rejected` with `auth_required` / `forbidden` → the whole loop pauses until
+ *   re-auth (a later enqueue or `retry()`), kept `pending`.
+ * - `rejected` with any other reason → removed, `failed` (terminal).
+ *
+ * A transport that THROWS (network error, lost response, 5xx) is the ambiguous
+ * path: the write stays `pending` with backoff and is blindly resent later
+ * under the same {@link OutboxCommand.idempotencyKey}.
+ */
+export type OutboxCommandResult =
+  | { status: 'applied'; updatedAt?: string }
+  | {
+      status: 'conflict';
+      reason?: 'stale_write' | 'create_conflict';
+      updatedAt?: string;
+    }
+  | { status: 'rejected'; reason: SyncApplyReason | (string & {}) };
+
+/** Replays one queued write through a consumer-declared server operation. */
+export type OutboxCommandTransport = (
+  command: OutboxCommand,
+) => Promise<OutboxCommandResult>;
+
 /** Exponential-backoff tuning for retryable replay failures. */
 export interface OutboxBackoff {
   /** Delay before the first retry, ms (default 1000). */
