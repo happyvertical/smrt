@@ -308,8 +308,12 @@ export interface SmrtWebDataSurfaceActionCommandTransportOptions {
   /** The same action transport the mounted surface uses online. */
   transport: SmrtWebDataSurfaceActionTransport;
   /**
-   * Build the action request for a queued write AT REPLAY TIME, so it carries
-   * the surface's current `expectedRevision` rather than the one at capture.
+   * Build the action request for a queued write at its FIRST replay attempt,
+   * so it carries the surface's `expectedRevision` as of replay rather than
+   * capture. The built request is pinned durably to the write and reused on
+   * every later attempt (including after a reload): the server fingerprints
+   * the request per idempotency key, so a resend after a lost response must be
+   * identical to replay the recorded result instead of `idempotency_conflict`.
    */
   request: (
     command: OutboxCommand,
@@ -375,7 +379,15 @@ export function dataSurfaceActionCommandTransport(
 ): OutboxCommandTransport {
   const classify = options.classify ?? classifySmrtWebDataSurfaceActionResult;
   return async (command) => {
-    const base = await options.request(command);
+    let base = command.pinned as
+      | SmrtWebDataSurfaceActionCommandRequest
+      | undefined;
+    if (base === undefined) {
+      base = await options.request(command);
+      // Pin before sending, so no attempt that may have reached the server
+      // ever differs from the ones after it.
+      await command.pin(base);
+    }
     const requestId = (phase: string) =>
       `${command.idempotencyKey}:${command.attempt}:${phase}`;
     let confirmationToken: string | undefined;

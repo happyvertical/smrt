@@ -139,14 +139,16 @@ function registerForWipe(
   engine: SharedSnapshotEngine,
   namespace: string,
 ): void {
-  const store = engine.store;
-  if (!store || engine.unregister) return;
+  if (engine.unregister) return;
   engine.unregister = registerDurableResource(namespace, {
     kind: 'persisted-collection',
-    clear: () => {
+    clear: async () => {
+      // Synchronous part first: handles created before this wipe go inert at
+      // once, even while the store is still opening.
       engine.wipeEpoch += 1;
       engine.unregister = undefined;
-      return store.clear();
+      const store = await engine.ready;
+      await store?.clear();
     },
   });
 }
@@ -176,9 +178,8 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
   const existing = enginesByNamespace.get(namespace);
   if (existing) {
     existing.refCount += 1;
-    // Re-register synchronously when the store is already open, so a wipe
-    // issued right after this acquire cannot miss it; a store still opening
-    // registers itself when the open completes.
+    // Re-register synchronously (a previous wipe dropped the registration), so
+    // a wipe issued right after this acquire cannot miss it.
     registerForWipe(existing, namespace);
     return existing;
   }
@@ -201,10 +202,6 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
     try {
       const store = await openSnapshotStore(namespace);
       engine.store = store;
-      // Register the shared store as a durable resource so a logout wipe clears
-      // every persisted collection under this namespace at once — alongside the
-      // outbox's own registered resource.
-      registerForWipe(engine, namespace);
       return store;
     } catch {
       warnNoIndexedDbOnce();
@@ -212,6 +209,10 @@ function acquireSnapshotEngine(namespace: string): SharedSnapshotEngine {
     }
   })();
   enginesByNamespace.set(namespace, engine);
+  // Register the shared store as a durable resource NOW, before the async
+  // open, so a logout wipe issued immediately still clears every persisted
+  // collection under this namespace — alongside the outbox's own resource.
+  registerForWipe(engine, namespace);
   return engine;
 }
 

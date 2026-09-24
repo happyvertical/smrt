@@ -413,6 +413,28 @@ describe('offlineCommandQueue — writes with no generated collection', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('a wipe issued immediately after attach clears rows already on disk', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    const key = uniqueKey();
+    const first = offlineCommandQueue({
+      name: 'punch',
+      namespace: key,
+      transport: async () => ({ status: 'applied' }),
+    });
+    await first.enqueue({ rowId: 'x' });
+    await first.dispose();
+
+    vi.stubGlobal('navigator', { onLine: true });
+    const transport = vi.fn(
+      async (): Promise<OutboxCommandResult> => ({ status: 'applied' }),
+    );
+    const q = queue({ name: 'punch', namespace: key, transport });
+    await wipeDurableStore(durableStoreNamespace(key)); // before the open settles
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await q.snapshot()).toEqual([]);
+    expect(transport).not.toHaveBeenCalled();
+  });
+
   it('a second wipe still clears commands queued after the first', async () => {
     vi.stubGlobal('navigator', { onLine: false });
     const key = uniqueKey();
@@ -474,7 +496,89 @@ describe('dataSurfaceActionCommandTransport', () => {
     rowId: 'key-1',
     payload: { kind: 'in' },
     attempt: 2,
+    pin: async () => {},
   };
+
+  it('pins the first built request and resends it unchanged on every later attempt, across a reload', async () => {
+    vi.stubGlobal('navigator', { onLine: true });
+    const key = uniqueKey();
+    let revision = 0;
+    let fail = true;
+    const requests: SmrtWebDataSurfaceActionRequest[] = [];
+    const build = () =>
+      dataSurfaceActionCommandTransport({
+        transport: {
+          async action(request) {
+            requests.push(request);
+            if (fail) throw new Error('response lost');
+            return {
+              version: 1,
+              requestId: request.requestId,
+              identity: request.identity,
+              actionId: request.actionId,
+              phase: request.phase,
+              ok: true,
+            };
+          },
+        },
+        request: () => {
+          revision += 1;
+          return {
+            identity,
+            actionId: 'clock-in',
+            expectedRevision: revision,
+            selection: { scope: 'current-page' },
+          };
+        },
+      });
+    const first = offlineCommandQueue({
+      name: 'punch',
+      namespace: key,
+      backoff: { initialDelayMs: 100_000, maxDelayMs: 100_000 },
+      random: () => 1,
+      transport: build(),
+    });
+    const itemId = await first.enqueue({});
+    await waitFor(() => requests.length === 1);
+    await new Promise((r) => setTimeout(r, 20));
+    await first.dispose();
+
+    fail = false;
+    const states: SyncStateEvent[] = [];
+    const second = queue({
+      name: 'punch',
+      namespace: key,
+      transport: build(),
+      onSyncStateChange: (e) => states.push(e),
+    });
+    await second.retry(itemId as string);
+    await waitFor(() => states.some((e) => e.state === 'synced'));
+    expect(revision).toBe(1);
+    expect(requests.map((r) => [r.expectedRevision, r.idempotencyKey])).toEqual(
+      [
+        [1, itemId],
+        [1, itemId],
+      ],
+    );
+  });
+
+  it('reuses a pinned request without calling the builder', async () => {
+    const requests: SmrtWebDataSurfaceActionRequest[] = [];
+    const builder = vi.fn();
+    const transport = dataSurfaceActionCommandTransport({
+      transport: actionTransport(() => ({}), requests),
+      request: builder,
+    });
+    const pinned = {
+      identity,
+      actionId: 'clock-in',
+      expectedRevision: 3,
+      selection: { scope: 'current-page' },
+    };
+    await transport({ ...command, pinned });
+    expect(builder).not.toHaveBeenCalled();
+    expect(requests[0]).toMatchObject({ ...pinned, idempotencyKey: 'key-1' });
+  });
 
   it('applies with the outbox idempotency key and a request built at replay time', async () => {
     const requests: SmrtWebDataSurfaceActionRequest[] = [];

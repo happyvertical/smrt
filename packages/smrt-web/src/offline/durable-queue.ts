@@ -77,6 +77,12 @@ export interface OutboxRow {
    * before #3021 lack it and keep their sync-apply meaning, so no schema bump.
    */
   transport?: string;
+  /**
+   * A value the row's transport pinned on its first attempt (#3021) — e.g. the
+   * built server request — so every retry under the same idempotency key
+   * resends an identical request. Structured-clone-safe.
+   */
+  pinned?: unknown;
   /** On-disk lifecycle state. */
   state: OutboxRowState;
   /** How many replay attempts this row has made (drives backoff). */
@@ -214,7 +220,10 @@ export class DurableOutboxQueue {
   async markState(
     seq: number,
     patch: Partial<
-      Pick<OutboxRow, 'state' | 'attempts' | 'nextAttemptAt' | 'lastError'>
+      Pick<
+        OutboxRow,
+        'state' | 'attempts' | 'nextAttemptAt' | 'lastError' | 'pinned'
+      >
     >,
   ): Promise<void> {
     const tx = this.db.transaction(OUTBOX_STORE, 'readwrite');

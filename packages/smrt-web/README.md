@@ -119,7 +119,7 @@ const punches = offlineCommandQueue({
     request: (command) => ({
       identity: descriptor.identity,
       actionId: 'clock-in',
-      expectedRevision: currentRevision(), // read at replay time
+      expectedRevision: currentRevision(), // read at first replay, then pinned
       selection: { scope: 'current-page' },
       payload: command.payload,
     }),

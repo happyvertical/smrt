@@ -184,6 +184,15 @@ export interface OutboxCommand {
   baseUpdatedAt?: string;
   /** 1-based number of this attempt (`1` on the first send). */
   attempt: number;
+  /** The value this write's transport pinned on an earlier attempt, if any. */
+  pinned?: unknown;
+  /**
+   * Durably pin a structured-clone-safe value to this write before sending,
+   * so a later attempt (including after a reload) sees it as `pinned`. A
+   * transport whose server fingerprints the request per idempotency key pins
+   * the request it built, so a resend after a lost response is identical.
+   */
+  pin(value: unknown): Promise<void>;
 }
 
 /**

@@ -235,6 +235,8 @@ export class OutboxEngine {
    * explicit retry wakes it. Items stay queued.
    */
   private paused = false;
+  /** Wipes issued but not yet cleared; replay is suspended meanwhile. */
+  private wipesPending = 0;
   /** True while a drain pass is running, to coalesce concurrent triggers. */
   private draining = false;
   /** The running drain, while `draining`. */
@@ -249,6 +251,9 @@ export class OutboxEngine {
   constructor(config: OutboxEngineConfig) {
     this.config = config;
     this.ready = this.open();
+    // Register synchronously, before the async open: a wipe issued right after
+    // attach (logout at startup) must still clear what is already on disk.
+    this.registerForWipe();
     this.wireOnlineListener();
     // Kick a drain once the queue has finished opening. Leadership can be
     // granted (single-tab fallback: a microtask; Web Locks: whenever the lock
@@ -275,8 +280,6 @@ export class OutboxEngine {
     }
     try {
       this.queue = await openDurableOutboxQueue(this.config.namespace);
-      // Register for wipeDurableStore now that the queue exists.
-      this.registerForWipe();
       if (this.disposed) {
         // Disposed while opening — tear the just-opened queue back down.
         this.queue.close();
@@ -299,10 +302,20 @@ export class OutboxEngine {
    * the first.
    */
   private registerForWipe(): void {
-    if (this.unregisterResource || !this.queue || this.disposed) return;
+    if (this.unregisterResource || this.disposed) return;
     this.unregisterResource = this.config.registerResource(async () => {
       this.unregisterResource = undefined;
-      await this.queue?.clear();
+      // Replay nothing while the wipe is pending: rows on disk belong to the
+      // scope being cleared.
+      this.wipesPending += 1;
+      try {
+        await this.ready;
+        await this.queue?.clear();
+      } finally {
+        this.wipesPending -= 1;
+        // Writes enqueued after the wipe was issued survive it; replay them.
+        if (!this.disposed) void this.drain();
+      }
     });
   }
 
@@ -612,6 +625,7 @@ export class OutboxEngine {
   /** One drain pass: send every currently-due batch, then schedule backoff. */
   private async drainOnce(): Promise<void> {
     if (this.disposed) return;
+    if (this.wipesPending > 0) return;
     if (this.paused) return;
     if (this.degraded || !this.queue) return;
     if (isDefinitelyOffline()) return;
@@ -692,6 +706,14 @@ export class OutboxEngine {
           ? {}
           : { baseUpdatedAt: row.baseUpdatedAt }),
         attempt: row.attempts + 1,
+        ...(row.pinned === undefined ? {} : { pinned: row.pinned }),
+        pin: async (value) => {
+          if (row.seq === undefined || !this.queue) {
+            throw new Error('[smrt-web] outbox row is no longer queued');
+          }
+          await this.queue.markState(row.seq, { pinned: value });
+          row.pinned = value;
+        },
       });
     } catch {
       await this.requeueRow(row, 'network error during command replay');

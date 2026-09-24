@@ -167,6 +167,21 @@ describe('persistDataSurface', () => {
     expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
   });
 
+  it('a wipe issued before the store opens still clears it and makes the handle inert', async () => {
+    const k = key();
+    const first = surface({ namespace: k, identity, debounceMs: 0 });
+    first.save([{ id: 'p1', at: '08:00' }]);
+    await first.dispose();
+
+    const s = surface({ namespace: k, identity, debounceMs: 0 });
+    await wipeDurableStore(durableStoreNamespace(k)); // before any await on s
+    s.save([{ id: 'p2', at: '09:00' }]);
+    await s.flush();
+    expect(await s.load()).toBeUndefined();
+    await s.dispose();
+    expect(await surface({ namespace: k, identity }).load()).toBeUndefined();
+  });
+
   it('rejects an identity without a surfaceId', () => {
     expect(() =>
       persistDataSurface({

@@ -110,7 +110,11 @@ operation instead, on the SAME engine:
   per-object event routing, so it must not equal a sibling collection name.
 
 `dataSurfaceActionCommandTransport` adapts a data-surface action transport:
-the request is built at REPLAY time (current `expectedRevision`), `apply`
+the request is built at the FIRST replay attempt (current `expectedRevision`)
+and pinned durably to the row via `command.pin()` before sending; every later
+attempt, including after a reload, resends the pinned request, because the
+server fingerprints the request per idempotency key and a changed resend gets
+`idempotency_conflict` instead of the recorded result. `apply`
 carries `idempotencyKey`, `preview: true` runs preview first for its
 `confirmationToken`, and `classifySmrtWebDataSurfaceActionResult` maps reasons
 (transient → `write_failed`, auth → `auth_required`, stale → `conflict`,
@@ -133,10 +137,12 @@ Invariants:
   last binding (or disposing the engine) stops new sends at once but holds the
   lock until the in-flight send and its durable transition settle, so another
   tab never replays a row this one is still settling.
-- **Wipe re-registration.** `wipeDurableStore` drops a namespace's
-  registrations, so the queue's clear callback forgets its registration and
-  the next enqueue re-registers; a later wipe still clears rows written after
-  the first.
+- **Wipe registration.** The queue registers synchronously at engine
+  construction (not after the async open), so a wipe issued right after attach
+  still clears rows already on disk; replay is suspended while a wipe is
+  pending. `wipeDurableStore` drops a namespace's registrations, so the clear
+  callback forgets ours and the next enqueue re-registers; a later wipe still
+  clears rows written after the first.
 - **Sync-apply endpoint comes from bindings, not the engine creator.** A
   command queue may create the shared engine first; the first sync-apply
   binding supplies `basePath`/`fetchFn`.
