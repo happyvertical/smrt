@@ -408,6 +408,7 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     'stack-derived',
     'stack-derived, no table',
     'explicit packageName',
+    'bundled, no table',
   ] as const) {
     it(`does not take a dependency's cached, unregistered manifest entry (${variant})`, async () => {
       // An app manifest declaring the dependency makes discovery load its
@@ -435,11 +436,15 @@ describe('consumer workspace registration (#3106, #3110)', () => {
                 'packages/market/src/BareLicenseSale.js',
               'explicit packageName':
                 'packages/market/src/ExplicitLicenseSale.js',
+              'bundled, no table':
+                'apps/app/build/server/chunks/license-sale-bare.js',
             }[variant],
           ),
         );
         expect(identity(consumer)?.qualifiedName).toBe(
-          '@fixture/market:LicenseSale',
+          variant === 'bundled, no table'
+            ? '@fixture/app:LicenseSale'
+            : '@fixture/market:LicenseSale',
         );
         expect(identity(consumer)?.schema?.tableName).not.toBe('contracts');
         expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(

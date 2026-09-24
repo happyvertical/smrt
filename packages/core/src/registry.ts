@@ -3819,6 +3819,21 @@ export class ObjectRegistry {
  * @see {@link SmartObjectConfig} for all available configuration options
  * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
+/** Whether a registered ancestor of `ctor` uses single-table inheritance. */
+function extendsStiClass(ctor: unknown): boolean {
+  for (
+    let parent = Object.getPrototypeOf(ctor);
+    parent && parent !== Function.prototype;
+    parent = Object.getPrototypeOf(parent)
+  ) {
+    const registered = ObjectRegistry.getClassByConstructor(
+      parent as typeof SmrtObject,
+    );
+    if (registered?.config?.tableStrategy === 'sti') return true;
+  }
+  return false;
+}
+
 export function smrt(config: SmartObjectConfig = {}) {
   // The `(...args: any[])` spread is the idiomatic class-decorator constraint
   // (every class constructor — including ones with specific parameter lists —
@@ -3944,20 +3959,24 @@ export function smrt(config: SmartObjectConfig = {}) {
         );
         // Another package's same-named entry (its manifest loaded before its
         // classes register) is not this class's table unless it describes
-        // this very file (#3106). Only bundled output with a stack-derived
-        // package keeps it: there the stack names the bundle, and an inlined
-        // copy of the dependency's class must resolve the same table.
+        // this very file (#3106). Bundled output with a stack-derived package
+        // keeps it only for a single-table-inheritance class: an inlined STI
+        // subtype may precede its registered base and needs the base's table
+        // from the manifest, while any other class resolves its own table
+        // below — an inlined copy of a dependency's class resolves the same
+        // one, and a consumer's same-named class a different one.
         const foreignEntry =
           !!lookedUp?.packageName &&
           !!ownPackage &&
           lookedUp.packageName !== ownPackage;
         const sourceFile = foreignEntry ? getSourceFileFromStack() : undefined;
-        const manifestEntry =
-          foreignEntry &&
-          !isSameSourcePath(sourceFile, lookedUp?.filePath) &&
-          (config.packageName || !isBundledOutputPath(sourceFile))
-            ? undefined
-            : lookedUp;
+        const keepForeignEntry =
+          !foreignEntry ||
+          isSameSourcePath(sourceFile, lookedUp?.filePath) ||
+          (!config.packageName &&
+            isBundledOutputPath(sourceFile) &&
+            (config.tableStrategy === 'sti' || extendsStiClass(ctor)));
+        const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {
