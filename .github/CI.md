@@ -206,7 +206,9 @@ to its S3 provider, so the workflows bound the pool themselves:
 - `turbo-cache-seed.yml` prunes, after a successful seed, every `turbogha_`
   entry in its own ref that the run neither restored nor wrote. Those belong
   to superseded commits, so main holds roughly one commit's task closure
-  instead of every commit's for seven days.
+  instead of every commit's for seven days. It skips pruning when the shim
+  did not start or the run touched no entry, since a cold run would
+  otherwise make the whole pool look superseded.
 - `merge-queue-cleanup.yml` deletes every cache entry of a
   `gh-readonly-queue/*` ref whose branch is gone. Jobs of a live merge group
   still share entries; a dead group's entries are unrestorable.

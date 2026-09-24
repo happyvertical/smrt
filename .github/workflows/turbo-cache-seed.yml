@@ -122,9 +122,23 @@ jobs:
           PRUNE_LIMIT: '300'
         run: |
           set -euo pipefail
-          ids=$(gh api --paginate \
+          # The shim step is continue-on-error: if it failed to start, the
+          # seed built cold, touched nothing, and every entry would look
+          # superseded. Require the shim's exported endpoint and evidence
+          # that this run actually restored or wrote entries in this ref.
+          if [ -z "${TURBO_API:-}" ]; then
+            echo "::warning::Turbo cache shim not active; skipping prune"
+            exit 0
+          fi
+          caches=$(gh api --paginate \
             "repos/${GITHUB_REPOSITORY}/actions/caches?key=turbogha_&ref=${GITHUB_REF}&per_page=100" \
-            --jq ".actions_caches[] | select(.last_accessed_at < \"${CUTOFF}\") | .id")
+            --jq '.actions_caches[] | [.id, .last_accessed_at] | @tsv')
+          touched=$(printf '%s\n' "$caches" | awk -F'\t' -v c="$CUTOFF" 'NF && $2 >= c' | grep -c . || true)
+          if [ "$touched" -eq 0 ]; then
+            echo "::warning::this seed restored or wrote no turbogha_ entries in ${GITHUB_REF}; skipping prune"
+            exit 0
+          fi
+          ids=$(printf '%s\n' "$caches" | awk -F'\t' -v c="$CUTOFF" 'NF && $2 < c {print $1}')
           total=$(printf '%s' "$ids" | grep -c . || true)
           deleted=0
           failed=0
@@ -135,7 +149,7 @@ jobs:
               failed=$((failed + 1))
             fi
           done
-          echo "pruned ${deleted} of ${total} superseded turbogha_ entries in ${GITHUB_REF} (cutoff ${CUTOFF}, ${failed} failed)"
+          echo "pruned ${deleted} of ${total} superseded turbogha_ entries in ${GITHUB_REF} (cutoff ${CUTOFF}, ${touched} touched, ${failed} failed)"
           if [ "$failed" -gt 0 ]; then
             echo "::warning::${failed} turbogha_ cache deletions failed; they will be retried by the next seed or expire"
           fi
