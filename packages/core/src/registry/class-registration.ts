@@ -116,7 +116,7 @@ function pluralizeCollection(className: string): string {
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
  */
-function isBundledOutputPath(sourceFile: string | undefined): boolean {
+export function isBundledOutputPath(sourceFile: string | undefined): boolean {
   if (!sourceFile) return false;
   return (
     sourceFile.includes('.svelte-kit/output/') ||

@@ -182,6 +182,7 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     ws.writeModel('packages/market/src/LicenseSale.js', 'LicenseSale', {
       tableName: 'license_sales',
     });
+    ws.writeModel('packages/market/src/BareLicenseSale.js', 'LicenseSale');
     ws.writeModel('packages/market/src/ExplicitLicenseSale.js', 'LicenseSale', {
       packageName: '@fixture/market',
     });
@@ -403,7 +404,11 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     expect(stub?.constructor).not.toBe(consumer);
   });
 
-  for (const variant of ['stack-derived', 'explicit packageName'] as const) {
+  for (const variant of [
+    'stack-derived',
+    'stack-derived, no table',
+    'explicit packageName',
+  ] as const) {
     it(`does not take a dependency's cached, unregistered manifest entry (${variant})`, async () => {
       // An app manifest declaring the dependency makes discovery load its
       // manifest before any of its classes (or stubs) register.
@@ -424,9 +429,13 @@ describe('consumer workspace registration (#3106, #3110)', () => {
       try {
         const consumer = await defineFrom(
           ws.path(
-            variant === 'stack-derived'
-              ? 'packages/market/src/LicenseSale.js'
-              : 'packages/market/src/ExplicitLicenseSale.js',
+            {
+              'stack-derived': 'packages/market/src/LicenseSale.js',
+              'stack-derived, no table':
+                'packages/market/src/BareLicenseSale.js',
+              'explicit packageName':
+                'packages/market/src/ExplicitLicenseSale.js',
+            }[variant],
           ),
         );
         expect(identity(consumer)?.qualifiedName).toBe(

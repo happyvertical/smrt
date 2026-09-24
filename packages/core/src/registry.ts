@@ -64,6 +64,7 @@ import {
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
   ensureTenantScopedField,
+  isBundledOutputPath,
   isSameSourcePath,
 } from './registry/class-registration';
 import { resolveCollectionDbCacheKey } from './registry/db-cache-key';
@@ -3941,14 +3942,20 @@ export function smrt(config: SmartObjectConfig = {}) {
             ? ownQualifiedKey
             : ctor.name,
         );
-        // An explicit `packageName` is authoritative: another package's
-        // same-named entry (loaded before its classes register) is not this
-        // class's table unless it describes this very file (#3106).
+        // Another package's same-named entry (its manifest loaded before its
+        // classes register) is not this class's table unless it describes
+        // this very file (#3106). Only bundled output with a stack-derived
+        // package keeps it: there the stack names the bundle, and an inlined
+        // copy of the dependency's class must resolve the same table.
+        const foreignEntry =
+          !!lookedUp?.packageName &&
+          !!ownPackage &&
+          lookedUp.packageName !== ownPackage;
+        const sourceFile = foreignEntry ? getSourceFileFromStack() : undefined;
         const manifestEntry =
-          config.packageName &&
-          lookedUp?.packageName &&
-          lookedUp.packageName !== config.packageName &&
-          !isSameSourcePath(getSourceFileFromStack(), lookedUp.filePath)
+          foreignEntry &&
+          !isSameSourcePath(sourceFile, lookedUp?.filePath) &&
+          (config.packageName || !isBundledOutputPath(sourceFile))
             ? undefined
             : lookedUp;
         if (manifestEntry?.decoratorConfig?.tableName) {
