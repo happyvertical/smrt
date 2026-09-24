@@ -190,6 +190,34 @@ describe('consumer workspace registration (#3106, #3110)', () => {
         tableName: 'license_sales',
       },
     );
+    // An installed dependency whose LicenseSale is an STI subtype of its
+    // Contract (smrt-commerce's shape), a bundle that inlined that pair, and
+    // an app bundle declaring its own LicenseSale with no configuration.
+    ws.writePackage('node_modules/@fixture/sales', '@fixture/sales');
+    ws.write(
+      'node_modules/@fixture/sales/dist/models.js',
+      [
+        'export function define({ smrt, SmrtObject }) {',
+        "  const Contract = smrt({ tableName: 'contracts', tableStrategy: 'sti' })(class Contract extends SmrtObject {});",
+        "  return smrt({ tableStrategy: 'sti' })(class LicenseSale extends Contract {});",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    ws.write(
+      'apps/app/build/server/chunks/sales-inlined.js',
+      [
+        'export function define({ smrt, SmrtObject }) {',
+        "  const Contract = smrt({ tableName: 'contracts', tableStrategy: 'sti' })(class Contract extends SmrtObject {});",
+        "  return smrt({ tableStrategy: 'sti' })(class LicenseSale extends Contract {});",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    ws.writeModel(
+      'apps/app/build/server/chunks/license-sale-bare.js',
+      'LicenseSale',
+    );
     ws.writePackage('node_modules/@fixture/profiles', '@fixture/profiles');
     ws.writeModel('node_modules/@fixture/profiles/dist/models.js', 'ApiKey');
     ws.writeModel('apps/app/build/server/chunks/api-key.js', 'ApiKey');
@@ -419,6 +447,36 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     expect(identity(dependency)?.schema?.tableName).toBe('contracts');
     expect(identity(bundled)?.qualifiedName).toBe('@fixture/app:LicenseSale');
     expect(identity(bundled)?.schema?.tableName).toBe('license_sales');
+  });
+
+  it("keeps an app bundle's undeclared-table class apart from a dependency class of another lineage", async () => {
+    const dependency = await defineFrom(
+      ws.path('node_modules/@fixture/sales/dist/models.js'),
+    );
+    const bundled = await defineFrom(
+      ws.path('apps/app/build/server/chunks/license-sale-bare.js'),
+    );
+    expect(identity(dependency)?.qualifiedName).toBe(
+      '@fixture/sales:LicenseSale',
+    );
+    expect(identity(dependency)?.constructor).toBe(dependency);
+    expect(identity(bundled)?.qualifiedName).toBe('@fixture/app:LicenseSale');
+    expect(identity(bundled)?.schema?.tableName).not.toBe('contracts');
+  });
+
+  it("still accepts an inlined copy of a dependency's STI pair as the same classes", async () => {
+    const installed = await defineFrom(
+      ws.path('node_modules/@fixture/sales/dist/models.js'),
+    );
+    const inlined = await defineFrom(
+      ws.path('apps/app/build/server/chunks/sales-inlined.js'),
+    );
+    expect(identity(installed)?.qualifiedName).toBe(
+      '@fixture/sales:LicenseSale',
+    );
+    expect(identity(inlined)?.qualifiedName).toBe('@fixture/sales:LicenseSale');
+    expect(ObjectRegistry.getClass('@fixture/app:LicenseSale')).toBe(undefined);
+    expect(ObjectRegistry.getClass('@fixture/app:Contract')).toBe(undefined);
   });
 
   it('keeps one class when the app bundle inlines a class the installed dependency also loads', async () => {

@@ -1157,7 +1157,7 @@ function registerUntracked(
   // register, and its same-named entry would otherwise hand a consumer class
   // the dependency's identity, fields and table (#3106). In bundled output
   // (where the stack package is the bundle's) the entry is refused only when
-  // the class declares a different table.
+  // the table the decorator resolved for the class differs from the entry's.
   const simpleNameManifestFallback = () => {
     if (
       findClassesByName(name).some(

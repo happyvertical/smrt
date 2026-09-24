@@ -175,10 +175,13 @@ export interface CollisionInputs {
   readonly existingHasNoPackage: boolean;
 
   /**
-   * Decorator-origin only: the new class explicitly declares a `tableName`
-   * and it differs from the existing entry's table. A duplicate of one class
-   * never disagrees with itself about its table, so this is positive evidence
-   * of a different class (#3106).
+   * Decorator-origin only: the table the `@smrt()` decorator resolved for the
+   * new class (its explicit `tableName`, its STI parent's table, or the name
+   * derived from the class) differs from the existing entry's table. A
+   * duplicate of one class — pnpm copy, inlined chunk — resolves the same
+   * table, so this is positive evidence of a different class (#3106): ergot's
+   * `LicenseSale` resolves `license_sales` where smrt-commerce's STI subtype
+   * resolves `contracts`.
    */
   readonly declaresDifferentTable: boolean;
 }
