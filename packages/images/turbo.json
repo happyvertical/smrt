@@ -3,19 +3,19 @@
   "extends": ["//"],
   "tasks": {
     "generate": {
-      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+      "inputs": ["$TURBO_DEFAULT$"]
     },
     "generate:test": {
-      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+      "inputs": ["$TURBO_DEFAULT$"]
     },
     "build": {
-      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+      "inputs": ["$TURBO_DEFAULT$"]
     },
     "typecheck": {
-      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+      "inputs": ["$TURBO_DEFAULT$"]
     },
     "test": {
-      "inputs": ["$TURBO_EXTENDS$", "!src/routes/api/**"]
+      "inputs": ["$TURBO_DEFAULT$"]
     }
   }
 }

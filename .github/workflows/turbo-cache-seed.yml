@@ -119,7 +119,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CUTOFF: ${{ steps.seed-start.outputs.at }}
-          PRUNE_LIMIT: '500'
+          PRUNE_LIMIT: '300'
         run: |
           set -euo pipefail
           ids=$(gh api --paginate \

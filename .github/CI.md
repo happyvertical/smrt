@@ -187,10 +187,13 @@ restored (#3118). Task inputs therefore exclude generated files — core's
 `static-manifest.*` and `smrt-knowledge.json`, `smrt-generated` types, test
 manifests, and for `typecheck`/`test` also `dist/` and `.svelte-kit/` — and
 dependency hashes cover them instead. The Vite plugin's generated API routes
-are excluded per package: `assets` and `images` negate `src/routes/api/**`
-via `$TURBO_EXTENDS$`, and `content`, whose generated routes share
-`src/routes/api/v1/` with hand-written ones, hashes `$TURBO_DEFAULT$`
-(git-tracked files only). Check a change to these globs with
+share `src/routes/api/` with hand-written ones, so `assets`, `content` and
+`images` hash `$TURBO_DEFAULT$` in their package `turbo.json`: tracked plus
+untracked-but-not-ignored files. Generated routes stay out only because the
+plugin lists them in the package's managed `.gitignore` block, so that block
+must stay committed and current; a generated route missing from it re-enters
+the hash and brings the clean-tree/built-tree split back. Check a change to
+these globs with
 `turbo run build typecheck test --dry=json` on a clean tree and again after
 `turbo run build typecheck`: every task hash must match.
 
