@@ -21,7 +21,7 @@
  * paths or load JavaScript manifest modules.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
@@ -464,30 +464,50 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
 }
 
 let projectManifestRead:
-  | { cwd: string; manifest: SmartObjectManifest | null }
+  | { path: string; mtimeMs: number; manifest: SmartObjectManifest | null }
   | undefined;
 
 /**
- * The manifest of the project the process runs in (`<cwd>/.smrt/manifest.json`
- * or `<cwd>/dist/manifest.json`), read once per working directory and never
- * seeded into the lookup caches. Only consulted to attribute a decorated
- * class whose declaring file that manifest describes, when no loaded manifest
- * does: a plain Node/tsx script importing an app's workspace-package models
- * has not loaded the app's manifest yet (#3109).
+ * The manifest of the project the process runs in (the first of
+ * `<cwd>/.smrt/manifest.json`, `<cwd>/dist/manifest.json`,
+ * `<cwd>/src/manifest/manifest.json`, as `ManifestManager.loadLocal()` reads
+ * them), never seeded into the lookup caches. Only consulted to attribute a
+ * decorated class whose declaring file that manifest describes, when no loaded
+ * manifest does: a plain Node/tsx script importing an app's workspace-package
+ * models has not loaded the app's manifest yet (#3109). The read is reused
+ * only while that file is unchanged, so a dev server that regenerates it is
+ * seen; a missing manifest is never cached.
  */
 export function readProjectManifestSync(): SmartObjectManifest | null {
   if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
     return null;
   }
-  const cwd = process.cwd();
-  if (projectManifestRead?.cwd === cwd) return projectManifestRead.manifest;
+  const manager = new ManifestManager(process.cwd());
+  const path = [
+    manager.getOutputPath('dev'),
+    manager.getOutputPath('build'),
+    manager.getOutputPath('source'),
+  ].find((candidate) => existsSync(candidate));
+  if (!path) return null;
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+  if (
+    projectManifestRead?.path === path &&
+    projectManifestRead.mtimeMs === mtimeMs
+  ) {
+    return projectManifestRead.manifest;
+  }
   let manifest: SmartObjectManifest | null = null;
   try {
-    manifest = new ManifestManager(cwd).loadLocal();
+    manifest = parse<SmartObjectManifest>(readFileSync(path, 'utf-8'));
   } catch {
     manifest = null;
   }
-  projectManifestRead = { cwd, manifest };
+  projectManifestRead = { path, mtimeMs, manifest };
   return manifest;
 }
 
@@ -1483,6 +1503,8 @@ export function clearManifestCache(): void {
   getManifestCacheMap().clear();
   getManifestCollisionsMap().clear();
   getSTISiblingCache().clear();
+  projectManifestRead = undefined;
+  owningPackageRootCache.clear();
 }
 
 /**

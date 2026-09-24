@@ -1172,6 +1172,35 @@ function registerUntracked(
   // 4. Cached external manifests (if already loaded)
   // For external packages not yet loaded, manifest discovery happens lazily during schema generation
   // Issue #713: Use lookupInManifest for qualified name support
+  // The simple-name entry is a last resort for a class with a known package
+  // identity. It never applies while another package registers a class of
+  // this name, and a stack-derived identity nothing confirmed (outside
+  // bundled output, where the stack package is the declaring file's own) also
+  // refuses an entry another package owns: an app manifest that declares a
+  // dependency loads that dependency's manifest before any of its classes
+  // register, and its same-named entry would otherwise hand a consumer class
+  // the dependency's identity, fields and table (#3106). In bundled output
+  // (where the stack package is the bundle's) the entry is refused only when
+  // the class declares a different table.
+  const simpleNameManifestFallback = () => {
+    if (
+      findClassesByName(name).some(
+        (candidate) =>
+          !!candidate.packageName && candidate.packageName !== newPackageName,
+      )
+    ) {
+      return undefined;
+    }
+    const entry = discoverManifestSync(name);
+    const foreignEntry =
+      !!entry?.packageName && entry.packageName !== newPackageName;
+    if (!foreignEntry || ownPackageDeclaresClass) return entry;
+    const entryTable =
+      entry?.schema?.tableName || entry?.decoratorConfig?.tableName;
+    const declaresOtherTable =
+      !!config.tableName && !!entryTable && config.tableName !== entryTable;
+    return !newInBundledContext || declaresOtherTable ? undefined : entry;
+  };
   let manifestEntry: ReturnType<typeof lookupInManifest> | undefined;
   if (config._manifest) {
     manifestEntry = lookupRegistrationManifest(
@@ -1195,12 +1224,7 @@ function registerUntracked(
     manifestEntry = ownQualifiedKey
       ? (discoverManifestSync(ownQualifiedKey) ??
         sourceManifestPackage?.entry ??
-        (findClassesByName(name).some(
-          (candidate) =>
-            !!candidate.packageName && candidate.packageName !== newPackageName,
-        )
-          ? undefined
-          : discoverManifestSync(name)))
+        simpleNameManifestFallback())
       : discoverManifestSync(name);
   }
   const runtimeTenantScopedDeclaration =

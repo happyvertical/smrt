@@ -21,6 +21,7 @@
  * workspaces laid out on disk; `issue-3109-plain-node-consumer.test.ts` covers
  * the plain Node process.
  */
+import { readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   afterAll,
@@ -33,6 +34,7 @@ import {
   vi,
 } from 'vitest';
 import { getPackageName } from '../../manifest/manifest-loader.js';
+import { getManifestCache } from '../../manifest/store.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry, smrt } from '../../registry.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
@@ -73,6 +75,10 @@ describe('stack attribution under source maps (#3109, #3110)', () => {
     ws.writePackage(installedCore, '@happyvertical/smrt-core');
     ws.writePackage('apps/app', '@fixture/app');
     ws.write('apps/app/src/models/Network.ts', '');
+    // A consumer's own workspace package that happens to live at
+    // `packages/core` (ergot's `@ergot/core`).
+    ws.writePackage('packages/core', '@fixture/core');
+    ws.write('packages/core/src/models/Usage.ts', '');
   });
   afterAll(() => ws.dispose());
 
@@ -103,6 +109,25 @@ describe('stack attribution under source maps (#3109, #3110)', () => {
         tsxStack(),
       ),
     ).toBe('@fixture/app');
+  });
+
+  it("does not mistake a consumer's own packages/core for smrt-core", () => {
+    const usage = ws.path('packages/core/src/models/Usage.ts');
+    const dist = ws.path('packages/core/dist/manifest-loader-usage.js');
+    expect(isSmrtCoreFramePath(usage)).toBe(false);
+    expect(isSmrtCoreFramePath(dist)).toBe(false);
+    const stack = tsxStack().replace(
+      ws.path('apps/app/src/models/Network.ts'),
+      usage,
+    );
+    expect(
+      getPackageName(
+        class Usage {} as unknown as SmrtObjectConstructor,
+        true,
+        stack,
+      ),
+    ).toBe('@fixture/core');
+    expect(getSourceFileFromStack(stack)).toBe(usage);
   });
 
   it('reports the declaring file without a named frame parenthesis', () => {
@@ -219,6 +244,41 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     }
   });
 
+  it('sees the app manifest again after it is regenerated', async () => {
+    const manifestPath = ws.path('apps/app/.smrt/manifest.json');
+    const original = readFileSync(manifestPath, 'utf8');
+    ws.writeModel('packages/cloud/src/models/LaterA.js', 'LaterA');
+    ws.writeModel('packages/cloud/src/models/LaterB.js', 'LaterB');
+    vi.stubEnv('VITEST', 'false');
+    vi.stubEnv('NODE_ENV', 'development');
+    try {
+      const LaterA = await defineFrom(
+        ws.path('packages/cloud/src/models/LaterA.js'),
+      );
+      expect(identity(LaterA)?.qualifiedName).toBe('@fixture/cloud:LaterA');
+      // A dev server's plugin rewrites the manifest when a model is added.
+      const manifest = JSON.parse(original);
+      manifest.objects['@fixture/app:LaterB'] = manifestEntry({
+        className: 'LaterB',
+        packageName: '@fixture/app',
+        filePath: 'packages/cloud/src/models/LaterB.js',
+        tableName: 'later_bs',
+        fields: { label: { type: 'text' } },
+      });
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      const later = new Date(Date.now() + 5_000);
+      utimesSync(manifestPath, later, later);
+      const LaterB = await defineFrom(
+        ws.path('packages/cloud/src/models/LaterB.js'),
+      );
+      expect(identity(LaterB)?.qualifiedName).toBe('@fixture/app:LaterB');
+      expect(identity(LaterB)?.schema?.tableName).toBe('later_bs');
+    } finally {
+      vi.unstubAllEnvs();
+      writeFileSync(manifestPath, original);
+    }
+  });
+
   it('re-registers that model after a module reset (app manifest registered first)', async () => {
     // Vitest's smrt plugin registers the app manifest before test modules
     // load; the entry carries the manifest's workspace-relative path.
@@ -307,6 +367,39 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     const stub = ObjectRegistry.getClass('@fixture/commerce:LicenseSale');
     expect(stub?.schema?.tableName).toBe('contracts');
     expect(stub?.constructor).not.toBe(consumer);
+  });
+
+  it("does not take a dependency's cached, unregistered manifest entry", async () => {
+    // An app manifest declaring the dependency makes discovery load its
+    // manifest before any of its classes (or stubs) register.
+    getManifestCache().set('@fixture/commerce', {
+      version: '1',
+      timestamp: 0,
+      packageName: '@fixture/commerce',
+      objects: {
+        '@fixture/commerce:LicenseSale': manifestEntry({
+          className: 'LicenseSale',
+          packageName: '@fixture/commerce',
+          filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+          tableName: 'contracts',
+          fields: { contractNumber: { type: 'text' } },
+        }),
+      },
+    } as never);
+    try {
+      const consumer = await defineFrom(
+        ws.path('packages/market/src/LicenseSale.js'),
+      );
+      expect(identity(consumer)?.qualifiedName).toBe(
+        '@fixture/market:LicenseSale',
+      );
+      expect(identity(consumer)?.schema?.tableName).toBe('license_sales');
+      expect([...(identity(consumer)?.fields.keys() ?? [])]).not.toContain(
+        'contractNumber',
+      );
+    } finally {
+      getManifestCache().delete('@fixture/commerce');
+    }
   });
 
   it("keeps an app bundle's class apart from an installed dependency's", async () => {
