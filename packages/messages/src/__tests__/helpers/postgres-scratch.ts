@@ -6,7 +6,10 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 
-type Hook = (fn: () => Promise<void>) => void;
+type Hook = (fn: () => Promise<void>, timeout?: number) => void;
+
+/** Creating and dropping a database outlasts this package's hook default. */
+const HOOK_TIMEOUT_MS = 60_000;
 
 export function withScratchDatabase(beforeEach: Hook, afterEach: Hook) {
   const connections: DatabaseInterface[] = [];
@@ -24,7 +27,7 @@ export function withScratchDatabase(beforeEach: Hook, afterEach: Hook) {
     });
     databaseName = `smrt_messages_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
     await admin.query(`CREATE DATABASE ${databaseName}`);
-  });
+  }, HOOK_TIMEOUT_MS);
 
   afterEach(async () => {
     for (const db of connections.splice(0)) {
@@ -32,7 +35,7 @@ export function withScratchDatabase(beforeEach: Hook, afterEach: Hook) {
     }
     await admin?.query(`DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`);
     await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
-  });
+  }, HOOK_TIMEOUT_MS);
 
   const url = (): string => {
     const scratch = new URL(baseUrl);
