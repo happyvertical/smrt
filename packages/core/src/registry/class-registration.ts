@@ -1158,6 +1158,20 @@ function registerUntracked(
   // the dependency's identity, fields and table (#3106). In bundled output
   // (where the stack package is the bundle's) the entry is refused only when
   // the table the decorator resolved for the class differs from the entry's.
+  // A class whose package is unknown still refuses a packaged entry that
+  // describes another file (#3112): bundled output keeps it, where the stack
+  // cannot name the declaring package, as for a stack-derived identity.
+  const unknownPackageManifestEntry = () => {
+    const entry = discoverManifestSync(name);
+    if (
+      !entry?.packageName ||
+      newInBundledContext ||
+      isSameSourcePath(newSourceFile, entry.filePath)
+    ) {
+      return entry;
+    }
+    return undefined;
+  };
   const simpleNameManifestFallback = () => {
     if (
       findClassesByName(name).some(
@@ -1207,7 +1221,7 @@ function registerUntracked(
       ? (discoverManifestSync(ownQualifiedKey) ??
         sourceManifestPackage?.entry ??
         simpleNameManifestFallback())
-      : discoverManifestSync(name);
+      : unknownPackageManifestEntry();
   }
   const runtimeTenantScopedDeclaration =
     getConstructorTenantScopedDeclarations().get(ctor);

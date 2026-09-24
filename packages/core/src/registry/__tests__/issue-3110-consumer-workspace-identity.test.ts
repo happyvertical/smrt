@@ -183,6 +183,8 @@ describe('consumer workspace registration (#3106, #3110)', () => {
       tableName: 'license_sales',
     });
     ws.writeModel('packages/market/src/BareLicenseSale.js', 'LicenseSale');
+    // No scoped package.json above it: its package cannot be derived.
+    ws.writeModel('scripts/UnscopedLicenseSale.js', 'LicenseSale');
     ws.writeModel('apps/app/build/server/chunks/order.js', 'Order', {
       tableStrategy: 'sti',
     });
@@ -511,6 +513,29 @@ describe('consumer workspace registration (#3106, #3110)', () => {
       }
     });
   }
+
+  it("does not give a class of unknown package a cached dependency entry's table", async () => {
+    getManifestCache().set('@fixture/commerce', {
+      version: '1',
+      timestamp: 0,
+      packageName: '@fixture/commerce',
+      objects: {
+        '@fixture/commerce:LicenseSale': manifestEntry({
+          className: 'LicenseSale',
+          packageName: '@fixture/commerce',
+          filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+          tableName: 'contracts',
+          fields: { contractNumber: { type: 'text' } },
+        }),
+      },
+    } as never);
+    try {
+      const ctor = await defineFrom(ws.path('scripts/UnscopedLicenseSale.js'));
+      expect(ctor.SMRT_TABLE_NAME).not.toBe('contracts');
+    } finally {
+      getManifestCache().delete('@fixture/commerce');
+    }
+  });
 
   it("keeps an app bundle's class apart from an installed dependency's", async () => {
     const dependency = await defineFrom(

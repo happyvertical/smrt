@@ -3751,6 +3751,29 @@ export class ObjectRegistry {
   }
 }
 
+/** Whether `ctor` directly extends a framework base, i.e. is its own STI base. */
+function isOwnStiBase(ctor: unknown): boolean {
+  const parent = Object.getPrototypeOf(ctor) as { name?: string } | null;
+  return (
+    !parent?.name || parent.name === 'SmrtObject' || parent.name === 'SmrtClass'
+  );
+}
+
+/** Whether a registered ancestor of `ctor` uses single-table inheritance. */
+function extendsStiClass(ctor: unknown): boolean {
+  for (
+    let parent = Object.getPrototypeOf(ctor);
+    parent && parent !== Function.prototype;
+    parent = Object.getPrototypeOf(parent)
+  ) {
+    const registered = ObjectRegistry.getClassByConstructor(
+      parent as typeof SmrtObject,
+    );
+    if (registered?.config?.tableStrategy === 'sti') return true;
+  }
+  return false;
+}
+
 /**
  * Registers a `SmrtObject` or `SmrtCollection` subclass with the global `ObjectRegistry`.
  *
@@ -3819,29 +3842,6 @@ export class ObjectRegistry {
  * @see {@link SmartObjectConfig} for all available configuration options
  * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
-/** Whether `ctor` directly extends a framework base, i.e. is its own STI base. */
-function isOwnStiBase(ctor: unknown): boolean {
-  const parent = Object.getPrototypeOf(ctor) as { name?: string } | null;
-  return (
-    !parent?.name || parent.name === 'SmrtObject' || parent.name === 'SmrtClass'
-  );
-}
-
-/** Whether a registered ancestor of `ctor` uses single-table inheritance. */
-function extendsStiClass(ctor: unknown): boolean {
-  for (
-    let parent = Object.getPrototypeOf(ctor);
-    parent && parent !== Function.prototype;
-    parent = Object.getPrototypeOf(parent)
-  ) {
-    const registered = ObjectRegistry.getClassByConstructor(
-      parent as typeof SmrtObject,
-    );
-    if (registered?.config?.tableStrategy === 'sti') return true;
-  }
-  return false;
-}
-
 export function smrt(config: SmartObjectConfig = {}) {
   // The `(...args: any[])` spread is the idiomatic class-decorator constraint
   // (every class constructor — including ones with specific parameter lists —
@@ -3974,10 +3974,10 @@ export function smrt(config: SmartObjectConfig = {}) {
         // below — its explicit or derived name, or its registered STI base's —
         // so an inlined copy of a dependency's class resolves the same table
         // and a consumer's same-named class a different one.
+        // A class whose own package is unknown cannot claim a packaged entry
+        // either; the same-file and STI exceptions below still apply.
         const foreignEntry =
-          !!lookedUp?.packageName &&
-          !!ownPackage &&
-          lookedUp.packageName !== ownPackage;
+          !!lookedUp?.packageName && lookedUp.packageName !== ownPackage;
         const sourceFile = foreignEntry ? getSourceFileFromStack() : undefined;
         const keepForeignEntry =
           !foreignEntry ||
