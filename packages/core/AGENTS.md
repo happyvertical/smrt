@@ -65,6 +65,14 @@ and repository rules.
   constructor, explicit package, and isolated one-object manifest. Never infer
   ownership from paths, simple names, or table names; packages can share names.
   Consumer regression gate: `packages/bundle-gate/src/__tests__/registry-identity.spec.ts`.
+- Decorator registration trusts a class's stack-derived package only when that
+  package declares the class (stub, own manifest entry, or explicit
+  `packageName`); it then matches the qualified key and never adopts another
+  package's same-named registration. Stack attribution skips smrt-core,
+  decorator-helper, and module-runner frames. Instance and collection registry
+  lookups pass the qualified name. The schema planner rejects a table claimed
+  by two unrelated classes (`CONFIG_TABLE_NAME_COLLISION`): only one STI family
+  shares a table (#3098).
 - API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
   in `generators/custom-action.ts`: both SvelteKit route emitters,
   `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too

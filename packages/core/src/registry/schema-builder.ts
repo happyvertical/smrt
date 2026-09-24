@@ -4,6 +4,7 @@
  * Extracted from registry.ts as part of issue #1006.
  */
 
+import { ConfigurationError } from '../errors';
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
 import { normalizeBackfill } from '../schema/backfill.js';
@@ -33,6 +34,10 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
+import {
+  isQualifiedName,
+  parseQualifiedName,
+} from '../utils/qualified-names.js';
 import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,
@@ -582,6 +587,54 @@ function resolveContributorTable(
 }
 
 /**
+ * Reject a table claimed by two unrelated classes (#3098).
+ *
+ * Classes share a physical table only as one single-table-inheritance family,
+ * identified by its STI base. Anything else — two packages that both declare
+ * `Account` and both derive `accounts`, or an explicit `tableName` reused by an
+ * unrelated class — would be merged into one union table whose rows each
+ * package's unscoped queries then return as its own. An unqualified (source)
+ * registration and a package-qualified one of the same class are the same
+ * family, not a conflict.
+ */
+function assertSingleTableFamily(
+  tableName: string,
+  contributors: TableContributor[],
+): void {
+  const families = new Map<string, { className: string; pkg?: string }>();
+  for (const contributor of contributors) {
+    const familyKey = contributor.conflictKey;
+    if (families.has(familyKey)) continue;
+    families.set(
+      familyKey,
+      isQualifiedName(familyKey)
+        ? (() => {
+            const parsed = parseQualifiedName(familyKey);
+            return { className: parsed.className, pkg: parsed.packageName };
+          })()
+        : { className: familyKey },
+    );
+  }
+  const distinct = [...families.entries()];
+  for (let i = 0; i < distinct.length; i++) {
+    for (let j = i + 1; j < distinct.length; j++) {
+      const [leftKey, left] = distinct[i];
+      const [rightKey, right] = distinct[j];
+      const sameClass =
+        left.className === right.className &&
+        (!left.pkg || !right.pkg || left.pkg === right.pkg);
+      if (sameClass) continue;
+      throw new ConfigurationError(
+        `Table '${tableName}' is claimed by unrelated classes ${leftKey} and ${rightKey}. ` +
+          'Classes share a table only as one single-table-inheritance family; give one of them its own @smrt({ tableName }).',
+        'CONFIG_TABLE_NAME_COLLISION',
+        { tableName, classes: [leftKey, rightKey] },
+      );
+    }
+  }
+}
+
+/**
  * Order the classes that share one table deterministically.
  *
  * The first contributor seeds the table: it supplies the base columns, the
@@ -653,6 +706,7 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
   const tableSchemas: Record<string, MergedTableSchema> = {};
 
   for (const [tableName, contributors] of contributorsByTable) {
+    assertSingleTableFamily(tableName, contributors);
     for (const contributor of sortTableContributors(contributors)) {
       const { registered, simpleName, isSTI } = contributor;
       const conflictColumns = ObjectRegistry.getConflictColumns(

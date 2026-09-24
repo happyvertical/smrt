@@ -291,6 +291,12 @@ function isValidMetaType(actualMetaType: unknown, className: string): boolean {
     return true;
   }
 
+  // Callers pass the qualified identity (#3098); a legacy row may still carry
+  // that class's simple-name discriminator.
+  if (registeredClass?.name && actualMetaType === registeredClass.name) {
+    return true;
+  }
+
   return false;
 }
 
@@ -641,15 +647,14 @@ export class SmrtObject extends SmrtClass {
   private isLegacySTIDiscriminatorUpgrade(
     currentMetaType: string | undefined,
     nextMetaType: unknown,
-    className: string,
   ): currentMetaType is string {
     return (
       typeof nextMetaType === 'string' &&
       typeof currentMetaType === 'string' &&
       currentMetaType !== nextMetaType &&
       !currentMetaType.includes(':') &&
-      isValidMetaType(currentMetaType, className) &&
-      isValidMetaType(nextMetaType, className)
+      isValidMetaType(currentMetaType, this.getResolvedQualifiedName()) &&
+      isValidMetaType(nextMetaType, this.getResolvedQualifiedName())
     );
   }
 
@@ -670,13 +675,7 @@ export class SmrtObject extends SmrtClass {
 
     const currentMetaType = this.getCurrentMetaType();
     const nextMetaType = data._meta_type;
-    if (
-      !this.isLegacySTIDiscriminatorUpgrade(
-        currentMetaType,
-        nextMetaType,
-        className,
-      )
-    ) {
+    if (!this.isLegacySTIDiscriminatorUpgrade(currentMetaType, nextMetaType)) {
       return upsertPlan;
     }
     const qualifiedMetaType = String(nextMetaType);
@@ -1151,10 +1150,10 @@ export class SmrtObject extends SmrtClass {
 
       // Validation 2: _meta_type must match the class being instantiated
       // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-      if (!isValidMetaType(metaType, className)) {
+      if (!isValidMetaType(metaType, this.getResolvedQualifiedName())) {
         throw new Error(
           `STI validation failed: Type mismatch when loading ${className}. ` +
-            `Database row has _meta_type='${metaType}' but expected '${getExpectedMetaType(className)}'. ` +
+            `Database row has _meta_type='${metaType}' but expected '${getExpectedMetaType(this.getResolvedQualifiedName())}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
@@ -1412,8 +1411,11 @@ export class SmrtObject extends SmrtClass {
   // return type would reject. The body below stays internally typed.
   // biome-ignore lint/suspicious/noExplicitAny: subclasses OVERRIDE getFields() with domain shapes (e.g. `Project.getFields(): Promise<ProjectField[]>`); a precise base return type would reject those overrides. S4 #1579.
   async getFields(): Promise<any> {
-    const className = this.getResolvedClassName();
-    const cachedFields = await ObjectRegistry.getAllFields(className);
+    // Qualified identity: a simple name can match another package's
+    // same-named class (#3098).
+    const cachedFields = await ObjectRegistry.getAllFields(
+      this.getResolvedQualifiedName(),
+    );
     const fields: Record<
       string,
       {
@@ -1542,9 +1544,12 @@ export class SmrtObject extends SmrtClass {
     // Get registered field definitions (synchronous access to already-loaded metadata)
     // For inheritance hierarchies, use cached inherited fields if available (populated by getAllFields())
     // This ensures multi-level STI classes serialize all parent fields correctly (Issue #332)
-    const registered = ObjectRegistry.getClass(className);
+    const registered =
+      this.getRegisteredClassInfo() ??
+      ObjectRegistry.getClass(this.getResolvedQualifiedName());
     let registeredFields =
-      registered?.inheritedFields || ObjectRegistry.getFields(className);
+      registered?.inheritedFields ||
+      ObjectRegistry.getFields(this.getResolvedQualifiedName());
 
     // In STI mode, we need to know about ALL sibling class fields to provide default values
     // for fields that exist in siblings but not in this class (Issue #391).
@@ -1733,10 +1738,12 @@ export class SmrtObject extends SmrtClass {
     sensitive: Set<string>;
     readPermissions: Map<string, string>;
   } {
-    const className = this.getResolvedClassName();
-    const registered = ObjectRegistry.getClass(className);
+    const registered =
+      this.getRegisteredClassInfo() ??
+      ObjectRegistry.getClass(this.getResolvedQualifiedName());
     const fieldMaps: Map<string, RegisteredField>[] = [
-      registered?.inheritedFields || ObjectRegistry.getFields(className),
+      registered?.inheritedFields ||
+        ObjectRegistry.getFields(this.getResolvedQualifiedName()),
     ];
 
     const tableStrategy = ObjectRegistry.getTableStrategy(
@@ -2109,9 +2116,7 @@ export class SmrtObject extends SmrtClass {
    * runtime-registered classes without a manifest) we fall back to field
    * metadata, mirroring the schema-builder's field→SQL mapping.
    */
-  private async resolveUuidColumnNames(
-    className: string,
-  ): Promise<Set<string>> {
+  private async resolveUuidColumnNames(): Promise<Set<string>> {
     const uuidColumns = new Set<string>();
 
     const collectFromSchema = (schemaName: string | null | undefined): void => {
@@ -2126,11 +2131,12 @@ export class SmrtObject extends SmrtClass {
       }
     };
 
-    // Own schema (covers non-STI and STI-base classes).
-    collectFromSchema(className);
+    // Own schema (covers non-STI and STI-base classes), by qualified identity
+    // so another package's same-named class cannot answer (#3098).
+    const qualifiedName = this.getResolvedQualifiedName();
+    collectFromSchema(qualifiedName);
 
     // STI children: FK columns are declared on the base table.
-    const qualifiedName = this.getResolvedQualifiedName();
     if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
       collectFromSchema(ObjectRegistry.getSTIBase(qualifiedName));
     }
@@ -2143,7 +2149,7 @@ export class SmrtObject extends SmrtClass {
     // is available. Mirrors schema-builder's field→SQL mapping so that a
     // text-id cross-package ref is not treated as UUID.
     try {
-      const fields = await ObjectRegistry.getAllFields(className);
+      const fields = await ObjectRegistry.getAllFields(qualifiedName);
       for (const [fieldName, field] of fields.entries()) {
         if (!field) continue;
         const type = field.type;
@@ -2184,10 +2190,9 @@ export class SmrtObject extends SmrtClass {
    * or consumer-facing type changes. Mutates `data` in place.
    */
   private async coerceEmptyUuidValuesToNull(
-    className: string,
     data: Record<string, unknown>,
   ): Promise<void> {
-    const uuidColumns = await this.resolveUuidColumnNames(className);
+    const uuidColumns = await this.resolveUuidColumnNames();
     if (uuidColumns.size === 0) return;
     for (const columnName of uuidColumns) {
       if (data[columnName] === '') {
@@ -2210,18 +2215,18 @@ export class SmrtObject extends SmrtClass {
       this._insertOnly ||
       !GlobalInterceptors.supportsBulkMutation(this.getResolvedClassName()) ||
       buildCascadePlan(ObjectRegistry, name).references.length > 0 ||
-      ObjectRegistry.resolveEmbeddingConfig(this.getResolvedClassName())
+      ObjectRegistry.resolveEmbeddingConfig(this.getResolvedQualifiedName())
     )
       return false;
     const config = this.getRegisteredClassInfo()?.config;
     if (config?.hooks && Object.keys(config.hooks).length > 0) return false;
     // Only declarative validation is known to be free of user I/O/side effects.
     if (
-      ObjectRegistry.getValidationRules(this.getResolvedClassName()) ===
+      ObjectRegistry.getValidationRules(this.getResolvedQualifiedName()) ===
         undefined &&
-      (ObjectRegistry.getValidators(this.getResolvedClassName()) ?? []).some(
-        (validator) => !isBatchSafeValidator(validator),
-      )
+      (
+        ObjectRegistry.getValidators(this.getResolvedQualifiedName()) ?? []
+      ).some((validator) => !isBatchSafeValidator(validator))
     )
       return false;
     for (const field of ObjectRegistry.getFields(name).values()) {
@@ -2552,10 +2557,12 @@ export class SmrtObject extends SmrtClass {
         );
       }
       // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-      if (!isValidMetaType(jsonData._meta_type, className)) {
+      if (
+        !isValidMetaType(jsonData._meta_type, this.getResolvedQualifiedName())
+      ) {
         throw new Error(
           `STI validation failed: _meta_type mismatch when saving ${className}. ` +
-            `Expected '${getExpectedMetaType(className)}' but got '${jsonData._meta_type}'. ` +
+            `Expected '${getExpectedMetaType(this.getResolvedQualifiedName())}' but got '${jsonData._meta_type}'. ` +
             `This should not happen - please report this bug.`,
         );
       }
@@ -2582,13 +2589,17 @@ export class SmrtObject extends SmrtClass {
     // `string`-typed FK is `''`, which Postgres rejects on a `uuid` column
     // ("invalid input syntax for type uuid"). This framework-level coercion
     // fixes every optional/unset declared-FK field uniformly.
-    await this.coerceEmptyUuidValuesToNull(className, data);
+    await this.coerceEmptyUuidValuesToNull(data);
 
     // Finalize derived columns after the complete polymorphic serialization
     // chain. Ordinary saves and eligible batches consume this prepared row.
-    const conflictColumns = ObjectRegistry.getConflictColumns(className);
+    const conflictColumns = ObjectRegistry.getConflictColumns(
+      this.getResolvedQualifiedName(),
+    );
     const derivedColumns = this.getPersistenceDerivedColumns();
-    const registeredFields = ObjectRegistry.getFields(className);
+    const registeredFields = ObjectRegistry.getFields(
+      this.getResolvedQualifiedName(),
+    );
     const registeredColumns = new Set(
       [...registeredFields]
         .filter(
@@ -2670,7 +2681,9 @@ export class SmrtObject extends SmrtClass {
     // Auto-generate embeddings only when an AI client is configured. Manual
     // generation can still use local embeddings, but save-time background
     // work should not unexpectedly load a local transformer model.
-    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(className);
+    const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(
+      this.getResolvedQualifiedName(),
+    );
     const skipAutoEmbeddings = this.options._skipAutoEmbeddings === true;
     if (
       embeddingConfig &&
@@ -3180,10 +3193,13 @@ export class SmrtObject extends SmrtClass {
    */
   protected async validateBeforeSave(): Promise<void> {
     const className = this.getResolvedClassName();
+    // Rules and validators resolve by qualified identity; a simple name can
+    // select another package's same-named class (#3098).
+    const registryName = this.getResolvedQualifiedName();
 
     // Priority 1: Use pre-computed validation rules from manifest (Issue #782)
     // This is the fastest path - rules are serializable and don't require closures
-    const validationRules = ObjectRegistry.getValidationRules(className);
+    const validationRules = ObjectRegistry.getValidationRules(registryName);
 
     if (validationRules !== undefined) {
       const errors = await ObjectRegistry.validateWithRules(
@@ -3199,7 +3215,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Priority 2: Use compiled validators (backward compatibility)
-    const validators = ObjectRegistry.getValidators(className);
+    const validators = ObjectRegistry.getValidators(registryName);
 
     if (validators && validators.length > 0) {
       // Execute all cached validators
@@ -3253,7 +3269,9 @@ export class SmrtObject extends SmrtClass {
    */
   protected async validateCrossPackageRefs(): Promise<void> {
     const className = this.getResolvedClassName();
-    const registered = ObjectRegistry.getClass(className);
+    const registered =
+      this.getRegisteredClassInfo() ??
+      ObjectRegistry.getClass(this.getResolvedQualifiedName());
     if (!registered) return;
 
     const fields = registered.inheritedFields || registered.fields;

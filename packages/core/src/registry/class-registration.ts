@@ -437,6 +437,8 @@ function resolveTableName(
   name: string,
   config: SmartObjectConfig,
 ): string {
+  // A known package resolves by qualified identity so a same-named class in
+  // another package cannot supply this one's table (#3098).
   const manifestEntry = config._manifest
     ? lookupRegistrationManifest(
         config._manifest,
@@ -444,13 +446,37 @@ function resolveTableName(
         config.packageName,
         config._manifestKey,
       )
-    : discoverManifestSync(name);
+    : discoverManifestSync(
+        config.packageName
+          ? createQualifiedName(config.packageName, name)
+          : name,
+      );
 
   return (
     manifestEntry?.schema?.tableName ||
     manifestEntry?.decoratorConfig?.tableName ||
     config.tableName ||
     tableNameFromClass(ctor)
+  );
+}
+
+/**
+ * Whether `packageName` itself declares the class `qualifiedKey` names: it is
+ * registered under that key (a manifest stub or an earlier registration), or
+ * a manifest owned by that package describes it. A stack-derived package is
+ * only trusted as a class's identity on this evidence — a consumer bundle
+ * that inlined a dependency reports the consumer's package, whose manifest
+ * describes the dependency's classes under the dependency's name (#3098).
+ */
+function packageDeclaresClass(
+  packageName: string,
+  qualifiedKey: string,
+): boolean {
+  if (getClasses().has(qualifiedKey)) return true;
+  const entry = discoverManifestSync(qualifiedKey);
+  return (
+    !!entry &&
+    (entry.packageName === undefined || entry.packageName === packageName)
   );
 }
 
@@ -679,6 +705,7 @@ function registerUntracked(
     const nextTableName = resolveTableName(ctor, name, {
       ...existing.config,
       ...config,
+      ...(nextPackageName ? { packageName: nextPackageName } : {}),
     });
     existing.config = {
       ...existing.config,
@@ -814,15 +841,29 @@ function registerUntracked(
     }
   }
 
-  // 1. Exact-match check (existingKey === name)
-  if (getClasses().has(name)) {
-    const existing = getClasses().get(name);
-    if (!existing) {
-      throw new Error(
-        `Registry inconsistency: ${name} exists in classes Map but get() returned undefined`,
-      );
-    }
+  // #3098: when this constructor's own package is known and that package
+  // declares this class (its manifest stub or an earlier registration sits
+  // under the qualified key, or its manifest describes it), never adopt
+  // another package's same-named registration below — `Account` exists in
+  // both smrt-ledgers and smrt-messages, and a simple-name match would hand
+  // one package's constructor the other's fields and table.
+  const ownQualifiedKey = newPackageName
+    ? createQualifiedName(newPackageName, name)
+    : undefined;
+  const ownPackageDeclaresClass =
+    !!ownQualifiedKey &&
+    !!newPackageName &&
+    (!!explicitPackageName ||
+      packageDeclaresClass(newPackageName, ownQualifiedKey));
+  const belongsToAnotherPackage = (existing: RegisteredClass): boolean =>
+    ownPackageDeclaresClass &&
+    !!existing.packageName &&
+    existing.packageName !== newPackageName;
 
+  // 1. Exact-match check (existingKey === name)
+  const exactExisting = getClasses().get(name);
+  if (exactExisting && !belongsToAnotherPackage(exactExisting)) {
+    const existing = exactExisting;
     const handled = applyRegisterCollisionPolicy({
       ctor,
       name,
@@ -854,6 +895,11 @@ function registerUntracked(
       explicitPackageName !== existing.packageName &&
       isQualifiedName(existingKey)
     ) {
+      continue;
+    }
+    // The same holds for a package identity the registry already knows this
+    // class under (see ownPackageDeclaresClass above, #3098).
+    if (belongsToAnotherPackage(existing)) {
       continue;
     }
 
@@ -901,7 +947,13 @@ function registerUntracked(
     );
   }
   if (!manifestEntry) {
-    manifestEntry = discoverManifestSync(name);
+    // A class whose own package is known resolves its manifest by qualified
+    // identity only; a simple-name lookup could return another package's
+    // same-named class (#3098).
+    manifestEntry =
+      ownQualifiedKey && ownPackageDeclaresClass
+        ? discoverManifestSync(ownQualifiedKey)
+        : discoverManifestSync(name);
   }
   const runtimeTenantScopedDeclaration =
     getConstructorTenantScopedDeclarations().get(ctor);
@@ -1266,7 +1318,12 @@ function registerUntracked(
   // The manifest's tableName is computed at build-time when full class hierarchy is known,
   // which correctly handles STI inheritance. The decorator may derive wrong tableName
   // if parent class isn't registered yet at decorator execution time.
-  const tableName = resolveTableName(ctor, name, config);
+  const tableName = resolveTableName(ctor, name, {
+    ...config,
+    ...(ownPackageDeclaresClass && newPackageName
+      ? { packageName: newPackageName }
+      : {}),
+  });
   setSmrtTableName(ctor, tableName);
 
   // Load pre-generated schema from manifest if available, otherwise placeholder

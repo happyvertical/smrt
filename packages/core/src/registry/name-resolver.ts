@@ -20,6 +20,11 @@
  */
 
 import { ConfigurationError } from '../errors';
+import {
+  getLocalTestManifestCache,
+  getManifestCache,
+  getTestManifestCache,
+} from '../manifest/store.js';
 import type { QualifiedClassName, SmrtVisibility } from '../scanner/types.js';
 import {
   createQualifiedName,
@@ -292,6 +297,29 @@ export function qualifyExtendsName(
     extendsValue,
   );
   if (classes.has(samePackageQualified)) {
+    return samePackageQualified;
+  }
+
+  // The package's own manifest declares the parent but it is not registered
+  // yet (manifest entries register in file order, so a subclass can precede
+  // its base). It is still this package's class: another package's
+  // same-named registration must not become the parent (#3098).
+  const ownManifests = [
+    getManifestCache().get(currentPackage),
+    getLocalTestManifestCache(),
+    getTestManifestCache(),
+  ];
+  if (
+    ownManifests.some((manifest) => {
+      if (manifest?.packageName !== currentPackage) return false;
+      const entry = manifest.objects?.[samePackageQualified];
+      // An entry that itself extends this simple name is the subclass being
+      // registered (a same-named child of another package's base, e.g.
+      // support's ServiceTimeEntry), not a base of its own package.
+      const entryParent = entry?.extends?.split(':').pop();
+      return !!entry && entryParent !== extendsValue;
+    })
+  ) {
     return samePackageQualified;
   }
 

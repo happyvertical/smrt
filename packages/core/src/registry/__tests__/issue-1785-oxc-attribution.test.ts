@@ -18,6 +18,7 @@
  * node_modules fallback (method 4) is exercised.
  */
 
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { getPackageName } from '../../manifest/manifest-loader.js';
 import type { SmrtObjectConstructor } from '../../registry/types.js';
@@ -25,6 +26,7 @@ import {
   DECORATOR_RUNTIME_PACKAGES,
   isDecoratorRuntimeFramePath,
   isDecoratorRuntimePackageName,
+  isModuleRunnerFramePath,
 } from '../../utils/stack-frames.js';
 import { getSourceFileFromStack } from '../shared-state.js';
 
@@ -69,6 +71,20 @@ describe('#1785: decorator-runtime frame detection', () => {
     expect(
       isDecoratorRuntimeFramePath('/app/node_modules/tslib/tslib.es6.js'),
     ).toBe(true);
+  });
+
+  it('matches the Vite virtual-module id of the oxc helper (#3098)', () => {
+    // Vitest/Vite dev serve the helper as `\0@oxc-project+runtime@<v>/...`
+    // relative to the project root; unskipped, it attributed every class to
+    // the root package.
+    expect(
+      isDecoratorRuntimeFramePath(
+        '/repo/packages/ledgers/\0@oxc-project+runtime@0.138.0/helpers/esm/decorate.js',
+      ),
+    ).toBe(true);
+    expect(
+      isDecoratorRuntimeFramePath('/repo/app/src/oxc-project+runtime@1/x.ts'),
+    ).toBe(false);
   });
 
   it('does not match consumer module paths', () => {
@@ -118,5 +134,53 @@ describe('#1785: getSourceFileFromStack skips the oxc helper frame', () => {
     expect(getSourceFileFromStack(stack)).toBe(
       '/virtual-1785-app/src/lib/objects/Widget.ts',
     );
+  });
+});
+
+describe('#3098: getPackageName under a module runner (Vitest, Vite SSR)', () => {
+  const ctor = { name: 'Widget' } as unknown as SmrtObjectConstructor;
+  // Real files, so the package.json walk (method 3) resolves them.
+  const declaringModule = fileURLToPath(
+    new URL('../../../../ledgers/src/models/Account.ts', import.meta.url),
+  );
+  const coreTestModule = fileURLToPath(
+    new URL('./widget-registry.test.ts', import.meta.url),
+  );
+  const VIRTUAL_OXC_FRAME =
+    '    at __decorate (/repo/packages/app/\0@oxc-project+runtime@0.138.0/helpers/esm/decorate.js:17:22)';
+  const RUNNER_FRAME =
+    '    at file:///repo/node_modules/.pnpm/@vitest+runner@4.1.10/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11';
+
+  it('skips the Vite virtual-module oxc helper and reads the anonymous declaring frame', () => {
+    const stack = [
+      'Error',
+      CORE_FRAME,
+      VIRTUAL_OXC_FRAME,
+      `    at ${declaringModule}:165:44`,
+      RUNNER_FRAME,
+    ].join('\n');
+
+    expect(getPackageName(ctor, true, stack)).toBe(
+      '@happyvertical/smrt-ledgers',
+    );
+  });
+
+  it('never attributes a class to the test or module runner', () => {
+    expect(isModuleRunnerFramePath(RUNNER_FRAME)).toBe(true);
+    expect(
+      isModuleRunnerFramePath(
+        '/repo/node_modules/vite/dist/node/module-runner.js',
+      ),
+    ).toBe(true);
+    expect(isModuleRunnerFramePath(declaringModule)).toBe(false);
+    const runnerOnly = ['Error', CORE_FRAME, RUNNER_FRAME].join('\n');
+    expect(getPackageName(ctor, true, runnerOnly)).toBeNull();
+  });
+
+  it('attributes a caller whose file name merely contains "registry"', () => {
+    const stack = ['Error', CORE_FRAME, `    at ${coreTestModule}:9:1`].join(
+      '\n',
+    );
+    expect(getPackageName(ctor, true, stack)).toBe('@happyvertical/smrt-core');
   });
 });

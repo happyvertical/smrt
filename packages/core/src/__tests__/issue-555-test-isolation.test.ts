@@ -77,8 +77,14 @@ describe('Issue #555: Test isolation - class name collision', () => {
       registered!.sourceFilePath = '/different/path/to/file.ts';
 
       // Create a different constructor with the same name
-      // This simulates a different class with the same name from another file
+      // This simulates a different class with the same name from another file.
+      // It must also come from another package: within one package, a second
+      // constructor of the same name from another file is indistinguishable
+      // from a pnpm-duplicated copy (accepted). This test used to get that
+      // package difference by accident — the registry attributed the call to
+      // the test runner's package until #3098 fixed stack attribution.
       const OtherClass = class CollisionTest555 extends SmrtObject {
+        static readonly __package__ = '@test/issue-555-other';
         field2: string = '';
       };
 
