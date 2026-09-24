@@ -534,7 +534,11 @@ describe('smrt#3060 billing-period close', () => {
       );
       expect(
         await world.provider.acceptWebhook(forged.payload, forged.signature),
-      ).toMatchObject({ accepted: false, kind: 'ignored' });
+      ).toMatchObject({
+        accepted: false,
+        kind: 'ignored',
+        type: 'checkout.session.completed:unverified_credit_purchase',
+      });
     });
 
     it('acknowledges checkouts it did not create without storing them', async () => {
@@ -548,7 +552,11 @@ describe('smrt#3060 billing-period close', () => {
       );
       expect(
         await world.provider.acceptWebhook(foreign.payload, foreign.signature),
-      ).toMatchObject({ accepted: false, kind: 'ignored' });
+      ).toMatchObject({
+        accepted: false,
+        kind: 'ignored',
+        type: 'checkout.session.completed',
+      });
       const malformed = signedEvent({
         id: 'evt_no_invoice',
         type: 'invoice.paid',

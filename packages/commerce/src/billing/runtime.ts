@@ -419,15 +419,28 @@ export class BillingRuntime {
    * Verify and durably enqueue a provider webhook. Returns `accepted: false`
    * for a duplicate delivery or an event this package does not act on.
    * Respond 2xx whenever this resolves; a verification failure throws
-   * `BillingWebhookVerificationError`.
+   * `BillingWebhookVerificationError`. An ignored event's `type` names what
+   * was ignored: alert on one ending in `:unverified_credit_purchase` (a
+   * paid checkout that claims to be a credit purchase but failed
+   * verification, for example after a webhook-secret rotation).
    */
   async acceptWebhook(
     payload: string,
     signature: string,
-  ): Promise<{ accepted: boolean; eventId: string; kind: string }> {
+  ): Promise<{
+    accepted: boolean;
+    eventId: string;
+    kind: string;
+    type?: string;
+  }> {
     const event = await this.provider.verifyWebhook(payload, signature);
     if (event.kind === 'ignored') {
-      return { accepted: false, eventId: event.eventId, kind: event.kind };
+      return {
+        accepted: false,
+        eventId: event.eventId,
+        kind: event.kind,
+        type: event.type,
+      };
     }
     return withTenant({ tenantId: this.sellerTenantId }, async () => {
       const inbox = await ForgeDeliveryCollection.create({ db: this.db });

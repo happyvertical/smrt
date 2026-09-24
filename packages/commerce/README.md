@@ -192,7 +192,13 @@ registerBillingRuntime('platform', billing);
 await enqueueBillingPeriodClose({ runtime: 'platform' });
 
 // Webhook route: verify, enqueue, respond 2xx.
-await billing.acceptWebhook(rawBody, request.headers.get('stripe-signature'));
+const intake = await billing.acceptWebhook(
+  rawBody,
+  request.headers.get('stripe-signature'),
+);
+if (intake.type?.endsWith(':unverified_credit_purchase')) {
+  // alert: a paid checkout claimed to buy credit but failed verification
+}
 await billing.processEvents(); // or enqueueBillingEvents({ runtime: 'platform' })
 
 // Prepaid credit through provider checkout.
