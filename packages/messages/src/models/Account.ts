@@ -4,6 +4,9 @@
  * Common fields shared across email, Slack, Twitter accounts, etc.
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,

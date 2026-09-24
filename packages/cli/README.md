@@ -48,6 +48,7 @@ The four snapshot options are atomic: supplying any one requires all four.
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:migrate-int8` | Widen legacy pre-#2373 int4 columns to BIGINT after reviewing the maintenance-window preflight |
+| `smrt db:migrate-ledger-accounts [--dry-run]` | Move smrt-ledgers accounts out of the pre-#3098 shared `accounts` table into `ledger_accounts` (PostgreSQL; run between two `db:migrate` passes — see the smrt-ledgers README) |
 | `smrt db:drop-framework-base-tables` | One-time removal of the five framework-base tables (`smrt_objects`, `smrt_classes`, `smrt_collections`, `smrt_hierarchicals`, `smrt_polymorphic_associations`) orphaned by #2644; refuses if any target table has rows, an unexpected shape, or an inbound foreign key |
 | `smrt db:drop-framework-base-tables --dry-run` | Print the drop plan (tables and companion indexes) without executing |
 | `smrt db:diff` | Show schema differences without generating migration files |

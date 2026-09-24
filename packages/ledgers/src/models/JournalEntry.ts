@@ -8,6 +8,7 @@
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
+import { Account } from './Account';
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -31,7 +32,9 @@ export class JournalEntry extends SmrtObject {
   /**
    * Account ID (required)
    */
-  @foreignKey('Account')
+  // Constructor reference, not the simple name `Account` (also declared by
+  // smrt-messages, #3098).
+  @foreignKey(Account)
   accountId: string = '';
 
   /**

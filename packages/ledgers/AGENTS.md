@@ -4,7 +4,7 @@ Double-entry accounting with chart of accounts, journal lifecycle, and balance e
 
 ## Models
 
-- **Account**: 5 types (asset/liability/equity/revenue/expense). Hierarchical via `parentId`. Debit-normal (asset, expense) vs credit-normal (liability, equity, revenue). Methods: `getAncestors()`, `getFullPath()`, `toTreeNode()`, `getBalance(asOfDate?)`.
+- **Account**: 5 types (asset/liability/equity/revenue/expense). Hierarchical via `parentId`. Debit-normal (asset, expense) vs credit-normal (liability, equity, revenue). Methods: `getAncestors()`, `getFullPath()`, `toTreeNode()`, `getBalance(asOfDate?)`. Stored in `ledger_accounts` (explicit `tableName`), never the derived `accounts`: smrt-messages declares an unrelated `Account` on that table (#3098). `src/migrations/ledger-accounts-table.ts` (`smrt db:migrate-ledger-accounts`) moves pre-#3098 rows; the README has the operator sequence.
 - **Journal**: lifecycle `draft → posted → voided`. **Immutable after posting** (can only void, not edit). `sourceModule`/`sourceRef` for cross-package attribution. Auto-numbered (e.g., "JNL-0001"). `summarize()` is AI-powered via the smrt-prompts registry (see Prompt Registry below).
 - **JournalEntry**: debit XOR credit (not both, validated on save). Multi-currency via `exchangeRate`. Non-negative amounts required.
 
@@ -36,3 +36,4 @@ PII-conscious variable selection: `tenantId`, `sourceRef` (may reference custome
 - **Account types inherited by children**: child cannot differ from parent type
 - **getBalance() is async**: requires JournalEntryCollection query (not stored on Account)
 - **Optional tenancy** on all models
+- **Same-named `Account`**: reference the ledger model by constructor (`@foreignKey(Account)`) or qualified name (`@happyvertical/smrt-ledgers:Account`), never the bare string. The PostgreSQL lanes are `pnpm test:postgres` here (ledgers alone) and in smrt-messages (both packages loaded)

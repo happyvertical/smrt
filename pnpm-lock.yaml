@@ -683,6 +683,9 @@ importers:
       '@happyvertical/smrt-dev-mcp':
         specifier: workspace:*
         version: link:../smrt-dev-mcp
+      '@happyvertical/smrt-ledgers':
+        specifier: workspace:*
+        version: link:../ledgers
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
@@ -1680,6 +1683,9 @@ importers:
         specifier: ^0.90.0
         version: 0.90.0
     devDependencies:
+      '@happyvertical/smrt-ledgers':
+        specifier: workspace:*
+        version: link:../ledgers
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

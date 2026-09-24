@@ -72,7 +72,18 @@ import './prompts.js';
 export { AccountCollection } from './collections/Accounts';
 export { JournalEntryCollection } from './collections/JournalEntries';
 export { JournalCollection } from './collections/Journals';
-
+// One-time move of ledger accounts out of the shared `accounts` table (#3098)
+export {
+  LEDGER_ACCOUNTS_TABLE,
+  LEDGER_ACCOUNTS_TABLE_MOVE,
+  LEGACY_ACCOUNTS_TABLE,
+  LedgerAccountsTableMoveError,
+  type LedgerAccountsTableMoveOptions,
+  type LedgerAccountsTableMovePlan,
+  type LedgerAccountsTableMoveResult,
+  migrateLedgerAccountsTable,
+  planLedgerAccountsTableMove,
+} from './migrations/ledger-accounts-table';
 // Export models
 export { Account } from './models/Account';
 export { Journal } from './models/Journal';

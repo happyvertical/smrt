@@ -2,6 +2,9 @@
  * SlackAccount model - Slack workspace account extending the Account STI base
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import { smrt } from '@happyvertical/smrt-core';
 import type { MessageSenderInterface, SlackAccountOptions } from '../types';
 import { Account } from './Account';

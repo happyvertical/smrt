@@ -2,6 +2,9 @@
  * SlackMessage model - Slack message extending the Message STI base
  */
 
+// Register the package manifest before this module's @smrt() decorator
+// runs, whichever chunk the library build places it in (#3098).
+import '../__smrt-register__.js';
 import { smrt } from '@happyvertical/smrt-core';
 import type { SlackMessageOptions } from '../types';
 import { Message } from './Message';

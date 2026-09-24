@@ -4,6 +4,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dbMigrateAgentScheduleSlugsCommand } from '../db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from '../db-migrate-int8.js';
+import { dbMigrateLedgerAccountsCommand } from '../db-migrate-ledger-accounts.js';
 import {
   buildDeclaredUuidColumnSet,
   dbMigrateUuidCommand,
@@ -381,6 +382,18 @@ describe('db:migrate-agent-schedule-slugs command', () => {
     expect(
       dbMigrateAgentScheduleSlugsCommand.options?.['dry-run'],
     ).toBeDefined();
+  });
+});
+
+describe('db:migrate-ledger-accounts command (#3098)', () => {
+  it('is registered as an explicit dry-run-capable repair', () => {
+    expect(utilityCommands['db:migrate-ledger-accounts']).toBe(
+      dbMigrateLedgerAccountsCommand,
+    );
+    expect(dbMigrateLedgerAccountsCommand.aliases).toContain(
+      'migrate-ledger-accounts',
+    );
+    expect(dbMigrateLedgerAccountsCommand.options?.['dry-run']).toBeDefined();
   });
 });
 

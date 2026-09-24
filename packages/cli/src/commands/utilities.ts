@@ -58,6 +58,7 @@ import {
 } from './db-migrate-actions.js';
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
+import { dbMigrateLedgerAccountsCommand } from './db-migrate-ledger-accounts.js';
 import { dbMigrateNullEqualIndexesCommand } from './db-migrate-null-equal-indexes.js';
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
 import { dbOrphansCommand } from './db-orphans.js';
@@ -3739,6 +3740,7 @@ export default testManifest;
   'db:migrate-int8': dbMigrateInt8Command,
   'db:migrate-null-equal-indexes': dbMigrateNullEqualIndexesCommand,
   'db:migrate-agent-schedule-slugs': dbMigrateAgentScheduleSlugsCommand,
+  'db:migrate-ledger-accounts': dbMigrateLedgerAccountsCommand,
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
   'db:orphans': dbOrphansCommand,
