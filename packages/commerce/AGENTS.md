@@ -46,12 +46,14 @@ for usage.
   (pure; `BillingAccount.billingAnchorAt`, null = calendar months). A close
   with no period closes each payer's `lastEndedBillingPeriod()`. Flat-plan
   claims are the exception to "id from the source": their `sourceId` is
-  `<subscriptionId>:after:<previous claim id|start>` and their
-  `periodStart/End` is the covered window; `claimFlatWindow()` bills only the
-  window minus existing coverage and retries on a successor-id conflict. That
-  chain, not the period, is what stops overlaps when schedules or payers
-  change — never claim a flat plan outside it. Proration is
-  `prorateMinorUnits()` (half up, BigInt) against the period's full cycle.
+  `<subscriptionId>:seq:<chainSequence>` and their `periodStart/End` is the
+  exact time they bill. `claimFlatWindow()` reads the last number, then the
+  coverage (claims ending after the window start), claims one gap as number
+  n + 1, and retries on conflict; reading in that order is what makes it
+  safe. That numbering, not the period, stops overlaps when schedules or
+  payers change — never claim a flat plan outside it, and keep both reads
+  bounded (no whole-history scans). Proration is `prorateMinorUnits()` (half
+  up, BigInt) against the period's full cycle.
 - **System tables.** `BillingAccount`, `BillingPeriodClose`, and
   `BillingLineSource` are not tenant-scoped and have no generated surface.
   Collections stay unexported; models are root exports (#3082). Invoices,

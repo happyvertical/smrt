@@ -7,7 +7,7 @@
  */
 
 import { TenantUsageMetricCollection } from '@happyvertical/smrt-subscriptions';
-import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addBillingMonths,
@@ -18,6 +18,7 @@ import {
 import { previousCalendarMonth } from '../billing/period-close.js';
 import type { BillingProviderInvoiceInput } from '../billing/provider.js';
 import { BillingRuntime } from '../billing/runtime.js';
+import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import * as commerceRoot from '../index.js';
 import {
   addNetworkSite,
@@ -387,6 +388,51 @@ describe('smrt#3116 anchored period close', () => {
     ]);
     const [, second] = await invoicesOf(world, SOLO);
     expect(second?.subtotal).toBe(1250);
+  });
+
+  it('bills time on both sides of an already billed window as separate claims and lines', async () => {
+    await parkNetwork(world);
+    await anchor(SOLO, null, true);
+    const solo = await updateSubscription(world, SOLO, {
+      startedAt: at('2030-03-12T00:00:00Z'),
+      status: 'canceled',
+      canceledAt: at('2030-03-20T00:00:00Z'),
+    });
+    await world.provider.closePeriod({ now: at('2030-04-02T00:00:00Z') });
+    // Reactivated, then moved to an anchor on Mar 5 without proration: the
+    // Mar 5 → Apr 5 period surrounds the billed Mar 12 → Mar 20.
+    await updateSubscription(world, SOLO, {
+      status: 'active',
+      canceledAt: null,
+    });
+    await anchor(SOLO, at('2030-03-05T00:00:00Z'), false);
+    await world.provider.closePeriod({ now: at('2030-04-06T00:00:00Z') });
+    // 8/31, 7/31 and 16/31 of 2500, each rounded half up.
+    expect(await claimedWindows(world, String(solo.id))).toEqual([
+      ['2030-03-05T00:00:00.000Z', '2030-03-12T00:00:00.000Z', 565],
+      ['2030-03-12T00:00:00.000Z', '2030-03-20T00:00:00.000Z', 645],
+      ['2030-03-20T00:00:00.000Z', '2030-04-05T00:00:00.000Z', 1290],
+    ]);
+    expect(await overlappingClaims(world)).toEqual([]);
+    const [, second] = await invoicesOf(world, SOLO);
+    expect(second?.subtotal).toBe(565 + 1290);
+    const lines = await withTenant({ tenantId: PROVIDER }, async () =>
+      (await InvoiceLineItemCollection.create({ db: world.db })).findByInvoice(
+        String(second?.id),
+      ),
+    );
+    expect(
+      lines
+        .map((line) => [
+          line.periodStart?.toISOString(),
+          line.periodEnd?.toISOString(),
+          line.amount,
+        ])
+        .sort(),
+    ).toEqual([
+      ['2030-03-05T00:00:00.000Z', '2030-03-12T00:00:00.000Z', 565],
+      ['2030-03-20T00:00:00.000Z', '2030-04-05T00:00:00.000Z', 1290],
+    ]);
   });
 
   it('closes an explicit period only for payers whose schedule has it', async () => {

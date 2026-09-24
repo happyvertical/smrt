@@ -400,19 +400,24 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
     ]);
     const typed = await world.db.query(
       `SELECT data_type FROM information_schema.columns
-        WHERE table_name = '_smrt_billing_accounts'
-          AND column_name IN ('billing_anchor_at', 'prorate_flat_plans')
+        WHERE (table_name = '_smrt_billing_accounts'
+               AND column_name IN ('billing_anchor_at', 'prorate_flat_plans'))
+           OR (table_name = '_smrt_billing_line_sources'
+               AND column_name = 'chain_sequence')
         ORDER BY column_name`,
     );
     expect(typed.rows.map((row) => row.data_type)).toEqual([
       'timestamp with time zone',
+      'bigint',
       'boolean',
     ]);
     const index = await world.db.query(
       `SELECT indexdef FROM pg_indexes
-        WHERE indexname = '_smrt_billing_line_sources_line_key_idx'`,
+        WHERE indexname = '_smrt_billing_line_sources_line_key_chain_sequence_idx'`,
     );
-    expect(String(index.rows[0]?.indexdef)).toContain('(line_key)');
+    expect(String(index.rows[0]?.indexdef)).toContain(
+      '(line_key, chain_sequence)',
+    );
   });
 
   it('accepts and applies a verified webhook under strict tenancy (#3100)', async () => {

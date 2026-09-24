@@ -12,9 +12,9 @@
  * - each billable source is claimed by one {@link BillingLineSource} whose id
  *   is derived from the source, so a charge is billed at most once however
  *   many periods or workers race for it; a flat plan's claims record the time
- *   they cover and form a per-subscription chain (#3116), so no two claims for
- *   one subscription ever cover the same time, whatever schedule each payer
- *   is on;
+ *   they cover and are numbered per subscription (#3116), so no two claims
+ *   for one subscription ever cover the same time, whatever schedule each
+ *   payer is on;
  * - the invoice and its lines have ids derived from the close, and the
  *   provider invoice uses the close id as its idempotency key;
  * - every step persists its outcome before the next, so a retry resumes where
@@ -129,7 +129,7 @@ interface Candidate {
   discountable: boolean;
   periodStart: Date | null;
   periodEnd: Date | null;
-  /** A flat plan's billable window, claimed through the coverage chain. */
+  /** A flat plan's billable window, claimed by `claimFlatWindow()`. */
   flat?: FlatWindow;
 }
 
@@ -432,9 +432,7 @@ async function collectGroups(
   );
   const flatClaims = await loadFlatClaims(
     runtime,
-    candidates.flatMap((candidate) =>
-      candidate.flat ? [candidate.flat.subscriptionId] : [],
-    ),
+    candidates.flatMap((candidate) => (candidate.flat ? [candidate.flat] : [])),
   );
   for (const group of groups) {
     const ids = await Promise.all(
@@ -459,7 +457,7 @@ async function collectGroups(
         const claims = flatClaims.get(candidate.flat.subscriptionId) ?? [];
         return (
           claims.some((claim) => claim.periodCloseId === group.closeId) ||
-          uncoveredMs(uncovered(candidate.flat, claims)) > 0
+          uncovered(candidate.flat, claims).length > 0
         );
       }
       const owner = claimed.get(ids[index]);
@@ -852,7 +850,7 @@ async function collectFlatPlans(
     const forTenant = payer !== subscriber ? ` for tenant ${subscriber}` : '';
     candidates.push({
       sourceType: 'subscription_period',
-      // Assigned when claimed: the claim's place in the coverage chain.
+      // Assigned when claimed: the claim's number for its subscription.
       sourceId: '',
       payerTenantId: payer,
       currency: normalizeCurrency(plan.currency),
@@ -929,18 +927,33 @@ function flatLineKey(subscriptionId: string): string {
   return `subscription|${subscriptionId}`;
 }
 
-/** Every flat-plan claim of each subscription, by subscription id. */
+/**
+ * Flat-plan claims of each subscription that end after `after` — the only
+ * ones that can overlap a window starting there — by subscription id. The
+ * read is bounded by the windows being billed, not by billing history.
+ */
 async function loadFlatClaims(
   runtime: BillingRuntime,
-  subscriptionIds: string[],
+  flats: FlatWindow[],
 ): Promise<Map<string, BillingLineSource[]>> {
-  const keys = [...new Set(subscriptionIds)].map(flatLineKey);
+  const bySubscription = new Map<string, number>();
+  for (const flat of flats) {
+    const start = flat.windowStart.getTime();
+    const known = bySubscription.get(flat.subscriptionId);
+    if (known === undefined || start < known) {
+      bySubscription.set(flat.subscriptionId, start);
+    }
+  }
+  const entries = [...bySubscription.entries()];
   const claims = new Map<string, BillingLineSource[]>();
-  for (let offset = 0; offset < keys.length; offset += runtime.pageSize) {
+  for (let offset = 0; offset < entries.length; offset += runtime.pageSize) {
+    const batch = entries.slice(offset, offset + runtime.pageSize);
+    const after = Math.min(...batch.map(([, start]) => start));
     const rows = await runtime.sources.list({
       where: {
         sourceType: 'subscription_period',
-        lineKey: keys.slice(offset, offset + runtime.pageSize),
+        lineKey: batch.map(([subscriptionId]) => flatLineKey(subscriptionId)),
+        'periodEnd >': new Date(after).toISOString(),
       },
     });
     for (const row of rows) {
@@ -982,52 +995,39 @@ function uncovered(
   return gaps.filter(([from, to]) => to > from);
 }
 
-function uncoveredMs(gaps: Array<[number, number]>): number {
-  return gaps.reduce((sum, [from, to]) => sum + (to - from), 0);
-}
-
-const CHAIN_SEPARATOR = ':after:';
-
-/**
- * The claim the next one for this subscription must follow: the latest-ending
- * claim no other claim follows (ties by id). Deterministic for a given set of
- * claims, so two workers that read the same claims race for one successor id
- * and exactly one wins; a worker that read fewer claims computes a tip that
- * already has a successor, and loses.
- */
-function chainTip(
+/** The subscription's highest claim sequence number (0 before its first). */
+async function lastFlatSequence(
+  runtime: BillingRuntime,
   subscriptionId: string,
-  claims: BillingLineSource[],
-): string | null {
-  const prefix = `${subscriptionId}${CHAIN_SEPARATOR}`;
-  const followed = new Set(
-    claims
-      .filter((claim) => claim.sourceId.startsWith(prefix))
-      .map((claim) => claim.sourceId.slice(prefix.length)),
-  );
-  let tip: BillingLineSource | null = null;
-  for (const claim of claims) {
-    if (!claim.id || followed.has(String(claim.id))) continue;
-    if (
-      !tip ||
-      (claim.periodEnd?.getTime() ?? 0) > (tip.periodEnd?.getTime() ?? 0) ||
-      ((claim.periodEnd?.getTime() ?? 0) === (tip.periodEnd?.getTime() ?? 0) &&
-        String(claim.id) > String(tip.id))
-    ) {
-      tip = claim;
-    }
-  }
-  return tip ? String(tip.id) : null;
+): Promise<number> {
+  const [last] = await runtime.sources.list({
+    where: {
+      sourceType: 'subscription_period',
+      lineKey: flatLineKey(subscriptionId),
+    },
+    orderBy: 'chainSequence DESC',
+    limit: 1,
+  });
+  return Number(last?.chainSequence) || 0;
 }
 
-const MAX_FLAT_CLAIM_ATTEMPTS = 8;
+function flatSourceId(subscriptionId: string, sequence: number): string {
+  return `${subscriptionId}:seq:${sequence}`;
+}
+
+const MAX_FLAT_CLAIM_CONFLICTS = 8;
 
 /**
- * Claim the uncovered part of a flat window for `closeId`, priced as the
- * plan amount × uncovered time / cycle length (rounded half up). Claims for
- * one subscription form a chain — each names the claim it follows in its
- * source id — so concurrent claimers conflict on the same id instead of
- * billing the same time twice.
+ * Claim every uncovered part of a flat window for `closeId`, one claim per
+ * gap, each priced as the plan amount × gap length / cycle length (rounded
+ * half up) and recording exactly the time it bills.
+ *
+ * A subscription's claims are numbered 1, 2, 3, … and a claim's id is derived
+ * from its number, so only one claimer can ever take number n + 1. A claimer
+ * reads the last number n first and the coverage second; every claim up to n
+ * was committed before claim n was, so the coverage read sees them all, and a
+ * claim written after the first read takes n + 1 and makes this insert
+ * conflict. A conflicting claimer re-reads and retries.
  */
 async function claimFlatWindow(
   runtime: BillingRuntime,
@@ -1036,50 +1036,55 @@ async function claimFlatWindow(
   flat: FlatWindow,
   account: BillingAccount,
 ): Promise<void> {
-  for (let attempt = 0; attempt < MAX_FLAT_CLAIM_ATTEMPTS; attempt += 1) {
+  let conflicts = 0;
+  for (;;) {
+    const sequence = (await lastFlatSequence(runtime, flat.subscriptionId)) + 1;
     const claims =
-      (await loadFlatClaims(runtime, [flat.subscriptionId])).get(
-        flat.subscriptionId,
-      ) ?? [];
-    if (claims.some((claim) => claim.periodCloseId === closeId)) return;
-    const gaps = uncovered(flat, claims);
-    const coveredMs = uncoveredMs(gaps);
-    const amount = prorateMinorUnits(flat.planAmount, coveredMs, flat.cycleMs);
-    if (amount <= 0) return;
-    const billedStart = new Date(gaps[0][0]);
-    const billedEnd = new Date(gaps[gaps.length - 1][1]);
-    const tip = chainTip(flat.subscriptionId, claims);
-    const flatSourceId = `${flat.subscriptionId}${CHAIN_SEPARATOR}${tip ?? 'start'}`;
-    const id = await sourceId('subscription_period', flatSourceId);
-    const prorated = coveredMs < flat.cycleMs ? ' (prorated)' : '';
+      (await loadFlatClaims(runtime, [flat])).get(flat.subscriptionId) ?? [];
+    const gap = uncovered(flat, claims)
+      .map(([from, to]) => ({
+        from,
+        to,
+        amount: prorateMinorUnits(flat.planAmount, to - from, flat.cycleMs),
+      }))
+      .find((part) => part.amount > 0);
+    if (!gap) return;
+    const billedStart = new Date(gap.from);
+    const billedEnd = new Date(gap.to);
+    const claimSourceId = flatSourceId(flat.subscriptionId, sequence);
+    const id = await sourceId('subscription_period', claimSourceId);
+    const prorated = gap.to - gap.from < flat.cycleMs ? ' (prorated)' : '';
     try {
       await runtime.sources.create({
         id,
         sellerTenantId: runtime.sellerTenantId,
         periodCloseId: closeId,
         sourceType: 'subscription_period',
-        sourceId: flatSourceId,
+        sourceId: claimSourceId,
+        chainSequence: sequence,
         lineKey: candidate.lineKey,
         lineDescription: `${flat.label} — ${isoDate(billedStart)} to ${isoDate(
           new Date(billedEnd.getTime() - 1),
         )}${prorated}`,
-        amount,
-        discount: flatDiscount(amount, account),
+        amount: gap.amount,
+        discount: flatDiscount(gap.amount, account),
         quantity: 1,
         currency: candidate.currency,
         periodStart: billedStart,
         periodEnd: billedEnd,
         _insertOnly: true,
       });
-      return;
     } catch (error) {
-      // Another claim took this place in the chain: re-read and retry.
+      // Another claim took this number: re-read and retry.
       if (!(await runtime.sources.get(id))) throw error;
+      conflicts += 1;
+      if (conflicts >= MAX_FLAT_CLAIM_CONFLICTS) {
+        throw new Error(
+          `Could not claim subscription ${flat.subscriptionId}: its billed coverage kept changing.`,
+        );
+      }
     }
   }
-  throw new Error(
-    `Could not claim subscription ${flat.subscriptionId}: its billed coverage kept changing.`,
-  );
 }
 
 function flatDiscount(amount: number, account: BillingAccount): number {
@@ -1380,11 +1385,22 @@ interface InvoiceLineGroup {
 
 function groupLines(sources: BillingLineSource[]): InvoiceLineGroup[] {
   const lines = new Map<string, InvoiceLineGroup & { quantity: number }>();
+  // A close holding several flat claims for one subscription (#3116: time
+  // around an already billed window) shows each with its own service period.
+  const flatCounts = new Map<string, number>();
   for (const source of sources) {
-    let line = lines.get(source.lineKey);
+    if (source.sourceType !== 'subscription_period') continue;
+    flatCounts.set(source.lineKey, (flatCounts.get(source.lineKey) ?? 0) + 1);
+  }
+  for (const source of sources) {
+    const key =
+      (flatCounts.get(source.lineKey) ?? 0) > 1
+        ? `${source.lineKey}|${source.periodStart?.toISOString() ?? ''}`
+        : source.lineKey;
+    let line = lines.get(key);
     if (!line) {
       line = {
-        key: source.lineKey,
+        key,
         description: source.lineDescription,
         amount: 0,
         discount: 0,
@@ -1392,7 +1408,7 @@ function groupLines(sources: BillingLineSource[]): InvoiceLineGroup[] {
         periodStart: source.periodStart,
         periodEnd: source.periodEnd,
       };
-      lines.set(source.lineKey, line);
+      lines.set(key, line);
     }
     line.amount += Number(source.amount);
     line.discount += Number(source.discount);

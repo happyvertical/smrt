@@ -250,18 +250,20 @@ export class BillingPeriodClose extends SmrtObject {
  * A claim that one billable source — a charge, an adjustment, or a window of
  * a flat plan — is billed on exactly one period close. The id is derived
  * from `(sourceType, sourceId)`, so a source can never be claimed twice. A
- * flat plan's claims record the window they cover and chain per subscription
- * (`<subscriptionId>:after:<previous claim id>`, #3116), so no two cover the
- * same time; claims written before #3116 are `<subscriptionId>:<periodStart>`.
+ * flat plan's claims record the window they cover and are numbered per
+ * subscription (`<subscriptionId>:seq:<n>`, #3116): only one claimer can take
+ * the next number, so no two cover the same time. Claims written before #3116
+ * are `<subscriptionId>:<periodStart>` with number 0.
  */
 @smrt({
   tableName: '_smrt_billing_line_sources',
   conflictColumns: ['source_type', 'source_id'],
-  // Flat-plan coverage is read per subscription line (#3116).
+  // Flat-plan claims are read per subscription line, newest number first
+  // (#3116).
   indexes: [
     {
-      name: '_smrt_billing_line_sources_line_key_idx',
-      columns: ['lineKey'],
+      name: '_smrt_billing_line_sources_line_key_chain_sequence_idx',
+      columns: ['lineKey', 'chainSequence'],
     },
   ],
   api: false,
@@ -285,6 +287,11 @@ export class BillingLineSource extends SmrtObject {
   discount: number = 0;
   /** Metered quantity, informational; fractional like the charge's. */
   quantity: number = 0.0;
+  /**
+   * A flat-plan claim's number within its subscription (1, 2, …; #3116). 0
+   * for other sources and for flat-plan claims written before #3116.
+   */
+  chainSequence: number = 0;
   currency: string = 'USD';
   /**
    * The billed window. For a flat plan this is the time the claim covers

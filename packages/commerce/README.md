@@ -272,24 +272,26 @@ const { url } = await billing.createCreditCheckout({
   back-dated into an already billed period is not credited — issue an
   adjustment.
 - **No double billing across schedule changes.** Every flat-plan claim records
-  the window it covers, and a subscription's claims form a chain (each names
-  the claim it follows), so two workers can never both claim the same time.
+  the exact time it bills, and a subscription's claims are numbered, so only
+  one worker can write the next claim and two can never claim the same time.
   Moving an account from calendar months to an anchor, moving an anchor, or
   moving a subscription to a payer on another schedule bills only time not yet
   billed, prorated. For example, calendar months through February and then an
   anchor on Mar 20 bills the Mar 1 → Mar 20 stub pro rata, then Mar 20 → Apr
-  20. Stop workers running a pre-#3116 version before relying on this: they
-  claim flat plans outside the chain.
+  20. Time around an already billed window is billed as separate lines, each
+  with its own service period. Stop workers running a pre-#3116 version
+  before relying on this: they claim flat plans outside the numbering.
 - **Service periods.** Each flat-plan invoice line carries its billed window
   as `periodStart`/`periodEnd`, down to the provider port. The Stripe adapter
   passes them on; `@happyvertical/accounting` does not send them to Stripe yet
   (happyvertical/sdk#1274).
 - **Upgrading to #3116.** Additive schema only: `_smrt_billing_accounts` gains
   `billing_anchor_at` (nullable) and `prorate_flat_plans` (default false), and
-  `_smrt_billing_line_sources` an index on `line_key`; run `smrt db:migrate`.
+  `_smrt_billing_line_sources` gains `chain_sequence` (default 0) and an index
+  on `(line_key, chain_sequence)`; run `smrt db:migrate`.
   Existing accounts stay on calendar months, and claims written before the
-  upgrade (`<subscriptionId>:<periodStart>`) count as billed coverage, so
-  nothing is billed again after it.
+  upgrade (`<subscriptionId>:<periodStart>`, number 0) count as billed
+  coverage, so nothing is billed again after it.
 - **Tax** comes from the provider (Stripe Tax) using the account customer's
   `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and
