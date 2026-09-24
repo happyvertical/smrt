@@ -15,6 +15,22 @@ schemas. No schema/persistence/security effect — `sensitive`/`readPermission`
 stay the security rail, and `sensitive`/`transient` fields never emit to the
 client at all.
 
+## Worker registration artifact (#3117)
+
+With `svelteKit.enabled`, a production `vite build` compiles the generated
+`smrt-register.ts` into `.smrt/runtime/register.js` after the server build
+(`src/vite-plugin/worker-registration.ts`, called once from `closeBundle`).
+adapter-node re-bundles the server from its own entries, so the web bundle is
+never importable by a separate Node process; this artifact is how a deployed
+task/schedule worker registers the app's local objects (and, through the
+`.smrt/register.js` it imports, consumed packages' objects) with the same
+qualified identities and isolated manifests as the web server. It is a nested
+SSR build with no consumer plugins: only aliases pointing into the project
+sources (e.g. `$lib`) apply, and every other bare import stays external so the
+worker shares the installed `@happyvertical/smrt-core` registry. SvelteKit
+virtual modules (`$env/*`, `$app/*`) are not available to a worker; an object
+importing one fails at worker startup. A failure fails the build.
+
 ## Lightweight discovery
 
 `src/knowledge-discovery.ts`, exported through `smrt-core/knowledge`, enumerates

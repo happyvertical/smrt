@@ -53,7 +53,11 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   Keep the guard in place for SSR and seed live collections with SSR
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
-- Run task and schedule workers as separate deployed processes. Extend the
+- Run task and schedule workers as separate deployed processes. The worker
+  imports `.smrt/runtime/register.js` (compiled by `pnpm build`) before any
+  runner starts, so jobs can target this app's own `@smrt()` objects; keep that
+  import ahead of runner creation and keep domain objects free of SvelteKit
+  virtual modules (`$env/*`, `$app/*`), which a worker cannot load. Extend the
   portability adapter instead of converting database files. Deployed provider
   readiness must come from installed modules that probe the real backing
   services; environment booleans are not readiness evidence.

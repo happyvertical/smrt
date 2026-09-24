@@ -791,6 +791,15 @@ describe('profile-aware application operations', () => {
     expect(worker).toContain('initializeDeployedApplicationRuntime');
     expect(worker).toContain('createTaskWorker');
     expect(worker).toContain('createScheduleWorker');
+    // App-defined jobs resolve the app's own objects from the compiled
+    // registration, imported before any runner is created (#3117).
+    const registration = worker.indexOf(
+      "await import(registration.href)",
+    );
+    expect(worker).toContain("'../.smrt/runtime/register.js'");
+    expect(registration).toBeGreaterThan(-1);
+    expect(registration).toBeLessThan(worker.indexOf('createTaskWorker('));
+    expect(dockerfile).toContain('COPY --from=build /app/.smrt ./.smrt');
     expect(compose).toContain('worker:');
     expect(compose).toContain('schedule-worker:');
     expect(compose).toContain('migrate:');
