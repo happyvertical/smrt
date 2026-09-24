@@ -30,6 +30,7 @@ const distDir = resolve(packageDir, 'dist');
 
 interface Report {
   network: string | undefined;
+  previewResource: { qualifiedName?: string; fields: string[] };
   jobs: (string | undefined)[];
 }
 
@@ -51,6 +52,7 @@ describe('#3109: consumer classes under plain Node with source maps', () => {
     );
 
     ws.writePackage('apps/app', '@fixture/app');
+    ws.writePackage('packages/cloud', '@fixture/cloud');
     ws.write(
       'apps/app/.smrt/manifest.json',
       JSON.stringify({
@@ -65,10 +67,21 @@ describe('#3109: consumer classes under plain Node with source maps', () => {
             tableName: 'networks',
             fields: { githubOrg: { type: 'text' } },
           }),
+          '@fixture/app:PreviewResource': manifestEntry({
+            className: 'PreviewResource',
+            packageName: '@fixture/app',
+            filePath: 'packages/cloud/src/models/PreviewResource.js',
+            tableName: 'preview_resources',
+            fields: { networkId: { type: 'text' } },
+          }),
         },
       }),
     );
     ws.writeModel('apps/app/src/models/Network.js', 'Network');
+    ws.writeModel(
+      'packages/cloud/src/models/PreviewResource.js',
+      'PreviewResource',
+    );
     for (const variant of ['a', 'b']) {
       const dir = `node_modules/.pnpm/@fixture+jobs@1.0.0_${variant}/node_modules/@fixture/jobs`;
       ws.writePackage(dir, '@fixture/jobs');
@@ -87,12 +100,17 @@ const load = async (relativePath) =>
 const entry = (ctor) => ObjectRegistry.getClassByConstructor(ctor);
 
 const Network = await load('apps/app/src/models/Network.js');
+const PreviewResource = await load('packages/cloud/src/models/PreviewResource.js');
 const jobs = [];
 for (const variant of ['a', 'b']) {
   jobs.push(await load('node_modules/.pnpm/@fixture+jobs@1.0.0_' + variant + '/node_modules/@fixture/jobs/dist/index.js'));
 }
 console.log(JSON.stringify({
   network: entry(Network)?.qualifiedName,
+  previewResource: {
+    qualifiedName: entry(PreviewResource)?.qualifiedName,
+    fields: [...(entry(PreviewResource)?.fields.keys() ?? [])],
+  },
   jobs: jobs.map((job) => entry(job)?.qualifiedName),
 }));
 `,
@@ -119,6 +137,10 @@ console.log(JSON.stringify({
     ) as Report;
 
     expect(report.network).toBe('@fixture/app:Network');
+    expect(report.previewResource.qualifiedName).toBe(
+      '@fixture/app:PreviewResource',
+    );
+    expect(report.previewResource.fields).toContain('networkId');
     expect(report.jobs).toEqual([
       '@fixture/jobs:FixtureJob',
       '@fixture/jobs:FixtureJob',

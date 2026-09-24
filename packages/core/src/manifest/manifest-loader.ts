@@ -463,6 +463,34 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
   return null;
 }
 
+let projectManifestRead:
+  | { cwd: string; manifest: SmartObjectManifest | null }
+  | undefined;
+
+/**
+ * The manifest of the project the process runs in (`<cwd>/.smrt/manifest.json`
+ * or `<cwd>/dist/manifest.json`), read once per working directory and never
+ * seeded into the lookup caches. Only consulted to attribute a decorated
+ * class whose declaring file that manifest describes, when no loaded manifest
+ * does: a plain Node/tsx script importing an app's workspace-package models
+ * has not loaded the app's manifest yet (#3109).
+ */
+export function readProjectManifestSync(): SmartObjectManifest | null {
+  if (typeof process === 'undefined' || typeof process.cwd !== 'function') {
+    return null;
+  }
+  const cwd = process.cwd();
+  if (projectManifestRead?.cwd === cwd) return projectManifestRead.manifest;
+  let manifest: SmartObjectManifest | null = null;
+  try {
+    manifest = new ManifestManager(cwd).loadLocal();
+  } catch {
+    manifest = null;
+  }
+  projectManifestRead = { cwd, manifest };
+  return manifest;
+}
+
 /**
  * Extract package name from class constructor
  *

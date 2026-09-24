@@ -74,3 +74,4 @@ Materialized aggregate report models for SMRT.
 - Incremental refresh requires a source watermark column (default `updatedAt`) and soft-delete column (default `deletedAt`); it recomputes affected groups and deletes empty report groups instead of applying aggregate deltas.
 - Raw aggregate refreshes must explicitly filter `tenant_id`; the tenancy interceptor only protects normal collection reads.
 - Scheduled/on-change refreshes enqueue `SmrtReportRefreshTask.run()` through `@happyvertical/smrt-jobs`; do not add a separate report queue.
+- `SmrtReportCollection` is a framework collection base (core's `SMRT_COLLECTION_BASE_NAMES`): a report collection never owns its model's table, even when an app manifest attributes the two to different packages. `pnpm test:postgres` runs the `*.optional.test.ts` lane (#3110).
