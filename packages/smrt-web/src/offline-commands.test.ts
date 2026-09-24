@@ -435,6 +435,34 @@ describe('offlineCommandQueue — writes with no generated collection', () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
+  it('a wipe pending when the engine is disposed during startup still clears the queue', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    const key = uniqueKey();
+    const first = offlineCommandQueue({
+      name: 'punch',
+      namespace: key,
+      transport: async () => ({ status: 'applied' }),
+    });
+    await first.enqueue({ rowId: 'x' });
+    await first.dispose();
+
+    const second = offlineCommandQueue({
+      name: 'punch',
+      namespace: key,
+      transport: async () => ({ status: 'applied' }),
+    });
+    const wipe = wipeDurableStore(durableStoreNamespace(key));
+    await second.dispose(); // before the open (and the wipe) settle
+    await wipe;
+
+    const third = queue({
+      name: 'punch',
+      namespace: key,
+      transport: async () => ({ status: 'applied' }),
+    });
+    expect(await third.snapshot()).toEqual([]);
+  });
+
   it('a second wipe still clears commands queued after the first', async () => {
     vi.stubGlobal('navigator', { onLine: false });
     const key = uniqueKey();
@@ -562,6 +590,107 @@ describe('dataSurfaceActionCommandTransport', () => {
     );
   });
 
+  it('with preview, a retry after a lost apply response recovers the recorded result instead of re-previewing', async () => {
+    // A server whose apply records its result under the idempotency key and
+    // advances the surface revision; the first apply's response is lost.
+    let revision = 1;
+    const completed = new Map<string, boolean>();
+    let loseNextApply = true;
+    const calls: string[] = [];
+    const server: SmrtWebDataSurfaceActionTransport = {
+      async action(request) {
+        calls.push(request.phase);
+        const reply = (ok: boolean, extra: Record<string, unknown> = {}) => ({
+          version: 1,
+          requestId: request.requestId,
+          identity: request.identity,
+          actionId: request.actionId,
+          phase: request.phase,
+          ok,
+          ...extra,
+        });
+        if (request.phase === 'apply' && request.idempotencyKey) {
+          if (completed.has(request.idempotencyKey)) return reply(true);
+          if (request.expectedRevision !== revision)
+            return reply(false, { reason: 'stale_revision' });
+          completed.set(request.idempotencyKey, true);
+          revision += 1;
+          if (loseNextApply) {
+            loseNextApply = false;
+            throw new Error('response lost');
+          }
+          return reply(true);
+        }
+        if (request.expectedRevision !== revision)
+          return reply(false, { reason: 'stale_revision' });
+        return reply(true, { confirmationToken: `tok-${revision}` });
+      },
+    };
+    let pinned: unknown;
+    const transport = dataSurfaceActionCommandTransport({
+      preview: true,
+      transport: server,
+      request: () => ({
+        identity,
+        actionId: 'clock-out',
+        expectedRevision: revision,
+        selection: { scope: 'current-page' },
+      }),
+    });
+    const attempt = (n: number) =>
+      transport({
+        ...command,
+        attempt: n,
+        ...(pinned === undefined ? {} : { pinned }),
+        pin: async (value) => {
+          pinned = value;
+        },
+      });
+    await expect(attempt(1)).rejects.toThrow('response lost');
+    await expect(attempt(2)).resolves.toEqual({ status: 'applied' });
+    expect(calls).toEqual(['preview', 'apply', 'apply']);
+  });
+
+  it('previews again when the pinned confirmation token is unusable', async () => {
+    const requests: SmrtWebDataSurfaceActionRequest[] = [];
+    let applies = 0;
+    const transport = dataSurfaceActionCommandTransport({
+      preview: true,
+      transport: actionTransport((r) => {
+        if (r.phase === 'preview') return { confirmationToken: 'fresh' };
+        applies += 1;
+        return applies === 1
+          ? { ok: false, reason: 'invalid_or_expired_confirmation' }
+          : {};
+      }, requests),
+      request: vi.fn(),
+    });
+    let pinned: unknown = {
+      request: {
+        identity,
+        actionId: 'clock-out',
+        expectedRevision: 2,
+        selection: { scope: 'current-page' },
+      },
+      confirmationToken: 'expired',
+    };
+    await expect(
+      transport({
+        ...command,
+        pinned,
+        pin: async (value) => {
+          pinned = value;
+        },
+      }),
+    ).resolves.toEqual({ status: 'applied' });
+    expect(requests.map((r) => [r.phase, r.confirmationToken])).toEqual([
+      ['apply', 'expired'],
+      ['preview', undefined],
+      ['apply', 'fresh'],
+    ]);
+    expect(pinned).toMatchObject({ confirmationToken: 'fresh' });
+  });
+
   it('reuses a pinned request without calling the builder', async () => {
     const requests: SmrtWebDataSurfaceActionRequest[] = [];
     const builder = vi.fn();
@@ -575,7 +704,7 @@ describe('dataSurfaceActionCommandTransport', () => {
       expectedRevision: 3,
       selection: { scope: 'current-page' },
     };
-    await transport({ ...command, pinned });
+    await transport({ ...command, pinned: { request: pinned } });
     expect(builder).not.toHaveBeenCalled();
     expect(requests[0]).toMatchObject({ ...pinned, idempotencyKey: 'key-1' });
   });

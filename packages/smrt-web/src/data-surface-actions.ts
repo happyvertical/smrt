@@ -323,6 +323,9 @@ export interface SmrtWebDataSurfaceActionCommandTransportOptions {
   /**
    * Run `preview` first and apply with its `confirmationToken` — for actions
    * whose server adapter requires confirmation. Default false (apply only).
+   * The token is pinned before apply; a retry applies with it directly (the
+   * server replays a completed result) and previews again only when the token
+   * turns out unusable.
    */
   preview?: boolean;
   /** Map a non-throwing result onto an outbox outcome. Default below. */
@@ -340,6 +343,24 @@ const AUTH_ACTION_REASONS = new Set([
   'unauthorized',
 ]);
 const STALE_ACTION_REASONS = new Set(['stale_revision', 'stale_preview']);
+/**
+ * Apply reasons that mean the pinned confirmation token cannot be used and no
+ * result was recorded under the idempotency key (a completed record would
+ * have been replayed first), so previewing again is safe.
+ */
+const UNUSABLE_CONFIRMATION_REASONS = new Set([
+  'invalid_or_expired_confirmation',
+  'confirmation_mismatch',
+  'confirmation_replayed',
+  'confirmation_required',
+  'stale_preview',
+]);
+
+/** What the action adapter pins to a queued write. */
+interface PinnedActionCommand {
+  request: SmrtWebDataSurfaceActionCommandRequest;
+  confirmationToken?: string;
+}
 
 /**
  * Default outcome mapping for a data-surface action result. `ok` → applied; a
@@ -379,36 +400,55 @@ export function dataSurfaceActionCommandTransport(
 ): OutboxCommandTransport {
   const classify = options.classify ?? classifySmrtWebDataSurfaceActionResult;
   return async (command) => {
-    let base = command.pinned as
-      | SmrtWebDataSurfaceActionCommandRequest
-      | undefined;
-    if (base === undefined) {
-      base = await options.request(command);
+    let pinned = command.pinned as PinnedActionCommand | undefined;
+    if (pinned === undefined) {
       // Pin before sending, so no attempt that may have reached the server
       // ever differs from the ones after it.
-      await command.pin(base);
+      pinned = { request: await options.request(command) };
+      await command.pin(pinned);
     }
+    const base = pinned.request;
     const requestId = (phase: string) =>
       `${command.idempotencyKey}:${command.attempt}:${phase}`;
-    let confirmationToken: string | undefined;
-    if (options.preview) {
-      const preview = await executeSmrtWebDataSurfaceAction(options.transport, {
+    const apply = (confirmationToken: string | undefined) =>
+      executeSmrtWebDataSurfaceAction(options.transport, {
         ...base,
         version: 1,
-        phase: 'preview',
-        requestId: requestId('preview'),
+        phase: 'apply',
+        requestId: requestId('apply'),
+        idempotencyKey: command.idempotencyKey,
+        ...(confirmationToken === undefined ? {} : { confirmationToken }),
       });
-      if (!preview.ok) return classify(preview);
-      confirmationToken = preview.confirmationToken;
+    if (!options.preview) return classify(await apply(undefined));
+
+    // A pinned token means an earlier attempt previewed and may have applied.
+    // Apply directly: the server replays a completed idempotency record before
+    // it checks the token or the revision, so a lost response is recovered
+    // here — whereas re-previewing an applied write would see `stale_revision`.
+    if (pinned.confirmationToken !== undefined) {
+      const applied = await apply(pinned.confirmationToken);
+      if (
+        applied.ok ||
+        !UNUSABLE_CONFIRMATION_REASONS.has(applied.reason ?? '')
+      ) {
+        return classify(applied);
+      }
+      // The token is unusable and nothing was recorded under this key.
     }
-    const applied = await executeSmrtWebDataSurfaceAction(options.transport, {
+    const preview = await executeSmrtWebDataSurfaceAction(options.transport, {
       ...base,
       version: 1,
-      phase: 'apply',
-      requestId: requestId('apply'),
-      idempotencyKey: command.idempotencyKey,
-      ...(confirmationToken === undefined ? {} : { confirmationToken }),
+      phase: 'preview',
+      requestId: requestId('preview'),
     });
-    return classify(applied);
+    if (!preview.ok) return classify(preview);
+    pinned = {
+      request: base,
+      ...(preview.confirmationToken === undefined
+        ? {}
+        : { confirmationToken: preview.confirmationToken }),
+    };
+    await command.pin(pinned);
+    return classify(await apply(preview.confirmationToken));
   };
 }

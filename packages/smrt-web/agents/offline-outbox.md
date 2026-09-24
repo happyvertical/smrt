@@ -114,7 +114,13 @@ the request is built at the FIRST replay attempt (current `expectedRevision`)
 and pinned durably to the row via `command.pin()` before sending; every later
 attempt, including after a reload, resends the pinned request, because the
 server fingerprints the request per idempotency key and a changed resend gets
-`idempotency_conflict` instead of the recorded result. `apply`
+`idempotency_conflict` instead of the recorded result. With `preview: true`
+the preview's `confirmationToken` is pinned too before apply; a retry applies
+directly with it (the server replays a completed idempotency record before
+checking the token or revision — re-previewing an applied write would get
+`stale_revision`) and previews again only when apply says the token is
+unusable (`invalid_or_expired_confirmation`, `confirmation_*`,
+`stale_preview`), which means nothing was recorded. `apply`
 carries `idempotencyKey`, `preview: true` runs preview first for its
 `confirmationToken`, and `classifySmrtWebDataSurfaceActionResult` maps reasons
 (transient → `write_failed`, auth → `auth_required`, stale → `conflict`,
@@ -140,7 +146,9 @@ Invariants:
 - **Wipe registration.** The queue registers synchronously at engine
   construction (not after the async open), so a wipe issued right after attach
   still clears rows already on disk; replay is suspended while a wipe is
-  pending. `wipeDurableStore` drops a namespace's registrations, so the clear
+  pending. `dispose()` waits for a wipe already issued before closing the
+  queue (a disposed-while-opening engine leaves closing to `dispose()`).
+  `wipeDurableStore` drops a namespace's registrations, so the clear
   callback forgets ours and the next enqueue re-registers; a later wipe still
   clears rows written after the first.
 - **Sync-apply endpoint comes from bindings, not the engine creator.** A

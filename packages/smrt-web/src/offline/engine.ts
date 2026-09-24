@@ -237,6 +237,8 @@ export class OutboxEngine {
   private paused = false;
   /** Wipes issued but not yet cleared; replay is suspended meanwhile. */
   private wipesPending = 0;
+  /** Those wipes, so `dispose()` can let them finish before closing. */
+  private readonly pendingWipes = new Set<Promise<void>>();
   /** True while a drain pass is running, to coalesce concurrent triggers. */
   private draining = false;
   /** The running drain, while `draining`. */
@@ -280,14 +282,9 @@ export class OutboxEngine {
     }
     try {
       this.queue = await openDurableOutboxQueue(this.config.namespace);
-      if (this.disposed) {
-        // Disposed while opening — tear the just-opened queue back down.
-        this.queue.close();
-        this.queue = undefined;
-        this.unregisterResource?.();
-        this.unregisterResource = undefined;
-        return;
-      }
+      // Disposed while opening: leave the queue open — `dispose()` awaits this
+      // open and any pending wipe, then closes it, so a wipe issued before the
+      // dispose still clears it.
     } catch (error) {
       this.degraded = true;
       // biome-ignore lint/suspicious/noConsole: surface an outbox open failure (#1762)
@@ -308,13 +305,21 @@ export class OutboxEngine {
       // Replay nothing while the wipe is pending: rows on disk belong to the
       // scope being cleared.
       this.wipesPending += 1;
+      const wipe = (async () => {
+        try {
+          await this.ready;
+          await this.queue?.clear();
+        } finally {
+          this.wipesPending -= 1;
+          // Writes enqueued after the wipe was issued survive it; replay them.
+          if (!this.disposed) void this.drain();
+        }
+      })();
+      this.pendingWipes.add(wipe);
       try {
-        await this.ready;
-        await this.queue?.clear();
+        await wipe;
       } finally {
-        this.wipesPending -= 1;
-        // Writes enqueued after the wipe was issued survive it; replay them.
-        if (!this.disposed) void this.drain();
+        this.pendingWipes.delete(wipe);
       }
     });
   }
@@ -1004,8 +1009,11 @@ export class OutboxEngine {
     for (const entry of leaders) entry.release();
     this.unregisterResource?.();
     this.unregisterResource = undefined;
-    // Wait for any in-flight open to settle before closing.
+    // Wait for any in-flight open, then any wipe already issued, before
+    // closing: a wipe that was pending when the engine detached must still
+    // clear the rows on disk.
     await this.ready.catch(() => undefined);
+    await Promise.allSettled([...this.pendingWipes]);
     this.queue?.close();
     this.queue = undefined;
     this.listenersByObject.clear();
