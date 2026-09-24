@@ -58,3 +58,49 @@ jobs:
             done <<< "$ids"
           done
           echo "swept $swept dead run(s)"
+
+      # Actions cache entries are scoped to the ref that wrote them, and only
+      # runs on that ref can restore them. Hosted merge-group jobs write
+      # turbogha_, pnpm-store (~830 MB) and Playwright (~270 MB) entries into
+      # their gh-readonly-queue/* ref; jobs of the same group reuse them, but
+      # once the queue deletes the branch nothing can, and they would hold
+      # repository cache quota for GitHub's 7-day idle eviction. Delete them.
+      # Same fail-safe as above: only an explicit 404 marks a ref dead. At
+      # most DELETE_LIMIT deletions per sweep keep the GITHUB_TOKEN rate
+      # limit for the cancellation work; the next sweep continues.
+      - name: Delete caches of deleted merge-group branches
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DELETE_LIMIT: '400'
+        run: |
+          set -euo pipefail
+          refs=$(gh api --paginate "repos/$REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[].ref | select(startswith("refs/heads/gh-readonly-queue/"))' \
+            | sort -u)
+          deleted=0
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            [ "$deleted" -lt "$DELETE_LIMIT" ] || break
+            branch="${ref#refs/heads/}"
+            encoded=$(printf '%s' "$branch" | jq -sRr @uri)
+            if probe=$(gh api "repos/$REPO/branches/$encoded" 2>&1); then
+              continue  # live queue entry: its jobs may still restore these
+            fi
+            case "$probe" in
+              *"HTTP 404"*) ;;
+              *) echo "skipping caches of $ref: branch probe failed non-404"; continue ;;
+            esac
+            ids=$(gh api --paginate "repos/$REPO/actions/caches?ref=$ref&per_page=100" \
+              --jq '.actions_caches[].id')
+            for id in $ids; do
+              [ "$deleted" -lt "$DELETE_LIMIT" ] || break
+              if gh api -X DELETE "repos/$REPO/actions/caches/$id" --silent; then
+                deleted=$((deleted + 1))
+              fi
+            done
+            echo "deleted caches of dead merge-group ref $ref"
+          done <<< "$refs"
+          echo "deleted $deleted cache entr(ies) of deleted merge-group branches"

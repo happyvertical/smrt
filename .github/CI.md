@@ -178,14 +178,39 @@ runs stay skipped until the repository variable
 `CI_HOSTED_TURBO_CACHE_ENABLED` is `true`; manual dispatch bypasses the
 variable so the lane can be validated first, mirroring the PostgreSQL lane.
 
+Hits depend on task hashes being a function of the commit alone. Turbo
+hashes every file an explicit `inputs` glob matches, gitignored or not, so a
+glob that also matches the outputs of a dependency task makes a fresh
+checkout and a built tree hash the same commit differently: the seed's
+second invocation then re-executed and re-uploaded a duplicate set nobody
+restored (#3118). Task inputs therefore exclude generated files — core's
+`static-manifest.*` and `smrt-knowledge.json`, `smrt-generated` types, test
+manifests, and for `typecheck`/`test` also `dist/` and `.svelte-kit/` — and
+dependency hashes cover them instead. The Vite plugin's generated API routes
+are excluded per package: `assets` and `images` negate `src/routes/api/**`
+via `$TURBO_EXTENDS$`, and `content`, whose generated routes share
+`src/routes/api/v1/` with hand-written ones, hashes `$TURBO_DEFAULT$`
+(git-tracked files only). Check a change to these globs with
+`turbo run build typecheck test --dry=json` on a clean tree and again after
+`turbo run build typecheck`: every task hash must match.
+
 The `turbogha_` pool shares the repository's 10 GiB Actions cache quota with
-`mobile.yml`'s Gradle entries (about 3.8 GiB when this lane was added) under
-least-recently-used eviction. An unbounded Turbo pool degrades the mobile
-nightly to slower cold Gradle runs rather than breaking it, but watch the
-usage report the seed job prints. The shim's built-in cleanup options apply
-only to its S3 provider, so pruning here is manual:
-`gh cache list --key turbogha_` and `gh cache delete`. Entries idle for
-seven days expire on their own.
+`mobile.yml`'s Gradle entries (about 3.8 GiB when this lane was added) and
+the pnpm-store and Playwright entries of `setup-environment` under
+least-recently-used eviction. The shim's built-in cleanup options apply only
+to its S3 provider, so the workflows bound the pool themselves:
+
+- `turbo-cache-seed.yml` prunes, after a successful seed, every `turbogha_`
+  entry in its own ref that the run neither restored nor wrote. Those belong
+  to superseded commits, so main holds roughly one commit's task closure
+  instead of every commit's for seven days.
+- `merge-queue-cleanup.yml` deletes every cache entry of a
+  `gh-readonly-queue/*` ref whose branch is gone. Jobs of a live merge group
+  still share entries; a dead group's entries are unrestorable.
+
+Both are best effort, capped per run to respect the `GITHUB_TOKEN` rate
+limit, and never fail their job; anything left idle for seven days expires on
+its own. Manual inspection remains `gh cache list --key turbogha_`.
 
 ## Job timeouts
 
