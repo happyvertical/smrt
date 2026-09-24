@@ -42,6 +42,16 @@ for usage.
   close that nets to a credit keeps its claims and ends `carried_forward`;
   its subtotal is a `credit_carry_forward` source for the payer's next billed
   close, which marks the carried close `completed`.
+- **Cycles and flat-plan coverage (#3116).** `cycles.ts` is the schedule
+  (pure; `BillingAccount.billingAnchorAt`, null = calendar months). A close
+  with no period closes each payer's `lastEndedBillingPeriod()`. Flat-plan
+  claims are the exception to "id from the source": their `sourceId` is
+  `<subscriptionId>:after:<previous claim id|start>` and their
+  `periodStart/End` is the covered window; `claimFlatWindow()` bills only the
+  window minus existing coverage and retries on a successor-id conflict. That
+  chain, not the period, is what stops overlaps when schedules or payers
+  change — never claim a flat plan outside it. Proration is
+  `prorateMinorUnits()` (half up, BigInt) against the period's full cycle.
 - **System tables.** `BillingAccount`, `BillingPeriodClose`, and
   `BillingLineSource` are not tenant-scoped and have no generated surface.
   Collections stay unexported; models are root exports (#3082). Invoices,
@@ -67,7 +77,9 @@ for usage.
   two-decimal only (sdk#1269); `autoTopUp` cannot charge a saved card
   (sdk#1270); Stripe line discounts and uncollectible status are worked around
   as negative lines and event types (sdk#1271). `RetailCharge` has no
-  adjustment ledger. Flat plans are monthly, in arrears, without proration.
+  adjustment ledger. Flat plans are monthly, in arrears; plan changes are not
+  prorated (#3119). The Stripe adapter passes line service periods but
+  the accounting SDK does not send them to Stripe yet (happyvertical/sdk#1274).
 
 ## Cross-Package References
 

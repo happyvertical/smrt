@@ -187,7 +187,16 @@ await billing.upsertAccount({
   billingAddress: { country: 'CA', postalCode: 'T0L 0A0' },
 });
 
-// Close last month (default) — safe to run on every schedule tick.
+// Optional: bill this payer from its activation date instead of calendar
+// months, prorating flat plans added mid-period (see "Billing cycles").
+await billing.upsertAccount({
+  payerTenantId,
+  name: 'Network Co',
+  billingAnchorAt: activatedAt,
+  prorateFlatPlans: true,
+});
+
+// Close each payer's last ended period — safe to run on every schedule tick.
 registerBillingRuntime('platform', billing);
 await enqueueBillingPeriodClose({ runtime: 'platform' });
 
@@ -216,7 +225,7 @@ const { url } = await billing.createCreditCheckout({
   it owns, to each subscriber's billing owner. A `reseller` runtime bills the
   `RetailCharge`s its children owe it plus its own flat plans. Charges approved
   before the period end are billed once, whatever period that is; flat plans
-  are billed in arrears for a closed calendar month (trials and
+  are billed in arrears for the payer's closed period (trials and
   provider-managed subscriptions are skipped). One invoice per payer and
   currency carries both kinds of lines.
 - **Replay safety.** Close, invoice, and line ids are derived from the payer,
@@ -225,6 +234,62 @@ const { url } = await billing.createCreditCheckout({
   persisted before the next, so a retry resumes where it stopped. A lease stops
   two workers advancing the same close. A payer whose charges net to a credit
   gets no invoice; the credit is carried to its next invoice.
+- **Billing cycles (#3116).** A payer's periods follow its account's
+  `billingAnchorAt`. Unset (the default) they are UTC calendar months. Set,
+  they run monthly from the anchor at its UTC time of day; a day the month
+  lacks is clamped to its last day, always from the anchor itself (an anchor
+  on Jan 31 bills Jan 31 → Feb 28 → Mar 31). Before the anchor the schedule is
+  calendar months, and the anchor's own month ends at the anchor (a *stub*).
+  `closePeriod()` / `enqueueBillingPeriodClose()` with no period close each
+  payer's **last ended period on its own schedule**, so payers on different
+  anchors are closed by the same daily tick. An explicit
+  `{ periodStart, periodEnd }` closes that period for calendar payers (flat
+  plans only when it is a calendar month, as before) and for anchored payers
+  whose schedule has exactly that period. `billingPeriodFor(payer, at)` returns
+  a payer's current period; `billingPeriodContaining()`,
+  `lastEndedBillingPeriod()`, and `prorateMinorUnits()` are exported.
+- **Proration.** A flat plan is priced `price × billed time / cycle length`,
+  in integer minor units rounded half up (exact integer arithmetic; the
+  cycle is the period's own month, so February prorates over 28 or 29 days).
+  With `prorateFlatPlans` off (default) the billed time is the whole period
+  whenever the subscription was active in it and out of trial at its start —
+  the pre-#3116 behavior. With it on, the billed time is exactly the time the
+  subscription was active and out of trial: a subscription starting, leaving
+  trial, or canceled mid-period is billed pro rata. Proration happens before
+  the account's flat discount. Split into parts, prorated amounts can differ
+  from the full price by a minor unit.
+- **First period.** *Anchor at signup* (set `billingAnchorAt` to the
+  signup/activation instant): the first period is a full period from signup;
+  nothing before it is billed. *Bill from signup to the next anchor* (keep a
+  fixed anchor, or calendar months, and set `prorateFlatPlans`): the first
+  period is billed pro rata from signup. Items added later are prorated to the
+  payer's anchor when `prorateFlatPlans` is on and billed a full period
+  otherwise.
+- **Mid-period changes.** Billing is in arrears, so a cancellation needs no
+  credit: with proration the canceled period is billed up to `canceledAt`,
+  without it in full. A plan change is billed at the plan in effect at close
+  for the whole window (no plan-change proration yet, #3119), and a cancellation
+  back-dated into an already billed period is not credited — issue an
+  adjustment.
+- **No double billing across schedule changes.** Every flat-plan claim records
+  the window it covers, and a subscription's claims form a chain (each names
+  the claim it follows), so two workers can never both claim the same time.
+  Moving an account from calendar months to an anchor, moving an anchor, or
+  moving a subscription to a payer on another schedule bills only time not yet
+  billed, prorated. For example, calendar months through February and then an
+  anchor on Mar 20 bills the Mar 1 → Mar 20 stub pro rata, then Mar 20 → Apr
+  20. Stop workers running a pre-#3116 version before relying on this: they
+  claim flat plans outside the chain.
+- **Service periods.** Each flat-plan invoice line carries its billed window
+  as `periodStart`/`periodEnd`, down to the provider port. The Stripe adapter
+  passes them on; `@happyvertical/accounting` does not send them to Stripe yet
+  (happyvertical/sdk#1274).
+- **Upgrading to #3116.** Additive schema only: `_smrt_billing_accounts` gains
+  `billing_anchor_at` (nullable) and `prorate_flat_plans` (default false), and
+  `_smrt_billing_line_sources` an index on `line_key`; run `smrt db:migrate`.
+  Existing accounts stay on calendar months, and claims written before the
+  upgrade (`<subscriptionId>:<periodStart>`) count as billed coverage, so
+  nothing is billed again after it.
 - **Tax** comes from the provider (Stripe Tax) using the account customer's
   `defaultBillingAddress`; the invoice records it as `providerTaxAmount`.
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and

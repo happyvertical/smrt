@@ -35,6 +35,10 @@ import {
   type CreateCreditCheckoutInput,
   createCreditCheckout,
 } from './credits.js';
+import {
+  billingPeriodContaining,
+  type ScheduledBillingPeriod,
+} from './cycles.js';
 import { processBillingEvents } from './events.js';
 import {
   type ClosePeriodInput,
@@ -115,6 +119,15 @@ export interface UpsertBillingAccountInput {
   paymentTermsDays?: number;
   /** Link an existing provider customer (for example from checkout). */
   providerCustomerId?: string;
+  /**
+   * Billing-cycle anchor (#3116): periods run monthly from this instant
+   * (anchor at signup/activation for no partial first period). `null` returns
+   * the payer to UTC calendar months; omitted leaves it unchanged. Changing it
+   * never bills time twice.
+   */
+  billingAnchorAt?: Date | null;
+  /** Prorate flat plans to the time they were active in a period (#3116). */
+  prorateFlatPlans?: boolean;
 }
 
 /** A synced account: its provider customer id is always present. */
@@ -259,6 +272,16 @@ export class BillingRuntime {
       input.payerTenantId,
       'payerTenantId',
     );
+    if (
+      input.billingAnchorAt !== undefined &&
+      input.billingAnchorAt !== null &&
+      !(
+        input.billingAnchorAt instanceof Date &&
+        Number.isFinite(input.billingAnchorAt.getTime())
+      )
+    ) {
+      throw new Error('billingAnchorAt must be a valid date or null.');
+    }
     const id = await this.accountId(payerTenantId);
     const existing = await this.accounts.get(id);
     const customerId = await withTenant(
@@ -307,6 +330,10 @@ export class BillingRuntime {
       account.flatDiscountBasisPoints = input.flatDiscountBasisPoints;
     if (input.paymentTermsDays !== undefined)
       account.paymentTermsDays = input.paymentTermsDays;
+    if (input.billingAnchorAt !== undefined)
+      account.billingAnchorAt = input.billingAnchorAt;
+    if (input.prorateFlatPlans !== undefined)
+      account.prorateFlatPlans = input.prorateFlatPlans;
     if (input.providerCustomerId) {
       account.provider = this.provider.name;
       account.providerCustomerId = input.providerCustomerId;
@@ -364,9 +391,27 @@ export class BillingRuntime {
   // Period close
   // -------------------------------------------------------------------------
 
-  /** Close a billing period (default: the previous calendar month, UTC). */
+  /**
+   * Close billing periods. Without a period, each payer's last ended period
+   * on its own schedule (the previous UTC calendar month unless its account
+   * has a `billingAnchorAt`), so running it daily is safe. See
+   * {@link ClosePeriodInput}.
+   */
   closePeriod(input: ClosePeriodInput = {}): Promise<PeriodCloseResult> {
     return closeBillingPeriod(this, input);
+  }
+
+  /**
+   * The payer's billing period containing `at` (default now) on its account's
+   * schedule — for example to show the next invoice date. A payer without an
+   * account is on calendar months.
+   */
+  async billingPeriodFor(
+    payerTenantId: string,
+    at: Date = new Date(),
+  ): Promise<ScheduledBillingPeriod> {
+    const account = await this.getAccount(payerTenantId);
+    return billingPeriodContaining(account?.billingAnchorAt ?? null, at);
   }
 
   async getInvoice(invoiceId: string): Promise<Invoice> {
