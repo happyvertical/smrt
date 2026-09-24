@@ -255,4 +255,96 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     }
     expect(identity(copies[1])?.qualifiedName).toBe('@fixture/jobs:FixtureJob');
   });
+
+  for (const order of ['dependency first', 'consumer first'] as const) {
+    it(`keeps a consumer class apart from a same-named dependency class (${order})`, async () => {
+      const load = {
+        dependency: () =>
+          defineFrom(ws.path('node_modules/@fixture/commerce/dist/models.js')),
+        consumer: () =>
+          defineFrom(ws.path('packages/market/src/LicenseSale.js')),
+      };
+      const [first, second] =
+        order === 'dependency first'
+          ? [await load.dependency(), await load.consumer()]
+          : [await load.consumer(), await load.dependency()];
+      const [dependency, consumer] =
+        order === 'dependency first' ? [first, second] : [second, first];
+
+      expect(identity(dependency)?.qualifiedName).toBe(
+        '@fixture/commerce:LicenseSale',
+      );
+      expect(identity(consumer)?.qualifiedName).toBe(
+        '@fixture/market:LicenseSale',
+      );
+      expect(identity(dependency)?.schema?.tableName).toBe('contracts');
+      expect(identity(consumer)?.schema?.tableName).toBe('license_sales');
+      expect(identity(dependency)?.constructor).toBe(dependency);
+    });
+  }
+
+  it("does not let another package's manifest stub adopt a consumer class", async () => {
+    ObjectRegistry.registerFromManifest(
+      'LicenseSale',
+      {
+        ...manifestEntry({
+          className: 'LicenseSale',
+          packageName: '@fixture/commerce',
+          filePath: '/build-host/packages/commerce/src/models/Contract.ts',
+          tableName: 'contracts',
+          fields: { contractNumber: { type: 'text' } },
+        }),
+      },
+      '@fixture/commerce',
+    );
+    const consumer = await defineFrom(
+      ws.path('packages/market/src/LicenseSale.js'),
+    );
+    expect(identity(consumer)?.qualifiedName).toBe(
+      '@fixture/market:LicenseSale',
+    );
+    expect(identity(consumer)?.schema?.tableName).toBe('license_sales');
+    const stub = ObjectRegistry.getClass('@fixture/commerce:LicenseSale');
+    expect(stub?.schema?.tableName).toBe('contracts');
+    expect(stub?.constructor).not.toBe(consumer);
+  });
+
+  it("keeps an app bundle's class apart from an installed dependency's", async () => {
+    const dependency = await defineFrom(
+      ws.path('node_modules/@fixture/commerce/dist/models.js'),
+    );
+    const bundled = await defineFrom(
+      ws.path('apps/app/build/server/chunks/license-sale.js'),
+    );
+    expect(identity(dependency)?.qualifiedName).toBe(
+      '@fixture/commerce:LicenseSale',
+    );
+    expect(identity(dependency)?.constructor).toBe(dependency);
+    expect(identity(dependency)?.schema?.tableName).toBe('contracts');
+    expect(identity(bundled)?.qualifiedName).toBe('@fixture/app:LicenseSale');
+    expect(identity(bundled)?.schema?.tableName).toBe('license_sales');
+  });
+
+  it("still treats an inlined dependency's chunk duplicates as one class", async () => {
+    ObjectRegistry.registerFromManifest(
+      'Widget',
+      manifestEntry({
+        className: 'Widget',
+        packageName: '@fixture/dep',
+        filePath: '/build-host/packages/dep/src/Widget.ts',
+        tableName: 'widgets',
+        fields: { label: { type: 'text' } },
+      }),
+      '@fixture/dep',
+    );
+    const chunkA = await defineFrom(
+      ws.path('apps/app/build/server/chunks/widget-a.js'),
+    );
+    const chunkB = await defineFrom(
+      ws.path('apps/app/build/server/chunks/widget-b.js'),
+    );
+    expect(identity(chunkA)?.qualifiedName).toBe('@fixture/dep:Widget');
+    expect(identity(chunkB)?.qualifiedName).toBe('@fixture/dep:Widget');
+    expect(ObjectRegistry.getClass('@fixture/app:Widget')).toBe(undefined);
+  });
 });

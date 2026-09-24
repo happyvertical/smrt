@@ -40,8 +40,12 @@ flattens or renames provider constructors. Keep the behavioral assertions for
 qualified same-name coexistence, renamed constructors, fresh-database empty
 listing, and provider-manifest non-adoption of consumer classes.
 
+`src/__tests__/consumer-same-name.spec.ts` bundles an app entry that declares
+its own `LicenseSale` next to an external smrt-commerce (both load orders) and
+asserts neither class adopts the other's registration or table (#3106).
+
 The specs build from **dist** via package export maps (no workspace src
-aliases), so run `pnpm build` for chat/personas/messages first; in CI turbo's
+aliases), so run `pnpm build` for chat/personas/messages/commerce first; in CI turbo's
 `test` task already depends on `^build`.
 
 ## Ownership and budget updates

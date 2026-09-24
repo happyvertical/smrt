@@ -491,6 +491,39 @@ export function readProjectManifestSync(): SmartObjectManifest | null {
   return manifest;
 }
 
+const owningPackageRootCache = new Map<string, string | null>();
+
+/**
+ * The directory of the nearest `package.json` above a source file — the
+ * package that physically owns it — or `null` when none is found. Used to tell
+ * a bundler's chunk duplicate (both copies under one package's output) from a
+ * same-named class of another package (#3106). Cached per directory.
+ *
+ * @param filePath - A source path from a stack frame or manifest.
+ */
+export function getOwningPackageRoot(filePath: string): string | null {
+  const start = dirname(filePath.replace(/^file:\/\//, '').replace(/\\/g, '/'));
+  const cached = owningPackageRootCache.get(start);
+  if (cached !== undefined) return cached;
+  let dir = start;
+  let root: string | null = null;
+  for (let i = 0; i < 32; i++) {
+    try {
+      if (existsSync(join(dir, 'package.json'))) {
+        root = dir;
+        break;
+      }
+    } catch {
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  owningPackageRootCache.set(start, root);
+  return root;
+}
+
 /**
  * Extract package name from class constructor
  *

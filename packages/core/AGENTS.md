@@ -68,11 +68,20 @@ and repository rules.
 - Decorator registration trusts a class's stack-derived package only when that
   package declares the class (stub, own manifest entry, or explicit
   `packageName`); it then matches the qualified key and never adopts another
-  package's same-named registration. Stack attribution skips smrt-core,
-  decorator-helper, and module-runner frames. Instance and collection registry
-  lookups pass the qualified name. The schema planner rejects a table claimed
-  by two unrelated classes (`CONFIG_TABLE_NAME_COLLISION`): only one STI family
-  shares a table (#3098).
+  package's same-named registration. Otherwise a loaded (or the cwd project's)
+  manifest entry describing the declaring file supplies the identity — apps
+  scan workspace-package sources under the app's name (#3110). A class of
+  another known package coexists under its qualified key
+  (`decorator-different-packages-qualified-coexist`); bundled output needs
+  evidence first (different package roots or declared table, #3106). Stack
+  attribution skips smrt-core (including source-mapped installed
+  `smrt-core/src` frames, #3109), decorator-helper, and module-runner frames.
+  Instance and collection registry lookups pass the qualified name. The schema
+  planner rejects a table claimed by two unrelated classes
+  (`CONFIG_TABLE_NAME_COLLISION`): only one STI family shares a table (#3098);
+  collections (including `SmrtReportCollection`) never claim one. Consumer
+  gates: `registry/__tests__/issue-3110-*.test.ts`, `issue-3109-*.test.ts`,
+  `packages/bundle-gate/src/__tests__/consumer-same-name.spec.ts`.
 - API custom-action eligibility has ONE resolver, `resolveApiMethodExposure()`
   in `generators/custom-action.ts`: both SvelteKit route emitters,
   `resolveApiActionSet`, and `knowledge.ts` read it, and a new consumer must too

@@ -32,6 +32,7 @@ interface Report {
   network: string | undefined;
   previewResource: { qualifiedName?: string; fields: string[] };
   jobs: (string | undefined)[];
+  licenseSales: { qualifiedName?: string; table?: string }[];
 }
 
 describe('#3109: consumer classes under plain Node with source maps', () => {
@@ -53,6 +54,8 @@ describe('#3109: consumer classes under plain Node with source maps', () => {
 
     ws.writePackage('apps/app', '@fixture/app');
     ws.writePackage('packages/cloud', '@fixture/cloud');
+    ws.writePackage('packages/market', '@fixture/market');
+    ws.writePackage('node_modules/@fixture/commerce', '@fixture/commerce');
     ws.write(
       'apps/app/.smrt/manifest.json',
       JSON.stringify({
@@ -87,6 +90,16 @@ describe('#3109: consumer classes under plain Node with source maps', () => {
       ws.writePackage(dir, '@fixture/jobs');
       ws.writeModel(`${dir}/dist/index.js`, 'FixtureJob');
     }
+    ws.writeModel(
+      'node_modules/@fixture/commerce/dist/models.js',
+      'LicenseSale',
+      {
+        tableName: 'contracts',
+      },
+    );
+    ws.writeModel('packages/market/src/LicenseSale.js', 'LicenseSale', {
+      tableName: 'license_sales',
+    });
     ws.write(
       'apps/app/scripts/report.mjs',
       `
@@ -105,6 +118,10 @@ const jobs = [];
 for (const variant of ['a', 'b']) {
   jobs.push(await load('node_modules/.pnpm/@fixture+jobs@1.0.0_' + variant + '/node_modules/@fixture/jobs/dist/index.js'));
 }
+const licenseSales = [
+  await load('node_modules/@fixture/commerce/dist/models.js'),
+  await load('packages/market/src/LicenseSale.js'),
+];
 console.log(JSON.stringify({
   network: entry(Network)?.qualifiedName,
   previewResource: {
@@ -112,6 +129,10 @@ console.log(JSON.stringify({
     fields: [...(entry(PreviewResource)?.fields.keys() ?? [])],
   },
   jobs: jobs.map((job) => entry(job)?.qualifiedName),
+  licenseSales: licenseSales.map((ctor) => ({
+    qualifiedName: entry(ctor)?.qualifiedName,
+    table: entry(ctor)?.schema?.tableName,
+  })),
 }));
 `,
     );
@@ -144,6 +165,10 @@ console.log(JSON.stringify({
     expect(report.jobs).toEqual([
       '@fixture/jobs:FixtureJob',
       '@fixture/jobs:FixtureJob',
+    ]);
+    expect(report.licenseSales).toEqual([
+      { qualifiedName: '@fixture/commerce:LicenseSale', table: 'contracts' },
+      { qualifiedName: '@fixture/market:LicenseSale', table: 'license_sales' },
     ]);
   });
 });
