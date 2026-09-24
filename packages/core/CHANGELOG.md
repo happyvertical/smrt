@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.24
+
+### Patch Changes
+
+- ### Features
+  
+  - billing-period close, provider events, and prepaid credit (#3097) (commerce)
+- @happyvertical/smrt-config@0.51.24
+  - @happyvertical/smrt-scanner@0.51.24
+  - @happyvertical/smrt-types@0.51.24
+
 ## 0.51.23
 
 ### Patch Changes
