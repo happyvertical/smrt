@@ -15,7 +15,6 @@ import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
   discoverSTISiblingsSync,
-  getOwningPackageRoot,
   getPackageName,
   lookupInManifest,
   readProjectManifestSync,
@@ -180,24 +179,6 @@ export function isSameSourcePath(
     (root) =>
       normalizeSourcePath(path.posix.resolve(root, relative)) === absolute,
   );
-}
-
-/**
- * Whether two known source files physically belong to different packages
- * (different nearest `package.json` directories). Unknown or relative paths
- * cannot be compared and report `false`.
- */
-function sourcePackageRootsDiffer(
-  left: string | undefined,
-  right: string | undefined,
-): boolean {
-  if (!left || !right) return false;
-  const a = normalizeSourcePath(left);
-  const b = normalizeSourcePath(right);
-  if (!isAbsoluteSourcePath(a) || !isAbsoluteSourcePath(b)) return false;
-  const leftRoot = getOwningPackageRoot(a);
-  const rightRoot = getOwningPackageRoot(b);
-  return !!leftRoot && !!rightRoot && leftRoot !== rightRoot;
 }
 
 /**
@@ -369,10 +350,6 @@ function buildDecoratorCollisionInputs(args: {
     hasManifestContent: false,
     registrationKeyDiffersFromExistingKey: false,
     existingHasNoPackage: !existing.packageName,
-    sourcePackageRootsDiffer:
-      !samePackage &&
-      !sameSourceFile &&
-      sourcePackageRootsDiffer(newSourceFile, existing.sourceFilePath),
     declaresDifferentTable:
       !!newDeclaredTableName &&
       !!existingTableName &&
@@ -554,7 +531,6 @@ function buildManifestCollisionInputs(args: {
     ),
     registrationKeyDiffersFromExistingKey: registrationKey !== existingKey,
     existingHasNoPackage: !existing.packageName,
-    sourcePackageRootsDiffer: false,
     declaresDifferentTable: false,
   };
   // Note: manifest-origin sets hasNewQualifiedKey from the final

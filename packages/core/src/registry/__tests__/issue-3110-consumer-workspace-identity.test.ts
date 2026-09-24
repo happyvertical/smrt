@@ -190,6 +190,9 @@ describe('consumer workspace registration (#3106, #3110)', () => {
         tableName: 'license_sales',
       },
     );
+    ws.writePackage('node_modules/@fixture/profiles', '@fixture/profiles');
+    ws.writeModel('node_modules/@fixture/profiles/dist/models.js', 'ApiKey');
+    ws.writeModel('apps/app/build/server/chunks/api-key.js', 'ApiKey');
     ws.writeModel('apps/app/build/server/chunks/widget-a.js', 'Widget');
     ws.writeModel('apps/app/build/server/chunks/widget-b.js', 'Widget');
     // Two pnpm peer-variant copies of one installed package version.
@@ -416,6 +419,43 @@ describe('consumer workspace registration (#3106, #3110)', () => {
     expect(identity(dependency)?.schema?.tableName).toBe('contracts');
     expect(identity(bundled)?.qualifiedName).toBe('@fixture/app:LicenseSale');
     expect(identity(bundled)?.schema?.tableName).toBe('license_sales');
+  });
+
+  it('keeps one class when the app bundle inlines a class the installed dependency also loads', async () => {
+    // A SvelteKit build's analysis step loads a server bundle that inlined
+    // the dependency's ApiKey while the installed package registers it too;
+    // the generated registration then claims the bundled constructor.
+    const installed = await defineFrom(
+      ws.path('node_modules/@fixture/profiles/dist/models.js'),
+    );
+    const inlined = await defineFrom(
+      ws.path('apps/app/build/server/chunks/api-key.js'),
+    );
+    expect(identity(installed)?.qualifiedName).toBe('@fixture/profiles:ApiKey');
+    expect(identity(inlined)?.qualifiedName).toBe('@fixture/profiles:ApiKey');
+    expect(ObjectRegistry.getClass('@fixture/app:ApiKey')).toBe(undefined);
+
+    const key = '@fixture/profiles:ApiKey';
+    ObjectRegistry.register(inlined, {
+      name: 'ApiKey',
+      packageName: '@fixture/profiles',
+      _manifestKey: key,
+      _manifest: {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/profiles',
+        objects: {
+          [key]: manifestEntry({
+            className: 'ApiKey',
+            packageName: '@fixture/profiles',
+            filePath: '/build-host/packages/profiles/src/ApiKey.ts',
+            tableName: 'api_keys',
+            fields: { label: { type: 'text' } },
+          }),
+        },
+      } as never,
+    });
+    expect(identity(inlined)?.qualifiedName).toBe(key);
   });
 
   it("still treats an inlined dependency's chunk duplicates as one class", async () => {

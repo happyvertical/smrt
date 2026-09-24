@@ -42,7 +42,6 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     registrationKeyDiffersFromExistingKey: false,
     existingHasNoPackage: false,
     existingHasAnyPackage: false,
-    sourcePackageRootsDiffer: false,
     declaresDifferentTable: false,
     ...overrides,
   };
@@ -354,26 +353,21 @@ describe('decideCollisionPolicy', () => {
       expect(result.policy).toBe('coexist-qualified');
     });
 
-    it('bundled output coexists only with evidence it is not a chunk duplicate', () => {
+    it('bundled output coexists only when the class declares another table', () => {
       expect(
         decideCollisionPolicy(
           baseline({ ...differentPackages, newInBundledContext: true }),
         ).scenario,
       ).toBe('decorator-bundled-context-known-package');
-      for (const evidence of [
-        { sourcePackageRootsDiffer: true },
-        { declaresDifferentTable: true },
-      ]) {
-        expect(
-          decideCollisionPolicy(
-            baseline({
-              ...differentPackages,
-              newInBundledContext: true,
-              ...evidence,
-            }),
-          ).policy,
-        ).toBe('coexist-qualified');
-      }
+      expect(
+        decideCollisionPolicy(
+          baseline({
+            ...differentPackages,
+            newInBundledContext: true,
+            declaresDifferentTable: true,
+          }),
+        ).policy,
+      ).toBe('coexist-qualified');
     });
 
     it('leaves same-package duplicates, same files and STI pairs to their rows', () => {

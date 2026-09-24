@@ -175,15 +175,6 @@ export interface CollisionInputs {
   readonly existingHasNoPackage: boolean;
 
   /**
-   * Decorator-origin only: both registrations' source files are known and
-   * physically belong to different packages (their nearest `package.json`
-   * directories differ). A bundler's chunk duplicate of one class lives under
-   * one package's output; a same-named class of another package does not
-   * (#3106).
-   */
-  readonly sourcePackageRootsDiffer: boolean;
-
-  /**
    * Decorator-origin only: the new class explicitly declares a `tableName`
    * and it differs from the existing entry's table. A duplicate of one class
    * never disagrees with itself about its table, so this is positive evidence
@@ -377,11 +368,12 @@ const ROWS: readonly Row[] = [
     // different class, not a duplicate — e.g. a consumer's `LicenseSale` next
     // to smrt-commerce's. Both live under their qualified keys. Inheritance
     // between them is left to the STI rows. In bundled output the declaring
-    // package is only trusted with evidence that the class is not a chunk
-    // duplicate — the two source files belong to different packages, or the
-    // new class declares another table: a consumer bundle that inlined a
-    // dependency reports the consumer's package for the dependency's classes,
-    // which is the chunk duplicate the next row accepts.
+    // package is only trusted when the new class declares another table: a
+    // consumer bundle that inlined a dependency reports the consumer's
+    // package for the dependency's classes, and the same class may also load
+    // from the installed dependency (a SvelteKit build's analysis step does),
+    // so neither the package nor the file location tells a duplicate apart.
+    // Those duplicates are what the next row accepts.
     scenario: 'decorator-different-packages-qualified-coexist',
     match: (i) =>
       i.origin === 'decorator' &&
@@ -391,9 +383,7 @@ const ROWS: readonly Row[] = [
       !i.sameSourceFile &&
       !i.newExtendsExisting &&
       !i.existingExtendsNew &&
-      (!i.newInBundledContext ||
-        i.sourcePackageRootsDiffer ||
-        i.declaresDifferentTable),
+      (!i.newInBundledContext || i.declaresDifferentTable),
     policy: 'coexist-qualified',
     reason: () =>
       'Different packages declare the same simple name; both registrations live under their qualified keys (issue #3106).',

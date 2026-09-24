@@ -73,7 +73,7 @@ and repository rules.
   scan workspace-package sources under the app's name (#3110). A class of
   another known package coexists under its qualified key
   (`decorator-different-packages-qualified-coexist`); bundled output needs
-  evidence first (different package roots or declared table, #3106). Stack
+  a declared table that differs first (#3106). Stack
   attribution skips smrt-core (including source-mapped installed
   `smrt-core/src` frames, #3109), decorator-helper, and module-runner frames.
   Instance and collection registry lookups pass the qualified name. The schema
