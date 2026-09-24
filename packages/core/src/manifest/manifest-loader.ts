@@ -45,6 +45,7 @@ import {
   isDecoratorRuntimeFramePath,
   isDecoratorRuntimePackageName,
   isModuleRunnerFramePath,
+  isSmrtCoreFramePath,
 } from '../utils/stack-frames.js';
 import { ManifestManager } from './manager.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
@@ -487,22 +488,6 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  *   `Error().stack`. Used by tests to simulate a lowered call pattern.
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
-/**
- * Whether a stack frame is smrt-core's own code, which applies decorators but
- * never declares an application class. Matched by location rather than by a
- * bare `registry` substring, which also skipped any caller file so named —
- * including core's own `*registry*.test.ts` suites (#3098).
- */
-function isCoreInternalFramePath(path: string): boolean {
-  const lower = path.toLowerCase();
-  return (
-    lower.includes('manifest-loader') ||
-    lower.includes('/smrt-core/dist/') ||
-    lower.includes('/packages/core/dist/') ||
-    (lower.includes('/packages/core/src/') && !lower.includes('__tests__'))
-  );
-}
-
 export function getPackageName(
   ctor: SmrtObjectConstructor,
   skipRegistry: boolean = false,
@@ -551,7 +536,7 @@ export function getPackageName(
           // helpers (#1785) — the class is declared in neither.
           const normalizedPath = filePath.replace(/\\/g, '/');
           if (
-            isCoreInternalFramePath(normalizedPath) ||
+            isSmrtCoreFramePath(normalizedPath) ||
             isDecoratorRuntimeFramePath(normalizedPath) ||
             isModuleRunnerFramePath(normalizedPath)
           ) {

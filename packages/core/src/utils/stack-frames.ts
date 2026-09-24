@@ -90,3 +90,30 @@ export function isModuleRunnerFramePath(path: string): boolean {
 export function isDecoratorRuntimePackageName(name: string): boolean {
   return DECORATOR_RUNTIME_PACKAGES.includes(name);
 }
+
+/**
+ * Whether a stack-frame path is smrt-core's own code, which applies decorators
+ * but never declares an application class. Both stack walks (source-file
+ * identity in `registry/shared-state.ts` and package attribution in
+ * `manifest/manifest-loader.ts`) skip these frames.
+ *
+ * Matched by location, not by a bare `registry` substring (which also skipped
+ * any caller file so named). An installed core is matched by its package
+ * directory rather than by `dist/`: with source maps enabled — `tsx`,
+ * `node --enable-source-maps`, Vite SSR — its frames report the mapped
+ * `.../node_modules/@happyvertical/smrt-core/src/...` paths, and missing them
+ * attributed every class to `@happyvertical/smrt-core` (#3109, #3110).
+ * Core's own `__tests__` fixtures in the monorepo still declare classes.
+ *
+ * @param path - A file path from a stack frame (already normalized to `/`).
+ */
+export function isSmrtCoreFramePath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    lower.includes('manifest-loader') ||
+    lower.includes('/node_modules/@happyvertical/smrt-core/') ||
+    lower.includes('/smrt-core/dist/') ||
+    lower.includes('/packages/core/dist/') ||
+    (lower.includes('/packages/core/src/') && !lower.includes('__tests__'))
+  );
+}
