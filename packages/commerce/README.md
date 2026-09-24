@@ -232,7 +232,9 @@ const { url } = await billing.createCreditCheckout({
   currency, and period; each charge is claimed by exactly one close; the
   provider invoice uses the close id as its idempotency key; and every step is
   persisted before the next, so a retry resumes where it stopped. A lease stops
-  two workers advancing the same close. A payer whose charges net to a credit
+  two workers advancing the same close. A close without a period also resumes
+  every unfinished close whose period has ended, even one the payer's current
+  schedule no longer produces (#3116). A payer whose charges net to a credit
   gets no invoice; the credit is carried to its next invoice.
 - **Billing cycles (#3116).** A payer's periods follow its account's
   `billingAnchorAt`. Unset (the default) they are UTC calendar months. Set,

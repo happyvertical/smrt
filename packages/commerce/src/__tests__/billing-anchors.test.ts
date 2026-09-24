@@ -15,7 +15,10 @@ import {
   lastEndedBillingPeriod,
   prorateMinorUnits,
 } from '../billing/cycles.js';
-import { previousCalendarMonth } from '../billing/period-close.js';
+import {
+  BillingPeriodCloseError,
+  previousCalendarMonth,
+} from '../billing/period-close.js';
 import type { BillingProviderInvoiceInput } from '../billing/provider.js';
 import { BillingRuntime } from '../billing/runtime.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
@@ -494,6 +497,59 @@ describe('smrt#3116 anchored period close', () => {
     expect(lines.reduce((sum, line) => sum + line.amount, 0)).toBe(5000);
     expect(invoice?.subtotal).toBe(5000);
     expect(world.stripe.invoices.size).toBe(1);
+  });
+
+  it('resumes an unfinished close after the payer is re-anchored', async () => {
+    await parkNetwork(world);
+    const soloAnchor = at('2030-03-05T00:00:00Z');
+    await anchor(SOLO, soloAnchor);
+    await updateSubscription(world, SOLO, { startedAt: soloAnchor });
+    const now = at('2030-04-06T00:00:00Z');
+    // The first attempt claims the plan and writes the invoice, then dies
+    // before recording the close as invoiced.
+    const closes = world.provider.closes;
+    const get = closes.get.bind(closes);
+    let armed = true;
+    const spy = vi
+      .spyOn(closes, 'get')
+      .mockImplementation(async (...args: Parameters<typeof get>) => {
+        const close = await get(...args);
+        if (close && armed) {
+          const save = close.save.bind(close);
+          Object.assign(close, {
+            save: async () => {
+              if (armed && close.status === 'invoiced') {
+                armed = false;
+                throw new Error('worker died');
+              }
+              return save();
+            },
+          });
+        }
+        return close;
+      });
+    let stranded = '';
+    try {
+      const failed = await world.provider
+        .closePeriod({ now })
+        .catch((error: unknown) => error);
+      expect(failed).toBeInstanceOf(BillingPeriodCloseError);
+      stranded = String(
+        (failed as BillingPeriodCloseError).result.groups[0]?.closeId,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    // The payer moves to another anchor before the retry: its due period is
+    // no longer the stranded close's period, which is resumed anyway.
+    await anchor(SOLO, at('2030-03-20T00:00:00Z'));
+    await world.provider.closePeriod({ now });
+    const close = await world.provider.closes.get(stranded);
+    expect(close?.status).toBe('completed');
+    const invoices = await invoicesOf(world, SOLO);
+    expect(invoices.map((invoice) => invoice.subtotal)).toContain(2500);
+    expect(invoices.every((invoice) => invoice.status === 'sent')).toBe(true);
+    expect(await overlappingClaims(world)).toEqual([]);
   });
 
   it('closes an explicit period only for payers whose schedule has it', async () => {

@@ -323,8 +323,11 @@ export async function closeBillingPeriod(
     seen.add(group.closeId);
     results.push(await closeGroup(runtime, group, now));
   }
-  // Resume closes of the period this run closes whose sources were all
-  // claimed on an earlier attempt.
+  // Resume unfinished closes: with an explicit period, those of that period
+  // whose sources were all claimed on an earlier attempt; without one, every
+  // unfinished close whose period has ended, whatever the payer's schedule is
+  // now — a close stranded by a re-anchor would otherwise hold its claims
+  // (time later closes treat as billed) without ever invoicing them.
   for (const close of unfinished) {
     if (
       !close.id ||
@@ -334,23 +337,18 @@ export async function closeBillingPeriod(
     ) {
       continue;
     }
-    let period: ScheduledBillingPeriod | null;
-    if (mode.kind === 'explicit') {
-      period = samePeriod(close, mode.period)
-        ? {
-            periodStart: close.periodStart,
-            periodEnd: close.periodEnd,
-            cycleStart: close.periodStart,
-            cycleEnd: close.periodEnd,
-          }
-        : null;
-    } else {
-      const schedule = await schedules.get(close.payerTenantId);
-      period =
-        schedule.period && samePeriod(close, schedule.period)
-          ? schedule.period
-          : null;
-    }
+    const resumable =
+      mode.kind === 'explicit'
+        ? samePeriod(close, mode.period)
+        : close.periodEnd.getTime() <= now.getTime();
+    const period: ScheduledBillingPeriod | null = resumable
+      ? {
+          periodStart: close.periodStart,
+          periodEnd: close.periodEnd,
+          cycleStart: close.periodStart,
+          cycleEnd: close.periodEnd,
+        }
+      : null;
     if (!period) continue;
     results.push(
       await closeGroup(
@@ -928,32 +926,39 @@ function flatLineKey(subscriptionId: string): string {
 }
 
 /**
- * Flat-plan claims of each subscription that end after `after` — the only
- * ones that can overlap a window starting there — by subscription id. The
- * read is bounded by the windows being billed, not by billing history.
+ * Flat-plan claims of each subscription that overlap the windows being
+ * billed (ending after the earliest start and starting before the latest
+ * end), by subscription id. The read is bounded by those windows, not by
+ * billing history.
  */
 async function loadFlatClaims(
   runtime: BillingRuntime,
   flats: FlatWindow[],
 ): Promise<Map<string, BillingLineSource[]>> {
-  const bySubscription = new Map<string, number>();
+  const bySubscription = new Map<string, [number, number]>();
   for (const flat of flats) {
     const start = flat.windowStart.getTime();
+    const end = flat.windowEnd.getTime();
     const known = bySubscription.get(flat.subscriptionId);
-    if (known === undefined || start < known) {
-      bySubscription.set(flat.subscriptionId, start);
-    }
+    bySubscription.set(
+      flat.subscriptionId,
+      known
+        ? [Math.min(known[0], start), Math.max(known[1], end)]
+        : [start, end],
+    );
   }
   const entries = [...bySubscription.entries()];
   const claims = new Map<string, BillingLineSource[]>();
   for (let offset = 0; offset < entries.length; offset += runtime.pageSize) {
     const batch = entries.slice(offset, offset + runtime.pageSize);
-    const after = Math.min(...batch.map(([, start]) => start));
+    const after = Math.min(...batch.map(([, [start]]) => start));
+    const before = Math.max(...batch.map(([, [, end]]) => end));
     const rows = await runtime.sources.list({
       where: {
         sourceType: 'subscription_period',
         lineKey: batch.map(([subscriptionId]) => flatLineKey(subscriptionId)),
         'periodEnd >': new Date(after).toISOString(),
+        'periodStart <': new Date(before).toISOString(),
       },
     });
     for (const row of rows) {
