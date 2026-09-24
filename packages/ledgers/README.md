@@ -141,10 +141,13 @@ accounts once, in a PostgreSQL maintenance window:
    copies every ledger row (ids, hierarchy and metadata unchanged) into
    `ledger_accounts`, detaches the ledger foreign keys from `accounts`, and
    deletes the moved rows, in one locked transaction. Messaging rows (those
-   with an STI discriminator) stay. It refuses a row whose owner is uncertain
-   and ids already present in `ledger_accounts`, and a rerun is a no-op.
-   The same step is `migrateLedgerAccountsTable(db)` /
-   `planLedgerAccountsTableMove(db)` from this package.
+   with an STI discriminator) stay. Before writing anything it refuses a row
+   whose owner is uncertain, ids already present in `ledger_accounts`, and any
+   foreign key into `accounts` that no registered model declares (it would
+   otherwise dangle, or cascade); a rerun is a no-op. The same step is
+   `migrateLedgerAccountsTable(db)` / `planLedgerAccountsTableMove(db)` from
+   this package — call it with the application's models registered, as the
+   CLI does.
 3. `smrt db:migrate` — adds the foreign keys against `ledger_accounts`.
 
 Afterwards `accounts` is either empty (ledgers only — drop it when nothing else

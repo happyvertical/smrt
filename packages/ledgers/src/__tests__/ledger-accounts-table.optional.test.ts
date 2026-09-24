@@ -171,7 +171,7 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
       cash.id,
     );
     await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
-      /still references ledger accounts/,
+      /app_account_refs\.account_id reference "accounts" but no registered model declares them/,
     );
     const legacyRows = await db.query('SELECT COUNT(*) AS n FROM accounts');
     expect(Number((legacyRows.rows[0] as { n: string }).n)).toBe(3);
@@ -182,6 +182,94 @@ describePostgres('ledger accounts table move on PostgreSQL (#3098)', () => {
     expect(
       await foreignKeyTargets(db, 'journal_entries', 'account_id'),
     ).toEqual(['accounts']);
+  });
+
+  it('refuses an undeclared ON DELETE CASCADE reference instead of deleting its rows', async () => {
+    const db = await scratch.database();
+    const { cash } = await legacyLedger(db);
+    await dbMigrate(db);
+    await db.query(
+      'CREATE TABLE app_cascading_refs (account_id UUID REFERENCES accounts (id) ON DELETE CASCADE)',
+    );
+    await db.query(
+      'INSERT INTO app_cascading_refs (account_id) VALUES (?)',
+      cash.id,
+    );
+    await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
+      LedgerAccountsTableMoveError,
+    );
+    const refs = await db.query('SELECT COUNT(*) AS n FROM app_cascading_refs');
+    expect(Number((refs.rows[0] as { n: string }).n)).toBe(1);
+    const legacyRows = await db.query('SELECT COUNT(*) AS n FROM accounts');
+    expect(Number((legacyRows.rows[0] as { n: string }).n)).toBe(3);
+  });
+
+  it('refuses an undeclared reference even when no row uses it yet', async () => {
+    // Left in place it would keep pointing at the emptied accounts table and
+    // reject every later write of a ledger account id.
+    const db = await scratch.database();
+    await legacyLedger(db);
+    await dbMigrate(db);
+    await db.query(
+      'CREATE TABLE app_unused_refs (account_id UUID REFERENCES accounts (id))',
+    );
+    await expect(migrateLedgerAccountsTable(db)).rejects.toThrow(
+      /app_unused_refs\.account_id/,
+    );
+    const movedRows = await db.query(
+      'SELECT COUNT(*) AS n FROM ledger_accounts',
+    );
+    expect(Number((movedRows.rows[0] as { n: string }).n)).toBe(0);
+  });
+
+  it('moves a legacy table whose ids are still TEXT', async () => {
+    const db = await scratch.database();
+    const { assets, cash } = await legacyLedger(db);
+    await dbMigrate(db);
+    // A pre-UUID deployment: text ids on the legacy side only.
+    for (const { table, column } of [
+      { table: 'journal_entries', column: 'account_id' },
+      { table: 'accounts', column: 'parent_id' },
+    ]) {
+      const constraints = await db.query(
+        `SELECT con.conname FROM pg_constraint con
+           JOIN pg_attribute att
+             ON att.attrelid = con.conrelid AND att.attnum = con.conkey[1]
+          WHERE con.contype = 'f' AND con.conrelid = to_regclass(?)
+            AND att.attname = ?`,
+        table,
+        column,
+      );
+      for (const { conname } of constraints.rows as Array<{
+        conname: string;
+      }>) {
+        await db.query(`ALTER TABLE "${table}" DROP CONSTRAINT "${conname}"`);
+      }
+    }
+    await db.query(
+      'ALTER TABLE accounts ALTER COLUMN id TYPE TEXT, ALTER COLUMN parent_id TYPE TEXT',
+    );
+    await db.query(
+      'ALTER TABLE journal_entries ALTER COLUMN account_id TYPE TEXT',
+    );
+    await db.query(
+      'ALTER TABLE journal_entries ADD FOREIGN KEY (account_id) REFERENCES accounts (id)',
+    );
+    await db.query(
+      'ALTER TABLE accounts ADD FOREIGN KEY (parent_id) REFERENCES accounts (id)',
+    );
+
+    expect(await migrateLedgerAccountsTable(db)).toEqual({
+      ran: true,
+      moved: 3,
+      remainingLegacyRows: 0,
+      detachedForeignKeys: ['journal_entries.account_id'],
+    });
+    const moved = await db.query(
+      'SELECT CAST(id AS TEXT) AS id, CAST(parent_id AS TEXT) AS parent_id FROM ledger_accounts WHERE number = ?',
+      '1010',
+    );
+    expect(moved.rows).toEqual([{ id: cash.id, parent_id: assets.id }]);
   });
 
   it('refuses to overwrite ids already present in ledger_accounts, changing nothing', async () => {

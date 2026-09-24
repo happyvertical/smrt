@@ -178,22 +178,29 @@ async function classify(
 }
 
 /**
- * Every `table.column` the registered manifests point at `ledger_accounts` —
- * the references that pointed at `accounts` before #3098.
+ * Registered foreign keys by the table they reference: `table.column` keys
+ * the manifests point at `ledger_accounts` (the references that pointed at
+ * `accounts` before #3098) and at `accounts` (messaging's own references).
  */
-function ledgerReferenceColumns(): Set<string> {
-  const references = new Set<string>();
+function registeredReferenceColumns(): {
+  ledger: Set<string>;
+  accounts: Set<string>;
+} {
+  const ledger = new Set<string>();
+  const accounts = new Set<string>();
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   for (const [tableName, schema] of Object.entries(schemas)) {
     for (const [columnName, column] of Object.entries(schema.columns ?? {})) {
       const target = (column as { foreignKey?: { table?: string } }).foreignKey
         ?.table;
       if (target === LEDGER_ACCOUNTS_TABLE) {
-        references.add(`${tableName}.${columnName}`);
+        ledger.add(`${tableName}.${columnName}`);
+      } else if (target === LEGACY_ACCOUNTS_TABLE) {
+        accounts.add(`${tableName}.${columnName}`);
       }
     }
   }
-  return references;
+  return { ledger, accounts };
 }
 
 async function legacyForeignKeys(
@@ -270,7 +277,7 @@ export async function migrateLedgerAccountsTable(
   const copyColumns = Object.keys(target.columns).filter((column) =>
     shape.columns.has(column),
   );
-  const references = ledgerReferenceColumns();
+  const references = registeredReferenceColumns();
 
   const tracker = new BackfillTracker({ db });
   await tracker.initialize();
@@ -300,16 +307,53 @@ export async function migrateLedgerAccountsTable(
     }
 
     const ledger = ledgerRowPredicate(shape);
+    // Compare through text: a legacy table may still carry TEXT ids where
+    // ledger_accounts declares UUID (the copy below converts the same way).
     const clash = await tx.query(
       `SELECT COUNT(*) AS n FROM ${quote(LEGACY_ACCOUNTS_TABLE)} legacy
         WHERE ${ledger}
           AND EXISTS (SELECT 1 FROM ${quote(LEDGER_ACCOUNTS_TABLE)} moved
-                       WHERE moved.id = legacy.id)`,
+                       WHERE CAST(moved.id AS TEXT) = CAST(legacy.id AS TEXT))`,
     );
     if (Number((clash.rows[0] as { n: number | string }).n) > 0) {
       throw new LedgerAccountsTableMoveError(
         `"${LEDGER_ACCOUNTS_TABLE}" already holds ids of ledger rows still in "${LEGACY_ACCOUNTS_TABLE}"; refusing to overwrite`,
       );
+    }
+
+    // Account for every foreign key into accounts before writing anything.
+    // Ledger references are detached below; messaging's and the table's own
+    // parent link stay. A constraint no registered model declares would keep
+    // pointing at accounts after the move (blocking later writes), and a
+    // CASCADE or SET NULL action would silently delete or clear rows instead
+    // of refusing, so both refuse here. A kept constraint may not reference a
+    // row that moves.
+    const inbound = await legacyForeignKeys(tx);
+    const undeclared = inbound.filter(
+      (fk) =>
+        fk.table !== LEGACY_ACCOUNTS_TABLE &&
+        !references.ledger.has(`${fk.table}.${fk.column}`) &&
+        !references.accounts.has(`${fk.table}.${fk.column}`),
+    );
+    if (undeclared.length > 0) {
+      throw new LedgerAccountsTableMoveError(
+        `Foreign key(s) ${undeclared.map((fk) => `${fk.table}.${fk.column}`).join(', ')} reference "${LEGACY_ACCOUNTS_TABLE}" but no registered model declares them; nothing was moved. Run the move from the application whose models declare them, or retarget each to "${LEDGER_ACCOUNTS_TABLE}" (or drop it) by hand, then rerun.`,
+      );
+    }
+    for (const fk of inbound) {
+      if (references.ledger.has(`${fk.table}.${fk.column}`)) continue;
+      const survivor =
+        fk.table === LEGACY_ACCOUNTS_TABLE ? ` AND NOT ${ledger}` : '';
+      const pointing = await tx.query(
+        `SELECT COUNT(*) AS n FROM ${quote(fk.table)}
+          WHERE ${quote(fk.column)} IN
+                (SELECT id FROM ${quote(LEGACY_ACCOUNTS_TABLE)} WHERE ${ledger})${survivor}`,
+      );
+      if (Number((pointing.rows[0] as { n: number | string }).n) > 0) {
+        throw new LedgerAccountsTableMoveError(
+          `${fk.table}.${fk.column} references ledger accounts in "${LEGACY_ACCOUNTS_TABLE}" but is not a ledger reference; nothing was moved. Resolve those rows by hand, then rerun.`,
+        );
+      }
     }
 
     // Copy values as they are; convert only a column whose legacy type
@@ -336,27 +380,20 @@ export async function migrateLedgerAccountsTable(
     // next db:migrate adds them against ledger_accounts. References owned by
     // messaging (emails, messages, routes) keep pointing at accounts.
     const detached: string[] = [];
-    for (const foreignKey of await legacyForeignKeys(tx)) {
+    for (const foreignKey of inbound) {
       const key = `${foreignKey.table}.${foreignKey.column}`;
-      if (!references.has(key)) continue;
+      if (!references.ledger.has(key)) continue;
       await tx.query(
         `ALTER TABLE ${quote(foreignKey.table)} DROP CONSTRAINT ${quote(foreignKey.constraint)}`,
       );
       detached.push(key);
     }
 
-    // Any remaining reference to a moved row fails this DELETE, rolling the
-    // whole move back rather than orphaning it.
-    try {
-      await tx.query(
-        `DELETE FROM ${quote(LEGACY_ACCOUNTS_TABLE)} WHERE ${ledger}`,
-      );
-    } catch (error) {
-      if (!isForeignKeyViolation(error)) throw error;
-      throw new LedgerAccountsTableMoveError(
-        `A foreign key no registered model declares still references ledger accounts in "${LEGACY_ACCOUNTS_TABLE}"; nothing was moved. Run the move from the application whose models declare that reference, or retarget the constraint to "${LEDGER_ACCOUNTS_TABLE}" by hand, then rerun.`,
-      );
-    }
+    // Every remaining constraint was checked above; a violation here is a
+    // concurrent change the lock did not cover and rolls the move back.
+    await tx.query(
+      `DELETE FROM ${quote(LEGACY_ACCOUNTS_TABLE)} WHERE ${ledger}`,
+    );
 
     await transactionTracker.recordApplied(backfillName, {
       description:
@@ -370,25 +407,6 @@ export async function migrateLedgerAccountsTable(
       detachedForeignKeys: detached,
     };
   });
-}
-
-/** PostgreSQL `foreign_key_violation` (23503), through adapter wrapping. */
-function isForeignKeyViolation(error: unknown): boolean {
-  for (
-    let current: unknown = error, depth = 0;
-    current && depth < 5;
-    current = (current as { cause?: unknown }).cause, depth++
-  ) {
-    const { code, message } = current as { code?: unknown; message?: unknown };
-    if (code === '23503') return true;
-    if (
-      typeof message === 'string' &&
-      message.includes('violates foreign key constraint')
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 const SQL_TYPE = /^[A-Za-z][A-Za-z0-9 _]*(\(\d+(,\s*\d+)?\))?(\[\])?$/;
