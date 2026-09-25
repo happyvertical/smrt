@@ -161,12 +161,14 @@ function normalizeAIInput(ai?: PromptAIInput | null): NormalizedPromptAI {
 export function normalizePromptDefinitionInput(input: PromptDefinitionInput): {
   key: string;
   template: string;
+  description: string;
   ai: NormalizedPromptAI;
   editable: PromptEditableConfig;
 } {
   return {
     key: input.key,
     template: input.template,
+    description: input.description ?? '',
     ai: normalizeAIInput(input.ai),
     editable: normalizeEditableConfig(input.editable),
   };
