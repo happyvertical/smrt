@@ -22,6 +22,11 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  mapWithConcurrency,
+  POSTGRES_INTROSPECTION_CONCURRENCY,
+  POSTGRES_PROBE_CONCURRENCY,
+} from './bounded-concurrency.js';
 import { detectEngine } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import {
@@ -73,9 +78,32 @@ export interface ForeignKeyOrphanCountReport {
   skipped: ForeignKeyOrphanSkipped[];
 }
 
+/** Live table schema as returned by `db.getTableSchema()`. */
+type LiveTableSchema = Awaited<
+  ReturnType<NonNullable<DatabaseInterface['getTableSchema']>>
+>;
+
 export interface CollectForeignKeyOrphanCountsOptions {
   /** Explicit engine hint for adapters whose URL is empty or ambiguous. */
   engineHint?: string;
+  /**
+   * Live table schemas already read in this command over the same
+   * connection (e.g. `SchemaComparer.getLiveSchemaSnapshot()` after
+   * `compare()`), used instead of re-introspecting those tables. Tables
+   * absent from the map are introspected as before.
+   */
+  liveSchemas?: ReadonlyMap<string, LiveTableSchema | undefined>;
+  /**
+   * Maximum concurrent live-table introspections. Default:
+   * {@link POSTGRES_INTROSPECTION_CONCURRENCY} on PostgreSQL, 1 elsewhere.
+   */
+  introspectionConcurrency?: number;
+  /**
+   * Maximum concurrent orphan `COUNT(*)` probes. These scan table data, so
+   * the default is lower: {@link POSTGRES_PROBE_CONCURRENCY} on PostgreSQL,
+   * 1 elsewhere.
+   */
+  probeConcurrency?: number;
 }
 
 /**
@@ -93,40 +121,52 @@ export async function collectForeignKeyOrphanCounts(
   options: CollectForeignKeyOrphanCountsOptions = {},
 ): Promise<ForeignKeyOrphanCountReport> {
   const engine = resolveEngine(db, options.engineHint);
+  const isPostgres = engine === 'postgres';
+  const introspectionConcurrency =
+    options.introspectionConcurrency ??
+    (isPostgres ? POSTGRES_INTROSPECTION_CONCURRENCY : 1);
+  const probeConcurrency =
+    options.probeConcurrency ?? (isPostgres ? POSTGRES_PROBE_CONCURRENCY : 1);
   const liveTables = await listLiveTables(db, engine);
-  // Cache per table: several foreign keys can share a child table, and
-  // `db.getTableSchema` is a live introspection round-trip. Both shipped
-  // adapters throw on a failed schema lookup rather than returning `null`
-  // (review finding, #2748: an unguarded call here aborted the whole
-  // report, one bad child table taking down every other relationship's
-  // count) — swallow the same way `readLiveColumnType()` already does
-  // below: this introspection failing is not the orphan probe itself
-  // failing, so the relationship still gets counted (falling back to
-  // manifest-only nullability) or lands in `skipped` via the probe's own
-  // `catch`.
-  const fetchLiveSchema = async (tableName: string) => {
+  // One live-schema read per table for the whole report: several foreign
+  // keys can share a child table, the uuid cast-side check reads both the
+  // child and the parent, and `db.getTableSchema` is several catalog round
+  // trips. Both shipped adapters throw on a failed schema lookup rather than
+  // returning `null` (review finding, #2748: an unguarded call here aborted
+  // the whole report, one bad child table taking down every other
+  // relationship's count) — so a failed lookup is cached as `undefined`:
+  // this introspection failing is not the orphan probe itself failing, so
+  // the relationship still gets counted (falling back to manifest-only
+  // nullability and the manifest-declared uuid signal) or lands in
+  // `skipped` via the probe's own `catch`.
+  const liveSchemaCache = new Map<string, LiveTableSchema | undefined>(
+    options.liveSchemas ?? [],
+  );
+  const fetchLiveSchema = async (
+    tableName: string,
+  ): Promise<LiveTableSchema | undefined> => {
     try {
       return await db.getTableSchema?.(tableName);
     } catch {
       return undefined;
     }
   };
-  const liveSchemaCache = new Map<
-    string,
-    Awaited<ReturnType<typeof fetchLiveSchema>>
-  >();
-  const getLiveSchema = async (tableName: string) => {
-    if (liveSchemaCache.has(tableName)) {
-      return liveSchemaCache.get(tableName);
-    }
-    const liveSchema = await fetchLiveSchema(tableName);
-    liveSchemaCache.set(tableName, liveSchema);
-    return liveSchema;
-  };
 
-  const counts: ForeignKeyOrphanCount[] = [];
-  const skipped: ForeignKeyOrphanSkipped[] = [];
+  interface PlannedProbe {
+    base: Omit<ForeignKeyOrphanSkipped, 'reason' | 'kind'>;
+    childTable: string;
+    foreignKey: ReturnType<typeof schemaForeignKeysForEngine>[number];
+    manifestNullable: boolean;
+    declaredUuidComparison: boolean;
+  }
+  type PlanEntry =
+    | { kind: 'skip'; skip: ForeignKeyOrphanSkipped }
+    | { kind: 'probe'; probe: PlannedProbe };
 
+  // Phase 1 (no queries): decide, in manifest order, which relationships can
+  // be probed at all and which live schemas those probes need.
+  const plan: PlanEntry[] = [];
+  const tablesToIntrospect = new Set<string>();
   for (const [childTable, schema] of Object.entries(schemas)) {
     const foreignKeys = schemaForeignKeysForEngine(schema, engine);
 
@@ -140,23 +180,96 @@ export async function collectForeignKeyOrphanCounts(
       };
 
       if (!liveTables.has(childTable)) {
-        skipped.push({
-          ...base,
-          kind: 'missing_table',
-          reason: `Child table \`${childTable}\` does not exist in the live database.`,
+        plan.push({
+          kind: 'skip',
+          skip: {
+            ...base,
+            kind: 'missing_table',
+            reason: `Child table \`${childTable}\` does not exist in the live database.`,
+          },
         });
         continue;
       }
       if (!liveTables.has(parentTable)) {
-        skipped.push({
-          ...base,
-          kind: 'missing_table',
-          reason: `Parent table \`${parentTable}\` does not exist in the live database.`,
+        plan.push({
+          kind: 'skip',
+          skip: {
+            ...base,
+            kind: 'missing_table',
+            reason: `Parent table \`${parentTable}\` does not exist in the live database.`,
+          },
         });
         continue;
       }
 
       const childColumnDefinition = schema.columns[foreignKey.column];
+      const parentColumnDefinition =
+        schemas[parentTable]?.columns[foreignKey.referencesColumn];
+      const declaredUuidComparison =
+        childColumnDefinition?.type === 'UUID' &&
+        (parentColumnDefinition === undefined ||
+          parentColumnDefinition.type === 'UUID');
+
+      tablesToIntrospect.add(childTable);
+      if (
+        declaredUuidComparison &&
+        isPostgres &&
+        typeof db.getTableSchema === 'function'
+      ) {
+        tablesToIntrospect.add(parentTable);
+      }
+
+      plan.push({
+        kind: 'probe',
+        probe: {
+          base,
+          childTable,
+          foreignKey,
+          manifestNullable: childColumnDefinition?.notNull !== true,
+          declaredUuidComparison,
+        },
+      });
+    }
+  }
+
+  // Phase 2: introspect every needed table once, with bounded concurrency.
+  if (typeof db.getTableSchema === 'function') {
+    const pending = [...tablesToIntrospect].filter(
+      (tableName) => !liveSchemaCache.has(tableName),
+    );
+    const fetched = await mapWithConcurrency(
+      pending,
+      introspectionConcurrency,
+      fetchLiveSchema,
+    );
+    pending.forEach((tableName, index) => {
+      liveSchemaCache.set(tableName, fetched[index]);
+    });
+  }
+  const readLiveSchema = (tableName: string): LiveTableSchema | undefined =>
+    liveSchemaCache.get(tableName);
+
+  // Phase 3: run the COUNT(*) probes with bounded concurrency, collecting
+  // each outcome at its plan position so the report order is independent of
+  // completion order.
+  const outcomes = await mapWithConcurrency(
+    plan,
+    probeConcurrency,
+    async (
+      entry,
+    ): Promise<
+      | { kind: 'count'; count: ForeignKeyOrphanCount }
+      | { kind: 'skip'; skip: ForeignKeyOrphanSkipped }
+    > => {
+      if (entry.kind === 'skip') return entry;
+      const {
+        base,
+        childTable,
+        foreignKey,
+        manifestNullable,
+        declaredUuidComparison,
+      } = entry.probe;
+
       // Nullable only when BOTH the manifest and the live column agree
       // (review finding, #2748): a manifest relaxed to nullable while the
       // live column is still physically NOT NULL (relaxation pending, not
@@ -167,33 +280,30 @@ export async function collectForeignKeyOrphanCounts(
       // relationship this report told them was nullable. Mirrors
       // `SchemaComparer.getForeignKeyOrphanOptions()` in
       // `migrations/differ.ts`.
-      const liveChildSchema = await getLiveSchema(childTable);
-      const manifestNullable = childColumnDefinition?.notNull !== true;
       const liveNotNull =
-        liveChildSchema?.columns[foreignKey.column]?.notNull === true;
+        readLiveSchema(childTable)?.columns[foreignKey.column]?.notNull ===
+        true;
       const nullable = manifestNullable && !liveNotNull;
-      const parentColumnDefinition =
-        schemas[parentTable]?.columns[foreignKey.referencesColumn];
-      const declaredUuidComparison =
-        childColumnDefinition?.type === 'UUID' &&
-        (parentColumnDefinition === undefined ||
-          parentColumnDefinition.type === 'UUID');
 
       // The manifest declaring UUID on both sides is not proof the live
       // columns are actually native uuid yet — #2608 tolerates a legacy
-      // component that is still `text` on every side until it converges. Mirror
-      // the migration gate's live-type cast-side selection
+      // component that is still `text` on every side until it converges.
+      // Mirror the migration gate's live-type cast-side selection
       // (`SchemaComparer.getForeignKeyOrphanOptions` in migrations/differ.ts)
       // instead of guessing from the manifest alone, or a legacy text/text or
       // text/uuid relationship either errors (`operator does not exist: text
       // = uuid`) or silently mismatches instead of being counted.
-      const { uuidComparison, uuidCastSide } = await resolveUuidCastSide(db, {
+      const { uuidComparison, uuidCastSide } = resolveUuidCastSide(db, {
         engine,
         declaredUuidComparison,
-        childTable,
-        childColumn: foreignKey.column,
-        parentTable,
-        parentColumn: foreignKey.referencesColumn,
+        childType: liveColumnType(
+          readLiveSchema(childTable),
+          foreignKey.column,
+        ),
+        parentType: liveColumnType(
+          readLiveSchema(base.parentTable),
+          foreignKey.referencesColumn,
+        ),
       });
 
       const sql = renderForeignKeyOrphanDetector(childTable, foreignKey, {
@@ -208,19 +318,32 @@ export async function collectForeignKeyOrphanCounts(
         const rows = normalizeQueryRows(result);
         const raw = rows[0]?.orphan_count;
         const orphanCount = Number(raw);
-        counts.push({
-          ...base,
-          orphanCount: Number.isFinite(orphanCount) ? orphanCount : 0,
-          nullable,
-        });
+        return {
+          kind: 'count',
+          count: {
+            ...base,
+            orphanCount: Number.isFinite(orphanCount) ? orphanCount : 0,
+            nullable,
+          },
+        };
       } catch (error) {
-        skipped.push({
-          ...base,
-          kind: 'probe_failed',
-          reason: `Could not probe for orphan rows: ${error instanceof Error ? error.message : String(error)}`,
-        });
+        return {
+          kind: 'skip',
+          skip: {
+            ...base,
+            kind: 'probe_failed',
+            reason: `Could not probe for orphan rows: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        };
       }
-    }
+    },
+  );
+
+  const counts: ForeignKeyOrphanCount[] = [];
+  const skipped: ForeignKeyOrphanSkipped[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.kind === 'count') counts.push(outcome.count);
+    else skipped.push(outcome.skip);
   }
 
   counts.sort((a, b) => b.orphanCount - a.orphanCount);
@@ -236,25 +359,16 @@ export async function collectForeignKeyOrphanCounts(
  * same relationship the same way. Only PostgreSQL casts at all
  * (`foreignKeyOrphanParts()` ignores `uuidComparison` on every other engine).
  */
-async function resolveUuidCastSide(
+function resolveUuidCastSide(
   db: DatabaseInterface,
   options: {
     engine: DatabaseEngine;
     declaredUuidComparison: boolean;
-    childTable: string;
-    childColumn: string;
-    parentTable: string;
-    parentColumn: string;
+    childType: string | undefined;
+    parentType: string | undefined;
   },
-): Promise<{ uuidComparison: boolean; uuidCastSide?: ForeignKeyUuidCastSide }> {
-  const {
-    engine,
-    declaredUuidComparison,
-    childTable,
-    childColumn,
-    parentTable,
-    parentColumn,
-  } = options;
+): { uuidComparison: boolean; uuidCastSide?: ForeignKeyUuidCastSide } {
+  const { engine, declaredUuidComparison, childType, parentType } = options;
   if (!declaredUuidComparison || engine !== 'postgres') {
     return { uuidComparison: false };
   }
@@ -265,8 +379,6 @@ async function resolveUuidCastSide(
     return { uuidComparison: true };
   }
 
-  const childType = await readLiveColumnType(db, childTable, childColumn);
-  const parentType = await readLiveColumnType(db, parentTable, parentColumn);
   if (!childType || !parentType) {
     return { uuidComparison: true };
   }
@@ -288,21 +400,18 @@ function isUuidType(type: string): boolean {
   return type.toUpperCase().includes('UUID');
 }
 
-async function readLiveColumnType(
-  db: DatabaseInterface,
-  tableName: string,
+/**
+ * A live column's type from an already-read table schema. A missing table,
+ * column, or failed introspection (cached as `undefined`) yields `undefined`,
+ * and the caller falls back to the manifest-declared signal — the COUNT(*)
+ * probe itself still runs and can report its own failure.
+ */
+function liveColumnType(
+  schema: LiveTableSchema | undefined,
   columnName: string,
-): Promise<string | undefined> {
-  try {
-    const schema = await db.getTableSchema?.(tableName);
-    const type = schema?.columns?.[columnName]?.type;
-    return type === undefined || type === null ? undefined : String(type);
-  } catch {
-    // Introspection failure here is not the probe failing — the caller
-    // falls back to the manifest-declared signal, and the COUNT(*) probe
-    // itself still runs and can report its own failure.
-    return undefined;
-  }
+): string | undefined {
+  const type = schema?.columns?.[columnName]?.type;
+  return type === undefined || type === null ? undefined : String(type);
 }
 
 function resolveEngine(

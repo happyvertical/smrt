@@ -12,6 +12,7 @@ const {
   getHistoryMock,
   getEngineMock,
   collectForeignKeyOrphanCountsMock,
+  liveSchemaSnapshotMock,
   SchemaComparerMock,
   MigrationTrackerMock,
 } = vi.hoisted(() => {
@@ -23,8 +24,16 @@ const {
   const getEngine = vi.fn();
   const collectForeignKeyOrphanCounts = vi.fn();
 
+  const liveSchemaSnapshot = new Map([
+    [
+      'events',
+      { tableName: 'events', columns: {}, indexes: [], foreignKeys: [] },
+    ],
+  ]);
+
   class MockSchemaComparer {
     compare = compare;
+    getLiveSchemaSnapshot = () => liveSchemaSnapshot;
   }
 
   class MockMigrationTracker {
@@ -46,6 +55,7 @@ const {
     getHistoryMock: getHistory,
     getEngineMock: getEngine,
     collectForeignKeyOrphanCountsMock: collectForeignKeyOrphanCounts,
+    liveSchemaSnapshotMock: liveSchemaSnapshot,
     SchemaComparerMock: MockSchemaComparer,
     MigrationTrackerMock: MockMigrationTracker,
   };
@@ -839,6 +849,13 @@ describe('db:status', () => {
     );
     expect(output).not.toContain('clean.ref_id');
     expect(output).toContain('smrt db:orphans');
+    // The orphan report reuses the live schemas compare() already read over
+    // this connection instead of re-introspecting every table.
+    expect(collectForeignKeyOrphanCountsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ liveSchemas: liveSchemaSnapshotMock }),
+    );
     // Diagnostic-only: never touches the exit code.
     expect(process.exitCode).toBeUndefined();
   });
