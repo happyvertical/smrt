@@ -1050,7 +1050,9 @@ export interface RegisteredClass {
    * (which is snake_case and can be overridden/uncountable). Stored here so
    * runtime consumers (e.g. `createResourceListHandler`) can build URLs that
    * match the generated routes instead of re-deriving from `tableName`.
-   * See smrt#1311 consumer-migration finding.
+   * See smrt#1311 consumer-migration finding. A class registered before its
+   * manifest takes its registered STI base's collection when it is an STI
+   * subtype, and a manifest registered later reconciles it (#3125).
    */
   collection?: string;
   /** Parent class name (for inheritance chain tracking) */

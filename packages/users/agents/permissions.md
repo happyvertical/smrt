@@ -101,7 +101,11 @@ membership or tenant DENY to attenuate inherited role authority.
 ## Guards and RLS
 
 PermissionCatalogService derives collection.action slugs from manifests,
-including custom actions; list/get map to read. Hand-written mutations in form
+including custom actions; list/get map to read. Guards derive a class's slug
+through the same resolution (explicit `collection`, manifest entry, then its
+STI base's), so an STI subtype resolves its STI base's collection
+(`Network extends Tenant` -> `tenants.update`) in every build, including a
+bundle decorated before its manifest loads (#3125). Hand-written mutations in form
 handlers, endpoints, CLI and jobs use assertOperationPermission(). It requires
 catalog presence then resolves permissions, throwing fail-closed by default.
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only

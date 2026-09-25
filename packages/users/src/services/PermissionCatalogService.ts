@@ -237,19 +237,19 @@ export function deriveOperationPermissionCollectionName(
     ObjectRegistry.getClassByConstructor(
       ctor as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
     ) ?? ObjectRegistry.getClass(ctor.name);
-  const configuredCollection = (
-    registered?.config as { collection?: unknown } | undefined
-  )?.collection;
-
-  if (typeof configuredCollection === 'string' && configuredCollection) {
-    return configuredCollection;
+  if (!registered) {
+    return deriveCollectionName(ctor.name);
   }
 
-  if (registered?.collection) {
-    return registered.collection;
-  }
-
-  return deriveCollectionName(registered?.name ?? ctor.name);
+  // The catalog's resolution (explicit collection, manifest entry, STI base),
+  // so an STI subtype never derives a slug the catalog does not list (#3125).
+  // Only the last-resort fallback stays the guard's own: the registration's
+  // collection.
+  return resolveCollectionName(
+    registered,
+    manifestEntryFor(registered),
+    (target) => target.collection ?? deriveCollectionName(target.name),
+  );
 }
 
 export function deriveOperationPermissionSlug(
@@ -269,9 +269,48 @@ type RegisteredCatalogClass = NonNullable<
   ReturnType<typeof ObjectRegistry.getClass>
 >;
 
-function resolveCatalogCollectionName(
+function manifestEntryFor(
+  registered: RegisteredCatalogClass,
+): SmartObjectDefinition | undefined {
+  return registered.qualifiedName
+    ? findManifestEntryByQualifiedName(registered.qualifiedName)
+    : undefined;
+}
+
+/**
+ * The STI base of a registered class: its oldest registered prototype
+ * ancestor declaring `tableStrategy: 'sti'` — the manifest generator's
+ * `findSTIBase` rule. Ancestors resolve by constructor, so another package's
+ * same-named class cannot stand in for the base.
+ */
+function registeredStiBase(
+  registered: RegisteredCatalogClass,
+): RegisteredCatalogClass | undefined {
+  let base: RegisteredCatalogClass | undefined;
+  for (
+    let parent = Object.getPrototypeOf(registered.constructor);
+    parent && parent !== Function.prototype;
+    parent = Object.getPrototypeOf(parent)
+  ) {
+    const ancestor = ObjectRegistry.getClassByConstructor(parent);
+    if (ancestor?.config?.tableStrategy === 'sti') base = ancestor;
+  }
+  return base === registered ? undefined : base;
+}
+
+/**
+ * The permission collection of a registered class, shared by the catalog and
+ * the operation guards (#3125): an explicit `collection`, then the manifest
+ * entry's (the scanner gives an STI subtype its base's), then — for an STI
+ * subtype with no manifest entry, as in a consumer bundle decorated before its
+ * manifest loads — its STI base's. `fallback` names a class with none of
+ * these; it differs between the catalog and the guards for historical slugs
+ * and is deliberately left unchanged here.
+ */
+function resolveCollectionName(
   registered: RegisteredCatalogClass,
   manifestEntry: SmartObjectDefinition | undefined,
+  fallback: (registered: RegisteredCatalogClass) => string,
 ): string {
   const objectConfig = manifestEntry?.decoratorConfig ?? registered.config;
   const rawCollection = (objectConfig as { collection?: unknown } | undefined)
@@ -279,7 +318,20 @@ function resolveCatalogCollectionName(
   if (typeof rawCollection === 'string' && rawCollection.length > 0) {
     return rawCollection;
   }
-  return manifestEntry?.collection ?? deriveCollectionName(registered.name);
+  if (manifestEntry?.collection) return manifestEntry.collection;
+  const stiBase = registeredStiBase(registered);
+  return stiBase
+    ? resolveCollectionName(stiBase, manifestEntryFor(stiBase), fallback)
+    : fallback(registered);
+}
+
+function resolveCatalogCollectionName(
+  registered: RegisteredCatalogClass,
+  manifestEntry: SmartObjectDefinition | undefined,
+): string {
+  return resolveCollectionName(registered, manifestEntry, (target) =>
+    deriveCollectionName(target.name),
+  );
 }
 
 interface CatalogAncestor {
@@ -852,17 +904,10 @@ export class PermissionCatalogService {
       const className = registered.name;
       const qualifiedName = registered.qualifiedName;
       const objectConfig = manifestEntry?.decoratorConfig ?? registered.config;
-      const rawCollection = (
-        objectConfig as { collection?: unknown } | undefined
-      )?.collection;
-      const configuredCollection =
-        typeof rawCollection === 'string' && rawCollection.length > 0
-          ? rawCollection
-          : undefined;
-      const collection =
-        configuredCollection ??
-        manifestEntry?.collection ??
-        deriveCollectionName(className);
+      const collection = resolveCatalogCollectionName(
+        registered,
+        manifestEntry,
+      );
 
       const readExposed =
         isOperationEnabled(objectConfig.api, 'list') ||
