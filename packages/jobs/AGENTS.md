@@ -21,7 +21,7 @@ Status: `pending → running → completed/failed/cancelled`.
 Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `idlePollInterval` (defaults to 20× `pollInterval`), `heartbeatInterval` (30s, telemetry only), `leaseTtlMs` (30s), `leaseTickMs` (10s), `shutdownTimeout` (30s). Empty claims back off exponentially to `idlePollInterval`; any claimed work, capacity pressure, or poll error resets to `pollInterval`. Every delay is capped at the effective worker lease TTL, including an oversized base interval; recovery sweep spacing stays TTL-bounded (plus query/event-loop time). Polling intervals must be finite positive milliseconds within the Node timer range.
 
 1. `start()` calls `assertReady()` (fail fast if `_smrt_workers` unmigrated), registers a seeded `SmrtWorker` lease, and adds its worker key to the process-global live set — all **before** polling
-2. Polls `claimReady()` to atomically claim pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`)
+2. Polls `claimReady()` to atomically claim at most the free slots (`concurrency - active`) of pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`). On PostgreSQL the candidates come from a `MATERIALIZED` CTE joined to the UPDATE; never claim with `WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` — a nested-loop semi join rescans it per outer row and takes the whole backlog (#3145). The runner also never starts more than the free slots and returns any surplus claim to `pending` with its attempt restored
 3. Claim sets `status='running'`, `workerId=<incarnation key>`, heartbeat/start timestamps, and increments `attempts`
 4. Resolves class via `ObjectRegistry.getClass(objectType)`. Object-bound jobs
    pass `objectId` to the constructor and let `initialize()` perform the single
@@ -93,6 +93,8 @@ transitions and monotonic checkpoints in
   `claimReady`) so each claims and dead-letters only its own deliveries;
   unfiltered claims take every provider (smrt-commerce billing uses
   `<name>-billing:<sellerTenantId>`, #3060).
+- `claimReady` leases exactly one delivery; PostgreSQL uses the same
+  `MATERIALIZED` CTE claim as jobs (#3105).
 - Tenant-facing accept/replay requires ambient tenant context. Worker claim is
   cross-tenant, then runtime restores the captured context before observation.
   Reads in the accept path go through the tenant-scoped collection (`list()`),

@@ -150,6 +150,8 @@ export interface TaskRunnerEvents {
  */
 const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
 const DEFAULT_IDLE_POLL_INTERVAL_MULTIPLIER = 20;
+/** Ids per surplus-release statement, well under driver bind-parameter caps. */
+const SURPLUS_RELEASE_CHUNK = 500;
 
 /**
  * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
@@ -216,6 +218,8 @@ export class TaskRunner extends EventEmitter {
   private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
+  /** Over-claimed job ids whose release back to `pending` has not landed. */
+  private unreleasedSurplus = new Set<string>();
   private pollTimer: NodeJS.Timeout | null = null;
   private idlePollDelayMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
@@ -361,6 +365,10 @@ export class TaskRunner extends EventEmitter {
     // through the drain so a still-executing handler keeps its lease fresh and
     // isn't recovered by a peer; both are torn down after the drain below.
 
+    // A planned stop must not leave over-claimed rows `running`: the next
+    // incarnation's recovery would fail them as orphans without running them.
+    await this.retryUnreleasedSurplus();
+
     // Wait for active jobs to complete (with timeout)
     this.shutdownPromise = this.waitForActiveJobs();
 
@@ -462,6 +470,7 @@ export class TaskRunner extends EventEmitter {
     if (!this.collection || !this.db) return true;
 
     await this.recoverStaleJobs();
+    await this.retryUnreleasedSurplus();
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -469,11 +478,19 @@ export class TaskRunner extends EventEmitter {
 
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
-    const jobs = await this.collection.claimReady({
+    const claimed = await this.collection.claimReady({
       workerId: this.workerKey,
       queues: this.config.queues,
       limit: available,
     });
+
+    // `concurrency` is a hard cap: never start more jobs than free slots, even
+    // if a claim returns extra rows (a PostgreSQL claim once took the whole
+    // backlog, #3145). Surplus rows go back to `pending` untouched.
+    const jobs = claimed.slice(0, available);
+    if (claimed.length > available) {
+      await this.releaseSurplusClaims(claimed.slice(available));
+    }
 
     for (const job of jobs) {
       const jobId = job.id;
@@ -494,6 +511,66 @@ export class TaskRunner extends EventEmitter {
     }
 
     return jobs.length > 0;
+  }
+
+  /**
+   * Return over-claimed rows to `pending` with their claim undone, so the
+   * attempt is not consumed and any worker can claim them normally. Only rows
+   * this incarnation still owns as `running` and is not executing are
+   * touched, in chunked statements.
+   *
+   * A failed release keeps the ids; it is retried at the start of every poll
+   * and once more by `stop()`. If the process dies first, stale recovery fails
+   * those rows as orphaned (it does not requeue them).
+   */
+  private async releaseSurplusClaims(surplus: SmrtJob[]): Promise<void> {
+    const ids = surplus
+      .map((job) => job.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) return;
+    this.emit(
+      'runner:error',
+      new Error(
+        `claimReady returned ${ids.length} job(s) beyond the concurrency limit (${this.config.concurrency}); releasing them back to pending`,
+      ),
+    );
+    for (const id of ids) this.unreleasedSurplus.add(id);
+    await this.retryUnreleasedSurplus();
+  }
+
+  private async retryUnreleasedSurplus(): Promise<void> {
+    if (!this.db) return;
+    // A retained id this runner has since claimed normally is live work, not
+    // surplus: never unclaim a job this incarnation is executing.
+    for (const id of this.unreleasedSurplus) {
+      if (this.activeJobs.has(id)) this.unreleasedSurplus.delete(id);
+    }
+    const ids = [...this.unreleasedSurplus];
+    for (let i = 0; i < ids.length; i += SURPLUS_RELEASE_CHUNK) {
+      const chunk = ids.slice(i, i + SURPLUS_RELEASE_CHUNK);
+      const placeholders = chunk.map(() => '?').join(', ');
+      try {
+        await this.db.query(
+          `UPDATE _smrt_jobs
+              SET status = 'pending',
+                  worker_id = NULL,
+                  worker_heartbeat = NULL,
+                  started_at = NULL,
+                  attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+                  updated_at = ?
+            WHERE worker_id = ? AND status = 'running' AND id IN (${placeholders})`,
+          new Date().toISOString(),
+          this.workerKey,
+          ...chunk,
+        );
+        // Rows the statement did not match are no longer this worker's
+        // `running` claim, so there is nothing left to release for them.
+        for (const id of chunk) this.unreleasedSurplus.delete(id);
+      } catch (error) {
+        // Still `running` under this worker's live lease; never started here.
+        this.emit('runner:error', error as Error);
+      }
+    }
   }
 
   /**

@@ -417,8 +417,17 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
    * Atomically claim pending jobs ready to run for a worker.
    *
    * The claim is performed as one conditional UPDATE so concurrent workers
-   * cannot receive the same pending row. PostgreSQL additionally skips rows
-   * locked by other workers instead of waiting behind them.
+   * cannot receive the same pending row, and it never claims more than
+   * `limit` rows. PostgreSQL additionally skips rows locked by other workers
+   * instead of waiting behind them.
+   *
+   * On PostgreSQL the candidate set is selected once in a `MATERIALIZED` CTE
+   * and the UPDATE joins to it. The previous `WHERE id IN (SELECT … LIMIT ?
+   * FOR UPDATE SKIP LOCKED)` form let the planner choose a nested-loop semi
+   * join that rescans the subquery for every outer pending row; each rescan
+   * skipped the row the statement had just updated and returned the next one,
+   * so a single claim could take the whole backlog and a `concurrency: 1`
+   * runner started every ready job at once (#3145).
    */
   async claimReady(options: ClaimReadyOptions): Promise<SmrtJob[]> {
     const limit = options.limit ?? 100;
@@ -435,34 +444,44 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       whereParams.push(...options.queues);
     }
 
-    const lockClause =
-      getDatabaseEngine(this.db) === 'postgres'
-        ? ' FOR UPDATE SKIP LOCKED'
-        : '';
+    const isPostgres = getDatabaseEngine(this.db) === 'postgres';
     const candidateSelect = `
-      SELECT id
+      SELECT id AS claim_id
         FROM _smrt_jobs
        WHERE ${whereConditions.join(' AND ')}
        ORDER BY priority DESC, run_at ASC, created_at ASC, id ASC
-       LIMIT ?${lockClause}
+       LIMIT ?${isPostgres ? ' FOR UPDATE SKIP LOCKED' : ''}
     `;
-
-    const claimed = await this.query(
-      `UPDATE _smrt_jobs
+    const setClause = `
           SET status = 'running',
               worker_id = ?,
               worker_heartbeat = ?,
               started_at = ?,
               attempts = attempts + 1,
-              updated_at = ?
-        WHERE id IN (${candidateSelect})
-          AND status = 'pending'
-        RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
-      [options.workerId, nowIso, nowIso, nowIso, ...whereParams, limit],
-      // Worker-internal cross-tenant claim; tenant context is restored
-      // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
-      { allowRawOnTenantScoped: true },
-    );
+              updated_at = ?`;
+    const setParams = [options.workerId, nowIso, nowIso, nowIso];
+
+    // Worker-internal cross-tenant claim; tenant context is restored
+    // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
+    const claimed = isPostgres
+      ? await this.query(
+          `WITH claim_candidates AS MATERIALIZED (${candidateSelect})
+           UPDATE _smrt_jobs${setClause}
+             FROM claim_candidates
+            WHERE _smrt_jobs.id = claim_candidates.claim_id
+              AND _smrt_jobs.status = 'pending'
+            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
+          [...whereParams, limit, ...setParams],
+          { allowRawOnTenantScoped: true },
+        )
+      : await this.query(
+          `UPDATE _smrt_jobs${setClause}
+            WHERE id IN (${candidateSelect})
+              AND status = 'pending'
+            RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
+          [...setParams, ...whereParams, limit],
+          { allowRawOnTenantScoped: true },
+        );
 
     return claimed.toSorted(compareClaimOrder);
   }
