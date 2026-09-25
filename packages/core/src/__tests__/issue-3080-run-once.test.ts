@@ -8,6 +8,7 @@
  * the claim table directly, or by calling the pure resolver function.
  */
 
+import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunOnceClaimError } from '../errors';
@@ -203,6 +204,24 @@ describe('runOnce (#3080)', () => {
       expect(withFile('a.txt')).toBe(withFile('a.txt'));
     });
 
+    it('never collides with a plain object shaped like the FormData tag', () => {
+      const data = form([['sku', 'widget-1']]);
+      const forged = { '\u0000FormData': [['sku', 'widget-1']] };
+      expect(digestRunOnceContent(data)).not.toBe(digestRunOnceContent(forged));
+      expect(digestRunOnceContent({ a: data, b: forged })).not.toBe(
+        digestRunOnceContent({ a: data, b: data }),
+      );
+    });
+
+    it('keeps plain JSON digests unchanged', () => {
+      // sha256 of the sorted-key JSON, as #3080 stored it.
+      expect(digestRunOnceContent({ sku: 'widget-1', amount: 100 })).toBe(
+        createHash('sha256')
+          .update('{"amount":100,"sku":"widget-1"}')
+          .digest('hex'),
+      );
+    });
+
     it('rejects values JSON would reduce to {}', () => {
       expect(() => digestRunOnceContent(new Map([['a', 1]]))).toThrow(
         TypeError,
@@ -211,6 +230,9 @@ describe('runOnce (#3080)', () => {
         TypeError,
       );
       expect(() => digestRunOnceContent({ n: 1n })).toThrow(TypeError);
+      expect(() => digestRunOnceContent({ pattern: /first/ })).toThrow(
+        TypeError,
+      );
     });
   });
 
