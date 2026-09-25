@@ -253,6 +253,7 @@ async function applyInvoiceEvent(
   if (
     standing &&
     standing !== 'current' &&
+    runtime.hasPaymentRails &&
     (await pauseForConfirmingAttempts(
       runtime,
       db,
@@ -285,7 +286,8 @@ async function settlePaidInvoice(
   if (invoice.status === InvoiceStatus.PAID) return;
   if (
     state.paidOutOfBand ||
-    (await railSettlementPending(runtime, db, String(invoice.id)))
+    (runtime.hasPaymentRails &&
+      (await railSettlementPending(runtime, db, String(invoice.id))))
   ) {
     // The issuer collected nothing: the payment rail that took the money
     // (#3138) records it. Wait for that rather than recording a payment.

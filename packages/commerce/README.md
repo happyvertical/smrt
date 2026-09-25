@@ -378,6 +378,8 @@ await billing.processEvents();
   elsewhere) — capped cumulatively, once per reference; an invoice payment
   applied to its invoice is reversed at the issuer, not here.
   `recordCryptoConversion()` posts a conversion with FX gain/loss.
+- **Upgrading.** Additive schema: `_smrt_billing_payment_attempts` (run
+  `smrt db:migrate`). A runtime without `paymentProviders` never reads it.
 - **One live payment per invoice**, and the issuer's own `paid` event for an
   invoice closed out of band never records a payment: the rail does.
 - **Entities.** Each legal entity is its own seller runtime with its own

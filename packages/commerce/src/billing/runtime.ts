@@ -326,6 +326,16 @@ export class BillingRuntime {
     return found;
   }
 
+  /**
+   * Whether any payment rail is configured (#3138). A runtime without one
+   * never touches payment attempts, so it needs no attempt table.
+   */
+  get hasPaymentRails(): boolean {
+    return this.providers.some(
+      (provider) => providerCapabilities(provider).paymentAttempts,
+    );
+  }
+
   /** Every provider of this runtime: the issuing one first. */
   get providers(): BillingProvider[] {
     return [...this.providersByName.values()];
