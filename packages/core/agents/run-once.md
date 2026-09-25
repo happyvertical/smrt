@@ -17,7 +17,10 @@ re-introducing.
 ## Key derivation
 
 ```
-contentDigest = sha256(stableStringify(normalizeRunOnceContent(content)))
+normalized    = normalizeRunOnceContent(content)   // one pass; FormData captured as a node
+contentDigest = containsFormData(normalized)
+  ? sha256("\u0001run-once-formdata-v1\n" + stableStringify(toFormDataDomain(normalized)))
+  : sha256(stableStringify(normalized))              // plain JSON: unchanged since #3080
 claimKey      = sha256(stableStringify([tenantId, actor, token, contentDigest]))
 ```
 

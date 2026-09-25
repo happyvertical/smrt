@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunOnceClaimError } from '../errors';
+import { stableStringify } from '../knowledge-graph';
 import {
   deriveRunOnceClaimKey,
   digestRunOnceContent,
@@ -234,6 +235,19 @@ describe('runOnce (#3080)', () => {
       const b = once(form([['sku', 'widget-2']]));
       expect(a.calls()).toBe(1);
       expect(a.digest).not.toBe(b.digest);
+    });
+
+    it('follows JSON for toJSON(key) and omitted members', () => {
+      const viaJson = (value: unknown) =>
+        createHash('sha256')
+          .update(stableStringify(JSON.parse(JSON.stringify(value) ?? 'null')))
+          .digest('hex');
+      const keyed = { field: { toJSON: (key: string) => key } };
+      expect(digestRunOnceContent(keyed)).toBe(viaJson(keyed));
+      const omitted = { a: 1, b: { toJSON: () => undefined }, c: () => 1 };
+      expect(digestRunOnceContent(omitted)).toBe(viaJson(omitted));
+      const inArray = [1, undefined, () => 1];
+      expect(digestRunOnceContent(inArray)).toBe(viaJson(inArray));
     });
 
     it('keeps plain JSON digests unchanged', () => {

@@ -160,10 +160,15 @@ interface NormalizeState {
   sawFormData: boolean;
 }
 
+/** Marks a value JSON omits from an object (and writes as `null` in an array). */
+const OMIT: unique symbol = Symbol('run-once-omit');
+
 /**
  * Reduce `content` to plain JSON data before hashing, following JSON
- * serialization (`toJSON()` is honoured, so a `Date` digests as its ISO
- * string; `undefined` object members are dropped) with two differences:
+ * serialization exactly — `toJSON(key)` is called with the property name or
+ * array index (so a `Date` digests as its ISO string), and `undefined`,
+ * function and symbol values are omitted from objects and written as `null` in
+ * arrays — with two differences:
  *
  * - A native `FormData` has no own enumerable properties, so JSON reduces
  *   every form to `{}` and would collapse distinct submissions (#3136). It
@@ -171,25 +176,36 @@ interface NormalizeState {
  *   are significant — and a `File`/`Blob` entry digests by name, type and
  *   size, never its bytes.
  * - Values JSON would silently misrepresent (`Map`, `Set`, `RegExp`, any other
- *   non-plain object without `toJSON()`, functions, symbols, `bigint`) are
+ *   non-plain object without `toJSON()`) or cannot serialize (`bigint`) are
  *   rejected, not hashed as `{}`.
  */
 function normalizeRunOnceContent(
-  value: unknown,
+  input: unknown,
   state: NormalizeState,
+  key: string,
 ): unknown {
-  if (value === null || value === undefined) return null;
+  let value = input;
+  if (
+    value !== null &&
+    (typeof value === 'object' || typeof value === 'bigint') &&
+    typeof (value as { toJSON?: unknown }).toJSON === 'function'
+  ) {
+    value = (value as { toJSON: (key: string) => unknown }).toJSON(key);
+  }
+  if (value === null) return null;
   switch (typeof value) {
+    case 'undefined':
+    case 'function':
+    case 'symbol':
+      return OMIT;
     case 'string':
     case 'boolean':
       return value;
     case 'number':
       return Number.isFinite(value) ? value : null;
     case 'bigint':
-    case 'function':
-    case 'symbol':
       throw new TypeError(
-        `runOnce content cannot contain a ${typeof value}; pass plain JSON data`,
+        'runOnce content cannot contain a bigint; pass plain JSON data',
       );
   }
   if (typeof FormData !== 'undefined' && value instanceof FormData) {
@@ -197,8 +213,8 @@ function normalizeRunOnceContent(
     const entries: Array<[string, unknown]> = [];
     // `forEach`, not `entries()`: consumers type-check core's source against
     // DOM libs without `DOM.Iterable`, where FormData is not iterable.
-    value.forEach((entry, key) => {
-      entries.push([key, normalizeRunOnceContent(entry, state)]);
+    value.forEach((entry, name) => {
+      entries.push([name, normalizeRunOnceContent(entry, state, name)]);
     });
     return new NormalizedFormData(entries);
   }
@@ -209,12 +225,11 @@ function normalizeRunOnceContent(
       type: value.type,
     };
   }
-  const withToJSON = value as { toJSON?: () => unknown };
-  if (typeof withToJSON.toJSON === 'function') {
-    return normalizeRunOnceContent(withToJSON.toJSON(), state);
-  }
   if (Array.isArray(value)) {
-    return value.map((item) => normalizeRunOnceContent(item, state));
+    return value.map((item, index) => {
+      const normalized = normalizeRunOnceContent(item, state, String(index));
+      return normalized === OMIT ? null : normalized;
+    });
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
@@ -226,15 +241,9 @@ function normalizeRunOnceContent(
     );
   }
   const result: Record<string, unknown> = Object.create(null);
-  for (const [key, member] of Object.entries(value as object)) {
-    if (
-      member === undefined ||
-      typeof member === 'function' ||
-      typeof member === 'symbol'
-    ) {
-      continue; // JSON drops these object members
-    }
-    result[key] = normalizeRunOnceContent(member, state);
+  for (const [member, memberValue] of Object.entries(value as object)) {
+    const normalized = normalizeRunOnceContent(memberValue, state, member);
+    if (normalized !== OMIT) result[member] = normalized;
   }
   return result;
 }
@@ -282,7 +291,9 @@ function toFormDataDomain(value: unknown): unknown {
  */
 export function digestRunOnceContent(content: unknown): string {
   const state: NormalizeState = { sawFormData: false };
-  const normalized = normalizeRunOnceContent(content, state);
+  const captured = normalizeRunOnceContent(content, state, '');
+  // JSON.stringify of a top-level omitted value is `undefined`; #3080 hashed it as null.
+  const normalized = captured === OMIT ? null : captured;
   const input = state.sawFormData
     ? FORM_DATA_DOMAIN + stableStringify(toFormDataDomain(normalized))
     : stableStringify(normalized);
