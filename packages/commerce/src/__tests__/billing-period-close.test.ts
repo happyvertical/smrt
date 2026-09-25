@@ -888,6 +888,14 @@ describe('smrt#3060 billing-period close', () => {
       );
       expect(String(stored.rows[0]?.payload)).not.toContain('not ours');
       expect(await grants(SOLO)).toEqual([]);
+      // A paid event is applied against the re-read session: until the
+      // customer pays, nothing is credited even if the event says paid.
+      await deliver(world, checkoutEvent(session));
+      expect(await grants(SOLO)).toEqual([]);
+      // No provider customer yet: Checkout collects the tax location.
+      world.stripe.completeSession(checkout.sessionId, {
+        address: { country: 'US', postal_code: '94107' },
+      });
       await deliver(world, checkoutEvent(session));
       await deliver(
         world,
@@ -909,6 +917,17 @@ describe('smrt#3060 billing-period close', () => {
       );
       expect(payments).toHaveLength(1);
       expect(payments[0]?.status).toBe(PaymentStatus.COMPLETED);
+      // SOLO is taxed (US, 5% in the fake): tax is charged on top of the
+      // credit, and the payment is the amount collected.
+      expect(session).toMatchObject({
+        automatic_tax: true,
+        customer_update_address: false,
+        billing_address_collection: 'required',
+        amount_subtotal: 5000,
+        amount_tax: 250,
+        amount_total: 5250,
+      });
+      expect(payments[0]?.amount).toBe(5250);
     });
 
     it('lets only the payer buy credit: the parent for a delegated balance', async () => {
@@ -946,8 +965,7 @@ describe('smrt#3060 billing-period close', () => {
           purchaseId: 'network-topup',
         }),
       );
-      const session = world.stripe.sessions.get(checkout.sessionId);
-      if (!session) throw new Error('missing session');
+      const session = world.stripe.completeSession(checkout.sessionId);
       await deliver(world, checkoutEvent(session));
       expect(await grants(SITE)).toMatchObject([
         { amount: 2000, grantedByTenantId: NETWORK },
@@ -965,35 +983,60 @@ describe('smrt#3060 billing-period close', () => {
           purchaseId: 'p',
         }),
       );
-      const session = world.stripe.sessions.get(checkout.sessionId);
-      if (!session) throw new Error('missing session');
-      await deliver(world, checkoutEvent({ ...session, amount_subtotal: 1 }));
+      const session = world.stripe.completeSession(checkout.sessionId);
+      // The event's own amounts are not trusted: the provider's session is.
+      session.amount_subtotal = 1;
+      await deliver(world, checkoutEvent({ ...session, amount_subtotal: 700 }));
       expect(await grants(SOLO)).toEqual([]);
       // A discounted session reports the full subtotal but collects less.
-      await deliver(
-        world,
-        checkoutEvent({ ...session, id: 'cs_discounted', amount_total: 0 }),
-      );
+      session.amount_subtotal = 700;
+      session.amount_total = 0;
+      await deliver(world, checkoutEvent(session));
       expect(await grants(SOLO)).toEqual([]);
       const rows = await world.db.query(
-        'SELECT status, last_error FROM _smrt_forge_deliveries',
+        'SELECT status, last_error FROM _smrt_forge_deliveries ORDER BY created_at',
       );
-      expect(rows.rows[0]).toMatchObject({ status: 'retry' });
-      expect(String(rows.rows[0]?.last_error)).toContain('expected 700 USD');
+      expect(rows.rows).toHaveLength(2);
+      for (const row of rows.rows) {
+        expect(row).toMatchObject({ status: 'retry' });
+        expect(String(row.last_error)).toContain('expected 700 USD');
+      }
     });
 
-    it('refuses zero-decimal checkout currencies', async () => {
-      await expect(
-        world.provider.provider.createCheckout({
-          idempotencyKey: 'k',
-          currency: 'JPY',
-          amount: 100,
-          description: 'x',
+    it('prices checkouts in ISO minor units for zero- and three-decimal currencies', async () => {
+      // ISO exponent vs Stripe's unit: JPY 0/0, ISK 0/2, IQD 3/3, MGA 2/0.
+      const cases: Array<[string, number, number]> = [
+        ['JPY', 1200, 1200],
+        ['ISK', 500, 50_000],
+        ['IQD', 1500, 1500],
+        ['MGA', 15_000, 150],
+        ['USD', 1999, 1999],
+      ];
+      for (const [currency, amount, stripeAmount] of cases) {
+        const created = await world.provider.provider.createCheckout({
+          idempotencyKey: `iso-${currency}`,
+          currency,
+          amount,
+          description: 'Prepaid credit',
           successUrl: 'https://a.test',
           cancelUrl: 'https://a.test',
           metadata: {},
-        }),
-      ).rejects.toThrow(/two-decimal/);
+        });
+        const session = world.stripe.sessions.get(created.sessionId);
+        expect(session?.amount_subtotal, currency).toBe(stripeAmount);
+        world.stripe.completeSession(created.sessionId);
+        // The re-read converts Stripe's unit back to ISO minor units.
+        expect(
+          await world.provider.provider.getCheckout?.(created.sessionId),
+          currency,
+        ).toMatchObject({
+          complete: true,
+          paid: true,
+          currency,
+          amountSubtotal: amount,
+          amountTotal: amount,
+        });
+      }
     });
   });
 

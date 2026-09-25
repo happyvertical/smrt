@@ -10,9 +10,11 @@
  */
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import { JournalCollection } from '@happyvertical/smrt-ledgers';
 import {
   CreditGrantCollection,
   SpendingPolicyCollection,
+  SpendingPolicyEvaluator,
 } from '@happyvertical/smrt-subscriptions';
 import {
   disableTenancy,
@@ -25,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BillingRuntime } from '../billing/runtime.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
+import { PaymentInstrumentCollection } from '../collections/PaymentInstrumentCollection.js';
 import { InvoiceStatus, PaymentStatus } from '../types/index.js';
 import {
   addNetworkSite,
@@ -49,6 +52,7 @@ import {
 import {
   checkoutEvent,
   invoiceEvent,
+  paymentIntentEvent,
   signedEvent,
 } from './helpers/fake-stripe.js';
 
@@ -75,6 +79,7 @@ const OBJECTS = [
   'InvoiceLineItem',
   'Payment',
   'PaymentAllocation',
+  'PaymentInstrument',
   'BillingAccount',
   'BillingPeriodClose',
   'BillingLineSource',
@@ -230,8 +235,9 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
         purchaseId: 'pg-cart',
       }),
     );
-    const session = world.stripe.sessions.get(checkout.sessionId);
-    if (!session) throw new Error('missing session');
+    const session = world.stripe.completeSession(checkout.sessionId, {
+      address: { country: 'US' },
+    });
     for (const event of [
       checkoutEvent(session),
       checkoutEvent(
@@ -457,5 +463,159 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
       (await InvoiceCollection.create({ db })).get(String(invoice?.id)),
     );
     expect(settled?.status).toBe(InvoiceStatus.PAID);
+  });
+  it('tops up a balance exactly once across connections (#3139)', async () => {
+    const { world, peer } = await twoWorkers();
+    const firstDb = world.db;
+    const secondDb = peer.db;
+    const policies = await SpendingPolicyCollection.create({ db: firstDb });
+    const policyFor = (tenantId: string) =>
+      withSystemContext(() =>
+        policies.create({
+          tenantId,
+          name: 'Prepaid',
+          period: 'balance',
+          currency: 'USD',
+          behavior: 'block',
+        }),
+      );
+    const saveCard = async (payer: string, method: string) => {
+      const setup = await withTenant({ tenantId: payer }, () =>
+        world.provider.createCardSetupCheckout({
+          payerTenantId: payer,
+          currency: 'USD',
+          setupId: method,
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      const session = world.stripe.completeSession(setup.sessionId, {
+        paymentMethod: method,
+      });
+      const { payload, signature } = signedEvent(checkoutEvent(session));
+      await world.provider.acceptWebhook(payload, signature);
+      await world.provider.processEvents();
+    };
+    const evaluators = async (recheckAfterMs?: number) => [
+      await SpendingPolicyEvaluator.create({
+        db: firstDb,
+        autoTopUp: world.provider.autoTopUpHook({ recheckAfterMs }),
+      }),
+      await SpendingPolicyEvaluator.create({
+        db: secondDb,
+        autoTopUp: peer.autoTopUpHook({ recheckAfterMs }),
+      }),
+    ];
+    const spend = (
+      evaluator: SpendingPolicyEvaluator,
+      tenantId: string,
+      estimatedAmount: number,
+    ) =>
+      withSystemContext(() =>
+        evaluator.evaluate({
+          tenantId,
+          metricKey: 'ai.tokens',
+          estimatedAmount,
+          currency: 'USD',
+        }),
+      );
+    const topUpJournals = async (paymentId: string) =>
+      withTenant({ tenantId: PROVIDER }, async () =>
+        (await JournalCollection.create({ db: firstDb })).list({
+          where: { sourceRef: paymentId, status: 'posted' },
+        }),
+      );
+    const grantsOf = (tenantId: string) =>
+      withSystemContext(async () =>
+        (await CreditGrantCollection.create({ db: firstDb })).list({
+          where: { tenantId },
+        }),
+      );
+
+    // Untaxed payers: taxed accounts are not topped up by default.
+    await withSystemContext(async () => {
+      await world.provider.upsertAccount({
+        payerTenantId: SOLO,
+        name: 'Solo LLC',
+        automaticTax: false,
+      });
+      await world.provider.upsertAccount({
+        payerTenantId: NETWORK,
+        name: 'Network Co',
+        automaticTax: false,
+      });
+    });
+    // Racing evaluations on two connections charge the card once.
+    await policyFor(SOLO);
+    await saveCard(SOLO, 'pm_pg_solo');
+    const [one, two] = await evaluators();
+    if (!one || !two) throw new Error('missing evaluators');
+    await Promise.all([
+      spend(one, SOLO, 600),
+      spend(two, SOLO, 600),
+      spend(one, SOLO, 600),
+      spend(two, SOLO, 600),
+    ]);
+    expect(world.stripe.paymentIntents.size).toBe(1);
+    expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([600]);
+    const soloAttempts = (
+      await withTenant({ tenantId: PROVIDER }, async () =>
+        (await PaymentCollection.create({ db: firstDb })).list({}),
+      )
+    ).filter((row) => row.reference.startsWith('auto-top-up:'));
+    const [soloAttempt] = soloAttempts.filter(
+      (row) => row.status === PaymentStatus.COMPLETED,
+    );
+    expect(soloAttempts).toHaveLength(1);
+    expect(await topUpJournals(String(soloAttempt?.id))).toHaveLength(1);
+    const instruments = await PaymentInstrumentCollection.create({
+      db: firstDb,
+    });
+    const typed = await firstDb.query(
+      `SELECT data_type FROM information_schema.columns
+        WHERE table_name = ? AND column_name = 'id'`,
+      instruments.tableName,
+    );
+    expect(typed.rows[0]).toMatchObject({ data_type: 'uuid' });
+
+    // A processing charge settled at once by a re-drive on one connection
+    // and by its webhook on the other is credited and booked once.
+    await policyFor(NETWORK);
+    await saveCard(NETWORK, 'pm_pg_bank');
+    world.stripe.cards.set('pm_pg_bank', 'processing');
+    const [first] = await evaluators();
+    if (!first) throw new Error('missing evaluator');
+    await spend(first, NETWORK, 900);
+    expect(await grantsOf(NETWORK)).toEqual([]);
+    const intent = [...world.stripe.paymentIntents.values()].find(
+      (row) => row.payment_method === 'pm_pg_bank',
+    );
+    const settled = world.stripe.settlePaymentIntent(
+      String(intent?.id),
+      'succeeded',
+    );
+    const { payload, signature } = signedEvent(
+      paymentIntentEvent('payment_intent.succeeded', settled),
+    );
+    await peer.acceptWebhook(payload, signature);
+    const [redrive] = await evaluators(0);
+    if (!redrive) throw new Error('missing evaluator');
+    await Promise.all([spend(redrive, NETWORK, 900), peer.processEvents()]);
+    await peer.processEvents(); // a webhook that lost the race retries
+    expect((await grantsOf(NETWORK)).map((grant) => grant.amount)).toEqual([
+      900,
+    ]);
+    const bankAttempt = (
+      await withTenant({ tenantId: PROVIDER }, async () =>
+        (
+          await PaymentCollection.create({ db: firstDb })
+        ).list({
+          where: { externalId: String(intent?.id) },
+        }),
+      )
+    )[0];
+    expect(bankAttempt?.status).toBe(PaymentStatus.COMPLETED);
+    expect(await topUpJournals(String(bankAttempt?.id))).toHaveLength(1);
+    expect(world.stripe.paymentIntents.size).toBe(2);
   });
 });

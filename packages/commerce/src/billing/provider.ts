@@ -31,6 +31,15 @@ export interface BillingProviderInvoiceLine {
   periodEnd?: Date;
 }
 
+/**
+ * How the provider collects an invoice. `charge_automatically` charges the
+ * payer's saved default payment method after the invoice is sent, on the
+ * provider's own schedule; the outcome arrives as a `paid` or
+ * `payment_failed` event. A provider that cannot pull funds from a saved
+ * method must reject it, never fall back to `send_invoice`.
+ */
+export type BillingCollectionMethod = 'send_invoice' | 'charge_automatically';
+
 export interface BillingProviderInvoiceInput {
   /** Local invoice id; the provider tags its invoice with it. */
   invoiceId: string;
@@ -46,10 +55,21 @@ export interface BillingProviderInvoiceInput {
   idempotencyKey: string;
   /** Ask the provider to calculate tax from the customer's tax location. */
   automaticTax: boolean;
+  /** Default `send_invoice` (#3139). */
+  collectionMethod?: BillingCollectionMethod;
   memo?: string;
 }
 
-export type BillingProviderInvoiceStatus = 'draft' | 'open' | 'paid' | 'void';
+/**
+ * `uncollectible` is an open balance the seller wrote off (#3139); it can
+ * still be paid or voided later.
+ */
+export type BillingProviderInvoiceStatus =
+  | 'draft'
+  | 'open'
+  | 'paid'
+  | 'void'
+  | 'uncollectible';
 
 export interface BillingProviderInvoiceState {
   providerInvoiceId: string;
@@ -87,11 +107,98 @@ export interface BillingProviderCheckoutInput {
   cancelUrl: string;
   /** Opaque values returned verbatim on the completion event. */
   metadata: Record<string, string>;
+  /**
+   * Charge provider-calculated tax on top of `amount` (#3139). The buyer's
+   * tax location is collected at checkout when the customer has none.
+   */
+  automaticTax?: boolean;
+  /**
+   * Also save the payment method for later off-session charges (for example
+   * automatic top-ups). Requires `providerCustomerId`.
+   */
+  savePaymentMethod?: boolean;
 }
 
 export interface BillingProviderCheckoutSession {
   sessionId: string;
   url: string | null;
+}
+
+/** A checkout that saves a payment method without charging (#3139). */
+export interface BillingProviderSetupCheckoutInput {
+  /** Stable key reused when retrying the same checkout creation. */
+  idempotencyKey: string;
+  providerCustomerId: string;
+  /** The currency the saved method will be charged in. */
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  /** Collect the billing address (tax location) and save it to the customer. */
+  collectBillingAddress: boolean;
+  /** Opaque values returned verbatim on the completion event. */
+  metadata: Record<string, string>;
+}
+
+/** A checkout session as the provider reports it now (#3139). */
+export interface BillingProviderCheckoutState {
+  sessionId: string;
+  mode: 'payment' | 'setup' | 'other';
+  /** The session completed (paid, or a payment method was saved). */
+  complete: boolean;
+  /** A payment-mode session collected its money. */
+  paid: boolean;
+  providerCustomerId?: string;
+  /** The payment method the session collected. */
+  paymentMethodId?: string;
+  currency?: string;
+  /** Line amount before discounts and tax, minor units. */
+  amountSubtotal?: number;
+  /** Provider-calculated tax, minor units. */
+  amountTax?: number;
+  /** Amount collected, minor units. */
+  amountTotal?: number;
+  /**
+   * The customer's billing address after a completed session that was asked
+   * to collect one.
+   */
+  billingAddress?: Address;
+}
+
+/**
+ * The outcome of an off-session charge (#3139). `processing` settles later
+ * through a `payment` event; `requires_action` (the issuer wants the payer
+ * present), `failed`, and `canceled` charged nothing.
+ */
+export type BillingChargeStatus =
+  | 'succeeded'
+  | 'processing'
+  | 'requires_action'
+  | 'failed'
+  | 'canceled';
+
+export interface BillingProviderChargeInput {
+  providerCustomerId: string;
+  /** Positive integer minor units. */
+  amount: number;
+  currency: string;
+  /**
+   * Stable key for this logical charge. Every retry with it returns the
+   * original charge; a new attempt needs a new key.
+   */
+  idempotencyKey: string;
+  description?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface BillingProviderChargeResult {
+  status: BillingChargeStatus;
+  /** The provider payment id, when one was created. */
+  providerPaymentId?: string;
+  /** Minor units. */
+  amount: number;
+  currency: string;
+  failureCode?: string;
+  failureMessage?: string;
 }
 
 /** Invoice lifecycle changes this package acts on. */
@@ -119,14 +226,36 @@ export type BillingProviderEvent =
       kind: 'checkout_completed';
       eventId: string;
       sessionId: string;
+      /** `payment` (credit purchase) or `setup` (card on file, #3139). */
+      mode?: 'payment' | 'setup';
       /** Only `paid` sessions settle a credit purchase. */
       paid: boolean;
       currency: string;
-      /** Line-item amount before discounts and tax, minor units. */
-      amountSubtotal: number;
+      /**
+       * Line-item amount before discounts and tax, minor units. Omitted by a
+       * provider whose event amounts are not minor units; `observe()` then
+       * re-reads the session with `getCheckout()`.
+       */
+      amountSubtotal?: number;
+      /** Provider-calculated tax, minor units. */
+      amountTax?: number;
       /** Amount actually collected (after discounts, with tax), minor units. */
-      amountTotal: number;
+      amountTotal?: number;
       metadata: Record<string, string>;
+    }
+  | {
+      /** An off-session charge made by `chargeSavedPaymentMethod` (#3139). */
+      kind: 'payment';
+      eventId: string;
+      /** The `idempotencyKey` the charge was made with. */
+      chargeKey: string;
+      status: BillingChargeStatus;
+      providerPaymentId: string;
+      providerCustomerId?: string;
+      /** Minor units, when the provider amount converts exactly. */
+      amount?: number;
+      currency?: string;
+      failureCode?: string;
     }
   | { kind: 'ignored'; eventId: string; type: string };
 
@@ -162,6 +291,31 @@ export interface BillingProvider {
     payload: string,
     signature: string,
   ): Promise<BillingProviderEvent>;
+
+  // Optional capabilities (#3139). A provider that cannot do one omits the
+  // method, and callers detect the capability by its presence.
+
+  /**
+   * Charge the customer's saved default payment method off-session,
+   * idempotently by `input.idempotencyKey`. A decline or an authentication
+   * requirement is a result, not a throw.
+   */
+  chargeSavedPaymentMethod?(
+    input: BillingProviderChargeInput,
+  ): Promise<BillingProviderChargeResult>;
+  /** Start a checkout that saves a payment method without charging. */
+  createSetupCheckout?(
+    input: BillingProviderSetupCheckoutInput,
+  ): Promise<BillingProviderCheckoutSession>;
+  /** Re-read a checkout session, with amounts in minor units. */
+  getCheckout?(sessionId: string): Promise<BillingProviderCheckoutState>;
+  /** Make a saved payment method the customer's default. Idempotent. */
+  setDefaultPaymentMethod?(
+    providerCustomerId: string,
+    paymentMethodId: string,
+  ): Promise<void>;
+  /** Write an open invoice off as uncollectible. Idempotent. */
+  markInvoiceUncollectible?(providerInvoiceId: string): Promise<void>;
 }
 
 export class BillingWebhookVerificationError extends Error {

@@ -2,6 +2,7 @@
  * Prepaid credit purchases through provider checkout (#3060). A paid
  * checkout credits the balance policy through smrt-subscriptions'
  * `grantCredit()`, keyed by the checkout session so it is credited once.
+ * Provider-calculated tax is charged on top of the credit (#3139).
  */
 import {
   getTenantId,
@@ -10,6 +11,11 @@ import {
   TenantIsolationError,
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
+import {
+  assertCanSaveCards,
+  COLLECT_ADDRESS_METADATA,
+  SAVE_CARD_METADATA,
+} from './cards.js';
 import type { BillingProviderCheckoutSession } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
@@ -35,6 +41,18 @@ export interface CreateCreditCheckoutInput {
   purchaseId: string;
   /** Checkout line description (default `Prepaid credit`). */
   description?: string;
+  /**
+   * Charge provider-calculated tax on top of the credit (#3139). Default:
+   * the payer's account setting (`automaticTax`, off for tax-exempt
+   * customers). The credit granted is always `amount`; tax is booked to the
+   * tax account.
+   */
+  automaticTax?: boolean;
+  /**
+   * Also save the card as the payer's default for automatic top-ups and
+   * automatically charged invoices (#3139).
+   */
+  savePaymentMethod?: boolean;
 }
 
 /** The checkout metadata a completed purchase is settled from. */
@@ -135,6 +153,16 @@ export async function createCreditCheckout(
     throw new Error(`No billing account for payer ${payer}.`);
   }
   const currency = normalizeCurrency(policy.currency);
+  // Saving a card needs a provider customer to attach it to; the address may
+  // still be collected at checkout.
+  // Saving a card is settled from the checkout event, so refuse a provider
+  // that could take the money but not record the card.
+  if (input.savePaymentMethod) assertCanSaveCards(runtime);
+  const synced = input.savePaymentMethod
+    ? await runtime.ensureProviderCustomer(account, {
+        requireTaxLocation: false,
+      })
+    : null;
   const metadata = encodeMetadata({
     purpose: CREDIT_PURCHASE_PURPOSE,
     sellerTenantId: runtime.sellerTenantId,
@@ -152,9 +180,25 @@ export async function createCreditCheckout(
     input.purchaseId,
   ]);
   const providerCustomerId =
-    account.provider === runtime.provider.name
+    synced?.providerCustomerId ??
+    (account.provider === runtime.provider.name
       ? account.providerCustomerId
-      : '';
+      : '');
+  const automaticTax =
+    input.automaticTax ?? (await runtime.accountIsTaxed(account));
+  if (synced) metadata[SAVE_CARD_METADATA] = '1';
+  // A taxed checkout for a provider customer collects the address onto that
+  // customer; with no local tax location yet, it becomes the payer's (as a
+  // card setup does), so period close can tax the payer too. A checkout
+  // without a provider customer keeps no customer to read it from.
+  if (
+    automaticTax &&
+    providerCustomerId &&
+    runtime.provider.getCheckout &&
+    !(await runtime.hasTaxLocation(account))
+  ) {
+    metadata[COLLECT_ADDRESS_METADATA] = '1';
+  }
   return runtime.provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,
     providerCustomerId: providerCustomerId || undefined,
@@ -165,5 +209,7 @@ export async function createCreditCheckout(
     successUrl: input.successUrl,
     cancelUrl: input.cancelUrl,
     metadata,
+    automaticTax,
+    ...(input.savePaymentMethod ? { savePaymentMethod: true } : {}),
   });
 }

@@ -1,8 +1,9 @@
 /**
- * Billing-period close, provider events, and prepaid credit purchases
- * (#3060).
+ * Billing-period close, provider events, prepaid credit purchases (#3060),
+ * card on file, and automatic top-ups (#3139).
  * @packageDocumentation
  */
+export type { CreateCardSetupCheckoutInput } from './cards.js';
 export type { CreateCreditCheckoutInput } from './credits.js';
 export {
   addBillingMonths,
@@ -29,16 +30,22 @@ export {
   previousCalendarMonth,
 } from './period-close.js';
 export {
+  type BillingChargeStatus,
+  type BillingCollectionMethod,
   type BillingInvoiceEventType,
   type BillingProvider,
+  type BillingProviderChargeInput,
+  type BillingProviderChargeResult,
   type BillingProviderCheckoutInput,
   type BillingProviderCheckoutSession,
+  type BillingProviderCheckoutState,
   type BillingProviderCustomerInput,
   type BillingProviderEvent,
   type BillingProviderInvoiceInput,
   type BillingProviderInvoiceLine,
   type BillingProviderInvoiceState,
   type BillingProviderInvoiceStatus,
+  type BillingProviderSetupCheckoutInput,
   type BillingProviderSubscriptionState,
   BillingWebhookVerificationError,
 } from './provider.js';
@@ -46,6 +53,7 @@ export {
   type BillingLedgerAccounts,
   BillingRuntime,
   type BillingRuntimeOptions,
+  type EnsureProviderCustomerOptions,
   type PayerStandingChange,
   type PayerStandingHook,
   type SyncedBillingAccount,
@@ -55,6 +63,11 @@ export {
   createStripeBillingProvider,
   type StripeBillingProviderOptions,
 } from './stripe.js';
+export type {
+  AutoTopUpFailure,
+  AutoTopUpFailureHook,
+  AutoTopUpHookOptions,
+} from './top-up.js';
 export {
   currencyMinorUnitExponent,
   majorToMinorUnits,

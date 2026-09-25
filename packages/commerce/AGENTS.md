@@ -31,7 +31,13 @@ for usage.
 - **Port, not provider.** Period close, events, and credit checkout call only
   the `BillingProvider` port (integer minor units). `stripe.ts` adapts
   `@happyvertical/accounting`, which takes currency *major* units; convert with
-  `units.ts` (ISO 4217 exponent) and never hand-roll a Stripe call here.
+  `units.ts` and never hand-roll a Stripe call here. `units.ts` exponents are
+  an explicit ISO 4217 table matching the SDK's, never `Intl` display digits
+  (CLDR differs for IQD, MGA, … and drifts by ICU release). The SDK's
+  `*Minor` fields are already ISO minor units. Capabilities a rail may lack
+  (`chargeSavedPaymentMethod`, `createSetupCheckout`, `getCheckout`,
+  `setDefaultPaymentMethod`, `markInvoiceUncollectible`) are optional port
+  methods: detect them by presence, and keep additions optional (#3139).
   `sendAndReconcile` refuses a provider invoice whose subtotal or total
   disagrees with the local invoice.
 - **Replay safety is identity.** Close, invoice, line, payment, allocation,
@@ -70,20 +76,35 @@ for usage.
   and only `smrt_*` checkout metadata is kept; it is
   HMAC-signed with the webhook secret at creation (empty values are omitted:
   Stripe drops them), so another integration on the same account cannot forge
-  a credit purchase; credit is granted only when the collected total equals
-  it. Rotating the webhook secret strands in-flight checkouts (up to 24 h). `observe()` re-reads provider state, so
-  ordering never depends on delivery order. The standing hook runs inside the
-  event transaction and must be idempotent.
+  a credit purchase or a card setup; credit is granted only when the
+  collected total equals it plus provider tax. Checkout amounts come from the
+  re-read session (`getCheckout()`), never the Stripe event, whose amounts are
+  in Stripe's unit. Rotating the webhook secret strands in-flight checkouts
+  (up to 24 h). `observe()` re-reads provider state, so ordering never depends
+  on delivery order; the only provider writes in `observe()` are idempotent
+  (making a saved card the default). The standing hook runs inside the event
+  transaction and must be idempotent.
+- **Card on file and top-ups (#3139).** A saved card is the payer customer's
+  default `PaymentInstrument` (seller tenant, id from the provider method).
+  `autoChargeInvoices` bills such payers `charge_automatically`, decided at
+  first push; activation follows `paid`, never send. An auto top-up attempt
+  is a `PENDING` `Payment` (`reference` `auto-top-up:<policyId>`, id from the
+  policy and `count()` of its attempts) inserted before the charge, so racing
+  evaluations derive one id and one charge; the charge key is derived from
+  that id. `applyAutoTopUpOutcome()` must run in a transaction and starts with
+  a conditional `UPDATE … WHERE status = 'pending'` row lock, so the hook and
+  the `payment` webhook settle once; the grant is keyed by the charge key.
+  Never settle an attempt outside that function. Taxed accounts are skipped
+  unless `taxedAccounts: 'charge_untaxed'` (no tax on off-session charges,
+  happyvertical/sdk#1283). A provider write-off moves the local invoice to
+  `WRITTEN_OFF` (a later payment is recorded; the status stays).
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is
   server-managed (not API-writable). `toAccountingInput()` emits major units.
-- **Known limits** (each tracked upstream): provider customer creation is not
-  idempotent (happyvertical/sdk#1268); credit checkouts are untaxed and
-  two-decimal only (sdk#1269); `autoTopUp` cannot charge a saved card
-  (sdk#1270); Stripe line discounts and uncollectible status are worked around
-  as negative lines and event types (sdk#1271). `RetailCharge` has no
-  adjustment ledger. Flat plans are monthly, in arrears; plan changes are not
-  prorated (#3119). The Stripe adapter passes line service periods but
-  the accounting SDK does not send them to Stripe yet (happyvertical/sdk#1274).
+- **Known limits**: write-offs post no bad-debt journal (AR stays until paid
+  or journaled by an operator); discounts still reach Stripe as negative lines (the SDK's
+  line `discount` would change the lines a replayed push reconciles, so it
+  needs its own migration); `RetailCharge` has no adjustment ledger. Flat
+  plans are monthly, in arrears; plan changes are not prorated (#3119).
 
 ## Cross-Package References
 

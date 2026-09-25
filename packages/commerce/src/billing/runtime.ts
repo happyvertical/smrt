@@ -8,6 +8,7 @@ import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { ForgeDeliveryCollection } from '@happyvertical/smrt-jobs';
 import { JournalCollection } from '@happyvertical/smrt-ledgers';
 import {
+  type AutoTopUpHook,
   BillingAdjustmentCollection,
   type BillingRelationshipReader,
   ClientChargeCollection,
@@ -21,6 +22,7 @@ import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
+import { PaymentInstrumentCollection } from '../collections/PaymentInstrumentCollection.js';
 import {
   type BillingAccount,
   BillingAccountCollection,
@@ -30,7 +32,11 @@ import {
   type BillingStanding,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
-import type { Address } from '../types/index.js';
+import { type Address, InvoiceStatus } from '../types/index.js';
+import {
+  type CreateCardSetupCheckoutInput,
+  createCardSetupCheckout,
+} from './cards.js';
 import {
   type CreateCreditCheckoutInput,
   createCreditCheckout,
@@ -49,6 +55,11 @@ import type {
   BillingProvider,
   BillingProviderCheckoutSession,
 } from './provider.js';
+import {
+  type AutoTopUpFailureHook,
+  type AutoTopUpHookOptions,
+  createAutoTopUpHook,
+} from './top-up.js';
 import { canonicalTenantId, deterministicId } from './units.js';
 
 /** Ledger accounts billing posts to, in the seller's books. */
@@ -104,6 +115,22 @@ export interface BillingRuntimeOptions extends SmrtClassOptions {
   leaseMs?: number;
   /** Page size for charge scans (default 500). */
   pageSize?: number;
+  /**
+   * Bill payers whose default card with this provider is on file (saved by
+   * {@link BillingRuntime.createCardSetupCheckout} or a credit purchase with
+   * `savePaymentMethod`) with automatically charged invoices (#3139): the
+   * provider charges the card after the invoice is sent, and the `paid` or
+   * `payment_failed` event settles it. Default false (every invoice is sent
+   * for payment). Activate service on the `paid` event (a `current`
+   * standing), not on send: collection happens on the provider's schedule.
+   */
+  autoChargeInvoices?: boolean;
+  /**
+   * Called when an automatic top-up charge ends without collecting (a
+   * decline, or the issuer requiring the payer to authenticate), from the
+   * hook or the provider's `payment` event (#3139).
+   */
+  onAutoTopUpFailed?: AutoTopUpFailureHook;
 }
 
 export interface UpsertBillingAccountInput {
@@ -135,6 +162,16 @@ export interface SyncedBillingAccount {
   account: BillingAccount;
   providerCustomerId: string;
   automaticTax: boolean;
+  /** The customer has a billing address country (its tax location). */
+  hasTaxLocation: boolean;
+}
+
+export interface EnsureProviderCustomerOptions {
+  /**
+   * Refuse a taxed account without a tax location (default true). Card setup
+   * turns it off because the address is collected at checkout.
+   */
+  requireTaxLocation?: boolean;
 }
 
 const DEFAULT_LEASE_MS = 10 * 60 * 1000;
@@ -159,6 +196,8 @@ export class BillingRuntime {
   readonly onPayerStanding?: PayerStandingHook;
   readonly leaseMs: number;
   readonly pageSize: number;
+  readonly autoChargeInvoices: boolean;
+  readonly onAutoTopUpFailed?: AutoTopUpFailureHook;
   /** The inbox provider namespace for this runtime's events (per seller). */
   readonly eventProvider: string;
 
@@ -179,6 +218,7 @@ export class BillingRuntime {
     readonly subscriptions: TenantSubscriptionCollection,
     readonly plans: SubscriptionPlanCollection,
     readonly policies: SpendingPolicyCollection,
+    readonly instruments: PaymentInstrumentCollection,
   ) {
     this.sellerTenantId = canonicalTenantId(
       options.sellerTenantId,
@@ -195,6 +235,8 @@ export class BillingRuntime {
     this.onPayerStanding = options.onPayerStanding;
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
     this.pageSize = options.pageSize ?? 500;
+    this.autoChargeInvoices = options.autoChargeInvoices ?? false;
+    this.onAutoTopUpFailed = options.onAutoTopUpFailed;
     // One inbox namespace per seller: the delivery claim is cross-tenant, so
     // a runtime must never be able to claim another seller's events.
     this.eventProvider = `${options.provider.name}-billing:${this.sellerTenantId}`;
@@ -220,6 +262,8 @@ export class BillingRuntime {
       onPayerStanding: _hook,
       leaseMs: _leaseMs,
       pageSize: _pageSize,
+      autoChargeInvoices: _autoCharge,
+      onAutoTopUpFailed: _topUpFailed,
       ...classOptions
     } = options;
     const accounts = await BillingAccountCollection.create(classOptions);
@@ -241,6 +285,7 @@ export class BillingRuntime {
       await TenantSubscriptionCollection.create(shared),
       await SubscriptionPlanCollection.create(shared),
       await SpendingPolicyCollection.create(shared),
+      await PaymentInstrumentCollection.create(shared),
     );
   }
 
@@ -344,11 +389,13 @@ export class BillingRuntime {
 
   /**
    * Create or update the provider customer, including its tax location.
-   * Creating a customer is not idempotent at the provider; an attempt that
-   * dies between creation and this save leaves an unused provider customer.
+   * Creation is idempotent per account at the provider (sdk#1268): an
+   * attempt that dies between creation and this save finds the same
+   * customer on retry.
    */
   async ensureProviderCustomer(
     account: BillingAccount,
+    options: EnsureProviderCustomerOptions = {},
   ): Promise<SyncedBillingAccount> {
     const customer = await withTenant({ tenantId: this.sellerTenantId }, () =>
       this.customers.get(account.customerId),
@@ -357,7 +404,12 @@ export class BillingRuntime {
       throw new Error(`Billing account ${account.id} has no customer.`);
     }
     const address = customer.defaultBillingAddress ?? {};
-    if (account.automaticTax && !customer.taxExempt && !address.country) {
+    if (
+      options.requireTaxLocation !== false &&
+      account.automaticTax &&
+      !customer.taxExempt &&
+      !address.country
+    ) {
       throw new Error(
         `Billing account ${account.id} has no tax location; set a billing address country.`,
       );
@@ -384,7 +436,25 @@ export class BillingRuntime {
       account,
       providerCustomerId: synced.providerCustomerId,
       automaticTax: account.automaticTax && !customer.taxExempt,
+      hasTaxLocation: Boolean(address.country),
     };
+  }
+
+  /** Whether the account's customer has a tax location (address country). */
+  async hasTaxLocation(account: BillingAccount): Promise<boolean> {
+    const customer = await withTenant({ tenantId: this.sellerTenantId }, () =>
+      this.customers.get(account.customerId),
+    );
+    return Boolean(customer?.defaultBillingAddress?.country);
+  }
+
+  /** Whether provider-calculated tax applies to this account's charges. */
+  async accountIsTaxed(account: BillingAccount): Promise<boolean> {
+    if (!account.automaticTax) return false;
+    const customer = await withTenant({ tenantId: this.sellerTenantId }, () =>
+      this.customers.get(account.customerId),
+    );
+    return !customer?.taxExempt;
   }
 
   // -------------------------------------------------------------------------
@@ -517,6 +587,63 @@ export class BillingRuntime {
     input: CreateCreditCheckoutInput,
   ): Promise<BillingProviderCheckoutSession> {
     return createCreditCheckout(this, input);
+  }
+
+  // -------------------------------------------------------------------------
+  // Card on file and automatic top-ups (#3139)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Start a provider checkout that saves the payer's card without charging
+   * it. When the checkout completes, event processing makes the card the
+   * provider customer's default, records it as the payer's default
+   * `PaymentInstrument`, and adopts the billing address collected at
+   * checkout as its tax location. Callable by the payer or in a system
+   * context. Throws when the provider cannot save payment methods.
+   */
+  createCardSetupCheckout(
+    input: CreateCardSetupCheckoutInput,
+  ): Promise<BillingProviderCheckoutSession> {
+    return createCardSetupCheckout(this, input);
+  }
+
+  /**
+   * The `autoTopUp` hook for smrt-subscriptions' `SpendingPolicyEvaluator`:
+   * charges the payer's saved card off-session and credits the balance once
+   * the charge succeeds. Without a provider that can charge a saved card (or
+   * without a card) it never tops up. Enable `payment_intent.*` events on
+   * the provider webhook: charges that settle later are credited from them.
+   */
+  autoTopUpHook(options?: AutoTopUpHookOptions): AutoTopUpHook {
+    return createAutoTopUpHook(this, options);
+  }
+
+  /**
+   * Write off a sent, unpaid invoice at the provider (#3139). The provider's
+   * `uncollectible` event then moves the payer to `uncollectible` standing.
+   * Call only from trusted operator code. Throws when the provider cannot.
+   */
+  async markInvoiceUncollectible(invoiceId: string): Promise<void> {
+    const markUncollectible = this.provider.markInvoiceUncollectible;
+    if (!markUncollectible) {
+      throw new Error(
+        `Billing provider ${this.provider.name} cannot write off invoices.`,
+      );
+    }
+    const invoice = await this.getInvoice(invoiceId);
+    if (
+      invoice.externalProvider !== this.provider.name ||
+      !invoice.externalId ||
+      (invoice.status !== InvoiceStatus.SENT &&
+        invoice.status !== InvoiceStatus.VIEWED &&
+        invoice.status !== InvoiceStatus.PARTIAL &&
+        invoice.status !== InvoiceStatus.OVERDUE)
+    ) {
+      throw new Error(
+        `Invoice ${invoice.invoiceNumber} is not a sent, unpaid ${this.provider.name} invoice.`,
+      );
+    }
+    await markUncollectible.call(this.provider, invoice.externalId);
   }
 
   /** Run in a system context (cross-tenant reads and payer-owned writes). */

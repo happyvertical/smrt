@@ -35,6 +35,7 @@ import type {
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus } from '../types/index.js';
+import { defaultCardFor } from './cards.js';
 import {
   billingPeriodContaining,
   lastEndedBillingPeriod,
@@ -1473,6 +1474,11 @@ async function pushToProvider(
       });
     }
   }
+  // A payer with its default card on file is charged automatically (#3139),
+  // decided when the invoice is first pushed.
+  const chargeAutomatically =
+    runtime.autoChargeInvoices &&
+    (await defaultCardFor(runtime, account, synced.providerCustomerId));
   const { providerInvoiceId } = await runtime.provider.pushInvoice({
     invoiceId: String(invoice.id),
     invoiceNumber: invoice.invoiceNumber,
@@ -1484,6 +1490,9 @@ async function pushToProvider(
     subtotal: invoice.subtotal,
     idempotencyKey: `smrt-billing-close:${close.id}`,
     automaticTax: synced.automaticTax,
+    collectionMethod: chargeAutomatically
+      ? 'charge_automatically'
+      : 'send_invoice',
     memo: invoice.customerNotes || undefined,
   });
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {

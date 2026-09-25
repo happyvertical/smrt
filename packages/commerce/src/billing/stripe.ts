@@ -3,7 +3,9 @@
  *
  * Every provider call goes through `@happyvertical/accounting`'s Stripe
  * provider; this module only maps between commerce's integer minor units and
- * the SDK's major-unit contract, and normalizes verified webhook events.
+ * the SDK's major-unit contract, and normalizes verified webhook events. The
+ * SDK's `*Minor` fields (checkout prices, session totals, off-session charges)
+ * are already ISO minor units and pass through unconverted (#3139).
  */
 import type {
   StripeAccountingProvider,
@@ -11,22 +13,28 @@ import type {
   WebhookEvent,
 } from '@happyvertical/accounting';
 import type { SubscriptionStatus } from '@happyvertical/smrt-subscriptions';
+import { CARD_SETUP_PURPOSE, COLLECT_ADDRESS_METADATA } from './cards.js';
 import { CREDIT_PURCHASE_PURPOSE } from './credits.js';
 import {
+  type BillingChargeStatus,
   type BillingInvoiceEventType,
   type BillingProvider,
+  type BillingProviderChargeInput,
+  type BillingProviderChargeResult,
   type BillingProviderCheckoutInput,
   type BillingProviderCheckoutSession,
+  type BillingProviderCheckoutState,
   type BillingProviderCustomerInput,
   type BillingProviderEvent,
   type BillingProviderInvoiceInput,
   type BillingProviderInvoiceState,
   type BillingProviderInvoiceStatus,
+  type BillingProviderSetupCheckoutInput,
   type BillingProviderSubscriptionState,
   BillingWebhookVerificationError,
 } from './provider.js';
+import { AUTO_TOP_UP_CHARGE_PREFIX } from './top-up.js';
 import {
-  currencyMinorUnitExponent,
   majorToMinorUnits,
   minorToMajorUnits,
   normalizeCurrency,
@@ -61,6 +69,28 @@ const CHECKOUT_EVENTS = new Set([
   'checkout.session.async_payment_succeeded',
 ]);
 
+const PAYMENT_EVENTS = new Set([
+  'payment_intent.succeeded',
+  'payment_intent.processing',
+  'payment_intent.payment_failed',
+  'payment_intent.canceled',
+]);
+
+const CHARGE_STATUSES = new Set<BillingChargeStatus>([
+  'succeeded',
+  'processing',
+  'requires_action',
+  'failed',
+  'canceled',
+]);
+
+const INVOICE_STATUSES: Record<string, BillingProviderInvoiceStatus> = {
+  draft: 'draft',
+  paid: 'paid',
+  voided: 'void',
+  uncollectible: 'uncollectible',
+};
+
 const SUBSCRIPTION_STATUSES: Record<
   StripeSubscriptionStatus,
   SubscriptionStatus
@@ -75,19 +105,14 @@ const SUBSCRIPTION_STATUSES: Record<
   paused: 'unpaid',
 };
 
-/**
- * Checkout line amounts are passed to Stripe in its smallest currency unit,
- * which equals the ISO minor unit only for two-decimal currencies. Credit
- * purchases are therefore limited to those (USD, CAD, EUR, …).
- */
-function assertCheckoutCurrency(currency: string): string {
-  const code = normalizeCurrency(currency);
-  if (currencyMinorUnitExponent(code) !== 2) {
-    throw new Error(
-      `Checkout credit purchases support two-decimal currencies only; ${code} is not.`,
-    );
-  }
-  return code;
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
 }
 
 export function createStripeBillingProvider(
@@ -97,8 +122,28 @@ export function createStripeBillingProvider(
   if (!webhookSecret) {
     throw new Error('A Stripe webhook signing secret is required.');
   }
+  // Checkout amounts are settled from a re-read session (Stripe's webhook
+  // amounts are in Stripe's unit, not ISO minor units), so the SDK must be
+  // able to retrieve one (@happyvertical/accounting >= 0.92).
+  const retrieveCheckoutSession = stripe.billing.retrieveCheckoutSession?.bind(
+    stripe.billing,
+  );
+  if (!retrieveCheckoutSession) {
+    throw new Error(
+      'The Stripe provider cannot retrieve checkout sessions; upgrade @happyvertical/accounting to 0.92 or later.',
+    );
+  }
+  const chargeSaved = stripe.payments.chargeSavedPaymentMethod?.bind(
+    stripe.payments,
+  );
+  const setDefault = stripe.billing.setDefaultPaymentMethod?.bind(
+    stripe.billing,
+  );
+  const markUncollectible = stripe.invoices.markUncollectible?.bind(
+    stripe.invoices,
+  );
 
-  return {
+  const provider: BillingProvider = {
     name: 'stripe',
 
     async syncCustomer(input: BillingProviderCustomerInput) {
@@ -110,8 +155,28 @@ export function createStripeBillingProvider(
         billingAddress: input.billingAddress,
         taxExempt: input.taxExempt,
       };
-      const result = await stripe.customers.sync(customer);
-      return { providerCustomerId: result.externalId };
+      if (customer.externalId) {
+        const result = await stripe.customers.sync(customer);
+        return { providerCustomerId: result.externalId };
+      }
+      // Creation is idempotent per account (sdk#1268): a retry returns the
+      // customer an earlier attempt created, found by Stripe's key replay or,
+      // after its window, by the account id the SDK tags on the customer. The
+      // key also covers the contents, so a retry with edited details is a new
+      // request (Stripe refuses a reused key with other parameters) that the
+      // SDK still resolves to the first customer by that tag.
+      const digest = await sha256Hex(JSON.stringify(customer));
+      const created = await stripe.customers.sync({
+        ...customer,
+        idempotencyKey: `smrt-billing-customer:${input.accountId}:${digest.slice(0, 32)}`,
+      });
+      // A replayed or found customer carries the first attempt's details;
+      // write the current ones.
+      await stripe.customers.sync({
+        ...customer,
+        externalId: created.externalId,
+      });
+      return { providerCustomerId: created.externalId };
     },
 
     async pushInvoice(input: BillingProviderInvoiceInput) {
@@ -138,6 +203,7 @@ export function createStripeBillingProvider(
         memo: input.memo,
         idempotencyKey: input.idempotencyKey,
         automaticTax: input.automaticTax,
+        collectionMethod: input.collectionMethod ?? 'send_invoice',
       });
       return { providerInvoiceId: result.externalId };
     },
@@ -151,14 +217,9 @@ export function createStripeBillingProvider(
     ): Promise<BillingProviderInvoiceState> {
       const invoice = await stripe.invoices.pull(providerInvoiceId);
       const currency = normalizeCurrency(invoice.currency);
+      // sent, viewed, and overdue are all open (unpaid) at the provider.
       const status: BillingProviderInvoiceStatus =
-        invoice.status === 'draft'
-          ? 'draft'
-          : invoice.status === 'paid'
-            ? 'paid'
-            : invoice.status === 'voided'
-              ? 'void'
-              : 'open';
+        INVOICE_STATUSES[invoice.status] ?? 'open';
       return {
         providerInvoiceId: invoice.externalId,
         status,
@@ -197,32 +258,116 @@ export function createStripeBillingProvider(
     async createCheckout(
       input: BillingProviderCheckoutInput,
     ): Promise<BillingProviderCheckoutSession> {
-      const currency = assertCheckoutCurrency(input.currency);
+      const currency = normalizeCurrency(input.currency);
       if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
         throw new Error(
           'Checkout amount must be positive integer minor units.',
+        );
+      }
+      const customerExternalId = input.providerCustomerId || undefined;
+      if (input.savePaymentMethod && !customerExternalId) {
+        throw new Error(
+          'Saving a payment method requires a provider customer.',
         );
       }
       const session = await stripe.billing.createCheckoutSession({
         mode: 'payment',
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
-        customerExternalId: input.providerCustomerId || undefined,
-        customerEmail: input.customerEmail || undefined,
+        customerExternalId,
+        customerEmail: customerExternalId
+          ? undefined
+          : input.customerEmail || undefined,
         lineItems: [
           {
             quantity: 1,
             priceData: {
               currency: currency.toLowerCase(),
-              unitAmount: input.amount,
+              // ISO minor units; the SDK converts to Stripe's unit (sdk#1269).
+              unitAmountMinor: input.amount,
               productName: input.description,
             },
           },
         ],
+        ...(input.automaticTax
+          ? {
+              automaticTax: true,
+              // Stripe Tax needs the buyer's location: Checkout collects it
+              // and saves it to an existing customer.
+              ...(customerExternalId
+                ? { customerUpdate: { address: 'auto' as const } }
+                : { billingAddressCollection: 'required' as const }),
+            }
+          : {}),
+        ...(input.savePaymentMethod
+          ? { setupFutureUsage: 'off_session' as const }
+          : {}),
         metadata: await signMetadata(input.metadata, webhookSecret),
         idempotencyKey: input.idempotencyKey,
       });
       return { sessionId: session.externalId, url: session.url };
+    },
+
+    async createSetupCheckout(
+      input: BillingProviderSetupCheckoutInput,
+    ): Promise<BillingProviderCheckoutSession> {
+      if (!input.providerCustomerId) {
+        throw new Error('A setup checkout requires a provider customer.');
+      }
+      const session = await stripe.billing.createCheckoutSession({
+        mode: 'setup',
+        successUrl: input.successUrl,
+        cancelUrl: input.cancelUrl,
+        customerExternalId: input.providerCustomerId,
+        currency: normalizeCurrency(input.currency).toLowerCase(),
+        ...(input.collectBillingAddress
+          ? {
+              billingAddressCollection: 'required' as const,
+              customerUpdate: { address: 'auto' as const },
+            }
+          : {}),
+        metadata: await signMetadata(input.metadata, webhookSecret),
+        idempotencyKey: input.idempotencyKey,
+      });
+      return { sessionId: session.externalId, url: session.url };
+    },
+
+    async getCheckout(
+      sessionId: string,
+    ): Promise<BillingProviderCheckoutState> {
+      const session = await retrieveCheckoutSession(sessionId);
+      const mode =
+        session.mode === 'payment' || session.mode === 'setup'
+          ? session.mode
+          : 'other';
+      const complete = session.status === 'complete';
+      const state: BillingProviderCheckoutState = {
+        sessionId: session.externalId,
+        mode,
+        complete,
+        paid: session.paymentStatus === 'paid',
+        providerCustomerId: session.customerExternalId,
+        paymentMethodId: session.paymentMethodExternalId,
+        currency: session.currency,
+        amountSubtotal: session.amountSubtotalMinor,
+        amountTax: session.amountTaxMinor,
+        amountTotal: session.amountTotalMinor,
+      };
+      if (
+        complete &&
+        session.customerExternalId &&
+        session.metadata[COLLECT_ADDRESS_METADATA] === '1'
+      ) {
+        // A session asked to collect the address saved it to the customer
+        // (customer_update[address]=auto). Only those pay for this read.
+        const customer = await stripe.customers.pull(
+          session.customerExternalId,
+        );
+        if (customer.billingAddress?.country) {
+          state.billingAddress = customer.billingAddress;
+        }
+      }
+      return state;
     },
 
     async verifyWebhook(
@@ -238,6 +383,38 @@ export function createStripeBillingProvider(
       );
     },
   };
+
+  if (chargeSaved) {
+    provider.chargeSavedPaymentMethod = async (
+      input: BillingProviderChargeInput,
+    ): Promise<BillingProviderChargeResult> => {
+      const result = await chargeSaved({
+        customerExternalId: input.providerCustomerId,
+        amountMinor: input.amount,
+        currency: normalizeCurrency(input.currency),
+        idempotencyKey: input.idempotencyKey,
+        description: input.description,
+        metadata: input.metadata,
+      });
+      return {
+        status: result.status,
+        providerPaymentId: result.paymentExternalId,
+        amount: result.amountMinor,
+        currency: result.currency,
+        failureCode: result.failureCode,
+        failureMessage: result.failureMessage,
+      };
+    };
+  }
+  if (setDefault) {
+    provider.setDefaultPaymentMethod = (providerCustomerId, paymentMethodId) =>
+      setDefault(providerCustomerId, paymentMethodId);
+  }
+  if (markUncollectible) {
+    provider.markInvoiceUncollectible = (providerInvoiceId) =>
+      markUncollectible(providerInvoiceId);
+  }
+  return provider;
 }
 
 /** Normalize a verified, parsed Stripe event. Exported for tests. */
@@ -275,40 +452,75 @@ export async function normalizeStripeEvent(
     // Only sessions this package created are stored, and only their smrt_*
     // metadata: other integrations' checkouts never enter the inbox. The
     // metadata is signed with the endpoint secret at creation, so another
-    // integration on the same account cannot forge a credit purchase.
+    // integration on the same account cannot forge a credit purchase or
+    // attach a card to another payer.
     const metadata = smrtMetadata(session.metadata);
     const id = session.id;
-    const amount = session.amount_subtotal;
-    const collected = session.amount_total;
+    const mode = session.mode;
+    const expected =
+      (mode === 'payment' &&
+        metadata.smrt_purpose === CREDIT_PURCHASE_PURPOSE) ||
+      (mode === 'setup' && metadata.smrt_purpose === CARD_SETUP_PURPOSE);
     if (
-      session.mode !== 'payment' ||
-      metadata.smrt_purpose !== CREDIT_PURCHASE_PURPOSE ||
+      !expected ||
       !(await metadataSignatureValid(metadata, webhookSecret)) ||
       typeof id !== 'string' ||
-      typeof session.currency !== 'string' ||
-      typeof amount !== 'number' ||
-      !Number.isSafeInteger(amount) ||
-      typeof collected !== 'number' ||
-      !Number.isSafeInteger(collected)
+      !id ||
+      (mode === 'payment' && typeof session.currency !== 'string')
     ) {
-      // A session that claims to be a credit purchase but fails these checks
-      // is reported distinctly so the host can alert on it.
-      return metadata.smrt_purpose === CREDIT_PURCHASE_PURPOSE &&
-        session.mode === 'payment'
-        ? { ...ignored, type: `${event.type}:unverified_credit_purchase` }
-        : ignored;
+      // A session that claims to be ours but fails these checks is reported
+      // distinctly so the host can alert on it.
+      if (!expected) return ignored;
+      return {
+        ...ignored,
+        type:
+          mode === 'payment'
+            ? `${event.type}:unverified_credit_purchase`
+            : `${event.type}:unverified_card_setup`,
+      };
     }
+    // Amounts are not taken from the event: Stripe reports them in its own
+    // unit, which differs from ISO minor units for some currencies (ISK,
+    // UGX). `observe()` re-reads the session through the SDK, which converts.
     return {
       kind: 'checkout_completed',
       eventId,
       sessionId: id,
+      mode,
       paid: session.payment_status === 'paid',
       // Validated when the event is applied, so a bad value dead-letters
       // visibly instead of failing intake.
-      currency: session.currency.toUpperCase(),
-      amountSubtotal: amount,
-      amountTotal: collected,
+      currency:
+        typeof session.currency === 'string'
+          ? session.currency.toUpperCase()
+          : '',
       metadata,
+    };
+  }
+  if (PAYMENT_EVENTS.has(event.type)) {
+    // Only off-session charges this package made (#3139); the charge key is
+    // the SDK's `hv_charge_key` metadata. Settlement checks it against the
+    // local attempt row, amount, currency, and customer.
+    const payment = event.payment;
+    const chargeKey = payment?.chargeKey;
+    if (
+      !payment ||
+      !chargeKey?.startsWith(AUTO_TOP_UP_CHARGE_PREFIX) ||
+      !CHARGE_STATUSES.has(payment.status) ||
+      !payment.paymentExternalId
+    ) {
+      return ignored;
+    }
+    return {
+      kind: 'payment',
+      eventId,
+      chargeKey,
+      status: payment.status,
+      providerPaymentId: payment.paymentExternalId,
+      providerCustomerId: payment.customerExternalId,
+      amount: payment.amountMinor,
+      currency: payment.currency,
+      failureCode: payment.failureCode,
     };
   }
   return ignored;

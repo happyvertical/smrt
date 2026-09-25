@@ -1242,6 +1242,7 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
         balanceAmount: 0,
         estimatedAmount: 40,
         shortfall: 40,
+        currentShortfall: expect.any(Function),
       });
       expect(decision).toMatchObject({ allowed: true, balanceAmount: 500 });
       // The same top-up source id is never credited twice.
@@ -1269,6 +1270,49 @@ describe('smrt#3059 reseller price books and delegated spending', () => {
         }),
       );
       expect(declined).toMatchObject({ allowed: false, state: 'blocked' });
+    });
+
+    it('lets the hook see a concurrent top-up and re-reads the balance after it (smrt#3139)', async () => {
+      const balance = await system(() =>
+        reseller.setDelegatedSpendingPolicy({
+          parentTenantId: RESELLER,
+          childTenantId: CHILD,
+          name: 'Prepaid',
+          basis: 'retail',
+          currency: 'USD',
+          behavior: 'block',
+          period: 'balance',
+          balanceFrom: new Date('2026-01-01T00:00:00Z'),
+        }),
+      );
+      const seen: number[] = [];
+      // Another path credits the balance after this evaluation read it; the
+      // hook then finds nothing left to cover and secures nothing.
+      const hook: AutoTopUpHook = async (request) => {
+        seen.push(request.shortfall);
+        await system(() =>
+          evaluator().grantCredit({
+            spendingPolicyId: String(balance.id),
+            amount: 100,
+            source: 'concurrent',
+            sourceId: 'other-evaluation',
+            grantedByTenantId: RESELLER,
+          }),
+        );
+        seen.push(await (request.currentShortfall?.() ?? Promise.resolve(NaN)));
+        return null;
+      };
+      const decision = await system(() =>
+        evaluator(hook).evaluate({
+          tenantId: CHILD,
+          metricKey: 'ai.tokens',
+          estimatedAmount: 40,
+          currency: 'USD',
+          at: new Date(),
+        }),
+      );
+      expect(seen).toEqual([40, -60]);
+      expect(decision).toMatchObject({ allowed: true, balanceAmount: 100 });
     });
   });
 });
