@@ -310,6 +310,12 @@ async function applyInvoiceEvent(
       invoice.status = InvoiceStatus.WRITTEN_OFF;
       await invoice.save();
       standing = 'uncollectible';
+    } else if (invoice.status === InvoiceStatus.DRAFT) {
+      // Written off while its close is parked before the send was recorded
+      // (for example on a provider/local total mismatch): the payer's
+      // standing still follows, and the close's own error stays for the
+      // operator to resolve.
+      standing = 'uncollectible';
     }
   } else if (state.status === 'open') {
     if (event.type === 'payment_failed' || event.type === 'overdue') {

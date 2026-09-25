@@ -878,6 +878,39 @@ describe('smrt#3139 Stripe launch billing', () => {
       ).toBe(true);
     });
 
+    it('marks the payer uncollectible when an invoice parked before its send is written off', async () => {
+      await world.usage(SOLO);
+      // The send reaches Stripe, but its total disagrees with the local
+      // invoice, so the close parks with the local invoice still a draft.
+      const original = world.provider.provider.getInvoice;
+      vi.spyOn(world.provider.provider, 'getInvoice').mockImplementation(
+        async (id) => {
+          const state = await original.call(world.provider.provider, id);
+          return state.status === 'draft'
+            ? state
+            : { ...state, subtotal: state.subtotal + 1 };
+        },
+      );
+      await expect(world.provider.closePeriod(period)).rejects.toThrow();
+      vi.restoreAllMocks();
+      const account = await world.provider.getAccount(SOLO);
+      const [local] = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await InvoiceCollection.create({ db: world.db })).list({
+          where: { customerId: account?.customerId },
+        }),
+      );
+      expect(local?.status).toBe(InvoiceStatus.DRAFT);
+      const externalId = String(local?.externalId);
+      world.stripe.setInvoiceStatus(externalId, 'uncollectible');
+      await deliver(
+        world,
+        invoiceEvent('invoice.marked_uncollectible', externalId),
+      );
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe(
+        'uncollectible',
+      );
+    });
+
     it('refuses to write off an invoice that is not sent and unpaid', async () => {
       await world.usage(SOLO);
       await world.provider.closePeriod(period);
