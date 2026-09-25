@@ -469,11 +469,19 @@ export class TaskRunner extends EventEmitter {
 
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
-    const jobs = await this.collection.claimReady({
+    const claimed = await this.collection.claimReady({
       workerId: this.workerKey,
       queues: this.config.queues,
       limit: available,
     });
+
+    // `concurrency` is a hard cap: never start more jobs than free slots, even
+    // if a claim returns extra rows (a PostgreSQL claim once took the whole
+    // backlog, #3145). Surplus rows go back to `pending` untouched.
+    const jobs = claimed.slice(0, available);
+    if (claimed.length > available) {
+      await this.releaseSurplusClaims(claimed.slice(available));
+    }
 
     for (const job of jobs) {
       const jobId = job.id;
@@ -494,6 +502,46 @@ export class TaskRunner extends EventEmitter {
     }
 
     return jobs.length > 0;
+  }
+
+  /**
+   * Return over-claimed rows to `pending` with their claim undone, so the
+   * attempt is not consumed and any worker can claim them normally. Only rows
+   * this incarnation still owns as `running` are touched.
+   */
+  private async releaseSurplusClaims(surplus: SmrtJob[]): Promise<void> {
+    if (!this.db) return;
+    const ids = surplus
+      .map((job) => job.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    this.emit(
+      'runner:error',
+      new Error(
+        `claimReady returned ${ids.length} job(s) beyond the concurrency limit (${this.config.concurrency}); releasing them back to pending`,
+      ),
+    );
+    const nowIso = new Date().toISOString();
+    for (const id of ids) {
+      try {
+        await this.db.query(
+          `UPDATE _smrt_jobs
+              SET status = 'pending',
+                  worker_id = NULL,
+                  worker_heartbeat = NULL,
+                  started_at = NULL,
+                  attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+                  updated_at = ?
+            WHERE id = ? AND worker_id = ? AND status = 'running'`,
+          nowIso,
+          id,
+          this.workerKey,
+        );
+      } catch (error) {
+        // Left `running` under a live lease; stale recovery reclaims it once
+        // this incarnation stops. Never start it here.
+        this.emit('runner:error', error as Error);
+      }
+    }
   }
 
   /**

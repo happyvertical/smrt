@@ -323,10 +323,8 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
       throw new Error('leaseMs extends past the supported Date range');
     }
     const token = randomUUID();
-    const lockClause =
-      getDatabaseEngine(this.db) === 'postgres'
-        ? ' FOR UPDATE SKIP LOCKED'
-        : '';
+    const isPostgres = getDatabaseEngine(this.db) === 'postgres';
+    const lockClause = isPostgres ? ' FOR UPDATE SKIP LOCKED' : '';
     const providers = options.providers;
     if (providers !== undefined) {
       if (providers.length === 0) {
@@ -356,16 +354,8 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
       { allowRawOnTenantScoped: true },
     );
 
-    const claimed = await this.query(
-      `UPDATE _smrt_forge_deliveries
-          SET status = 'leased',
-              attempts = attempts + 1,
-              lease_owner = ?,
-              lease_token = ?,
-              lease_expires_at = ?,
-              updated_at = ?
-        WHERE id IN (
-          SELECT id
+    const candidateSelect = `
+          SELECT id AS claim_id
             FROM _smrt_forge_deliveries
            WHERE attempts < max_attempts${providerClause}
              AND (
@@ -373,26 +363,43 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
                OR (status = 'leased' AND lease_expires_at < ?)
            )
            ORDER BY next_attempt_at ASC, received_at ASC, created_at ASC, id ASC
-           LIMIT 1${lockClause}
-        )
-          AND (
+           LIMIT 1${lockClause}`;
+    const candidateParams = [...providerParams, nowIso, nowIso];
+    const setClause = `
+          SET status = 'leased',
+              attempts = attempts + 1,
+              lease_owner = ?,
+              lease_token = ?,
+              lease_expires_at = ?,
+              updated_at = ?`;
+    const setParams = [options.workerId, token, leaseExpiresAt, nowIso];
+    const stillClaimable = `(
             (status IN ('pending', 'retry') AND next_attempt_at <= ?)
             OR (status = 'leased' AND lease_expires_at < ?)
-          )
-        RETURNING *`,
-      [
-        options.workerId,
-        token,
-        leaseExpiresAt,
-        nowIso,
-        ...providerParams,
-        nowIso,
-        nowIso,
-        nowIso,
-        nowIso,
-      ],
-      { allowRawOnTenantScoped: true },
-    );
+          )`;
+    // PostgreSQL selects the candidate once in a MATERIALIZED CTE: an
+    // `IN (SELECT … LIMIT 1 FOR UPDATE SKIP LOCKED)` subquery can be rescanned
+    // per outer row by a nested-loop semi join, leasing several deliveries
+    // under one token while only the first is returned (#3105, #3145).
+    const claimed = isPostgres
+      ? await this.query(
+          `WITH claim_candidates AS MATERIALIZED (${candidateSelect})
+             UPDATE _smrt_forge_deliveries${setClause}
+               FROM claim_candidates
+              WHERE _smrt_forge_deliveries.id = claim_candidates.claim_id
+                AND ${stillClaimable}
+              RETURNING _smrt_forge_deliveries.*`,
+          [...candidateParams, ...setParams, nowIso, nowIso],
+          { allowRawOnTenantScoped: true },
+        )
+      : await this.query(
+          `UPDATE _smrt_forge_deliveries${setClause}
+              WHERE id IN (${candidateSelect})
+                AND ${stillClaimable}
+              RETURNING *`,
+          [...setParams, ...candidateParams, nowIso, nowIso],
+          { allowRawOnTenantScoped: true },
+        );
     const delivery = claimed[0] ?? null;
     if (delivery) {
       await withTenant({ tenantId: delivery.tenantId }, async () => {
