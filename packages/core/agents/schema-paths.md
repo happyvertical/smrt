@@ -737,15 +737,19 @@ the component is uniformly UUID and the planner emits nothing.
 
 ### Retention (`src/system/retention.ts`)
 
-`runRetentionSweep(db, policy)` runs four built-ins in fixed order, then
+`runRetentionSweep(db, policy)` runs five built-ins in fixed order (`changes`,
+`ai-usage`, `contexts`, `dispatch`, `run-once-claims`), then
 `registerRetentionTask()` contributions. A failed task records its result and
 continues; a missing table is `unavailable`. The `globalThis` registry avoids
 split registrations under duplicate core resolution; package tasks exist only
 after importing the package. CLI prune optionally imports jobs/users.
 
 Defaults are opt-out: changes 30 days, AI usage 90 days, completed dispatch 30
-days/failed dispatch 90 days, contexts by `expires_at`. `smrt.configure({
-retention })` tunes built-ins; contributed tasks own their defaults/options.
+days/failed dispatch 90 days, contexts by `expires_at`, run-once claims 30
+days on `completed_at` (#3080; `in_progress` rows never match — the window is
+a replay deadline for `runOnce()`, not just disk hygiene, see
+`agents/run-once.md`). `smrt.configure({ retention })` tunes built-ins;
+contributed tasks own their defaults/options.
 Jobs defaults are 7 days terminal, 30 failed, 30 events via
 `registerJobRetentionTasks()` or runner `retention.jobs`; expired credentials
 have no extra window. Disable a table/task with `false` or the whole policy with
@@ -760,8 +764,9 @@ approximate under concurrency. Overlapping change/AI-usage bounds exclude rows
 already counted, including dry runs.
 
 Retention indexes belong in system DDL and its versioned replay:
-`_smrt_contexts(expires_at)`, `_smrt_ai_usage(tenant_id, created_at)`, and dispatch
-`(status, processed_at)` / `(status, updated_at)`. Jobs `(status, completed_at)`
+`_smrt_contexts(expires_at)`, `_smrt_ai_usage(tenant_id, created_at)`, dispatch
+`(status, processed_at)` / `(status, updated_at)`, and
+`_smrt_run_once_claims(status, completed_at)`. Jobs `(status, completed_at)`
 belongs in `ensureJobsSystemTableCompatibility()` on each collection initialize,
 since decorated jobs tables do not exist at bootstrap.
 

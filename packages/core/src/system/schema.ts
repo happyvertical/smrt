@@ -975,6 +975,12 @@ CREATE TABLE IF NOT EXISTS _smrt_run_once_claims (
 
 CREATE INDEX IF NOT EXISTS idx_smrt_run_once_claims_tenant
   ON _smrt_run_once_claims(tenant_id, created_at);
+
+-- Retention predicate for pruneRunOnceClaims() (#3080): completed claims are
+-- aged out on completed_at, scoped to status = 'completed' so an in_progress
+-- claim (completed_at IS NULL) is never matched by the sweep.
+CREATE INDEX IF NOT EXISTS idx_smrt_run_once_claims_status_completed
+  ON _smrt_run_once_claims(status, completed_at);
 `;
 
 /**
@@ -1102,8 +1108,12 @@ export function getSystemTableDDLForEngine(
  *
  * 1.11.0 adds `_smrt_run_once_claims` (#3080), the insert-only claim table
  * behind `runOnce()` (`../run-once.ts`).
+ *
+ * 1.11.1 adds `idx_smrt_run_once_claims_status_completed` (#3080), the
+ * `(status, completed_at)` index backing `pruneRunOnceClaims()`'s retention
+ * predicate (`system/retention.ts`).
  */
-export const SMRT_SCHEMA_VERSION = '1.11.0';
+export const SMRT_SCHEMA_VERSION = '1.11.1';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1146,4 +1156,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'f796ee3b3f7ab8b9dc659ecaa68884ec01277408c3dd6edea540853fce369c16',
     '1.11.0':
       'c51351a76c96beb64fa7e5922f78d776367af882ed1ff37229f9e9ffacee8372',
+    '1.11.1':
+      '98112937a3bbb3883c3db1fd5e836751f91a479c1c5da64d4410263a6581ef1f',
   });

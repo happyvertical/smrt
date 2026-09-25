@@ -66,7 +66,12 @@ and repository rules.
   The claim insert must never raise on conflict: PostgreSQL aborts the whole
   transaction on any raised error, which would take the recovery `SELECT`
   down with it too — this is why it is `DO NOTHING`, not a plain `INSERT`
-  caught for `isUniqueViolationError`.
+  caught for `isUniqueViolationError`. Completed claims are bounded by
+  `runRetentionSweep()`'s `run-once-claims` task (`system/retention.ts`,
+  `DEFAULT_RETENTION_POLICY.runOnceClaims`, default 30 days on
+  `completed_at`; `in_progress` rows are never matched) — the window is a
+  replay deadline, not just disk hygiene: a token replayed after its claim
+  is swept runs `work()` again. See `agents/run-once.md`.
 - `ensureSystemTables(db, typeHint?)` provisions framework tables idempotently;
   call it on a base PostgreSQL connection before caller-owned transactions.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the

@@ -181,6 +181,44 @@ multiple codes via static factories — see `TenantIsolationError`,
 automatically by `runOnce()` itself: only the caller knows whether retrying
 inline is appropriate for its own request.
 
+## Retention: completed claims are pruned; the window is a replay deadline
+
+`_smrt_run_once_claims` is append-only in normal operation — every submission
+adds a row and nothing else ever deletes one — so, like `_smrt_changes`,
+`_smrt_ai_usage`, and `_smrt_dispatch`, it is wired into
+`system/retention.ts`'s `runRetentionSweep()` as a built-in task
+(`'run-once-claims'`), covered by `DEFAULT_RETENTION_POLICY.runOnceClaims`
+(default `{ maxAgeDays: 30 }`, overridable per policy or disabled with
+`runOnceClaims: false`). `pruneRunOnceClaims()` deletes only rows with
+`status = 'completed'` AND `completed_at` older than the window; an
+`'in_progress'` row has no `completed_at` and can never match this predicate,
+so a claim held by a live (or abandoned) transaction is never pruned by age
+alone. The predicate is covered by
+`idx_smrt_run_once_claims_status_completed` (`status, completed_at`), added
+in `SMRT_SCHEMA_VERSION` 1.11.1.
+
+**The window is a replay deadline, not just disk hygiene.** `runOnce()`'s
+entire contract — a retry or double-submit with the SAME token and content
+replays the first attempt's stored result instead of running `work()` again
+— depends on the claim row still existing. Once retention sweeps a completed
+claim, a client that replays that exact request (same `tenantId`, `actor`,
+`token`, and content) no longer collides with anything: `runOnce()` sees no
+existing row, wins the insert, and runs `work()` a second time. This is
+silent — there is no error, just a second execution of whatever `work()`
+does. The default 30-day window is chosen to be comfortably longer than any
+realistic client retry window (a browser tab left open, a queued mobile
+request, a webhook redelivery schedule) for the same reason the other
+default windows in `DEFAULT_RETENTION_POLICY` are generous relative to their
+consumers (see `system/retention.ts`'s module doc). A consumer with a
+longer-lived retry/replay window (e.g. an at-least-once delivery queue with a
+multi-week redelivery tail) must raise `runOnceClaims.maxAgeDays` to exceed
+it, not rely on the default.
+
+Tests: `src/__tests__/issue-2375-retention.test.ts` covers
+`pruneRunOnceClaims()` end-to-end through `runRetentionSweep()` — an old
+completed claim is removed, a recent completed claim and an old
+`in_progress` claim both survive.
+
 ## Tests
 
 `src/__tests__/issue-3080-run-once.test.ts` (real in-memory SQLite via
