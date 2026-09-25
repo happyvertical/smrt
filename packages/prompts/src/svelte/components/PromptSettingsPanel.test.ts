@@ -303,6 +303,30 @@ describe('PromptSettingsPanel', () => {
     expect(textareaNamed(target, 'tenantTemplate').disabled).toBe(true);
   });
 
+  it('never submits a non-editable row, so an existing override is not silently reverted', () => {
+    const onSave = vi.fn();
+    const target = render({
+      prompts: [
+        {
+          ...DRAFTS,
+          editable: { template: false },
+          tenantTemplate: 'Existing tenant text.',
+          supplyingLevel: 'tenant',
+        },
+      ],
+      onSave,
+      formAction: '?/savePrompt',
+    });
+
+    expect(
+      target.querySelector<HTMLButtonElement>('button[type="submit"]')
+        ?.disabled,
+    ).toBe(true);
+    const event = submitFirstForm(target);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('shows host-supplied status and error text', () => {
     const target = render({
       prompts: [DRAFTS],

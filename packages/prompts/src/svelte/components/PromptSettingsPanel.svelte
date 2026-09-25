@@ -100,6 +100,13 @@ const canSubmit = $derived(!busy && (onSave != null || formAction != null));
 const resetKey = $derived(contextKey ?? prompts);
 
 function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
+  // A non-editable row's controls are disabled, and disabled controls are
+  // absent from FormData — a submit would read as "unchecked" and revert an
+  // existing override. Such a row is read-only: it never submits.
+  if (!isTemplateEditable(prompt)) {
+    event.preventDefault();
+    return;
+  }
   if (!onSave) return;
   event.preventDefault();
   const fields = new FormData(event.currentTarget as HTMLFormElement);
@@ -204,7 +211,12 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
               </p>
             </div>
 
-            <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={!canSubmit || !isTemplateEditable(prompt)}
+            >
               {saveLabel}
             </Button>
           </form>
