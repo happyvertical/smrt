@@ -17,7 +17,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendChange,
   ensureChangeFeedTable,
@@ -303,6 +303,35 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       resolveAuthorization([PUNCHES_TABLE]);
       await flushAsync();
 
+      expect(changeSignalSubscriberCount(db)).toBe(0);
+    });
+  });
+
+  describe('subscriber slot when the live-forward head query fails (#3020 follow-up)', () => {
+    it('releases the reserved slot exactly once when the head-capture query rejects', async () => {
+      setChangeFeedAuthorizer(() => [PUNCHES_TABLE]);
+      // Every database call rejects, as during a transient outage.
+      const failingDb = new Proxy(db, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function'
+            ? () => Promise.reject(new Error('database unavailable'))
+            : value;
+        },
+      }) as DatabaseInterface;
+      const releaseSubscriberSlot = vi.fn();
+
+      const stream = buildChangeEventStream(failingDb, {
+        cursor: null,
+        tenantScope: UNENFORCED_SCOPE,
+        locals: stationLocals,
+        request: stationRequest,
+        releaseSubscriberSlot,
+      });
+      await expect(stream.getReader().read()).rejects.toThrow();
+      await flushAsync();
+
+      expect(releaseSubscriberSlot).toHaveBeenCalledTimes(1);
       expect(changeSignalSubscriberCount(db)).toBe(0);
     });
   });

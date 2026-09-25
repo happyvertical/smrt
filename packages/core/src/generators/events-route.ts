@@ -344,10 +344,19 @@ export function buildChangeEventStream(
       let gapFillCursor: number | null = null;
       if (hasChangeFeedTableAuthorizerHook()) {
         if (cursor == null) {
-          const headPage = await getChangesSince(db, {
-            since: 0,
-            denyAllTables: true,
-          });
+          // A rejected head query errors the stream, and cancelling an
+          // errored stream never reaches `cancel()` — release the reserved
+          // subscriber slot here or it stays allocated forever.
+          let headPage: Awaited<ReturnType<typeof getChangesSince>>;
+          try {
+            headPage = await getChangesSince(db, {
+              since: 0,
+              denyAllTables: true,
+            });
+          } catch (error) {
+            teardown();
+            throw error;
+          }
           gapFillCursor = headPage.resyncRequired
             ? (headPage.resyncCursor ?? 0)
             : headPage.cursor;
