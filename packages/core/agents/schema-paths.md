@@ -74,6 +74,13 @@ divergence is a bug in the generator, not an exception to add to the test.
   migration replaces a same-name global unique with tenant-led columns. That
   prefix serves tenant and tenant-scoped slug reads; a legacy standalone tenant
   index is dropped only with `--drop-indexes`.
+- **Widening an explicit key** (e.g. `['key']` → `['tenant_id', 'key']`,
+  #3126) renames its index, so migration adds the new unique and
+  `SchemaComparer` drops the superseded one without `--drop-indexes`: a UNIQUE
+  index named `conflictIndexName()` for its own columns, with no predicate,
+  whose columns are a strict subset of a declared UNIQUE index. It is a pure
+  relaxation (every row satisfies the wider key) and otherwise would keep
+  rejecting rows the model allows. The maintenance-window rule below applies.
 - **Optional NULL tenants** retain the SDK's NULL-equal upsert identity. Generated
   framework conflict indexes with nullable keys carry `nullsNotDistinct: true`;
   PostgreSQL 15+ creates `UNIQUE NULLS NOT DISTINCT`, enabling warm single-statement

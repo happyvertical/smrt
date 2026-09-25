@@ -13,6 +13,7 @@ import {
   resolveRenameDataPendingCandidates,
   uuidInvalidShapePredicate,
 } from '../schema/column-data-probes.js';
+import { conflictIndexName } from '../schema/conflict-target.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import { renderNullEqualConflictIndex } from '../schema/ddl/null-equal-index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
@@ -29,6 +30,7 @@ import {
   normalizeForeignKeyAction,
   requireForeignKeyAction,
 } from '../schema/foreign-key-policy.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   maskSampleValue,
   probeCastSafety,
@@ -3406,10 +3408,13 @@ export class SchemaComparer {
    *    caller opts in via `includeDroppedIndexes`, and even then never for
    *    PostgreSQL implicit indexes (`*_pkey`, `*_key`) — those are owned by
    *    table-level constraints and need a separate `DROP CONSTRAINT` path
-   *    that the differ does not emit yet. One exception is unconditional: a
-   *    redundant single-column index over the live primary key (the legacy
+   *    that the differ does not emit yet. Two exceptions are unconditional:
+   *    a redundant single-column index over the live primary key (the legacy
    *    `<table>_id_idx`, #2359) is dropped even without the opt-in, because
-   *    the primary-key constraint already serves it.
+   *    the primary-key constraint already serves it; and a superseded
+   *    conflict-identity index (the SMRT-named UNIQUE index of a key the
+   *    manifest now widens to a strict superset, #3126) is dropped because it
+   *    keeps rejecting rows the model allows.
    *
    * 4. **Partial-index predicate drift / collision** — two indexes on the
    *    same column(s) and uniqueness that differ only by their `WHERE`
@@ -3579,7 +3584,7 @@ export class SchemaComparer {
       });
     }
 
-    // Orphan-index sweep. Three tiers:
+    // Orphan-index sweep. Four tiers:
     //
     // - A redundant primary-key index — a non-unique single-column index over
     //   the table's sole primary-key column that the manifest no longer
@@ -3588,6 +3593,9 @@ export class SchemaComparer {
     //   (#2359, A5); the constraint keeps serving every lookup, so the drop
     //   is a pure write-cost saving and `db:migrate` cleans it up without
     //   `--drop-indexes`.
+    // - A superseded conflict-identity index — the SMRT-named UNIQUE index of
+    //   a key the class has since widened (#3126) — is dropped
+    //   unconditionally for the same reason: it only ever rejects rows.
     // - Unclaimed constraint-owned unique indexes (`*_key`) are never dropped
     //   but always *reported* (#2369) — a stale inline UNIQUE keeps rejecting
     //   duplicates the model now allows.
@@ -3657,7 +3665,33 @@ export class SchemaComparer {
         dbPredicateFor(idx.name) === '' &&
         primaryKeyColumns.length === 1 &&
         primaryKeyColumns[0] === idx.columns[0];
-      if (!redundantPrimaryKeyIndex && !this.options.includeDroppedIndexes) {
+      // A superseded conflict identity (#3126): a UNIQUE index carrying the
+      // name SMRT generates for a conflict key over its columns, where the
+      // manifest now declares a UNIQUE index over a strict superset of those
+      // columns — the class widened its key (e.g. `['key']` →
+      // `['tenant_id', 'key']`). The stale narrower index keeps rejecting
+      // rows the model now allows, so it is dropped without the opt-in: a
+      // pure relaxation that every existing row already satisfies. Requires
+      // predicate introspection so a partial index is never mistaken for it.
+      const supersededConflictIndex =
+        idx.unique === true &&
+        predicateAware &&
+        dbPredicateFor(idx.name) === '' &&
+        idx.columns.length > 0 &&
+        idx.name ===
+          shortenIdentifier(conflictIndexName(tableName, idx.columns)) &&
+        manifestIndexes.some(
+          (declared) =>
+            declared.unique === true &&
+            !declared.where &&
+            declared.columns.length > idx.columns.length &&
+            idx.columns.every((column) => declared.columns.includes(column)),
+        );
+      if (
+        !redundantPrimaryKeyIndex &&
+        !supersededConflictIndex &&
+        !this.options.includeDroppedIndexes
+      ) {
         continue;
       }
 
