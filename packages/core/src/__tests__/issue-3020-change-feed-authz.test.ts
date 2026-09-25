@@ -48,6 +48,11 @@ const NOTES_TABLE = 'issue3020_notes';
 const stationLocals = { user: { id: 'station-1', role: 'station' } };
 /** The office principal: no restriction under any of this file's hooks. */
 const officeLocals = { user: { id: 'office-1', role: 'office' } };
+// SvelteKit's `event.request` always accompanies `locals` on a real route
+// (see `vite-plugin/changes-route.ts`'s `getAuthorizedTenantScopedChangesSince`
+// call); included here so these tests exercise the real hook context shape.
+const stationRequest = new Request('http://localhost/api/_changes');
+const officeRequest = new Request('http://localhost/api/_changes');
 
 const OWN_ROW_ID = 'punch-station-owns';
 const OTHER_ROW_ID = 'punch-office-owns';
@@ -92,6 +97,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const authorized = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
 
       expect(authorized).toEqual(baseline);
@@ -99,15 +105,17 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
     });
 
     it('resolveAuthorizedChangeFeedTables passes requested tables through unchanged', async () => {
+      const ctx = { locals: stationLocals, request: stationRequest };
       await expect(
-        resolveAuthorizedChangeFeedTables(stationLocals, undefined),
+        resolveAuthorizedChangeFeedTables(ctx, undefined),
       ).resolves.toBeUndefined();
       await expect(
-        resolveAuthorizedChangeFeedTables(stationLocals, [PUNCHES_TABLE]),
+        resolveAuthorizedChangeFeedTables(ctx, [PUNCHES_TABLE]),
       ).resolves.toEqual([PUNCHES_TABLE]);
     });
 
     it('isChangeFeedEntryVisible / filterVisibleChangeFeedEntries are no-ops', async () => {
+      const ctx = { locals: stationLocals, request: stationRequest };
       const entry: ChangeFeedVisibilityEntry = {
         table: PUNCHES_TABLE,
         rowId: OTHER_ROW_ID,
@@ -115,13 +123,11 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
         tenantId: null,
         seq: 1,
       };
-      await expect(
-        isChangeFeedEntryVisible(stationLocals, entry),
-      ).resolves.toBe(true);
+      await expect(isChangeFeedEntryVisible(ctx, entry)).resolves.toBe(true);
       const entries = [entry];
-      await expect(
-        filterVisibleChangeFeedEntries(stationLocals, entries),
-      ).resolves.toBe(entries);
+      await expect(filterVisibleChangeFeedEntries(ctx, entries)).resolves.toBe(
+        entries,
+      );
     });
   });
 
@@ -150,6 +156,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const stationPage = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(stationPage.changes).toHaveLength(0);
       // The cursor still advances past the denied entry — the station is not
@@ -162,6 +169,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const stationNext = await getAuthorizedTenantScopedChangesSince(db, {
         since: stationPage.cursor,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(stationNext.changes).toHaveLength(0);
       expect(stationNext.cursor).toBe(stationPage.cursor);
@@ -170,6 +178,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const officePage = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: officeLocals,
+        request: officeRequest,
       });
       expect(officePage.changes.map((c) => c.rowId)).toEqual([OTHER_ROW_ID]);
     });
@@ -186,6 +195,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
         since: 0,
         tables: [PUNCHES_TABLE, NOTES_TABLE],
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes.map((c) => c.table)).toEqual([NOTES_TABLE]);
     });
@@ -200,6 +210,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
         since: 0,
         tables: [PUNCHES_TABLE],
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBeGreaterThan(0);
@@ -214,6 +225,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const page = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBeGreaterThan(0);
@@ -228,6 +240,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const page = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBeGreaterThan(0);
@@ -240,6 +253,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const page = await getAuthorizedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBeGreaterThan(0);
@@ -277,12 +291,14 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const stationPage = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(stationPage.changes.map((c) => c.rowId)).toEqual([OWN_ROW_ID]);
 
       const officePage = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: officeLocals,
+        request: officeRequest,
       });
       expect(officePage.changes.map((c) => c.rowId).sort()).toEqual(
         [OTHER_ROW_ID, OWN_ROW_ID].sort(),
@@ -310,6 +326,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
         since: 0,
         limit: 2,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes.map((c) => c.rowId)).toEqual([OWN_ROW_ID]);
       expect(page.cursor).toBe(ownSeqEntry);
@@ -319,6 +336,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const next = await getAuthorizedTenantScopedChangesSince(db, {
         since: page.cursor,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(next.changes).toHaveLength(0);
       expect(next.cursor).toBe(page.cursor);
@@ -337,6 +355,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const page = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBeGreaterThan(0);
@@ -354,6 +373,7 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       const page = await getAuthorizedTenantScopedChangesSince(db, {
         since: 0,
         locals: stationLocals,
+        request: stationRequest,
       });
       expect(page.changes).toHaveLength(0);
     });

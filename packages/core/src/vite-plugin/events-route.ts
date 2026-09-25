@@ -318,6 +318,7 @@ ${corsBlock.capacityReturn}
       manifestHash: MANIFEST_HASH,
       releaseSubscriberSlot,
       locals,
+      request,
     }),
     {
       status: 200,

@@ -40,6 +40,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ensureChangeFeedTable, getChangesSince } from '../change-feed.js';
 import {
+  type ChangeFeedRequestContext,
   filterVisibleChangeFeedEntries,
   hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
@@ -129,16 +130,19 @@ export interface ChangeEventStreamOptions {
    */
   releaseSubscriberSlot?: () => void;
   /**
-   * Request `locals` (or the equivalent context), forwarded to the
-   * consumer-supplied change-feed authorization hooks (#3020) —
+   * Request `locals` (SvelteKit) and the authenticated `request`, forwarded
+   * to the consumer-supplied change-feed authorization hooks (#3020) —
    * `authorizeChangeFeed` and `isChangeFeedEntryVisible`, see
    * `change-feed-authz.ts`. Resolved and captured ONCE at connection open,
    * exactly like `tenantScope`: delivery runs from a different async context
    * (the writer's `afterSave`, possibly another request or replica) with no
-   * per-signal opportunity to re-derive it. Omitted (as the REST generator
-   * does today) means hooks — if any are registered — see `locals: undefined`.
+   * per-signal opportunity to re-derive it. The REST generator has no
+   * `locals`, so it passes `locals: undefined` and the
+   * `authMiddleware`-processed `Request` as `request` — a REST-hosting
+   * consumer identifies the principal from `request`.
    */
   locals?: unknown;
+  request?: Request;
 }
 
 /**
@@ -281,7 +285,8 @@ export function buildChangeEventStream(
   db: DatabaseInterface,
   options: ChangeEventStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { cursor, tenantScope, manifestHash, locals } = options;
+  const { cursor, tenantScope, manifestHash, locals, request } = options;
+  const requestContext: ChangeFeedRequestContext = { locals, request };
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
 
   let unsubscribe: (() => void) | null = null;
@@ -316,7 +321,7 @@ export function buildChangeEventStream(
       let allowedTables: string[] | undefined;
       if (hasChangeFeedTableAuthorizerHook()) {
         allowedTables = await resolveAuthorizedChangeFeedTables(
-          locals,
+          requestContext,
           undefined,
         );
       }
@@ -349,7 +354,7 @@ export function buildChangeEventStream(
         }
         deliveryQueue = deliveryQueue.then(async () => {
           if (closed) return;
-          if (!(await isChangeFeedEntryVisible(locals, sig))) return;
+          if (!(await isChangeFeedEntryVisible(requestContext, sig))) return;
           try {
             controller.enqueue(encodeSseEvent(sig));
           } catch {
@@ -407,7 +412,7 @@ export function buildChangeEventStream(
             // `page.cursor` below so the client still advances past a denied
             // entry instead of re-requesting it forever.
             const visibleChanges = await filterVisibleChangeFeedEntries(
-              locals,
+              requestContext,
               page.changes,
             );
             for (const change of visibleChanges) {
@@ -539,6 +544,10 @@ export async function handleEventsRoute(
       tenantScope,
       manifestHash: options.manifestHash,
       releaseSubscriberSlot,
+      // REST has no `locals`; the authorization hooks (#3020) identify the
+      // principal from the authMiddleware-processed request instead.
+      locals: undefined,
+      request: authResult,
     }),
     {
       status: 200,

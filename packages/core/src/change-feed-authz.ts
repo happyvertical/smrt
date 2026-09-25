@@ -12,29 +12,40 @@
  * only because it did not ask, not because it could not have.
  *
  * This module is the consumer-supplied seam that closes that gap, evaluated
- * identically by both routes so the pull (`_changes`) and push (`_events`)
- * halves of the sync contract cannot diverge. Two independent hooks,
+ * identically by **every** transport — the generated SvelteKit `_changes`/
+ * `_events` routes AND the runtime REST generator's `_changes`/`_events`
+ * (`generators/changes-route.ts`, `generators/events-route.ts`) — so no
+ * transport can leak what another denies. Two independent hooks,
  * dependency-inverted onto `globalThis` exactly like
  * {@link resolveDispatchTenantScope} (`dispatch/tenant-resolver.ts`) so a
  * consumer app registers them once — wherever it already calls
  * `enableTenancy()`, or its `hooks.server.ts` — with **no change to the
  * generated "DO NOT EDIT" route files' imports**:
  *
- * - `authorizeChangeFeed({ locals, tables }) => allowedTables` — table-level.
- *   Its result is INTERSECTED with the client's `?tables=` filter (never
- *   unioned): a table the hook does not name is never queried, let alone
- *   returned, regardless of what the client asked for.
- * - `isChangeFeedEntryVisible({ locals, entry }) => boolean` — row-level, for
- *   scope narrower than a whole table (a station sees only its own rows).
- *   Applied per entry, after the table-level filter, before anything is
- *   serialized to the client — including a live `_events` signal, which never
- *   carries a payload but still carries the row id and write timing the row
- *   hook exists to withhold.
+ * - `authorizeChangeFeed({ locals, request, tables }) => allowedTables` —
+ *   table-level. Its result is INTERSECTED with the client's `?tables=`
+ *   filter (never unioned): a table the hook does not name is never queried,
+ *   let alone returned, regardless of what the client asked for.
+ * - `isChangeFeedEntryVisible({ locals, request, entry }) => boolean` —
+ *   row-level, for scope narrower than a whole table (a station sees only its
+ *   own rows). Applied per entry, after the table-level filter, before
+ *   anything is serialized to the client — including a live `_events` signal,
+ *   which never carries a payload but still carries the row id and write
+ *   timing the row hook exists to withhold.
  *
- * Both hooks are optional and independent. When neither is registered, both
- * routes behave exactly as before (#1540 posture — authenticated + tenant
- * scoped only, no per-table or per-row check): every call in this module is a
- * synchronous no-op pass-through until a consumer opts in.
+ * ## `locals` vs. `request`
+ *
+ * SvelteKit routes pass both `event.locals` and `event.request`. The REST
+ * generator has no `locals` concept, so it passes `locals: undefined` and the
+ * `authMiddleware`-processed `Request` (whatever properties/headers the
+ * middleware attached) as `request` — a REST-hosting consumer identifies the
+ * principal from `request`, not `locals`. Every real caller supplies
+ * `request`; it is typed optional only so a low-level unit test can omit it.
+ *
+ * Both hooks are optional and independent. When neither is registered, every
+ * transport behaves exactly as before (#1540 posture — authenticated +
+ * tenant scoped only, no per-table or per-row check): every call in this
+ * module is a synchronous no-op pass-through until a consumer opts in.
  *
  * ## Fail-closed
  *
@@ -94,10 +105,23 @@ export interface ChangeFeedVisibilityEntry {
   seq: number;
 }
 
-/** Input to the table-level {@link ChangeFeedTableAuthorizer} hook. */
-export interface ChangeFeedTableAuthorizationRequest {
-  /** SvelteKit `locals` for the requesting connection/request. */
+/**
+ * The requesting principal's context, common to both hooks. `locals` is
+ * SvelteKit's `event.locals`, or `undefined` on the REST transport (which has
+ * no `locals` concept). `request` is the SvelteKit route's `event.request`,
+ * or the REST route's `authMiddleware`-processed `Request` — a
+ * REST-hosting consumer identifies the principal from `request`, since
+ * `locals` is never populated there. Every generated route supplies
+ * `request`; it is optional only so a low-level unit test can omit it.
+ */
+export interface ChangeFeedRequestContext {
   locals: unknown;
+  request?: Request;
+}
+
+/** Input to the table-level {@link ChangeFeedTableAuthorizer} hook. */
+export interface ChangeFeedTableAuthorizationRequest
+  extends ChangeFeedRequestContext {
   /**
    * The client's `?tables=` filter, or `undefined` when it named none (the
    * unrestricted default). On `_events`, which has no `?tables=` param, this
@@ -108,8 +132,8 @@ export interface ChangeFeedTableAuthorizationRequest {
 }
 
 /**
- * Table-level change-feed authorization hook (#3020). Returns the tables
- * `locals` may read from the feed at all; a table it does not name is denied
+ * Table-level change-feed authorization hook (#3020). Returns the tables the
+ * requester may read from the feed at all; a table it does not name is denied
  * regardless of the client's own `?tables=` filter. Register with
  * {@link setChangeFeedAuthorizer}.
  */
@@ -118,8 +142,8 @@ export type ChangeFeedTableAuthorizer = (
 ) => string[] | Promise<string[]>;
 
 /** Input to the row-level {@link ChangeFeedEntryVisibility} hook. */
-export interface ChangeFeedEntryVisibilityRequest {
-  locals: unknown;
+export interface ChangeFeedEntryVisibilityRequest
+  extends ChangeFeedRequestContext {
   entry: ChangeFeedVisibilityEntry;
 }
 
@@ -203,7 +227,7 @@ export function toChangeFeedTablesFilter(
  * surfaced as a 5xx — see module docs).
  */
 export async function resolveAuthorizedChangeFeedTables(
-  locals: unknown,
+  ctx: ChangeFeedRequestContext,
   requestedTables: string[] | undefined,
 ): Promise<string[] | undefined> {
   const authorizer = globalThis.__smrtChangeFeedTableAuthorizer;
@@ -211,7 +235,7 @@ export async function resolveAuthorizedChangeFeedTables(
 
   let allowed: string[];
   try {
-    const result = await authorizer({ locals, tables: requestedTables });
+    const result = await authorizer({ ...ctx, tables: requestedTables });
     if (!Array.isArray(result) || result.some((t) => typeof t !== 'string')) {
       logger.error(
         'authorizeChangeFeed() returned a non-string-array result; failing closed to no tables',
@@ -232,19 +256,19 @@ export async function resolveAuthorizedChangeFeedTables(
 }
 
 /**
- * Whether `entry` is visible to `locals` under the registered
+ * Whether `entry` is visible to the requester under the registered
  * {@link ChangeFeedEntryVisibility} hook. `true` (visible) when no hook is
  * registered — the unmodified default. A throwing or non-boolean hook fails
  * closed to `false` (hidden), never falls back to visible.
  */
 export async function isChangeFeedEntryVisible(
-  locals: unknown,
+  ctx: ChangeFeedRequestContext,
   entry: ChangeFeedVisibilityEntry,
 ): Promise<boolean> {
   const predicate = globalThis.__smrtChangeFeedEntryVisibility;
   if (!predicate) return true;
   try {
-    return (await predicate({ locals, entry })) === true;
+    return (await predicate({ ...ctx, entry })) === true;
   } catch (error) {
     logger.error('isChangeFeedEntryVisible() threw; failing closed to hidden', {
       error: error instanceof Error ? error.message : String(error),
@@ -260,36 +284,37 @@ export async function isChangeFeedEntryVisible(
  */
 export async function filterVisibleChangeFeedEntries<
   T extends ChangeFeedVisibilityEntry,
->(locals: unknown, entries: readonly T[]): Promise<T[]> {
+>(ctx: ChangeFeedRequestContext, entries: readonly T[]): Promise<T[]> {
   if (entries.length === 0 || !globalThis.__smrtChangeFeedEntryVisibility) {
     return entries as T[];
   }
   const visible: T[] = [];
   for (const entry of entries) {
-    if (await isChangeFeedEntryVisible(locals, entry)) visible.push(entry);
+    if (await isChangeFeedEntryVisible(ctx, entry)) visible.push(entry);
   }
   return visible;
 }
 
-interface AuthorizedChangesInput extends Omit<GetChangesOptions, 'tables'> {
+interface AuthorizedChangesInput
+  extends Omit<GetChangesOptions, 'tables'>,
+    ChangeFeedRequestContext {
   tables?: string[];
-  locals: unknown;
 }
 
 /** Shared implementation behind {@link getAuthorizedChangesSince} and {@link getAuthorizedTenantScopedChangesSince}. */
 async function readAuthorized(
-  locals: unknown,
+  ctx: ChangeFeedRequestContext,
   requestedTables: string[] | undefined,
   read: (tables: string[] | undefined) => Promise<ChangeFeedPage>,
 ): Promise<ChangeFeedPage> {
   const effectiveTables = await resolveAuthorizedChangeFeedTables(
-    locals,
+    ctx,
     requestedTables,
   );
   const page = await read(toChangeFeedTablesFilter(effectiveTables));
   if (page.changes.length === 0) return page;
   const visibleChanges = await filterVisibleChangeFeedEntries(
-    locals,
+    ctx,
     page.changes,
   );
   return visibleChanges.length === page.changes.length
@@ -301,15 +326,16 @@ async function readAuthorized(
  * {@link getChangesSince}, additionally applying the registered table and
  * row-level authorization hooks (#3020). Used where the tenant filter (if
  * any) is resolved by the caller rather than the active DispatchBus context —
- * the `_events` catch-up replay, which captures its tenant scope once at
- * connection open.
+ * the `_events` catch-up replay (both transports), which captures its tenant
+ * scope once at connection open, and the REST `_changes` route, which has no
+ * DispatchBus tenant context of its own to resolve.
  */
 export async function getAuthorizedChangesSince(
   db: DatabaseInterface,
   options: AuthorizedChangesInput,
 ): Promise<ChangeFeedPage> {
-  const { locals, tables, ...rest } = options;
-  return readAuthorized(locals, tables, (effectiveTables) =>
+  const { locals, request, tables, ...rest } = options;
+  return readAuthorized({ locals, request }, tables, (effectiveTables) =>
     getChangesSince(db, { ...rest, tables: effectiveTables }),
   );
 }
@@ -317,7 +343,7 @@ export async function getAuthorizedChangesSince(
 /**
  * {@link getTenantScopedChangesSince}, additionally applying the registered
  * table and row-level authorization hooks (#3020). This is what the
- * generated `_changes` route calls.
+ * generated SvelteKit `_changes` route calls.
  *
  * Table authorization narrows `tables` BEFORE the query runs (a denied table
  * is never queried, let alone returned); row visibility filters the fetched
@@ -328,8 +354,8 @@ export async function getAuthorizedTenantScopedChangesSince(
   db: DatabaseInterface,
   options: Omit<AuthorizedChangesInput, 'tenantId'>,
 ): Promise<ChangeFeedPage> {
-  const { locals, tables, ...rest } = options;
-  return readAuthorized(locals, tables, (effectiveTables) =>
+  const { locals, request, tables, ...rest } = options;
+  return readAuthorized({ locals, request }, tables, (effectiveTables) =>
     getTenantScopedChangesSince(db, { ...rest, tables: effectiveTables }),
   );
 }

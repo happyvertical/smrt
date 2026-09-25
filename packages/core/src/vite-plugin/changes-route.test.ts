@@ -101,7 +101,7 @@ describe('generateChangesRoute (#1758)', () => {
     expect(content).toContain(
       'getAuthorizedTenantScopedChangesSince(collection.db',
     );
-    expect(content).toContain('    locals,\n  });');
+    expect(content).toContain('    locals,\n    request,\n  });');
     // Anchored on the alphabetically first non-collection class.
     expect(content).toContain("getCollection('Apple')");
   });

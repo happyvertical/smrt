@@ -42,6 +42,10 @@ const NOTES_TABLE = 'issue3020_notes';
 
 const stationLocals = { user: { id: 'station-1', role: 'station' } };
 const officeLocals = { user: { id: 'office-1', role: 'office' } };
+// SvelteKit's `event.request` always accompanies `locals` on a real route
+// (see `vite-plugin/events-route.ts`'s `buildChangeEventStream` call);
+// included here so these tests exercise the real hook context shape.
+const stationRequest = new Request('http://localhost/api/_events');
 
 const OWN_ROW_ID = 'punch-station-owns';
 const OTHER_ROW_ID = 'punch-office-owns';
@@ -130,6 +134,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       await flushAsync();
       publishChangeSignal(db, signal());
@@ -151,6 +156,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       await flushAsync();
       publishChangeSignal(db, signal({ table: PUNCHES_TABLE, seq: 1 }));
@@ -173,6 +179,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       await flushAsync();
       publishChangeSignal(db, signal());
@@ -195,6 +202,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       await flushAsync();
       publishChangeSignal(db, signal({ rowId: OTHER_ROW_ID, seq: 1 }));
@@ -214,6 +222,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       await flushAsync();
       publishChangeSignal(db, signal({ rowId: OWN_ROW_ID }));
@@ -249,6 +258,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         cursor: 0,
         tenantScope: UNENFORCED_SCOPE,
         locals: stationLocals,
+        request: stationRequest,
       });
       const text = await readStreamText(stream);
       expect(text).not.toContain(NOTES_TABLE);

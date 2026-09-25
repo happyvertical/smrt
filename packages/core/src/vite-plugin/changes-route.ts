@@ -191,7 +191,7 @@ function requireRouteAuth(locals: unknown): void {
   }
 }
 ${tenantHelper}
-export const GET: RequestHandler = async ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals, url, request }) => {
   requireRouteAuth(locals);${tenantCall}
 
   const since = Number(url.searchParams.get('since') ?? '0');
@@ -224,6 +224,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     tables,
     limit,
     locals,
+    request,
   });
   return json(page);
 };
