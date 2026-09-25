@@ -1,6 +1,6 @@
 import type { PromptOverrideCollection } from './collections/PromptOverrideCollection.js';
 import type { PromptOverride } from './models/PromptOverride.js';
-import type { PromptOverrideScopeType } from './types.js';
+import { APP_PROMPT_SCOPE_ID, type PromptOverrideScopeType } from './types.js';
 
 /** One override write the host must authorize before it runs (mirrors #3013). */
 export interface PromptOverrideWriteRequest {
@@ -29,6 +29,65 @@ export class PromptOverrideAuthorizationError extends Error {
       `Prompt override ${request.operation} denied for ${request.scopeType} scope`,
     );
     this.name = 'PromptOverrideAuthorizationError';
+  }
+}
+
+/**
+ * Thrown when a write names a scope the resolver never reads: an unknown scope
+ * type, an app scope other than {@link APP_PROMPT_SCOPE_ID}, or a blank /
+ * untrimmed / non-string tenant id. Checked before the authorizer runs, so a
+ * malformed tenant scope can never resolve to the app-wide row. Nothing is
+ * written.
+ */
+export class InvalidPromptScopeError extends Error {
+  readonly status = 400;
+  constructor(
+    readonly scopeType: string,
+    readonly scopeId: string,
+    reason: string,
+  ) {
+    super(`Invalid prompt override scope (${scopeType}): ${reason}`);
+    this.name = 'InvalidPromptScopeError';
+  }
+}
+
+/** Reject any scope the resolver does not read (see {@link InvalidPromptScopeError}). */
+export function assertValidPromptScope(
+  scopeType: PromptOverrideScopeType,
+  scopeId: string,
+): void {
+  if (scopeType !== 'app' && scopeType !== 'tenant') {
+    throw new InvalidPromptScopeError(
+      String(scopeType),
+      String(scopeId),
+      'scope type must be "app" or "tenant"',
+    );
+  }
+  if (typeof scopeId !== 'string') {
+    throw new InvalidPromptScopeError(
+      scopeType,
+      String(scopeId),
+      'scope id must be a string',
+    );
+  }
+  if (scopeType === 'app' && scopeId !== APP_PROMPT_SCOPE_ID) {
+    throw new InvalidPromptScopeError(
+      scopeType,
+      scopeId,
+      `the app scope is only ever "${APP_PROMPT_SCOPE_ID}"`,
+    );
+  }
+  if (
+    scopeType === 'tenant' &&
+    (!scopeId.trim() ||
+      scopeId !== scopeId.trim() ||
+      scopeId === APP_PROMPT_SCOPE_ID)
+  ) {
+    throw new InvalidPromptScopeError(
+      scopeType,
+      scopeId,
+      'a tenant scope id must be non-blank, already trimmed, and not the app scope id',
+    );
   }
 }
 
@@ -71,6 +130,7 @@ export class PromptOverrideService {
   }
 
   private async require(request: PromptOverrideWriteRequest): Promise<void> {
+    assertValidPromptScope(request.scopeType, request.scopeId);
     let allowed = false;
     try {
       allowed = (await this.authorize(request)) === true;

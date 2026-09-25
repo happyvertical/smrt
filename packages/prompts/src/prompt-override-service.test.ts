@@ -2,6 +2,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PromptOverrideCollection } from './collections/PromptOverrideCollection.js';
 import {
+  InvalidPromptScopeError,
   PromptOverrideAuthorizationError,
   PromptOverrideService,
   type PromptOverrideWriteRequest,
@@ -104,5 +105,41 @@ describe('PromptOverrideService (mirrors #3013)', () => {
       ).rejects.toBeInstanceOf(PromptOverrideAuthorizationError);
     }
     expect(await overrides.getTenantOverride(KEY, 'tenant-1')).toBeNull();
+  });
+
+  it('rejects malformed scopes before authorizing, so a tenant write cannot reach the app row', async () => {
+    const overrides = await setup();
+    await overrides.setTemplateOverride(KEY, 'app', '__app__', 'App text.');
+    let asked = 0;
+    // An authorizer that trusts any "tenant" request — the malformed ids
+    // below must still never be resolved to the app-wide row.
+    const service = new PromptOverrideService(overrides, (request) => {
+      asked += 1;
+      return request.scopeType === 'tenant';
+    });
+    const malformed: Array<[string, unknown]> = [
+      ['tenant', null],
+      ['tenant', undefined],
+      ['tenant', ''],
+      ['tenant', ' tenant-1'],
+      ['tenant', '__app__'],
+      ['app', 'tenant-1'],
+      ['global', '__app__'],
+    ];
+    for (const [scopeType, scopeId] of malformed) {
+      await expect(
+        service.setTemplateOverride(
+          KEY,
+          scopeType as 'tenant',
+          scopeId as string,
+          'Attacker text.',
+        ),
+      ).rejects.toBeInstanceOf(InvalidPromptScopeError);
+      await expect(
+        service.removeOverride(KEY, scopeType as 'tenant', scopeId as string),
+      ).rejects.toBeInstanceOf(InvalidPromptScopeError);
+    }
+    expect(asked).toBe(0);
+    expect((await overrides.getAppOverride(KEY))?.template).toBe('App text.');
   });
 });

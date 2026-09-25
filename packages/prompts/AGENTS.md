@@ -8,7 +8,7 @@ SMRT prompt registry and tenant-aware prompt override package. Code defines defa
 - `resolvePrompt()` merges code defaults, file/config overrides (via `@happyvertical/smrt-config`), stored app-level overrides, stored tenant-level overrides, and a runtime override
 - `PromptOverride` (`_smrt_prompt_overrides` table) stores partial app-level and tenant-level overrides with write-time validation
 - `PromptOverrideCollection` — collection API, plus `setTemplateOverride()` / `removeOverride()` / `findByScope()` for the authorized write path below
-- `PromptOverrideService` — the only write path a host should use directly; asks a host-supplied authorizer before every write and fails closed (mirrors `FeatureOverrideService`, #3013)
+- `PromptOverrideService` — the only write path a host should use directly; asks a host-supplied authorizer before every write and fails closed (mirrors `FeatureOverrideService`, #3013); before authorizing it rejects any scope the resolver never reads (`InvalidPromptScopeError`: unknown type, app id other than `__app__`, blank/untrimmed/`__app__` tenant id), so a malformed tenant write cannot reach the app-wide row
 
 ## Resolution layers (priority low → high)
 

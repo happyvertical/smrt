@@ -19,6 +19,7 @@ export {
   type PromptOverrideOptions,
 } from './models/PromptOverride.js';
 export {
+  InvalidPromptScopeError,
   PromptOverrideAuthorizationError,
   type PromptOverrideAuthorizer,
   PromptOverrideService,
