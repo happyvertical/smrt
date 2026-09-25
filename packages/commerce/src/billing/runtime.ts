@@ -26,6 +26,9 @@ import {
   BillingAccountCollection,
   type BillingCloseKind,
   BillingLineSourceCollection,
+  type BillingPaymentAttempt,
+  BillingPaymentAttemptCollection,
+  type BillingPaymentAttemptPurpose,
   BillingPeriodCloseCollection,
   type BillingStanding,
 } from '../models/billing.js';
@@ -41,15 +44,29 @@ import {
 } from './cycles.js';
 import { processBillingEvents } from './events.js';
 import {
+  type CreateInvoicePaymentInput,
+  createInvoicePayment,
+} from './invoice-payments.js';
+import {
+  type BillingPaymentPolicy,
+  type CryptoConversionInput,
+  type ManualRefundInput,
+  type ManualRefundResult,
+  normalizePaymentPolicy,
+  recordCryptoConversion,
+  recordManualRefund,
+} from './payment-attempts.js';
+import {
   type ClosePeriodInput,
   closeBillingPeriod,
   type PeriodCloseResult,
 } from './period-close.js';
-import type {
-  BillingProvider,
-  BillingProviderCheckoutSession,
+import {
+  type BillingProvider,
+  type BillingProviderCheckoutSession,
+  providerCapabilities,
 } from './provider.js';
-import { canonicalTenantId, deterministicId } from './units.js';
+import { canonicalTenantId, deterministicId, tenantKey } from './units.js';
 
 /** Ledger accounts billing posts to, in the seller's books. */
 export interface BillingLedgerAccounts {
@@ -63,6 +80,15 @@ export interface BillingLedgerAccounts {
   cashAccountId: string;
   /** Liability credited when prepaid credit is purchased. */
   prepaidCreditAccountId: string;
+  /**
+   * Asset debited when a crypto rail payment settles and the seller holds
+   * the crypto (#3138). Defaults to `cashAccountId`.
+   */
+  cryptoHoldingsAccountId?: string;
+  /** Realized gain or loss when held crypto is converted (#3138). */
+  fxGainLossAccountId?: string;
+  /** Conversion and network fees (#3138). */
+  feesAccountId?: string;
 }
 
 /** A payer's standing changed after a provider invoice event. */
@@ -93,7 +119,16 @@ export interface BillingRuntimeOptions extends SmrtClassOptions {
   /** The tenant that issues invoices. */
   sellerTenantId: string;
   kind: BillingCloseKind;
+  /** The issuing provider: it issues, taxes, and sends invoices. */
   provider: BillingProvider;
+  /**
+   * Additional payment rails (#3138), for example a crypto checkout
+   * provider. A payer picks a rail per payment; each rail has its own inbox
+   * namespace and webhook route. Names must be unique across all providers.
+   */
+  paymentProviders?: BillingProvider[];
+  /** Per-seller rules for rail payments (#3138). */
+  paymentPolicy?: Partial<BillingPaymentPolicy>;
   /** smrt-tenancy's `BillingRelationshipService` (read access required). */
   billingRelationships: BillingRelationshipReader;
   ledger: BillingLedgerAccounts;
@@ -159,8 +194,12 @@ export class BillingRuntime {
   readonly onPayerStanding?: PayerStandingHook;
   readonly leaseMs: number;
   readonly pageSize: number;
-  /** The inbox provider namespace for this runtime's events (per seller). */
+  /** The inbox provider namespace for the issuing provider's events. */
   readonly eventProvider: string;
+  /** Per-seller rules for rail payments (#3138). */
+  readonly paymentPolicy: BillingPaymentPolicy;
+  private readonly providersByName = new Map<string, BillingProvider>();
+  readonly attempts: BillingPaymentAttemptCollection;
 
   private constructor(
     options: BillingRuntimeOptions,
@@ -179,7 +218,9 @@ export class BillingRuntime {
     readonly subscriptions: TenantSubscriptionCollection,
     readonly plans: SubscriptionPlanCollection,
     readonly policies: SpendingPolicyCollection,
+    attempts: BillingPaymentAttemptCollection,
   ) {
+    this.attempts = attempts;
     this.sellerTenantId = canonicalTenantId(
       options.sellerTenantId,
       'sellerTenantId',
@@ -198,14 +239,38 @@ export class BillingRuntime {
     // One inbox namespace per seller: the delivery claim is cross-tenant, so
     // a runtime must never be able to claim another seller's events.
     this.eventProvider = `${options.provider.name}-billing:${this.sellerTenantId}`;
+    if (!providerCapabilities(options.provider).issuesInvoices) {
+      throw new Error(
+        `Provider ${options.provider.name} does not issue invoices; pass it in paymentProviders.`,
+      );
+    }
+    for (const candidate of [
+      options.provider,
+      ...(options.paymentProviders ?? []),
+    ]) {
+      if (!candidate?.name || this.providersByName.has(candidate.name)) {
+        throw new Error(
+          `Billing provider names must be unique and non-empty (${candidate?.name ?? 'missing'}).`,
+        );
+      }
+      this.providersByName.set(candidate.name, candidate);
+    }
+    this.paymentPolicy = normalizePaymentPolicy(options.paymentPolicy);
     if (!Number.isFinite(this.leaseMs) || this.leaseMs <= 0) {
       throw new Error('leaseMs must be a positive number.');
     }
     if (!Number.isSafeInteger(this.pageSize) || this.pageSize <= 0) {
       throw new Error('pageSize must be a positive integer.');
     }
+    const optionalLedger = new Set([
+      'cryptoHoldingsAccountId',
+      'fxGainLossAccountId',
+      'feesAccountId',
+    ]);
     for (const [key, value] of Object.entries(options.ledger ?? {})) {
-      if (!value) throw new Error(`Ledger account ${key} is required.`);
+      if (!value && !(optionalLedger.has(key) && value === undefined)) {
+        throw new Error(`Ledger account ${key} is required.`);
+      }
     }
   }
 
@@ -218,6 +283,8 @@ export class BillingRuntime {
       ledger: _ledger,
       invoiceNumberPrefix: _prefix,
       onPayerStanding: _hook,
+      paymentProviders: _rails,
+      paymentPolicy: _paymentPolicy,
       leaseMs: _leaseMs,
       pageSize: _pageSize,
       ...classOptions
@@ -241,6 +308,57 @@ export class BillingRuntime {
       await TenantSubscriptionCollection.create(shared),
       await SubscriptionPlanCollection.create(shared),
       await SpendingPolicyCollection.create(shared),
+      await BillingPaymentAttemptCollection.create(shared),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Providers and rails (#3138)
+  // -------------------------------------------------------------------------
+
+  /** A provider by name; the issuing provider when `name` is omitted. */
+  providerFor(name?: string): BillingProvider {
+    if (!name) return this.provider;
+    const found = this.providersByName.get(name);
+    if (!found) {
+      throw new Error(`No billing provider named ${name} on this runtime.`);
+    }
+    return found;
+  }
+
+  /**
+   * Whether any payment rail is configured (#3138). A runtime without one
+   * never touches payment attempts, so it needs no attempt table.
+   */
+  get hasPaymentRails(): boolean {
+    return this.providers.some(
+      (provider) => providerCapabilities(provider).paymentAttempts,
+    );
+  }
+
+  /** Every provider of this runtime: the issuing one first. */
+  get providers(): BillingProvider[] {
+    return [...this.providersByName.values()];
+  }
+
+  /** A provider's inbox namespace (per provider, per seller). */
+  eventProviderFor(name?: string): string {
+    return `${this.providerFor(name).name}-billing:${this.sellerTenantId}`;
+  }
+
+  /** Every inbox namespace this runtime claims events from. */
+  get eventProviders(): string[] {
+    return this.providers.map((provider) =>
+      this.eventProviderFor(provider.name),
+    );
+  }
+
+  /** The provider whose inbox namespace this is, or null. */
+  providerForNamespace(namespace: string): BillingProvider | null {
+    return (
+      this.providers.find(
+        (provider) => this.eventProviderFor(provider.name) === namespace,
+      ) ?? null
     );
   }
 
@@ -472,13 +590,24 @@ export class BillingRuntime {
   async acceptWebhook(
     payload: string,
     signature: string,
+    options: {
+      /** The rail whose webhook this is (default the issuing provider). */
+      provider?: string;
+      /** Request headers, for rails that sign with their own header. */
+      headers?: Headers | Record<string, string | undefined>;
+    } = {},
   ): Promise<{
     accepted: boolean;
     eventId: string;
     kind: string;
     type?: string;
   }> {
-    const event = await this.provider.verifyWebhook(payload, signature);
+    const provider = this.providerFor(options.provider);
+    const event = await provider.verifyWebhook(
+      payload,
+      signature,
+      options.headers,
+    );
     if (event.kind === 'ignored') {
       return {
         accepted: false,
@@ -490,7 +619,7 @@ export class BillingRuntime {
     return withTenant({ tenantId: this.sellerTenantId }, async () => {
       const inbox = await ForgeDeliveryCollection.create({ db: this.db });
       const { accepted } = await inbox.accept({
-        provider: this.eventProvider,
+        provider: this.eventProviderFor(provider.name),
         deliveryId: event.eventId,
         eventName: event.kind,
         payload: { event },
@@ -517,6 +646,203 @@ export class BillingRuntime {
     input: CreateCreditCheckoutInput,
   ): Promise<BillingProviderCheckoutSession> {
     return createCreditCheckout(this, input);
+  }
+
+  // -------------------------------------------------------------------------
+  // Rail payments (#3138)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Pay an issued invoice on a payment rail: opens a rail checkout for the
+   * amount due. Settlement records the payment and closes the issuing
+   * provider's invoice as paid out of band. Callable by the payer or from a
+   * system context.
+   */
+  createInvoicePayment(
+    input: CreateInvoicePaymentInput,
+  ): Promise<BillingProviderCheckoutSession> {
+    return createInvoicePayment(this, input);
+  }
+
+  /** Record a rail checkout just opened (idempotent). */
+  async recordPaymentAttemptStart(input: {
+    /** The rail order id (the checkout idempotency key), when known. */
+    orderId?: string;
+    provider: string;
+    checkoutId: string;
+    checkoutUrl: string;
+    purpose: BillingPaymentAttemptPurpose;
+    payerTenantId: string;
+    billingAccountId: string;
+    invoiceId?: string;
+    spendingPolicyId?: string;
+    amount: number;
+    currency: string;
+  }): Promise<BillingPaymentAttempt> {
+    const id = await this.paymentAttemptId(input.provider, input.checkoutId);
+    const existing = await this.attempts.get(id);
+    if (existing) return existing;
+    try {
+      return await this.attempts.create({
+        id,
+        sellerTenantId: this.sellerTenantId,
+        payerTenantId: input.payerTenantId,
+        billingAccountId: input.billingAccountId,
+        purpose: input.purpose,
+        invoiceId: input.invoiceId ?? '',
+        spendingPolicyId: input.spendingPolicyId ?? '',
+        provider: input.provider,
+        orderId: input.orderId ?? '',
+        checkoutId: input.checkoutId,
+        checkoutUrl: input.checkoutUrl,
+        amount: input.amount,
+        currency: input.currency,
+        status: 'open',
+        exception: 'none',
+        timeline: [
+          {
+            at: new Date().toISOString(),
+            status: 'open',
+            exception: 'none',
+            source: 'created',
+          },
+        ],
+        _insertOnly: true,
+      });
+    } catch (error) {
+      const concurrent = await this.attempts.get(id);
+      if (concurrent) return concurrent;
+      throw error;
+    }
+  }
+
+  /** The deterministic id of a rail checkout's attempt row. */
+  paymentAttemptId(provider: string, checkoutId: string): Promise<string> {
+    return deterministicId(['billing-payment-attempt', provider, checkoutId]);
+  }
+
+  /**
+   * This seller's rail payment attempts, newest first — for "payment
+   * confirming" displays and operator queues.
+   */
+  async listPaymentAttempts(
+    filter: {
+      payerTenantId?: string;
+      invoiceId?: string;
+      status?: string;
+      flagged?: boolean;
+      limit?: number;
+    } = {},
+  ): Promise<BillingPaymentAttempt[]> {
+    const where: Record<string, unknown> = {
+      sellerTenantId: this.sellerTenantId,
+    };
+    if (filter.payerTenantId) {
+      where.payerTenantId = canonicalTenantId(
+        filter.payerTenantId,
+        'payerTenantId',
+      );
+    }
+    if (filter.invoiceId) where.invoiceId = filter.invoiceId;
+    if (filter.status) where.status = filter.status;
+    const rows = await this.attempts.list({
+      where,
+      orderBy: 'created_at DESC',
+      limit: filter.limit ?? 100,
+    });
+    return filter.flagged === undefined
+      ? rows
+      : rows.filter((row) => Boolean(row.flag) === filter.flagged);
+  }
+
+  /**
+   * Queue a re-read of open and confirming attempts (the polling fallback
+   * for missed webhooks). Returns how many were queued; apply them with
+   * `processEvents()`.
+   */
+  async refreshPaymentAttempts(limit = 100): Promise<number> {
+    const rows = [
+      ...(await this.listPaymentAttempts({ status: 'open', limit })),
+      ...(await this.listPaymentAttempts({ status: 'confirming', limit })),
+    ].slice(0, limit);
+    let queued = 0;
+    for (const row of rows) {
+      if (await this.refreshPaymentAttempt(row.provider, row.checkoutId)) {
+        queued += 1;
+      }
+    }
+    return queued;
+  }
+
+  /** Queue a re-read of one rail checkout; false if one is already queued. */
+  async refreshPaymentAttempt(
+    provider: string,
+    checkoutId: string,
+  ): Promise<boolean> {
+    const rail = this.providerFor(provider);
+    if (!providerCapabilities(rail).paymentAttempts) {
+      throw new Error(`Provider ${rail.name} has no payment attempts.`);
+    }
+    // One poll per checkout per minute: a burst of refreshes queues once.
+    const bucket = Math.floor(Date.now() / 60_000);
+    return withTenant({ tenantId: this.sellerTenantId }, async () => {
+      const inbox = await ForgeDeliveryCollection.create({ db: this.db });
+      const { accepted } = await inbox.accept({
+        provider: this.eventProviderFor(rail.name),
+        deliveryId: `poll:${checkoutId}:${bucket}`,
+        eventName: 'payment_attempt',
+        payload: {
+          event: {
+            kind: 'payment_attempt',
+            eventId: `poll:${checkoutId}:${bucket}`,
+            checkoutId,
+          },
+        },
+      });
+      return accepted;
+    });
+  }
+
+  /** Close an attempt's flag with an operator note (the flag is kept). */
+  async resolvePaymentAttempt(
+    attemptId: string,
+    resolution: string,
+  ): Promise<BillingPaymentAttempt> {
+    const attempt = await this.attempts.get(attemptId);
+    if (!attempt || tenantKey(attempt.sellerTenantId) !== this.sellerTenantId) {
+      throw new Error(`Payment attempt ${attemptId} was not found.`);
+    }
+    if (!resolution.trim()) throw new Error('A resolution note is required.');
+    // Column-scoped: never overwrites what an event or refund wrote.
+    await this.db.query(
+      `UPDATE ${this.attempts.tableName}
+          SET resolution = ?, resolved_at = ?
+        WHERE id = ?`,
+      resolution.trim(),
+      new Date().toISOString(),
+      String(attempt.id),
+    );
+    return (await this.attempts.get(String(attempt.id))) ?? attempt;
+  }
+
+  /**
+   * Record a refund an operator made outside billing (no provider call):
+   * posts a reversing journal and, for a credit purchase, removes the
+   * credit. Idempotent by `reference`.
+   */
+  recordManualRefund(input: ManualRefundInput): Promise<ManualRefundResult> {
+    return recordManualRefund(this, input);
+  }
+
+  /**
+   * Record converting held crypto to fiat: cash and fees against the
+   * holdings' carrying value, with the difference to FX gain/loss.
+   * Idempotent by `reference`.
+   */
+  recordCryptoConversion(
+    input: CryptoConversionInput,
+  ): Promise<{ journalId: string }> {
+    return recordCryptoConversion(this, input);
   }
 
   /** Run in a system context (cross-tenant reads and payer-owned writes). */

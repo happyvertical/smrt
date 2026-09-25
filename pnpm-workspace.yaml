@@ -18,6 +18,7 @@ overrides:
   '@happyvertical/geo': ^0.94.0
   '@happyvertical/images': ^0.94.0
   '@happyvertical/jobs': ^0.94.0
+  '@happyvertical/payments': ^0.94.0
   '@happyvertical/json': ^0.94.0
   '@happyvertical/logger': ^0.94.0
   '@happyvertical/messages': ^0.94.0
@@ -121,6 +122,7 @@ auditConfig:
   ignoreGhsas: []
 
 minimumReleaseAgeExclude:
+  - '@happyvertical/payments@0.94.0'
   - '@happyvertical/accounting@0.90.0 || 0.94.0'
   - '@happyvertical/ai@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12 || 0.90.0 || 0.94.0'
   - '@happyvertical/cache@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4 || 0.89.6 || 0.89.9 || 0.89.10 || 0.89.12 || 0.90.0 || 0.94.0'
@@ -156,6 +158,7 @@ catalog:
   '@happyvertical/geo': ^0.94.0
   '@happyvertical/images': ^0.94.0
   '@happyvertical/jobs': ^0.94.0
+  '@happyvertical/payments': ^0.94.0
   '@happyvertical/json': ^0.94.0
   '@happyvertical/logger': ^0.94.0
   '@happyvertical/messages': ^0.94.0

@@ -322,7 +322,8 @@ function stripeObject(event: WebhookEvent): Record<string, unknown> {
     : {};
 }
 
-const SIGNATURE_KEY = 'smrt_sig';
+/** Metadata key holding the `smrt_*` HMAC (shared with crypto rails, #3138). */
+export const SIGNATURE_KEY = 'smrt_sig';
 
 async function hmacHex(secret: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -351,7 +352,7 @@ function canonicalMetadata(metadata: Record<string, string>): string {
   );
 }
 
-async function signMetadata(
+export async function signMetadata(
   metadata: Record<string, string>,
   secret: string,
 ): Promise<Record<string, string>> {
@@ -364,7 +365,7 @@ async function signMetadata(
   };
 }
 
-async function metadataSignatureValid(
+export async function metadataSignatureValid(
   metadata: Record<string, string>,
   secret: string,
 ): Promise<boolean> {
@@ -382,7 +383,7 @@ async function metadataSignatureValid(
   return diff === 0;
 }
 
-function smrtMetadata(value: unknown): Record<string, string> {
+export function smrtMetadata(value: unknown): Record<string, string> {
   const result: Record<string, string> = {};
   if (!value || typeof value !== 'object') return result;
   for (const [key, entry] of Object.entries(value)) {

@@ -10,7 +10,10 @@ import {
   TenantIsolationError,
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
-import type { BillingProviderCheckoutSession } from './provider.js';
+import {
+  type BillingProviderCheckoutSession,
+  providerCapabilities,
+} from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
   canonicalTenantId,
@@ -35,6 +38,11 @@ export interface CreateCreditCheckoutInput {
   purchaseId: string;
   /** Checkout line description (default `Prepaid credit`). */
   description?: string;
+  /**
+   * The payment rail to pay with (a provider name from the runtime's
+   * `provider` or `paymentProviders`; default the issuing provider, #3138).
+   */
+  provider?: string;
 }
 
 /** The checkout metadata a completed purchase is settled from. */
@@ -145,17 +153,20 @@ export async function createCreditCheckout(
     amount: input.amount,
     currency,
   });
+  const railName = runtime.providerFor(input.provider).name;
   const key = await deterministicId([
     'billing-credit-checkout',
     runtime.sellerTenantId,
     String(policy.id),
     input.purchaseId,
+    // The issuing provider keeps the pre-#3138 key, so retries of existing
+    // purchases still return their checkout.
+    ...(railName === runtime.provider.name ? [] : [railName]),
   ]);
+  const provider = runtime.providerFor(input.provider);
   const providerCustomerId =
-    account.provider === runtime.provider.name
-      ? account.providerCustomerId
-      : '';
-  return runtime.provider.createCheckout({
+    account.provider === provider.name ? account.providerCustomerId : '';
+  const session = await provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,
     providerCustomerId: providerCustomerId || undefined,
     customerEmail: providerCustomerId ? undefined : account.email || undefined,
@@ -166,4 +177,19 @@ export async function createCreditCheckout(
     cancelUrl: input.cancelUrl,
     metadata,
   });
+  if (providerCapabilities(provider).paymentAttempts) {
+    await runtime.recordPaymentAttemptStart({
+      orderId: `smrt-credit-checkout:${key}`,
+      provider: provider.name,
+      checkoutId: session.sessionId,
+      checkoutUrl: session.url ?? '',
+      purpose: 'credit_purchase',
+      payerTenantId: payer,
+      billingAccountId: String(account.id),
+      spendingPolicyId: String(policy.id),
+      amount: input.amount,
+      currency,
+    });
+  }
+  return session;
 }

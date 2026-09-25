@@ -22,7 +22,7 @@ import {
   type SubscriptionStatus,
   TenantSubscriptionCollection,
 } from '@happyvertical/smrt-subscriptions';
-import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
@@ -30,13 +30,22 @@ import {
   type BillingAccount,
   BillingAccountCollection,
   BillingLineSourceCollection,
+  BillingPaymentAttemptCollection,
   BillingPeriodCloseCollection,
   type BillingStanding,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
 import { CREDIT_PURCHASE_PURPOSE, creditMetadata } from './credits.js';
+import {
+  type AttemptTarget,
+  applyPaymentAttempt,
+  attemptTarget,
+  decideAttempt,
+} from './payment-attempts.js';
 import type {
+  BillingPaymentAttemptState,
+  BillingProvider,
   BillingProviderEvent,
   BillingProviderInvoiceState,
   BillingProviderSubscriptionState,
@@ -58,6 +67,7 @@ type CheckoutEvent = Extract<
   BillingProviderEvent,
   { kind: 'checkout_completed' }
 >;
+type AttemptEvent = Extract<BillingProviderEvent, { kind: 'payment_attempt' }>;
 
 type ObservedEvent =
   | { event: InvoiceEvent; invoice: BillingProviderInvoiceState }
@@ -65,7 +75,13 @@ type ObservedEvent =
       event: SubscriptionEvent;
       subscription: BillingProviderSubscriptionState;
     }
-  | { event: CheckoutEvent };
+  | { event: CheckoutEvent; providerName: string }
+  | {
+      event: AttemptEvent;
+      providerName: string;
+      attempt: BillingPaymentAttemptState;
+      target: AttemptTarget;
+    };
 
 const PROJECTION = 'billing-provider-events';
 
@@ -80,7 +96,7 @@ export async function processBillingEvents(
   const processor = new ForgeProjectionRuntime({
     db: runtime.db,
     workerId: `billing-${crypto.randomUUID()}`,
-    providers: [runtime.eventProvider],
+    providers: runtime.eventProviders,
     leaseMs: 60_000,
   });
   const projector = createBillingEventProjector(runtime);
@@ -102,8 +118,9 @@ export function createBillingEventProjector(
     ): Promise<ForgeObservation<ObservedEvent> | null> {
       // The claim is filtered to this seller's namespace; anything else is
       // released for retry rather than acknowledged as if it were applied.
+      const provider = runtime.providerForNamespace(delivery.provider);
       if (
-        delivery.provider !== runtime.eventProvider ||
+        !provider ||
         tenantKey(delivery.tenantId) !== runtime.sellerTenantId
       ) {
         throw new Error(
@@ -115,17 +132,21 @@ export function createBillingEventProjector(
       if (event.kind === 'invoice') {
         value = {
           event,
-          invoice: await runtime.provider.getInvoice(event.providerInvoiceId),
+          invoice: await provider.getInvoice(event.providerInvoiceId),
         };
       } else if (event.kind === 'subscription') {
         value = {
           event,
-          subscription: await runtime.provider.getSubscription(
+          subscription: await provider.getSubscription(
             event.providerSubscriptionId,
           ),
         };
       } else if (event.kind === 'checkout_completed') {
-        value = { event };
+        value = { event, providerName: provider.name };
+      } else if (event.kind === 'payment_attempt') {
+        const observed = await observeAttempt(runtime, provider, event);
+        if (!observed) return null;
+        value = observed;
       } else {
         return null;
       }
@@ -153,8 +174,15 @@ export function createBillingEventProjector(
         );
       } else if ('subscription' in value) {
         await applySubscriptionState(runtime, context.db, value.subscription);
+      } else if ('attempt' in value) {
+        await applyAttempt(runtime, context.db, value);
       } else {
-        await applyCheckout(runtime, context.db, value.event);
+        await applyCheckout(
+          runtime,
+          context.db,
+          value.event,
+          value.providerName,
+        );
       }
     },
   };
@@ -197,8 +225,11 @@ async function applyInvoiceEvent(
 
   let standing: BillingStanding | null = null;
   if (state.status === 'paid') {
-    await settlePaidInvoice(runtime, db, invoice, state);
-    standing = 'current';
+    // A skipped event (the rail records this payment itself) leaves the
+    // standing to the rail's settlement.
+    if (await settlePaidInvoice(runtime, db, invoice, state)) {
+      standing = 'current';
+    }
   } else if (state.status === 'void') {
     if (
       invoice.status !== InvoiceStatus.PAID &&
@@ -222,6 +253,21 @@ async function applyInvoiceEvent(
       standing = 'uncollectible';
     }
   }
+  if (
+    standing &&
+    standing !== 'current' &&
+    runtime.hasPaymentRails &&
+    (await pauseForConfirmingAttempts(
+      runtime,
+      db,
+      String(invoice.id),
+      standing,
+    ))
+  ) {
+    // A rail payment for this invoice is confirming (#3138): dunning pauses.
+    // If the payment ends without settling, it re-applies this standing.
+    standing = null;
+  }
   if (standing) {
     await applyStanding(
       runtime,
@@ -239,8 +285,17 @@ async function settlePaidInvoice(
   db: DatabaseInterface,
   invoice: Invoice,
   state: BillingProviderInvoiceState,
-): Promise<void> {
-  if (invoice.status === InvoiceStatus.PAID) return;
+): Promise<boolean> {
+  if (invoice.status === InvoiceStatus.PAID) return true;
+  if (
+    state.paidOutOfBand &&
+    runtime.hasPaymentRails &&
+    (await railClosedOutOfBand(runtime, db, String(invoice.id)))
+  ) {
+    // This rail closed the invoice at the issuer (#3138) and records the
+    // payment itself in its own event; the issuer collected nothing.
+    return false;
+  }
   if (invoice.status === InvoiceStatus.DRAFT) {
     // Period close has not recorded the send yet; retry after it has.
     throw new Error(
@@ -273,7 +328,10 @@ async function settlePaidInvoice(
         customerId: invoice.customerId,
         amount: state.amountPaid,
         currency: invoice.currency,
-        method: PaymentMethod.CREDIT_CARD,
+        // Closed out of band by someone else (wire, cheque): not a card.
+        method: state.paidOutOfBand
+          ? PaymentMethod.OTHER
+          : PaymentMethod.CREDIT_CARD,
         reference: invoice.invoiceNumber,
         externalId: state.providerInvoiceId,
         externalProvider: runtime.provider.name,
@@ -307,6 +365,7 @@ async function settlePaidInvoice(
     await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
   );
   await invoice.save();
+  return true;
 }
 
 const DELINQUENT_TARGET: Record<
@@ -414,6 +473,7 @@ async function applyCheckout(
   runtime: BillingRuntime,
   db: DatabaseInterface,
   event: CheckoutEvent,
+  providerName: string,
 ): Promise<void> {
   const metadata = creditMetadata(event.metadata);
   if (!metadata || metadata.purpose !== CREDIT_PURCHASE_PURPOSE) return;
@@ -444,7 +504,7 @@ async function applyCheckout(
       spendingPolicyId: metadata.spendingPolicyId,
       amount: metadata.amount,
       reason: 'Prepaid credit purchase',
-      source: `${runtime.provider.name}-checkout`,
+      source: `${providerName}-checkout`,
       sourceId: event.sessionId,
       ...(metadata.grantedByTenantId
         ? { grantedByTenantId: metadata.grantedByTenantId }
@@ -465,7 +525,7 @@ async function applyCheckout(
   const payments = await PaymentCollection.create({ db });
   const paymentId = await deterministicId([
     'billing-credit-payment',
-    runtime.provider.name,
+    providerName,
     event.sessionId,
   ]);
   const payment =
@@ -479,7 +539,7 @@ async function applyCheckout(
       method: PaymentMethod.CREDIT_CARD,
       reference: `credit:${metadata.spendingPolicyId}`,
       externalId: event.sessionId,
-      externalProvider: runtime.provider.name,
+      externalProvider: providerName,
       _insertOnly: true,
     }));
   if (payment.status !== PaymentStatus.COMPLETED) {
@@ -489,4 +549,205 @@ async function applyCheckout(
       receivablesAccountId: runtime.ledger.prepaidCreditAccountId,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Payment-rail attempts (#3138)
+// ---------------------------------------------------------------------------
+
+async function observeAttempt(
+  runtime: BillingRuntime,
+  provider: BillingProvider,
+  event: AttemptEvent,
+): Promise<ObservedEvent | null> {
+  if (!provider.getPaymentAttempt) {
+    throw new Error(`Provider ${provider.name} has no payment attempts.`);
+  }
+  const attempt = await provider.getPaymentAttempt(event.checkoutId);
+  if (!attempt) return null; // Not a checkout this rail created.
+  const target = attemptTarget(runtime, attempt.metadata);
+  if (!target) return null; // Unsigned, foreign, or another seller's.
+  const decision = decideAttempt(attempt, runtime.paymentPolicy, target);
+  if (decision.action === 'settle' && target.purpose === 'invoice_payment') {
+    // Close the issuer's invoice before recording the payment, so it stops
+    // dunning. Idempotent, and retried with the event on failure.
+    const invoice = await withTenant(
+      { tenantId: runtime.sellerTenantId },
+      async () =>
+        (await InvoiceCollection.create({ db: runtime.db })).get(
+          target.invoiceId,
+        ),
+    );
+    if (
+      invoice?.id &&
+      invoice.status !== InvoiceStatus.PAID &&
+      invoice.externalProvider === runtime.provider.name &&
+      invoice.externalId
+    ) {
+      if (!runtime.provider.markInvoicePaidOutOfBand) {
+        throw new Error(
+          `${runtime.provider.name} cannot close invoice ${invoice.invoiceNumber} paid on ${provider.name}.`,
+        );
+      }
+      // Committed before the issuer is told, so the issuer's own `paid`
+      // event waits for this settlement instead of recording a payment.
+      const row = await runtime.recordPaymentAttemptStart({
+        orderId: attempt.orderId,
+        provider: provider.name,
+        checkoutId: attempt.checkoutId,
+        checkoutUrl: attempt.checkoutUrl ?? '',
+        purpose: target.purpose,
+        payerTenantId: target.payerTenantId,
+        billingAccountId: target.billingAccountId,
+        invoiceId: target.invoiceId,
+        amount: target.amount,
+        currency: target.currency,
+      });
+      if (row.flag === 'out_of_band_without_settlement' || row.resolvedAt) {
+        // Closing again after an operator reopened the invoice: this rail
+        // owns the close once more, so the old resolution no longer applies.
+        await runtime.db.query(
+          `UPDATE ${runtime.attempts.tableName}
+              SET flag = '', resolved_at = NULL
+            WHERE id = ? AND flag = 'out_of_band_without_settlement'`,
+          String(row.id),
+        );
+      }
+      if (!row.outOfBandRequestedAt) {
+        // Column-scoped, so it cannot overwrite a concurrent writer's fields.
+        await runtime.db.query(
+          `UPDATE ${runtime.attempts.tableName}
+              SET out_of_band_requested_at = ?
+            WHERE id = ? AND out_of_band_requested_at IS NULL`,
+          new Date().toISOString(),
+          String(row.id),
+        );
+      }
+      await runtime.provider.markInvoicePaidOutOfBand(invoice.externalId);
+    }
+  }
+  return { event, providerName: provider.name, attempt, target };
+}
+
+async function applyAttempt(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  value: Extract<ObservedEvent, { attempt: BillingPaymentAttemptState }>,
+): Promise<void> {
+  const outcome = await applyPaymentAttempt(
+    runtime,
+    db,
+    value.providerName,
+    value.attempt,
+    value.target,
+    value.event.eventId.startsWith('poll:') ? 'poll' : 'webhook',
+  );
+  if (value.target.purpose !== 'invoice_payment') return;
+  if (!outcome.settled && !outcome.endedUnsettled) return;
+  const invoices = await InvoiceCollection.create({ db });
+  const invoice = await withTenant({ tenantId: runtime.sellerTenantId }, () =>
+    invoices.get(value.target.invoiceId),
+  );
+  if (!invoice?.id) return;
+  const closes = await BillingPeriodCloseCollection.create({ db });
+  const [close] = await closes.list({
+    where: { invoiceId: invoice.id, sellerTenantId: runtime.sellerTenantId },
+    limit: 1,
+  });
+  if (!close?.id) return;
+  const accounts = await BillingAccountCollection.create({ db });
+  const account = await accounts.get(close.billingAccountId);
+  if (!account) return;
+  if (outcome.settled && invoice.status === InvoiceStatus.PAID) {
+    await applyStanding(
+      runtime,
+      db,
+      account,
+      invoice,
+      String(close.id),
+      'current',
+    );
+  } else if (outcome.endedUnsettled && invoice.status !== InvoiceStatus.PAID) {
+    // The dunning paused while this payment confirmed; resume it with the
+    // standing the issuer asked for meanwhile, or from the invoice's state.
+    const paused = outcome.attempt.pausedStanding;
+    const resumed: BillingStanding | null =
+      paused === 'past_due' || paused === 'uncollectible'
+        ? paused
+        : invoice.status === InvoiceStatus.OVERDUE
+          ? 'past_due'
+          : null;
+    if (resumed) {
+      await applyStanding(
+        runtime,
+        db,
+        account,
+        invoice,
+        String(close.id),
+        resumed,
+      );
+    }
+  }
+}
+
+const STANDING_SEVERITY: Record<string, number> = {
+  '': 0,
+  past_due: 1,
+  uncollectible: 2,
+};
+
+/**
+ * Record a paused standing on the invoice's confirming rail attempts.
+ * Returns whether any attempt is confirming (and so dunning pauses).
+ */
+async function pauseForConfirmingAttempts(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  invoiceId: string,
+  standing: BillingStanding,
+): Promise<boolean> {
+  const attempts = await BillingPaymentAttemptCollection.create({ db });
+  // Lock before reading, so a concurrent writer's fields are not lost.
+  await db.query(
+    `UPDATE ${attempts.tableName} SET updated_at = updated_at
+      WHERE seller_tenant_id = ? AND invoice_id = ? AND status = 'confirming'`,
+    runtime.sellerTenantId,
+    invoiceId,
+  );
+  const rows = await attempts.list({
+    where: {
+      sellerTenantId: runtime.sellerTenantId,
+      invoiceId,
+      status: 'confirming',
+    },
+  });
+  for (const row of rows) {
+    if (
+      (STANDING_SEVERITY[standing] ?? 0) >
+      (STANDING_SEVERITY[row.pausedStanding] ?? 0)
+    ) {
+      row.pausedStanding = standing;
+      await row.save();
+    }
+  }
+  return rows.length > 0;
+}
+
+/** A rail of this runtime asked the issuer to close this invoice. */
+async function railClosedOutOfBand(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  invoiceId: string,
+): Promise<boolean> {
+  const attempts = await BillingPaymentAttemptCollection.create({ db });
+  const rows = await attempts.list({
+    where: { sellerTenantId: runtime.sellerTenantId, invoiceId },
+  });
+  // An operator who reopened the invoice at the issuer resolves the flagged
+  // attempt; a later out-of-band close is then someone else's and recorded.
+  return rows.some(
+    (row) =>
+      Boolean(row.outOfBandRequestedAt) &&
+      !(row.flag === 'out_of_band_without_settlement' && row.resolvedAt),
+  );
 }
