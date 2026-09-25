@@ -42,6 +42,22 @@ const resolved = await resolvePrompt('projects.issue.incorporateFeedback', {
 
 Stored overrides support partial fields, so applications can override only the template, profile, model, or AI params without forking the rest of a prompt.
 
+## Generated surfaces
+
+`PromptOverride` ships with generated REST routes, MCP tools, and CLI
+commands closed (`api: false`, `cli: false`, `mcp: false`). Override rows are
+authorization state for every scope, so write them only from server code
+through `PromptOverrideService`, which asks an authorizer you bind to the
+current caller before every write and fails closed:
+
+```typescript
+const service = new PromptOverrideService(overrides, (request) =>
+  request.scopeType === 'tenant' && request.scopeId === session.tenantId &&
+  session.permissions.has('prompts.manage'),
+);
+await service.setTemplateOverride(key, 'tenant', session.tenantId, 'New text.');
+```
+
 ## Documentation
 
 - See [`AGENTS.md`](./AGENTS.md) for package-internal patterns

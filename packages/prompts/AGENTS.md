@@ -7,7 +7,8 @@ SMRT prompt registry and tenant-aware prompt override package. Code defines defa
 - `definePrompt()` registers code defaults in a global process registry (`globalThis.__smrtPromptRegistry`)
 - `resolvePrompt()` merges code defaults, file/config overrides (via `@happyvertical/smrt-config`), stored app-level overrides, stored tenant-level overrides, and a runtime override
 - `PromptOverride` (`_smrt_prompt_overrides` table) stores partial app-level and tenant-level overrides with write-time validation
-- `PromptOverrideCollection` exposes the standard SmrtCollection CRUD surface
+- `PromptOverrideCollection` — collection API, plus `setTemplateOverride()` / `removeOverride()` / `findByScope()` for the authorized write path below
+- `PromptOverrideService` — the only write path a host should use directly; asks a host-supplied authorizer before every write and fails closed (mirrors `FeatureOverrideService`, #3013)
 
 ## Resolution layers (priority low → high)
 
@@ -25,6 +26,18 @@ Each layer can override any subset of fields (template, profile, model, params).
 - **Stored overrides use nullable fields** so inheritance stays field-by-field — null means "use the lower layer"
 - **Provider selection is indirect** in v1: prompts select named profiles, and profiles resolve to provider/model in `smrt-config`
 - **`editable` flags are enforced on `PromptOverride.save()`** — definitions can lock specific fields against tenant override
+
+## Generated surfaces
+
+`PromptOverride` ships with generated REST routes, MCP tools, and CLI commands
+closed (`api: false`, `cli: false`, `mcp: false`, mirrors `FeatureOverride`,
+#3013). Override rows are authorization state for every scope and `tenantId` is
+an ordinary settable field, not request-derived tenant scoping — a generated
+authentication-only surface would let any signed-in principal set another
+tenant's prompt text. Hosts write overrides server-side with
+`PromptOverrideService` (which requires an explicit authorizer for every
+write) or `PromptOverrideCollection.setTemplateOverride()` /
+`removeOverride()` only after their own authorization decision.
 
 ## Caching
 
