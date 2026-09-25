@@ -104,7 +104,32 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       expect(authorized.changes).toHaveLength(2);
     });
 
-    it('resolveAuthorizedChangeFeedTables passes requested tables through unchanged', async () => {
+    it('an empty requested tables: [] behaves exactly like an omitted filter (Copilot #3020 follow-up)', async () => {
+      // Documented as equivalent to an omitted `tables` filter. Without a
+      // hook registered, `resolveAuthorizedChangeFeedTables` used to return
+      // `[]` unchanged, and `isChangeFeedDenyAll([])` then turned that into
+      // deny-all — silently breaking the promised unchanged default for a
+      // client that happens to send `tables=` with nothing in it.
+      await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
+      await appendChange(db, { table: NOTES_TABLE, rowId: 'n1' });
+
+      const omitted = await getAuthorizedTenantScopedChangesSince(db, {
+        since: 0,
+        locals: stationLocals,
+        request: stationRequest,
+      });
+      const emptyArray = await getAuthorizedTenantScopedChangesSince(db, {
+        since: 0,
+        tables: [],
+        locals: stationLocals,
+        request: stationRequest,
+      });
+
+      expect(emptyArray).toEqual(omitted);
+      expect(emptyArray.changes).toHaveLength(2);
+    });
+
+    it('resolveAuthorizedChangeFeedTables passes requested tables through unchanged, and normalizes an empty array to undefined', async () => {
       const ctx = { locals: stationLocals, request: stationRequest };
       await expect(
         resolveAuthorizedChangeFeedTables(ctx, undefined),
@@ -112,6 +137,9 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       await expect(
         resolveAuthorizedChangeFeedTables(ctx, [PUNCHES_TABLE]),
       ).resolves.toEqual([PUNCHES_TABLE]);
+      await expect(
+        resolveAuthorizedChangeFeedTables(ctx, []),
+      ).resolves.toBeUndefined();
     });
 
     it('isChangeFeedEntryVisible / filterVisibleChangeFeedEntries are no-ops', async () => {

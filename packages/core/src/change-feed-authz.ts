@@ -212,8 +212,13 @@ export function isChangeFeedDenyAll(tables: string[] | undefined): boolean {
  * Resolve the tables a request may read from the feed: the registered
  * {@link ChangeFeedTableAuthorizer}'s answer intersected with the client's
  * own `?tables=` filter (never widened by it). Returns `requestedTables`
- * unchanged, including `undefined`, when no hook is registered — the
- * unmodified default behavior.
+ * unchanged when no hook is registered — the unmodified default behavior —
+ * EXCEPT that an explicit empty `requestedTables` (`tables: []`) is
+ * normalized to `undefined`: `getChangesSince` (and this module's own
+ * {@link isChangeFeedDenyAll}) treat an omitted filter and an empty one as
+ * equivalent "no filter", so with no hook registered to actually narrow
+ * anything, a client-sent `tables: []` must stay a no-op rather than being
+ * read as "deny every table" (#3020 Copilot follow-up).
  *
  * Once a hook is registered, the result is always an explicit array (possibly
  * empty): a throwing or malformed hook fails closed to `[]` (logged, never
@@ -224,7 +229,11 @@ export async function resolveAuthorizedChangeFeedTables(
   requestedTables: string[] | undefined,
 ): Promise<string[] | undefined> {
   const authorizer = globalThis.__smrtChangeFeedTableAuthorizer;
-  if (!authorizer) return requestedTables;
+  if (!authorizer) {
+    return requestedTables && requestedTables.length === 0
+      ? undefined
+      : requestedTables;
+  }
 
   let allowed: string[];
   try {

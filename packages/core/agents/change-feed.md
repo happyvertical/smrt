@@ -162,7 +162,15 @@ runs and the cursor still advances — it just matches zero rows.
 `change-feed-authz.ts`'s `isChangeFeedDenyAll()` is the one place that decides
 "empty allow-list" (deny all) vs. "no hook registered" (no filter); both
 `readAuthorized()` (pull side) and `buildChangeEventStream()`'s catch-up loop
-(push side) call it rather than re-deriving the distinction.
+(push side) call it rather than re-deriving the distinction. With NO hook
+registered, `resolveAuthorizedChangeFeedTables()` normalizes an explicit empty
+requested `tables: []` to `undefined` before that decision runs: `?tables=`
+with nothing in it is documented as equivalent to an omitted filter, and
+without a hook there is no authorized answer to narrow anything with — feeding
+`[]` through unchanged would let `isChangeFeedDenyAll()` read it as "deny
+every table" and silently break the promised unchanged default (#3020
+follow-up). Once a hook IS registered, its own answer is what decides
+deny-all, exactly as above.
 
 `getAuthorizedChangesSince()` / `getAuthorizedTenantScopedChangesSince()` wrap
 `getChangesSince()` / `getTenantScopedChangesSince()` with both hooks applied;
