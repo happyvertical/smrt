@@ -1,6 +1,6 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TenantCollection } from '../../users/src/index.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
 import { FeatureResolver } from './feature-resolver.js';
@@ -217,7 +217,12 @@ describe('FeatureResolver', () => {
 
     // `newEditor` defaults to disabled, so only the root's ENABLE override
     // (correctly applied and cascaded down through two no-op nodes) can make
-    // this resolve to `true`.
+    // this resolve to `true`. The ancestor read has no ORDER BY, so which row
+    // a bound would drop depends on the query plan (SQLite serves it in
+    // scope-id order, hence the `zz-` root); the spy below pins the bounds
+    // exemption itself, independent of row order.
+    const createSpy = vi.spyOn(FeatureOverrideCollection as any, 'create');
+    closers.add(async () => createSpy.mockRestore());
     const resolver = new FeatureResolver(
       { db, defaultListLimit: 2, maxListLimit: 2 },
       { tenantHierarchyLoader: async () => ({ getChain: async () => chain }) },
@@ -228,5 +233,11 @@ describe('FeatureResolver', () => {
         tenantId: leafId,
       }),
     ).resolves.toBe(true);
+    const createOptions = createSpy.mock.calls.at(-1)?.[0] as {
+      defaultListLimit?: number;
+      maxListLimit?: number;
+    };
+    expect(createOptions.defaultListLimit).toBeUndefined();
+    expect(createOptions.maxListLimit).toBeUndefined();
   });
 });
