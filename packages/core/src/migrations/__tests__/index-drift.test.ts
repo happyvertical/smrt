@@ -223,6 +223,29 @@ describe('SchemaComparer index drift', () => {
         );
       });
 
+      it('keeps the narrower key while a column of the wider key is not in the table yet', async () => {
+        await db.query(
+          'CREATE UNIQUE INDEX tenants_slug_idx ON tenants(slug);',
+        );
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({
+          tenants: tableSchema({
+            columns: {
+              ...widened().columns,
+              region: { type: 'TEXT', notNull: true },
+            },
+            indexes: [
+              {
+                name: 'tenants_region_slug_idx',
+                columns: ['region', 'slug'],
+                unique: true,
+              },
+            ],
+          }),
+        });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
       it('keeps a unique index that is not SMRT-named for its columns', async () => {
         await db.query(
           'CREATE UNIQUE INDEX tenants_custom_slug_guard ON tenants(slug);',

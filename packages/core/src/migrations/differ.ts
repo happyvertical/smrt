@@ -3685,7 +3685,12 @@ export class SchemaComparer {
             declared.unique === true &&
             !declared.where &&
             declared.columns.length > idx.columns.length &&
-            idx.columns.every((column) => declared.columns.includes(column)),
+            idx.columns.every((column) => declared.columns.includes(column)) &&
+            // The wider index must be buildable in this same batch: every
+            // column already exists. A column still to be added (or withheld
+            // as not addable, #3008) defers the drop to a later migrate, so
+            // the table never loses its only conflict arbiter.
+            declared.columns.every((column) => column in dbSchema.columns),
         );
       if (
         !redundantPrimaryKeyIndex &&
