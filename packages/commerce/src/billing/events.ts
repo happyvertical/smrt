@@ -300,8 +300,11 @@ async function applyInvoiceEvent(
     // longer counts as overdue against the payer. It can still be paid (the
     // `paid` branch records the payment and reinstates the payer). Only the
     // first observation changes standing: a late event about an invoice
-    // already written off must not undo a later reinstatement.
+    // already written off must not undo a later reinstatement. A DRAFT is an
+    // invoice whose close parked after the send reached the provider; the
+    // close still completes from WRITTEN_OFF once its error is resolved.
     if (
+      invoice.status === InvoiceStatus.DRAFT ||
       invoice.status === InvoiceStatus.SENT ||
       invoice.status === InvoiceStatus.VIEWED ||
       invoice.status === InvoiceStatus.PARTIAL ||
@@ -309,12 +312,6 @@ async function applyInvoiceEvent(
     ) {
       invoice.status = InvoiceStatus.WRITTEN_OFF;
       await invoice.save();
-      standing = 'uncollectible';
-    } else if (invoice.status === InvoiceStatus.DRAFT) {
-      // Written off while its close is parked before the send was recorded
-      // (for example on a provider/local total mismatch): the payer's
-      // standing still follows, and the close's own error stays for the
-      // operator to resolve.
       standing = 'uncollectible';
     }
   } else if (state.status === 'open') {

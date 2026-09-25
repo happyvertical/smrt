@@ -909,6 +909,58 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect((await world.provider.getAccount(SOLO))?.standing).toBe(
         'uncollectible',
       );
+      const listed = async () =>
+        (
+          await withTenant({ tenantId: PROVIDER }, async () =>
+            (
+              await InvoiceCollection.create({ db: world.db })
+            ).list({
+              where: { customerId: account?.customerId },
+            }),
+          )
+        ).find((row) => row.id === local?.id);
+      expect((await listed())?.status).toBe(InvoiceStatus.WRITTEN_OFF);
+
+      // Reinstated by paying the next invoice; a late event about the parked
+      // one does not undo it.
+      const next = {
+        periodStart: period.periodEnd,
+        periodEnd: new Date(
+          Date.UTC(
+            period.periodEnd.getUTCFullYear(),
+            period.periodEnd.getUTCMonth() + 1,
+            1,
+          ),
+        ),
+      };
+      await world.provider.closePeriod({
+        ...next,
+        now: new Date(next.periodEnd.getTime() + 86_400_000),
+      });
+      const second = (
+        await withTenant({ tenantId: PROVIDER }, async () =>
+          (
+            await InvoiceCollection.create({ db: world.db })
+          ).list({
+            where: { customerId: account?.customerId },
+          }),
+        )
+      ).find((row) => row.id !== local?.id);
+      world.stripe.pay(String(second?.externalId));
+      await deliver(
+        world,
+        invoiceEvent('invoice.paid', String(second?.externalId)),
+      );
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
+      await deliver(world, invoiceEvent('invoice.payment_failed', externalId));
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
+
+      // The parked close, its mismatch resolved, still completes.
+      const result = await world.provider.closePeriod(period);
+      expect(result.groups.every((group) => group.outcome !== 'failed')).toBe(
+        true,
+      );
+      expect((await listed())?.status).toBe(InvoiceStatus.WRITTEN_OFF);
     });
 
     it('refuses to write off an invoice that is not sent and unpaid', async () => {
