@@ -17,14 +17,27 @@ re-introducing.
 ## Key derivation
 
 ```
-contentDigest = sha256(stableStringify(JSON.parse(JSON.stringify(content))))
+normalized    = normalizeRunOnceContent(content)   // one pass; FormData captured as a node
+contentDigest = containsFormData(normalized)
+  ? sha256("\u0001run-once-formdata-v1\n" + stableStringify(toFormDataDomain(normalized)))
+  : sha256(stableStringify(normalized))              // plain JSON: unchanged since #3080
 claimKey      = sha256(stableStringify([tenantId, actor, token, contentDigest]))
 ```
 
 `stableStringify` (`../src/knowledge-graph.ts`) is sorted-key JSON: property
-insertion order never changes the digest. Content is normalized through its
-JSON serialization first, so a `Date` (or any `toJSON()` value) digests as what
-it serializes to rather than as `{}`. Folding in `tenantId` and `actor`
+insertion order never changes the digest. Content is normalized first, following
+JSON serialization exactly: `toJSON(key)` is called with the property name or
+array index (a `Date` digests as its ISO string, not `{}`), and `undefined`,
+function and symbol values are omitted from objects and written as `null` in
+arrays. A `FormData` has no enumerable properties, so
+JSON would reduce every form to `{}`; it digests as its ordered entry list
+instead (repeated fields are significant; a `File` digests by name, type and
+size), hashed in a separate domain (the input is prefixed with a byte sorted-key
+JSON never starts with, and user keys starting with NUL are escaped) so no plain
+object can forge it and plain-JSON digests are unchanged. `Map`, `Set`,
+`RegExp`, any other non-plain object without `toJSON()`, and `bigint` throw a
+`TypeError` rather than silently hashing as `{}` (#3136). Folding in `tenantId`
+and `actor`
 means two tenants or two actors can never collide on the same claim even if a
 token were somehow shared between them; folding in `contentDigest` means a
 retry of the SAME submission (same token, same content) replays, while a

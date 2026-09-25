@@ -8,9 +8,11 @@
  * the claim table directly, or by calling the pure resolver function.
  */
 
+import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunOnceClaimError } from '../errors';
+import { stableStringify } from '../knowledge-graph';
 import {
   deriveRunOnceClaimKey,
   digestRunOnceContent,
@@ -165,6 +167,110 @@ describe('runOnce (#3080)', () => {
     const a = digestRunOnceContent({ amount: 100, sku: 'widget-1' });
     const b = digestRunOnceContent({ amount: 200, sku: 'widget-1' });
     expect(a).not.toBe(b);
+  });
+
+  describe('non-plain content (#3136)', () => {
+    function form(entries: Array<[string, string]>): FormData {
+      const data = new FormData();
+      for (const [key, value] of entries) data.append(key, value);
+      return data;
+    }
+
+    it('digests FormData by its entries, not as {}', () => {
+      const a = digestRunOnceContent(form([['sku', 'widget-1']]));
+      const b = digestRunOnceContent(form([['sku', 'widget-2']]));
+      expect(a).not.toBe(b);
+      expect(a).not.toBe(digestRunOnceContent({}));
+      expect(digestRunOnceContent(form([['sku', 'widget-1']]))).toBe(a);
+    });
+
+    it('treats repeated FormData fields as significant', () => {
+      const one = digestRunOnceContent(form([['line', 'a']]));
+      const two = digestRunOnceContent(
+        form([
+          ['line', 'a'],
+          ['line', 'b'],
+        ]),
+      );
+      expect(one).not.toBe(two);
+    });
+
+    it('digests a FormData file by name, type and size', () => {
+      const withFile = (name: string) => {
+        const data = new FormData();
+        data.append('upload', new File(['abc'], name, { type: 'text/plain' }));
+        return digestRunOnceContent(data);
+      };
+      expect(withFile('a.txt')).not.toBe(withFile('b.txt'));
+      expect(withFile('a.txt')).toBe(withFile('a.txt'));
+    });
+
+    it('never collides with a plain object shaped like the FormData tag', () => {
+      const data = form([['sku', 'widget-1']]);
+      const forged = { '\u0000FormData': [['sku', 'widget-1']] };
+      expect(digestRunOnceContent(data)).not.toBe(digestRunOnceContent(forged));
+      expect(digestRunOnceContent({ a: data, b: forged })).not.toBe(
+        digestRunOnceContent({ a: data, b: data }),
+      );
+    });
+
+    it('evaluates toJSON() once, so a stateful value cannot collapse two forms', () => {
+      const once = (data: FormData) => {
+        let calls = 0;
+        let pending: FormData | undefined = data;
+        const buffered = {
+          toJSON() {
+            calls += 1;
+            const value = pending;
+            pending = undefined;
+            return value;
+          },
+        };
+        return {
+          digest: digestRunOnceContent({ buffered }),
+          calls: () => calls,
+        };
+      };
+      const a = once(form([['sku', 'widget-1']]));
+      const b = once(form([['sku', 'widget-2']]));
+      expect(a.calls()).toBe(1);
+      expect(a.digest).not.toBe(b.digest);
+    });
+
+    it('follows JSON for toJSON(key) and omitted members', () => {
+      const viaJson = (value: unknown) =>
+        createHash('sha256')
+          .update(stableStringify(JSON.parse(JSON.stringify(value) ?? 'null')))
+          .digest('hex');
+      const keyed = { field: { toJSON: (key: string) => key } };
+      expect(digestRunOnceContent(keyed)).toBe(viaJson(keyed));
+      const omitted = { a: 1, b: { toJSON: () => undefined }, c: () => 1 };
+      expect(digestRunOnceContent(omitted)).toBe(viaJson(omitted));
+      const inArray = [1, undefined, () => 1];
+      expect(digestRunOnceContent(inArray)).toBe(viaJson(inArray));
+    });
+
+    it('keeps plain JSON digests unchanged', () => {
+      // sha256 of the sorted-key JSON, as #3080 stored it.
+      expect(digestRunOnceContent({ sku: 'widget-1', amount: 100 })).toBe(
+        createHash('sha256')
+          .update('{"amount":100,"sku":"widget-1"}')
+          .digest('hex'),
+      );
+    });
+
+    it('rejects values JSON would reduce to {}', () => {
+      expect(() => digestRunOnceContent(new Map([['a', 1]]))).toThrow(
+        TypeError,
+      );
+      expect(() => digestRunOnceContent({ lines: new Set([1]) })).toThrow(
+        TypeError,
+      );
+      expect(() => digestRunOnceContent({ n: 1n })).toThrow(TypeError);
+      expect(() => digestRunOnceContent({ pattern: /first/ })).toThrow(
+        TypeError,
+      );
+    });
   });
 
   it('produces a different content digest when only a Date differs', () => {
