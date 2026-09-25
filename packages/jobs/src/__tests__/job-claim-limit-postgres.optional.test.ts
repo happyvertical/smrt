@@ -375,6 +375,62 @@ describePostgres('claim limit on PostgreSQL (#3145, #3105)', () => {
     expect(Number(attempts?.max)).toBe(1);
   });
 
+  it('never releases a retained id the runner is executing, and flushes on stop', async () => {
+    await seedBacklog('deploys');
+    const runner = createTaskRunner({
+      concurrency: 1,
+      queues: ['deploys'],
+      pollInterval: 60_000,
+      retention: false,
+    });
+    runners.push(runner);
+    await runner.initialize(db);
+    const internals = runner as unknown as {
+      unreleasedSurplus: Set<string>;
+      retryUnreleasedSurplus(): Promise<void>;
+    };
+    await runner.start();
+    const deadline = Date.now() + 20_000;
+    while (peak === 0) {
+      if (Date.now() > deadline) throw new Error('timed out');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const [running] = rows<{ id: string }>(
+      await db.query(
+        "SELECT CAST(id AS VARCHAR) AS id FROM _smrt_jobs WHERE status = 'running'",
+      ),
+    );
+    expect(running?.id).toBeTruthy();
+    // Stale bookkeeping naming the live job must not unclaim it.
+    internals.unreleasedSurplus.add(String(running?.id));
+    await internals.retryUnreleasedSurplus();
+    expect(internals.unreleasedSurplus.size).toBe(0);
+    expect(
+      await count(
+        db,
+        "SELECT COUNT(*) AS count FROM _smrt_jobs WHERE status = 'running'",
+      ),
+    ).toBe(1);
+
+    // A surplus row still owned at shutdown is returned to pending by stop().
+    const [extra] = await jobs.claimReady({
+      workerId: (runner as unknown as { workerKey: string }).workerKey,
+      queues: ['deploys'],
+      limit: 1,
+    });
+    internals.unreleasedSurplus.add(String(extra?.id));
+    await runner.stop();
+    runners.splice(runners.indexOf(runner), 1);
+    const [row] = rows<{ status: string; attempts: number | string }>(
+      await db.query(
+        'SELECT status, attempts FROM _smrt_jobs WHERE id = $1',
+        extra?.id,
+      ),
+    );
+    expect(row?.status).toBe('pending');
+    expect(Number(row?.attempts)).toBe(0);
+  });
+
   it('leases exactly one forge delivery per claim from a backlog', async () => {
     const inbox = await ForgeDeliveryCollection.create({ db });
     for (let i = 0; i < 40; i += 1) {
