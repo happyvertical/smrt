@@ -153,6 +153,7 @@ minor units.
 
 ```ts
 import { getAccountingProvider } from '@happyvertical/accounting';
+import { SpendingPolicyEvaluator } from '@happyvertical/smrt-subscriptions';
 import {
   BillingRuntime,
   createStripeBillingProvider,
@@ -210,13 +211,32 @@ if (intake.type?.endsWith(':unverified_credit_purchase')) {
 }
 await billing.processEvents(); // or enqueueBillingEvents({ runtime: 'platform' })
 
-// Prepaid credit through provider checkout.
+// Prepaid credit through provider checkout: tax is added on top when the
+// payer's account is taxed; `savePaymentMethod` keeps the card for top-ups.
 const { url } = await billing.createCreditCheckout({
   spendingPolicyId,
   amount: 5000,
   purchaseId: cartId,
+  savePaymentMethod: true,
   successUrl,
   cancelUrl,
+});
+
+// Card on file at signup: a setup checkout that charges nothing. Its
+// completion event makes the card the payer's default and adopts the billing
+// address collected at checkout as the tax location.
+const setup = await billing.createCardSetupCheckout({
+  payerTenantId,
+  currency: 'CAD',
+  setupId: signupId,
+  successUrl,
+  cancelUrl,
+});
+
+// Automatic top-ups: charge the saved card when a balance would run out.
+const evaluator = await SpendingPolicyEvaluator.create({
+  db,
+  autoTopUp: billing.autoTopUpHook({ amount: () => 2500 }),
 });
 ```
 
@@ -284,9 +304,8 @@ const { url } = await billing.createCreditCheckout({
   with its own service period. Stop workers running a pre-#3116 version
   before relying on this: they claim flat plans outside the numbering.
 - **Service periods.** Each flat-plan invoice line carries its billed window
-  as `periodStart`/`periodEnd`, down to the provider port. The Stripe adapter
-  passes them on; `@happyvertical/accounting` does not send them to Stripe yet
-  (happyvertical/sdk#1274).
+  as `periodStart`/`periodEnd`, down to the provider port and on to Stripe's
+  invoice item `period`.
 - **Upgrading to #3116.** Additive schema only: `_smrt_billing_accounts` gains
   `billing_anchor_at` (nullable) and `prorate_flat_plans` (default false), and
   `_smrt_billing_line_sources` gains `chain_sequence` (default 0) and an index
@@ -299,11 +318,44 @@ const { url } = await billing.createCreditCheckout({
 - **Events** are verified, stored in smrt-jobs' durable delivery inbox, and
   applied against current provider state: paid invoices record a payment and
   allocation; failures and overdue notices mark the payer `past_due` and its
-  flat-plan subscriptions `past_due`; payment reinstates them. Dunning is the
-  provider's.
+  flat-plan subscriptions `past_due`; an invoice written off at the provider
+  (`markInvoiceUncollectible(invoiceId)`, or in Stripe) marks it
+  `uncollectible`; payment reinstates them. Dunning is the provider's.
+  Subscribe the webhook endpoint to `invoice.*`, `customer.subscription.*`,
+  `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+  and `payment_intent.*`.
 - **Prepaid credit** purchases credit a `period: 'balance'` spending policy
   once per checkout session, paid by the policy's tenant or, for a delegated
-  balance, the parent that set it.
+  balance, the parent that set it. Amounts are ISO 4217 minor units in any
+  currency the provider supports. When the payer's account is taxed
+  (`automaticTax`, not tax-exempt; override per call), provider tax is
+  charged on top and collected at checkout with the buyer's address: the
+  credit is the amount bought, the payment is the total collected, and the
+  tax is booked to the tax account.
+- **Card on file (#3139).** `createCardSetupCheckout()` (or a credit purchase
+  with `savePaymentMethod`) saves the payer's card without charging it. On
+  completion the card becomes the provider customer's default and the
+  payer's default `PaymentInstrument`, and a collected billing address
+  becomes the payer's tax location.
+- **Automatically charged invoices.** With `autoChargeInvoices: true` on the
+  runtime, a payer with a default card is invoiced `charge_automatically`:
+  the provider charges the card after the invoice is sent, on its own
+  schedule, and retries failures. Activate service on the `current` standing
+  from the `paid` event, not on send; a failure marks the payer `past_due`.
+- **Automatic top-ups.** `billing.autoTopUpHook()` is the `autoTopUp` hook for
+  `SpendingPolicyEvaluator`: when a balance would run out it charges the
+  payer's saved card off-session (the delegating parent's, for a delegated
+  balance) and credits the balance only when the charge succeeds. A charge
+  still processing is credited from its `payment_intent.succeeded` event; a
+  decline or an authentication requirement credits nothing, closes the
+  attempt, and calls the runtime's `onAutoTopUpFailed` (ask the payer to
+  re-save their card with a setup checkout). One attempt runs per policy at a
+  time, retries of a declined card wait `retryAfterMs` (default one hour),
+  and the credit is granted exactly once however the outcome arrives.
+- **Upgrading to #3139.** Requires `@happyvertical/accounting` 0.92 or later.
+  No schema change. Credit checkouts are now taxed for taxed accounts (pass
+  `automaticTax: false` to keep them untaxed), and Stripe customers are
+  created idempotently.
 
 See [`AGENTS.md`](./AGENTS.md#billing-period-close-3060) for invariants and
 known limits.

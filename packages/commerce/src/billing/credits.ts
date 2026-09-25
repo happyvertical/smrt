@@ -2,6 +2,7 @@
  * Prepaid credit purchases through provider checkout (#3060). A paid
  * checkout credits the balance policy through smrt-subscriptions'
  * `grantCredit()`, keyed by the checkout session so it is credited once.
+ * Provider-calculated tax is charged on top of the credit (#3139).
  */
 import {
   getTenantId,
@@ -10,6 +11,7 @@ import {
   TenantIsolationError,
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
+import { SAVE_CARD_METADATA } from './cards.js';
 import type { BillingProviderCheckoutSession } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
@@ -35,6 +37,18 @@ export interface CreateCreditCheckoutInput {
   purchaseId: string;
   /** Checkout line description (default `Prepaid credit`). */
   description?: string;
+  /**
+   * Charge provider-calculated tax on top of the credit (#3139). Default:
+   * the payer's account setting (`automaticTax`, off for tax-exempt
+   * customers). The credit granted is always `amount`; tax is booked to the
+   * tax account.
+   */
+  automaticTax?: boolean;
+  /**
+   * Also save the card as the payer's default for automatic top-ups and
+   * automatically charged invoices (#3139).
+   */
+  savePaymentMethod?: boolean;
 }
 
 /** The checkout metadata a completed purchase is settled from. */
@@ -135,6 +149,13 @@ export async function createCreditCheckout(
     throw new Error(`No billing account for payer ${payer}.`);
   }
   const currency = normalizeCurrency(policy.currency);
+  // Saving a card needs a provider customer to attach it to; the address may
+  // still be collected at checkout.
+  const synced = input.savePaymentMethod
+    ? await runtime.ensureProviderCustomer(account, {
+        requireTaxLocation: false,
+      })
+    : null;
   const metadata = encodeMetadata({
     purpose: CREDIT_PURCHASE_PURPOSE,
     sellerTenantId: runtime.sellerTenantId,
@@ -151,10 +172,14 @@ export async function createCreditCheckout(
     String(policy.id),
     input.purchaseId,
   ]);
+  if (input.savePaymentMethod) metadata[SAVE_CARD_METADATA] = '1';
   const providerCustomerId =
-    account.provider === runtime.provider.name
+    synced?.providerCustomerId ??
+    (account.provider === runtime.provider.name
       ? account.providerCustomerId
-      : '';
+      : '');
+  const automaticTax =
+    input.automaticTax ?? (await runtime.accountIsTaxed(account));
   return runtime.provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,
     providerCustomerId: providerCustomerId || undefined,
@@ -165,5 +190,7 @@ export async function createCreditCheckout(
     successUrl: input.successUrl,
     cancelUrl: input.cancelUrl,
     metadata,
+    automaticTax,
+    ...(input.savePaymentMethod ? { savePaymentMethod: true } : {}),
   });
 }

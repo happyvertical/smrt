@@ -17,6 +17,7 @@ import {
   ForgeProjectionRuntime,
   type ForgeProjector,
 } from '@happyvertical/smrt-jobs';
+import { JournalCollection } from '@happyvertical/smrt-ledgers';
 import {
   SpendingPolicyEvaluator,
   type SubscriptionStatus,
@@ -35,19 +36,23 @@ import {
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
+import {
+  CARD_SETUP_PURPOSE,
+  recordSavedCard,
+  SAVE_CARD_METADATA,
+  type SavedCard,
+  savedCardFromCheckout,
+} from './cards.js';
 import { CREDIT_PURCHASE_PURPOSE, creditMetadata } from './credits.js';
 import type {
+  BillingProviderCheckoutState,
   BillingProviderEvent,
   BillingProviderInvoiceState,
   BillingProviderSubscriptionState,
 } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
-import {
-  currencyMinorUnitExponent,
-  deterministicId,
-  normalizeCurrency,
-  tenantKey,
-} from './units.js';
+import { applyAutoTopUpOutcome, autoTopUpPaymentId } from './top-up.js';
+import { deterministicId, normalizeCurrency, tenantKey } from './units.js';
 
 type InvoiceEvent = Extract<BillingProviderEvent, { kind: 'invoice' }>;
 type SubscriptionEvent = Extract<
@@ -58,6 +63,7 @@ type CheckoutEvent = Extract<
   BillingProviderEvent,
   { kind: 'checkout_completed' }
 >;
+type PaymentEvent = Extract<BillingProviderEvent, { kind: 'payment' }>;
 
 type ObservedEvent =
   | { event: InvoiceEvent; invoice: BillingProviderInvoiceState }
@@ -65,7 +71,14 @@ type ObservedEvent =
       event: SubscriptionEvent;
       subscription: BillingProviderSubscriptionState;
     }
-  | { event: CheckoutEvent };
+  | {
+      event: CheckoutEvent;
+      /** The session re-read from the provider, when it can be. */
+      checkout: BillingProviderCheckoutState | null;
+      /** A card the session saved, already the provider default. */
+      card: SavedCard | null;
+    }
+  | { event: PaymentEvent; paymentId: string };
 
 const PROJECTION = 'billing-provider-events';
 
@@ -125,7 +138,15 @@ export function createBillingEventProjector(
           ),
         };
       } else if (event.kind === 'checkout_completed') {
-        value = { event };
+        value = await observeCheckout(runtime, event);
+      } else if (event.kind === 'payment') {
+        // Only this seller's auto top-up attempts; another runtime's charge
+        // on a shared provider account is not ours to apply.
+        const paymentId = autoTopUpPaymentId(event.chargeKey);
+        if (!paymentId || !(await isOwnTopUp(runtime, paymentId))) {
+          return null;
+        }
+        value = { event, paymentId };
       } else {
         return null;
       }
@@ -153,11 +174,77 @@ export function createBillingEventProjector(
         );
       } else if ('subscription' in value) {
         await applySubscriptionState(runtime, context.db, value.subscription);
+      } else if ('paymentId' in value) {
+        await applyAutoTopUpOutcome(runtime, context.db, value.paymentId, {
+          status: value.event.status,
+          providerPaymentId: value.event.providerPaymentId,
+          providerCustomerId: value.event.providerCustomerId,
+          amount: value.event.amount,
+          currency: value.event.currency,
+          failureCode: value.event.failureCode,
+        });
       } else {
-        await applyCheckout(runtime, context.db, value.event);
+        if (value.card) await recordSavedCard(runtime, context.db, value.card);
+        await applyCheckout(runtime, context.db, value.event, value.checkout);
       }
     },
   };
+}
+
+/**
+ * Re-read a completed checkout (Stripe's event amounts are not ISO minor
+ * units) and, when it saved a card for one of this seller's accounts, make it
+ * the provider customer's default. That provider write is idempotent, so a
+ * retried event repeats it harmlessly.
+ */
+async function observeCheckout(
+  runtime: BillingRuntime,
+  event: CheckoutEvent,
+): Promise<Extract<ObservedEvent, { checkout: unknown }>> {
+  const getCheckout = runtime.provider.getCheckout;
+  const checkout = getCheckout
+    ? await getCheckout.call(runtime.provider, event.sessionId)
+    : null;
+  if (checkout && checkout.sessionId !== event.sessionId) {
+    throw new Error(
+      `Checkout ${event.sessionId} re-read as ${checkout.sessionId}.`,
+    );
+  }
+  const savesCard =
+    (event.mode === 'setup' &&
+      event.metadata.smrt_purpose === CARD_SETUP_PURPOSE) ||
+    event.metadata[SAVE_CARD_METADATA] === '1';
+  let card: SavedCard | null = null;
+  if (savesCard && checkout) {
+    card = await savedCardFromCheckout(runtime, event.metadata, checkout);
+    if (card) {
+      const setDefault = runtime.provider.setDefaultPaymentMethod;
+      if (!setDefault) {
+        throw new Error(
+          `Billing provider ${runtime.provider.name} cannot set a default payment method.`,
+        );
+      }
+      await setDefault.call(
+        runtime.provider,
+        card.providerCustomerId,
+        card.paymentMethodId,
+      );
+    }
+  }
+  return { event, checkout, card };
+}
+
+async function isOwnTopUp(
+  runtime: BillingRuntime,
+  paymentId: string,
+): Promise<boolean> {
+  const payments = await PaymentCollection.create({ db: runtime.db });
+  const payment = await withSystemContext(() => payments.get(paymentId));
+  return Boolean(
+    payment &&
+      tenantKey(payment.tenantId) === runtime.sellerTenantId &&
+      payment.externalProvider === runtime.provider.name,
+  );
 }
 
 function readEvent(delivery: ForgeDelivery): BillingProviderEvent {
@@ -207,6 +294,10 @@ async function applyInvoiceEvent(
       invoice.cancel();
       await invoice.save();
     }
+  } else if (state.status === 'uncollectible') {
+    // Written off at the provider (#3139). It can still be paid (the `paid`
+    // branch then reinstates the payer) or voided.
+    standing = 'uncollectible';
   } else if (state.status === 'open') {
     if (event.type === 'payment_failed' || event.type === 'overdue') {
       standing = 'past_due';
@@ -219,6 +310,7 @@ async function applyInvoiceEvent(
         await invoice.save();
       }
     } else if (event.type === 'uncollectible') {
+      // A provider that reports written-off invoices as open.
       standing = 'uncollectible';
     }
   }
@@ -414,26 +506,33 @@ async function applyCheckout(
   runtime: BillingRuntime,
   db: DatabaseInterface,
   event: CheckoutEvent,
+  checkout: BillingProviderCheckoutState | null,
 ): Promise<void> {
   const metadata = creditMetadata(event.metadata);
   if (!metadata || metadata.purpose !== CREDIT_PURCHASE_PURPOSE) return;
   if (metadata.sellerTenantId !== runtime.sellerTenantId) return;
-  if (!event.paid) return; // An async payment settles on a later event.
-  if (currencyMinorUnitExponent(event.currency) !== 2) {
-    throw new Error(
-      `Checkout ${event.sessionId} is in ${event.currency}; credit purchases are two-decimal only.`,
-    );
-  }
+  // The re-read session is authoritative; the event's own amounts are used
+  // only for a provider that cannot re-read (and reports minor units).
+  const paid = checkout ? checkout.complete && checkout.paid : event.paid;
+  if (!paid) return; // An async payment settles on a later event.
+  const currency = normalizeCurrency(
+    (checkout ? checkout.currency : event.currency) ?? '',
+  );
+  const subtotal = checkout ? checkout.amountSubtotal : event.amountSubtotal;
+  const tax = (checkout ? checkout.amountTax : event.amountTax) ?? 0;
+  const total = checkout ? checkout.amountTotal : event.amountTotal;
   if (
-    event.currency !== metadata.currency ||
-    event.amountSubtotal !== metadata.amount ||
-    // Credit is granted only for money collected in full: a discounted
-    // session reports the undiscounted subtotal.
-    event.amountTotal !== metadata.amount
+    currency !== metadata.currency ||
+    subtotal !== metadata.amount ||
+    !Number.isSafeInteger(tax) ||
+    tax < 0 ||
+    // Credit is granted only for money collected in full: the total is the
+    // credit plus provider tax, with no discount.
+    total !== metadata.amount + tax
   ) {
     throw new Error(
-      `Checkout ${event.sessionId} collected ${event.amountTotal} of ${event.amountSubtotal} ${event.currency}; ` +
-        `expected ${metadata.amount} ${metadata.currency}.`,
+      `Checkout ${event.sessionId} collected ${total} (${subtotal} + ${tax} tax) ${currency}; ` +
+        `expected ${metadata.amount} ${metadata.currency} plus tax.`,
     );
   }
 
@@ -452,7 +551,8 @@ async function applyCheckout(
     });
   });
 
-  // The cash is recorded in the seller's books against prepaid credit.
+  // The cash is recorded in the seller's books against prepaid credit, and
+  // any tax collected is moved to tax payable.
   const accounts = await BillingAccountCollection.create({ db });
   const account = await accounts.get(metadata.billingAccountId);
   if (
@@ -474,7 +574,7 @@ async function applyCheckout(
       id: paymentId,
       tenantId: runtime.sellerTenantId,
       customerId: account.customerId,
-      amount: metadata.amount,
+      amount: total,
       currency: metadata.currency,
       method: PaymentMethod.CREDIT_CARD,
       reference: `credit:${metadata.spendingPolicyId}`,
@@ -483,10 +583,33 @@ async function applyCheckout(
       _insertOnly: true,
     }));
   if (payment.status !== PaymentStatus.COMPLETED) {
+    // The payment row, its journal, and the tax reclass commit together, so
+    // a replay that finds the payment completed has nothing left to post.
     await payment.recordPayment({
       ledgerId: '',
       cashAccountId: runtime.ledger.cashAccountId,
       receivablesAccountId: runtime.ledger.prepaidCreditAccountId,
     });
+    if (tax > 0) {
+      const journals = await JournalCollection.create({ db });
+      const journal = await journals.create({
+        date: new Date(),
+        description: `Tax collected on prepaid credit ${event.sessionId}`,
+        sourceModule: 'smrt-commerce',
+        sourceRef: `${paymentId}:tax`,
+      });
+      await journal.save();
+      await journal.addEntry({
+        accountId: runtime.ledger.prepaidCreditAccountId,
+        debit: tax,
+        memo: `Tax on credit ${metadata.spendingPolicyId}`,
+      });
+      await journal.addEntry({
+        accountId: runtime.ledger.taxAccountId,
+        credit: tax,
+        memo: `Tax on credit ${metadata.spendingPolicyId}`,
+      });
+      await journal.post();
+    }
   }
 }
