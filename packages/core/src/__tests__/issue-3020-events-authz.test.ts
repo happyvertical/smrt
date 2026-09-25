@@ -306,4 +306,49 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       expect(changeSignalSubscriberCount(db)).toBe(0);
     });
   });
+
+  describe('gap-fill catch-up during pending table authorization (#3020 follow-up)', () => {
+    it('a live-forward stream still delivers a change committed and signalled while the table authorizer is pending', async () => {
+      let resolveAuthorization: (tables: string[]) => void = () => {};
+      const pendingAuthorization = new Promise<string[]>((resolve) => {
+        resolveAuthorization = resolve;
+      });
+      setChangeFeedAuthorizer(() => pendingAuthorization);
+
+      // cursor: null → live-forward-only, no explicit catch-up requested.
+      // Constructing the stream starts its (async) start(), which — with a
+      // table hook registered — awaits the authorizer before subscribing.
+      const stream = buildChangeEventStream(db, {
+        cursor: null,
+        tenantScope: UNENFORCED_SCOPE,
+        locals: stationLocals,
+        request: stationRequest,
+      });
+
+      // Let start() reach and suspend on the pending authorization await.
+      // `unsubscribe` is still null here — no subscription exists yet.
+      await flushAsync();
+      expect(changeSignalSubscriberCount(db)).toBe(0);
+
+      // A write commits (and, via appendChange's own publishChangeSignal
+      // call, signals) while the authorizer is still pending. With no
+      // subscription attached yet, that live signal has no listener to
+      // reach — before the fix, this entry would be lost forever once the
+      // stream finally subscribes, since live-forward mode runs no explicit
+      // catch-up phase to recover it.
+      await appendChange(db, {
+        table: PUNCHES_TABLE,
+        rowId: OTHER_ROW_ID,
+        operation: 'create',
+      });
+
+      // Authorization now resolves, allowing the table.
+      resolveAuthorization([PUNCHES_TABLE]);
+      await flushAsync();
+
+      const text = await readStreamText(stream);
+      expect(text).toContain(`"rowId":"${OTHER_ROW_ID}"`);
+      await stream.cancel().catch(() => {});
+    });
+  });
 });

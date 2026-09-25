@@ -263,7 +263,14 @@ function encodeSseComment(text: string): Uint8Array {
  *     like `tenantScope`, and for the same reason (delivery runs outside this
  *     call's context). Skipped entirely (no `await`) when no table
  *     authorizer is registered, so the default connection setup stays
- *     synchronous up to the subscribe call below.
+ *     synchronous up to the subscribe call below. When a hook IS registered
+ *     and the connection has no explicit catch-up `cursor` (live-forward-only),
+ *     the feed's current head is captured BEFORE this await as a gap-fill
+ *     cursor: `unsubscribe` below only sees signals published after it
+ *     attaches, so a write that commits (and signals) while the authorizer is
+ *     pending would otherwise be lost forever, not merely delayed — a
+ *     supplied `cursor` doesn't need this because its own catch-up phase (c)
+ *     already starts from a value captured before this same await.
  *  a. **Subscribe FIRST**, before catch-up. Subscribing before the catch-up
  *     read closes the gap window: a write landing between subscribe and the
  *     catch-up read is delivered twice (once live, once in the replay) — which
@@ -272,9 +279,10 @@ function encodeSseComment(text: string): Uint8Array {
  *     if registered, the row-level `isChangeFeedEntryVisible` hook — denied
  *     signals are silently dropped, never enqueued.
  *  b. Write the `retry:` reconnection hint.
- *  c. If a cursor was supplied, replay changes after it (paging until
- *     exhausted, applying the same table/row authorization as live delivery);
- *     on `resyncRequired`, emit `event: resync` at the server's fresh horizon.
+ *  c. If a cursor was supplied, OR step 0 captured a gap-fill cursor, replay
+ *     changes after it (paging until exhausted, applying the same table/row
+ *     authorization as live delivery); on `resyncRequired`, emit
+ *     `event: resync` at the server's fresh horizon.
  *  d. Start the heartbeat interval.
  *
  * `cancel()` tears down on disconnect: clears the heartbeat and unsubscribes,
@@ -319,7 +327,31 @@ export function buildChangeEventStream(
       // hook is actually registered, so the unconfigured default reaches the
       // subscribe call below with no yield in between.
       let allowedTables: string[] | undefined;
+      // Gap-fill catch-up cursor (#3020 follow-up): in live-forward-only mode
+      // (`cursor === null`) there is no explicit catch-up phase below to
+      // recover a write that commits — and signals — while the table
+      // authorizer is awaited. `unsubscribe` below only sees signals
+      // published AFTER it attaches, so anything published during this await
+      // is otherwise lost forever, not merely delayed. Capture the feed's
+      // current head BEFORE the await (a single indexed MIN/MAX bounds
+      // query, via `denyAllTables` so it never touches the row-selecting
+      // path) so that once the allow-list resolves we can replay exactly the
+      // entries appended in that window — same mechanism the explicit-cursor
+      // path already gets for free, since its catch-up starts from a cursor
+      // captured before this same await. A non-null `cursor` needs no
+      // separate capture: its own catch-up phase already starts from that
+      // pre-await value.
+      let gapFillCursor: number | null = null;
       if (hasChangeFeedTableAuthorizerHook()) {
+        if (cursor == null) {
+          const headPage = await getChangesSince(db, {
+            since: 0,
+            denyAllTables: true,
+          });
+          gapFillCursor = headPage.resyncRequired
+            ? (headPage.resyncCursor ?? 0)
+            : headPage.cursor;
+        }
         allowedTables = await resolveAuthorizedChangeFeedTables(
           requestContext,
           undefined,
@@ -394,8 +426,12 @@ export function buildChangeEventStream(
         controller.enqueue(encodeSseManifestEvent(manifestHash));
       }
 
-      // (c) Catch-up replay from the cursor, if one was supplied.
-      if (cursor != null) {
+      // (c) Catch-up replay from the cursor, if one was supplied — or from
+      // the gap-fill cursor captured before the authorizer await (above),
+      // which replays only what was appended during that await so a
+      // live-forward-only connection never silently drops it.
+      const catchupCursor = cursor ?? gapFillCursor;
+      if (catchupCursor != null) {
         try {
           // Catch-up MUST filter by the scope captured at connection open, not
           // re-resolve the tenant via ALS at call time. start() happens to run
@@ -406,7 +442,7 @@ export function buildChangeEventStream(
           const catchupTenantId = tenantScope.enforced
             ? tenantScope.tenantId
             : undefined;
-          let since = cursor;
+          let since = catchupCursor;
           // Page until exhausted (cursor stops advancing / resync).
           for (;;) {
             const page = await getChangesSince(db, {
