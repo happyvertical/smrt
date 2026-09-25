@@ -18,6 +18,13 @@ export {
   PromptOverride,
   type PromptOverrideOptions,
 } from './models/PromptOverride.js';
+export {
+  InvalidPromptScopeError,
+  PromptOverrideAuthorizationError,
+  type PromptOverrideAuthorizer,
+  PromptOverrideService,
+  type PromptOverrideWriteRequest,
+} from './prompt-override-service.js';
 export { definePrompt, PromptRegistry } from './prompt-registry.js';
 export { resolvePrompt } from './prompt-resolver.js';
 export type {
@@ -28,6 +35,7 @@ export type {
   PromptDefinitionInput,
   PromptEditableConfig,
   PromptLayer,
+  PromptOverrideScopeType,
   PromptPackageConfig,
   PromptParams,
   PromptProfileConfig,
@@ -35,6 +43,7 @@ export type {
   ResolvedPromptAI,
   ResolvePromptOptions,
 } from './types.js';
+export { APP_PROMPT_SCOPE_ID } from './types.js';
 
 /** @internal */
 export const PACKAGE_VERSION_INITIALIZED = true;

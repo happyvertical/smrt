@@ -8,10 +8,11 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidatePromptCache } from '../cache.js';
 import { PromptRegistry } from '../prompt-registry.js';
-import type {
-  PromptLayer,
-  PromptPackageConfig,
-  PromptParams,
+import {
+  APP_PROMPT_SCOPE_ID,
+  type PromptLayer,
+  type PromptPackageConfig,
+  type PromptParams,
 } from '../types.js';
 import {
   mergePromptLayers,
@@ -48,15 +49,21 @@ function getPromptConfig(): PromptPackageConfig {
   });
 }
 
+// Override rows are authorization state: any scope (app-wide, or another
+// tenant) can be written, and the object is not tenant-scoped by the request
+// context — `tenantId` is an ordinary settable field. Generated REST routes
+// and MCP tools only check authentication, so they are closed (#3013, mirrored
+// from `@happyvertical/smrt-features`). Hosts write overrides server-side
+// through `PromptOverrideService`, which requires an explicit authorizer for
+// every write (or `PromptOverrideCollection.setTemplateOverride()` /
+// `removeOverride()` after their own authorization decision). The CLI is
+// closed too: generated CLI commands dispatch through the generated API.
 @smrt({
   tableName: '_smrt_prompt_overrides',
   conflictColumns: ['key', 'context'],
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: {
-    include: ['list', 'get', 'create', 'update', 'delete'],
-    exclude: ['getParams', 'setParams', 'toPromptLayer'],
-  },
-  mcp: { include: [] },
+  api: false,
+  cli: false,
+  mcp: false,
 })
 export class PromptOverride extends SmrtObject {
   @field({ required: true })
@@ -117,7 +124,7 @@ export class PromptOverride extends SmrtObject {
     await this.validatePromptOverride();
     // Use context as the uniqueness scope so app-level rows remain unique even
     // though tenantId is nullable and would otherwise allow multiple NULL rows.
-    this.context = this.tenantId ?? '__app__';
+    this.context = this.tenantId ?? APP_PROMPT_SCOPE_ID;
     const identityChanged =
       previousIdentity &&
       (previousIdentity.key !== this.key ||

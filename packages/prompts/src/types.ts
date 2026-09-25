@@ -32,6 +32,22 @@ export interface PromptDefinition {
   editable: PromptEditableConfig;
 }
 
+/**
+ * The two scopes a stored {@link PromptOverride} row may target: the
+ * app-wide default (`tenantId` is `null`) or one tenant.
+ */
+export type PromptOverrideScopeType = 'app' | 'tenant';
+
+/**
+ * Canonical scope id for the app-wide override scope, mirroring
+ * `GLOBAL_FEATURE_SCOPE_ID` in `@happyvertical/smrt-features` (#3013). The
+ * resolver and the write-authorization path both key off this exact value —
+ * `PromptOverride` itself stores the app scope as `tenantId: null`, not this
+ * string, so this constant only ever appears at the scope-request boundary
+ * (`PromptOverrideService`, `PromptSettingsService`).
+ */
+export const APP_PROMPT_SCOPE_ID = '__app__';
+
 export interface PromptProfileConfig {
   provider: string;
   model: string;

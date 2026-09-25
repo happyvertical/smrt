@@ -1,5 +1,6 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { PromptOverride } from '../models/PromptOverride.js';
+import type { PromptOverrideScopeType } from '../types.js';
 
 export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
   static readonly _itemClass = PromptOverride;
@@ -44,5 +45,60 @@ export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
       app,
       tenant,
     };
+  }
+
+  /** The override row for a scope request, in the vocabulary used at the write boundary. */
+  async findByScope(
+    key: string,
+    scopeType: PromptOverrideScopeType,
+    scopeId: string,
+  ): Promise<PromptOverride | null> {
+    return scopeType === 'app'
+      ? this.getAppOverride(key)
+      : this.getTenantOverride(key, scopeId);
+  }
+
+  /**
+   * Set (or clear, with `template: null`) the `template` field of the override
+   * row for one scope, creating the row if it did not exist. Other fields
+   * (`profile`, `model`, `params`) on an existing row are left untouched, per
+   * this package's field-by-field inheritance model.
+   */
+  async setTemplateOverride(
+    key: string,
+    scopeType: PromptOverrideScopeType,
+    scopeId: string,
+    template: string | null,
+  ): Promise<PromptOverride> {
+    const existing = await this.findByScope(key, scopeType, scopeId);
+
+    if (existing) {
+      existing.template = template;
+      await existing.save();
+      return existing;
+    }
+
+    const created = await this.create({
+      key,
+      tenantId: scopeType === 'app' ? null : scopeId,
+      template,
+    });
+    await created.save();
+    return created;
+  }
+
+  /** Remove the override row for one scope entirely, if one exists. */
+  async removeOverride(
+    key: string,
+    scopeType: PromptOverrideScopeType,
+    scopeId: string,
+  ): Promise<boolean> {
+    const existing = await this.findByScope(key, scopeType, scopeId);
+    if (!existing) {
+      return false;
+    }
+
+    await existing.delete();
+    return true;
   }
 }
