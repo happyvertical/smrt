@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-content",
-  "packageVersion": "0.49.2",
+  "packageVersion": "0.51.27",
   "objects": {
     "@happyvertical/smrt-content:ContentAsset": {
       "name": "contentasset",
@@ -193,7 +193,8 @@
           }
         ],
         "version": "472d718d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentAssetCollection": {
       "name": "contentassetcollection",
@@ -422,7 +423,8 @@
           }
         ],
         "version": "472d718d"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionAttachment": {
       "name": "contentcontributionattachment",
@@ -700,7 +702,8 @@
           }
         ],
         "version": "83e64a1b"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionAttachmentCollection": {
       "name": "contentcontributionattachmentcollection",
@@ -885,7 +888,8 @@
           }
         ],
         "version": "83e64a1b"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionRevision": {
       "name": "contentcontributionrevision",
@@ -1143,7 +1147,8 @@
           }
         ],
         "version": "5051727c"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionRevisionCollection": {
       "name": "contentcontributionrevisioncollection",
@@ -1312,7 +1317,8 @@
           }
         ],
         "version": "5051727c"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionType": {
       "name": "contentcontributiontype",
@@ -1505,6 +1511,7 @@
       "decoratorConfig": {
         "tableName": "content_contribution_types",
         "conflictColumns": [
+          "tenant_id",
           "key"
         ],
         "api": {
@@ -1654,11 +1661,13 @@
         },
         "indexes": [
           {
-            "name": "content_contribution_types_key_idx",
+            "name": "content_contribution_types_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_contribution_types_slug_context_idx",
@@ -1676,7 +1685,8 @@
           }
         ],
         "version": "35552300"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributionTypeCollection": {
       "name": "contentcontributiontypecollection",
@@ -1801,11 +1811,13 @@
         },
         "indexes": [
           {
-            "name": "content_contribution_types_key_idx",
+            "name": "content_contribution_types_tenant_id_key_idx",
             "columns": [
+              "tenant_id",
               "key"
             ],
-            "unique": true
+            "unique": true,
+            "nullsNotDistinct": true
           },
           {
             "name": "content_contribution_types_slug_context_idx",
@@ -1823,7 +1835,8 @@
           }
         ],
         "version": "35552300"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContribution": {
       "name": "contentcontribution",
@@ -2384,7 +2397,8 @@
           }
         ],
         "version": "ef8fd792"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributions": {
       "name": "contentcontributions",
@@ -2717,7 +2731,8 @@
           }
         ],
         "version": "ef8fd792"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributor": {
       "name": "contentcontributor",
@@ -2936,7 +2951,8 @@
           }
         ],
         "version": "7eb9c661"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentContributorCollection": {
       "name": "contentcontributorcollection",
@@ -3094,7 +3110,8 @@
           }
         ],
         "version": "7eb9c661"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentCorrection": {
       "name": "contentcorrection",
@@ -3396,7 +3413,8 @@
           }
         ],
         "version": "bf2808c7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentCorrectionCollection": {
       "name": "contentcorrectioncollection",
@@ -3616,7 +3634,8 @@
           }
         ],
         "version": "bf2808c7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentFeedSource": {
       "name": "contentfeedsource",
@@ -3992,7 +4011,8 @@
           }
         ],
         "version": "bbcb36e5"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentFeedSourceCollection": {
       "name": "contentfeedsourcecollection",
@@ -4222,7 +4242,8 @@
           }
         ],
         "version": "bbcb36e5"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernanceAssignment": {
       "name": "contentgovernanceassignment",
@@ -4526,7 +4547,8 @@
           }
         ],
         "version": "00a2c610"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernanceAssignmentCollection": {
       "name": "contentgovernanceassignmentcollection",
@@ -4702,7 +4724,8 @@
           }
         ],
         "version": "00a2c610"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernancePolicyCollection": {
       "name": "contentgovernancepolicycollection",
@@ -4827,7 +4850,8 @@
           }
         ],
         "version": "3cc24f80"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernancePolicy": {
       "name": "contentgovernancepolicy",
@@ -5056,7 +5080,8 @@
           }
         ],
         "version": "3cc24f80"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernanceProfile": {
       "name": "contentgovernanceprofile",
@@ -5291,7 +5316,8 @@
           }
         ],
         "version": "4bfc2afc"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentGovernanceProfileCollection": {
       "name": "contentgovernanceprofilecollection",
@@ -5415,7 +5441,8 @@
           }
         ],
         "version": "4bfc2afc"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentReference": {
       "name": "contentreference",
@@ -5593,7 +5620,8 @@
           }
         ],
         "version": "3347ea2a"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentReferences": {
       "name": "contentreferences",
@@ -5865,7 +5893,8 @@
           }
         ],
         "version": "3347ea2a"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentReview": {
       "name": "contentreview",
@@ -6132,7 +6161,8 @@
           }
         ],
         "version": "7b2c0ad7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentReviewCollection": {
       "name": "contentreviewcollection",
@@ -6377,7 +6407,8 @@
           }
         ],
         "version": "7b2c0ad7"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:Article": {
       "name": "article",
@@ -7644,7 +7675,8 @@
           }
         ],
         "version": "ad51267b"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentDocument": {
       "name": "contentdocument",
@@ -8911,7 +8943,8 @@
           }
         ],
         "version": "8107d801"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:Mirror": {
       "name": "mirror",
@@ -10207,7 +10240,8 @@
           }
         ],
         "version": "088da7e4"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentVersion": {
       "name": "contentversion",
@@ -10491,7 +10525,8 @@
           }
         ],
         "version": "66cda211"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:ContentVersionCollection": {
       "name": "contentversioncollection",
@@ -10743,7 +10778,8 @@
           }
         ],
         "version": "66cda211"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:Content": {
       "name": "content",
@@ -12143,7 +12179,8 @@
           }
         ],
         "version": "40e4ddf4"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     },
     "@happyvertical/smrt-content:Contents": {
       "name": "contents",
@@ -12633,7 +12670,8 @@
           }
         ],
         "version": "40e4ddf4"
-      }
+      },
+      "importPath": "@happyvertical/smrt-content"
     }
   },
   "moduleType": "smrt",
@@ -12648,7 +12686,6 @@
     "@happyvertical/smrt-profiles",
     "@happyvertical/smrt-prompts",
     "@happyvertical/smrt-tenancy",
-    "@happyvertical/smrt-types",
-    "@happyvertical/smrt-ui"
+    "@happyvertical/smrt-users"
   ]
 }

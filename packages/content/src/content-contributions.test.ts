@@ -3,6 +3,7 @@ import {
   AttachmentCollection,
   EmailCollection,
 } from '@happyvertical/smrt-messages';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -196,7 +197,7 @@ CREATE TABLE IF NOT EXISTS content_contribution_types (
   promotion_mapping TEXT,
   metadata TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS content_contribution_types_key_idx ON content_contribution_types (key);
+CREATE UNIQUE INDEX IF NOT EXISTS content_contribution_types_tenant_id_key_idx ON content_contribution_types (tenant_id, key);
 `;
 
 const CONTENT_CONTRIBUTORS_SCHEMA = `
@@ -614,6 +615,130 @@ describe('content contributions', () => {
     expect(globalState.persisted.map((type) => type.key)).toEqual([
       'global-letter',
     ]);
+  });
+
+  it('keys contribution types per tenant (#3126)', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    const input = {
+      key: 'letter-to-the-editor',
+      allowedChannels: ['web' as const],
+      allowText: true,
+      promotion: { targetContentType: 'article' },
+    };
+
+    const first = await types.create({
+      ...input,
+      label: 'Tenant one letters',
+      tenantId: 'tenant-1',
+    });
+    await first.save();
+    const second = await types.create({
+      ...input,
+      label: 'Tenant two letters',
+      tenantId: 'tenant-2',
+    });
+    await second.save();
+
+    const rows = (await db.list('content_contribution_types', {
+      key: 'letter-to-the-editor',
+    })) as Array<{ id: string; tenant_id: string; label: string }>;
+    expect(rows.map((row) => [row.tenant_id, row.label]).sort()).toEqual([
+      ['tenant-1', 'Tenant one letters'],
+      ['tenant-2', 'Tenant two letters'],
+    ]);
+    expect(second.id).not.toBe(first.id);
+
+    const tenantState = await getContentContributionTypeConfigState({
+      db,
+      tenantId: 'tenant-2',
+    });
+    expect(
+      tenantState.persisted.find((type) => type.key === input.key)?.label,
+    ).toBe('Tenant two letters');
+
+    await expect(
+      db.query(
+        `INSERT INTO content_contribution_types (id, slug, context, created_at, updated_at, tenant_id, key)
+         VALUES ('duplicate-row', 'duplicate', '', '2026-01-01', '2026-01-01', 'tenant-1', 'letter-to-the-editor')`,
+      ),
+    ).rejects.toThrow(/unique/i);
+  });
+
+  it('resolves getByKey to the tenant row, else the global default, never another tenant (#3126)', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    for (const [label, tenantId] of [
+      ['Global tips', null],
+      ['Tenant two tips', 'tenant-2'],
+    ] as const) {
+      const record = await types.create({
+        key: 'tips',
+        label,
+        tenantId,
+        allowedChannels: ['web'],
+        promotion: { targetContentType: 'article' },
+      });
+      await record.save();
+    }
+
+    const inTenant = <T>(tenantId: string, fn: () => Promise<T>) =>
+      withTenant({ tenantId }, fn);
+    expect(
+      (await inTenant('tenant-2', () => types.getByKey('tips')))?.label,
+    ).toBe('Tenant two tips');
+    expect(
+      (await inTenant('tenant-1', () => types.getByKey('tips')))?.label,
+    ).toBe('Global tips');
+    expect((await types.getByKey('tips'))?.label).toBe('Global tips');
+    expect(
+      await inTenant('tenant-2', () => types.getByKey('missing')),
+    ).toBeNull();
+
+    const tenantOnly = await types.create({
+      key: 'tenant-only',
+      tenantId: 'tenant-2',
+      allowedChannels: ['web'],
+      promotion: { targetContentType: 'article' },
+    });
+    await tenantOnly.save();
+    expect(await types.getByKey('tenant-only')).toBeNull();
+    expect(
+      await inTenant('tenant-1', () => types.getByKey('tenant-only')),
+    ).toBeNull();
+  });
+
+  it('checks delete references within the type tenant only (#3126)', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    const input = {
+      key: 'qa-tenant-delete',
+      allowedChannels: ['web' as const],
+      allowText: true,
+      promotion: { targetContentType: 'article' },
+    };
+    const tenantOne = await types.create({ ...input, tenantId: 'tenant-1' });
+    await tenantOne.save();
+    const tenantTwo = await types.create({ ...input, tenantId: 'tenant-2' });
+    await tenantTwo.save();
+
+    const contributors = await ContentContributorCollection.create({ db });
+    const contributor = await contributors.findOrCreateByEmail({
+      email: 'tenant-one-contributor@example.com',
+      name: 'Tenant One Contributor',
+      tenantId: 'tenant-1',
+    });
+    const contribution = await contributions.create({
+      contributorId: contributor.id as string,
+      contributionTypeKey: input.key,
+      tenantId: 'tenant-1',
+      status: 'submitted',
+      intakeDecision: 'accepted',
+      channel: 'web',
+    });
+    await contribution.save();
+
+    await expect(tenantOne.delete()).rejects.toThrow(
+      'contributions already reference it',
+    );
+    await expect(tenantTwo.delete()).resolves.toBeUndefined();
   });
 
   it('deletes an unused custom contribution type cleanly', async () => {

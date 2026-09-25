@@ -2000,7 +2000,9 @@ primary key is not indexed twice, `unique: true` on a single-table-inheritance
 field becomes a unique index (partial by discriminator when only a subclass
 declares it), and classes with custom `conflictColumns` keep a plain
 `(slug, context)` index for slug loading. `smrt db:migrate` adds the missing
-indexes to existing databases and drops the legacy `<table>_id_idx`.
+indexes to existing databases and drops the legacy `<table>_id_idx`, and the
+narrower unique index of a conflict key a class has since widened (for example
+`['key']` to `['tenant_id', 'key']`).
 
 The ordering every generated list route uses is indexed automatically too:
 `(tenant_id, created_at)` on a tenant-scoped table and `(created_at)` otherwise,

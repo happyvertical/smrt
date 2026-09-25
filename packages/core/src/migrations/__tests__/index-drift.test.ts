@@ -163,6 +163,115 @@ describe('SchemaComparer index drift', () => {
       expect(drops).toHaveLength(0);
     });
 
+    describe('superseded conflict-identity index (#3126)', () => {
+      const widened = () =>
+        tableSchema({
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            slug: { type: 'TEXT' },
+            context: { type: 'TEXT' },
+            _meta_type: { type: 'TEXT' },
+            tenant_id: { type: 'TEXT' },
+          },
+          indexes: [
+            {
+              name: 'tenants_tenant_id_slug_idx',
+              columns: ['tenant_id', 'slug'],
+              unique: true,
+            },
+          ],
+        });
+
+      beforeEach(async () => {
+        await db.query('ALTER TABLE tenants ADD COLUMN tenant_id TEXT;');
+      });
+
+      it('drops the narrower SMRT-named unique key without --drop-indexes once the manifest widens it', async () => {
+        await db.query(
+          'CREATE UNIQUE INDEX tenants_slug_idx ON tenants(slug);',
+        );
+        // A genuine orphan is still left for the opt-in.
+        await db.query('CREATE INDEX tenants_legacy_idx ON tenants(context);');
+
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: widened() });
+
+        expect(
+          diff.changes
+            .filter((c) => c.type === 'add_index' || c.type === 'drop_index')
+            .map((c) => `${c.type}:${c.name}`),
+        ).toEqual([
+          'add_index:tenants_tenant_id_slug_idx',
+          'drop_index:tenants_slug_idx',
+        ]);
+
+        for (const change of diff.changes) {
+          if (change.sql) await db.query(change.sql);
+        }
+        // Two tenants may now hold the same slug; one tenant still may not.
+        await db.query(
+          "INSERT INTO tenants (id, slug, context, _meta_type, tenant_id) VALUES ('a', 'letters', '', 'T', 't1'), ('b', 'letters', '', 'T', 't2');",
+        );
+        await expect(
+          db.query(
+            "INSERT INTO tenants (id, slug, context, _meta_type, tenant_id) VALUES ('c', 'letters', '', 'T', 't1');",
+          ),
+        ).rejects.toThrow();
+        const after = await comparer.compare({ tenants: widened() });
+        expect(after.changes.filter((c) => c.type === 'drop_index')).toEqual(
+          [],
+        );
+      });
+
+      it('keeps the narrower key while a column of the wider key is not in the table yet', async () => {
+        await db.query(
+          'CREATE UNIQUE INDEX tenants_slug_idx ON tenants(slug);',
+        );
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({
+          tenants: tableSchema({
+            columns: {
+              ...widened().columns,
+              region: { type: 'TEXT', notNull: true },
+            },
+            indexes: [
+              {
+                name: 'tenants_region_slug_idx',
+                columns: ['region', 'slug'],
+                unique: true,
+              },
+            ],
+          }),
+        });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('keeps a unique index that is not SMRT-named for its columns', async () => {
+        await db.query(
+          'CREATE UNIQUE INDEX tenants_custom_slug_guard ON tenants(slug);',
+        );
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: widened() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('keeps a narrower unique key the manifest does not widen', async () => {
+        await db.query(
+          'CREATE UNIQUE INDEX tenants_context_idx ON tenants(context);',
+        );
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: widened() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('keeps a non-unique index over the narrower columns', async () => {
+        await db.query('CREATE INDEX tenants_slug_idx ON tenants(slug);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: widened() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+    });
+
     describe('redundant primary-key index (#2359, A5)', () => {
       it('drops the legacy <table>_id_idx without --drop-indexes once the manifest stops declaring it', async () => {
         // Every generator path used to emit this beside the engine's own

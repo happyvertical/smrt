@@ -24,7 +24,7 @@ you are editing. This file keeps what holds across the package.
 - **ContentGovernanceAssignment**: Governs content type/variant → profile mapping, feature flags
 - **ContentContribution**: Held inbound submission with status lifecycle (submitted → approved/rejected/withdrawn → promoted)
 - **ContentContributor**: Contributor profile resolved by email, with trust level (standard/trusted/blocked)
-- **ContentContributionType**: Configures intake channels, rules, and promotion mapping
+- **ContentContributionType**: Configures intake channels, rules, and promotion mapping. Keyed per tenant (`tenant_id`, `key`); NULL-tenant rows are the global defaults each tenant can override by key
 - **ContentContributionRevision**: Revision history for held submissions
 - **ContentContributionAttachment**: Held file metadata; becomes an `Asset` on promotion
 

@@ -50,7 +50,10 @@ function parseJSON<T>(raw: unknown, fallback: T): T {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_contribution_types',
-  conflictColumns: ['key'],
+  // A key is unique per tenant, not installation-wide: every tenant seeds and
+  // overrides the same keys, and global (NULL-tenant) rows stay unique on key
+  // through the tenant-led index's NULLS NOT DISTINCT (#3126, #2405).
+  conflictColumns: ['tenant_id', 'key'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: { skipApiCheck: true },
@@ -202,10 +205,18 @@ export class ContentContributionType extends SmrtObject {
 
     if (!hasFallback) {
       try {
-        const existing = await this.db.query(
-          'SELECT id FROM content_contributions WHERE contribution_type_key = ? LIMIT 1',
-          this.key,
-        );
+        // A tenant's type is referenced only by that tenant's contributions; a
+        // global (NULL-tenant) type can back any tenant's contributions.
+        const existing = this.tenantId
+          ? await this.db.query(
+              'SELECT id FROM content_contributions WHERE contribution_type_key = ? AND tenant_id = ? LIMIT 1',
+              this.key,
+              this.tenantId,
+            )
+          : await this.db.query(
+              'SELECT id FROM content_contributions WHERE contribution_type_key = ? LIMIT 1',
+              this.key,
+            );
         const rows = getQueryRows(existing);
 
         if (rows.length > 0) {
