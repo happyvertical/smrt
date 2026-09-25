@@ -94,10 +94,62 @@ through a resolver hook on the leaf module (so `change-feed.ts` never imports
 the registry), sees the exact name being recorded with no derivation to keep in
 sync, and declares it — closing the read path and signal bus for that table.
 
-Scope note: the generated `_changes`/`_events` routes still gate on an
-authenticated principal only — there is no per-table permission check, and
-tenant scoping (`getTenantScopedChangesSince`, fail-closed) remains the sole
-row-level filter for ordinary tables.
+Scope note: the generated `_changes`/`_events` routes authorize on an
+authenticated principal plus tenant scoping (`getTenantScopedChangesSince`,
+fail-closed) by default. A consumer-supplied table/row authorization seam
+beyond that — `change-feed-authz.ts` (#3020, below) — is optional and off
+until registered.
+
+## Consumer table/row authorization seam (#3020)
+
+Tenant scoping keeps one tenant from seeing another's rows, but it cannot
+express "table X is readable by some principals of the tenant but not others"
+or "principal P only sees their own rows of table X" (e.g. a bay-tablet
+station versus the back office). `?tables=` on `_changes` was always a
+client-chosen filter, never enforcement — a table the client did not ask for
+was withheld only because it did not ask, not because it could not have.
+
+`src/change-feed-authz.ts` closes that gap with two independent, optional
+hooks, dependency-inverted onto `globalThis` exactly like
+`resolveDispatchTenantScope` (`dispatch/tenant-resolver.ts`), so a consumer
+registers them once with no change to the generated "DO NOT EDIT" route files:
+
+- `setChangeFeedAuthorizer(authorizeChangeFeed)` — table-level.
+  `authorizeChangeFeed({ locals, tables }) => allowedTables` returns the
+  tables `locals` may read from the feed at all; the result is INTERSECTED
+  with the client's `?tables=` filter (never unioned), so a table the hook
+  does not name is never queried, let alone returned.
+- `setChangeFeedEntryVisibility(isChangeFeedEntryVisible)` — row-level, for
+  scope narrower than a whole table. Applied per entry, after the table
+  filter, before anything is serialized — including a live `_events` signal.
+
+Both are optional and independent; unregistered, both routes behave exactly as
+before (tenant-scoped only). A hook that throws or returns something other
+than the documented shape fails closed to "authorizes nothing" for that call —
+same posture as a throwing `resolveDispatchTenantScope` resolver, and the same
+200-empty-page shape the sensitivity filter above already gives a request
+naming only tables it may not see (never a 5xx, which would tell a caller its
+own hook is broken — indistinguishable from "denied" from the caller's side).
+
+Every filter narrows the *returned* `changes`; nothing ever touches
+`cursor`/`resyncRequired`/`resyncCursor` — mirrors the sensitivity filter's
+"filters affect what is returned, never how the cursor advances" and for the
+same reason: a client must advance past a denied entry without re-polling it
+forever, and the entry's row id/timing must never be inferable from a stalled
+cursor. Table denial passes a guaranteed-no-match sentinel table name rather
+than an empty `tables` array, because `getChangesSince` treats an
+omitted/empty `tables` as "no filter" and would otherwise widen the read; the
+sentinel instead takes the ordinary `table_name IN (...)` path (the same one a
+client naming a nonexistent table already took, unvalidated), so the real
+horizon computation still runs and the cursor still advances — it just
+matches zero rows.
+
+`getAuthorizedChangesSince()` / `getAuthorizedTenantScopedChangesSince()` wrap
+`getChangesSince()` / `getTenantScopedChangesSince()` with both hooks applied;
+the generated `_changes` route calls the tenant-scoped variant, and
+`buildChangeEventStream()` (`change-signals.md`) applies the same hooks to
+`_events` catch-up replay and live signal delivery, resolving the table
+allow-list ONCE at connection open (mirrors captured tenant scope).
 
 ## Compatible bulk mutations (#2818)
 

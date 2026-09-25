@@ -40,6 +40,14 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ensureChangeFeedTable, getChangesSince } from '../change-feed.js';
 import {
+  filterVisibleChangeFeedEntries,
+  hasChangeFeedEntryVisibilityHook,
+  hasChangeFeedTableAuthorizerHook,
+  isChangeFeedEntryVisible,
+  resolveAuthorizedChangeFeedTables,
+  toChangeFeedTablesFilter,
+} from '../change-feed-authz.js';
+import {
   type ChangeSignal,
   changeSignalSubscriberCount,
   subscribeToChangeSignals,
@@ -120,6 +128,17 @@ export interface ChangeEventStreamOptions {
    * stream never reaches `start()`.
    */
   releaseSubscriberSlot?: () => void;
+  /**
+   * Request `locals` (or the equivalent context), forwarded to the
+   * consumer-supplied change-feed authorization hooks (#3020) —
+   * `authorizeChangeFeed` and `isChangeFeedEntryVisible`, see
+   * `change-feed-authz.ts`. Resolved and captured ONCE at connection open,
+   * exactly like `tenantScope`: delivery runs from a different async context
+   * (the writer's `afterSave`, possibly another request or replica) with no
+   * per-signal opportunity to re-derive it. Omitted (as the REST generator
+   * does today) means hooks — if any are registered — see `locals: undefined`.
+   */
+  locals?: unknown;
 }
 
 /**
@@ -235,14 +254,23 @@ function encodeSseComment(text: string): Uint8Array {
  * Build the SSE body stream for an `_events` connection.
  *
  * `start(controller)`:
+ *  0. Resolve the change-feed table authorization (#3020), if a hook is
+ *     registered, and capture it for the life of the connection — exactly
+ *     like `tenantScope`, and for the same reason (delivery runs outside this
+ *     call's context). Skipped entirely (no `await`) when no table
+ *     authorizer is registered, so the default connection setup stays
+ *     synchronous up to the subscribe call below.
  *  a. **Subscribe FIRST**, before catch-up. Subscribing before the catch-up
  *     read closes the gap window: a write landing between subscribe and the
  *     catch-up read is delivered twice (once live, once in the replay) — which
- *     is safe, since the client dedupes by the SSE `id:`/seq.
+ *     is safe, since the client dedupes by the SSE `id:`/seq. Each live signal
+ *     is additionally checked against the captured table authorization and,
+ *     if registered, the row-level `isChangeFeedEntryVisible` hook — denied
+ *     signals are silently dropped, never enqueued.
  *  b. Write the `retry:` reconnection hint.
  *  c. If a cursor was supplied, replay changes after it (paging until
- *     exhausted); on `resyncRequired`, emit `event: resync` at the server's
- *     fresh horizon.
+ *     exhausted, applying the same table/row authorization as live delivery);
+ *     on `resyncRequired`, emit `event: resync` at the server's fresh horizon.
  *  d. Start the heartbeat interval.
  *
  * `cancel()` tears down on disconnect: clears the heartbeat and unsubscribes,
@@ -253,7 +281,7 @@ export function buildChangeEventStream(
   db: DatabaseInterface,
   options: ChangeEventStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { cursor, tenantScope, manifestHash } = options;
+  const { cursor, tenantScope, manifestHash, locals } = options;
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
 
   let unsubscribe: (() => void) | null = null;
@@ -280,20 +308,54 @@ export function buildChangeEventStream(
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
+      // (0) Table authorization (#3020), captured once for the connection's
+      // lifetime — mirrors `tenantScope`. `undefined` (no hook registered)
+      // keeps every downstream check a no-op; the `await` only runs when a
+      // hook is actually registered, so the unconfigured default reaches the
+      // subscribe call below with no yield in between.
+      let allowedTables: string[] | undefined;
+      if (hasChangeFeedTableAuthorizerHook()) {
+        allowedTables = await resolveAuthorizedChangeFeedTables(
+          locals,
+          undefined,
+        );
+      }
+      const allowedTableSet = allowedTables ? new Set(allowedTables) : null;
+      const rowVisibilityActive = hasChangeFeedEntryVisibilityHook();
+      // Serializes the (possibly async) row-visibility check so signals are
+      // still delivered in arrival order; unused — and never allocated a
+      // microtask — when no row hook is registered (see the enqueue fast path
+      // below), preserving the documented synchronous per-listener delivery.
+      let deliveryQueue: Promise<void> = Promise.resolve();
+
       // (a) Subscribe FIRST, before catch-up — closes the subscribe/catch-up
       // gap window (a write in between is delivered twice; the client dedupes
       // by seq). The tenant filter uses the scope captured at open, never a
-      // per-signal re-resolution.
+      // per-signal re-resolution; table authorization is the same captured
+      // value.
       unsubscribe = subscribeToChangeSignals(db, (sig) => {
         if (closed) return;
         if (!signalVisibleToTenant(sig, tenantScope)) return;
-        try {
-          controller.enqueue(encodeSseEvent(sig));
-        } catch {
-          // Controller already closed (client gone before cancel fired) —
-          // tear down so we stop trying to write to a dead controller.
-          teardown();
+        if (allowedTableSet && !allowedTableSet.has(sig.table)) return;
+        if (!rowVisibilityActive) {
+          try {
+            controller.enqueue(encodeSseEvent(sig));
+          } catch {
+            // Controller already closed (client gone before cancel fired) —
+            // tear down so we stop trying to write to a dead controller.
+            teardown();
+          }
+          return;
         }
+        deliveryQueue = deliveryQueue.then(async () => {
+          if (closed) return;
+          if (!(await isChangeFeedEntryVisible(locals, sig))) return;
+          try {
+            controller.enqueue(encodeSseEvent(sig));
+          } catch {
+            teardown();
+          }
+        });
       });
       if (releaseSubscriberSlot) {
         releaseSubscriberSlot();
@@ -327,6 +389,8 @@ export function buildChangeEventStream(
             const page = await getChangesSince(db, {
               since,
               tenantId: catchupTenantId,
+              // Same captured table authorization as live delivery (#3020).
+              tables: toChangeFeedTablesFilter(allowedTables),
             });
             if (page.resyncRequired) {
               const resyncCursor =
@@ -338,7 +402,15 @@ export function buildChangeEventStream(
               controller.enqueue(encodeSseResyncEvent(resyncCursor));
               break;
             }
-            for (const change of page.changes) {
+            // Row-level visibility (#3020) — filters the replayed page the
+            // same way the read `_changes` path does, never touching
+            // `page.cursor` below so the client still advances past a denied
+            // entry instead of re-requesting it forever.
+            const visibleChanges = await filterVisibleChangeFeedEntries(
+              locals,
+              page.changes,
+            );
+            for (const change of visibleChanges) {
               controller.enqueue(
                 encodeSseEvent({
                   table: change.table,

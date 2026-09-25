@@ -97,8 +97,11 @@ describe('generateChangesRoute (#1758)', () => {
     expect(content).toContain('requireRouteAuth(locals)');
     expect(content).toContain("throw error(401, 'Authentication required')");
     expect(content).not.toContain('PUBLIC_ACCESS');
-    // Reads through the tenant-scoped cursor API.
-    expect(content).toContain('getTenantScopedChangesSince(collection.db');
+    // Reads through the tenant-scoped, authorization-aware cursor API (#3020).
+    expect(content).toContain(
+      'getAuthorizedTenantScopedChangesSince(collection.db',
+    );
+    expect(content).toContain('    locals,\n  });');
     // Anchored on the alphabetically first non-collection class.
     expect(content).toContain("getCollection('Apple')");
   });

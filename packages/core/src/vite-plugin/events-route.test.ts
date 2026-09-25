@@ -128,7 +128,7 @@ describe('generateEventsRoute (#1763)', () => {
       'const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db)',
     );
     expect(content).toContain(
-      'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n      releaseSubscriberSlot,\n    })',
+      'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n      releaseSubscriberSlot,\n      locals,\n    })',
     );
     // It streams over an event-stream response.
     expect(content).toContain("'Content-Type': 'text/event-stream'");

@@ -13,8 +13,14 @@
  * - **Tenant scoping**: when the project has tenant-scoped objects, the
  *   route establishes tenant context from `locals` exactly like generated
  *   collection routes, then reads through
- *   `getTenantScopedChangesSince()` — a tenant only ever sees its own
- *   changes plus global rows.
+ *   `getAuthorizedTenantScopedChangesSince()` — a tenant only ever sees its
+ *   own changes plus global rows.
+ * - **Table/row authorization** (#3020): the same call additionally applies
+ *   the consumer-supplied `authorizeChangeFeed`/`isChangeFeedEntryVisible`
+ *   hooks (`@happyvertical/smrt-core`'s `change-feed-authz.ts`), if
+ *   registered — a table-level and row-level seam beyond tenant scope (e.g. a
+ *   station principal reading only its own rows of a table the office can
+ *   read in full). Unregistered, behavior is unchanged from pre-#3020.
  * - **Database resolution**: the route anchors on the project's first
  *   generated collection (alphabetical) via the consumer's existing
  *   `getCollection()` helper, inheriting its configuration, request-scoped
@@ -151,9 +157,17 @@ function establishTenantContext(locals: unknown): void {
 // HTTP 200 — protocol state, not an error) means the cursor cannot be
 // served incrementally (pruned or foreign) and the client must re-fetch
 // in full before resuming polling from resyncCursor.
+//
+// Table/row authorization (#3020): beyond tenant scope, the read additionally
+// applies the consumer-supplied \`authorizeChangeFeed\`/
+// \`isChangeFeedEntryVisible\` hooks, if registered (see
+// \`@happyvertical/smrt-core\`'s \`change-feed-authz.ts\`). A denied table or row
+// is never returned — filtering happens before the response is built, not on
+// the client — and the cursor still advances past a denied entry so polling
+// never stalls or re-requests it.
 
 import { error, json } from '@sveltejs/kit';
-import { getTenantScopedChangesSince } from '@happyvertical/smrt-core';
+import { getAuthorizedTenantScopedChangesSince } from '@happyvertical/smrt-core';
 import { getCollection } from '${configImport}';
 import type { RequestHandler } from './$types';
 
@@ -205,10 +219,11 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   // The feed lives in the project's database; anchor on the
   // ${anchorClassName} collection to reuse its configured connection.
   const collection = await getCollection('${anchorClassName}');
-  const page = await getTenantScopedChangesSince(collection.db, {
+  const page = await getAuthorizedTenantScopedChangesSince(collection.db, {
     since,
     tables,
     limit,
+    locals,
   });
   return json(page);
 };
