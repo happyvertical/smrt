@@ -358,6 +358,8 @@ export class BillingPaymentAttempt extends SmrtObject {
   spendingPolicyId: string = '';
   /** Provider (rail) name, for example `btcpay`. */
   provider: string = '';
+  /** The rail order id (checkout idempotency key) the checkout was made for. */
+  orderId: string = '';
   checkoutId: string = '';
   status: string = 'open';
   exception: string = 'none';
@@ -390,6 +392,25 @@ export class BillingPaymentAttempt extends SmrtObject {
   resolution: string = '';
   @field({ type: 'datetime', nullable: true })
   resolvedAt: Date | null = null;
+  /**
+   * Set before the issuer's invoice is closed out of band, so the issuer's
+   * own `paid` event waits for this settlement instead of recording one.
+   */
+  @field({ type: 'datetime', nullable: true })
+  outOfBandRequestedAt: Date | null = null;
+  /**
+   * The most severe standing an issuer event asked for while this payment
+   * was confirming (dunning paused); re-applied if it ends unsettled.
+   */
+  pausedStanding: string = '';
+  /** Fiat received above the price, booked as customer credit (minor units). */
+  excessAmount: number = 0;
+  /** Refunds recorded by operators, total (minor units). */
+  refundedAmount: number = 0;
+  /** The part of `refundedAmount` taken from the price, not the excess. */
+  refundedPrincipal: number = 0;
+  /** Refund records (JSON): reference, amount, basis, journal, at. */
+  refunds: Record<string, unknown>[] = [];
 
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
@@ -413,6 +434,9 @@ export class BillingPaymentAttempt extends SmrtObject {
       this.amountPaid,
       this.nativeAmountDue,
       this.nativeAmountPaid,
+      this.excessAmount,
+      this.refundedAmount,
+      this.refundedPrincipal,
     ]) {
       if (!Number.isSafeInteger(value) || value < 0) {
         throw new Error('Payment attempt amounts must be minor units.');
@@ -428,6 +452,11 @@ export class BillingPaymentAttempt extends SmrtObject {
   /** The recorded payments, tolerating a JSON string from the database. */
   get paymentRecords(): Record<string, unknown>[] {
     return jsonArray(this.payments) as Record<string, unknown>[];
+  }
+
+  /** The recorded refunds, tolerating a JSON string from the database. */
+  get refundRecords(): Record<string, unknown>[] {
+    return jsonArray(this.refunds) as Record<string, unknown>[];
   }
 }
 

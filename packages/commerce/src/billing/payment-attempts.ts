@@ -312,6 +312,7 @@ export async function applyPaymentAttempt(
     const result = await settleAttempt(runtime, db, attempt, state, target);
     attempt.paymentId = result.paymentId;
     attempt.creditGrantId = result.creditGrantId;
+    attempt.excessAmount = result.excess;
     attempt.settledAt = new Date();
     attempt.flag = result.flag || decision.flag;
     settled = true;
@@ -353,6 +354,7 @@ async function settleAttempt(
 ): Promise<{
   paymentId: string;
   creditGrantId: string;
+  excess: number;
   flag: BillingPaymentAttemptFlag;
 }> {
   const ledger = runtime.ledger;
@@ -377,8 +379,18 @@ async function settleAttempt(
   let receivables = ledger.prepaidCreditAccountId;
   let customerId = '';
   if (target.purpose === 'invoice_payment') {
-    invoice = await withTenant({ tenantId: runtime.sellerTenantId }, async () =>
-      (await InvoiceCollection.create({ db })).get(target.invoiceId),
+    invoice = await withTenant(
+      { tenantId: runtime.sellerTenantId },
+      async () => {
+        const invoices = await InvoiceCollection.create({ db });
+        // Serialize settlements of one invoice: two rail payments projected
+        // at once must not both read it unpaid and both allocate.
+        await db.query(
+          `UPDATE ${invoices.tableName} SET updated_at = updated_at WHERE id = ?`,
+          target.invoiceId,
+        );
+        return invoices.get(target.invoiceId);
+      },
     );
     if (!invoice?.id) {
       throw new Error(`Invoice ${target.invoiceId} for an attempt is missing.`);
@@ -446,6 +458,19 @@ async function settleAttempt(
     },
   );
 
+  // Money above the price is the payer's: book it as customer credit (in the
+  // prepaid-credit liability) for an operator to refund or apply.
+  const excess = Math.max(0, state.amountPaid - target.amount);
+  if (excess > 0) {
+    await postOnce(runtime, db, `overpayment:${paymentId}`, {
+      description: `Overpayment on ${attempt.provider} checkout ${state.checkoutId}`,
+      entries: [
+        { accountId: holdings, debit: excess },
+        { accountId: ledger.prepaidCreditAccountId, credit: excess },
+      ],
+    });
+  }
+
   let creditGrantId = '';
   if (target.purpose === 'credit_purchase') {
     const grant = await withSystemContext(async () => {
@@ -491,21 +516,7 @@ async function settleAttempt(
       await invoice.save();
     });
   }
-  return { paymentId: String(payment.id), creditGrantId, flag };
-}
-
-/** An invoice has a rail payment that is confirming (dunning pauses). */
-export async function hasConfirmingAttempt(
-  db: DatabaseInterface,
-  sellerTenantId: string,
-  invoiceId: string,
-): Promise<boolean> {
-  const attempts = await BillingPaymentAttemptCollection.create({ db });
-  const rows = await attempts.list({
-    where: { sellerTenantId, invoiceId, status: 'confirming' },
-    limit: 1,
-  });
-  return rows.length > 0;
+  return { paymentId: String(payment.id), creditGrantId, excess, flag };
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +542,14 @@ export interface ManualRefundResult {
   creditGrantId: string;
 }
 
+/**
+ * Record a refund an operator made outside billing. Refunds come from what
+ * the payer is owed: first any overpayment, then — for a credit purchase, or
+ * an invoice payment kept as credit because the invoice was paid elsewhere —
+ * the price. An invoice payment applied to its invoice is not refundable
+ * here (reverse the invoice at the issuer first). Refunds are capped
+ * cumulatively per payment and are idempotent by `reference`.
+ */
 export async function recordManualRefund(
   runtime: BillingRuntime,
   input: ManualRefundInput,
@@ -538,71 +557,104 @@ export async function recordManualRefund(
   if (!Number.isSafeInteger(input.fiatAmount) || input.fiatAmount <= 0) {
     throw new Error('fiatAmount must be positive integer minor units.');
   }
-  if (!input.reference?.trim()) throw new Error('A reference is required.');
+  const reference = input.reference?.trim();
+  if (!reference) throw new Error('A reference is required.');
   const basis = input.basis ?? runtime.paymentPolicy.refundBasis;
-  const sourceRef = `refund:${input.reference.trim()}`;
   return withSystemContext(async () => {
-    const payment = await withTenant(
-      { tenantId: runtime.sellerTenantId },
-      async () =>
-        (await PaymentCollection.create({ db: runtime.db })).get(
-          input.paymentId,
-        ),
-    );
-    if (
-      !payment?.id ||
-      tenantKey(payment.tenantId) !== runtime.sellerTenantId
-    ) {
-      throw new Error(`Payment ${input.paymentId} was not found.`);
-    }
-    if (input.fiatAmount > payment.amount) {
-      throw new Error('A refund cannot exceed the payment.');
-    }
     const [attempt] = await runtime.attempts.list({
-      where: { sellerTenantId: runtime.sellerTenantId, paymentId: payment.id },
+      where: {
+        sellerTenantId: runtime.sellerTenantId,
+        paymentId: input.paymentId,
+      },
       limit: 1,
     });
-    const ledger = runtime.ledger;
-    const credited =
-      attempt?.purpose === 'invoice_payment'
-        ? ledger.revenueAccountId
-        : ledger.prepaidCreditAccountId;
-    const holdings =
-      payment.method === PaymentMethod.CRYPTO
-        ? ledger.cryptoHoldingsAccountId || ledger.cashAccountId
-        : ledger.cashAccountId;
-    const journalId = await postOnce(runtime, sourceRef, {
-      description: `Refund ${input.reference} (${basis}${
-        input.nativeAmount ? `, ${input.nativeAmount} native` : ''
-      }): ${input.reason}`,
-      entries: [
-        { accountId: credited, debit: input.fiatAmount },
-        { accountId: holdings, credit: input.fiatAmount },
-      ],
-    });
-    let creditGrantId = '';
-    if (attempt?.purpose === 'credit_purchase' && attempt.spendingPolicyId) {
-      const grant = await withSystemContext(async () =>
-        (await SpendingPolicyEvaluator.create({ db: runtime.db })).grantCredit({
-          spendingPolicyId: attempt.spendingPolicyId,
-          amount: -input.fiatAmount,
-          reason: `Refund: ${input.reason}`,
-          source: `${attempt.provider}-refund`,
-          sourceId: input.reference.trim(),
-        }),
+    if (!attempt?.id || !attempt.settledAt) {
+      throw new Error(
+        `Payment ${input.paymentId} is not a settled payment-rail payment of this seller.`,
       );
+    }
+    const done = attempt.refundRecords.find(
+      (record) => record.reference === reference,
+    );
+    if (done) {
+      return {
+        journalId: String(done.journalId ?? ''),
+        creditGrantId: String(done.creditGrantId ?? ''),
+      };
+    }
+    const principalRefundable =
+      attempt.purpose === 'credit_purchase' ||
+      attempt.flag === 'invoice_already_paid'
+        ? attempt.amount
+        : 0;
+    const refundedExcess = attempt.refundedAmount - attempt.refundedPrincipal;
+    const excessLeft = attempt.excessAmount - refundedExcess;
+    const principalLeft = principalRefundable - attempt.refundedPrincipal;
+    if (input.fiatAmount > excessLeft + principalLeft) {
+      throw new Error(
+        `A refund of ${input.fiatAmount} would exceed the ${excessLeft + principalLeft} ${attempt.currency} still refundable on this payment.`,
+      );
+    }
+    const fromExcess = Math.min(input.fiatAmount, excessLeft);
+    const fromPrincipal = input.fiatAmount - fromExcess;
+    const ledger = runtime.ledger;
+    const holdings = ledger.cryptoHoldingsAccountId || ledger.cashAccountId;
+    const journalId = await postOnce(
+      runtime,
+      runtime.db,
+      `refund:${attempt.id}:${reference}`,
+      {
+        description: `Refund ${reference} (${basis}${
+          input.nativeAmount ? `, ${input.nativeAmount} native` : ''
+        }): ${input.reason}`,
+        entries: [
+          // Excess and credit kept for an already-paid invoice both sit in
+          // the prepaid-credit liability, as does purchased credit.
+          { accountId: ledger.prepaidCreditAccountId, debit: input.fiatAmount },
+          { accountId: holdings, credit: input.fiatAmount },
+        ],
+      },
+    );
+    let creditGrantId = '';
+    if (
+      fromPrincipal > 0 &&
+      attempt.purpose === 'credit_purchase' &&
+      attempt.spendingPolicyId
+    ) {
+      const grant = await (
+        await SpendingPolicyEvaluator.create({ db: runtime.db })
+      ).grantCredit({
+        spendingPolicyId: attempt.spendingPolicyId,
+        amount: -fromPrincipal,
+        reason: `Refund: ${input.reason}`,
+        source: `${attempt.provider}-refund`,
+        sourceId: reference,
+      });
       creditGrantId = String(grant.id ?? '');
     }
-    if (attempt) {
-      attempt.resolution = [
-        attempt.resolution,
-        `refunded ${input.fiatAmount} ${payment.currency} (${basis}) ref ${input.reference}`,
-      ]
-        .filter(Boolean)
-        .join('; ');
-      attempt.resolvedAt = new Date();
-      await attempt.save();
-    }
+    const refunds = attempt.refundRecords;
+    refunds.push({
+      reference,
+      amount: input.fiatAmount,
+      principal: fromPrincipal,
+      nativeAmount: input.nativeAmount ?? null,
+      basis,
+      reason: input.reason,
+      journalId,
+      creditGrantId,
+      at: new Date().toISOString(),
+    });
+    attempt.refunds = refunds;
+    attempt.refundedAmount += input.fiatAmount;
+    attempt.refundedPrincipal += fromPrincipal;
+    attempt.resolution = [
+      attempt.resolution,
+      `refunded ${input.fiatAmount} ${attempt.currency} (${basis}) ref ${reference}`,
+    ]
+      .filter(Boolean)
+      .join('; ');
+    attempt.resolvedAt = new Date();
+    await attempt.save();
     return { journalId, creditGrantId };
   });
 }
@@ -662,6 +714,7 @@ export async function recordCryptoConversion(
   }
   const journalId = await postOnce(
     runtime,
+    runtime.db,
     `conversion:${input.reference.trim()}`,
     {
       description: `Convert ${input.nativeAmount} ${normalizeCurrency(
@@ -684,11 +737,12 @@ interface JournalLine {
 /** Post a balanced journal once per `sourceRef` in the seller's books. */
 async function postOnce(
   runtime: BillingRuntime,
+  db: DatabaseInterface,
   sourceRef: string,
   journal: { description: string; entries: JournalLine[] },
 ): Promise<string> {
   return withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    const journals = await JournalCollection.create({ db: runtime.db });
+    const journals = await JournalCollection.create({ db });
     const [posted] = await journals.list({
       where: { sourceModule: 'smrt-commerce', sourceRef, status: 'posted' },
       limit: 1,

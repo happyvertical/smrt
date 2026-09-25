@@ -371,9 +371,15 @@ await billing.processEvents();
   payments (`review` | `accept`), manually marked checkouts, hold vs convert
   (`conversionHandler`), and the refund basis.
 - **Ledger.** Receipts are booked at the locked fiat amount into
-  `cryptoHoldingsAccountId` (default `cashAccountId`).
-  `recordManualRefund()` and `recordCryptoConversion()` post the operator's
-  refund and conversion journals (with FX gain/loss), once per reference.
+  `cryptoHoldingsAccountId` (default `cashAccountId`); money received above
+  the price is booked as customer credit (prepaid-credit liability).
+  `recordManualRefund()` refunds from that excess first, then from purchased
+  credit (or an invoice payment kept as credit because the invoice was paid
+  elsewhere) — capped cumulatively, once per reference; an invoice payment
+  applied to its invoice is reversed at the issuer, not here.
+  `recordCryptoConversion()` posts a conversion with FX gain/loss.
+- **One live payment per invoice**, and the issuer's own `paid` event for an
+  invoice closed out of band never records a payment: the rail does.
 - **Entities.** Each legal entity is its own seller runtime with its own
   store, keys, and ledger. Inter-entity resale is ordinary reseller billing
   between two sellers, payable on any rail the selling entity offers.

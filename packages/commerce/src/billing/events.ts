@@ -42,7 +42,6 @@ import {
   applyPaymentAttempt,
   attemptTarget,
   decideAttempt,
-  hasConfirmingAttempt,
 } from './payment-attempts.js';
 import type {
   BillingPaymentAttemptState,
@@ -254,10 +253,15 @@ async function applyInvoiceEvent(
   if (
     standing &&
     standing !== 'current' &&
-    (await hasConfirmingAttempt(db, runtime.sellerTenantId, String(invoice.id)))
+    (await pauseForConfirmingAttempts(
+      runtime,
+      db,
+      String(invoice.id),
+      standing,
+    ))
   ) {
     // A rail payment for this invoice is confirming (#3138): dunning pauses.
-    // If the payment ends without settling, its event re-applies the standing.
+    // If the payment ends without settling, it re-applies this standing.
     standing = null;
   }
   if (standing) {
@@ -280,10 +284,11 @@ async function settlePaidInvoice(
 ): Promise<void> {
   if (invoice.status === InvoiceStatus.PAID) return;
   if (
-    state.paidOutOfBand &&
+    state.paidOutOfBand ||
     (await railSettlementPending(runtime, db, String(invoice.id)))
   ) {
-    // A payment rail took the money (#3138) and records it; wait for that.
+    // The issuer collected nothing: the payment rail that took the money
+    // (#3138) records it. Wait for that rather than recording a payment.
     throw new Error(
       `Invoice ${invoice.invoiceNumber} was paid on another rail; the paid event will be retried after that payment is recorded.`,
     );
@@ -577,6 +582,23 @@ async function observeAttempt(
           `${runtime.provider.name} cannot close invoice ${invoice.invoiceNumber} paid on ${provider.name}.`,
         );
       }
+      // Committed before the issuer is told, so the issuer's own `paid`
+      // event waits for this settlement instead of recording a payment.
+      const row = await runtime.recordPaymentAttemptStart({
+        provider: provider.name,
+        checkoutId: attempt.checkoutId,
+        checkoutUrl: attempt.checkoutUrl ?? '',
+        purpose: target.purpose,
+        payerTenantId: target.payerTenantId,
+        billingAccountId: target.billingAccountId,
+        invoiceId: target.invoiceId,
+        amount: target.amount,
+        currency: target.currency,
+      });
+      if (!row.outOfBandRequestedAt) {
+        row.outOfBandRequestedAt = new Date();
+        await row.save();
+      }
       await runtime.provider.markInvoicePaidOutOfBand(invoice.externalId);
     }
   }
@@ -621,20 +643,63 @@ async function applyAttempt(
       String(close.id),
       'current',
     );
-  } else if (
-    outcome.endedUnsettled &&
-    invoice.status === InvoiceStatus.OVERDUE
-  ) {
-    // The dunning paused while this payment confirmed; resume it.
-    await applyStanding(
-      runtime,
-      db,
-      account,
-      invoice,
-      String(close.id),
-      'past_due',
-    );
+  } else if (outcome.endedUnsettled && invoice.status !== InvoiceStatus.PAID) {
+    // The dunning paused while this payment confirmed; resume it with the
+    // standing the issuer asked for meanwhile, or from the invoice's state.
+    const paused = outcome.attempt.pausedStanding;
+    const resumed: BillingStanding | null =
+      paused === 'past_due' || paused === 'uncollectible'
+        ? paused
+        : invoice.status === InvoiceStatus.OVERDUE
+          ? 'past_due'
+          : null;
+    if (resumed) {
+      await applyStanding(
+        runtime,
+        db,
+        account,
+        invoice,
+        String(close.id),
+        resumed,
+      );
+    }
   }
+}
+
+const STANDING_SEVERITY: Record<string, number> = {
+  '': 0,
+  past_due: 1,
+  uncollectible: 2,
+};
+
+/**
+ * Record a paused standing on the invoice's confirming rail attempts.
+ * Returns whether any attempt is confirming (and so dunning pauses).
+ */
+async function pauseForConfirmingAttempts(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  invoiceId: string,
+  standing: BillingStanding,
+): Promise<boolean> {
+  const attempts = await BillingPaymentAttemptCollection.create({ db });
+  const rows = await attempts.list({
+    where: {
+      sellerTenantId: runtime.sellerTenantId,
+      invoiceId,
+      status: 'confirming',
+    },
+  });
+  for (const row of rows) {
+    if (
+      (STANDING_SEVERITY[standing] ?? 0) >
+      (STANDING_SEVERITY[row.pausedStanding] ?? 0)
+    ) {
+      row.pausedStanding = standing;
+      await row.save();
+    }
+  }
+  return rows.length > 0;
 }
 
 /** A rail payment for this invoice is settled or still confirming. */
@@ -648,6 +713,9 @@ async function railSettlementPending(
     where: { sellerTenantId: runtime.sellerTenantId, invoiceId },
   });
   return rows.some(
-    (row) => row.status === 'confirming' || Boolean(row.settledAt),
+    (row) =>
+      row.status === 'confirming' ||
+      Boolean(row.settledAt) ||
+      Boolean(row.outOfBandRequestedAt),
   );
 }

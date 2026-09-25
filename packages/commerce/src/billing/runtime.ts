@@ -656,6 +656,8 @@ export class BillingRuntime {
 
   /** Record a rail checkout just opened (idempotent). */
   async recordPaymentAttemptStart(input: {
+    /** The rail order id (the checkout idempotency key), when known. */
+    orderId?: string;
     provider: string;
     checkoutId: string;
     checkoutUrl: string;
@@ -680,6 +682,7 @@ export class BillingRuntime {
         invoiceId: input.invoiceId ?? '',
         spendingPolicyId: input.spendingPolicyId ?? '',
         provider: input.provider,
+        orderId: input.orderId ?? '',
         checkoutId: input.checkoutId,
         checkoutUrl: input.checkoutUrl,
         amount: input.amount,

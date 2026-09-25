@@ -49,6 +49,8 @@ interface FakeCheckout {
   amountPaid: number;
   payments: CryptoCheckoutPayment[];
   owned: boolean;
+  /** Settlement asset override (default BTC). */
+  asset?: string;
 }
 
 /** An in-memory gateway: tests move checkouts through their states. */
@@ -170,7 +172,7 @@ export class FakeCryptoGateway implements CryptoCheckoutGateway {
       amount: checkout.amount,
       currency: checkout.currency,
       amountPaid: checkout.amountPaid,
-      settlementAsset: 'BTC',
+      settlementAsset: checkout.asset ?? 'BTC',
       nativeAmountDue: (checkout.amount / 100_000).toFixed(8),
       nativeAmountPaid: (checkout.amountPaid / 100_000).toFixed(8),
       rate: '100000.00',

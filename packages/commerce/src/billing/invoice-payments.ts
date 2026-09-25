@@ -96,7 +96,35 @@ export async function createInvoicePayment(
       `Provider ${rail.name} cannot take payments for issued invoices.`,
     );
   }
-  const invoice = await runtime.getInvoice(input.invoiceId);
+  // Authorize before anything about the invoice is revealed: a payer may
+  // only learn about, and pay, its own invoices.
+  const notFound = () =>
+    new Error(`Invoice ${input.invoiceId} was not found for this payer.`);
+  let invoice: Awaited<ReturnType<BillingRuntime['getInvoice']>>;
+  try {
+    invoice = await runtime.getInvoice(input.invoiceId);
+  } catch {
+    throw notFound();
+  }
+  const [close] = await runtime.closes.list({
+    where: {
+      invoiceId: String(invoice.id),
+      sellerTenantId: runtime.sellerTenantId,
+    },
+    limit: 1,
+  });
+  const account = close?.billingAccountId
+    ? await runtime.accounts.get(close.billingAccountId)
+    : null;
+  if (!account?.id) throw notFound();
+  const payer = tenantKey(account.payerTenantId);
+  if (
+    !isSystemContext() &&
+    !isSuperAdminBypass() &&
+    tenantKey(getTenantId()) !== payer
+  ) {
+    throw new TenantIsolationError('Only the payer of an invoice can pay it.');
+  }
   if (!PAYABLE.has(invoice.status)) {
     throw new Error(
       `Invoice ${invoice.invoiceNumber} is ${invoice.status}; only sent, unpaid invoices can be paid.`,
@@ -113,29 +141,6 @@ export async function createInvoicePayment(
       `${runtime.provider.name} cannot close an invoice paid on another rail.`,
     );
   }
-  const [close] = await runtime.closes.list({
-    where: {
-      invoiceId: String(invoice.id),
-      sellerTenantId: runtime.sellerTenantId,
-    },
-    limit: 1,
-  });
-  const account = close?.billingAccountId
-    ? await runtime.accounts.get(close.billingAccountId)
-    : null;
-  if (!account?.id) {
-    throw new Error(
-      `Invoice ${invoice.invoiceNumber} has no billing account for this seller.`,
-    );
-  }
-  const payer = tenantKey(account.payerTenantId);
-  if (
-    !isSystemContext() &&
-    !isSuperAdminBypass() &&
-    tenantKey(getTenantId()) !== payer
-  ) {
-    throw new TenantIsolationError('Only the payer of an invoice can pay it.');
-  }
   const allocated = await withTenant(
     { tenantId: runtime.sellerTenantId },
     async () =>
@@ -148,6 +153,30 @@ export async function createInvoicePayment(
     throw new Error(`Invoice ${invoice.invoiceNumber} has nothing due.`);
   }
   const currency = normalizeCurrency(invoice.currency);
+  const key = await deterministicId([
+    'billing-invoice-payment',
+    runtime.sellerTenantId,
+    rail.name,
+    String(invoice.id),
+    String(amountDue),
+    input.purchaseId,
+  ]);
+  const orderId = `smrt-invoice-payment:${key}`;
+  // One live payment per invoice: a second checkout could be paid too and
+  // collect the invoice twice. The payer finishes (or lets expire) the one
+  // already open; retrying the same purchase returns it.
+  const live = (
+    await runtime.listPaymentAttempts({ invoiceId: String(invoice.id) })
+  ).filter(
+    (row) =>
+      (row.status === 'open' || row.status === 'confirming') && !row.settledAt,
+  );
+  const busy = live.find((row) => row.orderId !== orderId);
+  if (busy) {
+    throw new Error(
+      `Invoice ${invoice.invoiceNumber} already has a payment in progress on ${busy.provider}.`,
+    );
+  }
   const metadata: Record<string, string> = {
     smrt_purpose: INVOICE_PAYMENT_PURPOSE,
     smrt_seller: runtime.sellerTenantId,
@@ -157,16 +186,8 @@ export async function createInvoicePayment(
     smrt_amount: String(amountDue),
     smrt_currency: currency,
   };
-  const key = await deterministicId([
-    'billing-invoice-payment',
-    runtime.sellerTenantId,
-    rail.name,
-    String(invoice.id),
-    String(amountDue),
-    input.purchaseId,
-  ]);
   const session = await rail.createCheckout({
-    idempotencyKey: `smrt-invoice-payment:${key}`,
+    idempotencyKey: orderId,
     customerEmail: account.email || undefined,
     currency,
     amount: amountDue,
@@ -176,6 +197,7 @@ export async function createInvoicePayment(
     metadata,
   });
   await runtime.recordPaymentAttemptStart({
+    orderId,
     provider: rail.name,
     checkoutId: session.sessionId,
     checkoutUrl: session.url ?? '',

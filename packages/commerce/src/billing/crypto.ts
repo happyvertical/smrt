@@ -160,7 +160,10 @@ export function createCryptoBillingProvider(
       const verified =
         Boolean(metadata[SIGNATURE_KEY]) &&
         (await metadataSignatureValid(metadata, metadataSecret));
-      return toAttemptState(checkout, verified ? metadata : {});
+      // A checkout without our signed metadata is not ours to record, even
+      // if it settles in an asset this rail cannot map.
+      if (!verified) return null;
+      return toAttemptState(checkout, metadata);
     },
   };
 }

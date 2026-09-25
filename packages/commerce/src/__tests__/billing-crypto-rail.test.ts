@@ -275,6 +275,15 @@ describe('smrt#3138 crypto payment rail', () => {
       await world.railEvent(session.sessionId);
       expect(await grants(world, SOLO)).toEqual([]);
 
+      // Unsigned metadata in an asset the rail cannot record: ignored, not
+      // a failing delivery.
+      checkout.asset = 'LTC';
+      await world.railEvent(session.sessionId);
+      const failed = await world.db.query(
+        "SELECT status FROM _smrt_forge_deliveries WHERE status <> 'completed'",
+      );
+      expect(failed.rows).toEqual([]);
+
       // A checkout the rail did not create is acknowledged and ignored.
       checkout.owned = false;
       await world.railEvent(session.sessionId);
@@ -331,7 +340,19 @@ describe('smrt#3138 crypto payment rail', () => {
       await world.railEvent(session.sessionId);
       expect((await grants(world, SOLO)).map((g) => g.amount)).toEqual([5000]);
       const [attempt] = await world.runtime.listPaymentAttempts({});
-      expect(attempt).toMatchObject({ flag: 'overpaid', amountPaid: 6000 });
+      expect(attempt).toMatchObject({
+        flag: 'overpaid',
+        amountPaid: 6000,
+        excessAmount: 1000,
+      });
+      // The excess is refunded first and leaves the credit alone.
+      await world.runtime.recordManualRefund({
+        paymentId: attempt?.paymentId ?? '',
+        fiatAmount: 1000,
+        reference: 'excess-1',
+        reason: 'overpayment',
+      });
+      expect((await grants(world, SOLO)).map((g) => g.amount)).toEqual([5000]);
     });
 
     it('records a manual refund once: journal and negative credit', async () => {
@@ -354,10 +375,28 @@ describe('smrt#3138 crypto payment rail', () => {
       expect((await grants(world, SOLO)).map((g) => g.amount).sort()).toEqual([
         -2000, 5000,
       ]);
+      // The cap is cumulative across references.
       await expect(
-        world.runtime.recordManualRefund({ ...refund, fiatAmount: 9999 }),
-      ).rejects.toThrow(/exceed/);
+        world.runtime.recordManualRefund({
+          ...refund,
+          reference: 'refund-tx-2',
+          fiatAmount: 3001,
+        }),
+      ).rejects.toThrow(/exceed the 3000 USD still refundable/);
+      await world.runtime.recordManualRefund({
+        ...refund,
+        reference: 'refund-tx-2',
+        fiatAmount: 3000,
+      });
       const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt).toMatchObject({
+        refundedAmount: 5000,
+        refundedPrincipal: 5000,
+      });
+      expect(attempt?.refundRecords.map((r) => r.reference)).toEqual([
+        'refund-tx-1',
+        'refund-tx-2',
+      ]);
       expect(attempt?.resolution).toContain('original_native');
     });
   });
@@ -414,6 +453,75 @@ describe('smrt#3138 crypto payment rail', () => {
       // Nothing is due any more.
       await expect(payWithRail(String(invoice.id))).rejects.toThrow(
         /only sent, unpaid invoices/,
+      );
+      // An applied invoice payment is not refundable here.
+      await expect(
+        world.runtime.recordManualRefund({
+          paymentId: String(payments[0]?.id),
+          fiatAmount: 1,
+          reference: 'r',
+          reason: 'x',
+        }),
+      ).rejects.toThrow(/exceed the 0 USD/);
+    });
+
+    it("never records the issuer's paid event as a payment when the invoice was closed out of band", async () => {
+      const invoice = await openInvoice();
+      await payWithRail(String(invoice.id));
+      // The issuer reports paid (out of band) before the rail's settlement
+      // is recorded, as when the rail's projection is retried.
+      world.outOfBand.push(String(invoice.externalId));
+      world.stripe.pay(String(invoice.externalId));
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect(await sellerPayments(world)).toEqual([]);
+      const pending = await world.db.query(
+        "SELECT status FROM _smrt_forge_deliveries WHERE status = 'retry'",
+      );
+      expect(pending.rows).toHaveLength(1);
+    });
+
+    it("allows one live rail payment per invoice and hides other payers' invoices", async () => {
+      const invoice = await openInvoice();
+      await payWithRail(String(invoice.id));
+      await expect(
+        withTenant({ tenantId: SOLO }, () =>
+          world.runtime.createInvoicePayment({
+            invoiceId: String(invoice.id),
+            provider: 'btcpay',
+            purchaseId: 'pay-2',
+            successUrl: 'https://a.test',
+            cancelUrl: 'https://a.test',
+          }),
+        ),
+      ).rejects.toThrow(/already has a payment in progress/);
+      // Retrying the same purchase returns the same checkout.
+      expect((await payWithRail(String(invoice.id))).sessionId).toBeTruthy();
+      await expect(
+        payWithRail('00000000-0000-4000-8000-0000000000ff'),
+      ).rejects.toThrow(/was not found for this payer/);
+    });
+
+    it('re-applies an uncollectible standing paused while a payment confirmed', async () => {
+      const invoice = await openInvoice();
+      const session = await payWithRail(String(invoice.id));
+      world.gateway.set(session.sessionId, 'confirming');
+      await world.railEvent(session.sessionId);
+      world.stripe.setInvoiceStatus(String(invoice.externalId), 'open');
+      await deliverStripe(
+        world,
+        invoiceEvent(
+          'invoice.marked_uncollectible',
+          String(invoice.externalId),
+        ),
+      );
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
+      world.gateway.set(session.sessionId, 'expired', { paid: 0 });
+      await world.railEvent(session.sessionId);
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe(
+        'uncollectible',
       );
     });
 

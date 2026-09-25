@@ -179,6 +179,7 @@ export async function createCreditCheckout(
   });
   if (providerCapabilities(provider).paymentAttempts) {
     await runtime.recordPaymentAttemptStart({
+      orderId: `smrt-credit-checkout:${key}`,
       provider: provider.name,
       checkoutId: session.sessionId,
       checkoutUrl: session.url ?? '',
