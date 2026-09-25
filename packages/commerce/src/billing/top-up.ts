@@ -232,12 +232,6 @@ async function claimAttempt(
     return null; // No provider customer, so no saved card to charge.
   }
   const providerCustomerId = account.providerCustomerId;
-  if (
-    options.taxedAccounts !== 'charge_untaxed' &&
-    (await runtime.accountIsTaxed(account))
-  ) {
-    return null; // No tax on an off-session charge: never silently untaxed.
-  }
   const payments = await PaymentCollection.create({ db: runtime.db });
   const where = {
     tenantId: runtime.sellerTenantId,
@@ -278,6 +272,15 @@ async function claimAttempt(
     return null;
   }
 
+  // New charges only (an attempt already charged is still re-driven above):
+  // no tax on an off-session charge, so a taxed account is never silently
+  // charged untaxed.
+  if (
+    options.taxedAccounts !== 'charge_untaxed' &&
+    (await runtime.accountIsTaxed(account))
+  ) {
+    return null;
+  }
   // Only a payer with a card on file is charged (no failed attempt per
   // shortfall for payers who never saved one).
   if (!(await defaultCardFor(runtime, account, providerCustomerId))) {

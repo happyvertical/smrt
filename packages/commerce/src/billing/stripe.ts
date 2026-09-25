@@ -13,7 +13,7 @@ import type {
   WebhookEvent,
 } from '@happyvertical/accounting';
 import type { SubscriptionStatus } from '@happyvertical/smrt-subscriptions';
-import { CARD_SETUP_PURPOSE } from './cards.js';
+import { CARD_SETUP_PURPOSE, COLLECT_ADDRESS_METADATA } from './cards.js';
 import { CREDIT_PURCHASE_PURPOSE } from './credits.js';
 import {
   type BillingChargeStatus,
@@ -353,10 +353,13 @@ export function createStripeBillingProvider(
         amountTax: session.amountTaxMinor,
         amountTotal: session.amountTotalMinor,
       };
-      if (complete && session.customerExternalId) {
-        // A session that collected an address saved it to the customer
-        // (customer_update[address]=auto); callers adopt it only when they
-        // asked for collection.
+      if (
+        complete &&
+        session.customerExternalId &&
+        session.metadata[COLLECT_ADDRESS_METADATA] === '1'
+      ) {
+        // A session asked to collect the address saved it to the customer
+        // (customer_update[address]=auto). Only those pay for this read.
         const customer = await stripe.customers.pull(
           session.customerExternalId,
         );

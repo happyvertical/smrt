@@ -854,6 +854,13 @@ describe('smrt#3139 Stripe launch billing', () => {
         invoiceEvent('invoice.paid', String(second?.externalId)),
       );
       expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
+      // A late event about the written-off invoice does not undo that.
+      await deliver(world, invoiceEvent('invoice.payment_failed', firstId));
+      await deliver(
+        world,
+        invoiceEvent('invoice.marked_uncollectible', firstId),
+      );
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
 
       // The written-off invoice paid late records the payment and stays
       // written off.
@@ -913,6 +920,28 @@ describe('smrt#3139 Stripe launch billing', () => {
           automaticTax: false,
         });
       });
+    });
+
+    it('still settles an attempt charged before the account became taxed', async () => {
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_became_taxed', 'processing');
+      await spend(evaluator(), SOLO, 500);
+      const [intent] = [...world.stripe.paymentIntents.values()];
+      world.stripe.settlePaymentIntent(String(intent?.id), 'succeeded');
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: true,
+        }),
+      );
+      // The re-drive of the pending attempt is not blocked by the tax skip.
+      await spend(evaluator({ recheckAfterMs: 0 }), SOLO, 500);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([
+        500,
+      ]);
+      expect((await sellerPayments())[0]?.status).toBe(PaymentStatus.COMPLETED);
     });
 
     it('does not top up a taxed payer unless the seller opts in', async () => {

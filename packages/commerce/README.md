@@ -234,6 +234,9 @@ const setup = await billing.createCardSetupCheckout({
 });
 
 // Automatic top-ups: charge the saved card when a balance would run out.
+// Accounts are taxed by default (`automaticTax`), and a taxed account is not
+// topped up (no tax on off-session charges, sdk#1283): set
+// `automaticTax: false` on the account or pass `taxedAccounts: 'charge_untaxed'`.
 const evaluator = await SpendingPolicyEvaluator.create({
   db,
   autoTopUp: billing.autoTopUpHook({ amount: () => 2500 }),
@@ -345,7 +348,11 @@ const evaluator = await SpendingPolicyEvaluator.create({
   the provider charges the card after the invoice is sent, on its own
   schedule, and retries failures. Activate service on the `current` standing
   from the `paid` event, not on send; a failure marks the payer `past_due`.
-- **Automatic top-ups.** `billing.autoTopUpHook()` is the `autoTopUp` hook for
+- **Automatic top-ups.** Taxed accounts (the default: `automaticTax` on, not
+  tax-exempt) are never topped up unless the hook is built with
+  `taxedAccounts: 'charge_untaxed'`, because an off-session charge carries no
+  tax yet (happyvertical/sdk#1283); the skip is silent (no attempt row).
+  `billing.autoTopUpHook()` is the `autoTopUp` hook for
   `SpendingPolicyEvaluator`: when a balance would run out it charges the
   payer's saved card off-session (the delegating parent's, for a delegated
   balance) and credits the balance only when the charge succeeds. A charge

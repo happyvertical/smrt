@@ -158,8 +158,8 @@ export interface BillingProviderCheckoutState {
   /** Amount collected, minor units. */
   amountTotal?: number;
   /**
-   * The customer's billing address after a completed session (collected by
-   * it when the checkout asked to collect one).
+   * The customer's billing address after a completed session that was asked
+   * to collect one.
    */
   billingAddress?: Address;
 }

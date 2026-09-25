@@ -298,7 +298,9 @@ async function applyInvoiceEvent(
   } else if (state.status === 'uncollectible') {
     // Written off at the provider (#3139): written off here too, so it no
     // longer counts as overdue against the payer. It can still be paid (the
-    // `paid` branch records the payment and reinstates the payer).
+    // `paid` branch records the payment and reinstates the payer). Only the
+    // first observation changes standing: a late event about an invoice
+    // already written off must not undo a later reinstatement.
     if (
       invoice.status === InvoiceStatus.SENT ||
       invoice.status === InvoiceStatus.VIEWED ||
@@ -307,8 +309,8 @@ async function applyInvoiceEvent(
     ) {
       invoice.status = InvoiceStatus.WRITTEN_OFF;
       await invoice.save();
+      standing = 'uncollectible';
     }
-    standing = 'uncollectible';
   } else if (state.status === 'open') {
     if (event.type === 'payment_failed' || event.type === 'overdue') {
       standing = 'past_due';
