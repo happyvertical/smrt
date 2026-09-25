@@ -167,6 +167,18 @@ describe('runOnce (#3080)', () => {
     expect(a).not.toBe(b);
   });
 
+  it('produces a different content digest when only a Date differs', () => {
+    const a = digestRunOnceContent({
+      due: new Date('2026-09-01T00:00:00Z'),
+      sku: 'widget-1',
+    });
+    const b = digestRunOnceContent({
+      due: new Date('2026-10-01T00:00:00Z'),
+      sku: 'widget-1',
+    });
+    expect(a).not.toBe(b);
+  });
+
   describe('resolveExistingRunOnceClaim (pure resolver)', () => {
     it('returns the parsed result for a completed claim', () => {
       const result = resolveExistingRunOnceClaim(

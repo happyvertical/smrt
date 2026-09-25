@@ -17,12 +17,14 @@ re-introducing.
 ## Key derivation
 
 ```
-contentDigest = sha256(stableStringify(content))
+contentDigest = sha256(stableStringify(JSON.parse(JSON.stringify(content))))
 claimKey      = sha256(stableStringify([tenantId, actor, token, contentDigest]))
 ```
 
 `stableStringify` (`../src/knowledge-graph.ts`) is sorted-key JSON: property
-insertion order never changes the digest. Folding in `tenantId` and `actor`
+insertion order never changes the digest. Content is normalized through its
+JSON serialization first, so a `Date` (or any `toJSON()` value) digests as what
+it serializes to rather than as `{}`. Folding in `tenantId` and `actor`
 means two tenants or two actors can never collide on the same claim even if a
 token were somehow shared between them; folding in `contentDigest` means a
 retry of the SAME submission (same token, same content) replays, while a

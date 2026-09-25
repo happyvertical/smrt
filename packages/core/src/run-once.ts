@@ -144,10 +144,15 @@ interface RunOnceClaimRow {
  *
  * Property order never changes the digest, so callers do not need to worry
  * about object construction order producing two different claims for what is
- * semantically the same submission.
+ * semantically the same submission. Content is first normalized through its
+ * JSON serialization, so a `Date` (or anything with `toJSON()`) digests as the
+ * value it serializes to; sorting the raw object would reduce every `Date` to
+ * `{}` and collapse submissions that differ only by a date.
  */
 export function digestRunOnceContent(content: unknown): string {
-  return createHash('sha256').update(stableStringify(content)).digest('hex');
+  const json = JSON.stringify(content);
+  const normalized: unknown = json === undefined ? null : JSON.parse(json);
+  return createHash('sha256').update(stableStringify(normalized)).digest('hex');
 }
 
 /**
