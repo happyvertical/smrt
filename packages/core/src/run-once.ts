@@ -173,9 +173,11 @@ function normalizeRunOnceContent(value: unknown): unknown {
   }
   if (typeof FormData !== 'undefined' && value instanceof FormData) {
     const entries: unknown[] = [];
-    for (const [key, entry] of value.entries()) {
+    // `forEach`, not `entries()`: consumers type-check core's source against
+    // DOM libs without `DOM.Iterable`, where FormData is not iterable.
+    value.forEach((entry, key) => {
       entries.push([key, normalizeRunOnceContent(entry)]);
-    }
+    });
     return { [FORM_DATA_TAG]: entries };
   }
   if (typeof Blob !== 'undefined' && value instanceof Blob) {
