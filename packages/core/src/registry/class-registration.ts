@@ -112,6 +112,30 @@ function pluralizeCollection(className: string): string {
 }
 
 /**
+ * The collection an STI subtype shares with its STI base, for a class that
+ * registers with no manifest `collection` (#3125). The manifest generator
+ * gives every STI subtype its base's collection (`findSTIBase`: the oldest
+ * ancestor declaring `tableStrategy: 'sti'`); a subtype decorated before its
+ * manifest loads — a consumer's bundled model chunk — must resolve the same
+ * one, or permission slugs and route segments derived from it name a
+ * collection nothing catalogues. Ancestors resolve by constructor identity, so
+ * a same-named class in another package cannot stand in for the base.
+ */
+function inheritedStiCollection(ctor: typeof SmrtObject): string | undefined {
+  let base: RegisteredClass | undefined;
+  for (
+    let parent = Object.getPrototypeOf(ctor);
+    parent && parent !== Function.prototype;
+    parent = Object.getPrototypeOf(parent)
+  ) {
+    const key = getConstructorIndex().get(parent as typeof SmrtObject);
+    const registered = key ? getClasses().get(key) : undefined;
+    if (registered?.config?.tableStrategy === 'sti') base = registered;
+  }
+  return base?.collection;
+}
+
+/**
  * Shared bundled-context detector. Source files in these output
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
@@ -1733,8 +1757,12 @@ function registerUntracked(
     // Pluralized endpoint name. Prefer the manifest's computed value (handles
     // STI inheritance + any future inflection changes); fall back to the same
     // simple pluralization the scanner uses for inline/test classes that have
-    // no manifest entry. (smrt#1311.)
-    collection: manifestEntry?.collection ?? pluralizeCollection(name),
+    // no manifest entry. (smrt#1311.) An STI subtype with no manifest entry
+    // takes its registered STI base's, as the manifest would (#3125).
+    collection:
+      manifestEntry?.collection ??
+      inheritedStiCollection(ctor) ??
+      pluralizeCollection(name),
     collectionConstructor: promotedCollectionConstructor,
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
@@ -2299,6 +2327,13 @@ function mergeManifestIntoExistingRegistration(
 
   if (!existing.sourceFilePath && objectDef.filePath) {
     existing.sourceFilePath = objectDef.filePath;
+  }
+
+  // The manifest's collection is authoritative (it carries STI inheritance):
+  // a class decorated before its manifest loaded registered a derived one,
+  // which permission slugs and route segments would otherwise keep (#3125).
+  if (objectDef.collection) {
+    existing.collection = objectDef.collection;
   }
 
   existing.visibility =
