@@ -7,6 +7,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import {
+  mapWithConcurrency,
+  POSTGRES_INTROSPECTION_CONCURRENCY,
+} from '../schema/bounded-concurrency.js';
+import {
   columnsAllValuesUuidShapedBatch,
   columnsHaveNonEmptyValueBatch,
   nonEmptyValuePredicate,
@@ -161,6 +165,15 @@ export interface DiffOptions {
    * than reinterpreted automatically.
    */
   postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+  /**
+   * How many live-table introspections `compare()` runs concurrently while
+   * prefetching every existing manifest table's schema. Defaults to
+   * {@link POSTGRES_INTROSPECTION_CONCURRENCY} on PostgreSQL (each
+   * `getTableSchema()` is several catalog round trips, so a wide schema over a
+   * high-latency link is otherwise dominated by sequential RTTs) and to 1 —
+   * the original sequential behavior — on every other engine.
+   */
+  introspectionConcurrency?: number;
 }
 
 /**
@@ -526,6 +539,17 @@ export class SchemaComparer {
   private renameDataPendingCache: Map<string, SchemaChange[]> | null = null;
 
   /**
+   * Partial-index predicates for every `public` table, read in one catalog
+   * query per `compare()` run instead of one `pg_indexes` query per table.
+   * Same lifetime as {@link renameDataPendingCache}: set inside `compare()`,
+   * cleared in its `finally`. `null` means "not precomputed" (standalone
+   * `compareTable()`, a non-PostgreSQL engine, or the batched read failed),
+   * in which case {@link getDbIndexPredicates} falls back to the per-table
+   * query.
+   */
+  private indexPredicateCache: Map<string, Map<string, string>> | null = null;
+
+  /**
    * Cross-table batch queries stay bounded regardless of schema shape: this
    * caps how many scalar-subquery columns one probe statement packs into a
    * single row. Conservative relative to PostgreSQL's ~1600 column limit
@@ -582,6 +606,7 @@ export class SchemaComparer {
     // across those runs.
     this.liveSchemas.clear();
     this.renameDataPendingCache = null;
+    this.indexPredicateCache = null;
 
     // #2878 review: `renameDataPendingCache` is populated below for the
     // duration of this call only. The `finally` clears it again on the way
@@ -598,6 +623,17 @@ export class SchemaComparer {
     try {
       // Get list of existing tables
       const existingTables = await this.getExistingTables();
+
+      // Every existing manifest table is introspected below (rename probes,
+      // uuid convergence, per-table comparison). Read them up front with
+      // bounded concurrency so the per-table loops hit the memoized result
+      // instead of paying several sequential catalog round trips per table.
+      await this.prefetchLiveSchemas(
+        Object.keys(manifestSchemas).filter((tableName) =>
+          existingTables.has(tableName),
+        ),
+      );
+      await this.precomputeIndexPredicates();
 
       // #2878: precompute every table's rename-pending advisory findings in
       // one batched pass, across the whole manifest, before the per-table
@@ -667,6 +703,7 @@ export class SchemaComparer {
       return diff;
     } finally {
       this.renameDataPendingCache = null;
+      this.indexPredicateCache = null;
     }
   }
 
@@ -869,6 +906,83 @@ export class SchemaComparer {
     const schema = await this.db.getTableSchema?.(tableName);
     this.liveSchemas.set(tableName, schema);
     return schema ?? undefined;
+  }
+
+  /**
+   * The live table schemas read by the most recent `compare()` run, keyed by
+   * table name. Lets a caller that runs further read-only diagnostics over
+   * the same connection in the same command (e.g. `smrt db:status`'s orphan
+   * report) reuse them instead of re-introspecting every table. Entries are
+   * successful reads only (`getTableSchema()` failures propagate out of
+   * `compare()`); `null`/`undefined` mean the adapter reported no table.
+   */
+  getLiveSchemaSnapshot(): ReadonlyMap<
+    string,
+    SqlTableSchemaInfo | null | undefined
+  > {
+    return new Map(this.liveSchemas);
+  }
+
+  /**
+   * Memoize several tables' live schemas with bounded concurrency. Same
+   * reads, same failure behavior as calling {@link getLiveSchema} for each
+   * in turn (the first failure rejects), but PostgreSQL keeps up to
+   * `introspectionConcurrency` introspections in flight on the pool.
+   */
+  private async prefetchLiveSchemas(tableNames: string[]): Promise<void> {
+    if (typeof this.db.getTableSchema !== 'function') return;
+    const pending = tableNames.filter(
+      (tableName) => !this.liveSchemas.has(tableName),
+    );
+    const concurrency =
+      this.options.introspectionConcurrency ??
+      (this.engine === 'postgres' ? POSTGRES_INTROSPECTION_CONCURRENCY : 1);
+    const schemas = await mapWithConcurrency(
+      pending,
+      concurrency,
+      (tableName) => Promise.resolve(this.db.getTableSchema?.(tableName)),
+    );
+    pending.forEach((tableName, index) => {
+      this.liveSchemas.set(tableName, schemas[index]);
+    });
+  }
+
+  /**
+   * Read every `public` table's partial-index predicates in one query
+   * (PostgreSQL only). On failure the cache stays `null` and
+   * {@link getDbIndexPredicates} keeps its per-table behavior, including its
+   * own fallback to predicate-unaware comparison.
+   */
+  private async precomputeIndexPredicates(): Promise<void> {
+    this.indexPredicateCache = null;
+    if (this.engine !== 'postgres') return;
+    try {
+      const result = await this.db.query(
+        `SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'`,
+      );
+      const cache = new Map<string, Map<string, string>>();
+      for (const row of result.rows as {
+        tablename?: string;
+        indexname?: string;
+        indexdef?: string;
+      }[]) {
+        if (!row.tablename || !row.indexname || !row.indexdef) continue;
+        const predicate = extractIndexPredicate(row.indexdef);
+        if (!predicate) continue;
+        let predicates = cache.get(row.tablename);
+        if (!predicates) {
+          predicates = new Map();
+          cache.set(row.tablename, predicates);
+        }
+        predicates.set(row.indexname, predicate);
+      }
+      this.indexPredicateCache = cache;
+    } catch (err) {
+      logger.debug(
+        '[SchemaComparer] Batched partial-index predicate introspection failed; falling back to per-table reads',
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+    }
   }
 
   /**
@@ -3793,6 +3907,9 @@ export class SchemaComparer {
   ): Promise<Map<string, string> | null> {
     if (!this.supportsPartialIndexes()) {
       return null;
+    }
+    if (this.engine === 'postgres' && this.indexPredicateCache) {
+      return new Map(this.indexPredicateCache.get(tableName) ?? []);
     }
     const predicates = new Map<string, string>();
     try {

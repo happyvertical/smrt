@@ -583,6 +583,15 @@ failing the whole run. It never repairs anything — the CLI surface is
 `smrt db:orphans` (`packages/cli/src/commands/db-orphans.ts`), and `db:status`
 prints a compact per-foreign-key summary when any count is nonzero.
 
+**Diagnostics are latency-bound, not query-bound.** Each `getTableSchema()` is
+five catalog round trips, so `compare()` and the orphan report read each table
+at most once per run, with bounded concurrency on PostgreSQL
+(`schema/bounded-concurrency.ts`: 8 introspections, 4 data-scanning probes; 1
+elsewhere). `compare()` reads partial-index predicates in one `pg_indexes`
+query, and `db:status` seeds the orphan report with
+`SchemaComparer.getLiveSchemaSnapshot()`. Never add a per-table or
+per-relationship query to these paths without batching or bounding it.
+
 **Partial apply and opt-in orphan disposition (#2748).** The batch an
 unflagged `db:migrate` attempts already excludes every blocked change (a
 FK-with-orphans, a manual `type_upgrade`/`alter_column`) — those never leave

@@ -608,8 +608,9 @@ export const dbStatusCommand: CLICommand = {
       // This keeps db:status useful for shared Postgres databases where the
       // migration history alone is not enough to prove the schema is current.
       const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+      let comparer: SchemaComparer | undefined;
       if (typeof db.getTableSchema === 'function') {
-        const comparer = new SchemaComparer(db);
+        comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
         status.notes = summarizeSchemaNotes(diff);
@@ -656,10 +657,16 @@ export const dbStatusCommand: CLICommand = {
       // never gates has_changes or the process exit code, and a probe
       // failure is reported rather than failing the whole status command.
       try {
+        // Reuse the live schemas `compare()` just read over this same
+        // connection instead of re-introspecting every table (each read is
+        // several catalog round trips).
         const orphanReport = await collectForeignKeyOrphanCounts(
           db,
           manifestSchemas,
-          { engineHint: dbType },
+          {
+            engineHint: dbType,
+            liveSchemas: comparer?.getLiveSchemaSnapshot(),
+          },
         );
         status.orphanedForeignKeys = affectedOrphanCounts(orphanReport);
         // A per-relationship probe failure (permissions, a malformed live
