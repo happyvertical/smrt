@@ -2,13 +2,15 @@
  * Idempotency seam: run an action exactly once per submission (#3080).
  *
  * Every consumer with a form, a retried request, or a double-tapped button
- * needs the same guard: a claim row, inserted `_insertOnly` against a UNIQUE
- * column in the SAME transaction as the work it guards, so a retry either
- * runs the work once or replays the first attempt's stored result. This
- * module is that primitive. It is DB/transaction-level — it takes a
+ * needs the same guard: a claim row, insert-only against a UNIQUE column
+ * (`claim_key`) in the SAME transaction as the work it guards, so a retry
+ * either runs the work once or replays the first attempt's stored result.
+ * This module is that primitive. It is DB/transaction-level — it takes a
  * `DatabaseInterface`, not a `SmrtObject`/`SmrtCollection` — so it works
  * outside SvelteKit and outside the ORM: any caller with a database handle
- * and a JSON-serializable work result can use it.
+ * and a JSON-serializable work result can use it. The claim insert itself
+ * is raw SQL (`## Concurrent submissions` below explains why), not the
+ * ORM's `SmrtObject`-level `_insertOnly` option.
  *
  * ## Key derivation (not the token alone)
  *
@@ -52,17 +54,31 @@
  *
  * ## Concurrent submissions
  *
+ * The claim insert uses `INSERT ... ON CONFLICT (claim_key) DO NOTHING
+ * RETURNING claim_key` (the same portable idiom `_smrt_migrations` already
+ * uses in `system/bootstrap.ts`), not a plain `INSERT` caught for a
+ * classified `unique_violation`. This matters on PostgreSQL specifically: a
+ * statement that raises an error aborts the WHOLE transaction ("current
+ * transaction is aborted, commands ignored until end of transaction block"),
+ * so a plain `INSERT` failing on the claim key would make every subsequent
+ * statement in the same transaction — including the very `SELECT` this
+ * function needs to read the winner's stored result back — fail too.
+ * `DO NOTHING` never raises: it returns zero rows instead, which this
+ * function reads as "lost the race" without ever touching the transaction's
+ * error state. SQLite and DuckDB both support the same `ON CONFLICT ... DO
+ * NOTHING` / `RETURNING` syntax, so one query works on every adapter.
+ *
  * `@happyvertical/sql`'s single-connection adapters (SQLite, DuckDB, JSON)
  * serialize `transaction()` calls on one connection: a second, concurrent
  * `runOnce()` call does not begin its own transaction until the first one
- * ends. PostgreSQL pools, but a plain `INSERT` colliding with another
- * transaction's uncommitted row of the same PRIMARY KEY blocks until that
- * transaction resolves, then either fails (committed — the row exists) or
- * succeeds (rolled back — no row). Either way, two concurrent callers with
- * the same key never both run `work()`: exactly one does, and the loser's
- * `INSERT` fails with a classified `unique_violation`
- * (`./db-errors.ts#isUniqueViolationError`), at which point it reads the now-
- * committed claim row back and replays its stored result.
+ * ends. PostgreSQL pools, but this `INSERT`'s arbiter still has to check the
+ * unique index against another transaction's uncommitted row of the same
+ * PRIMARY KEY, and blocks until that transaction resolves, then either
+ * no-ops (committed — the row exists) or inserts (rolled back — no row).
+ * Either way, two concurrent callers with the same key never both run
+ * `work()`: exactly one does, and the loser's `INSERT` returns zero rows —
+ * never an error — at which point it reads the now-committed claim row back
+ * and replays its stored result.
  *
  * ## Typed answers for a claim that is not (yet) a definite result
  *
@@ -80,10 +96,11 @@
  *   once it is `'completed'`) — it is reachable if a claim row was inserted
  *   outside this module's own completion discipline, and is kept as a
  *   defined answer rather than an assumption.
- * - the row cannot be read back at all after a reported conflict —
- *   `RunOnceClaimError.outcomeUnknown()`. Also normally unreachable on a
- *   single connection; kept for adapters/drivers where a conflict and a
- *   subsequent read are not guaranteed to observe the same committed state.
+ * - the row cannot be read back at all after `DO NOTHING` reported zero
+ *   rows inserted — `RunOnceClaimError.outcomeUnknown()`. Also normally
+ *   unreachable (the zero-rows case only happens when a committed row
+ *   already exists); kept for adapters/drivers where that and a subsequent
+ *   read are not guaranteed to observe the same committed state.
  *
  * Both errors carry `claimKey` and are safe to retry with the SAME token and
  * content; `runOnce()` never retries them itself.
@@ -93,7 +110,6 @@
 
 import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { isUniqueViolationError } from './db-errors.js';
 import { RunOnceClaimError } from './errors.js';
 import { stableStringify } from './knowledge-graph.js';
 
@@ -214,20 +230,21 @@ export async function runOnce<T>(
   });
 
   return db.transaction(async (tx) => {
-    try {
-      await tx.insert(RUN_ONCE_CLAIMS_TABLE, {
-        claim_key: claimKey,
-        tenant_id: tenantId,
-        actor,
-        content_digest: contentDigest,
-        status: 'in_progress',
-        result: null,
-        created_at: new Date(),
-      });
-    } catch (error) {
-      if (!isUniqueViolationError(error)) {
-        throw error;
-      }
+    // `ON CONFLICT ... DO NOTHING` never raises — see the module doc for why
+    // a plain INSERT-and-catch aborts the whole transaction on PostgreSQL,
+    // taking the recovery SELECT below down with it. `RETURNING claim_key`
+    // comes back with one row when this call won the claim, zero when it
+    // lost it — that is the only signal this function needs.
+    const won = await tx.single`
+      INSERT INTO _smrt_run_once_claims
+        (claim_key, tenant_id, actor, content_digest, status, result, created_at)
+      VALUES
+        (${claimKey}, ${tenantId}, ${actor}, ${contentDigest}, ${'in_progress'}, ${null}, ${new Date()})
+      ON CONFLICT (claim_key) DO NOTHING
+      RETURNING claim_key
+    `;
+
+    if (!won) {
       const existing = (await tx.get(RUN_ONCE_CLAIMS_TABLE, {
         claim_key: claimKey,
         tenant_id: tenantId,
@@ -238,7 +255,7 @@ export async function runOnce<T>(
     const result = await work(tx);
     await tx.update(
       RUN_ONCE_CLAIMS_TABLE,
-      { claim_key: claimKey },
+      { claim_key: claimKey, tenant_id: tenantId },
       {
         status: 'completed',
         result: JSON.stringify(result ?? null),

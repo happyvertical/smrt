@@ -56,12 +56,17 @@ and repository rules.
   metadata after rollback. Do not use a bound instance concurrently.
 - `runOnce({ db, tenantId, actor, token, content }, work)` (`src/run-once.ts`,
   #3080) claims a key derived from all four inputs — never the token alone,
-  which collapses distinct submissions — inserts it `_insertOnly` into the
-  hand-DDL `_smrt_run_once_claims` system table, and runs `work` in the SAME
+  which collapses distinct submissions — via `INSERT ... ON CONFLICT
+  (claim_key) DO NOTHING RETURNING claim_key` into the hand-DDL
+  `_smrt_run_once_claims` system table, and runs `work` in the SAME
   transaction; a completed claim replays its stored result instead of
   re-running, a failed `work` rolls the claim back with the transaction, and
   an unresolved claim raises typed `RunOnceClaimError`
   (`RUN_ONCE_IN_FLIGHT` / `RUN_ONCE_OUTCOME_UNKNOWN`) rather than guessing.
+  The claim insert must never raise on conflict: PostgreSQL aborts the whole
+  transaction on any raised error, which would take the recovery `SELECT`
+  down with it too — this is why it is `DO NOTHING`, not a plain `INSERT`
+  caught for `isUniqueViolationError`.
 - `ensureSystemTables(db, typeHint?)` provisions framework tables idempotently;
   call it on a base PostgreSQL connection before caller-owned transactions.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the

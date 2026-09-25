@@ -102,9 +102,24 @@ CREATE TABLE IF NOT EXISTS _smrt_run_once_claims (
 ```
 
 `claim_key` is the PRIMARY KEY — the "insert-only against a UNIQUE column"
-the issue asked for. A second `INSERT` for the same key always raises a
-classified `unique_violation` (`isUniqueViolationError`,
-`../src/db-errors.ts`); `runOnce()` never relies on message matching.
+the issue asked for. A second `INSERT` for the same key never adopts the
+existing row.
+
+**Why the claim insert is raw SQL (`INSERT ... ON CONFLICT (claim_key) DO
+NOTHING RETURNING claim_key`), not a plain `INSERT` caught for a classified
+`unique_violation`:** on PostgreSQL, a statement that raises an error aborts
+the WHOLE transaction ("current transaction is aborted, commands ignored
+until end of transaction block") — every later statement in that same
+transaction fails too, including the `SELECT` `runOnce()` needs to read the
+winner's stored result back. A first version of this primitive did exactly
+that (plain `INSERT` + catch classified via `isUniqueViolationError`,
+`../src/db-errors.ts`) and every replay/double-submit on PostgreSQL broke:
+review caught it before merge. `DO NOTHING` never raises — it reports zero
+rows via `RETURNING` instead — so the transaction's error state is never
+touched. SQLite and DuckDB support the identical `ON CONFLICT ... DO
+NOTHING` / `RETURNING` syntax (already used elsewhere in this codebase for
+`_smrt_migrations`, `system/bootstrap.ts`), so one query is portable across
+every adapter without engine branching.
 
 ## Atomicity and rollback
 
@@ -128,10 +143,14 @@ in `runOnce()`'s own code.
 `@happyvertical/sql`'s single-connection adapters (SQLite, DuckDB, JSON)
 serialize `transaction()` calls on one connection: a second, concurrent
 `runOnce()` call does not begin its own transaction until the first ends.
-PostgreSQL pools, but a plain `INSERT` colliding with another transaction's
-uncommitted row of the same PRIMARY KEY blocks until that transaction
-resolves, then either fails (committed) or succeeds (rolled back). On every
-adapter, two concurrent callers with the same key never both run `work()`.
+PostgreSQL pools, but the claim insert's arbiter still has to check the
+unique index against another transaction's uncommitted row of the same
+PRIMARY KEY, and blocks until that transaction resolves, then either no-ops
+(committed — `DO NOTHING` fires, zero rows) or inserts (rolled back). On
+every adapter, two concurrent callers with the same key never both run
+`work()`, and the loser never sees a PostgreSQL error for it — only zero
+rows back, at which point it reads the now-committed, now-`completed` claim
+row and replays its stored result.
 
 This is also why the "in flight" and "unknown outcome" branches below are
 normally unreachable through `runOnce()`-to-`runOnce()` races alone on a
@@ -181,3 +200,16 @@ system table):
   unit-tested directly.
 - `resolveExistingRunOnceClaim` (pure resolver) is unit-tested for all three
   branches, including the otherwise-unreachable `outcomeUnknown` case.
+
+`src/__tests__/issue-3080-run-once-postgres.optional.test.ts` (real
+PostgreSQL, `SMRT_TEST_POSTGRES_URL`, `describe.skipIf`, following
+`change-feed-concurrency.optional.test.ts`'s established pattern: distinct
+`dbid`s for two genuinely concurrent connections, `getTestDatabase({ db,
+classes: [] })` to bootstrap system tables): replay after completion, and
+concurrent double submit across the two real connections — both would
+reject with a PostgreSQL `DatabaseError` ("Failed to retrieve record from
+table", the driver's wrapping of 25P02 "current transaction is aborted")
+against the pre-fix plain-`INSERT`-and-catch version; verified locally
+against a disposable `postgres:18-alpine` container (revert via patch file,
+confirmed both tests red, restored, confirmed both green) since the SQLite
+suite cannot reach this PostgreSQL-specific failure mode at all.
