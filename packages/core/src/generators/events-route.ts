@@ -324,6 +324,19 @@ export function buildChangeEventStream(
           requestContext,
           undefined,
         );
+        // The client may have disconnected while that awaited (#3020 P2):
+        // `cancel()` runs `teardown()` before any subscription exists,
+        // releasing the reserved slot but leaving `unsubscribe` null since
+        // there is nothing to unsubscribe yet. Subscribing below anyway
+        // would register a listener that no later `teardown()` call could
+        // ever remove — `closed` is already `true`, so `teardown()`
+        // short-circuits — permanently leaking a `change-signals` local
+        // listener (inflating `changeSignalSubscriberCount` forever) and
+        // then throwing on the very next `controller.enqueue` against an
+        // already-closed controller. Bail out here instead: the slot was
+        // already released by that earlier `teardown()`, so nothing further
+        // needs releasing.
+        if (closed) return;
       }
       const allowedTableSet = allowedTables ? new Set(allowedTables) : null;
       // Same deny-all distinction `readAuthorized` makes (#3020 P1): an

@@ -30,6 +30,7 @@ import {
 } from '../change-feed-authz';
 import {
   type ChangeSignal,
+  changeSignalSubscriberCount,
   publishChangeSignal,
   resetChangeSignals,
 } from '../change-signals';
@@ -265,6 +266,44 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       expect(text).not.toContain(OTHER_ROW_ID);
       expect(text).toContain(OWN_ROW_ID);
       await stream.cancel().catch(() => {});
+    });
+  });
+
+  describe('subscriber lifecycle during pending table authorization (#3020 P2)', () => {
+    it('does not leave a subscription registered when the client disconnects while an async table authorizer is pending', async () => {
+      let resolveAuthorization: (tables: string[]) => void = () => {};
+      const pendingAuthorization = new Promise<string[]>((resolve) => {
+        resolveAuthorization = resolve;
+      });
+      setChangeFeedAuthorizer(() => pendingAuthorization);
+
+      expect(changeSignalSubscriberCount(db)).toBe(0);
+
+      // Constructing the stream starts running its (async) start() callback,
+      // which awaits the table authorizer before subscribing to anything.
+      const stream = buildChangeEventStream(db, {
+        cursor: null,
+        tenantScope: UNENFORCED_SCOPE,
+        locals: stationLocals,
+        request: stationRequest,
+      });
+
+      // Let start() reach — and suspend on — the pending authorization await,
+      // then disconnect while it is still pending. cancel() runs teardown()
+      // before any subscription exists (unsubscribe is still null), so it
+      // only releases the (no-op here) slot and marks the stream closed.
+      await flushAsync();
+      await stream.cancel().catch(() => {});
+      expect(changeSignalSubscriberCount(db)).toBe(0);
+
+      // Authorization now resolves. Before the fix, start() would subscribe
+      // anyway despite the stream already being closed, permanently leaking
+      // a change-signals listener that no later teardown() call could ever
+      // remove (teardown() short-circuits once `closed` is true).
+      resolveAuthorization([PUNCHES_TABLE]);
+      await flushAsync();
+
+      expect(changeSignalSubscriberCount(db)).toBe(0);
     });
   });
 });
