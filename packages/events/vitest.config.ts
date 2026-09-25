@@ -13,5 +13,8 @@ export default defineConfig({
     hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
+    // Recurrence math is local-calendar; fixtures assert UTC instants, so pin
+    // the zone or a host whose offset changes between dates fails spuriously.
+    env: { TZ: 'UTC' },
   },
 });

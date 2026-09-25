@@ -34,7 +34,9 @@ runtime dependency (only `fake-indexeddb` as a test devDep). The public surface
 is engine-free by construction (the boundary check is the proof).
 
 **Replay is sync-apply-ONLY** (`offline/engine.ts` → `POST
-{basePath}/sync/apply`), never `ctx.fetchers.create`. This is load-bearing:
+{basePath}/sync/apply`), never `ctx.fetchers.create` — unless the consumer
+declared its own replay transport (see "Consumer-declared replay transports"
+below). This is load-bearing:
 the normal REST create strips the client id (#1540) and mints a NEW server id,
 which would orphan the optimistic row the outbox is keeping; sync-apply's
 strict-insert path preserves the client UUID, so replay reconciles the exact
@@ -56,15 +58,18 @@ response → whole batch stays `pending`.
 
 **Shared, namespace-keyed engine** (`offline/engine.ts`,
 `getOrCreateOutboxEngine`): N collections under the same `namespace` share ONE
-ref-counted engine = ONE IndexedDB db + ONE leader lock + ONE FIFO queue. This
+ref-counted engine = ONE IndexedDB db + ONE queue, with one leader lock per
+replay route (see #3021 below; all sync-apply collections are one route). This
 is REQUIRED for correctness, not an optimization — independent per-collection
 locks would let two tabs each win a different collection's lock and both replay.
 The last collection to detach (via `teardown`) disposes the engine; the durable
 ROWS survive for the next load.
 
 **Web Locks leader election** (`offline/leader.ts`): with multiple tabs, exactly
-one replays the queue. A tab requests an EXCLUSIVE `navigator.locks` lock keyed
-`smrt-web-outbox-leader:<namespace>` and holds it while leader; the browser
+one replays each route. A tab requests an EXCLUSIVE `navigator.locks` lock keyed
+`smrt-web-outbox-leader:<namespace>` (sync-apply; unchanged name) or
+`smrt-web-outbox-leader:<namespace>:transport:<name>` for each route it has a
+binding for, and holds it while leader; the browser
 auto-releases on tab crash/close (no heartbeat) so the next tab takes over
 instantly. **Single-tab fallback (documented gap):** no `navigator.locks` →
 warn once + acquire leadership unconditionally; the outbox still replays but the
@@ -89,3 +94,69 @@ durable → exactly-once replay) is complete here.
 `DurableResource` under `durableStoreNamespace(config.namespace)`, so
 `wipeDurableStore(namespace)` (a logout / tenant-switch) empties the queue; the
 namespace is also the IndexedDB dbName and the leader-lock root.
+
+## Consumer-declared replay transports (#3021)
+
+Sync-apply calls `collection.create()` directly, so it cannot carry a write
+whose rules live in a hand-written, permission-gated service (or a model whose
+generated verbs are closed). Two entry points replay through the consumer's own
+operation instead, on the SAME engine:
+
+- `offlineOutbox({ transport })` — a collection's writes queue with
+  `row.transport = object.name`; `syncApplyBasePath` is ignored.
+- `offlineCommandQueue({ name, namespace, transport })` — no collection;
+  `enqueue()` returns the idempotency key, or `undefined` when the write was
+  not captured durably (the caller performs it online). Its `name` shares the
+  per-object event routing, so it must not equal a sibling collection name.
+
+`dataSurfaceActionCommandTransport` adapts a data-surface action transport:
+the request is built at the FIRST replay attempt (current `expectedRevision`)
+and pinned durably to the row via `command.pin()` before sending; every later
+attempt, including after a reload, resends the pinned request, because the
+server fingerprints the request per idempotency key and a changed resend gets
+`idempotency_conflict` instead of the recorded result. With `preview: true`
+the preview's `confirmationToken` is pinned too before apply; a retry applies
+directly with it (the server replays a completed idempotency record before
+checking the token or revision — re-previewing an applied write would get
+`stale_revision`) and previews again only when apply says the token is
+unusable (`invalid_or_expired_confirmation`, `confirmation_*`,
+`stale_preview`), which means nothing was recorded. `apply`
+carries `idempotencyKey`, `preview: true` runs preview first for its
+`confirmationToken`, and `classifySmrtWebDataSurfaceActionResult` maps reasons
+(transient → `write_failed`, auth → `auth_required`, stale → `conflict`,
+anything else incl. `denied` → terminal).
+
+Invariants:
+
+- **Durable route, never re-routed.** The row stores the transport NAME
+  (functions are not durable). A transport row never falls back to
+  `sync/apply`: that is the path its consumer closed.
+- **Per-route leadership, FIFO, and backoff.** Leadership is one Web Lock per
+  route, requested by a tab only while it has a binding serving that route
+  (sync-apply keeps the legacy lock name, so it stays exclusive with older
+  builds). A tab that cannot serve a route never leads it, so it can never
+  strand another tab's rows for that route — the failure a single
+  namespace-wide lock had. Rows of a route no attached tab serves (e.g. after
+  a reload, before its queue re-attaches) simply wait; they gate nothing else.
+  FIFO and backoff gating hold within a route, not across routes; sync-apply
+  rows still batch (≤1000), a transport row replays alone. Detaching a route's
+  last binding (or disposing the engine) stops new sends at once but holds the
+  lock until the in-flight send and its durable transition settle, so another
+  tab never replays a row this one is still settling.
+- **Wipe registration.** The queue registers synchronously at engine
+  construction (not after the async open), so a wipe issued right after attach
+  still clears rows already on disk; replay is suspended while a wipe is
+  pending. `dispose()` waits for a wipe already issued before closing the
+  queue (a disposed-while-opening engine leaves closing to `dispose()`).
+  `wipeDurableStore` drops a namespace's registrations, so the clear
+  callback forgets ours and the next enqueue re-registers; a later wipe still
+  clears rows written after the first.
+- **Sync-apply endpoint comes from bindings, not the engine creator.** A
+  command queue may create the shared engine first; the first sync-apply
+  binding supplies `basePath`/`fetchFn`.
+- **Same state machine.** `OutboxCommandResult` uses the sync-apply result
+  vocabulary and goes through `applyResult`; a thrown transport is the
+  ambiguous path (backoff, resend with the SAME `idempotencyKey`, `attempt`
+  incremented). The server operation must dedupe on that key.
+- Rows written before #3021 lack `transport` and keep their sync-apply
+  meaning, so no IndexedDB schema bump.

@@ -90,6 +90,8 @@ export {
   normalizeSmrtWebDataQueryResult,
 } from './data-query.js';
 export type {
+  SmrtWebDataSurfaceActionCommandRequest,
+  SmrtWebDataSurfaceActionCommandTransportOptions,
   SmrtWebDataSurfaceActionRequest,
   SmrtWebDataSurfaceActionResult,
   SmrtWebDataSurfaceActionTransport,
@@ -99,6 +101,8 @@ export type {
   SmrtWebDataSurfaceSelection,
 } from './data-surface-actions.js';
 export {
+  classifySmrtWebDataSurfaceActionResult,
+  dataSurfaceActionCommandTransport,
   executeSmrtWebDataSurfaceAction,
   MAX_SMRT_WEB_DATA_SURFACE_ACTION_CONTAINER_ITEMS,
   MAX_SMRT_WEB_DATA_SURFACE_ACTION_IDENTIFIER_LENGTH,
@@ -118,25 +122,40 @@ export {
 // .d.ts and fail the boundary check). Surfaced here as the root barrel; no
 // subpath. The public surface is engine-free by construction.
 export type {
+  OfflineCommandInput,
+  OfflineCommandQueue,
+  OfflineCommandQueueConfig,
   OfflineOutboxConfig,
   OutboxBackoff,
+  OutboxCommand,
+  OutboxCommandResult,
+  OutboxCommandTransport,
   OutboxConflict,
   OutboxHandle,
   OutboxSnapshotItem,
   OutboxSyncState,
   SyncStateEvent,
 } from './offline.js';
-export { getOutboxHandle, offlineOutbox } from './offline.js';
+export {
+  getOutboxHandle,
+  offlineCommandQueue,
+  offlineOutbox,
+} from './offline.js';
 // Durable persistence capability (#1764): an opted-in collection warm-starts
 // from a durable IndexedDB snapshot on load, then revalidates in the background;
 // namespace-keyed (api/tenant/identity/manifest hash) so a contract-changing
 // deploy drops old caches and no user reads another's rows. Its own module for
 // the same reason as the seam — reviewable/testable on its own (real
 // fake-indexeddb + real engine). Engine-free public surface.
-export type { PersistCollectionConfig } from './persistence.js';
+export type {
+  PersistCollectionConfig,
+  PersistDataSurfaceConfig,
+  PersistedDataSurface,
+} from './persistence.js';
 export {
   DEFAULT_PERSIST_DEBOUNCE_MS,
   persistCollection,
+  persistDataSurface,
 } from './persistence.js';
 export type {
   SmrtWebQuery,

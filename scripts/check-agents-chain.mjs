@@ -22,7 +22,7 @@
  * linked `packages/<pkg>/agents/<module>.md` references. Preserve distinct
  * behavioral constraints when shortening or moving documentation.
  */
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -50,7 +50,11 @@ function findAgentsFiles(dir = ROOT, found = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (IGNORES.has(entry.name)) continue;
-      findAgentsFiles(join(dir, entry.name), found);
+      const child = join(dir, entry.name);
+      // A nested checkout (e.g. a harness git worktree under .claude/worktrees)
+      // has its own instruction chain; it is not part of this one.
+      if (existsSync(join(child, '.git'))) continue;
+      findAgentsFiles(child, found);
     } else if (entry.name === 'AGENTS.md') {
       found.push(join(dir, entry.name));
     }

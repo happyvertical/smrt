@@ -7,8 +7,10 @@
  * lock, one FIFO queue. This sharing is REQUIRED for correctness, not an
  * optimization: if each collection held its OWN leader lock, two tabs could each
  * win a different collection's lock and both replay the (shared) queue,
- * double-POSTing. One lock per namespace ⇒ one replayer per namespace across all
- * tabs.
+ * double-POSTing. One lock per namespace route ⇒ one replayer per route across
+ * all tabs. Since #3021 a route is `sync-apply` (every sync-apply collection;
+ * keeps the pre-#3021 lock name) or one consumer-declared transport, and a tab
+ * leads only routes it has a binding for, so FIFO and backoff are per route.
  *
  * Replay maps sync-apply results onto durable transitions per the contract's
  * "Web outbox (#1762)" consumer notes
@@ -43,6 +45,8 @@ import { acquireLeadership, type LeadershipHandle } from './leader.js';
 import {
   computeBackoffDelay,
   MAX_SYNC_APPLY_BATCH_SIZE,
+  type OutboxCommandResult,
+  type OutboxCommandTransport,
   type OutboxConflict,
   type ResolvedBackoff,
   SYNC_APPLY_ROUTE_SEGMENTS,
@@ -50,6 +54,7 @@ import {
   type SyncApplyItem,
   type SyncApplyItemResult,
   type SyncApplyOp,
+  type SyncApplyReason,
   type SyncStateEvent,
 } from './types.js';
 
@@ -70,10 +75,6 @@ export function envelopeKindToOp(
 export interface OutboxEngineConfig {
   /** The durable-store namespace string — the IDB dbName + lock-name root. */
   namespace: string;
-  /** Absolute base path the sync-apply endpoint lives under (e.g. `/api/v1`). */
-  syncApplyBasePath: string;
-  /** Fetch implementation (injectable for tests/SSR). */
-  fetchFn: typeof fetch;
   /** Resolved backoff parameters. */
   backoff: ResolvedBackoff;
   /**
@@ -96,12 +97,64 @@ export interface OutboxEnqueueRequest {
   kind: 'insert' | 'update' | 'delete';
   /** The collection route segment (definition.name). */
   object: string;
-  /** The client-generated row UUID (the optimistic row's id). */
+  /**
+   * The client-generated row UUID (the optimistic row's id). Empty ⇒ the
+   * minted item id stands in (a transport command with no target row).
+   */
   rowId: string;
   /** Full row (insert) / changed fields (update) / ignored (delete). */
   data: Record<string, unknown>;
   /** The server updated_at last seen for this row, for the conflict guard. */
   baseUpdatedAt?: string;
+  /**
+   * Replay through the transport registered under this name instead of
+   * `sync/apply` (#3021). Absent ⇒ sync-apply.
+   */
+  transport?: string;
+}
+
+/**
+ * Where a namespace's sync-apply rows are POSTed. Supplied by the binding that
+ * replays through sync-apply (an `offlineOutbox` without a `transport`), not by
+ * the engine's creator: a command-only queue may create the shared engine
+ * first, and must not pin a sync-apply base path it never declared.
+ */
+export interface OutboxSyncApplyTarget {
+  /** Absolute base path the sync-apply endpoint lives under (e.g. `/api/v1`). */
+  basePath: string;
+  /** Fetch implementation (injectable for tests/SSR). */
+  fetchFn: typeof fetch;
+}
+
+/** The exact record {@link OutboxEngine.registerCollection} registered. */
+interface OutboxBindingRecord {
+  onSyncStateChange?: (event: SyncStateEvent) => void;
+  onConflict?: (conflict: OutboxConflict) => void;
+  transport?: OutboxCommandTransport;
+  /** The replay route this binding serves, if any (see {@link routeOf}). */
+  route?: string;
+}
+
+/** The route every sync-apply row replays through. */
+const SYNC_APPLY_ROUTE = 'sync-apply';
+
+/**
+ * The replay route a row belongs to: `sync-apply`, or `transport:<name>`.
+ * Leadership, FIFO, and backoff gating are all per route (#3021): a tab leads
+ * only routes it can actually serve, so a leader lacking a route never strands
+ * another tab's rows for it.
+ */
+function routeOf(row: { transport?: string }): string {
+  return row.transport === undefined
+    ? SYNC_APPLY_ROUTE
+    : `transport:${row.transport}`;
+}
+
+/** Cross-tab leadership for one route in this tab. */
+interface RouteLeadership {
+  release: LeadershipHandle;
+  isLeader: boolean;
+  refs: number;
 }
 
 /** A read-only view of one queued item, for {@link OutboxEngine.snapshot}. */
@@ -114,6 +167,8 @@ export interface OutboxSnapshotItem {
   attempts: number;
   nextAttemptAt: number;
   lastError?: string;
+  /** The replay transport name, when the item replays through one (#3021). */
+  transport?: string;
 }
 
 /** Generate a fresh UUID itemId, falling back when crypto.randomUUID is absent. */
@@ -147,11 +202,14 @@ export class OutboxEngine {
    */
   private readonly listenersByObject = new Map<
     string,
-    Set<{
-      onSyncStateChange?: (event: SyncStateEvent) => void;
-      onConflict?: (conflict: OutboxConflict) => void;
-    }>
+    Set<OutboxBindingRecord>
   >();
+  /**
+   * The sync-apply endpoint, adopted from the first binding that declares one.
+   * A tab without one never leads the sync-apply route, so its rows wait for a
+   * tab that does (never dropped) — see `drainOnce`.
+   */
+  private syncApply: OutboxSyncApplyTarget | undefined;
 
   /** Ref count: number of collections currently attached to this engine. */
   private refCount = 0;
@@ -161,10 +219,12 @@ export class OutboxEngine {
   private readonly ready: Promise<void>;
   /** True when IndexedDB was unavailable and the engine is a durable no-op. */
   private degraded = false;
-  /** Leadership handle; set once we've requested the leader lock. */
-  private leadership: LeadershipHandle | undefined;
-  /** True while this tab holds leadership. */
-  private isLeader = false;
+  /**
+   * Per-route leadership, requested when the first binding serving a route
+   * attaches and released when the last one detaches. Exactly one tab replays a
+   * given route; a tab never leads a route it has no binding for.
+   */
+  private readonly leaders = new Map<string, RouteLeadership>();
   /** Unregister fn from the durable-store registry. */
   private unregisterResource: (() => void) | undefined;
   /** True once dispose() ran — guards late async continuations. */
@@ -175,8 +235,14 @@ export class OutboxEngine {
    * explicit retry wakes it. Items stay queued.
    */
   private paused = false;
+  /** Wipes issued but not yet cleared; replay is suspended meanwhile. */
+  private wipesPending = 0;
+  /** Those wipes, so `dispose()` can let them finish before closing. */
+  private readonly pendingWipes = new Set<Promise<void>>();
   /** True while a drain pass is running, to coalesce concurrent triggers. */
   private draining = false;
+  /** The running drain, while `draining`. */
+  private activeDrain: Promise<void> | undefined;
   /** A drain requested while one was in flight — run one more pass after. */
   private drainQueued = false;
   /** Timer for the next backoff-scheduled drain, if any. */
@@ -187,8 +253,10 @@ export class OutboxEngine {
   constructor(config: OutboxEngineConfig) {
     this.config = config;
     this.ready = this.open();
+    // Register synchronously, before the async open: a wipe issued right after
+    // attach (logout at startup) must still clear what is already on disk.
+    this.registerForWipe();
     this.wireOnlineListener();
-    this.requestLeadership();
     // Kick a drain once the queue has finished opening. Leadership can be
     // granted (single-tab fallback: a microtask; Web Locks: whenever the lock
     // frees) BEFORE the async `open()` resolves — in which case that early
@@ -214,24 +282,46 @@ export class OutboxEngine {
     }
     try {
       this.queue = await openDurableOutboxQueue(this.config.namespace);
-      // Register for wipeDurableStore now that the queue exists.
-      this.unregisterResource = this.config.registerResource(async () => {
-        // A wipe clears the durable rows; drop the in-flight schedule too.
-        await this.queue?.clear();
-      });
-      if (this.disposed) {
-        // Disposed while opening — tear the just-opened queue back down.
-        this.queue.close();
-        this.queue = undefined;
-        this.unregisterResource?.();
-        this.unregisterResource = undefined;
-        return;
-      }
+      // Disposed while opening: leave the queue open — `dispose()` awaits this
+      // open and any pending wipe, then closes it, so a wipe issued before the
+      // dispose still clears it.
     } catch (error) {
       this.degraded = true;
       // biome-ignore lint/suspicious/noConsole: surface an outbox open failure (#1762)
       console.warn('[smrt-web] failed to open the offline outbox', error);
     }
+  }
+
+  /**
+   * Register the queue as a durable resource. A wipe drops the namespace's
+   * registrations, so the clear callback forgets ours and the next enqueue
+   * registers again — otherwise a second wipe would miss rows written after
+   * the first.
+   */
+  private registerForWipe(): void {
+    if (this.unregisterResource || this.disposed) return;
+    this.unregisterResource = this.config.registerResource(async () => {
+      this.unregisterResource = undefined;
+      // Replay nothing while the wipe is pending: rows on disk belong to the
+      // scope being cleared.
+      this.wipesPending += 1;
+      const wipe = (async () => {
+        try {
+          await this.ready;
+          await this.queue?.clear();
+        } finally {
+          this.wipesPending -= 1;
+          // Writes enqueued after the wipe was issued survive it; replay them.
+          if (!this.disposed) void this.drain();
+        }
+      })();
+      this.pendingWipes.add(wipe);
+      try {
+        await wipe;
+      } finally {
+        this.pendingWipes.delete(wipe);
+      }
+    });
   }
 
   /** Wake the drain loop immediately when connectivity returns. */
@@ -249,19 +339,53 @@ export class OutboxEngine {
     this.onlineListener = listener;
   }
 
-  /** Request cross-tab leadership; drain whenever we hold it. */
-  private requestLeadership(): void {
-    const lockName = `smrt-web-outbox-leader:${this.config.namespace}`;
-    this.leadership = acquireLeadership(
+  /**
+   * Request cross-tab leadership for `route` (ref-counted per tab). The
+   * sync-apply route keeps the pre-#3021 lock name, so it stays mutually
+   * exclusive with tabs running an older build; each transport route has its
+   * own lock.
+   */
+  private acquireRoute(route: string): void {
+    const existing = this.leaders.get(route);
+    if (existing) {
+      existing.refs += 1;
+      return;
+    }
+    const root = `smrt-web-outbox-leader:${this.config.namespace}`;
+    const lockName = route === SYNC_APPLY_ROUTE ? root : `${root}:${route}`;
+    const entry: RouteLeadership = {
+      release: () => {},
+      isLeader: false,
+      refs: 1,
+    };
+    this.leaders.set(route, entry);
+    entry.release = acquireLeadership(
       lockName,
       () => {
-        this.isLeader = true;
+        entry.isLeader = true;
         void this.drain();
       },
       () => {
-        this.isLeader = false;
+        entry.isLeader = false;
       },
     );
+  }
+
+  /** Drop one reference to `route`; the last one releases its lock. */
+  private releaseRoute(route: string): void {
+    const entry = this.leaders.get(route);
+    if (!entry) return;
+    entry.refs -= 1;
+    if (entry.refs > 0) return;
+    // Stop leading at once (`leads()` is false, so no new send starts), but
+    // hold the lock until an in-flight send and its durable transition settle.
+    this.leaders.delete(route);
+    void this.settled().then(() => entry.release());
+  }
+
+  /** Does this tab currently lead `route`? */
+  private leads(route: string): boolean {
+    return this.leaders.get(route)?.isLeader === true;
   }
 
   /**
@@ -272,18 +396,18 @@ export class OutboxEngine {
    * by `object` is what lets rehydrated rows (reloaded from IDB) reach this
    * collection's callbacks even though this session never enqueued them.
    */
-  registerCollection(binding: {
-    object: string;
-    onSyncStateChange?: (event: SyncStateEvent) => void;
-    onConflict?: (conflict: OutboxConflict) => void;
-  }): {
-    onSyncStateChange?: (event: SyncStateEvent) => void;
-    onConflict?: (conflict: OutboxConflict) => void;
-  } {
+  registerCollection(binding: OutboxCollectionBinding): object {
     this.refCount += 1;
-    const record = {
+    const route = binding.transport
+      ? routeOf({ transport: binding.object })
+      : binding.syncApply
+        ? SYNC_APPLY_ROUTE
+        : undefined;
+    const record: OutboxBindingRecord = {
       onSyncStateChange: binding.onSyncStateChange,
       onConflict: binding.onConflict,
+      transport: binding.transport,
+      route,
     };
     let set = this.listenersByObject.get(binding.object);
     if (!set) {
@@ -291,7 +415,23 @@ export class OutboxEngine {
       this.listenersByObject.set(binding.object, set);
     }
     set.add(record);
+    if (binding.syncApply && !this.syncApply) {
+      this.syncApply = binding.syncApply;
+    }
+    // Leading a newly served route drains its backlog (the grant callback
+    // drains; the constructor's post-open drain covers an early grant).
+    if (route && !this.disposed) this.acquireRoute(route);
     return record;
+  }
+
+  /** The first live transport registered under `name`, if any. */
+  private transportFor(name: string): OutboxCommandTransport | undefined {
+    const set = this.listenersByObject.get(name);
+    if (!set) return undefined;
+    for (const record of set) {
+      if (record.transport) return record.transport;
+    }
+    return undefined;
   }
 
   /**
@@ -303,9 +443,10 @@ export class OutboxEngine {
    */
   async unregisterCollection(object: string, record: object): Promise<boolean> {
     const set = this.listenersByObject.get(object);
-    if (set) {
-      set.delete(record as never);
+    if (set?.delete(record as OutboxBindingRecord)) {
       if (set.size === 0) this.listenersByObject.delete(object);
+      const route = (record as OutboxBindingRecord).route;
+      if (route) this.releaseRoute(route);
     }
     this.refCount = Math.max(0, this.refCount - 1);
     if (this.refCount > 0) return false;
@@ -333,25 +474,34 @@ export class OutboxEngine {
   async enqueue(request: OutboxEnqueueRequest): Promise<string | undefined> {
     await this.ready;
     if (!this.queue || this.degraded) return undefined;
+    this.registerForWipe();
 
     const itemId = newItemId();
     const op = envelopeKindToOp(request.kind);
+    // A command with no target row (#3021) is identified by its own item id.
+    const rowId = request.rowId || itemId;
 
-    // A delete carries no payload; create/update carry the row/changed fields.
-    const payload = op === 'delete' ? undefined : request.data;
+    // A sync-apply delete carries no payload; create/update carry the
+    // row/changed fields. A transport row keeps its payload for every op: the
+    // consumer's operation, not sync-apply, defines what a delete needs.
+    const payload =
+      op === 'delete' && request.transport === undefined
+        ? undefined
+        : request.data;
 
     await this.queue.enqueue({
       itemId,
       object: request.object,
       op,
-      id: request.rowId,
+      id: rowId,
       payload,
       baseUpdatedAt: request.baseUpdatedAt,
+      transport: request.transport,
     });
 
     this.emit({
       itemId,
-      rowId: request.rowId,
+      rowId,
       object: request.object,
       state: 'pending',
       attempts: 0,
@@ -400,6 +550,7 @@ export class OutboxEngine {
       attempts: row.attempts,
       nextAttemptAt: row.nextAttemptAt,
       lastError: row.lastError,
+      ...(row.transport === undefined ? {} : { transport: row.transport }),
     }));
   }
 
@@ -437,66 +588,148 @@ export class OutboxEngine {
   }
 
   /**
-   * The replay loop. Gated on: (a) holding leadership, (b) not paused by an
+   * The replay loop. Gated on: (a) leading at least one route, (b) not paused by an
    * auth failure, (c) `navigator.onLine !== false`, (d) IndexedDB usable. Drains
-   * all rows due now (`nextAttemptAt <= now`), oldest-first, chunked into
-   * batches of ≤1000 per POST, one POST at a time to preserve FIFO across
-   * chunks. Concurrency-coalesced: a drain requested while one runs sets a flag
+   * every led route's rows due now (`nextAttemptAt <= now`), oldest-first per
+   * route; sync-apply chunks into batches of ≤1000 per POST, one send at a time
+   * to preserve each route's FIFO. Concurrency-coalesced: a drain requested while one runs sets a flag
    * to run exactly one more pass, so overlapping triggers never interleave.
    */
-  private async drain(): Promise<void> {
+  private drain(): Promise<void> {
     if (this.draining) {
       this.drainQueued = true;
-      return;
+      return this.activeDrain ?? Promise.resolve();
     }
     this.draining = true;
-    try {
-      // Loop so a queued re-request (or a freshly-eligible backoff row) runs
-      // without re-entrancy.
-      for (;;) {
-        this.drainQueued = false;
-        await this.drainOnce();
-        if (!this.drainQueued) break;
+    this.activeDrain = (async () => {
+      try {
+        // Loop so a queued re-request (or a freshly-eligible backoff row) runs
+        // without re-entrancy.
+        for (;;) {
+          this.drainQueued = false;
+          await this.drainOnce();
+          if (!this.drainQueued) break;
+        }
+      } finally {
+        this.draining = false;
+        this.activeDrain = undefined;
       }
-    } finally {
-      this.draining = false;
-    }
+    })();
+    return this.activeDrain;
+  }
+
+  /**
+   * Settles once the drain in flight (if any) has finished its request AND its
+   * durable result transition. A route's lock is released only after this, so
+   * another tab can never replay a row this tab is still settling.
+   */
+  private settled(): Promise<void> {
+    return (this.activeDrain ?? Promise.resolve()).catch(() => undefined);
   }
 
   /** One drain pass: send every currently-due batch, then schedule backoff. */
   private async drainOnce(): Promise<void> {
     if (this.disposed) return;
-    if (!this.isLeader) return;
+    if (this.wipesPending > 0) return;
     if (this.paused) return;
     if (this.degraded || !this.queue) return;
     if (isDefinitelyOffline()) return;
 
-    const pending = (await this.queue.all()).filter(
-      (row) => row.state === 'pending',
-    );
-    if (pending.length === 0) return;
-
-    const now = Date.now();
-    const firstBlocked = pending.findIndex((row) => row.nextAttemptAt > now);
-    const due = firstBlocked === -1 ? pending : pending.slice(0, firstBlocked);
-    if (due.length === 0) {
-      // The oldest pending row is backed off; FIFO forbids draining newer rows.
-      await this.scheduleNextBackoff();
-      return;
+    // Group pending rows by route, oldest-first, keeping only routes this tab
+    // leads. A row whose route no tab here serves is simply not ours: it waits
+    // for the tab that leads its route (or for its queue/collection to attach
+    // after a reload) and never blocks another route. A transport row is never
+    // re-routed to `sync/apply` — that is exactly the path its consumer closed.
+    const byRoute = new Map<string, OutboxRow[]>();
+    for (const row of await this.queue.all()) {
+      if (row.state !== 'pending') continue;
+      const route = routeOf(row);
+      if (!this.leads(route)) continue;
+      const rows = byRoute.get(route);
+      if (rows) rows.push(row);
+      else byRoute.set(route, [row]);
     }
 
-    // Chunk oldest-first into ≤1000-item batches; send one at a time so FIFO
-    // holds across chunks.
-    for (let i = 0; i < due.length; i += MAX_SYNC_APPLY_BATCH_SIZE) {
-      if (this.disposed || this.paused || !this.isLeader) break;
-      const chunk = due.slice(i, i + MAX_SYNC_APPLY_BATCH_SIZE);
-      const drained = await this.sendBatch(chunk);
-      if (!drained) break;
+    const now = Date.now();
+    for (const [route, rows] of byRoute) {
+      // FIFO per route: the oldest backed-off row gates every newer one.
+      const firstBlocked = rows.findIndex((row) => row.nextAttemptAt > now);
+      const due = firstBlocked === -1 ? rows : rows.slice(0, firstBlocked);
+      if (route === SYNC_APPLY_ROUTE) {
+        const syncApply = this.syncApply;
+        if (!syncApply) continue;
+        // Chunk into ≤1000-item batches, one POST at a time.
+        for (let i = 0; i < due.length; i += MAX_SYNC_APPLY_BATCH_SIZE) {
+          if (this.disposed || this.paused || !this.leads(route)) break;
+          const chunk = due.slice(i, i + MAX_SYNC_APPLY_BATCH_SIZE);
+          if (!(await this.sendBatch(chunk, syncApply))) break;
+        }
+      } else {
+        for (const row of due) {
+          if (this.disposed || this.paused || !this.leads(route)) break;
+          const transport = this.transportFor(row.transport ?? row.object);
+          if (!transport) break;
+          if (!(await this.sendCommand(row, transport))) break;
+        }
+      }
+      if (this.disposed || this.paused) return;
     }
 
     // After processing, some rows may have been re-queued with a backoff gate;
     // schedule the next wake.
     await this.scheduleNextBackoff();
+  }
+
+  /**
+   * Replay one transport row through its consumer-declared transport (#3021)
+   * and map the outcome through the SAME transitions as a sync-apply result. A
+   * throw is the ambiguous path (request may or may not have landed): the row
+   * stays `pending` with backoff and is resent under the same idempotency key.
+   * Returns false when the row remains pending, stopping this route's pass
+   * (FIFO per route).
+   */
+  private async sendCommand(
+    row: OutboxRow,
+    transport: OutboxCommandTransport,
+  ): Promise<boolean> {
+    this.emit({
+      itemId: row.itemId,
+      rowId: row.id,
+      object: row.object,
+      state: 'uploading',
+      attempts: row.attempts,
+    });
+    let outcome: OutboxCommandResult;
+    try {
+      outcome = await transport({
+        idempotencyKey: row.itemId,
+        name: row.transport ?? row.object,
+        op: row.op,
+        rowId: row.id,
+        ...(row.payload === undefined ? {} : { payload: row.payload }),
+        ...(row.baseUpdatedAt === undefined
+          ? {}
+          : { baseUpdatedAt: row.baseUpdatedAt }),
+        attempt: row.attempts + 1,
+        ...(row.pinned === undefined ? {} : { pinned: row.pinned }),
+        pin: async (value) => {
+          if (row.seq === undefined || !this.queue) {
+            throw new Error('[smrt-web] outbox row is no longer queued');
+          }
+          await this.queue.markState(row.seq, { pinned: value });
+          row.pinned = value;
+        },
+      });
+    } catch {
+      await this.requeueRow(row, 'network error during command replay');
+      return false;
+    }
+    const result = commandResultToApplyResult(row, outcome);
+    if (!result) {
+      await this.requeueRow(row, 'unexpected command result shape');
+      return false;
+    }
+    return this.applyResult(row, result);
   }
 
   /**
@@ -507,7 +740,10 @@ export class OutboxEngine {
    * doesn't hot-spin. Returns false when a retryable row remains pending, which
    * stops this drain pass so newer FIFO chunks do not overtake it.
    */
-  private async sendBatch(chunk: OutboxRow[]): Promise<boolean> {
+  private async sendBatch(
+    chunk: OutboxRow[],
+    syncApply: OutboxSyncApplyTarget,
+  ): Promise<boolean> {
     // Mark the chunk uploading (observable), build the request items in order.
     for (const row of chunk) {
       this.emit({
@@ -529,7 +765,7 @@ export class OutboxEngine {
 
     let results: SyncApplyItemResult[] | undefined;
     try {
-      results = await this.postBatch(items);
+      results = await this.postBatch(items, syncApply);
     } catch {
       // Network reject / non-200 / lost response: keep the whole batch pending.
       await this.requeueBatch(chunk, 'network error during sync');
@@ -565,9 +801,10 @@ export class OutboxEngine {
    */
   private async postBatch(
     items: SyncApplyItem[],
+    syncApply: OutboxSyncApplyTarget,
   ): Promise<SyncApplyItemResult[] | undefined> {
-    const url = `${this.config.syncApplyBasePath}/${SYNC_APPLY_ROUTE_SEGMENTS.join('/')}`;
-    const response = await this.config.fetchFn(url, {
+    const url = `${syncApply.basePath}/${SYNC_APPLY_ROUTE_SEGMENTS.join('/')}`;
+    const response = await syncApply.fetchFn(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
@@ -709,13 +946,24 @@ export class OutboxEngine {
    */
   private async scheduleNextBackoff(): Promise<void> {
     if (this.disposed || this.paused || !this.queue) return;
-    const rows = await this.queue.all();
-    const firstPending = rows.find((r) => r.state === 'pending');
-    if (!firstPending) return;
-    const now = Date.now();
-    // FIFO: the oldest pending row gates every newer row, even if a newer row
-    // has no backoff delay.
-    const delay = Math.max(0, firstPending.nextAttemptAt - now);
+    // FIFO per route: each led route's oldest pending row gates it, even if a
+    // newer row has no backoff delay. Routes this tab does not lead are not
+    // ours to wake for.
+    let nextAt: number | undefined;
+    const seen = new Set<string>();
+    for (const row of await this.queue.all()) {
+      if (row.state !== 'pending') continue;
+      const route = routeOf(row);
+      if (seen.has(route)) continue;
+      seen.add(route);
+      if (!this.leads(route)) continue;
+      nextAt =
+        nextAt === undefined
+          ? row.nextAttemptAt
+          : Math.min(nextAt, row.nextAttemptAt);
+    }
+    if (nextAt === undefined) return;
+    const delay = Math.max(0, nextAt - Date.now());
     if (this.backoffTimer) clearTimeout(this.backoffTimer);
     const timers = globalThis as {
       setTimeout?: typeof setTimeout;
@@ -752,12 +1000,20 @@ export class OutboxEngine {
       target.removeEventListener('online', this.onlineListener);
       this.onlineListener = undefined;
     }
-    this.leadership?.();
-    this.leadership = undefined;
+    // `disposed` stops the drain loop before its next send; let an in-flight
+    // send settle (request + durable transition) before giving up the locks
+    // and closing the queue it writes to.
+    const leaders = [...this.leaders.values()];
+    this.leaders.clear();
+    await this.settled();
+    for (const entry of leaders) entry.release();
     this.unregisterResource?.();
     this.unregisterResource = undefined;
-    // Wait for any in-flight open to settle before closing.
+    // Wait for any in-flight open, then any wipe already issued, before
+    // closing: a wipe that was pending when the engine detached must still
+    // clear the rows on disk.
     await this.ready.catch(() => undefined);
+    await Promise.allSettled([...this.pendingWipes]);
     this.queue?.close();
     this.queue = undefined;
     this.listenersByObject.clear();
@@ -796,11 +1052,56 @@ export function getOrCreateOutboxEngine(
   return engine;
 }
 
-/** The per-collection callback binding registered when a collection attaches. */
+/**
+ * The per-collection (or per-command-queue) binding registered on attach.
+ * `object` is the event-routing key AND, for a `transport` binding, the name
+ * transport rows are queued under.
+ */
 export interface OutboxCollectionBinding {
   object: string;
   onSyncStateChange?: (event: SyncStateEvent) => void;
   onConflict?: (conflict: OutboxConflict) => void;
+  /** Replay rows queued under `object` through this transport (#3021). */
+  transport?: OutboxCommandTransport;
+  /** Declares the sync-apply endpoint (sync-apply bindings only). */
+  syncApply?: OutboxSyncApplyTarget;
+}
+
+/**
+ * Translate a transport's {@link OutboxCommandResult} into the positional
+ * sync-apply result shape `applyResult` already maps, so both routes share one
+ * state machine. `undefined` for a malformed outcome (treated as retryable,
+ * like a malformed sync-apply body).
+ */
+function commandResultToApplyResult(
+  row: OutboxRow,
+  outcome: unknown,
+): SyncApplyItemResult | undefined {
+  if (!outcome || typeof outcome !== 'object') return undefined;
+  const { status, reason, updatedAt } = outcome as {
+    status?: unknown;
+    reason?: unknown;
+    updatedAt?: unknown;
+  };
+  const base = {
+    itemId: row.itemId,
+    id: row.id,
+    ...(typeof updatedAt === 'string' ? { updatedAt } : {}),
+  };
+  if (status === 'applied') return { ...base, status };
+  if (status === 'conflict') {
+    return {
+      ...base,
+      status,
+      reason: reason === 'create_conflict' ? 'create_conflict' : 'stale_write',
+    };
+  }
+  if (status === 'rejected' && typeof reason === 'string' && reason) {
+    // Unknown reasons are carried verbatim; `applyResult` treats anything that
+    // is not write_failed / auth_required / forbidden as terminal.
+    return { ...base, status, reason: reason as SyncApplyReason };
+  }
+  return undefined;
 }
 
 /**

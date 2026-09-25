@@ -6,6 +6,12 @@
  * confirmation-token validation; this boundary only rejects malformed replies.
  */
 
+import type {
+  OutboxCommand,
+  OutboxCommandResult,
+  OutboxCommandTransport,
+} from './offline/types.js';
+
 export type SmrtWebDataSurfaceJsonPrimitive = string | number | boolean | null;
 export type SmrtWebDataSurfaceJsonValue =
   | SmrtWebDataSurfaceJsonPrimitive
@@ -286,4 +292,163 @@ export async function executeSmrtWebDataSurfaceAction(
     );
   }
   return result;
+}
+
+/**
+ * The replay-time request for {@link dataSurfaceActionCommandTransport}: every
+ * action-request field except those the adapter owns — `version`, `phase`,
+ * `requestId`, `idempotencyKey`, and `confirmationToken`.
+ */
+export type SmrtWebDataSurfaceActionCommandRequest = Omit<
+  SmrtWebDataSurfaceActionRequest,
+  'version' | 'phase' | 'requestId' | 'idempotencyKey' | 'confirmationToken'
+>;
+
+export interface SmrtWebDataSurfaceActionCommandTransportOptions {
+  /** The same action transport the mounted surface uses online. */
+  transport: SmrtWebDataSurfaceActionTransport;
+  /**
+   * Build the action request for a queued write at its FIRST replay attempt,
+   * so it carries the surface's `expectedRevision` as of replay rather than
+   * capture. The built request is pinned durably to the write and reused on
+   * every later attempt (including after a reload): the server fingerprints
+   * the request per idempotency key, so a resend after a lost response must be
+   * identical to replay the recorded result instead of `idempotency_conflict`.
+   */
+  request: (
+    command: OutboxCommand,
+  ) =>
+    | SmrtWebDataSurfaceActionCommandRequest
+    | Promise<SmrtWebDataSurfaceActionCommandRequest>;
+  /**
+   * Run `preview` first and apply with its `confirmationToken` — for actions
+   * whose server adapter requires confirmation. Default false (apply only).
+   * The token is pinned before apply; a retry applies with it directly (the
+   * server replays a completed result) and previews again only when the token
+   * turns out unusable.
+   */
+  preview?: boolean;
+  /** Map a non-throwing result onto an outbox outcome. Default below. */
+  classify?: (result: SmrtWebDataSurfaceActionResult) => OutboxCommandResult;
+}
+
+const RETRYABLE_ACTION_REASONS = new Set([
+  'idempotency_in_progress',
+  'background_unavailable',
+  'execution_failed',
+]);
+const AUTH_ACTION_REASONS = new Set([
+  'auth_required',
+  'unauthenticated',
+  'unauthorized',
+]);
+const STALE_ACTION_REASONS = new Set(['stale_revision', 'stale_preview']);
+/**
+ * Apply reasons that mean the pinned confirmation token cannot be used and no
+ * result was recorded under the idempotency key (a completed record would
+ * have been replayed first), so previewing again is safe.
+ */
+const UNUSABLE_CONFIRMATION_REASONS = new Set([
+  'invalid_or_expired_confirmation',
+  'confirmation_mismatch',
+  'confirmation_replayed',
+  'confirmation_required',
+  'stale_preview',
+]);
+
+/** What the action adapter pins to a queued write. */
+interface PinnedActionCommand {
+  request: SmrtWebDataSurfaceActionCommandRequest;
+  confirmationToken?: string;
+}
+
+/**
+ * Default outcome mapping for a data-surface action result. `ok` → applied; a
+ * transient server reason → retryable `write_failed`; an authentication reason
+ * → pause for re-auth; a stale revision/preview → `conflict` (a RESOLVED
+ * outcome the app rebases from); anything else — including `denied` — is a
+ * terminal rejection surfaced as `failed`.
+ */
+export function classifySmrtWebDataSurfaceActionResult(
+  result: SmrtWebDataSurfaceActionResult,
+): OutboxCommandResult {
+  if (result.ok) return { status: 'applied' };
+  const reason = result.reason ?? 'rejected';
+  if (RETRYABLE_ACTION_REASONS.has(reason)) {
+    return { status: 'rejected', reason: 'write_failed' };
+  }
+  if (AUTH_ACTION_REASONS.has(reason)) {
+    return { status: 'rejected', reason: 'auth_required' };
+  }
+  if (STALE_ACTION_REASONS.has(reason)) {
+    return { status: 'conflict', reason: 'stale_write' };
+  }
+  return { status: 'rejected', reason };
+}
+
+/**
+ * An {@link OutboxCommandTransport} that replays a queued write as a
+ * data-surface action `apply` (optionally preceded by `preview`) through the
+ * surface's own server adapter — its authority, allowlist, and principal
+ * scoping stay on the server path (#3021). The outbox's durable idempotency
+ * key becomes the action's `idempotencyKey`, so a resend after a lost response
+ * replays the server's recorded result instead of applying twice. Malformed or
+ * mismatched replies throw, which the outbox treats as retryable.
+ */
+export function dataSurfaceActionCommandTransport(
+  options: SmrtWebDataSurfaceActionCommandTransportOptions,
+): OutboxCommandTransport {
+  const classify = options.classify ?? classifySmrtWebDataSurfaceActionResult;
+  return async (command) => {
+    let pinned = command.pinned as PinnedActionCommand | undefined;
+    if (pinned === undefined) {
+      // Pin before sending, so no attempt that may have reached the server
+      // ever differs from the ones after it.
+      pinned = { request: await options.request(command) };
+      await command.pin(pinned);
+    }
+    const base = pinned.request;
+    const requestId = (phase: string) =>
+      `${command.idempotencyKey}:${command.attempt}:${phase}`;
+    const apply = (confirmationToken: string | undefined) =>
+      executeSmrtWebDataSurfaceAction(options.transport, {
+        ...base,
+        version: 1,
+        phase: 'apply',
+        requestId: requestId('apply'),
+        idempotencyKey: command.idempotencyKey,
+        ...(confirmationToken === undefined ? {} : { confirmationToken }),
+      });
+    if (!options.preview) return classify(await apply(undefined));
+
+    // A pinned token means an earlier attempt previewed and may have applied.
+    // Apply directly: the server replays a completed idempotency record before
+    // it checks the token or the revision, so a lost response is recovered
+    // here — whereas re-previewing an applied write would see `stale_revision`.
+    if (pinned.confirmationToken !== undefined) {
+      const applied = await apply(pinned.confirmationToken);
+      if (
+        applied.ok ||
+        !UNUSABLE_CONFIRMATION_REASONS.has(applied.reason ?? '')
+      ) {
+        return classify(applied);
+      }
+      // The token is unusable and nothing was recorded under this key.
+    }
+    const preview = await executeSmrtWebDataSurfaceAction(options.transport, {
+      ...base,
+      version: 1,
+      phase: 'preview',
+      requestId: requestId('preview'),
+    });
+    if (!preview.ok) return classify(preview);
+    pinned = {
+      request: base,
+      ...(preview.confirmationToken === undefined
+        ? {}
+        : { confirmationToken: preview.confirmationToken }),
+    };
+    await command.pin(pinned);
+    return classify(await apply(preview.confirmationToken));
+  };
 }

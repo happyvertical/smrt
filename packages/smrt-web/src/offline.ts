@@ -75,13 +75,18 @@ import {
 import {
   DEFAULT_BACKOFF,
   type OutboxBackoff,
+  type OutboxCommandTransport,
   type OutboxConflict,
   type ResolvedBackoff,
+  type SyncApplyOp,
   type SyncStateEvent,
 } from './offline/types.js';
 
 export type {
   OutboxBackoff,
+  OutboxCommand,
+  OutboxCommandResult,
+  OutboxCommandTransport,
   OutboxConflict,
   OutboxSyncState,
   SyncStateEvent,
@@ -112,9 +117,21 @@ export interface OfflineOutboxConfig<TData extends object = object> {
    * API base path the sync-apply endpoint lives under (`POST
    * {syncApplyBasePath}/sync/apply`). Defaults to `/api/v1`, matching the REST
    * generator's default. Set to the SvelteKit route base (`/api`) when replaying
-   * against the generated SvelteKit `sync/apply/+server.ts`.
+   * against the generated SvelteKit `sync/apply/+server.ts`. Ignored when
+   * {@link transport} is set.
    */
   syncApplyBasePath?: string;
+  /**
+   * Replay this collection's queued writes through a consumer-declared server
+   * operation instead of the generated `sync/apply` (#3021) — for a model whose
+   * generated write verbs are closed because a hand-written, permission-gated
+   * service owns its write rules. Rows are queued under `object.name` and replay
+   * ONLY through this transport (never `sync/apply`), each carrying its durable
+   * `idempotencyKey`, with the same four-state machine, per-route FIFO, and
+   * backoff.
+   * See {@link offlineCommandQueue} for writes with no collection at all.
+   */
+  transport?: OutboxCommandTransport;
   /** Fetch implementation override (tests, SSR). Defaults to global fetch. */
   fetchFn?: typeof fetch;
   /** Exponential-backoff tuning for retryable replay failures. */
@@ -158,6 +175,8 @@ export interface OutboxHandle {
 
 /** One item in an {@link OutboxHandle.snapshot} result. */
 export interface OutboxSnapshotItem {
+  /** The transport name, when the item replays through one (#3021). */
+  transport?: string;
   /** The queue row's idempotency handle. */
   itemId: string;
   /** The collection route segment. */
@@ -193,6 +212,20 @@ function resolveBackoff(backoff?: OutboxBackoff): ResolvedBackoff {
  */
 const handlesByNamespace = new Map<string, OutboxEngine>();
 
+/** Release one binding; drop the handle entry once the engine is evicted. */
+async function releaseBinding(
+  namespace: string,
+  engine: OutboxEngine,
+  object: string,
+  record: object,
+): Promise<void> {
+  const before = engine.referenceCount;
+  await releaseOutboxEngine(namespace, engine, object, record);
+  if (before <= 1 && handlesByNamespace.get(namespace) === engine) {
+    handlesByNamespace.delete(namespace);
+  }
+}
+
 /** Extract a timestamp from a payload for direct wrapMutation callers. */
 function getPayloadUpdatedAt(
   data: Record<string, unknown>,
@@ -209,9 +242,9 @@ function getPayloadUpdatedAt(
  * is unaffected (the seam's no-op guarantee — the "opt-in per model" AC).
  *
  * The same `namespace` across multiple collections shares ONE engine (one IDB
- * db, one leader lock, one FIFO queue) — so cross-collection ordering and the
- * multi-tab single-replayer guarantee hold across every opted-in collection of a
- * given identity.
+ * db, one queue) — so cross-collection ordering and the multi-tab
+ * single-replayer guarantee hold across every sync-apply collection of a given
+ * identity (one route). A collection with a `transport` is its own route.
  */
 export function offlineOutbox<TData extends object = object>(
   config: OfflineOutboxConfig<TData>,
@@ -222,6 +255,7 @@ export function offlineOutbox<TData extends object = object>(
     config.fetchFn ??
     ((...args) => globalThis.fetch(...(args as [RequestInfo])));
   const backoff = resolveBackoff(config.backoff);
+  const transport = config.transport;
 
   const object = config.object.name;
   // The engine this collection attaches to (set in onAttach, released in
@@ -238,8 +272,6 @@ export function offlineOutbox<TData extends object = object>(
       const acquired = acquireOutboxEngine(
         {
           namespace,
-          syncApplyBasePath,
-          fetchFn,
           backoff,
           random: config.random,
           registerResource: (clear) =>
@@ -249,6 +281,9 @@ export function offlineOutbox<TData extends object = object>(
           object,
           onSyncStateChange: config.onSyncStateChange,
           onConflict: config.onConflict,
+          ...(transport
+            ? { transport }
+            : { syncApply: { basePath: syncApplyBasePath, fetchFn } }),
         },
       );
       engine = acquired.engine;
@@ -267,6 +302,7 @@ export function offlineOutbox<TData extends object = object>(
         data: envelope.data,
         baseUpdatedAt:
           envelope.baseUpdatedAt ?? getPayloadUpdatedAt(envelope.data),
+        ...(transport ? { transport: object } : {}),
       });
       if (!itemId) return { handled: false };
       // The optimistic row (envelope.data) stands in for the fetcher result; the
@@ -281,13 +317,132 @@ export function offlineOutbox<TData extends object = object>(
       const currentRecord = record;
       engine = undefined;
       record = undefined;
-      // Detach; the final detach disposes the engine. Only drop the handle map
-      // entry if THIS release actually evicted the engine (ref count hit 0).
-      const before = current.referenceCount;
-      await releaseOutboxEngine(namespace, current, object, currentRecord);
-      if (before <= 1 && handlesByNamespace.get(namespace) === current) {
-        handlesByNamespace.delete(namespace);
-      }
+      // Detach; the final detach disposes the engine and drops the handle.
+      await releaseBinding(namespace, current, object, currentRecord);
+    },
+  };
+}
+
+/** Configuration for {@link offlineCommandQueue}. */
+export interface OfflineCommandQueueConfig {
+  /**
+   * The queue's name — the key queued writes are stored and routed under. It
+   * shares the namespace's durable queue and per-object event routing with
+   * every collection outbox, so it MUST NOT equal a sibling collection's
+   * `definition.name` (their events would cross). Durable: a write queued under a name replays only once a queue
+   * with that name (and a transport) is attached again, e.g. after a reload.
+   */
+  name: string;
+  /** The durable-store identity — the SAME key the app's other outboxes use. */
+  namespace: DurableStoreKey;
+  /** Replays each queued write through the consumer's own server operation. */
+  transport: OutboxCommandTransport;
+  /** Exponential-backoff tuning for retryable replay failures. */
+  backoff?: OutboxBackoff;
+  /** Push callback for every sync-state transition (see {@link offlineOutbox}). */
+  onSyncStateChange?: (event: SyncStateEvent) => void;
+  /** Push callback for a `conflict` outcome (a RESOLVED outcome). */
+  onConflict?: (conflict: OutboxConflict) => void;
+  /** Test-only: inject a deterministic RNG for backoff jitter. */
+  random?: () => number;
+}
+
+/** One write for {@link OfflineCommandQueue.enqueue}. */
+export interface OfflineCommandInput {
+  /** Command arguments — structured-clone-safe; persisted verbatim. */
+  payload?: Record<string, unknown>;
+  /** The row the write targets, when there is one. Defaults to the item id. */
+  rowId?: string;
+  /** Mutation kind, passed through to the transport. Defaults to `create`. */
+  op?: SyncApplyOp;
+  /** The server `updated_at` last seen, passed through to the transport. */
+  baseUpdatedAt?: string;
+}
+
+/** A durable queue of consumer-declared server operations (#3021). */
+export interface OfflineCommandQueue {
+  /**
+   * Durably queue one write and kick replay. Resolves to its idempotency key
+   * once the write is committed to IndexedDB, or `undefined` when the durable
+   * queue is unavailable (no IndexedDB) or the queue was disposed — the write
+   * was NOT captured, so the caller must perform it online itself or surface
+   * the failure; it is never acknowledged non-durably.
+   */
+  enqueue(input: OfflineCommandInput): Promise<string | undefined>;
+  /** The namespace's durable queue (every route), like {@link OutboxHandle}. */
+  snapshot(): Promise<OutboxSnapshotItem[]>;
+  /** Force a retry of a queued item now (clears backoff and an auth pause). */
+  retry(itemId: string): Promise<void>;
+  /** Detach. Queued writes stay on disk and replay on the next attach. */
+  dispose(): Promise<void>;
+}
+
+/**
+ * A durable offline queue for writes that go through a consumer-declared
+ * server operation — a data-surface action, a named remote command, a
+ * permission-gated service — rather than a generated collection (#3021).
+ *
+ * Shares the namespace's outbox engine with every {@link offlineOutbox}: one
+ * IndexedDB queue, a cross-tab leader per route, FIFO within the route, the
+ * `pending → uploading → synced | failed` state machine, backoff, auth pause,
+ * and the `wipeDurableStore` registration. Each replay carries the write's
+ * durable `idempotencyKey`, which the server operation must dedupe on — that
+ * is what makes a blind resend after a lost response safe.
+ *
+ * Attaches immediately; call `dispose()` when the owning view unmounts.
+ */
+export function offlineCommandQueue(
+  config: OfflineCommandQueueConfig,
+): OfflineCommandQueue {
+  if (typeof config.name !== 'string' || config.name.length === 0) {
+    throw new TypeError('offlineCommandQueue requires a non-empty name');
+  }
+  if (typeof config.transport !== 'function') {
+    throw new TypeError('offlineCommandQueue requires a transport function');
+  }
+  const namespace = durableStoreNamespace(config.namespace);
+  const name = config.name;
+  const acquired = acquireOutboxEngine(
+    {
+      namespace,
+      backoff: resolveBackoff(config.backoff),
+      random: config.random,
+      registerResource: (clear) =>
+        registerDurableResource(namespace, { kind: 'outbox', clear }),
+    },
+    {
+      object: name,
+      transport: config.transport,
+      onSyncStateChange: config.onSyncStateChange,
+      onConflict: config.onConflict,
+    },
+  );
+  let engine: OutboxEngine | undefined = acquired.engine;
+  const record = acquired.record;
+  handlesByNamespace.set(namespace, engine);
+
+  return {
+    async enqueue(input) {
+      if (!engine) return undefined;
+      return engine.enqueue({
+        kind:
+          input.op === 'create' || input.op === undefined ? 'insert' : input.op,
+        object: name,
+        rowId: input.rowId ?? '',
+        data: input.payload ?? {},
+        baseUpdatedAt: input.baseUpdatedAt,
+        transport: name,
+      });
+    },
+    snapshot: async () => (engine ? engine.snapshot() : []),
+    retry: async (itemId) => {
+      await engine?.retry(itemId);
+    },
+    async dispose() {
+      const current = engine;
+      if (!current) return;
+      engine = undefined;
+      await releaseBinding(namespace, current, name, record);
     },
   };
 }
