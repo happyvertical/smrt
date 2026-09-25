@@ -102,6 +102,14 @@ export interface AutoTopUpHookOptions {
   recheckAfterMs?: number;
   /** Charge description shown to the payer where supported. */
   description?: string;
+  /**
+   * A payer whose account is taxed (`automaticTax`, not tax-exempt) is not
+   * topped up by default (`'skip'`): an off-session charge carries no
+   * provider-calculated tax, while a checkout purchase of the same credit
+   * does. `'charge_untaxed'` charges them without tax, for sellers that
+   * account for tax on this credit elsewhere.
+   */
+  taxedAccounts?: 'skip' | 'charge_untaxed';
 }
 
 /** The outcome of a charge, from the provider's result or its webhook. */
@@ -224,6 +232,12 @@ async function claimAttempt(
     return null; // No provider customer, so no saved card to charge.
   }
   const providerCustomerId = account.providerCustomerId;
+  if (
+    options.taxedAccounts !== 'charge_untaxed' &&
+    (await runtime.accountIsTaxed(account))
+  ) {
+    return null; // No tax on an off-session charge: never silently untaxed.
+  }
   const payments = await PaymentCollection.create({ db: runtime.db });
   const where = {
     tenantId: runtime.sellerTenantId,

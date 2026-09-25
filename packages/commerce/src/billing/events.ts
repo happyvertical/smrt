@@ -289,14 +289,25 @@ async function applyInvoiceEvent(
   } else if (state.status === 'void') {
     if (
       invoice.status !== InvoiceStatus.PAID &&
-      invoice.status !== InvoiceStatus.CANCELLED
+      invoice.status !== InvoiceStatus.CANCELLED &&
+      invoice.status !== InvoiceStatus.WRITTEN_OFF
     ) {
       invoice.cancel();
       await invoice.save();
     }
   } else if (state.status === 'uncollectible') {
-    // Written off at the provider (#3139). It can still be paid (the `paid`
-    // branch then reinstates the payer) or voided.
+    // Written off at the provider (#3139): written off here too, so it no
+    // longer counts as overdue against the payer. It can still be paid (the
+    // `paid` branch records the payment and reinstates the payer).
+    if (
+      invoice.status === InvoiceStatus.SENT ||
+      invoice.status === InvoiceStatus.VIEWED ||
+      invoice.status === InvoiceStatus.PARTIAL ||
+      invoice.status === InvoiceStatus.OVERDUE
+    ) {
+      invoice.status = InvoiceStatus.WRITTEN_OFF;
+      await invoice.save();
+    }
     standing = 'uncollectible';
   } else if (state.status === 'open') {
     if (event.type === 'payment_failed' || event.type === 'overdue') {
@@ -395,6 +406,9 @@ async function settlePaidInvoice(
       });
     }
   }
+  // A written-off invoice paid later keeps its terminal status; the payment
+  // and allocation above record the recovery.
+  if (invoice.status === InvoiceStatus.WRITTEN_OFF) return;
   invoice.updatePaymentStatus(
     await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
   );

@@ -35,6 +35,11 @@ import {
 export const CARD_SETUP_PURPOSE = 'card_setup';
 /** Checkout metadata flag: the session saves its payment method. */
 export const SAVE_CARD_METADATA = 'smrt_save_card';
+/**
+ * Checkout metadata flag: the session collects the billing address, which is
+ * adopted as the payer's tax location when the card is saved.
+ */
+export const COLLECT_ADDRESS_METADATA = 'smrt_collect_address';
 
 export interface CreateCardSetupCheckoutInput {
   payerTenantId: string;
@@ -94,20 +99,22 @@ export async function createCardSetupCheckout(
     String(account.id),
     input.setupId,
   ]);
+  const collectBillingAddress =
+    input.collectBillingAddress ??
+    (synced.automaticTax && !synced.hasTaxLocation);
   return createSetupCheckout.call(runtime.provider, {
     idempotencyKey: `smrt-card-setup:${key}`,
     providerCustomerId: synced.providerCustomerId,
     currency: normalizeCurrency(input.currency),
     successUrl: input.successUrl,
     cancelUrl: input.cancelUrl,
-    collectBillingAddress:
-      input.collectBillingAddress ??
-      (synced.automaticTax && !synced.hasTaxLocation),
+    collectBillingAddress,
     metadata: {
       smrt_purpose: CARD_SETUP_PURPOSE,
       smrt_seller: runtime.sellerTenantId,
       smrt_payer: payer,
       smrt_account: String(account.id),
+      ...(collectBillingAddress ? { [COLLECT_ADDRESS_METADATA]: '1' } : {}),
     },
   });
 }
@@ -149,7 +156,12 @@ export async function savedCardFromCheckout(
     account,
     providerCustomerId: account.providerCustomerId,
     paymentMethodId: state.paymentMethodId,
-    billingAddress: state.billingAddress,
+    // Only an address the checkout was asked to collect replaces the local
+    // tax location; otherwise the provider's copy is the one synced from it.
+    billingAddress:
+      metadata[COLLECT_ADDRESS_METADATA] === '1'
+        ? state.billingAddress
+        : undefined,
   };
 }
 

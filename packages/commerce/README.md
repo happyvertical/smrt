@@ -319,8 +319,10 @@ const evaluator = await SpendingPolicyEvaluator.create({
   applied against current provider state: paid invoices record a payment and
   allocation; failures and overdue notices mark the payer `past_due` and its
   flat-plan subscriptions `past_due`; an invoice written off at the provider
-  (`markInvoiceUncollectible(invoiceId)`, or in Stripe) marks it
-  `uncollectible`; payment reinstates them. Dunning is the provider's.
+  (`markInvoiceUncollectible(invoiceId)`, or in Stripe) is written off
+  locally and marks the payer `uncollectible` (no bad-debt journal is
+  posted; AR stays until it is paid or an operator journals it); payment
+  reinstates them, including a late payment of the written-off invoice. Dunning is the provider's.
   Subscribe the webhook endpoint to `invoice.*`, `customer.subscription.*`,
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   and `payment_intent.*`.
@@ -335,8 +337,9 @@ const evaluator = await SpendingPolicyEvaluator.create({
 - **Card on file (#3139).** `createCardSetupCheckout()` (or a credit purchase
   with `savePaymentMethod`) saves the payer's card without charging it. On
   completion the card becomes the provider customer's default and the
-  payer's default `PaymentInstrument`, and a collected billing address
-  becomes the payer's tax location.
+  payer's default `PaymentInstrument`. When the checkout collected the billing
+  address (a taxed payer with no tax location), it becomes the payer's tax
+  location.
 - **Automatically charged invoices.** With `autoChargeInvoices: true` on the
   runtime, a payer with a default card is invoiced `charge_automatically`:
   the provider charges the card after the invoice is sent, on its own
@@ -351,7 +354,10 @@ const evaluator = await SpendingPolicyEvaluator.create({
   attempt, and calls the runtime's `onAutoTopUpFailed` (ask the payer to
   re-save their card with a setup checkout). One attempt runs per policy at a
   time, retries of a declined card wait `retryAfterMs` (default one hour),
-  and the credit is granted exactly once however the outcome arrives.
+  and the credit is granted exactly once however the outcome arrives. An
+  off-session charge carries no tax (happyvertical/sdk#1283), so taxed
+  accounts are not topped up unless the seller passes
+  `taxedAccounts: 'charge_untaxed'`; they buy credit through checkout.
 - **Upgrading to #3139.** Requires `@happyvertical/accounting` 0.92 or later.
   No schema change. Credit checkouts are now taxed for taxed accounts (pass
   `automaticTax: false` to keep them untaxed), and Stripe customers are

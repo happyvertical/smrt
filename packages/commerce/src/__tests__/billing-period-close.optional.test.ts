@@ -532,6 +532,19 @@ describePostgres('smrt#3060 billing-period close on PostgreSQL', () => {
         }),
       );
 
+    // Untaxed payers: taxed accounts are not topped up by default.
+    await withSystemContext(async () => {
+      await world.provider.upsertAccount({
+        payerTenantId: SOLO,
+        name: 'Solo LLC',
+        automaticTax: false,
+      });
+      await world.provider.upsertAccount({
+        payerTenantId: NETWORK,
+        name: 'Network Co',
+        automaticTax: false,
+      });
+    });
     // Racing evaluations on two connections charge the card once.
     await policyFor(SOLO);
     await saveCard(SOLO, 'pm_pg_solo');

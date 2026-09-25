@@ -353,9 +353,10 @@ export function createStripeBillingProvider(
         amountTax: session.amountTaxMinor,
         amountTotal: session.amountTotalMinor,
       };
-      if (mode === 'setup' && complete && session.customerExternalId) {
-        // A setup session with address collection saved the address to the
-        // customer (customer_update[address]=auto).
+      if (complete && session.customerExternalId) {
+        // A session that collected an address saved it to the customer
+        // (customer_update[address]=auto); callers adopt it only when they
+        // asked for collection.
         const customer = await stripe.customers.pull(
           session.customerExternalId,
         );

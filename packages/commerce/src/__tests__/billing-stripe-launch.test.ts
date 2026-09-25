@@ -414,6 +414,45 @@ describe('smrt#3139 Stripe launch billing', () => {
         2000,
       ]);
     });
+
+    it('adopts the address a card-saving purchase collected as the tax location', async () => {
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          billingAddress: {},
+        }),
+      );
+      const policy = await balancePolicy(SOLO);
+      const checkout = await withTenant({ tenantId: SOLO }, () =>
+        world.provider.createCreditCheckout({
+          spendingPolicyId: String(policy.id),
+          amount: 2000,
+          purchaseId: 'save-card-address',
+          savePaymentMethod: true,
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      const session = world.stripe.completeSession(checkout.sessionId, {
+        paymentMethod: 'pm_with_address',
+        address: { country: 'CA', postal_code: 'T0L 0A0' },
+      });
+      await deliver(world, checkoutEvent(session));
+      const account = await world.provider.getAccount(SOLO);
+      const customer = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await CustomerCollection.create({ db: world.db })).get(
+          String(account?.customerId),
+        ),
+      );
+      expect(customer?.defaultBillingAddress).toMatchObject({ country: 'CA' });
+      // Period close can now tax this payer.
+      await world.usage(SOLO);
+      const result = await world.provider.closePeriod(period);
+      expect(result.groups.every((group) => group.outcome !== 'failed')).toBe(
+        true,
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -497,6 +536,41 @@ describe('smrt#3139 Stripe launch billing', () => {
         ['pm_signup', false],
         ['pm_second', true],
       ]);
+    });
+
+    it('keeps the local address when the setup did not collect one', async () => {
+      // SOLO has a tax location, so the setup does not collect an address.
+      const setup = await withTenant({ tenantId: SOLO }, () =>
+        world.provider.createCardSetupCheckout({
+          payerTenantId: SOLO,
+          currency: 'USD',
+          setupId: 'keep-address',
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      expect(world.stripe.sessions.get(setup.sessionId)).toMatchObject({
+        billing_address_collection: null,
+        customer_update_address: false,
+      });
+      const account = await world.provider.getAccount(SOLO);
+      if (!account) throw new Error('missing account');
+      // The provider's copy differs (for example edited in its dashboard).
+      const remote = world.stripe.customers.get(account.providerCustomerId);
+      if (remote) remote.address = { country: 'CA' };
+      const session = world.stripe.completeSession(setup.sessionId, {
+        paymentMethod: 'pm_keep',
+      });
+      await deliver(world, checkoutEvent(session));
+      const customer = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await CustomerCollection.create({ db: world.db })).get(
+          account.customerId,
+        ),
+      );
+      expect(customer?.defaultBillingAddress).toMatchObject({
+        country: 'US',
+        postalCode: '94107',
+      });
     });
 
     it('lets only the payer start a card setup', async () => {
@@ -655,6 +729,27 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect((await runtime.getAccount(SOLO))?.standing).toBe('past_due');
     });
 
+    it('keeps the collection method of an invoice already created when a card is saved before the retry', async () => {
+      const runtime = await autoRuntime();
+      await world.usage(SOLO);
+      // Stripe creates the invoice (send_invoice), but the response is lost.
+      world.stripe.fail('POST', /^\/v1\/invoices$/, 'after');
+      await expect(runtime.closePeriod(period)).rejects.toThrow();
+      await saveCard(SOLO, 'pm_late', 'succeed', runtime);
+      await runtime.closePeriod(period);
+      const soloAccount = await runtime.getAccount(SOLO);
+      const invoices = [...world.stripe.invoices.values()].filter(
+        (row) => row.customer === soloAccount?.providerCustomerId,
+      );
+      // The retry finds the created invoice by its local id instead of
+      // reusing the key with other parameters, and sends it for payment.
+      expect(invoices).toHaveLength(1);
+      expect(invoices[0]).toMatchObject({
+        collection_method: 'send_invoice',
+        sent: 1,
+      });
+    });
+
     it('sends invoices when the runtime does not auto-charge, card or not', async () => {
       await saveCard(SOLO, 'pm_ignored');
       await world.usage(SOLO);
@@ -709,6 +804,73 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
     });
 
+    it('writes off an overdue invoice so paying another reinstates the payer', async () => {
+      await world.usage(SOLO);
+      await world.provider.closePeriod(period);
+      const account = await world.provider.getAccount(SOLO);
+      const listFor = () =>
+        withTenant({ tenantId: PROVIDER }, async () =>
+          (await InvoiceCollection.create({ db: world.db })).list({
+            where: { customerId: account?.customerId },
+            orderBy: 'invoiceNumber ASC',
+          }),
+        );
+      const [first] = await listFor();
+      const firstId = String(first?.externalId);
+      await deliver(world, invoiceEvent('invoice.overdue', firstId));
+      expect((await listFor())[0]?.status).toBe(InvoiceStatus.OVERDUE);
+      await system(() =>
+        world.provider.markInvoiceUncollectible(String(first?.id)),
+      );
+      await deliver(
+        world,
+        invoiceEvent('invoice.marked_uncollectible', firstId),
+      );
+      expect((await listFor())[0]?.status).toBe(InvoiceStatus.WRITTEN_OFF);
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe(
+        'uncollectible',
+      );
+
+      // The next period's invoice is paid: the written-off one no longer
+      // counts as overdue.
+      const next = {
+        periodStart: period.periodEnd,
+        periodEnd: new Date(
+          Date.UTC(
+            period.periodEnd.getUTCFullYear(),
+            period.periodEnd.getUTCMonth() + 1,
+            1,
+          ),
+        ),
+      };
+      await world.provider.closePeriod({
+        ...next,
+        now: new Date(next.periodEnd.getTime() + 86_400_000),
+      });
+      const second = (await listFor()).find((row) => row.id !== first?.id);
+      world.stripe.pay(String(second?.externalId));
+      await deliver(
+        world,
+        invoiceEvent('invoice.paid', String(second?.externalId)),
+      );
+      expect((await world.provider.getAccount(SOLO))?.standing).toBe('current');
+
+      // The written-off invoice paid late records the payment and stays
+      // written off.
+      world.stripe.pay(firstId);
+      await deliver(world, invoiceEvent('invoice.paid', firstId));
+      expect(
+        (await listFor()).find((row) => row.id === first?.id)?.status,
+      ).toBe(InvoiceStatus.WRITTEN_OFF);
+      expect((await sellerPayments()).map((row) => row.status)).toEqual([
+        PaymentStatus.COMPLETED,
+        PaymentStatus.COMPLETED,
+      ]);
+      expect(
+        (await deliveries(world)).every((row) => row.status === 'completed'),
+      ).toBe(true);
+    });
+
     it('refuses to write off an invoice that is not sent and unpaid', async () => {
       await world.usage(SOLO);
       await world.provider.closePeriod(period);
@@ -736,6 +898,43 @@ describe('smrt#3139 Stripe launch billing', () => {
   // -------------------------------------------------------------------------
 
   describe('automatic top-ups', () => {
+    // Taxed accounts are not topped up by default (no tax on an off-session
+    // charge); these payers are untaxed unless a test says otherwise.
+    beforeEach(async () => {
+      await system(async () => {
+        await world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: false,
+        });
+        await world.provider.upsertAccount({
+          payerTenantId: NETWORK,
+          name: 'Network Co',
+          automaticTax: false,
+        });
+      });
+    });
+
+    it('does not top up a taxed payer unless the seller opts in', async () => {
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: true,
+        }),
+      );
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_taxed');
+      expect(await spend(evaluator(), SOLO, 500)).toMatchObject({
+        allowed: false,
+      });
+      expect(world.stripe.paymentIntents.size).toBe(0);
+      expect(await sellerPayments()).toEqual([]);
+      expect(
+        await spend(evaluator({ taxedAccounts: 'charge_untaxed' }), SOLO, 500),
+      ).toMatchObject({ allowed: true });
+      expect(world.stripe.paymentIntents.size).toBe(1);
+    });
     it('charges the saved card once and credits the balance exactly once', async () => {
       const policy = await balancePolicy(SOLO);
       await saveCard(SOLO, 'pm_topup');

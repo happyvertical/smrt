@@ -11,7 +11,7 @@ import {
   TenantIsolationError,
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
-import { SAVE_CARD_METADATA } from './cards.js';
+import { COLLECT_ADDRESS_METADATA, SAVE_CARD_METADATA } from './cards.js';
 import type { BillingProviderCheckoutSession } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
@@ -172,7 +172,6 @@ export async function createCreditCheckout(
     String(policy.id),
     input.purchaseId,
   ]);
-  if (input.savePaymentMethod) metadata[SAVE_CARD_METADATA] = '1';
   const providerCustomerId =
     synced?.providerCustomerId ??
     (account.provider === runtime.provider.name
@@ -180,6 +179,14 @@ export async function createCreditCheckout(
       : '');
   const automaticTax =
     input.automaticTax ?? (await runtime.accountIsTaxed(account));
+  if (synced) {
+    metadata[SAVE_CARD_METADATA] = '1';
+    // A taxed checkout collects the address onto the customer; with no local
+    // tax location yet, it becomes the payer's (as a card setup does).
+    if (automaticTax && !synced.hasTaxLocation) {
+      metadata[COLLECT_ADDRESS_METADATA] = '1';
+    }
+  }
   return runtime.provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,
     providerCustomerId: providerCustomerId || undefined,
