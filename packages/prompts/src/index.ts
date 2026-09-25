@@ -27,6 +27,16 @@ export {
 } from './prompt-override-service.js';
 export { definePrompt, PromptRegistry } from './prompt-registry.js';
 export { resolvePrompt } from './prompt-resolver.js';
+export {
+  type ListPromptSettingsOptions,
+  PromptFieldNotEditableError,
+  type PromptSettingsLevel,
+  type PromptSettingsRow,
+  PromptSettingsService,
+  type PromptSettingsServiceOptions,
+  type SetPromptOverrideRequest,
+  UnknownPromptKeyError,
+} from './prompt-settings.js';
 export type {
   NormalizedPromptAI,
   PromptAIInput,

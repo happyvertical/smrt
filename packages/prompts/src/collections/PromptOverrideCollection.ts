@@ -47,6 +47,38 @@ export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
     };
   }
 
+  /**
+   * The override row for every key in `keys` at one scope, in a single query.
+   *
+   * Used by `PromptSettingsService.listPromptSettings()` to enumerate the
+   * whole registry's override state without one round trip per key. Because
+   * this is an enumeration read — a host-configured
+   * `defaultListLimit`/`maxListLimit` on the collection's options would
+   * silently drop keys past the cap, changing which prompts a management
+   * screen reports as overridden, with no error (the #3056 hazard class in
+   * `@happyvertical/smrt-features`'s `getOverrideMap`) — callers that need the
+   * full map construct this collection through
+   * `PromptSettingsService.create()`, which strips those bounds.
+   */
+  async getOverrideMapForKeys(
+    keys: string[],
+    scopeType: PromptOverrideScopeType,
+    scopeId: string,
+  ): Promise<Map<string, PromptOverride>> {
+    const result = new Map<string, PromptOverride>();
+    if (keys.length === 0) {
+      return result;
+    }
+
+    const tenantId = scopeType === 'app' ? null : scopeId;
+    const rows = await this.list({ where: { key: keys, tenantId } });
+    for (const row of rows) {
+      result.set(row.key, row);
+    }
+
+    return result;
+  }
+
   /** The override row for a scope request, in the vocabulary used at the write boundary. */
   async findByScope(
     key: string,

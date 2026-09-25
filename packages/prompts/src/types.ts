@@ -21,6 +21,8 @@ export interface PromptAIInput {
 export interface PromptDefinitionInput {
   key: string;
   template: string;
+  /** Human-readable description shown by a management screen; defaults to `''`. */
+  description?: string;
   ai?: PromptAIInput;
   editable?: Partial<PromptEditableConfig>;
 }
@@ -28,6 +30,7 @@ export interface PromptDefinitionInput {
 export interface PromptDefinition {
   key: string;
   template: string;
+  description: string;
   ai: NormalizedPromptAI;
   editable: PromptEditableConfig;
 }
