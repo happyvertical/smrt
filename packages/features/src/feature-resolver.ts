@@ -2,6 +2,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
+import { withoutListBounds } from './list-bounds.js';
 import {
   FeatureOverrideEffect,
   type FeatureResolutionContext,
@@ -101,12 +102,14 @@ export class FeatureResolver {
   private async ensureInitialized(): Promise<void> {
     if (!this.initializationPromise) {
       this.initializationPromise = (async () => {
-        this.featureDefinitions = await FeatureDefinitionCollection.create(
-          this.options,
-        );
-        this.featureOverrides = await FeatureOverrideCollection.create(
-          this.options,
-        );
+        // A host-configured `defaultListLimit`/`maxListLimit` must never reach
+        // these reads: `getOverrideMap()` walks the tenant ancestor chain, and
+        // a dropped ancestor override would change the flag's resolved value
+        // silently (#3056, same hazard class as #3048).
+        const options = withoutListBounds(this.options);
+        this.featureDefinitions =
+          await FeatureDefinitionCollection.create(options);
+        this.featureOverrides = await FeatureOverrideCollection.create(options);
       })();
     }
 

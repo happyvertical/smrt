@@ -4,6 +4,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { SmartObjectManifest } from '@happyvertical/smrt-core/manifest';
 import { FeatureDefinitionCollection } from './feature-definitions.js';
+import { withoutListBounds } from './list-bounds.js';
 import type {
   FeatureDefinitionSeed,
   FeatureSyncResult,
@@ -60,8 +61,11 @@ export class FeatureSyncService {
   private async ensureInitialized(): Promise<void> {
     if (!this.initializationPromise) {
       this.initializationPromise = (async () => {
+        // `applyDefinitions()` enumerates the full catalog per touched package
+        // to prune stale rows; a host-configured list bound must not make a
+        // prune pass see a partial catalog (#3056, same hazard class as #3048).
         this.featureDefinitions = await FeatureDefinitionCollection.create(
-          this.options,
+          withoutListBounds(this.options),
         );
       })();
     }

@@ -229,6 +229,44 @@ describe('FeatureSettingsService', () => {
       // global state is not an answer to a question about a tenant.
       expect(drafts.inheritedEnabled).toBeNull();
     });
+
+    it('returns every definition even when the host caps list defaults below the catalog size (#3056)', async () => {
+      const db = await getTestDatabase({
+        classes: ['FeatureDefinition', 'FeatureOverride'],
+      });
+      closers.add(async () => {
+        if (typeof (db as any).close === 'function') {
+          await (db as any).close();
+        }
+      });
+
+      // `loadDefinitions()` runs an unbounded `list({})` to enumerate the
+      // whole catalog for a management screen. Seed more definitions than
+      // the host's `defaultListLimit` so a truncated read is observable by
+      // count alone, independent of row order (#3056, same hazard class as
+      // #3048).
+      const definitions = await (FeatureDefinitionCollection as any).create({
+        db,
+      });
+      const keys = ['one', 'two', 'three', 'four', 'five'];
+      for (const key of keys) {
+        await definitions.upsertDefinition(
+          seed(`${PACKAGE_NAME}:Invoice#${key}`),
+        );
+      }
+
+      const service = await FeatureSettingsService.create({
+        db,
+        defaultListLimit: 2,
+        maxListLimit: 2,
+      });
+
+      const rows = await service.listFeatureSettings({});
+      expect(rows).toHaveLength(keys.length);
+      expect(new Set(rows.map((row) => row.featureKey))).toEqual(
+        new Set(keys.map((key) => `${PACKAGE_NAME}:Invoice#${key}`)),
+      );
+    });
   });
 
   describe('listFeatureSettings under a tenant hierarchy', () => {

@@ -8,6 +8,7 @@ import {
 } from './feature-override-service.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
 import { FeatureResolver } from './feature-resolver.js';
+import { withoutListBounds } from './list-bounds.js';
 import {
   type FeatureMetadata,
   FeatureOverrideEffect,
@@ -220,9 +221,15 @@ export class FeatureSettingsService {
     options: SmrtClassOptions = {},
     serviceOptions: FeatureSettingsServiceOptions = {},
   ): Promise<FeatureSettingsService> {
+    // The catalog enumeration (`loadDefinitions()`) and every override read
+    // this service does are internal, correctness-critical reads — not a
+    // user-facing page of results — so a host-configured `defaultListLimit`/
+    // `maxListLimit` must never truncate them (#3056, same hazard class as
+    // #3048).
+    const boundedOptions = withoutListBounds(options);
     const [definitions, overrides] = await Promise.all([
-      FeatureDefinitionCollection.create(options),
-      FeatureOverrideCollection.create(options),
+      FeatureDefinitionCollection.create(boundedOptions),
+      FeatureOverrideCollection.create(boundedOptions),
     ]);
     return new FeatureSettingsService(
       definitions as FeatureDefinitionCollection,
