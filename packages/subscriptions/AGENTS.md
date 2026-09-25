@@ -89,7 +89,10 @@ that reverted to DECIMAL passes every SQLite suite.
   cross-tenant read in evaluation is the bounded `wholesale`-basis sum.
 - `balance` policies take their limit from `CreditGrant`s; `limitAmount` must
   be 0, and currency and period are fixed once saved (the ledger is scoped to
-  them). Auto top-up is a host hook only — no payment provider calls.
+  them). Auto top-up is a host hook only — no payment provider calls. The
+  evaluator re-reads credit after the hook returns (grant or not) and hands
+  it `currentShortfall()`, so a hook that charges asynchronously can see a
+  concurrent top-up (smrt-commerce's `autoTopUpHook()`, #3139).
 
 ## Notes
 

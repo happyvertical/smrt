@@ -1094,6 +1094,13 @@ export interface AutoTopUpRequest {
   estimatedAmount: number;
   /** How far the estimate overshoots the balance, in integer minor units. */
   shortfall: number;
+  /**
+   * Recompute the shortfall against the credit and spend recorded now. A
+   * hook that secures funds asynchronously calls it before charging: a
+   * concurrent evaluation may have topped the balance up since this one read
+   * it, and the evaluator re-reads the credit after the hook returns.
+   */
+  currentShortfall?: () => Promise<number>;
 }
 
 /**
@@ -1111,7 +1118,8 @@ export interface AutoTopUpGrant {
  * Host hook for prepaid balances. Called when a pending charge would exhaust a
  * `balance` policy; return a grant to credit it (after the host has secured
  * the funds) or nothing to let the policy's behavior apply. The evaluator
- * never calls a payment provider itself.
+ * never calls a payment provider itself, and re-reads the balance after the
+ * hook returns either way, so credit granted meanwhile by another path counts.
  */
 export type AutoTopUpHook = (
   request: AutoTopUpRequest,
@@ -1366,6 +1374,10 @@ export class SpendingPolicyEvaluator {
         balanceAmount: credit - spent,
         estimatedAmount,
         shortfall: projectedAmount - credit,
+        currentShortfall: async () =>
+          (await this.spentFor(policy, input.tenantId, start, end)) +
+          estimatedAmount -
+          (await this.creditFor(policy)),
       });
       if (grant) {
         // The hook is host code configured on this evaluator; its grant is
@@ -1381,8 +1393,9 @@ export class SpendingPolicyEvaluator {
             grantedByTenantId: tenantKey(policy.setByTenantId),
           }),
         );
-        credit = await this.creditFor(policy);
       }
+      // Re-read either way: a concurrent top-up may have landed.
+      credit = await this.creditFor(policy);
     }
     return {
       ...decide(policy, projectedAmount, credit),

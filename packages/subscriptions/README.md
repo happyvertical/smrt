@@ -110,7 +110,11 @@ Parentage and the billing owner come from `smrt-tenancy`'s
   and idempotent per `source`/`sourceId`. Pass `autoTopUp` to
   `SpendingPolicyEvaluator.create()` to be called when a charge would exhaust a
   balance; return a grant once the host has secured the funds. The evaluator
-  never calls a payment provider.
+  never calls a payment provider. Before charging, a hook can call the
+  request's `currentShortfall()` to recompute the shortfall against the
+  current balance (another evaluation may have topped it up meanwhile); the
+  evaluator re-reads the balance after the hook returns either way.
+  smrt-commerce's `BillingRuntime.autoTopUpHook()` charges a saved card.
 
 ```ts
 import { BillingRelationshipService } from '@happyvertical/smrt-tenancy';
