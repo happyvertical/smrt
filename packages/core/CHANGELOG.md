@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.51.28
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - key ContentContributionType per tenant (tenant_id, key) (#3129) (content)
+  - STI subtype keeps its base's collection before its manifest loads (#3128) (core,users)
+- @happyvertical/smrt-config@0.51.28
+  - @happyvertical/smrt-scanner@0.51.28
+  - @happyvertical/smrt-types@0.51.28
+
 ## 0.51.27
 
 ### Patch Changes
