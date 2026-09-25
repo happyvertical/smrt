@@ -573,6 +573,91 @@ describe('smrt#3139 Stripe launch billing', () => {
       });
     });
 
+    it('adopts the address an ordinary taxed purchase collected for a customer without one', async () => {
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          billingAddress: {},
+        }),
+      );
+      const account = await world.provider.getAccount(SOLO);
+      if (!account) throw new Error('missing account');
+      await world.provider.ensureProviderCustomer(account, {
+        requireTaxLocation: false,
+      });
+      const policy = await balancePolicy(SOLO);
+      const checkout = await withTenant({ tenantId: SOLO }, () =>
+        world.provider.createCreditCheckout({
+          spendingPolicyId: String(policy.id),
+          amount: 1000,
+          purchaseId: 'taxed-no-card',
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      expect(world.stripe.sessions.get(checkout.sessionId)).toMatchObject({
+        customer_update_address: true,
+        setup_future_usage: null,
+        metadata: { smrt_collect_address: '1' },
+      });
+      const session = world.stripe.completeSession(checkout.sessionId, {
+        address: { country: 'US', postal_code: '10001' },
+      });
+      await deliver(world, checkoutEvent(session));
+      const customer = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await CustomerCollection.create({ db: world.db })).get(
+          account.customerId,
+        ),
+      );
+      expect(customer?.defaultBillingAddress).toMatchObject({ country: 'US' });
+      const instruments = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await PaymentInstrumentCollection.create({ db: world.db })).list({}),
+      );
+      expect(instruments).toEqual([]);
+      expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([
+        1000,
+      ]);
+    });
+
+    it('refuses to save cards with a provider that cannot apply them', async () => {
+      const { getCheckout: _omit, ...partial } = world.provider
+        .provider as BillingProvider;
+      const runtime = await BillingRuntime.create({
+        db: world.db,
+        sellerTenantId: PROVIDER,
+        kind: 'provider',
+        provider: partial,
+        billingRelationships: world.relationships,
+        ledger: world.ledger,
+      });
+      await expect(
+        withTenant({ tenantId: SOLO }, () =>
+          runtime.createCardSetupCheckout({
+            payerTenantId: SOLO,
+            currency: 'USD',
+            setupId: 'no-reread',
+            successUrl: 'https://a.test',
+            cancelUrl: 'https://a.test',
+          }),
+        ),
+      ).rejects.toThrow(/cannot apply a saved payment method/);
+      const policy = await balancePolicy(SOLO);
+      await expect(
+        withTenant({ tenantId: SOLO }, () =>
+          runtime.createCreditCheckout({
+            spendingPolicyId: String(policy.id),
+            amount: 100,
+            purchaseId: 'no-reread',
+            savePaymentMethod: true,
+            successUrl: 'https://a.test',
+            cancelUrl: 'https://a.test',
+          }),
+        ),
+      ).rejects.toThrow(/cannot apply a saved payment method/);
+      expect(world.stripe.sessions.size).toBe(0);
+    });
+
     it('lets only the payer start a card setup', async () => {
       await expect(
         withTenant({ tenantId: STRANGER }, () =>

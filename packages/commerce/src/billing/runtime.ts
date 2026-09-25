@@ -440,6 +440,14 @@ export class BillingRuntime {
     };
   }
 
+  /** Whether the account's customer has a tax location (address country). */
+  async hasTaxLocation(account: BillingAccount): Promise<boolean> {
+    const customer = await withTenant({ tenantId: this.sellerTenantId }, () =>
+      this.customers.get(account.customerId),
+    );
+    return Boolean(customer?.defaultBillingAddress?.country);
+  }
+
   /** Whether provider-calculated tax applies to this account's charges. */
   async accountIsTaxed(account: BillingAccount): Promise<boolean> {
     if (!account.automaticTax) return false;
@@ -628,6 +636,7 @@ export class BillingRuntime {
       !invoice.externalId ||
       (invoice.status !== InvoiceStatus.SENT &&
         invoice.status !== InvoiceStatus.VIEWED &&
+        invoice.status !== InvoiceStatus.PARTIAL &&
         invoice.status !== InvoiceStatus.OVERDUE)
     ) {
       throw new Error(

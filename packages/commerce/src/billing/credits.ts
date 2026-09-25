@@ -11,7 +11,11 @@ import {
   TenantIsolationError,
   withSystemContext,
 } from '@happyvertical/smrt-tenancy';
-import { COLLECT_ADDRESS_METADATA, SAVE_CARD_METADATA } from './cards.js';
+import {
+  assertCanSaveCards,
+  COLLECT_ADDRESS_METADATA,
+  SAVE_CARD_METADATA,
+} from './cards.js';
 import type { BillingProviderCheckoutSession } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
@@ -151,6 +155,9 @@ export async function createCreditCheckout(
   const currency = normalizeCurrency(policy.currency);
   // Saving a card needs a provider customer to attach it to; the address may
   // still be collected at checkout.
+  // Saving a card is settled from the checkout event, so refuse a provider
+  // that could take the money but not record the card.
+  if (input.savePaymentMethod) assertCanSaveCards(runtime);
   const synced = input.savePaymentMethod
     ? await runtime.ensureProviderCustomer(account, {
         requireTaxLocation: false,
@@ -179,13 +186,18 @@ export async function createCreditCheckout(
       : '');
   const automaticTax =
     input.automaticTax ?? (await runtime.accountIsTaxed(account));
-  if (synced) {
-    metadata[SAVE_CARD_METADATA] = '1';
-    // A taxed checkout collects the address onto the customer; with no local
-    // tax location yet, it becomes the payer's (as a card setup does).
-    if (automaticTax && !synced.hasTaxLocation) {
-      metadata[COLLECT_ADDRESS_METADATA] = '1';
-    }
+  if (synced) metadata[SAVE_CARD_METADATA] = '1';
+  // A taxed checkout for a provider customer collects the address onto that
+  // customer; with no local tax location yet, it becomes the payer's (as a
+  // card setup does), so period close can tax the payer too. A checkout
+  // without a provider customer keeps no customer to read it from.
+  if (
+    automaticTax &&
+    providerCustomerId &&
+    runtime.provider.getCheckout &&
+    !(await runtime.hasTaxLocation(account))
+  ) {
+    metadata[COLLECT_ADDRESS_METADATA] = '1';
   }
   return runtime.provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,

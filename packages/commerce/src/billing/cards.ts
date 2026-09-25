@@ -83,6 +83,7 @@ export async function createCardSetupCheckout(
       `Billing provider ${runtime.provider.name} cannot save a payment method.`,
     );
   }
+  assertCanSaveCards(runtime);
   if (!input.setupId) throw new Error('setupId is required.');
   const payer = canonicalTenantId(input.payerTenantId, 'payerTenantId');
   assertPayerContext(payer);
@@ -119,25 +120,51 @@ export async function createCardSetupCheckout(
   });
 }
 
-/** A saved card the event carries, validated against its account. */
+/**
+ * What a completed checkout saved for one of this seller's accounts: a card
+ * (setup, or a purchase with `savePaymentMethod`) and/or a billing address it
+ * was asked to collect. Validated against the account.
+ */
 export interface SavedCard {
   account: BillingAccount;
   providerCustomerId: string;
-  paymentMethodId: string;
+  paymentMethodId?: string;
   billingAddress?: BillingProviderCheckoutState['billingAddress'];
 }
 
+/** Whether the provider can apply a saved card from a checkout event. */
+export function assertCanSaveCards(runtime: BillingRuntime): void {
+  if (
+    !runtime.provider.getCheckout ||
+    !runtime.provider.setDefaultPaymentMethod
+  ) {
+    throw new Error(
+      `Billing provider ${runtime.provider.name} cannot apply a saved payment method (getCheckout and setDefaultPaymentMethod are required).`,
+    );
+  }
+}
+
 /**
- * The card a completed checkout saved for one of this seller's accounts, or
- * null when it saved none. Throws when the session and its (verified)
- * metadata disagree, so the event dead-letters visibly.
+ * The card and/or collected address a completed checkout saved for one of
+ * this seller's accounts, or null when it saved neither. Throws when the
+ * session and its (verified) metadata disagree, so the event dead-letters
+ * visibly.
  */
 export async function savedCardFromCheckout(
   runtime: BillingRuntime,
   metadata: Record<string, string>,
   state: BillingProviderCheckoutState,
+  savesCard: boolean,
 ): Promise<SavedCard | null> {
-  if (!state.complete || !state.paymentMethodId) return null;
+  if (!state.complete) return null;
+  const paymentMethodId = savesCard ? state.paymentMethodId : undefined;
+  // Only an address the checkout was asked to collect replaces the local
+  // tax location; otherwise the provider's copy is the one synced from it.
+  const billingAddress =
+    metadata[COLLECT_ADDRESS_METADATA] === '1' && state.billingAddress?.country
+      ? state.billingAddress
+      : undefined;
+  if (!paymentMethodId && !billingAddress) return null;
   if (tenantKey(metadata.smrt_seller) !== runtime.sellerTenantId) return null;
   const account = await runtime.accounts.get(metadata.smrt_account ?? '');
   if (
@@ -155,13 +182,8 @@ export async function savedCardFromCheckout(
   return {
     account,
     providerCustomerId: account.providerCustomerId,
-    paymentMethodId: state.paymentMethodId,
-    // Only an address the checkout was asked to collect replaces the local
-    // tax location; otherwise the provider's copy is the one synced from it.
-    billingAddress:
-      metadata[COLLECT_ADDRESS_METADATA] === '1'
-        ? state.billingAddress
-        : undefined,
+    paymentMethodId,
+    billingAddress,
   };
 }
 
@@ -175,39 +197,7 @@ export async function recordSavedCard(
   card: SavedCard,
 ): Promise<void> {
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
-    const instruments = await PaymentInstrumentCollection.create({ db });
-    const id = await deterministicId([
-      'billing-payment-instrument',
-      runtime.provider.name,
-      runtime.sellerTenantId,
-      card.paymentMethodId,
-    ]);
-    let instrument = await instruments.get(id);
-    if (!instrument) {
-      instrument = await instruments.create({
-        id,
-        tenantId: runtime.sellerTenantId,
-        customerId: card.account.customerId,
-        backendId: runtime.provider.name,
-        providerCustomerId: card.providerCustomerId,
-        providerPaymentMethodId: card.paymentMethodId,
-        type: 'card',
-        status: PaymentInstrumentStatus.ACTIVE,
-        _insertOnly: true,
-      });
-    } else if (instrument.customerId !== card.account.customerId) {
-      throw new Error(
-        `Payment method ${card.paymentMethodId} is already saved for another customer.`,
-      );
-    } else if (!instrument.isActive()) {
-      instrument.status = PaymentInstrumentStatus.ACTIVE;
-      await instrument.save();
-    }
-    await instruments.setDefaultForCustomer(
-      card.account.customerId,
-      String(instrument.id),
-    );
-
+    if (card.paymentMethodId) await recordInstrument(runtime, db, card);
     if (card.billingAddress?.country) {
       const customers = await CustomerCollection.create({ db });
       const customer = await customers.get(card.account.customerId);
@@ -217,6 +207,46 @@ export async function recordSavedCard(
       }
     }
   });
+}
+
+async function recordInstrument(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  card: SavedCard,
+): Promise<void> {
+  const paymentMethodId = String(card.paymentMethodId);
+  const instruments = await PaymentInstrumentCollection.create({ db });
+  const id = await deterministicId([
+    'billing-payment-instrument',
+    runtime.provider.name,
+    runtime.sellerTenantId,
+    paymentMethodId,
+  ]);
+  let instrument = await instruments.get(id);
+  if (!instrument) {
+    instrument = await instruments.create({
+      id,
+      tenantId: runtime.sellerTenantId,
+      customerId: card.account.customerId,
+      backendId: runtime.provider.name,
+      providerCustomerId: card.providerCustomerId,
+      providerPaymentMethodId: paymentMethodId,
+      type: 'card',
+      status: PaymentInstrumentStatus.ACTIVE,
+      _insertOnly: true,
+    });
+  } else if (instrument.customerId !== card.account.customerId) {
+    throw new Error(
+      `Payment method ${paymentMethodId} is already saved for another customer.`,
+    );
+  } else if (!instrument.isActive()) {
+    instrument.status = PaymentInstrumentStatus.ACTIVE;
+    await instrument.save();
+  }
+  await instruments.setDefaultForCustomer(
+    card.account.customerId,
+    String(instrument.id),
+  );
 }
 
 /**

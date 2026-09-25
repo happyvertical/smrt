@@ -38,6 +38,7 @@ import type { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
 import {
   CARD_SETUP_PURPOSE,
+  COLLECT_ADDRESS_METADATA,
   recordSavedCard,
   SAVE_CARD_METADATA,
   type SavedCard,
@@ -214,10 +215,22 @@ async function observeCheckout(
     (event.mode === 'setup' &&
       event.metadata.smrt_purpose === CARD_SETUP_PURPOSE) ||
     event.metadata[SAVE_CARD_METADATA] === '1';
+  const collectsAddress = event.metadata[COLLECT_ADDRESS_METADATA] === '1';
   let card: SavedCard | null = null;
-  if (savesCard && checkout) {
-    card = await savedCardFromCheckout(runtime, event.metadata, checkout);
-    if (card) {
+  if ((savesCard || collectsAddress) && !checkout) {
+    // Never acknowledge a saved card or address the provider cannot report.
+    throw new Error(
+      `Billing provider ${runtime.provider.name} cannot re-read checkout ${event.sessionId} to apply what it saved.`,
+    );
+  }
+  if (checkout && (savesCard || collectsAddress)) {
+    card = await savedCardFromCheckout(
+      runtime,
+      event.metadata,
+      checkout,
+      savesCard,
+    );
+    if (card?.paymentMethodId) {
       const setDefault = runtime.provider.setDefaultPaymentMethod;
       if (!setDefault) {
         throw new Error(

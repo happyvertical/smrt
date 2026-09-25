@@ -336,7 +336,10 @@ const evaluator = await SpendingPolicyEvaluator.create({
   (`automaticTax`, not tax-exempt; override per call), provider tax is
   charged on top and collected at checkout with the buyer's address: the
   credit is the amount bought, the payment is the total collected, and the
-  tax is booked to the tax account.
+  tax is booked to the tax account. For a payer with a provider customer but
+  no local tax location, the address collected at checkout becomes its tax
+  location. `savePaymentMethod` requires a provider that can re-read the
+  checkout and set a default payment method, and is refused otherwise.
 - **Card on file (#3139).** `createCardSetupCheckout()` (or a credit purchase
   with `savePaymentMethod`) saves the payer's card without charging it. On
   completion the card becomes the provider customer's default and the
