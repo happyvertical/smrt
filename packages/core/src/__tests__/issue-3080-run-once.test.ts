@@ -167,6 +167,53 @@ describe('runOnce (#3080)', () => {
     expect(a).not.toBe(b);
   });
 
+  describe('non-plain content (#3136)', () => {
+    function form(entries: Array<[string, string]>): FormData {
+      const data = new FormData();
+      for (const [key, value] of entries) data.append(key, value);
+      return data;
+    }
+
+    it('digests FormData by its entries, not as {}', () => {
+      const a = digestRunOnceContent(form([['sku', 'widget-1']]));
+      const b = digestRunOnceContent(form([['sku', 'widget-2']]));
+      expect(a).not.toBe(b);
+      expect(a).not.toBe(digestRunOnceContent({}));
+      expect(digestRunOnceContent(form([['sku', 'widget-1']]))).toBe(a);
+    });
+
+    it('treats repeated FormData fields as significant', () => {
+      const one = digestRunOnceContent(form([['line', 'a']]));
+      const two = digestRunOnceContent(
+        form([
+          ['line', 'a'],
+          ['line', 'b'],
+        ]),
+      );
+      expect(one).not.toBe(two);
+    });
+
+    it('digests a FormData file by name, type and size', () => {
+      const withFile = (name: string) => {
+        const data = new FormData();
+        data.append('upload', new File(['abc'], name, { type: 'text/plain' }));
+        return digestRunOnceContent(data);
+      };
+      expect(withFile('a.txt')).not.toBe(withFile('b.txt'));
+      expect(withFile('a.txt')).toBe(withFile('a.txt'));
+    });
+
+    it('rejects values JSON would reduce to {}', () => {
+      expect(() => digestRunOnceContent(new Map([['a', 1]]))).toThrow(
+        TypeError,
+      );
+      expect(() => digestRunOnceContent({ lines: new Set([1]) })).toThrow(
+        TypeError,
+      );
+      expect(() => digestRunOnceContent({ n: 1n })).toThrow(TypeError);
+    });
+  });
+
   it('produces a different content digest when only a Date differs', () => {
     const a = digestRunOnceContent({
       due: new Date('2026-09-01T00:00:00Z'),

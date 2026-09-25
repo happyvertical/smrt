@@ -17,14 +17,18 @@ re-introducing.
 ## Key derivation
 
 ```
-contentDigest = sha256(stableStringify(JSON.parse(JSON.stringify(content))))
+contentDigest = sha256(stableStringify(normalizeRunOnceContent(content)))
 claimKey      = sha256(stableStringify([tenantId, actor, token, contentDigest]))
 ```
 
 `stableStringify` (`../src/knowledge-graph.ts`) is sorted-key JSON: property
-insertion order never changes the digest. Content is normalized through its
-JSON serialization first, so a `Date` (or any `toJSON()` value) digests as what
-it serializes to rather than as `{}`. Folding in `tenantId` and `actor`
+insertion order never changes the digest. Content is normalized first, following
+JSON serialization: a `Date` (or any `toJSON()` value) digests as what it
+serializes to rather than as `{}`. A `FormData` has no enumerable properties, so
+JSON would reduce every form to `{}`; it digests as its ordered entry list
+instead (repeated fields are significant; a `File` digests by name, type and
+size). `Map`, `Set`, functions, symbols and `bigint` throw a `TypeError` rather
+than silently hashing as `{}` (#3136). Folding in `tenantId` and `actor`
 means two tenants or two actors can never collide on the same claim even if a
 token were somehow shared between them; folding in `contentDigest` means a
 retry of the SAME submission (same token, same content) replays, while a

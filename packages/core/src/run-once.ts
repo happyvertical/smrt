@@ -127,7 +127,8 @@ export interface RunOnceParams {
   /** The per-form/per-submission token minted by the caller (e.g. a hidden form field). */
   token: string;
   /**
-   * The content being written, in any JSON-serializable shape. Only its
+   * The content being written: plain JSON data, or a `FormData` (digested by
+   * its ordered entries; see {@link digestRunOnceContent}). Only its
    * digest is persisted — never the raw value.
    */
   content: unknown;
@@ -139,20 +140,101 @@ interface RunOnceClaimRow {
   result: string | null;
 }
 
+/** Key tagging a normalized `FormData`; a NUL-prefixed key no JSON form field produces. */
+const FORM_DATA_TAG = '\u0000FormData';
+
+/**
+ * Reduce `content` to plain JSON data before hashing, following JSON
+ * serialization (`toJSON()` is honoured, so a `Date` digests as its ISO
+ * string; `undefined` object members are dropped) with two differences:
+ *
+ * - A native `FormData` has no own enumerable properties, so JSON reduces
+ *   every form to `{}` and would collapse distinct submissions (#3136). It
+ *   becomes its ordered entry list instead — repeated fields and their order
+ *   are significant — and a `File`/`Blob` entry digests by name, type and
+ *   size, never its bytes.
+ * - Values JSON would silently misrepresent (`Map`, `Set`, `WeakMap`,
+ *   `WeakSet`, functions, symbols, `bigint`) are rejected, not hashed as `{}`.
+ */
+function normalizeRunOnceContent(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return value;
+    case 'number':
+      return Number.isFinite(value) ? value : null;
+    case 'bigint':
+    case 'function':
+    case 'symbol':
+      throw new TypeError(
+        `runOnce content cannot contain a ${typeof value}; pass plain JSON data`,
+      );
+  }
+  if (typeof FormData !== 'undefined' && value instanceof FormData) {
+    const entries: unknown[] = [];
+    for (const [key, entry] of value.entries()) {
+      entries.push([key, normalizeRunOnceContent(entry)]);
+    }
+    return { [FORM_DATA_TAG]: entries };
+  }
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    return {
+      name: (value as Blob & { name?: string }).name ?? null,
+      size: value.size,
+      type: value.type,
+    };
+  }
+  if (
+    value instanceof Map ||
+    value instanceof Set ||
+    value instanceof WeakMap ||
+    value instanceof WeakSet
+  ) {
+    throw new TypeError(
+      `runOnce content cannot contain a ${value.constructor.name}; convert it to plain JSON data`,
+    );
+  }
+  const withToJSON = value as { toJSON?: () => unknown };
+  if (typeof withToJSON.toJSON === 'function') {
+    return normalizeRunOnceContent(withToJSON.toJSON());
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      const normalized = normalizeRunOnceContent(item);
+      return normalized === undefined ? null : normalized;
+    });
+  }
+  const result: Record<string, unknown> = Object.create(null);
+  for (const [key, member] of Object.entries(value as object)) {
+    if (
+      member === undefined ||
+      typeof member === 'function' ||
+      typeof member === 'symbol'
+    ) {
+      continue; // JSON drops these object members
+    }
+    result[key] = normalizeRunOnceContent(member);
+  }
+  return result;
+}
+
 /**
  * Deterministic content digest: sha256 of sorted-key JSON.
  *
  * Property order never changes the digest, so callers do not need to worry
  * about object construction order producing two different claims for what is
- * semantically the same submission. Content is first normalized through its
- * JSON serialization, so a `Date` (or anything with `toJSON()`) digests as the
- * value it serializes to; sorting the raw object would reduce every `Date` to
- * `{}` and collapse submissions that differ only by a date.
+ * semantically the same submission. Content is normalized first (see
+ * {@link normalizeRunOnceContent}): `toJSON()` values such as `Date` digest as
+ * what they serialize to, a `FormData` digests as its ordered entries, and
+ * values JSON would reduce to `{}` (`Map`, `Set`, …) are rejected.
+ *
+ * @throws {TypeError} when `content` contains a value with no faithful JSON form.
  */
 export function digestRunOnceContent(content: unknown): string {
-  const json = JSON.stringify(content);
-  const normalized: unknown = json === undefined ? null : JSON.parse(json);
-  return createHash('sha256').update(stableStringify(normalized)).digest('hex');
+  return createHash('sha256')
+    .update(stableStringify(normalizeRunOnceContent(content)))
+    .digest('hex');
 }
 
 /**
