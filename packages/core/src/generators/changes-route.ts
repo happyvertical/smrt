@@ -23,15 +23,20 @@
  *   dependency-inversion hook the DispatchBus uses: with tenancy enabled, a
  *   request only ever sees its own tenant's changes plus global rows; with
  *   tenancy enabled but no active tenant, only global rows (fail-closed).
+ * - **Table/row authorization** (#3020): the read additionally applies the
+ *   consumer-supplied `authorizeChangeFeed`/`isChangeFeedEntryVisible` hooks,
+ *   if registered (`change-feed-authz.ts`), via
+ *   `getAuthorizedTenantScopedChangesSince()`. REST has no `locals`, so the
+ *   hooks receive `locals: undefined` and the `authMiddleware`-processed
+ *   `Request` as `request` — a REST-hosting consumer identifies the principal
+ *   from `request`. Unregistered, behavior is unchanged from pre-#3020.
  */
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import {
-  ensureChangeFeedTable,
-  getTenantScopedChangesSince,
-} from '../change-feed.js';
+import { ensureChangeFeedTable } from '../change-feed.js';
+import { getAuthorizedTenantScopedChangesSince } from '../change-feed-authz.js';
 import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 
 const logger = createLogger({ level: 'info' });
@@ -197,10 +202,14 @@ export async function handleChangesRoute(
     // System tables are runtime-ensured; a raw handle passed straight to the
     // generator may not have gone through framework init yet.
     await ensureChangeFeedTable(db);
-    const page = await getTenantScopedChangesSince(db, {
+    const page = await getAuthorizedTenantScopedChangesSince(db, {
       since,
       tables,
       limit,
+      // REST has no `locals`; the authorization hooks (#3020) identify the
+      // principal from the authMiddleware-processed request instead.
+      locals: undefined,
+      request: authResult,
     });
     return jsonResponse(page);
   } catch (error) {

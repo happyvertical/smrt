@@ -94,10 +94,101 @@ through a resolver hook on the leaf module (so `change-feed.ts` never imports
 the registry), sees the exact name being recorded with no derivation to keep in
 sync, and declares it — closing the read path and signal bus for that table.
 
-Scope note: the generated `_changes`/`_events` routes still gate on an
-authenticated principal only — there is no per-table permission check, and
-tenant scoping (`getTenantScopedChangesSince`, fail-closed) remains the sole
-row-level filter for ordinary tables.
+Scope note: the generated `_changes`/`_events` routes — both the SvelteKit
+routes and the runtime REST generator's — authorize on an authenticated
+principal plus tenant scoping (`getTenantScopedChangesSince`, fail-closed) by
+default. A consumer-supplied table/row authorization seam beyond that —
+`change-feed-authz.ts` (#3020, below) — is optional and off until registered.
+
+## Consumer table/row authorization seam (#3020)
+
+Tenant scoping keeps one tenant from seeing another's rows, but it cannot
+express "table X is readable by some principals of the tenant but not others"
+or "principal P only sees their own rows of table X" (e.g. a bay-tablet
+station versus the back office). `?tables=` on `_changes` was always a
+client-chosen filter, never enforcement — a table the client did not ask for
+was withheld only because it did not ask, not because it could not have.
+
+`src/change-feed-authz.ts` closes that gap with two independent, optional
+hooks, dependency-inverted onto `globalThis` exactly like
+`resolveDispatchTenantScope` (`dispatch/tenant-resolver.ts`), so a consumer
+registers them once with no change to the generated "DO NOT EDIT" route files.
+Both hooks are evaluated identically by **every** transport — the generated
+SvelteKit `_changes`/`_events` routes AND the runtime REST generator's
+`_changes`/`_events` (`generators/changes-route.ts`, `generators/events-route.ts`)
+— so a consumer serving both cannot register a hook that protects one and
+leaks through the other:
+
+- `setChangeFeedAuthorizer(authorizeChangeFeed)` — table-level.
+  `authorizeChangeFeed({ locals, request, tables }) => allowedTables` returns
+  the tables the requester may read from the feed at all; the result is
+  INTERSECTED with the client's `?tables=` filter (never unioned), so a table
+  the hook does not name is never queried, let alone returned.
+- `setChangeFeedEntryVisibility(isChangeFeedEntryVisible)` — row-level, for
+  scope narrower than a whole table. Applied per entry, after the table
+  filter, before anything is serialized — including a live `_events` signal.
+
+`locals` is SvelteKit's `event.locals`; `request` is SvelteKit's
+`event.request` or, on REST, the `authMiddleware`-processed `Request`. REST
+has no `locals` concept, so REST routes pass `locals: undefined` and a
+REST-hosting consumer identifies the principal from `request` instead
+(whatever the `authMiddleware` attached — headers, a decoded token, etc.).
+Every generated route supplies `request`.
+
+Both hooks are optional and independent; unregistered, every transport
+behaves exactly as before (tenant-scoped only). A hook that throws or returns
+something other than the documented shape fails closed to "authorizes
+nothing" for that call — same posture as a throwing `resolveDispatchTenantScope`
+resolver, and the same 200-empty-page shape the sensitivity filter above
+already gives a request naming only tables it may not see (never a 5xx, which
+would tell a caller its own hook is broken — indistinguishable from "denied"
+from the caller's side).
+
+Every filter narrows the *returned* `changes`; nothing ever touches
+`cursor`/`resyncRequired`/`resyncCursor` — mirrors the sensitivity filter's
+"filters affect what is returned, never how the cursor advances" and for the
+same reason: a client must advance past a denied entry without re-polling it
+forever, and the entry's row id/timing must never be inferable from a stalled
+cursor. Table denial sets `getChangesSince`'s explicit `denyAllTables: true`
+option rather than passing an empty `tables` array, because `getChangesSince`
+treats an omitted/empty `tables` as "no filter" and would otherwise widen the
+read. `denyAllTables` skips the `table_name IN (...)` clause (and the query)
+entirely — an earlier version instead passed a guaranteed-no-match sentinel
+table name through that clause, which broke on PostgreSQL (it rejects a NUL
+byte in a text parameter, turning a denied request into a 500 instead of the
+required 200 empty page, #3020 P1 follow-up). `denyAllTables` still runs every
+resync/pruned-cursor check unfiltered first, so the real horizon computation
+runs and the cursor still advances — it just matches zero rows.
+`change-feed-authz.ts`'s `isChangeFeedDenyAll()` is the one place that decides
+"empty allow-list" (deny all) vs. "no hook registered" (no filter); both
+`readAuthorized()` (pull side) and `buildChangeEventStream()`'s catch-up loop
+(push side) call it rather than re-deriving the distinction. With NO hook
+registered, `resolveAuthorizedChangeFeedTables()` normalizes an explicit empty
+requested `tables: []` to `undefined` before that decision runs: `?tables=`
+with nothing in it is documented as equivalent to an omitted filter, and
+without a hook there is no authorized answer to narrow anything with — feeding
+`[]` through unchanged would let `isChangeFeedDenyAll()` read it as "deny
+every table" and silently break the promised unchanged default (#3020
+follow-up). Once a hook IS registered, its own answer is what decides
+deny-all, exactly as above.
+
+A registered hook's returned table list is also validated for USABLE
+strings, not just string-typed ones: any entry that is empty or contains a
+NUL byte fails the whole call closed to `[]` (deny all), the same posture as
+a non-array or non-string result. This closes the same NUL-byte hazard the
+`denyAllTables` sentinel removal above fixed for a *synthesized* value — here
+the NUL byte would come from the hook's OWN answer, which otherwise flows
+straight into the ordinary `table_name IN (...)` clause and 500s on
+PostgreSQL (#3020 Copilot follow-up).
+
+`getAuthorizedChangesSince()` / `getAuthorizedTenantScopedChangesSince()` wrap
+`getChangesSince()` / `getTenantScopedChangesSince()` with both hooks applied;
+BOTH `_changes` routes (SvelteKit's `vite-plugin/changes-route.ts` and REST's
+`generators/changes-route.ts` `handleChangesRoute`) call the tenant-scoped
+variant, and `buildChangeEventStream()` (`change-signals.md`) — shared by
+BOTH `_events` routes — applies the same hooks to catch-up replay and live
+signal delivery, resolving the table allow-list ONCE at connection open
+(mirrors captured tenant scope).
 
 ## Compatible bulk mutations (#2818)
 

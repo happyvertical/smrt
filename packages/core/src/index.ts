@@ -59,6 +59,26 @@ export {
   resetChangeFeedWarnings,
   unregisterChangeFeedWriter,
 } from './change-feed';
+// Consumer-supplied change-feed table/row authorization seam (issue #3020).
+// Optional and independent of tenant scoping: unset, both generated routes
+// keep their pre-#3020 behavior (authenticated + tenant-scoped only).
+export {
+  type ChangeFeedEntryVisibility,
+  type ChangeFeedEntryVisibilityRequest,
+  type ChangeFeedTableAuthorizationRequest,
+  type ChangeFeedTableAuthorizer,
+  type ChangeFeedVisibilityEntry,
+  filterVisibleChangeFeedEntries,
+  getAuthorizedChangesSince,
+  getAuthorizedTenantScopedChangesSince,
+  hasChangeFeedEntryVisibilityHook,
+  hasChangeFeedTableAuthorizerHook,
+  isChangeFeedDenyAll,
+  isChangeFeedEntryVisible,
+  resolveAuthorizedChangeFeedTables,
+  setChangeFeedAuthorizer,
+  setChangeFeedEntryVisibility,
+} from './change-feed-authz';
 // Credential-bearing tables the feed must never disclose (issue #2937). The
 // declaring API is `@smrt({ sensitive: true })`; these are exported so a
 // deployment can assert what it classifies, and so tooling can explain why a

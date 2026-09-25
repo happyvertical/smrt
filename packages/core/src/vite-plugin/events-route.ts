@@ -21,6 +21,13 @@
  *   then captures the resolved scope ONCE at connection open and passes it to
  *   the stream (delivery filters against that fixed value — it cannot
  *   re-resolve per signal outside the request's ALS context).
+ * - **Table/row authorization** (#3020): `locals` is forwarded to
+ *   `buildChangeEventStream`, which — if the consumer registered
+ *   `authorizeChangeFeed`/`isChangeFeedEntryVisible`
+ *   (`@happyvertical/smrt-core`'s `change-feed-authz.ts`) — resolves the
+ *   allowed tables ONCE at connection open (same reasoning as tenant scope)
+ *   and applies both hooks to catch-up replay AND every live signal before it
+ *   is enqueued. Unregistered, behavior is unchanged from pre-#3020.
  * - **Database resolution**: anchors on the project's first generated
  *   collection (alphabetical) via `getCollection()`, exactly as `_changes`.
  * - Cleanup rides the generated-route sweep: the file starts with
@@ -310,6 +317,8 @@ ${corsBlock.capacityReturn}
       tenantScope,
       manifestHash: MANIFEST_HASH,
       releaseSubscriberSlot,
+      locals,
+      request,
     }),
     {
       status: 200,

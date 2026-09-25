@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { ensureChangeFeedTable } from '../change-feed.js';
 import { SmrtCollection } from '../collection.js';
 import { classifyDatabaseError } from '../db-errors.js';
 import { createDispatchBus } from '../dispatch/bus.js';
@@ -294,59 +295,83 @@ postgresDescribe('PostgreSQL Date instant persistence (#2069)', () => {
   });
 
   it('upgrades the legacy change-feed timestamp and helper ABI atomically', async () => {
-    await db.query(
-      `DROP FUNCTION IF EXISTS ${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}`,
-    );
-    await db.query(
-      `DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}`,
-    );
-    await db.query('DROP TABLE IF EXISTS _smrt_changes');
-    await db.query(`
-      CREATE TABLE _smrt_changes (
-        seq BIGSERIAL PRIMARY KEY,
-        id TEXT NOT NULL,
-        table_name TEXT NOT NULL,
-        row_id TEXT NOT NULL,
-        operation TEXT NOT NULL,
-        tenant_id TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    await db.query(`
-      CREATE FUNCTION _smrt_append_change(
-        p_id TEXT,
-        p_table_name TEXT,
-        p_row_id TEXT,
-        p_operation TEXT,
-        p_created_at TIMESTAMP
-      ) RETURNS TABLE(allocated_seq BIGINT, created_at TIMESTAMP)
-      LANGUAGE SQL AS $$ SELECT 1::BIGINT, p_created_at $$
-    `);
-
-    await migratePostgresSystemTimestamps(
-      db,
-      { legacyTimezone: 'UTC' },
-      'postgres',
-    );
-
-    const state = rowsOf(
+    // This simulates a pre-migration database by replacing the SHARED
+    // `_smrt_changes` system table with a legacy-shaped stand-in (extra
+    // `id`, NOT NULL `row_id`, a BIGSERIAL `seq`, and a timezone-naive
+    // `created_at`). The registered PostgreSQL suite runs every
+    // `*.optional.test.ts` file in this package against ONE shared database
+    // (one `test:postgres` process, one `CI_POSTGRES_BASE_URL` database), so
+    // leaving that legacy shape in place after this test would corrupt
+    // `_smrt_changes` for every other concurrently- or later-running
+    // change-feed test — `migratePostgresSystemTimestamps()` only retypes
+    // `created_at`, it does not restore the table's real column set. Restore
+    // the production shape in `finally` regardless of outcome (#3020 CI
+    // repro: `issue-3020-deny-all-postgres.optional.test.ts` hit a stray
+    // `id` NOT NULL constraint left behind by exactly this gap).
+    try {
+      await db.query(
+        `DROP FUNCTION IF EXISTS ${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}`,
+      );
+      await db.query(
+        `DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}`,
+      );
+      await db.query('DROP TABLE IF EXISTS _smrt_changes');
       await db.query(`
-        SELECT
-          (SELECT data_type FROM information_schema.columns
-           WHERE table_schema = current_schema()
-             AND table_name = '_smrt_changes'
-             AND column_name = 'created_at') AS created_at_type,
-          to_regprocedure('${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS legacy_helper,
-          to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS current_helper
-      `),
-    )[0];
-    expect(state).toEqual(
-      expect.objectContaining({
-        created_at_type: 'timestamp with time zone',
-        legacy_helper: null,
-      }),
-    );
-    expect(state?.current_helper).toBeTruthy();
+        CREATE TABLE _smrt_changes (
+          seq BIGSERIAL PRIMARY KEY,
+          id TEXT NOT NULL,
+          table_name TEXT NOT NULL,
+          row_id TEXT NOT NULL,
+          operation TEXT NOT NULL,
+          tenant_id TEXT,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await db.query(`
+        CREATE FUNCTION _smrt_append_change(
+          p_id TEXT,
+          p_table_name TEXT,
+          p_row_id TEXT,
+          p_operation TEXT,
+          p_created_at TIMESTAMP
+        ) RETURNS TABLE(allocated_seq BIGINT, created_at TIMESTAMP)
+        LANGUAGE SQL AS $$ SELECT 1::BIGINT, p_created_at $$
+      `);
+
+      await migratePostgresSystemTimestamps(
+        db,
+        { legacyTimezone: 'UTC' },
+        'postgres',
+      );
+
+      const state = rowsOf(
+        await db.query(`
+          SELECT
+            (SELECT data_type FROM information_schema.columns
+             WHERE table_schema = current_schema()
+               AND table_name = '_smrt_changes'
+               AND column_name = 'created_at') AS created_at_type,
+            to_regprocedure('${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS legacy_helper,
+            to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS current_helper
+        `),
+      )[0];
+      expect(state).toEqual(
+        expect.objectContaining({
+          created_at_type: 'timestamp with time zone',
+          legacy_helper: null,
+        }),
+      );
+      expect(state?.current_helper).toBeTruthy();
+    } finally {
+      // Drop the legacy-shaped table and rebuild it through the real
+      // framework bootstrap path so every column/index/function matches
+      // what production (and every other test in this shared database)
+      // expects — `ensureChangeFeedTable`'s `IF NOT EXISTS` DDL is a no-op
+      // against an already-existing (wrong-shaped) table, so the drop is
+      // required, not optional.
+      await db.query('DROP TABLE IF EXISTS _smrt_changes');
+      await ensureChangeFeedTable(db);
+    }
   });
 
   it('fails closed outside UTC and rolls back every system-table ALTER on failure', async () => {
