@@ -939,6 +939,9 @@ CREATE TABLE IF NOT EXISTS _smrt_backfills (
 );
 `;
 
+/** The insert-only claim table backing `runOnce()` (`../run-once.ts`). Browser-safe: retention imports it. */
+export const RUN_ONCE_CLAIMS_TABLE = '_smrt_run_once_claims';
+
 /**
  * Idempotency claims for `runOnce()` (#3080).
  *

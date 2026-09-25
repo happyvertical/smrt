@@ -112,9 +112,9 @@ import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { RunOnceClaimError } from './errors.js';
 import { stableStringify } from './knowledge-graph.js';
+import { RUN_ONCE_CLAIMS_TABLE } from './system/schema.js';
 
-/** The insert-only claim table backing {@link runOnce}. See `./system/schema.ts`. */
-export const RUN_ONCE_CLAIMS_TABLE = '_smrt_run_once_claims';
+export { RUN_ONCE_CLAIMS_TABLE };
 
 /** Input identifying one submission for {@link runOnce}. */
 export interface RunOnceParams {

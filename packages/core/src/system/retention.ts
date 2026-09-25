@@ -47,9 +47,9 @@
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { pruneChangeFeed } from '../change-feed.js';
-import { RUN_ONCE_CLAIMS_TABLE } from '../run-once.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import { RUN_ONCE_CLAIMS_TABLE } from './schema.js';
 
 const logger = createLogger({ level: 'info' });
 
