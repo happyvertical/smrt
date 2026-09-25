@@ -364,10 +364,26 @@ describe('smrt#3138 crypto payment rail', () => {
         excessAmount: 1000,
         flag: 'invalidated_after_settlement',
       });
+      // Back up again: each change gets its own journal (no key reuse).
+      world.gateway.set(session.sessionId, 'settled', {
+        exception: 'overpaid',
+        paid: 6500,
+      });
+      await world.railEvent(session.sessionId);
+      const excessJournals = await world.db.query(
+        "SELECT source_ref FROM journals WHERE source_ref LIKE 'overpayment:%'",
+      );
+      expect(excessJournals.rows).toHaveLength(4);
+      // Refund basis comes from the settlement, not the (changed) flag.
+      const [back] = await world.runtime.listPaymentAttempts({});
+      expect(back).toMatchObject({
+        excessAmount: 1500,
+        settlementOutcome: 'credit',
+      });
       // The excess is refunded first and leaves the credit alone.
       await world.runtime.recordManualRefund({
         paymentId: attempt?.paymentId ?? '',
-        fiatAmount: 1000,
+        fiatAmount: 1500,
         reference: 'excess-1',
         reason: 'overpayment',
       });

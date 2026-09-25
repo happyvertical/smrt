@@ -603,6 +603,16 @@ async function observeAttempt(
         amount: target.amount,
         currency: target.currency,
       });
+      if (row.flag === 'out_of_band_without_settlement' || row.resolvedAt) {
+        // Closing again after an operator reopened the invoice: this rail
+        // owns the close once more, so the old resolution no longer applies.
+        await runtime.db.query(
+          `UPDATE ${runtime.attempts.tableName}
+              SET flag = '', resolved_at = NULL
+            WHERE id = ? AND flag = 'out_of_band_without_settlement'`,
+          String(row.id),
+        );
+      }
       if (!row.outOfBandRequestedAt) {
         // Column-scoped, so it cannot overwrite a concurrent writer's fields.
         await runtime.db.query(

@@ -407,6 +407,14 @@ export class BillingPaymentAttempt extends SmrtObject {
   pausedStanding: string = '';
   /** Fiat received above the price, booked as customer credit (minor units). */
   excessAmount: number = 0;
+  /** Number of excess adjustments posted (keys each adjustment journal). */
+  excessRevision: number = 0;
+  /**
+   * How settlement booked the price: `credit` (prepaid credit, or customer
+   * credit for an invoice already paid elsewhere — refundable) or `applied`
+   * (allocated to its invoice — not refundable here).
+   */
+  settlementOutcome: string = '';
   /** Refunds recorded by operators, total (minor units). */
   refundedAmount: number = 0;
   /** The part of `refundedAmount` taken from the price, not the excess. */

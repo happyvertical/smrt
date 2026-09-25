@@ -335,7 +335,7 @@ export async function applyPaymentAttempt(
       await postOnce(
         runtime,
         db,
-        `overpayment:${attempt.paymentId}:${attempt.excessAmount}->${excess}`,
+        `overpayment:${attempt.paymentId}:r${attempt.excessRevision + 1}`,
         {
           description: `Excess on ${providerName} checkout ${state.checkoutId}: ${attempt.excessAmount} -> ${excess}`,
           entries:
@@ -351,6 +351,7 @@ export async function applyPaymentAttempt(
         },
       );
       attempt.excessAmount = excess;
+      attempt.excessRevision += 1;
       if (delta < 0) attempt.flag = 'invalidated_after_settlement';
       else if (!attempt.flag) attempt.flag = 'overpaid';
     }
@@ -359,6 +360,11 @@ export async function applyPaymentAttempt(
     attempt.paymentId = result.paymentId;
     attempt.creditGrantId = result.creditGrantId;
     attempt.excessAmount = result.excess;
+    attempt.settlementOutcome =
+      target.purpose === 'credit_purchase' ||
+      result.flag === 'invoice_already_paid'
+        ? 'credit'
+        : 'applied';
     attempt.settledAt = new Date();
     attempt.flag = result.flag || decision.flag;
     settled = true;
@@ -651,11 +657,9 @@ export async function recordManualRefund(
           creditGrantId: String(done.creditGrantId ?? ''),
         };
       }
+      // The settlement's own classification, not the mutable flag.
       const principalRefundable =
-        attempt.purpose === 'credit_purchase' ||
-        attempt.flag === 'invoice_already_paid'
-          ? attempt.amount
-          : 0;
+        attempt.settlementOutcome === 'credit' ? attempt.amount : 0;
       const refundedExcess = attempt.refundedAmount - attempt.refundedPrincipal;
       const excessLeft = attempt.excessAmount - refundedExcess;
       const principalLeft = principalRefundable - attempt.refundedPrincipal;
