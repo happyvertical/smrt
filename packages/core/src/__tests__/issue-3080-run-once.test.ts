@@ -179,6 +179,22 @@ describe('runOnce (#3080)', () => {
     expect(a).not.toBe(b);
   });
 
+  it('does not collide with {} for content carrying an own "__proto__" key', () => {
+    // JSON.parse() creates "__proto__" as a genuine own enumerable property
+    // (never as the prototype), so this is realistic attacker- or
+    // client-supplied content, not a contrived object literal. The shared
+    // `stableStringify()` (knowledge-graph.ts) used to sort keys into a
+    // plain `{}` target, where assigning the key "__proto__" through bracket
+    // notation invokes Object.prototype's accessor instead of creating an
+    // own property — silently dropping the key and digesting this content
+    // identically to an empty object.
+    const withProtoKey = digestRunOnceContent(
+      JSON.parse('{"__proto__":{"a":1}}'),
+    );
+    const empty = digestRunOnceContent({});
+    expect(withProtoKey).not.toBe(empty);
+  });
+
   describe('resolveExistingRunOnceClaim (pure resolver)', () => {
     it('returns the parsed result for a completed claim', () => {
       const result = resolveExistingRunOnceClaim(
