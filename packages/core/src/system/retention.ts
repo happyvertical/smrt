@@ -5,8 +5,10 @@
  * this module, unbounded by default: `_smrt_changes` grew one row per
  * framework save/delete, `_smrt_ai_usage` one row per AI call (persistence is
  * on by default, see `config.ts`), `_smrt_contexts` accumulated rows whose
- * `expires_at` nothing ever enforced, and `_smrt_dispatch` retained completed
- * work until an operator remembered to run `smrt dispatch:cleanup`.
+ * `expires_at` nothing ever enforced, `_smrt_dispatch` retained completed
+ * work until an operator remembered to run `smrt dispatch:cleanup`, and
+ * `_smrt_run_once_claims` (#3080) gains one row per `runOnce()` submission
+ * with nothing pruning completed ones.
  *
  * This module supplies the missing half:
  *
@@ -32,10 +34,11 @@
  *
  * Every predicate below is indexed by the system DDL in `system/schema.ts`
  * (`_smrt_contexts(expires_at)`, `_smrt_ai_usage(tenant_id, created_at)`,
- * `_smrt_dispatch(status, processed_at)` / `(status, updated_at)`) or by the
- * jobs compatibility path in `system/compatibility.ts`
- * (`_smrt_jobs(status, completed_at)`, `_smrt_job_events(created_at)`).
- * A new retention predicate must ship with its index.
+ * `_smrt_dispatch(status, processed_at)` / `(status, updated_at)`,
+ * `_smrt_run_once_claims(status, completed_at)`) or by the jobs compatibility
+ * path in `system/compatibility.ts` (`_smrt_jobs(status, completed_at)`,
+ * `_smrt_job_events(created_at)`). A new retention predicate must ship with
+ * its index.
  *
  * @see https://github.com/happyvertical/smrt/issues/2375
  * @packageDocumentation
@@ -46,6 +49,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { pruneChangeFeed } from '../change-feed.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import { RUN_ONCE_CLAIMS_TABLE } from './schema.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -93,6 +97,25 @@ export interface DispatchRetentionPolicy {
 }
 
 /**
+ * Retention for `runOnce()` idempotency claims (`_smrt_run_once_claims`, #3080).
+ *
+ * Only `status: 'completed'` rows with a `completed_at` older than the window
+ * are ever deleted — an `'in_progress'` claim has no `completed_at` and is
+ * never touched by this task regardless of age. See
+ * {@link pruneRunOnceClaims} and `agents/run-once.md` for the consequence of
+ * this window: a caller that replays a `runOnce()` token after its claim has
+ * been swept runs `work()` again instead of replaying the stored result, so
+ * `maxAgeDays` must stay comfortably longer than any realistic client retry
+ * window.
+ */
+export interface RunOnceClaimsRetentionPolicy {
+  /** Run this task (default `true`). */
+  enabled?: boolean;
+  /** Drop completed claims older than this many days (default 30). */
+  maxAgeDays?: number;
+}
+
+/**
  * Retention policy for a sweep.
  *
  * Every table is pruned by default; set a table's entry to `false` (or
@@ -112,6 +135,8 @@ export interface RetentionPolicy {
   contexts?: ContextsRetentionPolicy | false;
   /** `_smrt_dispatch` retention, or `false` to skip. */
   dispatch?: DispatchRetentionPolicy | false;
+  /** `_smrt_run_once_claims` retention, or `false` to skip. */
+  runOnceClaims?: RunOnceClaimsRetentionPolicy | false;
   /**
    * Enable/disable individual tasks contributed through
    * {@link registerRetentionTask}, keyed by task name. Unlisted tasks run.
@@ -133,11 +158,16 @@ export const DEFAULT_RETENTION_POLICY: {
   aiUsage: AiUsageRetentionPolicy;
   contexts: ContextsRetentionPolicy;
   dispatch: DispatchRetentionPolicy;
+  runOnceClaims: RunOnceClaimsRetentionPolicy;
 } = {
   changes: { maxAgeDays: 30 },
   aiUsage: { maxAgeDays: 90 },
   contexts: {},
   dispatch: { completedOlderThanDays: 30, failedOlderThanDays: 90 },
+  // 30 days is generous relative to any realistic runOnce() client retry —
+  // see RunOnceClaimsRetentionPolicy for the replay consequence of a shorter
+  // window.
+  runOnceClaims: { maxAgeDays: 30 },
 };
 
 // ============================================================================
@@ -195,7 +225,7 @@ export interface RetentionTask {
 const RETENTION_TASKS_KEY = Symbol.for('smrt.retention-tasks');
 
 /**
- * Names {@link builtInTasks} always uses for the four framework-owned tables.
+ * Names {@link builtInTasks} always uses for the five framework-owned tables.
  *
  * Reserved against contributed tasks: `RetentionTaskResult.task` is
  * documented unique within a sweep, and a contributed task sharing one of
@@ -210,6 +240,7 @@ const RESERVED_TASK_NAMES = new Set([
   'ai-usage',
   'contexts',
   'dispatch',
+  'run-once-claims',
 ]);
 
 /**
@@ -237,9 +268,9 @@ function registeredTasks(): Map<string, RetentionTask> {
  * off by name. Re-registering the same name replaces the previous task, which
  * keeps module re-evaluation (HMR, repeated test imports) idempotent.
  *
- * @throws If `task.name` is empty, or is one of the four built-in table
- *   names (`changes`, `ai-usage`, `contexts`, `dispatch`) — see
- *   {@link RESERVED_TASK_NAMES}.
+ * @throws If `task.name` is empty, or is one of the five built-in table
+ *   names (`changes`, `ai-usage`, `contexts`, `dispatch`, `run-once-claims`)
+ *   — see {@link RESERVED_TASK_NAMES}.
  */
 export function registerRetentionTask(task: RetentionTask): void {
   if (!task.name) {
@@ -439,6 +470,60 @@ export async function pruneExpiredContexts(
 }
 
 // ============================================================================
+// runOnce() claim retention
+// ============================================================================
+
+/** Bounds for {@link pruneRunOnceClaims}. */
+export interface RunOnceClaimsRetention {
+  /** Delete completed claims older than this many milliseconds. */
+  maxAgeMs: number;
+  /** Count matching records without deleting them. */
+  dryRun?: boolean;
+  /** Clock for the age cutoff (default: now). */
+  now?: Date;
+}
+
+/**
+ * Prune completed `runOnce()` idempotency claims to bound
+ * `_smrt_run_once_claims` growth (#3080).
+ *
+ * Only rows with `status = 'completed'` AND a `completed_at` older than the
+ * cutoff are deleted. An `'in_progress'` claim has no `completed_at`, so this
+ * predicate can never match one — a claim held open by an in-flight (or
+ * abandoned) transaction is never pruned by age alone.
+ *
+ * Predicate is covered by `idx_smrt_run_once_claims_status_completed`
+ * (`status, completed_at`).
+ *
+ * @param db - Database holding the system tables.
+ * @param retention - `maxAgeMs` is required; there is no row-count bound.
+ * @returns Number of claims deleted (or, under `dryRun`, matched).
+ */
+export async function pruneRunOnceClaims(
+  db: DatabaseInterface,
+  retention: RunOnceClaimsRetention,
+): Promise<{ pruned: number }> {
+  const { maxAgeMs, dryRun = false } = retention;
+
+  if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+    throw new Error(
+      `pruneRunOnceClaims maxAgeMs must be >= 0, got ${maxAgeMs}`,
+    );
+  }
+
+  const now = retention.now ?? new Date();
+  const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
+  const pruned = await deleteFrom(
+    db,
+    RUN_ONCE_CLAIMS_TABLE,
+    ["status = 'completed'", 'completed_at IS NOT NULL', 'completed_at < ?'],
+    [cutoff],
+    dryRun,
+  );
+  return { pruned };
+}
+
+// ============================================================================
 // Sweep
 // ============================================================================
 
@@ -462,7 +547,7 @@ export interface RetentionSweepResult {
  * Apply a {@link RetentionPolicy} across every framework-owned table.
  *
  * Built-in tasks run first, in a fixed order (`changes`, `ai-usage`,
- * `contexts`, `dispatch`), followed by tasks registered via
+ * `contexts`, `dispatch`, `run-once-claims`), followed by tasks registered via
  * {@link registerRetentionTask} in name order. Tables that do not exist in
  * this database are reported as `skipped: 'unavailable'` rather than failing —
  * a sweep must be safe to run against a partially bootstrapped database.
@@ -581,6 +666,11 @@ function builtInTasks(policy: RetentionPolicy): BuiltInRetentionTask[] {
     { name: 'ai-usage', table: AI_USAGE_TABLE, task: aiUsageTask(policy) },
     { name: 'contexts', table: CONTEXTS_TABLE, task: contextsTask(policy) },
     { name: 'dispatch', table: '_smrt_dispatch', task: dispatchTask(policy) },
+    {
+      name: 'run-once-claims',
+      table: RUN_ONCE_CLAIMS_TABLE,
+      task: runOnceClaimsTask(policy),
+    },
   ];
 }
 
@@ -682,6 +772,31 @@ function dispatchTask(policy: RetentionPolicy): RetentionTask | null {
           failed: result.failedDeleted,
         },
       };
+    },
+  };
+}
+
+function runOnceClaimsTask(policy: RetentionPolicy): RetentionTask | null {
+  const config = resolveEntry<RunOnceClaimsRetentionPolicy>(
+    policy.runOnceClaims,
+    DEFAULT_RETENTION_POLICY.runOnceClaims,
+  );
+  if (!config) return null;
+
+  return {
+    name: 'run-once-claims',
+    description:
+      'Prune completed runOnce() idempotency claims (_smrt_run_once_claims)',
+    run: async (db, context) => {
+      const { pruned } = await pruneRunOnceClaims(db, {
+        maxAgeMs:
+          (config.maxAgeDays ??
+            DEFAULT_RETENTION_POLICY.runOnceClaims.maxAgeDays ??
+            30) * MS_PER_DAY,
+        dryRun: context.dryRun,
+        now: context.now,
+      });
+      return pruned;
     },
   };
 }

@@ -317,7 +317,18 @@ export function stableStringify(value: unknown): string {
 function sortValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value && typeof value === 'object') {
-    const sorted: Record<string, unknown> = {};
+    // Null-prototype target: on an ordinary `{}`, assigning the key
+    // `"__proto__"` through bracket notation invokes `Object.prototype`'s
+    // `__proto__` accessor instead of creating an own property, so that key
+    // silently vanishes from the result and `JSON.stringify()` never emits
+    // it — two inputs that differ only by an own `"__proto__"` key (which
+    // `JSON.parse()` does create as a real own property) then serialize
+    // identically. An object with no prototype has no such accessor to
+    // shadow the assignment, so every own key — including `"__proto__"` —
+    // becomes a real own data property. `JSON.stringify()` does not care
+    // about an object's prototype, only its own enumerable properties, so
+    // this changes no other output.
+    const sorted: Record<string, unknown> = Object.create(null);
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
       sorted[key] = sortValue((value as Record<string, unknown>)[key]);
     }

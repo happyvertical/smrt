@@ -127,6 +127,27 @@ async function insertDispatch(options: {
   );
 }
 
+async function insertRunOnceClaim(options: {
+  claimKey: string;
+  status: string;
+  createdAt: string;
+  completedAt: string | null;
+}): Promise<void> {
+  await db.query(
+    `INSERT INTO _smrt_run_once_claims
+       (claim_key, tenant_id, actor, content_digest, status, result, created_at, completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    options.claimKey,
+    'tenant-a',
+    'user-1',
+    'digest',
+    options.status,
+    options.status === 'completed' ? '{"ok":true}' : null,
+    options.createdAt,
+    options.completedAt,
+  );
+}
+
 async function countRows(table: string): Promise<number> {
   const result = await db.query(`SELECT COUNT(*) AS total FROM ${table}`);
   return Number(result.rows[0]?.total ?? 0);
@@ -375,20 +396,47 @@ describe('runRetentionSweep (#2375)', () => {
       processedAt: daysAgo(1),
       updatedAt: daysAgo(1),
     });
+    await insertRunOnceClaim({
+      claimKey: 'claim-old',
+      status: 'completed',
+      createdAt: daysAgo(60),
+      completedAt: daysAgo(60),
+    });
+    await insertRunOnceClaim({
+      claimKey: 'claim-new',
+      status: 'completed',
+      createdAt: daysAgo(1),
+      completedAt: daysAgo(1),
+    });
+    await insertRunOnceClaim({
+      claimKey: 'claim-in-flight',
+      status: 'in_progress',
+      createdAt: daysAgo(60),
+      completedAt: null,
+    });
 
     const result = await runRetentionSweep(db);
 
     expect(result.failed).toBe(false);
-    expect(result.pruned).toBe(4);
+    expect(result.pruned).toBe(5);
     expect(result.tasks.map((task) => task.task)).toEqual([
       'changes',
       'ai-usage',
       'contexts',
       'dispatch',
+      'run-once-claims',
     ]);
     expect(await countRows('_smrt_changes')).toBe(1);
     expect(await countRows('_smrt_ai_usage')).toBe(1);
     expect(await countRows('_smrt_contexts')).toBe(1);
+    expect(await countRows('_smrt_run_once_claims')).toBe(2);
+    const remainingClaims = await db.query(
+      'SELECT claim_key FROM _smrt_run_once_claims ORDER BY claim_key ASC',
+    );
+    expect(remainingClaims.rows.map((row) => row.claim_key)).toEqual([
+      'claim-in-flight',
+      'claim-new',
+    ]);
     expect(await countRows('_smrt_dispatch')).toBe(1);
   });
 
@@ -551,7 +599,13 @@ describe('runRetentionSweep (#2375)', () => {
     // contributed task named e.g. "dispatch" would collide with the
     // built-in dispatch task's own result entry — and be unreachable
     // through RetentionPolicy.tasks, which only ever sees the built-in.
-    for (const reserved of ['changes', 'ai-usage', 'contexts', 'dispatch']) {
+    for (const reserved of [
+      'changes',
+      'ai-usage',
+      'contexts',
+      'dispatch',
+      'run-once-claims',
+    ]) {
       expect(() =>
         registerRetentionTask({ name: reserved, run: async () => 0 }),
       ).toThrow(/built-in task name/);
@@ -570,6 +624,7 @@ describe('retention predicate indexes (#2375)', () => {
     expect(names).toContain('idx_smrt_ai_usage_tenant_created');
     expect(names).toContain('idx_smrt_dispatch_status_processed');
     expect(names).toContain('idx_smrt_dispatch_status_updated');
+    expect(names).toContain('idx_smrt_run_once_claims_status_completed');
   });
 });
 
@@ -579,5 +634,6 @@ describe('DEFAULT_RETENTION_POLICY (#2375)', () => {
     expect(DEFAULT_RETENTION_POLICY.aiUsage.maxAgeDays).toBe(90);
     expect(DEFAULT_RETENTION_POLICY.dispatch.completedOlderThanDays).toBe(30);
     expect(DEFAULT_RETENTION_POLICY.dispatch.failedOlderThanDays).toBe(90);
+    expect(DEFAULT_RETENTION_POLICY.runOnceClaims.maxAgeDays).toBe(30);
   });
 });

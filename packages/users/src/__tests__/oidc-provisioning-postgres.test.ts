@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ensureSystemTables,
   migratePostgresSystemTimestamps,
+  SMRT_SCHEMA_VERSION,
 } from '@happyvertical/smrt-core';
 import {
   backfillProfileEmailKeys,
@@ -201,7 +202,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
       await expect(
         runtimeDb.query(
           'SELECT 1 FROM _smrt_migrations WHERE version = ? LIMIT 1',
-          '1.10.1',
+          SMRT_SCHEMA_VERSION,
         ),
       ).resolves.toMatchObject({ rows: [{ '?column?': 1 }] });
       let createStatements = 0;

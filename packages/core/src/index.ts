@@ -320,6 +320,7 @@ export {
   postgresRevisionCandidates,
   postgresRevisionCondition,
 } from './revision-guard';
+export * from './run-once';
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';

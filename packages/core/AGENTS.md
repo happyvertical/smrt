@@ -24,6 +24,7 @@ and repository rules.
 | `src/object.ts`, `src/collection.ts`, `src/learning/memory.ts` | Context memory and semantic search | [agents/memory.md](agents/memory.md) |
 | `src/system/diagnostics.ts` | SELECT-only `_smrt_*` diagnostics reader behind smrt-dev-mcp runtime tools (#1824) | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 | `src/system/registry-snapshot.ts` | Sanitized plain-JSON projection of the booted `ObjectRegistry` for the smrt-dev-mcp runtime dev-plane (#1831); never constructors, validators, values, or absolute paths | [agents/registry-snapshot.md](agents/registry-snapshot.md) |
+| `src/run-once.ts` | Shared idempotency seam: insert-only claim + caller work in one transaction, replay on retry, typed in-flight/unknown-outcome answers (#3080) | [agents/run-once.md](agents/run-once.md) |
 
 ## Cross-module invariants
 
@@ -54,6 +55,24 @@ and repository rules.
 - `withDatabase(db, callback)` restores only database bindings (including public
   `options.db`); `withTransaction(callback)` also restores identity/revision
   metadata after rollback. Do not use a bound instance concurrently.
+- `runOnce({ db, tenantId, actor, token, content }, work)` (`src/run-once.ts`,
+  #3080) claims a key derived from all four inputs — never the token alone,
+  which collapses distinct submissions — via `INSERT ... ON CONFLICT
+  (claim_key) DO NOTHING RETURNING claim_key` into the hand-DDL
+  `_smrt_run_once_claims` system table, and runs `work` in the SAME
+  transaction; a completed claim replays its stored result instead of
+  re-running, a failed `work` rolls the claim back with the transaction, and
+  an unresolved claim raises typed `RunOnceClaimError`
+  (`RUN_ONCE_IN_FLIGHT` / `RUN_ONCE_OUTCOME_UNKNOWN`) rather than guessing.
+  The claim insert must never raise on conflict: PostgreSQL aborts the whole
+  transaction on any raised error, which would take the recovery `SELECT`
+  down with it too — this is why it is `DO NOTHING`, not a plain `INSERT`
+  caught for `isUniqueViolationError`. Completed claims are bounded by
+  `runRetentionSweep()`'s `run-once-claims` task (`system/retention.ts`,
+  `DEFAULT_RETENTION_POLICY.runOnceClaims`, default 30 days on
+  `completed_at`; `in_progress` rows are never matched) — the window is a
+  replay deadline, not just disk hygiene: a token replayed after its claim
+  is swept runs `work()` again. See `agents/run-once.md`.
 - `ensureSystemTables(db, typeHint?)` provisions framework tables idempotently;
   call it on a base PostgreSQL connection before caller-owned transactions.
   Bootstrap uses a transaction-scoped advisory lock, taken only when the

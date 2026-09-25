@@ -67,6 +67,52 @@ const results = await products.list({
 
 ```
 
+### Run an action exactly once per submission (`runOnce`)
+
+A double-tapped submit, a retried request, or two concurrent requests should
+never write the same record twice. `runOnce()` (#3080) is the shared
+idempotency seam: an insert-only claim, written in the SAME transaction as
+the work it guards, so a retry either runs the work once or replays the first
+attempt's stored result.
+
+```typescript
+import { runOnce, RunOnceClaimError } from '@happyvertical/smrt-core';
+
+const purchaseOrderId = await runOnce(
+  {
+    db,
+    tenantId: session.tenantId,
+    actor: session.userId,
+    token: formData.get('submissionToken') as string, // minted once per rendered form
+    content: { supplierId, lines }, // only its digest is persisted, never the raw value
+  },
+  async (tx) => {
+    const po = await createPurchaseOrder(tx, { supplierId, lines });
+    return po.id; // must be JSON-serializable — this is what a replay returns
+  },
+);
+```
+
+- **Key derivation is `(tenantId, actor, token, contentDigest)` — never the
+  token alone.** A token-only key collapses two genuinely different
+  submissions that happen to reuse one form's token. `contentDigest` is a
+  sha256 of the sorted-key-JSON encoding of `content`, so key order never
+  changes it.
+- The claim lives in the hand-migrated `_smrt_run_once_claims` system table
+  (never an application table you migrate yourself) and only ever stores
+  digests plus the JSON-serialized `work()` result — never the raw token or
+  raw content.
+- A claim whose work is still in flight, or whose outcome cannot be resolved,
+  rejects with `RunOnceClaimError` (`code: 'RUN_ONCE_IN_FLIGHT'` or
+  `'RUN_ONCE_OUTCOME_UNKNOWN'`) instead of silently re-running or guessing —
+  mirroring the refused-vs-unknown-outcome distinction from #2990. Retry with
+  the SAME token and content; `runOnce()` never retries on its own.
+- If `work()` throws, the transaction that inserted the claim rolls it back
+  too — a failed attempt never strands a claim, and a retry with the same key
+  runs again.
+
+See [`agents/run-once.md`](agents/run-once.md) for the full contract.
+
 ### Bounded multi-collection reads
 
 When one request needs several independent collections, use a keyed read plan
@@ -527,6 +573,7 @@ Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember(
 | `AIError` | AI provider failures |
 | `ValidationError` | Field/object validation failures |
 | `RuntimeError` | General runtime failures |
+| `RunOnceClaimError` | `runOnce()` claim in flight or unresolvable (`RUN_ONCE_IN_FLIGHT` / `RUN_ONCE_OUTCOME_UNKNOWN`) |
 | `ErrorUtils` | Retry policy (`withRetry`, `isRetryable`) plus sanitization helpers |
 
 ### Database error classification
