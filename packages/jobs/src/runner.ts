@@ -216,6 +216,8 @@ export class TaskRunner extends EventEmitter {
   private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
+  /** Over-claimed job ids whose release back to `pending` has not landed. */
+  private unreleasedSurplus = new Set<string>();
   private pollTimer: NodeJS.Timeout | null = null;
   private idlePollDelayMs: number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
@@ -462,6 +464,7 @@ export class TaskRunner extends EventEmitter {
     if (!this.collection || !this.db) return true;
 
     await this.recoverStaleJobs();
+    await this.retryUnreleasedSurplus();
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -507,40 +510,49 @@ export class TaskRunner extends EventEmitter {
   /**
    * Return over-claimed rows to `pending` with their claim undone, so the
    * attempt is not consumed and any worker can claim them normally. Only rows
-   * this incarnation still owns as `running` are touched.
+   * this incarnation still owns as `running` are touched, in one statement.
+   *
+   * A failed release keeps the ids and is retried at the start of every poll.
+   * If this process dies first, stale recovery fails those rows as orphaned
+   * (it does not requeue), so the release is kept to a single round-trip.
    */
   private async releaseSurplusClaims(surplus: SmrtJob[]): Promise<void> {
-    if (!this.db) return;
     const ids = surplus
       .map((job) => job.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) return;
     this.emit(
       'runner:error',
       new Error(
         `claimReady returned ${ids.length} job(s) beyond the concurrency limit (${this.config.concurrency}); releasing them back to pending`,
       ),
     );
-    const nowIso = new Date().toISOString();
-    for (const id of ids) {
-      try {
-        await this.db.query(
-          `UPDATE _smrt_jobs
-              SET status = 'pending',
-                  worker_id = NULL,
-                  worker_heartbeat = NULL,
-                  started_at = NULL,
-                  attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
-                  updated_at = ?
-            WHERE id = ? AND worker_id = ? AND status = 'running'`,
-          nowIso,
-          id,
-          this.workerKey,
-        );
-      } catch (error) {
-        // Left `running` under a live lease; stale recovery reclaims it once
-        // this incarnation stops. Never start it here.
-        this.emit('runner:error', error as Error);
-      }
+    for (const id of ids) this.unreleasedSurplus.add(id);
+    await this.retryUnreleasedSurplus();
+  }
+
+  private async retryUnreleasedSurplus(): Promise<void> {
+    if (!this.db || this.unreleasedSurplus.size === 0) return;
+    const ids = [...this.unreleasedSurplus];
+    const placeholders = ids.map(() => '?').join(', ');
+    try {
+      await this.db.query(
+        `UPDATE _smrt_jobs
+            SET status = 'pending',
+                worker_id = NULL,
+                worker_heartbeat = NULL,
+                started_at = NULL,
+                attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+                updated_at = ?
+          WHERE worker_id = ? AND status = 'running' AND id IN (${placeholders})`,
+        new Date().toISOString(),
+        this.workerKey,
+        ...ids,
+      );
+      this.unreleasedSurplus.clear();
+    } catch (error) {
+      // Still `running` under this worker's live lease; never started here.
+      this.emit('runner:error', error as Error);
     }
   }
 

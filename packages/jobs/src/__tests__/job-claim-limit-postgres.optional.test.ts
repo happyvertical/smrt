@@ -21,7 +21,7 @@ import {
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { isPostgresAvailable } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backgroundEligible } from '../background-policy.js';
 import { ForgeDeliveryCollection } from '../forge-projection.js';
 import { createTaskRunner, type TaskRunner } from '../runner.js';
@@ -289,10 +289,21 @@ describePostgres('claim limit on PostgreSQL (#3145, #3105)', () => {
     const errors: Error[] = [];
     runner.on('runner:error', (error) => errors.push(error));
     await runner.start();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    const deadline = Date.now() + 20_000;
+    while (
+      peak === 0 ||
+      (await count(
+        db,
+        "SELECT COUNT(*) AS count FROM _smrt_jobs WHERE status = 'pending'",
+      )) !==
+        BACKLOG - 1
+    ) {
+      if (Date.now() > deadline) throw new Error('timed out');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
 
     expect(peak).toBe(1);
-    expect(runner.activeJobCount()).toBe(1);
+    expect(runner.activeJobCount()).toBeLessThanOrEqual(1);
     expect(
       await count(
         db,
@@ -304,6 +315,64 @@ describePostgres('claim limit on PostgreSQL (#3145, #3105)', () => {
         /beyond the concurrency limit/.test(error.message),
       ),
     ).toBe(true);
+  });
+
+  it('retries a failed surplus release on the next poll', async () => {
+    await seedBacklog('deploys');
+    const runner = createTaskRunner({
+      concurrency: 1,
+      queues: ['deploys'],
+      pollInterval: 20,
+      retention: false,
+    });
+    runners.push(runner);
+    await runner.initialize(db);
+    const collection = (runner as unknown as { collection: SmrtJobCollection })
+      .collection;
+    const realClaim = collection.claimReady.bind(collection);
+    collection.claimReady = (options) =>
+      realClaim({ ...options, limit: BACKLOG });
+    const realQuery = db.query.bind(db);
+    let failedOnce = false;
+    const spy = vi.spyOn(db, 'query').mockImplementation(((
+      sql: string,
+      ...params: unknown[]
+    ) => {
+      if (!failedOnce && /SET status = 'pending'/.test(sql)) {
+        failedOnce = true;
+        return Promise.reject(new Error('injected release failure'));
+      }
+      return realQuery(sql, ...params);
+    }) as typeof db.query);
+    const errors: Error[] = [];
+    runner.on('runner:error', (error) => errors.push(error));
+    try {
+      await runner.start();
+      const deadline = Date.now() + 20_000;
+      while (
+        (await count(
+          db,
+          "SELECT COUNT(*) AS count FROM _smrt_jobs WHERE status = 'completed' AND attempts > 0",
+        )) < BACKLOG
+      ) {
+        if (Date.now() > deadline) throw new Error('timed out');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(failedOnce).toBe(true);
+    expect(
+      errors.some((error) => error.message === 'injected release failure'),
+    ).toBe(true);
+    expect(peak).toBe(1);
+    const [attempts] = rows<{ max: number | string }>(
+      await db.query(
+        'SELECT MAX(attempts) AS max FROM _smrt_jobs WHERE attempts > 0',
+      ),
+    );
+    expect(Number(attempts?.max)).toBe(1);
   });
 
   it('leases exactly one forge delivery per claim from a backlog', async () => {
