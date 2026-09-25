@@ -213,6 +213,29 @@ describe('runOnce (#3080)', () => {
       );
     });
 
+    it('evaluates toJSON() once, so a stateful value cannot collapse two forms', () => {
+      const once = (data: FormData) => {
+        let calls = 0;
+        let pending: FormData | undefined = data;
+        const buffered = {
+          toJSON() {
+            calls += 1;
+            const value = pending;
+            pending = undefined;
+            return value;
+          },
+        };
+        return {
+          digest: digestRunOnceContent({ buffered }),
+          calls: () => calls,
+        };
+      };
+      const a = once(form([['sku', 'widget-1']]));
+      const b = once(form([['sku', 'widget-2']]));
+      expect(a.calls()).toBe(1);
+      expect(a.digest).not.toBe(b.digest);
+    });
+
     it('keeps plain JSON digests unchanged', () => {
       // sha256 of the sorted-key JSON, as #3080 stored it.
       expect(digestRunOnceContent({ sku: 'widget-1', amount: 100 })).toBe(

@@ -151,9 +151,12 @@ const FORM_DATA_TAG = '\u0000FormData';
  */
 const FORM_DATA_DOMAIN = '\u0001run-once-formdata-v1\n';
 
+/** A captured `FormData`: its ordered entries, already normalized. */
+class NormalizedFormData {
+  constructor(readonly entries: Array<[string, unknown]>) {}
+}
+
 interface NormalizeState {
-  /** Escape user keys starting with NUL so none can forge {@link FORM_DATA_TAG}. */
-  escapeKeys: boolean;
   sawFormData: boolean;
 }
 
@@ -191,13 +194,13 @@ function normalizeRunOnceContent(
   }
   if (typeof FormData !== 'undefined' && value instanceof FormData) {
     state.sawFormData = true;
-    const entries: unknown[] = [];
+    const entries: Array<[string, unknown]> = [];
     // `forEach`, not `entries()`: consumers type-check core's source against
     // DOM libs without `DOM.Iterable`, where FormData is not iterable.
     value.forEach((entry, key) => {
       entries.push([key, normalizeRunOnceContent(entry, state)]);
     });
-    return { [FORM_DATA_TAG]: entries };
+    return new NormalizedFormData(entries);
   }
   if (typeof Blob !== 'undefined' && value instanceof Blob) {
     return {
@@ -231,11 +234,37 @@ function normalizeRunOnceContent(
     ) {
       continue; // JSON drops these object members
     }
-    const safeKey =
-      state.escapeKeys && key.startsWith('\u0000') ? `\u0000${key}` : key;
-    result[safeKey] = normalizeRunOnceContent(member, state);
+    result[key] = normalizeRunOnceContent(member, state);
   }
   return result;
+}
+
+/**
+ * Map a normalized tree containing {@link NormalizedFormData} into the
+ * FormData hash domain: each form becomes `{ [FORM_DATA_TAG]: entries }`, and
+ * user keys starting with NUL are escaped (NUL doubled) so no plain object can
+ * forge the tag. Works on the captured tree, so no getter or `toJSON()` on the
+ * caller's content runs twice.
+ */
+function toFormDataDomain(value: unknown): unknown {
+  if (value instanceof NormalizedFormData) {
+    return {
+      [FORM_DATA_TAG]: value.entries.map(([key, entry]) => [
+        key,
+        toFormDataDomain(entry),
+      ]),
+    };
+  }
+  if (Array.isArray(value)) return value.map(toFormDataDomain);
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = Object.create(null);
+    for (const [key, member] of Object.entries(value)) {
+      result[key.startsWith('\u0000') ? `\u0000${key}` : key] =
+        toFormDataDomain(member);
+    }
+    return result;
+  }
+  return value;
 }
 
 /**
@@ -243,7 +272,7 @@ function normalizeRunOnceContent(
  *
  * Property order never changes the digest, so callers do not need to worry
  * about object construction order producing two different claims for what is
- * semantically the same submission. Content is normalized first (see
+ * semantically the same submission. Content is normalized exactly once (see
  * {@link normalizeRunOnceContent}): `toJSON()` values such as `Date` digest as
  * what they serialize to, a `FormData` digests as its ordered entries in a
  * separate hash domain, and values JSON would reduce to `{}` (`Map`, `Set`,
@@ -252,16 +281,10 @@ function normalizeRunOnceContent(
  * @throws {TypeError} when `content` contains a value with no faithful JSON form.
  */
 export function digestRunOnceContent(content: unknown): string {
-  const plain: NormalizeState = { escapeKeys: false, sawFormData: false };
-  const normalized = normalizeRunOnceContent(content, plain);
-  const input = plain.sawFormData
-    ? FORM_DATA_DOMAIN +
-      stableStringify(
-        normalizeRunOnceContent(content, {
-          escapeKeys: true,
-          sawFormData: false,
-        }),
-      )
+  const state: NormalizeState = { sawFormData: false };
+  const normalized = normalizeRunOnceContent(content, state);
+  const input = state.sawFormData
+    ? FORM_DATA_DOMAIN + stableStringify(toFormDataDomain(normalized))
     : stableStringify(normalized);
   return createHash('sha256').update(input).digest('hex');
 }
