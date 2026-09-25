@@ -380,8 +380,13 @@ await billing.processEvents();
   `recordCryptoConversion()` posts a conversion with FX gain/loss.
 - **Upgrading.** Additive schema: `_smrt_billing_payment_attempts` (run
   `smrt db:migrate`). A runtime without `paymentProviders` never reads it.
-- **One live payment per invoice**, and the issuer's own `paid` event for an
-  invoice closed out of band never records a payment: the rail does.
+- **One live payment per invoice.** The issuer's own `paid` event for an
+  invoice a rail closed out of band records nothing (the rail records it); an
+  out-of-band close made by someone else (wire, cheque) is recorded as an
+  `OTHER`-method payment; a real card payment made while a rail payment
+  confirms is recorded and the rail money is flagged `invoice_already_paid`.
+  An issuer close whose rail payment never settles is flagged
+  `out_of_band_without_settlement` for an operator to reopen.
 - **Entities.** Each legal entity is its own seller runtime with its own
   store, keys, and ledger. Inter-entity resale is ordinary reseller billing
   between two sellers, payable on any rail the selling entity offers.

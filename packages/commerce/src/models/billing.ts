@@ -318,7 +318,9 @@ export type BillingPaymentAttemptFlag =
   | 'manually_marked'
   | 'invalidated_after_settlement'
   | 'invoice_already_paid'
-  | 'amount_mismatch';
+  | 'amount_mismatch'
+  /** The issuer's invoice was closed out of band but the payment never settled. */
+  | 'out_of_band_without_settlement';
 
 /** One entry of an attempt's append-only status history. */
 export interface BillingPaymentAttemptTransition {

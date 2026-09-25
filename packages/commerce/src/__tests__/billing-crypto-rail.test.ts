@@ -345,6 +345,14 @@ describe('smrt#3138 crypto payment rail', () => {
         amountPaid: 6000,
         excessAmount: 1000,
       });
+      // More money after settlement is booked and refundable too.
+      world.gateway.set(session.sessionId, 'settled', {
+        exception: 'overpaid',
+        paid: 6500,
+      });
+      await world.railEvent(session.sessionId);
+      const [later] = await world.runtime.listPaymentAttempts({});
+      expect(later?.excessAmount).toBe(1500);
       // The excess is refunded first and leaves the credit alone.
       await world.runtime.recordManualRefund({
         paymentId: attempt?.paymentId ?? '',
@@ -465,11 +473,19 @@ describe('smrt#3138 crypto payment rail', () => {
       ).rejects.toThrow(/exceed the 0 USD/);
     });
 
-    it("never records the issuer's paid event as a payment when the invoice was closed out of band", async () => {
+    async function latch(checkoutId: string) {
+      const id = await world.runtime.paymentAttemptId('btcpay', checkoutId);
+      await world.db.query(
+        `UPDATE ${world.runtime.attempts.tableName} SET out_of_band_requested_at = ? WHERE id = ?`,
+        new Date().toISOString(),
+        id,
+      );
+    }
+
+    it("skips the issuer's paid event for an invoice this rail closed, and records the rail payment once", async () => {
       const invoice = await openInvoice();
-      await payWithRail(String(invoice.id));
-      // The issuer reports paid (out of band) before the rail's settlement
-      // is recorded, as when the rail's projection is retried.
+      const session = await payWithRail(String(invoice.id));
+      await latch(session.sessionId);
       world.outOfBand.push(String(invoice.externalId));
       world.stripe.pay(String(invoice.externalId));
       await deliverStripe(
@@ -477,10 +493,57 @@ describe('smrt#3138 crypto payment rail', () => {
         invoiceEvent('invoice.paid', String(invoice.externalId)),
       );
       expect(await sellerPayments(world)).toEqual([]);
-      const pending = await world.db.query(
-        "SELECT status FROM _smrt_forge_deliveries WHERE status = 'retry'",
+      const open = await world.db.query(
+        "SELECT status FROM _smrt_forge_deliveries WHERE status <> 'completed'",
       );
-      expect(pending.rows).toHaveLength(1);
+      expect(open.rows).toEqual([]);
+      world.gateway.set(session.sessionId, 'settled');
+      await world.railEvent(session.sessionId);
+      const payments = await sellerPayments(world);
+      expect(payments.map((row) => row.method)).toEqual([PaymentMethod.CRYPTO]);
+      expect((await soloInvoice(world)).status).toBe(InvoiceStatus.PAID);
+    });
+
+    it('records an out-of-band close made by someone else as an other-method payment', async () => {
+      const invoice = await openInvoice();
+      world.outOfBand.push(String(invoice.externalId));
+      world.stripe.pay(String(invoice.externalId));
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      const payments = await sellerPayments(world);
+      expect(payments.map((row) => row.method)).toEqual([PaymentMethod.OTHER]);
+    });
+
+    it('records a card payment made while a rail payment confirms, and flags the rail money', async () => {
+      const invoice = await openInvoice();
+      const session = await payWithRail(String(invoice.id));
+      world.gateway.set(session.sessionId, 'confirming');
+      await world.railEvent(session.sessionId);
+      world.stripe.pay(String(invoice.externalId));
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect((await soloInvoice(world)).status).toBe(InvoiceStatus.PAID);
+      world.gateway.set(session.sessionId, 'settled');
+      await world.railEvent(session.sessionId);
+      const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt?.flag).toBe('invoice_already_paid');
+      expect(
+        (await sellerPayments(world)).map((row) => row.method).sort(),
+      ).toEqual([PaymentMethod.CREDIT_CARD, PaymentMethod.CRYPTO].sort());
+    });
+
+    it('flags an issuer close whose payment never settled', async () => {
+      const invoice = await openInvoice();
+      const session = await payWithRail(String(invoice.id));
+      await latch(session.sessionId);
+      world.gateway.set(session.sessionId, 'expired', { paid: 0 });
+      await world.railEvent(session.sessionId);
+      const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt?.flag).toBe('out_of_band_without_settlement');
     });
 
     it("allows one live rail payment per invoice and hides other payers' invoices", async () => {
@@ -502,6 +565,24 @@ describe('smrt#3138 crypto payment rail', () => {
       await expect(
         payWithRail('00000000-0000-4000-8000-0000000000ff'),
       ).rejects.toThrow(/was not found for this payer/);
+    });
+
+    it('resumes dunning when a confirming payment is refused at settlement', async () => {
+      const invoice = await openInvoice();
+      const session = await payWithRail(String(invoice.id));
+      world.gateway.set(session.sessionId, 'confirming');
+      await world.railEvent(session.sessionId);
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.overdue', String(invoice.externalId)),
+      );
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
+      world.gateway.set(session.sessionId, 'settled', {
+        exception: 'manually_marked',
+        paid: 0,
+      });
+      await world.railEvent(session.sessionId);
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('past_due');
     });
 
     it('re-applies an uncollectible standing paused while a payment confirmed', async () => {

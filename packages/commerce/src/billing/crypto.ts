@@ -214,6 +214,7 @@ function toAttemptState(
   );
   return {
     checkoutId: checkout.id,
+    orderId: checkout.orderId,
     status: checkout.status,
     exception: checkout.exception,
     amount: checkout.amount,

@@ -171,7 +171,9 @@ export async function createInvoicePayment(
     (row) =>
       (row.status === 'open' || row.status === 'confirming') && !row.settledAt,
   );
-  const busy = live.find((row) => row.orderId !== orderId);
+  // Rows without an order id (created before it was recorded) are left to
+  // the gateway, whose creation is idempotent by order id.
+  const busy = live.find((row) => row.orderId && row.orderId !== orderId);
   if (busy) {
     throw new Error(
       `Invoice ${invoice.invoiceNumber} already has a payment in progress on ${busy.provider}.`,

@@ -285,15 +285,13 @@ async function settlePaidInvoice(
 ): Promise<void> {
   if (invoice.status === InvoiceStatus.PAID) return;
   if (
-    state.paidOutOfBand ||
-    (runtime.hasPaymentRails &&
-      (await railSettlementPending(runtime, db, String(invoice.id))))
+    state.paidOutOfBand &&
+    runtime.hasPaymentRails &&
+    (await railClosedOutOfBand(runtime, db, String(invoice.id)))
   ) {
-    // The issuer collected nothing: the payment rail that took the money
-    // (#3138) records it. Wait for that rather than recording a payment.
-    throw new Error(
-      `Invoice ${invoice.invoiceNumber} was paid on another rail; the paid event will be retried after that payment is recorded.`,
-    );
+    // This rail closed the invoice at the issuer (#3138) and records the
+    // payment itself in its own event; the issuer collected nothing.
+    return;
   }
   if (invoice.status === InvoiceStatus.DRAFT) {
     // Period close has not recorded the send yet; retry after it has.
@@ -327,7 +325,10 @@ async function settlePaidInvoice(
         customerId: invoice.customerId,
         amount: state.amountPaid,
         currency: invoice.currency,
-        method: PaymentMethod.CREDIT_CARD,
+        // Closed out of band by someone else (wire, cheque): not a card.
+        method: state.paidOutOfBand
+          ? PaymentMethod.OTHER
+          : PaymentMethod.CREDIT_CARD,
         reference: invoice.invoiceNumber,
         externalId: state.providerInvoiceId,
         externalProvider: runtime.provider.name,
@@ -587,6 +588,7 @@ async function observeAttempt(
       // Committed before the issuer is told, so the issuer's own `paid`
       // event waits for this settlement instead of recording a payment.
       const row = await runtime.recordPaymentAttemptStart({
+        orderId: attempt.orderId,
         provider: provider.name,
         checkoutId: attempt.checkoutId,
         checkoutUrl: attempt.checkoutUrl ?? '',
@@ -598,8 +600,14 @@ async function observeAttempt(
         currency: target.currency,
       });
       if (!row.outOfBandRequestedAt) {
-        row.outOfBandRequestedAt = new Date();
-        await row.save();
+        // Column-scoped, so it cannot overwrite a concurrent writer's fields.
+        await runtime.db.query(
+          `UPDATE ${runtime.attempts.tableName}
+              SET out_of_band_requested_at = ?
+            WHERE id = ? AND out_of_band_requested_at IS NULL`,
+          new Date().toISOString(),
+          String(row.id),
+        );
       }
       await runtime.provider.markInvoicePaidOutOfBand(invoice.externalId);
     }
@@ -685,6 +693,13 @@ async function pauseForConfirmingAttempts(
   standing: BillingStanding,
 ): Promise<boolean> {
   const attempts = await BillingPaymentAttemptCollection.create({ db });
+  // Lock before reading, so a concurrent writer's fields are not lost.
+  await db.query(
+    `UPDATE ${attempts.tableName} SET updated_at = updated_at
+      WHERE seller_tenant_id = ? AND invoice_id = ? AND status = 'confirming'`,
+    runtime.sellerTenantId,
+    invoiceId,
+  );
   const rows = await attempts.list({
     where: {
       sellerTenantId: runtime.sellerTenantId,
@@ -704,8 +719,8 @@ async function pauseForConfirmingAttempts(
   return rows.length > 0;
 }
 
-/** A rail payment for this invoice is settled or still confirming. */
-async function railSettlementPending(
+/** A rail of this runtime asked the issuer to close this invoice. */
+async function railClosedOutOfBand(
   runtime: BillingRuntime,
   db: DatabaseInterface,
   invoiceId: string,
@@ -714,10 +729,5 @@ async function railSettlementPending(
   const rows = await attempts.list({
     where: { sellerTenantId: runtime.sellerTenantId, invoiceId },
   });
-  return rows.some(
-    (row) =>
-      row.status === 'confirming' ||
-      Boolean(row.settledAt) ||
-      Boolean(row.outOfBandRequestedAt),
-  );
+  return rows.some((row) => Boolean(row.outOfBandRequestedAt));
 }

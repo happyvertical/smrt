@@ -813,10 +813,16 @@ export class BillingRuntime {
       throw new Error(`Payment attempt ${attemptId} was not found.`);
     }
     if (!resolution.trim()) throw new Error('A resolution note is required.');
-    attempt.resolution = resolution.trim();
-    attempt.resolvedAt = new Date();
-    await attempt.save();
-    return attempt;
+    // Column-scoped: never overwrites what an event or refund wrote.
+    await this.db.query(
+      `UPDATE ${this.attempts.tableName}
+          SET resolution = ?, resolved_at = ?
+        WHERE id = ?`,
+      resolution.trim(),
+      new Date().toISOString(),
+      String(attempt.id),
+    );
+    return (await this.attempts.get(String(attempt.id))) ?? attempt;
   }
 
   /**

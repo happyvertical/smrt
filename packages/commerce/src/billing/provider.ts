@@ -194,6 +194,8 @@ export interface BillingPaymentAttemptPayment {
  */
 export interface BillingPaymentAttemptState {
   checkoutId: string;
+  /** The rail order id the checkout was created for. */
+  orderId?: string;
   status: BillingPaymentAttemptStatus;
   exception: BillingPaymentAttemptException;
   /** The locked fiat price. */

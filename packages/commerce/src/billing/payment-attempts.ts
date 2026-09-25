@@ -254,6 +254,9 @@ export async function applyPaymentAttempt(
 ): Promise<AttemptOutcome> {
   const attempts = await BillingPaymentAttemptCollection.create({ db });
   const id = await runtime.paymentAttemptId(providerName, state.checkoutId);
+  // Lock before reading, so a concurrent writer (a refund, a paused
+  // standing) is never overwritten by this full-row save.
+  await lockAttempt(db, attempts.tableName, id);
   const attempt =
     (await attempts.get(id)) ??
     (await attempts.create({
@@ -265,6 +268,7 @@ export async function applyPaymentAttempt(
       invoiceId: target.invoiceId,
       spendingPolicyId: target.spendingPolicyId,
       provider: providerName,
+      orderId: state.orderId ?? '',
       checkoutId: state.checkoutId,
       amount: target.amount,
       currency: target.currency,
@@ -274,6 +278,7 @@ export async function applyPaymentAttempt(
       _insertOnly: true,
     }));
   const wasConfirming = attempt.status === 'confirming';
+  if (!attempt.orderId && state.orderId) attempt.orderId = state.orderId;
   const changed =
     attempt.status !== state.status || attempt.exception !== state.exception;
   const timeline = attempt.transitions;
@@ -308,6 +313,29 @@ export async function applyPaymentAttempt(
     // automatic reversal.
     if (state.status === 'invalid')
       attempt.flag = 'invalidated_after_settlement';
+    // Money that arrived after settlement is the payer's too: book it.
+    const excess = Math.max(0, state.amountPaid - target.amount);
+    if (excess > attempt.excessAmount && attempt.paymentId) {
+      const holdings =
+        runtime.ledger.cryptoHoldingsAccountId || runtime.ledger.cashAccountId;
+      await postOnce(
+        runtime,
+        db,
+        `overpayment:${attempt.paymentId}:${excess}`,
+        {
+          description: `Payment after settlement on ${providerName} checkout ${state.checkoutId}`,
+          entries: [
+            { accountId: holdings, debit: excess - attempt.excessAmount },
+            {
+              accountId: runtime.ledger.prepaidCreditAccountId,
+              credit: excess - attempt.excessAmount,
+            },
+          ],
+        },
+      );
+      attempt.excessAmount = excess;
+      if (!attempt.flag) attempt.flag = 'overpaid';
+    }
   } else if (decision.action === 'settle') {
     const result = await settleAttempt(runtime, db, attempt, state, target);
     attempt.paymentId = result.paymentId;
@@ -319,12 +347,21 @@ export async function applyPaymentAttempt(
   } else if (decision.flag) {
     attempt.flag = decision.flag;
   }
-  await attempt.save();
 
+  // Ended without settling: it stopped confirming and this did not settle
+  // it (expired, invalid, or reported settled but refused by the policy).
   const endedUnsettled =
-    wasConfirming &&
+    wasConfirming && !attempt.settledAt && state.status !== 'confirming';
+  if (
+    attempt.outOfBandRequestedAt &&
     !attempt.settledAt &&
-    (state.status === 'expired' || state.status === 'invalid');
+    (state.status === 'expired' || state.status === 'invalid')
+  ) {
+    // The issuer was told the invoice was paid, but the money never settled:
+    // an operator must reopen it at the issuer.
+    attempt.flag = 'out_of_band_without_settlement';
+  }
+  await attempt.save();
   if (
     settled &&
     runtime.paymentPolicy.cryptoTreatment === 'convert' &&
@@ -560,103 +597,119 @@ export async function recordManualRefund(
   const reference = input.reference?.trim();
   if (!reference) throw new Error('A reference is required.');
   const basis = input.basis ?? runtime.paymentPolicy.refundBasis;
-  return withSystemContext(async () => {
-    const [attempt] = await runtime.attempts.list({
-      where: {
-        sellerTenantId: runtime.sellerTenantId,
-        paymentId: input.paymentId,
-      },
-      limit: 1,
-    });
-    if (!attempt?.id || !attempt.settledAt) {
-      throw new Error(
-        `Payment ${input.paymentId} is not a settled payment-rail payment of this seller.`,
-      );
-    }
-    const done = attempt.refundRecords.find(
-      (record) => record.reference === reference,
-    );
-    if (done) {
-      return {
-        journalId: String(done.journalId ?? ''),
-        creditGrantId: String(done.creditGrantId ?? ''),
-      };
-    }
-    const principalRefundable =
-      attempt.purpose === 'credit_purchase' ||
-      attempt.flag === 'invoice_already_paid'
-        ? attempt.amount
-        : 0;
-    const refundedExcess = attempt.refundedAmount - attempt.refundedPrincipal;
-    const excessLeft = attempt.excessAmount - refundedExcess;
-    const principalLeft = principalRefundable - attempt.refundedPrincipal;
-    if (input.fiatAmount > excessLeft + principalLeft) {
-      throw new Error(
-        `A refund of ${input.fiatAmount} would exceed the ${excessLeft + principalLeft} ${attempt.currency} still refundable on this payment.`,
-      );
-    }
-    const fromExcess = Math.min(input.fiatAmount, excessLeft);
-    const fromPrincipal = input.fiatAmount - fromExcess;
-    const ledger = runtime.ledger;
-    const holdings = ledger.cryptoHoldingsAccountId || ledger.cashAccountId;
-    const journalId = await postOnce(
-      runtime,
-      runtime.db,
-      `refund:${attempt.id}:${reference}`,
-      {
-        description: `Refund ${reference} (${basis}${
-          input.nativeAmount ? `, ${input.nativeAmount} native` : ''
-        }): ${input.reason}`,
-        entries: [
-          // Excess and credit kept for an already-paid invoice both sit in
-          // the prepaid-credit liability, as does purchased credit.
-          { accountId: ledger.prepaidCreditAccountId, debit: input.fiatAmount },
-          { accountId: holdings, credit: input.fiatAmount },
-        ],
-      },
-    );
-    let creditGrantId = '';
-    if (
-      fromPrincipal > 0 &&
-      attempt.purpose === 'credit_purchase' &&
-      attempt.spendingPolicyId
-    ) {
-      const grant = await (
-        await SpendingPolicyEvaluator.create({ db: runtime.db })
-      ).grantCredit({
-        spendingPolicyId: attempt.spendingPolicyId,
-        amount: -fromPrincipal,
-        reason: `Refund: ${input.reason}`,
-        source: `${attempt.provider}-refund`,
-        sourceId: reference,
-      });
-      creditGrantId = String(grant.id ?? '');
-    }
-    const refunds = attempt.refundRecords;
-    refunds.push({
-      reference,
-      amount: input.fiatAmount,
-      principal: fromPrincipal,
-      nativeAmount: input.nativeAmount ?? null,
-      basis,
-      reason: input.reason,
-      journalId,
-      creditGrantId,
-      at: new Date().toISOString(),
-    });
-    attempt.refunds = refunds;
-    attempt.refundedAmount += input.fiatAmount;
-    attempt.refundedPrincipal += fromPrincipal;
-    attempt.resolution = [
-      attempt.resolution,
-      `refunded ${input.fiatAmount} ${attempt.currency} (${basis}) ref ${reference}`,
-    ]
-      .filter(Boolean)
-      .join('; ');
-    attempt.resolvedAt = new Date();
-    await attempt.save();
-    return { journalId, creditGrantId };
+  const [found] = await runtime.attempts.list({
+    where: {
+      sellerTenantId: runtime.sellerTenantId,
+      paymentId: input.paymentId,
+    },
+    limit: 1,
   });
+  if (!found?.id) {
+    throw new Error(
+      `Payment ${input.paymentId} is not a settled payment-rail payment of this seller.`,
+    );
+  }
+  const inTransaction = <T>(work: (db: DatabaseInterface) => Promise<T>) =>
+    runtime.db.transaction ? runtime.db.transaction(work) : work(runtime.db);
+  return withSystemContext(() =>
+    inTransaction(async (db) => {
+      const attempts = await BillingPaymentAttemptCollection.create({ db });
+      // Serialize refunds of one payment: the cumulative cap reads, then writes.
+      await lockAttempt(db, attempts.tableName, String(found.id));
+      const attempt = await attempts.get(String(found.id));
+      if (!attempt?.id || !attempt.settledAt) {
+        throw new Error(
+          `Payment ${input.paymentId} is not a settled payment-rail payment of this seller.`,
+        );
+      }
+      const done = attempt.refundRecords.find(
+        (record) => record.reference === reference,
+      );
+      if (done) {
+        return {
+          journalId: String(done.journalId ?? ''),
+          creditGrantId: String(done.creditGrantId ?? ''),
+        };
+      }
+      const principalRefundable =
+        attempt.purpose === 'credit_purchase' ||
+        attempt.flag === 'invoice_already_paid'
+          ? attempt.amount
+          : 0;
+      const refundedExcess = attempt.refundedAmount - attempt.refundedPrincipal;
+      const excessLeft = attempt.excessAmount - refundedExcess;
+      const principalLeft = principalRefundable - attempt.refundedPrincipal;
+      if (input.fiatAmount > excessLeft + principalLeft) {
+        throw new Error(
+          `A refund of ${input.fiatAmount} would exceed the ${excessLeft + principalLeft} ${attempt.currency} still refundable on this payment.`,
+        );
+      }
+      const fromExcess = Math.min(input.fiatAmount, excessLeft);
+      const fromPrincipal = input.fiatAmount - fromExcess;
+      const ledger = runtime.ledger;
+      const holdings = ledger.cryptoHoldingsAccountId || ledger.cashAccountId;
+      const journalId = await postOnce(
+        runtime,
+        db,
+        `refund:${attempt.id}:${reference}`,
+        {
+          description: `Refund ${reference} (${basis}${
+            input.nativeAmount ? `, ${input.nativeAmount} native` : ''
+          }): ${input.reason}`,
+          entries: [
+            // Excess and credit kept for an already-paid invoice both sit in
+            // the prepaid-credit liability, as does purchased credit.
+            {
+              accountId: ledger.prepaidCreditAccountId,
+              debit: input.fiatAmount,
+            },
+            { accountId: holdings, credit: input.fiatAmount },
+          ],
+        },
+      );
+      let creditGrantId = '';
+      if (
+        fromPrincipal > 0 &&
+        attempt.purpose === 'credit_purchase' &&
+        attempt.spendingPolicyId
+      ) {
+        const grant = await (
+          await SpendingPolicyEvaluator.create({ db })
+        ).grantCredit({
+          spendingPolicyId: attempt.spendingPolicyId,
+          amount: -fromPrincipal,
+          reason: `Refund: ${input.reason}`,
+          source: `${attempt.provider}-refund`,
+          sourceId: reference,
+        });
+        creditGrantId = String(grant.id ?? '');
+      }
+      const refunds = attempt.refundRecords;
+      refunds.push({
+        reference,
+        amount: input.fiatAmount,
+        principal: fromPrincipal,
+        nativeAmount: input.nativeAmount ?? null,
+        basis,
+        reason: input.reason,
+        journalId,
+        creditGrantId,
+        at: new Date().toISOString(),
+      });
+      attempt.refunds = refunds;
+      attempt.refundedAmount += input.fiatAmount;
+      attempt.refundedPrincipal += fromPrincipal;
+      attempt.resolution = [
+        attempt.resolution,
+        `refunded ${input.fiatAmount} ${attempt.currency} (${basis}) ref ${reference}`,
+      ]
+        .filter(Boolean)
+        .join('; ');
+      attempt.resolvedAt = new Date();
+      await attempt.save();
+      return { journalId, creditGrantId };
+    }),
+  );
 }
 
 export interface CryptoConversionInput {
@@ -726,6 +779,17 @@ export async function recordCryptoConversion(
     },
   );
   return { journalId };
+}
+
+async function lockAttempt(
+  db: DatabaseInterface,
+  tableName: string,
+  id: string,
+): Promise<void> {
+  await db.query(
+    `UPDATE ${tableName} SET updated_at = updated_at WHERE id = ?`,
+    id,
+  );
 }
 
 interface JournalLine {
