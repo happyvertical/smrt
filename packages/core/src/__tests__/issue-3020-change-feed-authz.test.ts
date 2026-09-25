@@ -274,6 +274,51 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
       expect(page.cursor).toBeGreaterThan(0);
     });
 
+    it('fails closed to no tables when the hook returns a table name containing a NUL byte (Copilot #3020 follow-up)', async () => {
+      // A NUL byte is exactly what an earlier version's own synthesized
+      // sentinel table name hit on PostgreSQL (#3020 P1) — but here it comes
+      // from the HOOK's own answer, not a synthesized value, and would
+      // otherwise be bound straight into `table_name IN (...)`. Validation
+      // must reject it before it ever reaches a query.
+      setChangeFeedAuthorizer(() => [`${PUNCHES_TABLE}\u0000evil`]);
+      await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
+
+      const page = await getAuthorizedTenantScopedChangesSince(db, {
+        since: 0,
+        locals: stationLocals,
+        request: stationRequest,
+      });
+      expect(page.changes).toHaveLength(0);
+      expect(page.cursor).toBeGreaterThan(0);
+      expect(page.resyncRequired).toBeUndefined();
+    });
+
+    it('fails closed to no tables when the hook returns an empty-string table name', async () => {
+      setChangeFeedAuthorizer(() => ['']);
+      await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
+
+      const page = await getAuthorizedTenantScopedChangesSince(db, {
+        since: 0,
+        locals: stationLocals,
+        request: stationRequest,
+      });
+      expect(page.changes).toHaveLength(0);
+      expect(page.cursor).toBeGreaterThan(0);
+    });
+
+    it('resolveAuthorizedChangeFeedTables itself fails closed on an invalid returned table name', async () => {
+      const ctx = { locals: stationLocals, request: stationRequest };
+      setChangeFeedAuthorizer(() => [`bad\u0000table`]);
+      await expect(
+        resolveAuthorizedChangeFeedTables(ctx, undefined),
+      ).resolves.toEqual([]);
+
+      setChangeFeedAuthorizer(() => ['']);
+      await expect(
+        resolveAuthorizedChangeFeedTables(ctx, undefined),
+      ).resolves.toEqual([]);
+    });
+
     it('never falls back to the unfiltered feed on a denied read (getAuthorizedChangesSince, the non-tenant-scoped variant)', async () => {
       setChangeFeedAuthorizer(() => []);
       await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });

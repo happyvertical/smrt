@@ -102,5 +102,29 @@ describe.skipIf(!pgUrl)(
       expect(next.changes).toHaveLength(0);
       expect(next.cursor).toBe(page.cursor);
     });
+
+    it('a hook returning a NUL-byte table name never reaches the driver, and answers 200/empty (#3020 Copilot follow-up)', async () => {
+      // The hook's own answer — not a synthesized sentinel — containing a
+      // NUL byte. Table-name validation in change-feed-authz.ts must fail
+      // this closed to deny-all before it is ever bound into an ordinary
+      // `table_name IN (...)` clause, where PostgreSQL would 500 on it.
+      setChangeFeedAuthorizer(() => [`${PUNCHES_TABLE}\u0000evil`]);
+      await appendChange(db, {
+        table: PUNCHES_TABLE,
+        rowId: 'p2',
+        operation: 'create',
+      });
+
+      const request = new Request('http://localhost/api/_changes');
+      const page = await getAuthorizedTenantScopedChangesSince(db, {
+        since: 0,
+        locals: undefined,
+        request,
+      });
+
+      expect(page.changes).toHaveLength(0);
+      expect(page.cursor).toBeGreaterThan(0);
+      expect(page.resyncRequired).toBeUndefined();
+    });
   },
 );

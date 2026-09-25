@@ -172,6 +172,15 @@ every table" and silently break the promised unchanged default (#3020
 follow-up). Once a hook IS registered, its own answer is what decides
 deny-all, exactly as above.
 
+A registered hook's returned table list is also validated for USABLE
+strings, not just string-typed ones: any entry that is empty or contains a
+NUL byte fails the whole call closed to `[]` (deny all), the same posture as
+a non-array or non-string result. This closes the same NUL-byte hazard the
+`denyAllTables` sentinel removal above fixed for a *synthesized* value — here
+the NUL byte would come from the hook's OWN answer, which otherwise flows
+straight into the ordinary `table_name IN (...)` clause and 500s on
+PostgreSQL (#3020 Copilot follow-up).
+
 `getAuthorizedChangesSince()` / `getAuthorizedTenantScopedChangesSince()` wrap
 `getChangesSince()` / `getTenantScopedChangesSince()` with both hooks applied;
 BOTH `_changes` routes (SvelteKit's `vite-plugin/changes-route.ts` and REST's

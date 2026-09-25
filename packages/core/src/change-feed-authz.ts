@@ -209,6 +209,19 @@ export function isChangeFeedDenyAll(tables: string[] | undefined): boolean {
 }
 
 /**
+ * Whether `name` is a usable change-feed table name: a non-empty string
+ * containing no NUL byte. A NUL byte is PostgreSQL's hard failure mode — it
+ * rejects one outright in a text parameter — so a hook returning one would
+ * otherwise reach the ordinary `table_name IN (...)` clause (built from the
+ * hook's OWN answer, not a client-supplied value) and turn a legitimate
+ * authorization decision into a 500 instead of the documented fail-closed
+ * 200/empty contract. An empty string is equally never a real table name.
+ */
+function isValidChangeFeedTableName(name: string): boolean {
+  return name.length > 0 && !name.includes('\u0000');
+}
+
+/**
  * Resolve the tables a request may read from the feed: the registered
  * {@link ChangeFeedTableAuthorizer}'s answer intersected with the client's
  * own `?tables=` filter (never widened by it). Returns `requestedTables`
@@ -222,7 +235,10 @@ export function isChangeFeedDenyAll(tables: string[] | undefined): boolean {
  *
  * Once a hook is registered, the result is always an explicit array (possibly
  * empty): a throwing or malformed hook fails closed to `[]` (logged, never
- * surfaced as a 5xx — see module docs).
+ * surfaced as a 5xx — see module docs). A returned table name that is not
+ * {@link isValidChangeFeedTableName} (at minimum: contains a NUL byte, or is
+ * empty) is treated the same way — the hook's own answer must never be able
+ * to reach the database with an unusable value.
  */
 export async function resolveAuthorizedChangeFeedTables(
   ctx: ChangeFeedRequestContext,
@@ -238,9 +254,14 @@ export async function resolveAuthorizedChangeFeedTables(
   let allowed: string[];
   try {
     const result = await authorizer({ ...ctx, tables: requestedTables });
-    if (!Array.isArray(result) || result.some((t) => typeof t !== 'string')) {
+    if (
+      !Array.isArray(result) ||
+      result.some(
+        (t) => typeof t !== 'string' || !isValidChangeFeedTableName(t),
+      )
+    ) {
       logger.error(
-        'authorizeChangeFeed() returned a non-string-array result; failing closed to no tables',
+        'authorizeChangeFeed() returned a non-string-array or invalid table name; failing closed to no tables',
       );
       return [];
     }
