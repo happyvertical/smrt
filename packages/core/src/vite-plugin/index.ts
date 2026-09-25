@@ -60,6 +60,7 @@ import {
   generateWebModule,
   selectWebCollectionEntries,
 } from './web-collections.js';
+import { buildWorkerRegistration } from './worker-registration.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
@@ -668,6 +669,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let generatedRoutesDuringConfig = false;
   let routeLifecycleConfig: object | undefined;
   let routeExpectedOwners: Array<'producer' | 'consumer'> = ['producer'];
+  let workerRegistrationBuilt = false;
 
   async function generateConfiguredSvelteKitRoutes(
     rootDir: string,
@@ -1333,6 +1335,41 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     },
 
     async closeBundle() {
+      // After the SvelteKit server build, compile the generated registration
+      // into `.smrt/runtime/register.js` for out-of-bundle worker processes
+      // (#3117). Once per build; a failure fails the build, because a worker
+      // without it cannot run any application-defined job.
+      const environment = (
+        this as { environment?: { config?: { consumer?: string } } }
+      ).environment;
+      const serverBuild =
+        environment?.config?.consumer === 'server' || !!config?.build?.ssr;
+      if (
+        svelteKit.enabled &&
+        config?.command === 'build' &&
+        !config.build?.lib &&
+        serverBuild &&
+        !workerRegistrationBuilt
+      ) {
+        workerRegistrationBuilt = true;
+        const registrationFile = join(
+          projectRoot,
+          svelteKit.configPath || 'src/lib/server',
+          'smrt-register.ts',
+        );
+        if (!existsSync(registrationFile)) {
+          throw new Error(
+            `[smrt] Cannot compile worker registration: ${registrationFile} was not generated.`,
+          );
+        }
+        const output = await buildWorkerRegistration({
+          projectRoot,
+          registrationFile,
+          resolvedConfig: config,
+        });
+        console.log(`[smrt] Compiled worker registration to ${output}`);
+      }
+
       // Write manifest to disk during library builds
       // This allows published packages to include their manifest
       if (!manifest || !config?.build?.lib || generationSnapshot) {

@@ -353,7 +353,11 @@ The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration
 service. The runtime image retains the generated manifest and operator CLI for
 doctor/export/import. `pnpm worker` and `pnpm worker:schedule` are separate from
-the web process.
+the web process. Workers register the app's own objects from
+`.smrt/runtime/register.js`, which `pnpm build` compiles, so a scheduled or
+queued job may target objects in `src/lib/objects`; build before starting a
+worker. A worker is a plain Node process: an object that imports a SvelteKit
+virtual module (`$env/*`, `$app/*`) or a `.svelte` file cannot load there.
 Logical export/import is manifest-driven JSON and refuses a non-empty target;
 it orders parent tables first and defers nullable cycle edges until every row
 exists. Export reads all model tables from one transaction snapshot. Every

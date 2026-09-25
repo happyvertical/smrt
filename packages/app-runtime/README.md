@@ -163,9 +163,14 @@ provider selectors, tenancy posture, and worker topology without secret values.
 
 Job producers keep using `SmrtObject.bg()` / `background().enqueue()` in every
 profile. Deployed worker entry points initialize the ordinary runners against
-the same PostgreSQL database:
+the same PostgreSQL database. A worker is a separate Node process, so it must
+first import the application's compiled object registration —
+`.smrt/runtime/register.js`, produced by a SvelteKit `smrtPlugin()` build — or
+any job targeting an application object fails with `Unknown object type`:
 
 ```ts
+await import('./.smrt/runtime/register.js');
+
 const taskWorker = await initialized.createTaskWorker({ concurrency: 8 });
 await taskWorker.start();
 

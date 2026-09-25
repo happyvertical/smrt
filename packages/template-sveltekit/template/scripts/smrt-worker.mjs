@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { initializeDeployedApplicationRuntime } from '@happyvertical/smrt-app-runtime';
 import {
   loadConfig,
@@ -14,6 +16,18 @@ if (configured.profile === 'local') {
   throw new Error('Local jobs run inline or embedded; a separate worker requires self-hosted or cloud.');
 }
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
+
+// Register this application's own @smrt() objects (and the consumed packages'
+// objects) before any runner resolves a job's objectType. `pnpm build`
+// compiles the generated registration into this module; the web server's
+// bundle is not importable from a separate Node process.
+const registration = new URL('../.smrt/runtime/register.js', import.meta.url);
+if (!existsSync(fileURLToPath(registration))) {
+  throw new Error(
+    'Missing .smrt/runtime/register.js: run pnpm build before starting a worker.',
+  );
+}
+await import(registration.href);
 
 const runtime = await initializeDeployedApplicationRuntime({
   profile: configured.profile,

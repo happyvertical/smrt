@@ -17,7 +17,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
 - The production baseline uses adapter-node with separate web, task-worker, and
-  schedule-worker processes. Its runtime image retains the generated manifest
+  schedule-worker processes. Workers import the build-compiled
+  `.smrt/runtime/register.js` (#3117) before creating runners so app-defined
+  jobs resolve the app's own objects. Its runtime image retains the generated manifest
   and operator CLI needed by `app:doctor`, `app:export`, and `app:import`.
 - Deployed authentication, asset, and secret readiness is delegated to
   installed provider-owned probe modules; never replace it with truthy flags.

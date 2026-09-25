@@ -221,8 +221,10 @@ If that startup cleanup fails, the redacted
 the provider closes successfully.
 
 The web, task-worker, and schedule-worker processes use the same initialization
-contract. Task and schedule processes call `createTaskWorker()` or
-`createScheduleWorker()` and then start the returned ordinary s-m-r-t runner.
+contract. Task and schedule processes first import the application's compiled
+object registration, `.smrt/runtime/register.js` (produced by the SvelteKit
+build), then call `createTaskWorker()` or `createScheduleWorker()` and start the
+returned ordinary s-m-r-t runner.
 Application code still enqueues through `bg()` or
 `background(...).enqueue()`; profile selection does not alter that API.
 Runtime shutdown drains in-flight readiness/session/worker initialization and
