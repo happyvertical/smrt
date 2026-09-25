@@ -76,6 +76,21 @@ for usage.
   event transaction and must be idempotent.
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is
   server-managed (not API-writable). `toAccountingInput()` emits major units.
+- **Payment rails (#3138).** A runtime has one issuing `provider` and any
+  number of `paymentProviders` (unique names, one inbox namespace each; a
+  provider with `capabilities.issuesInvoices === false` can never issue).
+  `observe()` resolves the provider from the delivery namespace, never the
+  payload. Crypto rails implement the port over `@happyvertical/payments`'
+  `CryptoCheckoutGateway`; never call BTCPay (or any gateway) from here.
+  Settlement is decided by the pure `decideAttempt()` from gateway state and
+  `paymentPolicy` — the gateway's `settled` is authoritative and nothing here
+  counts confirmations. A `BillingPaymentAttempt` (`(provider, checkout_id)`
+  deterministic id) records every state and settles once; grants and payments
+  are keyed by checkout id. Invoice payments close the issuer's invoice out of
+  band in `observe()` (idempotent) before `project()` records the payment, and
+  `settlePaidInvoice` waits for the rail instead of recording a second
+  payment for a `paidOutOfBand` invoice. Exceptions are flags for operators;
+  nothing reverses or refunds automatically.
 - **Known limits** (each tracked upstream): provider customer creation is not
   idempotent (happyvertical/sdk#1268); credit checkouts are untaxed and
   two-decimal only (sdk#1269); `autoTopUp` cannot charge a saved card

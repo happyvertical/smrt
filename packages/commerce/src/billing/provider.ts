@@ -54,6 +54,12 @@ export type BillingProviderInvoiceStatus = 'draft' | 'open' | 'paid' | 'void';
 export interface BillingProviderInvoiceState {
   providerInvoiceId: string;
   status: BillingProviderInvoiceStatus;
+  /**
+   * The invoice was closed as paid outside the provider (for example by a
+   * crypto payment rail, #3138). The rail that took the money records it; the
+   * provider's own `paid` event must not record a second payment.
+   */
+  paidOutOfBand?: boolean;
   currency: string;
   /** Pre-tax subtotal, minor units. */
   subtotal: number;
@@ -128,7 +134,86 @@ export type BillingProviderEvent =
       amountTotal: number;
       metadata: Record<string, string>;
     }
+  | {
+      /**
+       * A payment rail's checkout changed (#3138). The event carries ids
+       * only; `observe()` re-reads the attempt with `getPaymentAttempt()`.
+       */
+      kind: 'payment_attempt';
+      eventId: string;
+      checkoutId: string;
+    }
   | { kind: 'ignored'; eventId: string; type: string };
+
+/** What a provider can do beyond the core port (#3138). */
+export interface BillingProviderCapabilities {
+  /**
+   * The provider issues, taxes, and sends invoices (`pushInvoice` …). A
+   * payment rail (for example a crypto checkout) does not, and cannot be a
+   * runtime's issuing provider.
+   */
+  issuesInvoices: boolean;
+  /** The provider reports checkouts through `getPaymentAttempt()`. */
+  paymentAttempts: boolean;
+}
+
+/** A rail checkout's lifecycle, normalized by the provider (#3138). */
+export type BillingPaymentAttemptStatus =
+  | 'open'
+  | 'confirming'
+  | 'settled'
+  | 'expired'
+  | 'invalid';
+
+export type BillingPaymentAttemptException =
+  | 'none'
+  | 'underpaid'
+  | 'overpaid'
+  | 'paid_late'
+  | 'manually_marked';
+
+export interface BillingPaymentAttemptPayment {
+  id: string;
+  /** `onchain`, `lightning`, … */
+  rail: string;
+  /** The asset paid (`BTC`). */
+  asset: string;
+  /** Amount in the asset's minor units (satoshis for BTC). */
+  amount: number;
+  /** Fee in the asset's minor units, when reported. */
+  fee?: number;
+  status: 'confirming' | 'settled' | 'invalid';
+  transactionId?: string;
+  receivedAt?: string;
+}
+
+/**
+ * A rail checkout as the provider reports it now. Amounts are minor units;
+ * `metadata` holds only `smrt_*` keys whose signature verified, and is empty
+ * for a checkout this package did not create.
+ */
+export interface BillingPaymentAttemptState {
+  checkoutId: string;
+  status: BillingPaymentAttemptStatus;
+  exception: BillingPaymentAttemptException;
+  /** The locked fiat price. */
+  amount: number;
+  currency: string;
+  /** Fiat value received at the locked rate, rounded down. */
+  amountPaid: number;
+  metadata: Record<string, string>;
+  /** The asset the price was quoted in (`BTC`). */
+  nativeCurrency?: string;
+  /** Asset minor units (satoshis). */
+  nativeAmountDue?: number;
+  nativeAmountPaid?: number;
+  /** Decimal price of one unit of `nativeCurrency` in `currency`. */
+  rate?: string;
+  rateSource?: string;
+  checkoutUrl?: string;
+  expiresAt?: Date;
+  payments: BillingPaymentAttemptPayment[];
+}
 
 /**
  * A payment provider as period close sees it. Implementations must be
@@ -138,6 +223,11 @@ export type BillingProviderEvent =
 export interface BillingProvider {
   /** Provider name recorded on local rows (`stripe`). */
   readonly name: string;
+  /**
+   * Defaults to an issuing provider without payment attempts (Stripe's
+   * shape) when omitted.
+   */
+  readonly capabilities?: BillingProviderCapabilities;
   syncCustomer(
     input: BillingProviderCustomerInput,
   ): Promise<{ providerCustomerId: string }>;
@@ -161,7 +251,38 @@ export interface BillingProvider {
   verifyWebhook(
     payload: string,
     signature: string,
+    /** The request headers, for providers that sign with their own header. */
+    headers?: Headers | Record<string, string | undefined>,
   ): Promise<BillingProviderEvent>;
+  /**
+   * Close an issued invoice as paid outside the provider (#3138). Must be
+   * idempotent: an invoice already paid is a no-op.
+   */
+  markInvoicePaidOutOfBand?(providerInvoiceId: string): Promise<void>;
+  /**
+   * Read a rail checkout's current state (#3138). Returns null for a
+   * checkout this provider did not create.
+   */
+  getPaymentAttempt?(
+    checkoutId: string,
+  ): Promise<BillingPaymentAttemptState | null>;
+}
+
+/** The provider's capabilities, defaulted for providers that omit them. */
+export function providerCapabilities(
+  provider: BillingProvider,
+): BillingProviderCapabilities {
+  return (
+    provider.capabilities ?? { issuesInvoices: true, paymentAttempts: false }
+  );
+}
+
+/** A provider was asked for something it does not do (#3138). */
+export class BillingProviderUnsupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BillingProviderUnsupportedError';
+  }
 }
 
 export class BillingWebhookVerificationError extends Error {

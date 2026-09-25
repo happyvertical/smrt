@@ -305,6 +305,79 @@ const { url } = await billing.createCreditCheckout({
   once per checkout session, paid by the policy's tenant or, for a delegated
   balance, the parent that set it.
 
+### Payment rails: BTC and other crypto (#3138)
+
+A seller runtime can take payments on more than one **rail**. The issuing
+`provider` (Stripe) still issues, taxes, and emails every invoice; extra rails
+in `paymentProviders` let a payer choose, per payment, to pay an invoice or buy
+prepaid credit another way. The crypto rail runs short-lived, fiat-priced
+checkouts through `@happyvertical/payments`' provider-neutral
+`CryptoCheckoutGateway` — BTCPay Server at launch — so another gateway can
+replace BTCPay without changing this package or its consumers.
+
+```ts
+import {
+  BillingRuntime,
+  createBtcPayBillingProvider,
+  createStripeBillingProvider,
+} from '@happyvertical/smrt-commerce';
+
+const btcpay = createBtcPayBillingProvider({
+  baseUrl, apiKey, storeId,        // one BTCPay store per seller entity
+  webhookSecret, metadataSecret,   // from the host's secret store, by name
+  speedPolicy: 'LowSpeed',         // BTCPay settles after 0/1/2/6 confirmations
+  rateSource: 'kraken',
+  minimumAmount: { CAD: 500, USD: 500 },
+});
+const billing = await BillingRuntime.create({
+  db, sellerTenantId, kind: 'provider',
+  provider: createStripeBillingProvider({ stripe, webhookSecret }),
+  paymentProviders: [btcpay],
+  paymentPolicy: { latePaymentPolicy: 'review', refundBasis: 'original_native' },
+  billingRelationships,
+  ledger: { ...ledger, cryptoHoldingsAccountId, fxGainLossAccountId, feesAccountId },
+});
+
+// Prepaid credit or an issued invoice, paid with BTC:
+await billing.createCreditCheckout({ ...purchase, provider: 'btcpay' });
+await billing.createInvoicePayment({ invoiceId, provider: 'btcpay', purchaseId, successUrl, cancelUrl });
+
+// Webhook route for the rail (BTCPay signs with its own header):
+await billing.acceptWebhook(rawBody, '', { provider: 'btcpay', headers: request.headers });
+await billing.processEvents();
+```
+
+- **Settlement is the gateway's.** Credit is granted and invoices are paid
+  only when the gateway reports `settled` under its own confirmation policy;
+  this package never counts confirmations. BTCPay offers 0, 1, 2 or 6
+  confirmations (`LowSpeed` = 6 is the default because BTCPay has no 3).
+- **Payment attempts.** Every rail checkout is a `BillingPaymentAttempt`
+  recording the locked fiat price, fiat and native amounts received, rate and
+  rate source, each payment's txid, rail and fee, a timeline of status changes,
+  and what settlement produced. `listPaymentAttempts()` feeds "payment
+  confirming" displays and operator queues; `refreshPaymentAttempts()` is the
+  polling fallback for missed webhooks.
+- **Dunning pauses** for an invoice while a payment for it is confirming
+  (0-conf seen); if the payment then expires or is invalidated the payer's
+  standing is re-applied.
+- **Invoices paid on a rail** are closed at the issuer with
+  `markInvoicePaidOutOfBand` (Stripe `paid_out_of_band`), so Stripe stops
+  collecting; Stripe's own `paid` event then records nothing more.
+  `createInvoicePayment` refuses when the issuing provider cannot do that.
+- **Exceptions never auto-refund.** Underpaid, overpaid, late, manually marked
+  (at the gateway), invalidated-after-settlement, and paid-twice attempts are
+  flagged for an operator (`resolvePaymentAttempt`). Per-seller
+  `paymentPolicy` sets under/overpayment tolerances (basis points), late
+  payments (`review` | `accept`), manually marked checkouts, hold vs convert
+  (`conversionHandler`), and the refund basis.
+- **Ledger.** Receipts are booked at the locked fiat amount into
+  `cryptoHoldingsAccountId` (default `cashAccountId`).
+  `recordManualRefund()` and `recordCryptoConversion()` post the operator's
+  refund and conversion journals (with FX gain/loss), once per reference.
+- **Entities.** Each legal entity is its own seller runtime with its own
+  store, keys, and ledger. Inter-entity resale is ordinary reseller billing
+  between two sellers, payable on any rail the selling entity offers.
+
 See [`AGENTS.md`](./AGENTS.md#billing-period-close-3060) for invariants and
 known limits.
 

@@ -22,7 +22,7 @@ import {
   type SubscriptionStatus,
   TenantSubscriptionCollection,
 } from '@happyvertical/smrt-subscriptions';
-import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
@@ -30,13 +30,23 @@ import {
   type BillingAccount,
   BillingAccountCollection,
   BillingLineSourceCollection,
+  BillingPaymentAttemptCollection,
   BillingPeriodCloseCollection,
   type BillingStanding,
 } from '../models/billing.js';
 import type { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
 import { CREDIT_PURCHASE_PURPOSE, creditMetadata } from './credits.js';
+import {
+  type AttemptTarget,
+  applyPaymentAttempt,
+  attemptTarget,
+  decideAttempt,
+  hasConfirmingAttempt,
+} from './payment-attempts.js';
 import type {
+  BillingPaymentAttemptState,
+  BillingProvider,
   BillingProviderEvent,
   BillingProviderInvoiceState,
   BillingProviderSubscriptionState,
@@ -58,6 +68,7 @@ type CheckoutEvent = Extract<
   BillingProviderEvent,
   { kind: 'checkout_completed' }
 >;
+type AttemptEvent = Extract<BillingProviderEvent, { kind: 'payment_attempt' }>;
 
 type ObservedEvent =
   | { event: InvoiceEvent; invoice: BillingProviderInvoiceState }
@@ -65,7 +76,13 @@ type ObservedEvent =
       event: SubscriptionEvent;
       subscription: BillingProviderSubscriptionState;
     }
-  | { event: CheckoutEvent };
+  | { event: CheckoutEvent; providerName: string }
+  | {
+      event: AttemptEvent;
+      providerName: string;
+      attempt: BillingPaymentAttemptState;
+      target: AttemptTarget;
+    };
 
 const PROJECTION = 'billing-provider-events';
 
@@ -80,7 +97,7 @@ export async function processBillingEvents(
   const processor = new ForgeProjectionRuntime({
     db: runtime.db,
     workerId: `billing-${crypto.randomUUID()}`,
-    providers: [runtime.eventProvider],
+    providers: runtime.eventProviders,
     leaseMs: 60_000,
   });
   const projector = createBillingEventProjector(runtime);
@@ -102,8 +119,9 @@ export function createBillingEventProjector(
     ): Promise<ForgeObservation<ObservedEvent> | null> {
       // The claim is filtered to this seller's namespace; anything else is
       // released for retry rather than acknowledged as if it were applied.
+      const provider = runtime.providerForNamespace(delivery.provider);
       if (
-        delivery.provider !== runtime.eventProvider ||
+        !provider ||
         tenantKey(delivery.tenantId) !== runtime.sellerTenantId
       ) {
         throw new Error(
@@ -115,17 +133,21 @@ export function createBillingEventProjector(
       if (event.kind === 'invoice') {
         value = {
           event,
-          invoice: await runtime.provider.getInvoice(event.providerInvoiceId),
+          invoice: await provider.getInvoice(event.providerInvoiceId),
         };
       } else if (event.kind === 'subscription') {
         value = {
           event,
-          subscription: await runtime.provider.getSubscription(
+          subscription: await provider.getSubscription(
             event.providerSubscriptionId,
           ),
         };
       } else if (event.kind === 'checkout_completed') {
-        value = { event };
+        value = { event, providerName: provider.name };
+      } else if (event.kind === 'payment_attempt') {
+        const observed = await observeAttempt(runtime, provider, event);
+        if (!observed) return null;
+        value = observed;
       } else {
         return null;
       }
@@ -153,8 +175,15 @@ export function createBillingEventProjector(
         );
       } else if ('subscription' in value) {
         await applySubscriptionState(runtime, context.db, value.subscription);
+      } else if ('attempt' in value) {
+        await applyAttempt(runtime, context.db, value);
       } else {
-        await applyCheckout(runtime, context.db, value.event);
+        await applyCheckout(
+          runtime,
+          context.db,
+          value.event,
+          value.providerName,
+        );
       }
     },
   };
@@ -222,6 +251,15 @@ async function applyInvoiceEvent(
       standing = 'uncollectible';
     }
   }
+  if (
+    standing &&
+    standing !== 'current' &&
+    (await hasConfirmingAttempt(db, runtime.sellerTenantId, String(invoice.id)))
+  ) {
+    // A rail payment for this invoice is confirming (#3138): dunning pauses.
+    // If the payment ends without settling, its event re-applies the standing.
+    standing = null;
+  }
   if (standing) {
     await applyStanding(
       runtime,
@@ -241,6 +279,15 @@ async function settlePaidInvoice(
   state: BillingProviderInvoiceState,
 ): Promise<void> {
   if (invoice.status === InvoiceStatus.PAID) return;
+  if (
+    state.paidOutOfBand &&
+    (await railSettlementPending(runtime, db, String(invoice.id)))
+  ) {
+    // A payment rail took the money (#3138) and records it; wait for that.
+    throw new Error(
+      `Invoice ${invoice.invoiceNumber} was paid on another rail; the paid event will be retried after that payment is recorded.`,
+    );
+  }
   if (invoice.status === InvoiceStatus.DRAFT) {
     // Period close has not recorded the send yet; retry after it has.
     throw new Error(
@@ -414,6 +461,7 @@ async function applyCheckout(
   runtime: BillingRuntime,
   db: DatabaseInterface,
   event: CheckoutEvent,
+  providerName: string,
 ): Promise<void> {
   const metadata = creditMetadata(event.metadata);
   if (!metadata || metadata.purpose !== CREDIT_PURCHASE_PURPOSE) return;
@@ -444,7 +492,7 @@ async function applyCheckout(
       spendingPolicyId: metadata.spendingPolicyId,
       amount: metadata.amount,
       reason: 'Prepaid credit purchase',
-      source: `${runtime.provider.name}-checkout`,
+      source: `${providerName}-checkout`,
       sourceId: event.sessionId,
       ...(metadata.grantedByTenantId
         ? { grantedByTenantId: metadata.grantedByTenantId }
@@ -465,7 +513,7 @@ async function applyCheckout(
   const payments = await PaymentCollection.create({ db });
   const paymentId = await deterministicId([
     'billing-credit-payment',
-    runtime.provider.name,
+    providerName,
     event.sessionId,
   ]);
   const payment =
@@ -479,7 +527,7 @@ async function applyCheckout(
       method: PaymentMethod.CREDIT_CARD,
       reference: `credit:${metadata.spendingPolicyId}`,
       externalId: event.sessionId,
-      externalProvider: runtime.provider.name,
+      externalProvider: providerName,
       _insertOnly: true,
     }));
   if (payment.status !== PaymentStatus.COMPLETED) {
@@ -489,4 +537,117 @@ async function applyCheckout(
       receivablesAccountId: runtime.ledger.prepaidCreditAccountId,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Payment-rail attempts (#3138)
+// ---------------------------------------------------------------------------
+
+async function observeAttempt(
+  runtime: BillingRuntime,
+  provider: BillingProvider,
+  event: AttemptEvent,
+): Promise<ObservedEvent | null> {
+  if (!provider.getPaymentAttempt) {
+    throw new Error(`Provider ${provider.name} has no payment attempts.`);
+  }
+  const attempt = await provider.getPaymentAttempt(event.checkoutId);
+  if (!attempt) return null; // Not a checkout this rail created.
+  const target = attemptTarget(runtime, attempt.metadata);
+  if (!target) return null; // Unsigned, foreign, or another seller's.
+  const decision = decideAttempt(attempt, runtime.paymentPolicy, target);
+  if (decision.action === 'settle' && target.purpose === 'invoice_payment') {
+    // Close the issuer's invoice before recording the payment, so it stops
+    // dunning. Idempotent, and retried with the event on failure.
+    const invoice = await withTenant(
+      { tenantId: runtime.sellerTenantId },
+      async () =>
+        (await InvoiceCollection.create({ db: runtime.db })).get(
+          target.invoiceId,
+        ),
+    );
+    if (
+      invoice?.id &&
+      invoice.status !== InvoiceStatus.PAID &&
+      invoice.externalProvider === runtime.provider.name &&
+      invoice.externalId
+    ) {
+      if (!runtime.provider.markInvoicePaidOutOfBand) {
+        throw new Error(
+          `${runtime.provider.name} cannot close invoice ${invoice.invoiceNumber} paid on ${provider.name}.`,
+        );
+      }
+      await runtime.provider.markInvoicePaidOutOfBand(invoice.externalId);
+    }
+  }
+  return { event, providerName: provider.name, attempt, target };
+}
+
+async function applyAttempt(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  value: Extract<ObservedEvent, { attempt: BillingPaymentAttemptState }>,
+): Promise<void> {
+  const outcome = await applyPaymentAttempt(
+    runtime,
+    db,
+    value.providerName,
+    value.attempt,
+    value.target,
+    value.event.eventId.startsWith('poll:') ? 'poll' : 'webhook',
+  );
+  if (value.target.purpose !== 'invoice_payment') return;
+  if (!outcome.settled && !outcome.endedUnsettled) return;
+  const invoices = await InvoiceCollection.create({ db });
+  const invoice = await withTenant({ tenantId: runtime.sellerTenantId }, () =>
+    invoices.get(value.target.invoiceId),
+  );
+  if (!invoice?.id) return;
+  const closes = await BillingPeriodCloseCollection.create({ db });
+  const [close] = await closes.list({
+    where: { invoiceId: invoice.id, sellerTenantId: runtime.sellerTenantId },
+    limit: 1,
+  });
+  if (!close?.id) return;
+  const accounts = await BillingAccountCollection.create({ db });
+  const account = await accounts.get(close.billingAccountId);
+  if (!account) return;
+  if (outcome.settled && invoice.status === InvoiceStatus.PAID) {
+    await applyStanding(
+      runtime,
+      db,
+      account,
+      invoice,
+      String(close.id),
+      'current',
+    );
+  } else if (
+    outcome.endedUnsettled &&
+    invoice.status === InvoiceStatus.OVERDUE
+  ) {
+    // The dunning paused while this payment confirmed; resume it.
+    await applyStanding(
+      runtime,
+      db,
+      account,
+      invoice,
+      String(close.id),
+      'past_due',
+    );
+  }
+}
+
+/** A rail payment for this invoice is settled or still confirming. */
+async function railSettlementPending(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  invoiceId: string,
+): Promise<boolean> {
+  const attempts = await BillingPaymentAttemptCollection.create({ db });
+  const rows = await attempts.list({
+    where: { sellerTenantId: runtime.sellerTenantId, invoiceId },
+  });
+  return rows.some(
+    (row) => row.status === 'confirming' || Boolean(row.settledAt),
+  );
 }

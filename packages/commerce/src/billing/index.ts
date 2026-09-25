@@ -3,7 +3,15 @@
  * (#3060).
  * @packageDocumentation
  */
+export {
+  type BtcPayBillingProviderOptions,
+  createBtcPayBillingProvider,
+} from './btcpay.js';
 export type { CreateCreditCheckoutInput } from './credits.js';
+export {
+  type CryptoBillingProviderOptions,
+  createCryptoBillingProvider,
+} from './crypto.js';
 export {
   addBillingMonths,
   billingPeriodContaining,
@@ -12,6 +20,10 @@ export {
   type ScheduledBillingPeriod,
 } from './cycles.js';
 export {
+  type CreateInvoicePaymentInput,
+  INVOICE_PAYMENT_PURPOSE,
+} from './invoice-payments.js';
+export {
   type EnqueueBillingJobOptions,
   enqueueBillingEvents,
   enqueueBillingPeriodClose,
@@ -19,6 +31,14 @@ export {
   registerBillingRuntime,
   unregisterBillingRuntime,
 } from './jobs.js';
+export {
+  type BillingPaymentPolicy,
+  type CryptoConversionInput,
+  type CryptoSettlement,
+  decideAttempt,
+  type ManualRefundInput,
+  type ManualRefundResult,
+} from './payment-attempts.js';
 export {
   type BillingPeriod,
   BillingPeriodCloseError,
@@ -30,7 +50,12 @@ export {
 } from './period-close.js';
 export {
   type BillingInvoiceEventType,
+  type BillingPaymentAttemptException,
+  type BillingPaymentAttemptPayment,
+  type BillingPaymentAttemptState,
+  type BillingPaymentAttemptStatus,
   type BillingProvider,
+  type BillingProviderCapabilities,
   type BillingProviderCheckoutInput,
   type BillingProviderCheckoutSession,
   type BillingProviderCustomerInput,
@@ -40,7 +65,9 @@ export {
   type BillingProviderInvoiceState,
   type BillingProviderInvoiceStatus,
   type BillingProviderSubscriptionState,
+  BillingProviderUnsupportedError,
   BillingWebhookVerificationError,
+  providerCapabilities,
 } from './provider.js';
 export {
   type BillingLedgerAccounts,
