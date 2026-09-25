@@ -171,6 +171,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
                   <textarea
                     class="ps-textarea"
                     name="appTemplate"
+                    aria-label={appLabel}
                     rows="3"
                     disabled={busy || !isTemplateEditable(prompt)}
                     value={prompt.appTemplate ?? appRevertPreview(prompt)}
@@ -202,6 +203,7 @@ function submit(event: SubmitEvent, prompt: PromptSettingsView): void {
               <textarea
                 class="ps-textarea"
                 name="tenantTemplate"
+                aria-label={tenantLabel}
                 rows="4"
                 disabled={busy || !isTemplateEditable(prompt)}
                 value={prompt.tenantTemplate ?? tenantRevertPreview(prompt)}

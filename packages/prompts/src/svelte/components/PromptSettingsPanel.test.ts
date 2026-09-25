@@ -327,6 +327,18 @@ describe('PromptSettingsPanel', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('gives each template editor an accessible name', () => {
+    const target = render({
+      prompts: [DRAFTS],
+      showApp: true,
+      appEditable: true,
+    });
+    for (const name of ['appTemplate', 'tenantTemplate']) {
+      const label = textareaNamed(target, name).getAttribute('aria-label');
+      expect(label?.trim()).toBeTruthy();
+    }
+  });
+
   it('shows host-supplied status and error text', () => {
     const target = render({
       prompts: [DRAFTS],
