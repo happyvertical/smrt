@@ -940,6 +940,44 @@ CREATE TABLE IF NOT EXISTS _smrt_backfills (
 `;
 
 /**
+ * Idempotency claims for `runOnce()` (#3080).
+ *
+ * `claim_key` is the sha256 hex digest of the sorted-key-JSON encoding of
+ * `(tenantId, actor, token, contentDigest)` — see `../run-once.ts` for the
+ * derivation and why the token alone is not enough (it collapses distinct
+ * submissions that reuse a form's token). It is the table's PRIMARY KEY, so
+ * a second `INSERT` for the same key always raises a unique-constraint
+ * violation instead of silently adopting the first caller's row: exactly the
+ * "insert-only against a UNIQUE column" claim the issue asks for.
+ *
+ * Neither the raw token nor the raw submitted content is stored — only
+ * digests — so this table cannot leak submitted business data. `status`
+ * moves from `'in_progress'` to `'completed'` inside the SAME transaction
+ * that runs the caller's work, so `result` (the caller's JSON-serialized,
+ * ready-to-replay return value) and `completed_at` are only ever set once,
+ * atomically with whatever else that transaction wrote. If the work throws,
+ * `runOnce()` never marks the claim completed, and the transaction that
+ * inserted it rolls back the insert along with it — a claim is never left
+ * permanently `'in_progress'` by a failed attempt; a retry with the same key
+ * can always run again.
+ */
+export const CREATE_SMRT_RUN_ONCE_CLAIMS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_run_once_claims (
+  claim_key TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  content_digest TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  result TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_run_once_claims_tenant
+  ON _smrt_run_once_claims(tenant_id, created_at);
+`;
+
+/**
  * All system table creation statements
  */
 export const ALL_SYSTEM_TABLES = [
@@ -947,6 +985,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_MIGRATIONS_TABLE,
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
   CREATE_SMRT_BACKFILLS_TABLE,
+  CREATE_SMRT_RUN_ONCE_CLAIMS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
@@ -1060,8 +1099,11 @@ export function getSystemTableDDLForEngine(
  * sets — never published, never stamped in any real `_smrt_migrations` table
  * — so merging them reuses no version an existing install could have already
  * recorded; see the note on {@link SMRT_SCHEMA_DDL_CHECKSUMS}.)
+ *
+ * 1.11.0 adds `_smrt_run_once_claims` (#3080), the insert-only claim table
+ * behind `runOnce()` (`../run-once.ts`).
  */
-export const SMRT_SCHEMA_VERSION = '1.10.1';
+export const SMRT_SCHEMA_VERSION = '1.11.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1102,4 +1144,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
   Object.freeze({
     '1.10.1':
       'f796ee3b3f7ab8b9dc659ecaa68884ec01277408c3dd6edea540853fce369c16',
+    '1.11.0':
+      'c51351a76c96beb64fa7e5922f78d776367af882ed1ff37229f9e9ffacee8372',
   });

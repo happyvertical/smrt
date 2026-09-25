@@ -781,6 +781,60 @@ export class TenantIsolationError extends SmrtError {
 }
 
 /**
+ * Error thrown by `runOnce()` (`./run-once.ts`, #3080) when a submission's
+ * claim cannot be resolved to a definite, replayable result.
+ *
+ * Mirrors the "refused vs unknown outcome" distinction #2990 drew for
+ * `AssistantDock` actions:
+ * - `RUN_ONCE_IN_FLIGHT` — a claim for this key exists and has not completed.
+ *   This is a definite decision, not an unknown one: some execution currently
+ *   holds the key. Retry later with the SAME token and content — minting a
+ *   fresh token would create an unrelated claim and defeat the guard.
+ * - `RUN_ONCE_OUTCOME_UNKNOWN` — the claim insert reported a conflict but no
+ *   claim row could be read back. Genuinely indeterminate: retrying with the
+ *   SAME token and content is still safe (a completed claim replays; anything
+ *   else runs as a fresh attempt), but the caller must not treat this as
+ *   either success or failure.
+ *
+ * Both are `category: 'runtime'` and neither is retried automatically —
+ * `runOnce()` never loops on them, because only the caller knows whether
+ * retrying inline is appropriate for its own request (a SvelteKit action may
+ * prefer to tell the user "still processing" over blocking on a retry loop).
+ */
+export class RunOnceClaimError extends SmrtError {
+  /** The derived claim key this error concerns. */
+  public readonly claimKey: string;
+
+  constructor(
+    message: string,
+    code: 'RUN_ONCE_IN_FLIGHT' | 'RUN_ONCE_OUTCOME_UNKNOWN',
+    claimKey: string,
+  ) {
+    super(message, code, 'runtime', { claimKey });
+    this.claimKey = claimKey;
+  }
+
+  static inFlight(claimKey: string): RunOnceClaimError {
+    return new RunOnceClaimError(
+      `runOnce: claim "${claimKey}" is already in flight. Retry later with ` +
+        `the same token and content — do not mint a new token.`,
+      'RUN_ONCE_IN_FLIGHT',
+      claimKey,
+    );
+  }
+
+  static outcomeUnknown(claimKey: string): RunOnceClaimError {
+    return new RunOnceClaimError(
+      `runOnce: outcome for claim "${claimKey}" is unknown. Retrying with ` +
+        `the same token and content is safe, but do not treat this as ` +
+        `either success or failure.`,
+      'RUN_ONCE_OUTCOME_UNKNOWN',
+      claimKey,
+    );
+  }
+}
+
+/**
  * Utility functions for error handling
  */
 export class ErrorUtils {
