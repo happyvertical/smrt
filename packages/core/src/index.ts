@@ -73,11 +73,11 @@ export {
   getAuthorizedTenantScopedChangesSince,
   hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
+  isChangeFeedDenyAll,
   isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
   setChangeFeedAuthorizer,
   setChangeFeedEntryVisibility,
-  toChangeFeedTablesFilter,
 } from './change-feed-authz';
 // Credential-bearing tables the feed must never disclose (issue #2937). The
 // declaring API is `@smrt({ sensitive: true })`; these are exported so a

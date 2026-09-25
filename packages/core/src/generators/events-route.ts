@@ -44,9 +44,9 @@ import {
   filterVisibleChangeFeedEntries,
   hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
+  isChangeFeedDenyAll,
   isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
-  toChangeFeedTablesFilter,
 } from '../change-feed-authz.js';
 import {
   type ChangeSignal,
@@ -326,6 +326,11 @@ export function buildChangeEventStream(
         );
       }
       const allowedTableSet = allowedTables ? new Set(allowedTables) : null;
+      // Same deny-all distinction `readAuthorized` makes (#3020 P1): an
+      // explicit empty allow-list must deny the catch-up read via
+      // `getChangesSince`'s `denyAllTables` option, never an empty `tables`
+      // array (which means "no filter") or a synthesized sentinel name.
+      const catchupDenyAllTables = isChangeFeedDenyAll(allowedTables);
       const rowVisibilityActive = hasChangeFeedEntryVisibilityHook();
       // Serializes the (possibly async) row-visibility check so signals are
       // still delivered in arrival order; unused — and never allocated a
@@ -395,7 +400,8 @@ export function buildChangeEventStream(
               since,
               tenantId: catchupTenantId,
               // Same captured table authorization as live delivery (#3020).
-              tables: toChangeFeedTablesFilter(allowedTables),
+              tables: catchupDenyAllTables ? undefined : allowedTables,
+              denyAllTables: catchupDenyAllTables,
             });
             if (page.resyncRequired) {
               const resyncCursor =

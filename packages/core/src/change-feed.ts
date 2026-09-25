@@ -277,6 +277,21 @@ export interface GetChangesOptions {
   /** Restrict to these physical table names. Empty/omitted → all tables. */
   tables?: string[];
   /**
+   * Explicit deny-all: match no tables regardless of {@link tables}, while
+   * still computing `cursor`/`resyncRequired`/`resyncCursor` exactly as a
+   * query that matched zero rows would (the same horizon/pruned-cursor
+   * detection that runs for any other filter). Distinct from an
+   * omitted/empty `tables` array, which means "no filter" (all tables) — so
+   * a caller that has resolved "the requester may read nothing" must set
+   * this rather than pass `tables: []`.
+   *
+   * Used by `change-feed-authz.ts`'s consumer table-authorization seam
+   * (#3020) so a denied `_changes`/`_events` request never reaches the
+   * `table_name IN (...)` clause with a synthesized value — see that
+   * module's docs.
+   */
+  denyAllTables?: boolean;
+  /**
    * Tenant visibility filter:
    * - omitted/`undefined` → no tenant filter (all rows).
    * - `null` → only global rows (`tenant_id IS NULL`).
@@ -1644,6 +1659,16 @@ export async function getChangesSince(
   params.push(since);
   conditions.push(`seq <= ${next()}`);
   params.push(servedHorizon);
+
+  if (options.denyAllTables) {
+    // Explicit deny-all (#3020): skip the table filter and the query
+    // entirely — every resync/pruned-cursor check above already ran
+    // unfiltered, so this answers exactly like the "every requested table
+    // was sensitive" case just below, an authorized query that matched zero
+    // rows. No `table_name IN (...)` clause, so no synthesized value (NUL or
+    // otherwise) ever reaches the driver.
+    return { changes: [], cursor: servedHorizon };
+  }
 
   const tables = options.tables
     ?.filter((table) => table.trim().length > 0)

@@ -149,13 +149,20 @@ Every filter narrows the *returned* `changes`; nothing ever touches
 "filters affect what is returned, never how the cursor advances" and for the
 same reason: a client must advance past a denied entry without re-polling it
 forever, and the entry's row id/timing must never be inferable from a stalled
-cursor. Table denial passes a guaranteed-no-match sentinel table name rather
-than an empty `tables` array, because `getChangesSince` treats an
-omitted/empty `tables` as "no filter" and would otherwise widen the read; the
-sentinel instead takes the ordinary `table_name IN (...)` path (the same one a
-client naming a nonexistent table already took, unvalidated), so the real
-horizon computation still runs and the cursor still advances — it just
-matches zero rows.
+cursor. Table denial sets `getChangesSince`'s explicit `denyAllTables: true`
+option rather than passing an empty `tables` array, because `getChangesSince`
+treats an omitted/empty `tables` as "no filter" and would otherwise widen the
+read. `denyAllTables` skips the `table_name IN (...)` clause (and the query)
+entirely — an earlier version instead passed a guaranteed-no-match sentinel
+table name through that clause, which broke on PostgreSQL (it rejects a NUL
+byte in a text parameter, turning a denied request into a 500 instead of the
+required 200 empty page, #3020 P1 follow-up). `denyAllTables` still runs every
+resync/pruned-cursor check unfiltered first, so the real horizon computation
+runs and the cursor still advances — it just matches zero rows.
+`change-feed-authz.ts`'s `isChangeFeedDenyAll()` is the one place that decides
+"empty allow-list" (deny all) vs. "no hook registered" (no filter); both
+`readAuthorized()` (pull side) and `buildChangeEventStream()`'s catch-up loop
+(push side) call it rather than re-deriving the distinction.
 
 `getAuthorizedChangesSince()` / `getAuthorizedTenantScopedChangesSince()` wrap
 `getChangesSince()` / `getTenantScopedChangesSince()` with both hooks applied;

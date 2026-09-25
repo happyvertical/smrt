@@ -68,16 +68,18 @@
  * returned, never how the cursor advances") and for the same reason: a
  * client must advance past a denied entry without re-polling it forever, and
  * the entry's row id/timing must never be inferable from a cursor that stalls
- * on it. Table denial is implemented by asking the underlying read for a
- * table name that cannot exist ({@link DENY_ALL_TABLES_SENTINEL}) rather than
- * an empty list — `getChangesSince` treats an omitted/empty `tables` as "no
- * filter", so an empty array would (perversely) widen the read to everything.
- * A guaranteed-no-match name instead takes the ordinary `table_name IN (...)`
- * path — the same one an authorized request for a subset of real tables
- * takes, and the same one already exercised by a client naming a table that
- * happens not to exist, which `getChangesSince` has never validated — so the
- * real horizon computation runs and the cursor still advances correctly; it
- * just matches zero rows.
+ * on it. Table denial is implemented via `getChangesSince`'s explicit
+ * `denyAllTables` option rather than an empty `tables` array —
+ * `getChangesSince` treats an omitted/empty `tables` as "no filter", so an
+ * empty array would (perversely) widen the read to everything, and an
+ * earlier version of this module instead passed a guaranteed-no-match
+ * sentinel table name through the ordinary `table_name IN (...)` path; that
+ * broke on PostgreSQL, which rejects a NUL byte in a text parameter, turning
+ * a denied request into a 500 instead of the required 200 empty page. A
+ * `denyAllTables` request skips the `IN (...)` clause entirely — no
+ * synthesized value ever reaches the driver — while still running the same
+ * horizon/pruned-cursor computation any other filter does, so the cursor
+ * still advances correctly; it just matches zero rows.
  */
 
 import { createLogger } from '@happyvertical/logger';
@@ -195,24 +197,15 @@ export function hasChangeFeedEntryVisibilityHook(): boolean {
 }
 
 /**
- * A table name that cannot collide with a real one (SQL identifiers cannot
- * carry a NUL byte). See the module docs' "Cursor correctness" section for
- * why denial is expressed this way instead of an empty `tables` array.
+ * Whether a resolved allow-list means "match no tables" (an explicit empty
+ * array — every table was denied or no hook answer was authorized) as
+ * opposed to `undefined` (no hook registered — unchanged "no filter"
+ * default). Callers pass this through to `getChangesSince`'s
+ * `denyAllTables` option rather than an empty `tables` array — see the
+ * module docs' "Cursor correctness" section for why.
  */
-const DENY_ALL_TABLES_SENTINEL = ['\u0000__smrt_change_feed_denied__'];
-
-/**
- * Translate a resolved allow-list into a `getChangesSince`-ready `tables`
- * filter: `undefined` (no hook registered — unchanged default) passes
- * through, and an explicit empty allow-list becomes
- * {@link DENY_ALL_TABLES_SENTINEL} so the read is denied rather than widened.
- */
-export function toChangeFeedTablesFilter(
-  tables: string[] | undefined,
-): string[] | undefined {
-  return tables !== undefined && tables.length === 0
-    ? DENY_ALL_TABLES_SENTINEL
-    : tables;
+export function isChangeFeedDenyAll(tables: string[] | undefined): boolean {
+  return tables !== undefined && tables.length === 0;
 }
 
 /**
@@ -296,7 +289,7 @@ export async function filterVisibleChangeFeedEntries<
 }
 
 interface AuthorizedChangesInput
-  extends Omit<GetChangesOptions, 'tables'>,
+  extends Omit<GetChangesOptions, 'tables' | 'denyAllTables'>,
     ChangeFeedRequestContext {
   tables?: string[];
 }
@@ -305,13 +298,20 @@ interface AuthorizedChangesInput
 async function readAuthorized(
   ctx: ChangeFeedRequestContext,
   requestedTables: string[] | undefined,
-  read: (tables: string[] | undefined) => Promise<ChangeFeedPage>,
+  read: (
+    tables: string[] | undefined,
+    denyAllTables: boolean,
+  ) => Promise<ChangeFeedPage>,
 ): Promise<ChangeFeedPage> {
   const effectiveTables = await resolveAuthorizedChangeFeedTables(
     ctx,
     requestedTables,
   );
-  const page = await read(toChangeFeedTablesFilter(effectiveTables));
+  const denyAllTables = isChangeFeedDenyAll(effectiveTables);
+  const page = await read(
+    denyAllTables ? undefined : effectiveTables,
+    denyAllTables,
+  );
   if (page.changes.length === 0) return page;
   const visibleChanges = await filterVisibleChangeFeedEntries(
     ctx,
@@ -335,8 +335,15 @@ export async function getAuthorizedChangesSince(
   options: AuthorizedChangesInput,
 ): Promise<ChangeFeedPage> {
   const { locals, request, tables, ...rest } = options;
-  return readAuthorized({ locals, request }, tables, (effectiveTables) =>
-    getChangesSince(db, { ...rest, tables: effectiveTables }),
+  return readAuthorized(
+    { locals, request },
+    tables,
+    (effectiveTables, denyAllTables) =>
+      getChangesSince(db, {
+        ...rest,
+        tables: effectiveTables,
+        denyAllTables,
+      }),
   );
 }
 
@@ -355,7 +362,14 @@ export async function getAuthorizedTenantScopedChangesSince(
   options: Omit<AuthorizedChangesInput, 'tenantId'>,
 ): Promise<ChangeFeedPage> {
   const { locals, request, tables, ...rest } = options;
-  return readAuthorized({ locals, request }, tables, (effectiveTables) =>
-    getTenantScopedChangesSince(db, { ...rest, tables: effectiveTables }),
+  return readAuthorized(
+    { locals, request },
+    tables,
+    (effectiveTables, denyAllTables) =>
+      getTenantScopedChangesSince(db, {
+        ...rest,
+        tables: effectiveTables,
+        denyAllTables,
+      }),
   );
 }
