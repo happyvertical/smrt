@@ -251,6 +251,80 @@ describe('FeatureSyncService', () => {
     expect(alpha).toBeNull();
   });
 
+  it('prunes the full stale set even when the host caps list defaults below it (#3056)', async () => {
+    const db = await getTestDatabase({
+      classes: ['FeatureDefinition'],
+    });
+    closers.add(async () => {
+      if (typeof (db as any).close === 'function') {
+        await (db as any).close();
+      }
+    });
+
+    const definitions = await (FeatureDefinitionCollection as any).create({
+      db,
+    });
+
+    // Prune enumerates the touched package's existing definitions with an
+    // unbounded `findByPackageName()` call. Seed more stale definitions than
+    // the host's `defaultListLimit` so a truncated prune pass leaves some of
+    // them behind, observable by count alone (#3056, same hazard class as
+    // #3048).
+    const firstManifest: SmartObjectManifest = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/smrt-feature-prune-bounds',
+      objects: {
+        '@test/smrt-feature-prune-bounds:ManifestFixture': {
+          className: 'ManifestFixture',
+          qualifiedName: '@test/smrt-feature-prune-bounds:ManifestFixture',
+          collection: 'manifestfixtures',
+          filePath: '/tmp/ManifestFixture.ts',
+          fields: {},
+          methods: {},
+          decoratorConfig: {
+            features: {
+              alpha: { defaultEnabled: false },
+              beta: { defaultEnabled: false },
+              gamma: { defaultEnabled: false },
+              delta: { defaultEnabled: false },
+              epsilon: { defaultEnabled: false },
+            },
+          },
+        },
+      },
+    };
+
+    const secondManifest: SmartObjectManifest = {
+      ...firstManifest,
+      timestamp: Date.now() + 1,
+      objects: {
+        '@test/smrt-feature-prune-bounds:ManifestFixture': {
+          ...firstManifest.objects[
+            '@test/smrt-feature-prune-bounds:ManifestFixture'
+          ],
+          decoratorConfig: {},
+        },
+      },
+    };
+
+    const boundedSyncService = new FeatureSyncService({
+      db,
+      defaultListLimit: 2,
+      maxListLimit: 2,
+    });
+
+    await boundedSyncService.syncManifest(firstManifest);
+    const result = await boundedSyncService.syncManifest(secondManifest);
+
+    const remaining = await definitions.findByPackageName(
+      '@test/smrt-feature-prune-bounds',
+    );
+
+    expect(result.deleted).toBe(5);
+    expect(remaining).toHaveLength(0);
+  });
+
   it('does not prune sibling definitions during filtered syncs', async () => {
     const db = await getTestDatabase({
       classes: ['FeatureDefinition'],

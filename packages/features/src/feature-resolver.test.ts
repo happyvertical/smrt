@@ -1,10 +1,10 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TenantCollection } from '../../users/src/index.js';
 import { FeatureOverrideCollection } from './feature-overrides.js';
 import { FeatureResolver } from './feature-resolver.js';
-import { FeatureOverrideEffect } from './types.js';
+import { FeatureOverrideEffect, type FeatureTenantNode } from './types.js';
 import { resolveFeatureKeyForTarget } from './utils.js';
 
 @smrt({
@@ -166,5 +166,78 @@ describe('FeatureResolver', () => {
         tenantId: child.id,
       }),
     ).resolves.toBe(true);
+  });
+
+  it('still applies an ancestor tenant override when the chain exceeds a host-configured list limit (#3056)', async () => {
+    const db = await getTestDatabase({
+      classes: ['FeatureDefinition', 'FeatureOverride'],
+    });
+    closers.add(async () => {
+      if (typeof (db as any).close === 'function') {
+        await (db as any).close();
+      }
+    });
+
+    const featureKey =
+      '@test/smrt-feature-resolver:FeatureResolverFixture#newEditor';
+
+    // Three-node synthetic chain, walked root-to-leaf. `getOverrideMap()`
+    // fetches every scope in one `list({ where: { scopeId: [...] } })` call
+    // with no explicit `limit`, so a host-configured `defaultListLimit`
+    // smaller than the chain length must not be allowed to reach it (#3056).
+    // The two decoy nodes carry an explicit INHERIT row (a no-op) purely to
+    // make the query match more rows than the limit; the root's ENABLE row
+    // is the only one that can change the resolved value, and its scope id
+    // is chosen to sort last so it is the row a naive per-query LIMIT drops.
+    const rootId = 'zz-ancestor-root';
+    const midId = 'aa-ancestor-mid';
+    const leafId = 'bb-ancestor-leaf';
+    const chain: FeatureTenantNode[] = [
+      { id: rootId, inheritPermissions: true, cascadePermissions: true },
+      { id: midId, inheritPermissions: true, cascadePermissions: true },
+      { id: leafId, inheritPermissions: true, cascadePermissions: true },
+    ];
+
+    const overrides = await (FeatureOverrideCollection as any).create({ db });
+    await overrides.setTenantOverride(
+      featureKey,
+      rootId,
+      FeatureOverrideEffect.ENABLE,
+    );
+    await overrides.setTenantOverride(
+      featureKey,
+      midId,
+      FeatureOverrideEffect.INHERIT,
+    );
+    await overrides.setTenantOverride(
+      featureKey,
+      leafId,
+      FeatureOverrideEffect.INHERIT,
+    );
+
+    // `newEditor` defaults to disabled, so only the root's ENABLE override
+    // (correctly applied and cascaded down through two no-op nodes) can make
+    // this resolve to `true`. The ancestor read has no ORDER BY, so which row
+    // a bound would drop depends on the query plan (SQLite serves it in
+    // scope-id order, hence the `zz-` root); the spy below pins the bounds
+    // exemption itself, independent of row order.
+    const createSpy = vi.spyOn(FeatureOverrideCollection as any, 'create');
+    closers.add(async () => createSpy.mockRestore());
+    const resolver = new FeatureResolver(
+      { db, defaultListLimit: 2, maxListLimit: 2 },
+      { tenantHierarchyLoader: async () => ({ getChain: async () => chain }) },
+    );
+
+    await expect(
+      resolver.isEnabledFor(FeatureResolverFixture, 'newEditor', {
+        tenantId: leafId,
+      }),
+    ).resolves.toBe(true);
+    const createOptions = createSpy.mock.calls.at(-1)?.[0] as {
+      defaultListLimit?: number;
+      maxListLimit?: number;
+    };
+    expect(createOptions.defaultListLimit).toBeUndefined();
+    expect(createOptions.maxListLimit).toBeUndefined();
   });
 });
