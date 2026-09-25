@@ -386,7 +386,9 @@ await billing.processEvents();
   `OTHER`-method payment; a real card payment made while a rail payment
   confirms is recorded and the rail money is flagged `invoice_already_paid`.
   An issuer close whose rail payment never settles is flagged
-  `out_of_band_without_settlement` for an operator to reopen.
+  `out_of_band_without_settlement`: reopen the invoice at the issuer, then
+  `resolvePaymentAttempt()` it, after which a later out-of-band close is
+  recorded normally.
 - **Entities.** Each legal entity is its own seller runtime with its own
   store, keys, and ledger. Inter-entity resale is ordinary reseller billing
   between two sellers, payable on any rail the selling entity offers.

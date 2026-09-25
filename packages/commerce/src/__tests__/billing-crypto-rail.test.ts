@@ -353,6 +353,17 @@ describe('smrt#3138 crypto payment rail', () => {
       await world.railEvent(session.sessionId);
       const [later] = await world.runtime.listPaymentAttempts({});
       expect(later?.excessAmount).toBe(1500);
+      // A payment reversed after settlement unbooks its excess and flags it.
+      world.gateway.set(session.sessionId, 'settled', {
+        exception: 'overpaid',
+        paid: 6000,
+      });
+      await world.railEvent(session.sessionId);
+      const [reversed] = await world.runtime.listPaymentAttempts({});
+      expect(reversed).toMatchObject({
+        excessAmount: 1000,
+        flag: 'invalidated_after_settlement',
+      });
       // The excess is refunded first and leaves the credit alone.
       await world.runtime.recordManualRefund({
         paymentId: attempt?.paymentId ?? '',
@@ -484,6 +495,11 @@ describe('smrt#3138 crypto payment rail', () => {
 
     it("skips the issuer's paid event for an invoice this rail closed, and records the rail payment once", async () => {
       const invoice = await openInvoice();
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.overdue', String(invoice.externalId)),
+      );
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('past_due');
       const session = await payWithRail(String(invoice.id));
       await latch(session.sessionId);
       world.outOfBand.push(String(invoice.externalId));
@@ -493,6 +509,8 @@ describe('smrt#3138 crypto payment rail', () => {
         invoiceEvent('invoice.paid', String(invoice.externalId)),
       );
       expect(await sellerPayments(world)).toEqual([]);
+      // Nothing is recorded yet, so the standing waits for the rail.
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('past_due');
       const open = await world.db.query(
         "SELECT status FROM _smrt_forge_deliveries WHERE status <> 'completed'",
       );
@@ -502,6 +520,7 @@ describe('smrt#3138 crypto payment rail', () => {
       const payments = await sellerPayments(world);
       expect(payments.map((row) => row.method)).toEqual([PaymentMethod.CRYPTO]);
       expect((await soloInvoice(world)).status).toBe(InvoiceStatus.PAID);
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
     });
 
     it('records an out-of-band close made by someone else as an other-method payment', async () => {
@@ -536,14 +555,35 @@ describe('smrt#3138 crypto payment rail', () => {
       ).toEqual([PaymentMethod.CREDIT_CARD, PaymentMethod.CRYPTO].sort());
     });
 
-    it('flags an issuer close whose payment never settled', async () => {
+    it('flags an issuer close whose payment never settled, and records a later close once resolved', async () => {
       const invoice = await openInvoice();
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.overdue', String(invoice.externalId)),
+      );
       const session = await payWithRail(String(invoice.id));
       await latch(session.sessionId);
       world.gateway.set(session.sessionId, 'expired', { paid: 0 });
       await world.railEvent(session.sessionId);
       const [attempt] = await world.runtime.listPaymentAttempts({});
       expect(attempt?.flag).toBe('out_of_band_without_settlement');
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('past_due');
+
+      // The operator reopens the invoice at the issuer and resolves the
+      // flag; a wire then closes it out of band: recorded as OTHER.
+      await world.runtime.resolvePaymentAttempt(
+        String(attempt?.id),
+        'reopened at Stripe',
+      );
+      world.outOfBand.push(String(invoice.externalId));
+      world.stripe.pay(String(invoice.externalId));
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect((await sellerPayments(world)).map((row) => row.method)).toEqual([
+        PaymentMethod.OTHER,
+      ]);
     });
 
     it("allows one live rail payment per invoice and hides other payers' invoices", async () => {

@@ -254,6 +254,17 @@ export async function applyPaymentAttempt(
 ): Promise<AttemptOutcome> {
   const attempts = await BillingPaymentAttemptCollection.create({ db });
   const id = await runtime.paymentAttemptId(providerName, state.checkoutId);
+  if (target.purpose === 'invoice_payment') {
+    // Invoice before attempt, as the issuer's events lock them: one order
+    // for every transaction touching both.
+    await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+      const invoices = await InvoiceCollection.create({ db });
+      await db.query(
+        `UPDATE ${invoices.tableName} SET updated_at = updated_at WHERE id = ?`,
+        target.invoiceId,
+      );
+    });
+  }
   // Lock before reading, so a concurrent writer (a refund, a paused
   // standing) is never overwritten by this full-row save.
   await lockAttempt(db, attempts.tableName, id);
@@ -313,28 +324,35 @@ export async function applyPaymentAttempt(
     // automatic reversal.
     if (state.status === 'invalid')
       attempt.flag = 'invalidated_after_settlement';
-    // Money that arrived after settlement is the payer's too: book it.
+    // Excess follows what the rail reports in both directions: money after
+    // settlement is booked; a reversed payment (reorg, RBF) is unbooked.
     const excess = Math.max(0, state.amountPaid - target.amount);
-    if (excess > attempt.excessAmount && attempt.paymentId) {
+    const delta = excess - attempt.excessAmount;
+    if (delta !== 0 && attempt.paymentId) {
       const holdings =
         runtime.ledger.cryptoHoldingsAccountId || runtime.ledger.cashAccountId;
+      const credit = runtime.ledger.prepaidCreditAccountId;
       await postOnce(
         runtime,
         db,
-        `overpayment:${attempt.paymentId}:${excess}`,
+        `overpayment:${attempt.paymentId}:${attempt.excessAmount}->${excess}`,
         {
-          description: `Payment after settlement on ${providerName} checkout ${state.checkoutId}`,
-          entries: [
-            { accountId: holdings, debit: excess - attempt.excessAmount },
-            {
-              accountId: runtime.ledger.prepaidCreditAccountId,
-              credit: excess - attempt.excessAmount,
-            },
-          ],
+          description: `Excess on ${providerName} checkout ${state.checkoutId}: ${attempt.excessAmount} -> ${excess}`,
+          entries:
+            delta > 0
+              ? [
+                  { accountId: holdings, debit: delta },
+                  { accountId: credit, credit: delta },
+                ]
+              : [
+                  { accountId: credit, debit: -delta },
+                  { accountId: holdings, credit: -delta },
+                ],
         },
       );
       attempt.excessAmount = excess;
-      if (!attempt.flag) attempt.flag = 'overpaid';
+      if (delta < 0) attempt.flag = 'invalidated_after_settlement';
+      else if (!attempt.flag) attempt.flag = 'overpaid';
     }
   } else if (decision.action === 'settle') {
     const result = await settleAttempt(runtime, db, attempt, state, target);
@@ -350,7 +368,7 @@ export async function applyPaymentAttempt(
 
   // Ended without settling: it stopped confirming and this did not settle
   // it (expired, invalid, or reported settled but refused by the policy).
-  const endedUnsettled =
+  let endedUnsettled =
     wasConfirming && !attempt.settledAt && state.status !== 'confirming';
   if (
     attempt.outOfBandRequestedAt &&
@@ -358,8 +376,10 @@ export async function applyPaymentAttempt(
     (state.status === 'expired' || state.status === 'invalid')
   ) {
     // The issuer was told the invoice was paid, but the money never settled:
-    // an operator must reopen it at the issuer.
+    // an operator must reopen it at the issuer (then resolve this flag).
+    // Standing is re-derived from the invoice either way.
     attempt.flag = 'out_of_band_without_settlement';
+    endedUnsettled = true;
   }
   await attempt.save();
   if (

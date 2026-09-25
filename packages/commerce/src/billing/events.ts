@@ -225,8 +225,11 @@ async function applyInvoiceEvent(
 
   let standing: BillingStanding | null = null;
   if (state.status === 'paid') {
-    await settlePaidInvoice(runtime, db, invoice, state);
-    standing = 'current';
+    // A skipped event (the rail records this payment itself) leaves the
+    // standing to the rail's settlement.
+    if (await settlePaidInvoice(runtime, db, invoice, state)) {
+      standing = 'current';
+    }
   } else if (state.status === 'void') {
     if (
       invoice.status !== InvoiceStatus.PAID &&
@@ -282,8 +285,8 @@ async function settlePaidInvoice(
   db: DatabaseInterface,
   invoice: Invoice,
   state: BillingProviderInvoiceState,
-): Promise<void> {
-  if (invoice.status === InvoiceStatus.PAID) return;
+): Promise<boolean> {
+  if (invoice.status === InvoiceStatus.PAID) return true;
   if (
     state.paidOutOfBand &&
     runtime.hasPaymentRails &&
@@ -291,7 +294,7 @@ async function settlePaidInvoice(
   ) {
     // This rail closed the invoice at the issuer (#3138) and records the
     // payment itself in its own event; the issuer collected nothing.
-    return;
+    return false;
   }
   if (invoice.status === InvoiceStatus.DRAFT) {
     // Period close has not recorded the send yet; retry after it has.
@@ -362,6 +365,7 @@ async function settlePaidInvoice(
     await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
   );
   await invoice.save();
+  return true;
 }
 
 const DELINQUENT_TARGET: Record<
@@ -729,5 +733,11 @@ async function railClosedOutOfBand(
   const rows = await attempts.list({
     where: { sellerTenantId: runtime.sellerTenantId, invoiceId },
   });
-  return rows.some((row) => Boolean(row.outOfBandRequestedAt));
+  // An operator who reopened the invoice at the issuer resolves the flagged
+  // attempt; a later out-of-band close is then someone else's and recorded.
+  return rows.some(
+    (row) =>
+      Boolean(row.outOfBandRequestedAt) &&
+      !(row.flag === 'out_of_band_without_settlement' && row.resolvedAt),
+  );
 }
