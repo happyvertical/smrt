@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.51.29
+
+### Patch Changes
+
+- ### Features
+  
+  - prompt management panel and settings service (#3053) (#3135) (prompts)
+  - shared runOnce() idempotency seam (#3080) (#3132) (core)
+  - consumer authorization seam for change-feed routes (#3020) (#3134) (core)
+  - compile app registration for deployed workers (#3124) (core)
+  - offline replay transports and data-surface persistence (#3099) (smrt-web)
+  
+  ### Bug Fixes
+  
+  - digest FormData runOnce content by its entries (#3136) (#3137) (core)
+  - close generated override surfaces; add authorized service (#3131) (#3133) (prompts)
+  - exempt internal list reads from host list bounds (#3056) (#3130) (features)
+- @happyvertical/smrt-config@0.51.29
+  - @happyvertical/smrt-scanner@0.51.29
+  - @happyvertical/smrt-types@0.51.29
+
 ## 0.51.28
 
 ### Patch Changes
