@@ -22,6 +22,10 @@ import {
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
 import { registerChangeFeedWriter } from './change-feed.js';
+import {
+  getSmrtModuleConfig,
+  type SmrtGlobalConfig,
+} from './config/global-config.js';
 import type {
   AIConfig,
   AiUsageConfig,
@@ -31,6 +35,7 @@ import type {
 } from './config.js';
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
+import type { DecisionClient, DecisionConfig } from './decisions.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
@@ -347,6 +352,12 @@ export interface SmrtClassOptions {
   ai?: AIClientOptions | AIClient;
 
   /**
+   * Optional typed-decision provider or already-built decision-capable client.
+   * It is independent from `ai`, which remains the generation client.
+   */
+  decisions?: DecisionConfig | DecisionClient;
+
+  /**
    * AI usage tracking configuration (overrides global defaults)
    */
   usage?: AiUsageConfig;
@@ -411,6 +422,11 @@ export class SmrtClass {
    * AI client instance for interacting with AI models
    */
   protected _ai!: AIClient;
+
+  /** Optional, independently initialized typed-decision client. */
+  protected _decisionClient?: DecisionClient;
+
+  private _decisionClientInitPromise?: Promise<DecisionClient | undefined>;
 
   /**
    * Filesystem adapter for file operations
@@ -781,6 +797,95 @@ export class SmrtClass {
   protected async getOptionalAiClient(): Promise<AIClient | undefined> {
     await this.ensureRuntimeServicesInitialized();
     return this._ai;
+  }
+
+  /**
+   * Resolve the optional typed-decision client without changing the generation
+   * client used by `is()`, `do()`, or `describe()`. The SDK import stays inside
+   * this opt-in path so ordinary SMRT applications neither load nor configure
+   * the decision provider.
+   */
+  protected async getDecisionClient(): Promise<DecisionClient | undefined> {
+    await this.ensureRuntimeServicesInitialized();
+
+    if (this._decisionClient) return this._decisionClient;
+    if (this._decisionClientInitPromise) {
+      return this._decisionClientInitPromise;
+    }
+
+    this._decisionClientInitPromise = (async () => {
+      const instanceDecision = this.options.decisions;
+      if (
+        instanceDecision &&
+        typeof instanceDecision === 'object' &&
+        typeof (instanceDecision as DecisionClient).decide === 'function'
+      ) {
+        this._decisionClient = instanceDecision as DecisionClient;
+        return this._decisionClient;
+      }
+
+      const configuredDecision = this.getDecisionConfig();
+      if (!configuredDecision) return undefined;
+      if (configuredDecision.type !== 'typesafe') {
+        throw new Error("Decision configuration requires type: 'typesafe'.");
+      }
+
+      // `getAI()` is deliberately dynamically imported, matching the existing
+      // generation setup. The #1284 SDK adds `decide` as an optional interface
+      // capability, so third-party/older clients remain source-compatible.
+      const { getAI } = await import('@happyvertical/ai');
+      this._decisionClient = (await getAI(
+        configuredDecision as Parameters<typeof getAI>[0],
+      )) as unknown as DecisionClient;
+      return this._decisionClient;
+    })();
+
+    try {
+      return await this._decisionClientInitPromise;
+    } finally {
+      this._decisionClientInitPromise = undefined;
+    }
+  }
+
+  /** Resolve project, global, and instance decision options in that order. */
+  protected getDecisionConfig(): DecisionConfig | undefined {
+    const instanceDecision = this.options.decisions;
+    const instanceConfig =
+      instanceDecision &&
+      typeof instanceDecision === 'object' &&
+      typeof (instanceDecision as DecisionClient).decide !== 'function'
+        ? (instanceDecision as Partial<DecisionConfig>)
+        : undefined;
+    const projectDecision = getSmrtModuleConfig<SmrtGlobalConfig>('smrt', {})
+      .decisions as Partial<DecisionConfig> | undefined;
+    const globalDecision = config.toJSON().decisions as
+      | Partial<DecisionConfig>
+      | undefined;
+    const resolved = {
+      ...projectDecision,
+      ...globalDecision,
+      ...instanceConfig,
+    } as Partial<DecisionConfig>;
+    return Object.keys(resolved).length === 0
+      ? undefined
+      : (resolved as DecisionConfig);
+  }
+
+  /**
+   * Records an SDK operation through SMRT's established usage handlers. The
+   * event carries provider/model/tokens only; prompts, object data, and secrets
+   * never enter usage persistence or callbacks.
+   */
+  protected async recordAiUsageEvent(
+    event: unknown,
+    providerConfig: Record<string, unknown>,
+  ): Promise<void> {
+    await this.ensureRuntimeServicesInitialized();
+    await this.handleAiUsageCallback(
+      event,
+      providerConfig,
+      this.mergeAiUsageConfig(config.toJSON()),
+    );
   }
 
   private async isSystemSchemaVersionApplied(

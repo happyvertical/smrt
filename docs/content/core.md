@@ -248,6 +248,52 @@ const isValid = await order.is("Has all required fields populated and total > 0"
 const isTechnical = await article.is("Contains technical programming content");
 ```
 
+### `evaluate(criteria)` - Detailed Decision Evaluation
+
+`evaluate()` is an additive detailed alternative to `is()`. Without a typed
+decision provider it uses the same generative route as `is()`, but returns a
+strict `{ result, route }` object. When `smrt.decisions` is configured with the
+optional TypeSafe provider, it returns the finite predicate probability,
+provider/model provenance, and provider-reported token usage when available.
+`is()` remains compatible for existing callers and returns only the final
+boolean on a configured decision route.
+
+```ts
+const evaluation = await document.evaluate('is appropriate for a general audience');
+if (evaluation.result) {
+  console.log(evaluation.probability, evaluation.provenance);
+}
+```
+
+Configure decisions separately from `ai`: this never replaces the generative
+client used by `do()` or `describe()`.
+
+```ts
+import { defineConfig } from '@happyvertical/smrt-config';
+
+export default defineConfig({
+  smrt: {
+    decisions: {
+      type: 'typesafe',
+      apiKey: process.env.TYPESAFE_API_KEY,
+      defaultModel: 'jev-latest',
+      threshold: 0.5,
+      // Optional: only probabilities within this inclusive distance of the
+      // threshold use the ordinary generative route as a tie-break.
+      uncertaintyFallback: { band: 0.05 },
+    },
+  },
+});
+```
+
+Thresholds and uncertainty bands must be finite values in `[0, 1]`. A
+probability equal to the threshold is true. The uncertainty tie-break is
+explicit: a confident false remains false, and transport, authentication, or
+malformed-provider failures reject instead of becoming false or activating a
+fallback. Objects with registered AI tools use the generative route so tools
+are never silently dropped. `includeData` and `maxDataLength` continue to use
+the public, sensitive-field-excluding object representation on both routes.
+
 ### `do(instructions)` - Execute Instructions
 
 Executes AI-powered instructions on the object and returns the result. Use this for content transformation, analysis, and generation tasks.

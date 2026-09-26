@@ -24,6 +24,11 @@ import {
   type DatabaseErrorClassification,
 } from './db-errors';
 import {
+  assertFiniteUnitInterval,
+  type EvaluateOptions,
+  type EvaluationResult,
+} from './decisions';
+import {
   isEmbeddedDatabase,
   isPostgresDatabase,
   usesEmbeddedRevisionFallback,
@@ -102,6 +107,12 @@ function isDuckDbHugeInt(value: unknown): boolean {
 }
 
 const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
+
+function asDecisionRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
 
 type PlainJSONValue =
   | null
@@ -3665,6 +3676,13 @@ export class SmrtObject extends SmrtClass {
    * @see {@link do} for open-ended instructions instead of boolean checks
    */
   public async is(criteria: string, options: AiOperationOptions = {}) {
+    // Keep the no-decision path byte-for-byte compatible, including its
+    // historical `undefined` result for valid JSON without a boolean `result`.
+    // The new evaluate() contract is deliberately stricter.
+    if (await this.getDecisionClient()) {
+      return (await this.evaluate(criteria, options)).result;
+    }
+
     const ai = await this.getAiClient();
     const { maxDataLength, includeData, ...aiOptions } = options ?? {};
     const contentSection = this.buildAiContentSection(
@@ -3690,6 +3708,161 @@ export class SmrtObject extends SmrtClass {
     } catch (_e) {
       throw new Error(`Unexpected answer: ${message}`);
     }
+  }
+
+  /**
+   * Evaluate criteria with an optional typed-decision provider and return the
+   * detailed route result. No configured decision provider uses the existing
+   * generative route, but its response is strict because this is a new API.
+   *
+   * Registered tools always select the generative route: typed decisions do
+   * not implement tool calling and SMRT must never silently discard tools.
+   */
+  public async evaluate(
+    criteria: string,
+    options: EvaluateOptions = {},
+  ): Promise<EvaluationResult> {
+    const decision = await this.getDecisionClient();
+    const config = this.getDecisionConfig();
+    const threshold = options.threshold ?? config?.threshold ?? 0.5;
+    assertFiniteUnitInterval(threshold, 'Decision threshold');
+    const configuredFallback =
+      options.uncertaintyFallback === false
+        ? undefined
+        : (options.uncertaintyFallback ?? config?.uncertaintyFallback);
+    if (configuredFallback) {
+      assertFiniteUnitInterval(
+        configuredFallback.band,
+        'Decision uncertainty fallback band',
+      );
+    }
+
+    if (!decision || this.getAvailableTools().length > 0) {
+      return this.evaluateWithGenerativeClient(criteria, options);
+    }
+
+    const capabilities = await decision.getCapabilities?.();
+    if (
+      capabilities?.decisions !== true ||
+      typeof decision.decide !== 'function'
+    ) {
+      throw new Error(
+        'The configured decision client does not support typed decisions.',
+      );
+    }
+
+    const result = asDecisionRecord(
+      await decision.decide(
+        {
+          state:
+            options.includeData === false
+              ? {}
+              : { content: this.serializeForAiPrompt(options.maxDataLength) },
+          questions: {
+            result: {
+              type: 'predicate',
+              instructions: criteria,
+            },
+          },
+        },
+        {
+          model: options.model,
+          signal: options.signal,
+          timeout: options.timeout,
+          usageTags: { operation: 'decision', className: this._className },
+        },
+      ),
+    );
+    const answers = asDecisionRecord(result?.answers);
+    const answer = asDecisionRecord(answers?.result);
+    if (answer?.type !== 'predicate') {
+      throw new Error('Decision provider returned no predicate result.');
+    }
+    const probability = answer.probability;
+    assertFiniteUnitInterval(probability, 'Decision probability');
+    const provenance = asDecisionRecord(result?.provenance);
+    if (
+      !provenance ||
+      typeof provenance.provider !== 'string' ||
+      typeof provenance.model !== 'string'
+    ) {
+      throw new Error('Decision provider returned invalid provenance.');
+    }
+
+    await this.recordAiUsageEvent(
+      {
+        provider: provenance.provider,
+        model: provenance.model,
+        operation: 'decision',
+        usage: result?.usage,
+        tags: { operation: 'decision' },
+      },
+      provenance,
+    );
+
+    const inUncertaintyBand =
+      configuredFallback !== undefined &&
+      Math.abs(probability - threshold) <= configuredFallback.band;
+    if (inUncertaintyBand) {
+      const fallback = await this.evaluateWithGenerativeClient(
+        criteria,
+        options,
+      );
+      return {
+        ...fallback,
+        fallback: 'generative',
+        initialDecision: {
+          probability,
+          provenance: {
+            provider: provenance.provider,
+            model: provenance.model,
+          },
+          usage: result?.usage as EvaluationResult['usage'],
+        },
+      };
+    }
+
+    return {
+      result: probability >= threshold,
+      probability,
+      provenance: { provider: provenance.provider, model: provenance.model },
+      usage: result?.usage as EvaluationResult['usage'],
+      route: 'decision',
+    };
+  }
+
+  private async evaluateWithGenerativeClient(
+    criteria: string,
+    options: EvaluateOptions,
+  ): Promise<EvaluationResult> {
+    const ai = await this.getAiClient();
+    const {
+      maxDataLength,
+      includeData,
+      threshold,
+      uncertaintyFallback,
+      ...aiOptions
+    } = options;
+    const contentSection = this.buildAiContentSection(
+      includeData,
+      maxDataLength,
+    );
+    const prompt = `${contentSection}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
+    const tools = this.getAvailableTools();
+    const message = await ai.message(prompt, {
+      ...aiOptions,
+      responseFormat: { type: 'json_object' },
+      tools: tools.length > 0 ? tools : undefined,
+    });
+    try {
+      const { result } = JSON.parse(message);
+      if (result === true || result === false) {
+        return { result, route: 'generative' };
+      }
+    } catch (_error) {
+      // Preserve the public error below without exposing provider response data.
+    }
+    throw new Error('Unexpected answer from generative evaluation.');
   }
 
   /**

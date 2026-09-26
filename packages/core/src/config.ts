@@ -10,6 +10,7 @@
 
 import type { LoggerConfig } from '@happyvertical/logger';
 import type { AiUsageHandler, SignalAdapter } from '@happyvertical/smrt-types';
+import type { DecisionConfig } from './decisions.js';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
 import type { RetentionPolicy } from './system/retention.js';
@@ -102,6 +103,9 @@ export interface GlobalSignalConfig {
    * Provides global defaults for AI client initialization
    */
   ai?: AIConfig;
+
+  /** Optional typed-decision configuration, independent from `ai`. */
+  decisions?: DecisionConfig;
 
   /**
    * AI usage tracking configuration (default: enabled)
