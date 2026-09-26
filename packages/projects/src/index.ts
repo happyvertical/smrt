@@ -76,7 +76,13 @@ export {
   type DevelopmentRequestHistoryOptions,
 } from './models/DevelopmentRequestHistory';
 export * from './models/delivery-control-plane.js';
-export { Issue, type IssueOptions } from './models/Issue';
+export {
+  Issue,
+  type IssueLabelVocabulary,
+  type IssueLabelVocabularyEntry,
+  type IssueLabelVocabularyResolver,
+  type IssueOptions,
+} from './models/Issue';
 export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
 export {

@@ -85,6 +85,7 @@ await issue.rollback();
 - **Living Spec** (`incorporateFeedback()`): AI synthesizes issue comments into updated body. Supports preview mode and `rollback()`
 - **Sync throttle**: sync operations skip if called within 5 minutes (override with `{ force: true }`)
 - **Provider-agnostic**: GitHub primary, GitLab/Bitbucket/Azure types defined. Uses `@happyvertical/repos` and `@happyvertical/projects` SDK packages
+- **Optional label vocabulary**: `issue.suggestLabels(vocabulary)` keeps its free-label generation when no vocabulary or typed decision client is configured. With both, provide a readonly array of `{ name, description? }` or a resolver; each offered label is independently evaluated and only offered labels above 0.5 are returned. An explicit empty vocabulary returns `[]` without a provider call. Names are exact and case-sensitive; vocabulary entries are limited to 64 labels, 128-character names, and 512-character descriptions. Resolver and configured-provider errors propagate.
 - **Optional sentiment decisions**: `Comment.getSentiment()` keeps its existing generative behavior until typed decisions are configured. With no registered tools, it sends a bounded comment value to a three-choice decision request. A selected choice must be a unique probability maximum above 0.5; tied or low-probability responses, invalid configured responses, and provider failures reject instead of being silently treated as neutral. This is a routing certainty rule, not a calibrated quality claim.
 
 ## Dependencies
