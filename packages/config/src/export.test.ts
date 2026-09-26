@@ -255,6 +255,25 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
     // `auth` itself is a secret-adjacent key → whole subtree dropped.
     expect(out).not.toHaveProperty('auth');
   });
+
+  it('strips a nested typed-decision API key while retaining safe settings', () => {
+    const out = sanitizeConfig({
+      smrt: {
+        decisions: {
+          type: 'typesafe',
+          apiKey: 'typesafe-secret',
+          defaultModel: 'jev-latest',
+          threshold: 0.5,
+        },
+      },
+    }) as { smrt: { decisions: Record<string, unknown> } };
+
+    expect(out.smrt.decisions).toEqual({
+      type: 'typesafe',
+      defaultModel: 'jev-latest',
+      threshold: 0.5,
+    });
+  });
 });
 
 describe('sanitizeConfig — value-level secret-token redaction (#1381)', () => {

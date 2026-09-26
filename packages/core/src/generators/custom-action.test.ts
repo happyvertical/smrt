@@ -291,6 +291,7 @@ describe('framework lifecycle method exclusion (#2638)', () => {
       'withTransaction',
       'markAsPersisted',
       'getFields',
+      'evaluate',
     ]) {
       expect(isFrameworkLifecycleMethod(name)).toBe(true);
     }

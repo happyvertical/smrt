@@ -302,6 +302,18 @@ describe('CLIGenerator - generateObjectCommands', () => {
     expect(names).not.toContain('widget:internalcalc');
   });
 
+  it('excludes only the new evaluate lifecycle override from CLI commands', async () => {
+    const methods = new Map<string, any>([
+      ['evaluate', { name: 'evaluate', isPublic: true, parameters: [] }],
+      ['do', { name: 'do', isPublic: true, parameters: [] }],
+    ]);
+    stubRegistry({ cli: true, methods });
+    const cmds = await (cli as any).generateObjectCommands('Widget', {});
+    const names = cmds.map((c: any) => c.name);
+    expect(names).not.toContain('widget:evaluate');
+    expect(names).toContain('widget:do');
+  });
+
   it('uses strict mode when include lists custom methods', async () => {
     const methods = new Map<string, any>([
       ['analyze', { name: 'analyze', isPublic: true, parameters: [] }],

@@ -112,6 +112,12 @@ export const FRAMEWORK_LIFECYCLE_METHOD_NAMES: ReadonlySet<string> = new Set([
   'markAsPersisted',
   'requireInsertOnSave',
   'withTransaction',
+  // `evaluate()` is a framework decision-provider operation. Unlike the
+  // established overridable AI helpers above, exposing it would let generated
+  // REST/CLI/MCP surfaces acquire a new external-provider capability merely by
+  // upgrading core. Consumers that want a transport action declare their own
+  // domain method and policy explicitly.
+  'evaluate',
 ]);
 
 /**

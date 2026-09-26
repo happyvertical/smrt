@@ -2453,6 +2453,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       defaultListLimit, // #2367
       persistence, // Also extract persistence alias
       ai,
+      decisions,
       fs,
       logging,
       maxListLimit, // #2367
@@ -2469,6 +2470,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       db,
       persistence, // Pass persistence through so initialize() can map it to db
       ai,
+      decisions,
       defaultListLimit,
       fs,
       logging,
@@ -3587,6 +3589,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Schema already initialized in Collection.create() static factory
     const params = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       // Pass the actual database instance, not options
       // This ensures objects share the same connection as the collection
       // Critical for in-memory databases like DuckDB :memory: where each
@@ -3670,6 +3673,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const params = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
       ...(hydrationOptions.hydrateOnly
@@ -4484,6 +4488,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const instanceParams = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
       _reuseInitializedDb: true,
