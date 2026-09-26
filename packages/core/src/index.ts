@@ -171,6 +171,12 @@ export {
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
+export type {
+  DecisionClient,
+  DecisionConfig,
+  EvaluateOptions,
+  EvaluationResult,
+} from './decisions';
 export {
   applyPendingDecoratorRegistrations,
   type CompatibleMethodDecorator,

@@ -3587,6 +3587,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Schema already initialized in Collection.create() static factory
     const params = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       // Pass the actual database instance, not options
       // This ensures objects share the same connection as the collection
       // Critical for in-memory databases like DuckDB :memory: where each
@@ -3670,6 +3671,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const params = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
       ...(hydrationOptions.hydrateOnly
@@ -4484,6 +4486,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const instanceParams = {
       ai: this.options.ai,
+      decisions: this.options.decisions,
       db: this.db,
       _skipLoad: true,
       _reuseInitializedDb: true,

@@ -197,6 +197,20 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
     expect(generative.message).toHaveBeenCalledOnce();
   });
 
+  it('preserves is model overrides when uncertainty falls back to generation', async () => {
+    const { product, generative } = makeProduct(0.5, '{"result": true}');
+
+    await expect(
+      product.is('is suitable?', {
+        model: 'legacy-generation-model',
+        uncertaintyFallback: { band: 0 },
+      }),
+    ).resolves.toBe(true);
+    expect(generative.message.mock.calls[0]?.[1]).toMatchObject({
+      model: 'legacy-generation-model',
+    });
+  });
+
   it('routes registered tools through the generative client instead of dropping them', async () => {
     const { product, decision, generative } = makeProduct(
       1,

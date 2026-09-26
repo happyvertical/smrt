@@ -25,10 +25,10 @@ export interface DecisionConfig {
  * capability and projects the predicate result it consumes.
  */
 export interface DecisionClient {
-  getCapabilities?: () => Promise<{
+  getCapabilities: () => Promise<{
     decisions?: boolean;
   }>;
-  decide?: (request: unknown, options?: unknown) => Promise<unknown>;
+  decide: (request: unknown, options?: unknown) => Promise<unknown>;
 }
 
 export interface EvaluationResult {

@@ -3679,8 +3679,18 @@ export class SmrtObject extends SmrtClass {
     // Keep the no-decision path byte-for-byte compatible, including its
     // historical `undefined` result for valid JSON without a boolean `result`.
     // The new evaluate() contract is deliberately stricter.
-    if (await this.getDecisionClient()) {
-      return (await this.evaluate(criteria, options)).result;
+    if (
+      this.getAvailableTools().length === 0 &&
+      (await this.getDecisionClient())
+    ) {
+      return (
+        await this.evaluate(criteria, {
+          ...options,
+          // `is()` historically treats `model` as the generative override.
+          // Keep that meaning if an explicit uncertainty fallback runs.
+          generativeModel: options.model,
+        })
+      ).result;
     }
 
     const ai = await this.getAiClient();
@@ -3722,6 +3732,9 @@ export class SmrtObject extends SmrtClass {
     criteria: string,
     options: EvaluateOptions = {},
   ): Promise<EvaluationResult> {
+    if (this.getAvailableTools().length > 0) {
+      return this.evaluateWithGenerativeClient(criteria, options);
+    }
     const decision = await this.getDecisionClient();
     const config = this.getDecisionConfig();
     const threshold = options.threshold ?? config?.threshold ?? 0.5;
@@ -3737,7 +3750,7 @@ export class SmrtObject extends SmrtClass {
       );
     }
 
-    if (!decision || this.getAvailableTools().length > 0) {
+    if (!decision) {
       return this.evaluateWithGenerativeClient(criteria, options);
     }
 
