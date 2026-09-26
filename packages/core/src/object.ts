@@ -3676,13 +3676,14 @@ export class SmrtObject extends SmrtClass {
    * @see {@link do} for open-ended instructions instead of boolean checks
    */
   public async is(criteria: string, options: AiOperationOptions = {}) {
+    const tools = this.getAvailableTools();
+    const hasConfiguredDecisions =
+      this.options.decisions !== undefined ||
+      this.getDecisionConfig() !== undefined;
     // Keep the no-decision path byte-for-byte compatible, including its
     // historical `undefined` result for valid JSON without a boolean `result`.
     // The new evaluate() contract is deliberately stricter.
-    if (
-      this.getAvailableTools().length === 0 &&
-      (await this.getDecisionClient())
-    ) {
+    if (tools.length === 0 && (await this.getDecisionClient())) {
       return (
         await this.evaluate(criteria, {
           ...options,
@@ -3694,15 +3695,22 @@ export class SmrtObject extends SmrtClass {
     }
 
     const ai = await this.getAiClient();
-    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const { maxDataLength, includeData, ...legacyAiOptions } = options ?? {};
+    let aiOptions = legacyAiOptions;
+    if (tools.length > 0 && hasConfiguredDecisions) {
+      const {
+        threshold: _threshold,
+        uncertaintyFallback: _uncertaintyFallback,
+        generativeModel: _generativeModel,
+        ...generationOptions
+      } = aiOptions as typeof aiOptions & Partial<EvaluateOptions>;
+      aiOptions = generationOptions;
+    }
     const contentSection = this.buildAiContentSection(
       includeData,
       maxDataLength,
     );
     const prompt = `${contentSection}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
-
-    // Get available tools for AI function calling
-    const tools = this.getAvailableTools();
 
     const message = await ai.message(prompt, {
       ...aiOptions,

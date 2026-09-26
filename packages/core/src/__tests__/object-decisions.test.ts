@@ -269,7 +269,22 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
       result: true,
       route: 'generative',
     });
-    await expect(product.is('is suitable?')).resolves.toBe(true);
+    await expect(
+      product.is('is suitable?', {
+        model: 'legacy-generation-model',
+        threshold: 0.7,
+        uncertaintyFallback: { band: 0 },
+        generativeModel: 'ignored-generation-model',
+      } as any),
+    ).resolves.toBe(true);
+    const isOptions = generative.message.mock.calls[1]?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(isOptions).toMatchObject({ model: 'legacy-generation-model' });
+    expect(isOptions).not.toHaveProperty('threshold');
+    expect(isOptions).not.toHaveProperty('uncertaintyFallback');
+    expect(isOptions).not.toHaveProperty('generativeModel');
   });
 
   it('rejects malformed decision responses and never treats them as false', async () => {
