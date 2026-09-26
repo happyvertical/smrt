@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.51.30
+
+### Patch Changes
+
+- ### Features
+  
+  - Stripe card on file, taxed credit, and auto top-up (#3149) (commerce)
+  
+  ### Bug Fixes
+  
+  - honor claimReady limit on PostgreSQL; hard-cap runner concurrency (#3147) (jobs)
+  
+  ### Other Changes
+  
+  - perf: bound db:status introspection round trips (#3151) (core)
+  - chore: sync sdk packages to v0.94.0 (#3144) (deps)
+- @happyvertical/smrt-config@0.51.30
+  - @happyvertical/smrt-scanner@0.51.30
+  - @happyvertical/smrt-types@0.51.30
+
 ## 0.51.29
 
 ### Patch Changes
