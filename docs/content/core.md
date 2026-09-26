@@ -299,6 +299,41 @@ fallback. Objects with registered AI tools use the generative route so tools
 are never silently dropped. `includeData` and `maxDataLength` continue to use
 the public, sensitive-field-excluding object representation on both routes.
 
+### Bounded Choice, Score, and Batch Decisions
+
+Domain objects and collections can use the protected `attemptDecision()` helper
+for a choice, score, or several independent questions over one explicitly
+curated JSON state. It returns `undefined` only when no decision client is
+configured; configured capability, cancellation, timeout, provider, and
+malformed-result errors reject. A batch emits one decision usage event.
+
+```ts
+const decision = await this.attemptDecision(
+  {
+    state: { title: this.title, labels: this.labels },
+    questions: {
+      sentiment: {
+        type: 'choice',
+        instructions: resolvedPrompt.text,
+        criteria: { positive: null, neutral: null, negative: null },
+      },
+    },
+  },
+  { model: 'jev-latest', signal, timeout: 1_000 },
+);
+```
+
+`DecisionRequest`, `DecisionOptions`, and `DecisionResult` are re-exported SDK
+types; SMRT does not define a provider wire format. Resolve registered prompt
+instructions and tenant overrides before building `instructions`, and keep
+prompt generation options separate from `DecisionOptions`. Object methods with
+registered tools must retain their generative route before attempting a typed
+decision.
+
+For a representative-data pilot, record labeled cases, legacy and decision
+answers, ambiguity, failures, and usage/provenance telemetry. Contract tests do
+not measure model quality; live results require credentials and labeled data.
+
 ### `do(instructions)` - Execute Instructions
 
 Executes AI-powered instructions on the object and returns the result. Use this for content transformation, analysis, and generation tasks.

@@ -108,12 +108,6 @@ function isDuckDbHugeInt(value: unknown): boolean {
 
 const PLAIN_JSON_OMITTED = Symbol('plain-json-omitted');
 
-function asDecisionRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
 type PlainJSONValue =
   | null
   | boolean
@@ -3762,65 +3756,38 @@ export class SmrtObject extends SmrtClass {
       return this.evaluateWithGenerativeClient(criteria, options);
     }
 
-    const capabilities = await decision.getCapabilities?.();
-    if (
-      capabilities?.decisions !== true ||
-      typeof decision.decide !== 'function'
-    ) {
-      throw new Error(
-        'The configured decision client does not support typed decisions.',
-      );
-    }
-
-    const result = asDecisionRecord(
-      await decision.decide(
-        {
-          state:
-            options.includeData === false
-              ? {}
-              : { content: this.serializeForAiPrompt(options.maxDataLength) },
-          questions: {
-            result: {
-              type: 'predicate',
-              instructions: criteria,
-            },
+    const result = await this.attemptDecision(
+      {
+        state:
+          options.includeData === false
+            ? {}
+            : { content: this.serializeForAiPrompt(options.maxDataLength) },
+        questions: {
+          result: {
+            type: 'predicate',
+            instructions: criteria,
           },
         },
-        {
-          model: options.model,
-          signal: options.signal,
-          timeout: options.timeout,
-          usageTags: { operation: 'decision', className: this._className },
-        },
-      ),
+      },
+      {
+        model: options.model,
+        signal: options.signal,
+        timeout: options.timeout,
+        usageTags: { operation: 'decision', className: this._className },
+      },
     );
-    const answers = asDecisionRecord(result?.answers);
-    const answer = asDecisionRecord(answers?.result);
+    // `decision` was already resolved above, so a missing result would be an
+    // internal contract violation rather than a legacy-route fallback.
+    if (!result) {
+      throw new Error('Configured decision client was unavailable.');
+    }
+    const provenance = result.provenance;
+    const answer = result.answers.result;
     if (answer?.type !== 'predicate') {
       throw new Error('Decision provider returned no predicate result.');
     }
     const probability = answer.probability;
     assertFiniteUnitInterval(probability, 'Decision probability');
-    const provenance = asDecisionRecord(result?.provenance);
-    if (
-      !provenance ||
-      typeof provenance.provider !== 'string' ||
-      typeof provenance.model !== 'string'
-    ) {
-      throw new Error('Decision provider returned invalid provenance.');
-    }
-
-    await this.recordAiUsageEvent(
-      {
-        provider: provenance.provider,
-        model: provenance.model,
-        operation: 'decision',
-        usage: result?.usage,
-        tags: { operation: 'decision' },
-      },
-      provenance,
-    );
-
     // Compare against the computed inclusive bounds rather than an absolute
     // difference: the two endpoints follow the same floating-point rounding
     // as the configured threshold plus/minus band.

@@ -172,11 +172,18 @@ export {
   isUniqueViolationError,
 } from './db-errors';
 export type {
+  DecisionAnswer,
   DecisionClient,
   DecisionConfig,
+  DecisionOptions,
+  DecisionQuestion,
+  DecisionRequest,
+  DecisionResult,
+  DecisionValue,
   EvaluateOptions,
   EvaluationResult,
 } from './decisions';
+export { executeDecision } from './decisions';
 export {
   applyPendingDecoratorRegistrations,
   type CompatibleMethodDecorator,
