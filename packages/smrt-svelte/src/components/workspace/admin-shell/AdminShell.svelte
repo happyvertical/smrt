@@ -850,12 +850,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right {
       position: absolute;
+      grid-area: auto;
       inset-block: var(--smrt-admin-shell-top-track)
         var(--smrt-admin-shell-bottom-track);
       inline-size: min(22rem, 86vw);
       transform: translateX(-100%);
       transition: transform var(--smrt-duration-short2)
         var(--smrt-easing-standard);
+    }
+
+    .smrt-admin-shell__edge--left {
+      inset-inline-start: 0;
     }
 
     .smrt-admin-shell__edge--right {
@@ -880,6 +885,25 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
     .smrt-admin-shell__corner {
       display: none;
+    }
+
+    .smrt-admin-shell__drawer {
+      box-sizing: border-box;
+      inset-inline: 0;
+    }
+
+    .smrt-admin-shell__drawer--top {
+      max-block-size: min(
+        var(--smrt-admin-shell-top-expanded),
+        calc(100% - var(--smrt-admin-shell-top-track) - var(--smrt-admin-shell-bottom-track))
+      );
+    }
+
+    .smrt-admin-shell__drawer--bottom {
+      max-block-size: min(
+        var(--smrt-admin-shell-bottom-expanded),
+        calc(100% - var(--smrt-admin-shell-top-track) - var(--smrt-admin-shell-bottom-track))
+      );
     }
   }
 

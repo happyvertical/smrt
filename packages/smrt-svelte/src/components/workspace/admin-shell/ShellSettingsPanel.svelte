@@ -94,6 +94,9 @@ function conflictFor(edge: PanelEdge): string | null {
 <style>
   .smrt-shell-settings-panel {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
     gap: var(--smrt-spacing-4);
   }
 

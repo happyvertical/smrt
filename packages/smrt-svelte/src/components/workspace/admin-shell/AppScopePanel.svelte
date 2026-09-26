@@ -46,7 +46,7 @@ const { t } = useI18n();
       {/if}
     </div>
     {#if environment}
-      <Badge variant="info" size="sm">{environment}</Badge>
+      <Badge variant="info" size="sm"><span class="smrt-app-scope-panel__environment">{environment}</span></Badge>
     {/if}
   </header>
 
@@ -76,14 +76,26 @@ const { t } = useI18n();
 <style>
   .smrt-app-scope-panel {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
     gap: var(--smrt-spacing-5);
   }
 
   .smrt-app-scope-panel header {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
+  }
+
+  .smrt-app-scope-panel header > div {
+    min-inline-size: 0;
+  }
+
+  .smrt-app-scope-panel__environment {
+    white-space: normal;
   }
 
   .smrt-app-scope-panel h2,
