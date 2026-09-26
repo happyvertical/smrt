@@ -58,17 +58,87 @@ function makeProductWithClients(
 
 describe('SmrtObject.evaluate typed decisions (#3153)', () => {
   it.runIf(process.env.SMRT_SDK_DECISIONS_LINKED === '1')(
-    'constructs the linked SDK decision client without a provider request',
+    'drives evaluate through the linked SDK adapter with controlled HTTP',
     async () => {
       const generative = makeGenerativeClient();
       const product = new DecisionProduct({
         ai: generative.client,
-        decisions: { type: 'typesafe', apiKey: 'test-only-key' },
+        decisions: {
+          type: 'typesafe',
+          apiKey: 'test-only-key',
+          baseUrl: 'https://typesafe.test/v1',
+          defaultModel: 'jev-default',
+        },
       });
+      product.name = 'Public linked product';
+      product.apiKey = 'linked-secret';
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
 
-      const client = await (product as any).getDecisionClient();
-      expect((await client.getCapabilities?.())?.decisions).toBe(true);
-      expect(client.decide).toEqual(expect.any(Function));
+      try {
+        fetchMock.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              model: 'jev-actual',
+              answers: { result: { type: 'noul', noul: 0.75 } },
+              usage: { input_tokens: 4, output_tokens: 2 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+
+        await expect(
+          product.evaluate('is suitable?', {
+            model: 'jev-override',
+            timeout: 250,
+          }),
+        ).resolves.toEqual({
+          result: true,
+          probability: 0.75,
+          provenance: { provider: 'typesafe', model: 'jev-actual' },
+          usage: { promptTokens: 4, completionTokens: 2, totalTokens: 6 },
+          route: 'decision',
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+          'https://typesafe.test/v1/systemone',
+          expect.objectContaining({
+            method: 'POST',
+            signal: expect.anything(),
+          }),
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({
+          state: { content: expect.stringContaining('Public linked product') },
+          model: 'jev-override',
+          questions: {
+            result: { type: 'noul', instructions: 'is suitable?' },
+          },
+        });
+        expect(fetchMock.mock.calls[0]?.[1]?.body).not.toContain(
+          'linked-secret',
+        );
+
+        fetchMock.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              model: 'jev-actual',
+              answers: { result: { type: 'noul', noul: 2 } },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+        await expect(product.evaluate('is suitable?')).rejects.toThrow(
+          /between 0 and 1/,
+        );
+
+        fetchMock.mockRejectedValueOnce(
+          new Error('controlled transport error'),
+        );
+        await expect(product.evaluate('is suitable?')).rejects.toThrow(
+          /Network error calling TypeSafe System One: controlled transport error/,
+        );
+      } finally {
+        vi.unstubAllGlobals();
+      }
     },
   );
 
