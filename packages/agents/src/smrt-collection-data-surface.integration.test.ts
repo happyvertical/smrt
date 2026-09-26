@@ -83,14 +83,14 @@ describe('createSmrtCollectionDataSurfaceDefinition (real SQLite)', () => {
         title: 'Ship the report',
         status: 'open',
       });
-      a.internalCost = '4200';
+      a.internalCost = 'private-cost:tenant-a-open';
       await a.save();
       const b = await tasks.create({
         tenantId: 'tenant-a',
         title: 'Review the PR',
         status: 'closed',
       });
-      b.internalCost = '1500';
+      b.internalCost = 'private-cost:tenant-a-closed';
       await b.save();
     });
     await withTenant({ tenantId: 'tenant-b' }, async () => {
@@ -99,7 +99,7 @@ describe('createSmrtCollectionDataSurfaceDefinition (real SQLite)', () => {
         title: 'Hidden tenant task',
         status: 'open',
       });
-      hidden.internalCost = '9999';
+      hidden.internalCost = 'private-cost:tenant-b';
       await hidden.save();
     });
   });
@@ -151,8 +151,8 @@ describe('createSmrtCollectionDataSurfaceDefinition (real SQLite)', () => {
       expect(row).not.toHaveProperty('internalCost');
       expect(row).not.toHaveProperty('tenantId');
     }
-    expect(JSON.stringify(result)).not.toContain('9999');
-    expect(JSON.stringify(result)).not.toContain('4200');
+    // Distinctive text cannot collide with public UUIDs or timestamps.
+    expect(JSON.stringify(result)).not.toContain('private-cost:');
 
     // The other tenant's row never crosses the boundary, even under a wide
     // page limit.
