@@ -286,6 +286,11 @@ export default defineConfig({
 });
 ```
 
+The `model` option passed to `evaluate(criteria, options)` selects the typed
+decision model only. When a registered tool or an explicit uncertainty fallback
+uses the generative route, select that route's model separately with
+`generativeModel`.
+
 Thresholds and uncertainty bands must be finite values in `[0, 1]`. A
 probability equal to the threshold is true. The uncertainty tie-break is
 explicit: a confident false remains false, and transport, authentication, or

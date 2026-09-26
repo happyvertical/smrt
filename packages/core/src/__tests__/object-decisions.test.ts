@@ -171,20 +171,25 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
     expect(generative.message).not.toHaveBeenCalled();
   });
 
-  it('uses generative evaluation only for an explicitly configured uncertainty band', async () => {
-    const { product, generative } = makeProduct(0.55, '{"result": false}');
+  it.each([
+    0.45, 0.55,
+  ])('uses generative evaluation at the inclusive uncertainty endpoint %s', async (probability) => {
+    const { product, generative } = makeProduct(
+      probability,
+      '{"result": false}',
+    );
 
     await expect(
       product.evaluate('is suitable?', {
         threshold: 0.5,
-        uncertaintyFallback: { band: 0.1 },
+        uncertaintyFallback: { band: 0.05 },
       }),
     ).resolves.toEqual({
       result: false,
       route: 'generative',
       fallback: 'generative',
       initialDecision: {
-        probability: 0.55,
+        probability,
         provenance: { provider: 'typesafe', model: 'jev-test' },
         usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
       },
@@ -199,12 +204,17 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
     );
     vi.spyOn(product, 'getAvailableTools').mockReturnValue([{} as any]);
 
-    await expect(product.evaluate('is suitable?')).resolves.toMatchObject({
-      result: true,
-      route: 'generative',
-    });
+    await expect(
+      product.evaluate('is suitable?', {
+        model: 'jev-decision',
+        generativeModel: 'generation-model',
+      }),
+    ).resolves.toMatchObject({ result: true, route: 'generative' });
     expect(decision?.decide).not.toHaveBeenCalled();
     expect(generative.message.mock.calls[0]?.[1]?.tools).toHaveLength(1);
+    expect(generative.message.mock.calls[0]?.[1]).toMatchObject({
+      model: 'generation-model',
+    });
   });
 
   it('rejects malformed decision responses and never treats them as false', async () => {

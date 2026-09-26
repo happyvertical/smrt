@@ -3800,9 +3800,22 @@ export class SmrtObject extends SmrtClass {
       provenance,
     );
 
+    // Compare against the computed inclusive bounds rather than an absolute
+    // difference: the two endpoints follow the same floating-point rounding
+    // as the configured threshold plus/minus band.
+    const lowerUncertaintyBound =
+      configuredFallback === undefined
+        ? undefined
+        : Math.max(0, threshold - configuredFallback.band);
+    const upperUncertaintyBound =
+      configuredFallback === undefined
+        ? undefined
+        : Math.min(1, threshold + configuredFallback.band);
     const inUncertaintyBand =
-      configuredFallback !== undefined &&
-      Math.abs(probability - threshold) <= configuredFallback.band;
+      lowerUncertaintyBound !== undefined &&
+      upperUncertaintyBound !== undefined &&
+      probability >= lowerUncertaintyBound &&
+      probability <= upperUncertaintyBound;
     if (inUncertaintyBand) {
       const fallback = await this.evaluateWithGenerativeClient(
         criteria,
@@ -3841,6 +3854,8 @@ export class SmrtObject extends SmrtClass {
       includeData,
       threshold,
       uncertaintyFallback,
+      model: _decisionModel,
+      generativeModel,
       ...aiOptions
     } = options;
     const contentSection = this.buildAiContentSection(
@@ -3851,6 +3866,7 @@ export class SmrtObject extends SmrtClass {
     const tools = this.getAvailableTools();
     const message = await ai.message(prompt, {
       ...aiOptions,
+      ...(generativeModel ? { model: generativeModel } : {}),
       responseFormat: { type: 'json_object' },
       tools: tools.length > 0 ? tools : undefined,
     });

@@ -77,6 +77,8 @@ export interface EvaluateOptions {
     | false;
   /** Per-call decision model override. */
   model?: string;
+  /** Model for an explicit generative fallback or tool route. */
+  generativeModel?: string;
   /** Abort an in-flight provider request. */
   signal?: AbortSignal;
   /** Provider request deadline in milliseconds. */
