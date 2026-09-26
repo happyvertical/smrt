@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.51.31
+
+### Patch Changes
+
+- ### Features
+  
+  - add optional typed decision evaluation (#3154) (core)
+  
+  ### Bug Fixes
+  
+  - restore mobile shell panels and footer scrolling (#3157) (svelte)
+- @happyvertical/smrt-config@0.51.31
+  - @happyvertical/smrt-scanner@0.51.31
+  - @happyvertical/smrt-types@0.51.31
+
 ## 0.51.30
 
 ### Patch Changes
