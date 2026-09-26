@@ -32,7 +32,6 @@ const exportedDecisionRequest: DecisionRequest = {
     result: { type: 'predicate', instructions: 'is this valid?' },
   },
 };
-// @ts-expect-error DecisionClient requires both runtime methods.
 const incompleteDecisionClient: DecisionClient = { decide: async () => ({}) };
 void [
   exportedDecisionConfig,
@@ -189,6 +188,47 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
     await expect(executeDecision(malformed, request)).rejects.toThrow(
       /not a requested option/,
     );
+  });
+
+  it('keeps legacy injected predicate responses compatible with provenance-only models and extra answers', async () => {
+    const client: DecisionClient = {
+      getCapabilities: async () => ({ decisions: true }),
+      decide: async () => ({
+        model: 'redundant-but-different-model',
+        provenance: { provider: 'legacy-injected', model: 'provenance-model' },
+        answers: {
+          result: { type: 'predicate', probability: 1 },
+          retainedLegacyAnswer: { type: 'predicate', probability: 0 },
+        },
+      }),
+    };
+
+    const product = new DecisionProduct({
+      ai: makeGenerativeClient().client,
+      decisions: client,
+    });
+    await expect(product.evaluate('is compatible?')).resolves.toMatchObject({
+      result: true,
+      provenance: { provider: 'legacy-injected', model: 'provenance-model' },
+    });
+    await expect(
+      executeDecision(client, {
+        state: {},
+        questions: {
+          result: { type: 'predicate', instructions: 'is compatible?' },
+        },
+      }),
+    ).resolves.toMatchObject({ model: 'provenance-model' });
+  });
+
+  it('reports the documented unsupported-capability error when an injected client omits the optional probe', async () => {
+    const request: DecisionRequest = {
+      state: {},
+      questions: { result: { type: 'predicate', instructions: 'Check it.' } },
+    };
+    await expect(
+      executeDecision({ decide: async () => ({}) }, request),
+    ).rejects.toThrow('does not support typed decisions');
   });
 
   it.each([

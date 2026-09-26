@@ -42,7 +42,7 @@ export interface DecisionConfig {
  * capability and projects the predicate result it consumes.
  */
 export interface DecisionClient {
-  getCapabilities: () => Promise<{
+  getCapabilities?: () => Promise<{
     decisions?: boolean;
   }>;
   /**
@@ -125,7 +125,7 @@ export async function executeDecision(
   request: DecisionRequest,
   options?: DecisionOptions,
 ): Promise<DecisionResult> {
-  const capabilities = await client.getCapabilities();
+  const capabilities = await client.getCapabilities?.();
   if (capabilities?.decisions !== true || typeof client.decide !== 'function') {
     throw new Error(
       'The configured decision client does not support typed decisions.',
@@ -134,12 +134,8 @@ export async function executeDecision(
 
   const rawResult = await client.decide(request, options);
   const result = asDecisionRecord(rawResult);
-  if (
-    !result ||
-    typeof result.model !== 'string' ||
-    result.model.length === 0
-  ) {
-    throw new Error('Decision provider returned an invalid model.');
+  if (!result) {
+    throw new Error('Decision provider returned an invalid result.');
   }
   const provenance = asDecisionRecord(result.provenance);
   if (
@@ -147,19 +143,14 @@ export async function executeDecision(
     typeof provenance.provider !== 'string' ||
     provenance.provider.length === 0 ||
     typeof provenance.model !== 'string' ||
-    provenance.model.length === 0 ||
-    provenance.model !== result.model
+    provenance.model.length === 0
   ) {
     throw new Error('Decision provider returned invalid provenance.');
   }
 
   const answers = asDecisionRecord(result.answers);
   const questionIds = Object.keys(request.questions);
-  if (
-    !answers ||
-    Object.keys(answers).length !== questionIds.length ||
-    questionIds.some((id) => !Object.hasOwn(answers, id))
-  ) {
+  if (!answers || questionIds.some((id) => !Object.hasOwn(answers, id))) {
     throw new Error('Decision provider returned no answers.');
   }
   for (const [id, question] of Object.entries(request.questions)) {
@@ -230,7 +221,14 @@ export async function executeDecision(
     }
   }
 
-  return rawResult as DecisionResult;
+  // `evaluate()` historically accepted injected predicate results whose model
+  // lived only in provenance. Keep that source-compatible runtime shape while
+  // presenting the SDK result contract to new typed callers. Provenance is the
+  // validated provider identity, so it also normalizes redundant model metadata.
+  return {
+    ...result,
+    model: provenance.model,
+  } as DecisionResult;
 }
 
 export interface EvaluationResult {
