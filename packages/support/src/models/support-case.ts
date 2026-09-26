@@ -12,6 +12,8 @@
 
 import {
   crossPackageRef,
+  type DecisionRequest,
+  type DecisionResult,
   field,
   foreignKey,
   SmrtCollection,
@@ -202,6 +204,20 @@ export class SupportCase extends SmrtObject {
 
   setPlanSnapshot(value: Record<string, unknown>): void {
     this.planSnapshot = JSON.stringify(value ?? {});
+  }
+
+  /**
+   * Attempt typed support triage without changing the established tool route.
+   *
+   * A configured decision client is deliberately resolved only after the tool
+   * guard, matching the core routing rule. `undefined` means the caller must
+   * use its legacy generative behavior.
+   */
+  async attemptTriageDecision(
+    request: DecisionRequest,
+  ): Promise<DecisionResult | undefined> {
+    if (this.getAvailableTools().length > 0) return undefined;
+    return this.attemptDecision(request);
   }
 
   /**

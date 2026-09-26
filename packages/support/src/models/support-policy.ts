@@ -37,6 +37,7 @@ export const DEFAULT_SUPPORT_POLICY = {
   maxAutoAttempts: 1,
   autoSendEmailReplies: false,
   sensitiveCategories: [] as string[],
+  allowedCategories: [] as string[],
   allowedTools: [] as string[],
 } as const;
 
@@ -113,6 +114,13 @@ export class SupportPolicy extends SmrtObject {
   @field({ type: 'text' })
   sensitiveCategories: string = '[]';
 
+  /**
+   * Optional closed vocabulary for AI classification categories. Empty keeps
+   * the legacy free-vocabulary category generation path.
+   */
+  @field({ type: 'text' })
+  allowedCategories: string = '[]';
+
   /** Tool ids the troubleshooting phase may execute. JSON array, fail-closed. */
   @field({ type: 'text' })
   allowedTools: string = '[]';
@@ -126,6 +134,14 @@ export class SupportPolicy extends SmrtObject {
 
   setSensitiveCategories(categories: string[]): void {
     this.sensitiveCategories = JSON.stringify(categories ?? []);
+  }
+
+  getAllowedCategories(): string[] {
+    return parseStringArrayField(this.allowedCategories);
+  }
+
+  setAllowedCategories(categories: string[]): void {
+    this.allowedCategories = JSON.stringify(categories ?? []);
   }
 
   getAllowedTools(): string[] {

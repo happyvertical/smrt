@@ -48,8 +48,10 @@ export class SupportAiRun extends SmrtObject {
   outcome: SupportAiRunOutcome = 'completed';
 
   /**
-   * Model-reported confidence in [0, 1] for answer/classify/resolve phases;
-   * null when the phase has no confidence semantics (e.g. acknowledge).
+   * Model-reported answer/resolve confidence or the classification audit
+   * certainty in [0, 1]. Classification certainty is not calibrated answer
+   * confidence and never controls the answer policy threshold. Null when the
+   * phase has no confidence semantics (e.g. acknowledge).
    */
   @field({ type: 'decimal', nullable: true })
   confidence: number | null = null;
