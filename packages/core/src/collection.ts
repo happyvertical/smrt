@@ -2453,6 +2453,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       defaultListLimit, // #2367
       persistence, // Also extract persistence alias
       ai,
+      decisions,
       fs,
       logging,
       maxListLimit, // #2367
@@ -2469,6 +2470,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       db,
       persistence, // Pass persistence through so initialize() can map it to db
       ai,
+      decisions,
       defaultListLimit,
       fs,
       logging,

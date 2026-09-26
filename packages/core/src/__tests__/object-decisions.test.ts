@@ -257,6 +257,21 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
     });
   });
 
+  it('does not initialize an invalid decision configuration when tools select generation', async () => {
+    const generative = makeGenerativeClient('{"result": true}');
+    const product = new DecisionProduct({
+      ai: generative.client,
+      decisions: { type: 'invalid' } as any,
+    });
+    vi.spyOn(product, 'getAvailableTools').mockReturnValue([{} as any]);
+
+    await expect(product.evaluate('is suitable?')).resolves.toMatchObject({
+      result: true,
+      route: 'generative',
+    });
+    await expect(product.is('is suitable?')).resolves.toBe(true);
+  });
+
   it('rejects malformed decision responses and never treats them as false', async () => {
     const { product, decision } = makeProduct(1);
     decision?.decide.mockResolvedValueOnce({
