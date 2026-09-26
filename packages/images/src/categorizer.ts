@@ -391,8 +391,10 @@ Respond in JSON format:
     // Add tags via the asset collection. Guard against a non-array `tags`
     // (e.g. a hand-built CategoryResult or future code path that bypasses
     // `normalizeCategoryResult`) so the loop never throws "not iterable".
+    const imageId = image.id;
+    if (!imageId) throw new Error('Cannot tag an image without an id.');
     for (const tag of result.tags ?? []) {
-      await assetCollection.addTag(image.id!, tag);
+      await assetCollection.addTag(imageId, tag);
     }
   }
 }
