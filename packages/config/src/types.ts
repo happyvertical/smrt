@@ -155,6 +155,31 @@ export interface SmrtGlobalConfig {
     storage?: 'json' | 'native';
   };
 
+  /**
+   * Optional typed-decision provider configuration. This is deliberately
+   * separate from generation configuration: configuring decisions never
+   * changes the client used by `do()` or `describe()`.
+   */
+  decisions?: {
+    /** The currently supported typed-decision provider. */
+    type: 'typesafe';
+    /** Provider credential. Prefer an environment-backed value in deployments. */
+    apiKey?: string;
+    /** Optional provider endpoint override, primarily for approved test hosts. */
+    baseUrl?: string;
+    /** Default decision model; individual evaluations may override it. */
+    defaultModel?: string;
+    /** Inclusive predicate threshold. A probability equal to it is true. */
+    threshold?: number;
+    /**
+     * Opt in to a generative tie-break only when the probability is inside the
+     * finite band centered on the threshold. Provider failures never use it.
+     */
+    uncertaintyFallback?: {
+      band: number;
+    };
+  };
+
   [key: string]: unknown;
 }
 

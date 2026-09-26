@@ -1236,6 +1236,10 @@ export class CLIGenerator {
     >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
+        // `evaluate` is newly added core lifecycle infrastructure and must not
+        // acquire a CLI transport merely because a subclass overrides it.
+        // Keep the established CLI behavior for older lifecycle names.
+        if (methodName === 'evaluate') return false;
         // A method sharing an EMITTED CRUD command's name is not a custom
         // action — pushing one would add a second `${lowerName}:${name}` that
         // `objectCommands.find` (first match wins) can never reach (#2646),
