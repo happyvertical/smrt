@@ -66,7 +66,13 @@ function createSemanticEmbeddings(text: string): number[] {
   ];
 }
 
-function decisionResult(choice: 'merge' | 'branch', confidence: number) {
+function decisionResult(
+  choice: 'merge' | 'branch',
+  confidence: number,
+  probabilities = choice === 'merge'
+    ? { merge: 0.9, branch: 0.1 }
+    : { merge: 0.1, branch: 0.9 },
+) {
   return {
     model: 'test-decision-model',
     provenance: { provider: 'test', model: 'test-decision-model' },
@@ -74,10 +80,7 @@ function decisionResult(choice: 'merge' | 'branch', confidence: number) {
       reconciliation: {
         type: 'choice' as const,
         choice,
-        probabilities:
-          choice === 'merge'
-            ? { merge: 0.9, branch: 0.1 }
-            : { merge: 0.1, branch: 0.9 },
+        probabilities,
         confidence,
       },
     },
@@ -337,10 +340,12 @@ describe('reconcile()', () => {
       ).resolves.toMatchObject({ status: 'superseded' });
     });
 
-    it('branches a low-confidence typed merge without comparing confidence to similarity', async () => {
+    it('branches a low-probability typed merge without comparing probability to similarity', async () => {
       const decisions = {
         getCapabilities: vi.fn(async () => ({ decisions: true })),
-        decide: vi.fn(async () => decisionResult('merge', 0.72)),
+        decide: vi.fn(async () =>
+          decisionResult('merge', 0.99, { merge: 0.72, branch: 0.28 }),
+        ),
       };
       const decisionCollection = await FactCollection.create({
         db: { type: 'sqlite', url: dbPath },
@@ -351,10 +356,37 @@ describe('reconcile()', () => {
 
       const result = await decisionCollection.reconcile({
         rawInput: 'The council approved a revised $2 million budget.',
-        decisionConfidenceThreshold: 0.8,
+        decisionMergeProbabilityThreshold: 0.8,
       });
 
       expect(result.similarity).toBe(0.72);
+      expect(result.action).toBe('branched');
+      expect(result.fact.previousFactId).toBe(existing.id);
+    });
+
+    it.each([
+      [
+        'merge label with branch-favored probabilities',
+        { merge: 0.1, branch: 0.9 },
+      ],
+      ['merge label with tied probabilities', { merge: 0.5, branch: 0.5 }],
+    ])('branches when a typed %s response is not a conservative merge', async (_case, probabilities) => {
+      const decisions = {
+        getCapabilities: vi.fn(async () => ({ decisions: true })),
+        decide: vi.fn(async () => decisionResult('merge', 0.99, probabilities)),
+      };
+      const decisionCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: collection.ai,
+        decisions,
+      });
+      const existing = await createAmbiguousMatch(decisionCollection);
+
+      const result = await decisionCollection.reconcile({
+        rawInput: 'The council approved a revised $2 million budget.',
+        decisionMergeProbabilityThreshold: 0.5,
+      });
+
       expect(result.action).toBe('branched');
       expect(result.fact.previousFactId).toBe(existing.id);
     });

@@ -11,7 +11,7 @@ interface ReconcileOptions {
   rawInput: string;                    // Text to reconcile
   similarityThreshold?: number;        // Auto-merge threshold (default: 0.85)
   conflictThreshold?: number;          // Minimum similarity to consider (default: 0.60)
-  decisionConfidenceThreshold?: number; // Typed-decision merge threshold (default: 0.75)
+  decisionMergeProbabilityThreshold?: number; // Typed-decision merge threshold (default: 0.75)
   type?: FactType;                     // Classification (default: 'assertion')
   domain?: string;                     // Domain scope
   source?: {                           // Optional provenance
@@ -36,15 +36,16 @@ semanticSearch(rawInput, limit=5, minSimilarity=conflictThreshold)
   │
   └─ Ambiguous zone (0.60 - 0.85)
      └─ Typed choice decision when configured; otherwise legacy AI text disambiguation
-        ├─ Typed "merge" at confidence >= 0.75 → MERGE
-        ├─ Typed "branch", low confidence, malformed response, or provider error → BRANCH
+        ├─ Typed "merge" at selected merge probability >= 0.75 and above branch → MERGE
+        ├─ Typed "branch", low selected merge probability, malformed response, or provider error → BRANCH
         └─ Legacy text containing "branch" → BRANCH; other successful text → MERGE
 ```
 
-The typed-decision confidence threshold is a conservative operating threshold,
+The typed-decision merge probability threshold is a conservative operating threshold,
 not a calibrated assurance score. It is independent from the cosine-similarity
 thresholds that select the reconciliation zone. Registered reconciliation
 prompts and tenant or instance overrides supply the typed decision instructions.
+Values outside [0, 1] are rejected before a configured provider is called.
 
 After the action, if source metadata was provided, a `FactSource` record is created. On merge with a source, `recalculateConfidence()` is called to update the fact's confidence score.
 

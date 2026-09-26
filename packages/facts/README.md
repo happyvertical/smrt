@@ -44,7 +44,7 @@ await facts.recalculateConfidence(fact.id);
 // 3-zone semantic reconciliation
 // >= 0.85 similarity: auto-merge (same fact, update metadata)
 // 0.60-0.85: optional typed decision, otherwise AI disambiguation
-// Typed decisions merge only when their separate confidence meets the
+// Typed decisions merge only when their selected merge probability meets the
 // conservative 0.75 operating threshold; uncertainty and provider errors branch.
 // < 0.60: create new fact
 const result = await facts.reconcile({
