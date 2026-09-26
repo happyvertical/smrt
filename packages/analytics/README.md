@@ -73,6 +73,23 @@ const insights = await report.analyzeResults();
 const trending = await report.hasPositiveTrends();
 ```
 
+`hasPositiveTrends()` keeps that boolean API. When `decisions: { type:
+'typesafe' }` is configured and no AI tools are registered, it sends the
+resolved report prompt plus only the selected metrics and persisted aggregate
+rows to the typed-decision route. Its threshold defaults to `0.5`; a configured
+uncertainty band uses the same resolved prompt on the generative route, matching
+the framework's decision fallback behavior. The route treats higher
+user-growth, engagement, and conversion values as favorable, and higher bounce
+or error rates as adverse. Unknown metric directions, incomplete comparison
+periods, and insufficient or ambiguous data are not inferred as positive.
+Configured decision failures propagate. Without a decision provider, the
+existing prompt-driven `yes`/`no` behavior remains in use. `resultData` retains
+the documented caller-managed PII limitation in either route.
+
+The framework website's analytics guide should add a worked decision-provider
+configuration example; this package README documents the runtime contract until
+that guide is updated.
+
 ### Server-Side Event Lifecycle
 
 Events track their delivery status with built-in retry support:

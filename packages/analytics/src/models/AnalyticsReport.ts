@@ -420,11 +420,20 @@ export class AnalyticsReport extends SmrtObject {
    * carry PII the caller persisted; see `analyzeResults` docstring and
    * `../prompts.ts`.
    *
-   * Boolean coercion uses `/^\s*(yes|true)\b/i` against the trimmed
-   * response. The registered prompt template explicitly instructs the
-   * model to begin its answer with the literal word "yes" or "no" so
-   * this regex is reliable; tenant overrides MUST preserve that leading-
-   * word convention or the boolean will silently fall to `false`.
+   * When a typed-decision provider is configured and this object has no
+   * registered tools, the resolved prompt is sent as one bounded predicate
+   * request. The report's selected metrics and persisted aggregate data are
+   * the complete decision state; object fields and internal filters are never
+   * added. The decision uses the configured threshold (default `0.5`). A
+   * configured uncertainty band falls back to the same resolved generative
+   * prompt, matching `SmrtObject.evaluate()`; provider, capability, and
+   * malformed-response errors propagate.
+   *
+   * Without a decision provider, or where tools require the generative route,
+   * Boolean coercion uses `/^\s*(yes|true)\b/i` against the trimmed response.
+   * The registered prompt template explicitly instructs the model to begin its
+   * answer with the literal word "yes" or "no" so this legacy route remains
+   * compatible; tenant overrides MUST preserve that leading-word convention.
    */
   async hasPositiveTrends(): Promise<boolean> {
     const resultData = this.getResultData();
@@ -442,6 +451,59 @@ export class AnalyticsReport extends SmrtObject {
         },
       },
     );
+
+    // Typed decisions cannot call tools. Check this before resolving the
+    // optional client so a tool-enabled report stays on its existing route.
+    if (this.getAvailableTools().length === 0) {
+      const decision = await this.attemptDecision({
+        state: {
+          reportMetrics: this.metrics || '[]',
+          reportData: JSON.stringify(resultData),
+        },
+        questions: {
+          result: {
+            type: 'predicate',
+            instructions: `${resolvedPrompt.text}\n\nFor this predicate, only treat higher values as favorable for user growth, engagement, and conversions. Treat higher bounce or error rates as adverse. Do not infer a direction for an unknown metric. A date-range label alone does not establish comparable periods; if the supplied data is incomplete, lacks a comparable period, or is otherwise insufficient or ambiguous, answer false.`,
+          },
+        },
+      });
+
+      if (decision) {
+        const answer = decision.answers.result;
+        if (answer?.type !== 'predicate') {
+          throw new Error('Decision provider returned no predicate result.');
+        }
+
+        const probability = answer.probability;
+        const config = this.getDecisionConfig();
+        const threshold = config?.threshold ?? 0.5;
+        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+          throw new Error(
+            'Decision threshold must be a finite number in [0, 1].',
+          );
+        }
+        const uncertaintyBand = config?.uncertaintyFallback?.band;
+        if (uncertaintyBand !== undefined) {
+          if (
+            !Number.isFinite(uncertaintyBand) ||
+            uncertaintyBand < 0 ||
+            uncertaintyBand > 1
+          ) {
+            throw new Error(
+              'Decision uncertainty fallback band must be a finite number in [0, 1].',
+            );
+          }
+          const outsideUncertaintyBand =
+            probability < Math.max(0, threshold - uncertaintyBand) ||
+            probability > Math.min(1, threshold + uncertaintyBand);
+          if (outsideUncertaintyBand) {
+            return probability >= threshold;
+          }
+        } else {
+          return probability >= threshold;
+        }
+      }
+    }
 
     const ai = await this.getAiClient();
     const response = (
