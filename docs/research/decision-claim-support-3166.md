@@ -6,7 +6,7 @@
 current optional decision wrapper exposes predicate evaluation only. SDK v0.94.1
 also has typed predicate, choice, and score questions; its batched predicate
 contract can select multiple offered IDs through a deterministic question-key to
-ID mapping through the inspected #3159 shared wrapper. None of those question
+ID mapping after #3159's shared wrapper is merged. None of those question
 types writes an audit rationale by itself. No live TypeSafe decision
 configuration was available for this research, and no model call, latency,
 cost, or quality result was measured. Contract-shaped tests or fixtures would
@@ -52,9 +52,9 @@ Relevant baseline sources at `8ddc5463109369c594b69d4adb09d6a255a59a74`:
 - `packages/content/src/content.ts` — repair and recheck persistence.
 - `packages/facts/src/prompts.ts` — candidate-only assessment instruction.
 
-## Inspected decision foundation
+## Inspected pending decision foundation
 
-The #3159 stable commit `f2ff7129ee9b3b2dc05586e76dbb3fa0cebf4348` makes
+The pending #3159 commit `f2ff7129ee9b3b2dc05586e76dbb3fa0cebf4348` makes
 the SDK decision request/result types and `executeDecision()` public. Its
 protected `SmrtClass.attemptDecision()` accepts caller-curated state and a
 batched SDK request, returns `undefined` only when no decision client is
@@ -62,16 +62,20 @@ configured, records decision usage, and otherwise propagates capability,
 provider, and response errors. `executeDecision()` validates the exact answer
 keys, requested choice labels, score rubrics, and probability distributions.
 
-That foundation supports the proposed per-candidate predicate batch. It does
-not map question keys to domain IDs, derive claim-support status, or generate a
-rationale; those remain facts-domain responsibilities and evaluation targets.
+That foundation supports the proposed per-candidate predicate batch once it is
+merged. This main-based research PR does not import or execute it. The helper
+does not map question keys to domain IDs, derive claim-support status, or
+generate a rationale; those remain facts-domain responsibilities and evaluation
+targets.
 
-The #3161 stable commit `ed35a57fcf56847f68aab4dedf69c1f9419d0f4d`, atop that
-foundation, uses a typed `merge`/`branch` choice only for ambiguous fact
-reconciliation. It preserves the legacy text route when no decision client is
-configured and branches on low confidence or configured-provider errors. It
-does not change `assessClaimSupport`, so this research fixture and its proposed
-claim-support follow-up remain separate from reconciliation behavior.
+The inspected #3161 compatibility commit
+`9ba4c67c68f04f149e5c3d40af6f6969ab0ae41f`, atop that pending foundation, uses
+a typed `merge`/`branch` choice only for ambiguous fact reconciliation. It
+preserves the legacy text route when no decision client is configured and
+branches unless the selected merge probability meets the configured threshold
+and exceeds the branch probability. It does not change `assessClaimSupport`,
+so this research fixture and its proposed claim-support follow-up remain
+separate from reconciliation behavior.
 
 ## Proposed additive hybrid contract
 
@@ -156,9 +160,10 @@ role-specific attribution.
 
 The machine-readable counterparts live in
 `packages/facts/src/__tests__/fixtures/decision-claim-support-3166.ts`.
-`decision-claim-support-research.test.ts` checks only that their IDs are inside
-the declared candidate closure and that their labels are internally consistent;
-it does not invoke a model or evaluate model quality.
+`decision-claim-support-research.test.ts` checks normal expected IDs against
+the declared candidate closure, exercises each expected rationale example, and
+passes a separate malformed raw response through a test-local closure validator.
+It does not invoke a model or evaluate model quality.
 
 | Case | Claim and offered candidate evidence | Expected status | Required attribution/rationale assertion |
 | --- | --- | --- | --- |
@@ -168,7 +173,7 @@ it does not invoke a model or evaluate model quality.
 | Direct contradiction | Claim: “Council rejected Bylaw 10.” `f-approve`/`e-minutes` says it was approved. | `contradicted` | `f-approve` and `e-minutes` are contradicting. |
 | Conflicting sources | Claim: “The bridge reopened March 1.” `f-open`/`e-open` supports; `f-closed`/`e-closed` reports it remained closed. | `needs_review` | Both role-specific groups are retained; no consumer flattens them into `supports` links. |
 | Partial support | Claim contains approval, date, and dollar amount; evidence proves only approval. | `needs_review` | Supporting IDs are role-specific; rationale identifies missing portions. |
-| Invalid selection | Response includes an unknown ID or evidence assigned to another fact. | `needs_review` | Invalid IDs are absent from public arrays; evaluator diagnostics record the invalid output. |
+| Invalid selection | A separate malformed raw response includes an unknown fact ID and assigns known evidence to another offered fact. | `needs_review` | The closure validator rejects it before the normalized public result; evaluator diagnostics record the invalid output. |
 | Empty candidates | Any non-empty claim with no candidates. | `unsupported` | Empty IDs and candidate-scoped rationale; preserve public baseline. |
 | Empty claim | Whitespace-only claim with any candidates. | `needs_review` | Empty IDs and “No claim text was provided.” baseline behavior. |
 
@@ -191,7 +196,7 @@ For each route, record only actual observations:
 
 The gate passes only if the hybrid has reviewable measurements for the same
 corpus, does not weaken candidate-scoped semantics or attribution fidelity, and
-has an approved caller migration for mixed evidence. The #3159 foundation must
+has an approved caller migration for mixed evidence. The merged #3159 foundation must
 be used with a facts-domain map that maps every selected question only to an
 offered candidate. The report must state corpus scope, exclusions,
 provider/model/configuration, and limitations. It

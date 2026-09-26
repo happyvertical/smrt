@@ -3,6 +3,12 @@ import type {
   FactClaimSupportStatus,
 } from '../../types';
 
+export interface RationaleConstraint {
+  kind: 'candidate_scope' | 'grounded' | 'missing_portion' | 'empty_claim';
+  example: string;
+  requiredTerms: string[];
+}
+
 export interface DecisionClaimSupportFixture {
   id:
     | 'direct-support'
@@ -11,7 +17,6 @@ export interface DecisionClaimSupportFixture {
     | 'direct-contradiction'
     | 'conflicting-sources'
     | 'partial-support'
-    | 'invalid-selection'
     | 'empty-candidates'
     | 'empty-claim';
   claim: string;
@@ -21,11 +26,21 @@ export interface DecisionClaimSupportFixture {
   expectedSupportingEvidenceIds: string[];
   expectedContradictingFactIds: string[];
   expectedContradictingEvidenceIds: string[];
-  rationaleConstraint: 'candidate_scope' | 'grounded' | 'missing_portion';
-  invalidSelection?: {
-    factId?: string;
-    evidenceId?: string;
+  rationaleConstraint: RationaleConstraint;
+}
+
+export interface InvalidDecisionClaimSupportResponseFixture {
+  claim: string;
+  candidates: FactClaimSupportCandidate[];
+  rawResponse: {
+    status: FactClaimSupportStatus;
+    supportingFactIds: string[];
+    supportingEvidenceIds: string[];
+    contradictingFactIds: string[];
+    contradictingEvidenceIds: string[];
   };
+  expectedNormalizedStatus: 'needs_review';
+  expectedErrors: Array<'unknown_fact' | 'evidence_fact_mismatch'>;
 }
 
 export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
@@ -44,7 +59,11 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: ['e-minutes'],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'grounded',
+    rationaleConstraint: {
+      kind: 'grounded',
+      example: 'The offered minutes state that Council approved Bylaw 10.',
+      requiredTerms: ['offered', 'approved'],
+    },
   },
   {
     id: 'candidate-miss',
@@ -61,7 +80,11 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: [],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'candidate_scope',
+    rationaleConstraint: {
+      kind: 'candidate_scope',
+      example: 'The offered candidates do not support the approval claim.',
+      requiredTerms: ['offered', 'do not support'],
+    },
   },
   {
     id: 'combined-support',
@@ -83,7 +106,12 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: ['e-reopen', 'e-inspection'],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'grounded',
+    rationaleConstraint: {
+      kind: 'grounded',
+      example:
+        'The offered reopening and inspection evidence together support the claim.',
+      requiredTerms: ['offered', 'together'],
+    },
   },
   {
     id: 'direct-contradiction',
@@ -100,7 +128,11 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: [],
     expectedContradictingFactIds: ['f-approve'],
     expectedContradictingEvidenceIds: ['e-minutes'],
-    rationaleConstraint: 'grounded',
+    rationaleConstraint: {
+      kind: 'grounded',
+      example: 'The offered minutes say the bylaw was approved, not rejected.',
+      requiredTerms: ['offered', 'approved'],
+    },
   },
   {
     id: 'conflicting-sources',
@@ -122,7 +154,12 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: ['e-open'],
     expectedContradictingFactIds: ['f-closed'],
     expectedContradictingEvidenceIds: ['e-closed'],
-    rationaleConstraint: 'grounded',
+    rationaleConstraint: {
+      kind: 'grounded',
+      example:
+        'The offered sources conflict about whether the bridge reopened.',
+      requiredTerms: ['offered', 'conflict'],
+    },
   },
   {
     id: 'partial-support',
@@ -141,25 +178,12 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: ['e-approval'],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'missing_portion',
-  },
-  {
-    id: 'invalid-selection',
-    claim: 'Council approved Bylaw 10.',
-    candidates: [
-      {
-        id: 'f-approve',
-        statement: 'Council approved Bylaw 10.',
-        evidence: [{ id: 'e-minutes', quote: 'Bylaw 10 was approved.' }],
-      },
-    ],
-    expectedStatus: 'needs_review',
-    expectedSupportingFactIds: [],
-    expectedSupportingEvidenceIds: [],
-    expectedContradictingFactIds: [],
-    expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'grounded',
-    invalidSelection: { factId: 'f-unknown', evidenceId: 'e-unknown' },
+    rationaleConstraint: {
+      kind: 'missing_portion',
+      example:
+        'The offered evidence supports approval but not the date or amount.',
+      requiredTerms: ['offered', 'not the date', 'amount'],
+    },
   },
   {
     id: 'empty-candidates',
@@ -170,7 +194,11 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: [],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'candidate_scope',
+    rationaleConstraint: {
+      kind: 'candidate_scope',
+      example: 'No offered candidates were available for comparison.',
+      requiredTerms: ['offered candidates', 'available'],
+    },
   },
   {
     id: 'empty-claim',
@@ -187,6 +215,36 @@ export const decisionClaimSupportFixtures: DecisionClaimSupportFixture[] = [
     expectedSupportingEvidenceIds: [],
     expectedContradictingFactIds: [],
     expectedContradictingEvidenceIds: [],
-    rationaleConstraint: 'grounded',
+    rationaleConstraint: {
+      kind: 'empty_claim',
+      example: 'No claim text was provided.',
+      requiredTerms: ['no claim text', 'provided'],
+    },
   },
 ];
+
+export const invalidDecisionClaimSupportResponseFixture: InvalidDecisionClaimSupportResponseFixture =
+  {
+    claim: 'Council approved Bylaw 10.',
+    candidates: [
+      {
+        id: 'f-approve',
+        statement: 'Council approved Bylaw 10.',
+        evidence: [{ id: 'e-minutes', quote: 'Bylaw 10 was approved.' }],
+      },
+      {
+        id: 'f-hearing',
+        statement: 'Council held a hearing for Bylaw 10.',
+        evidence: [{ id: 'e-hearing', quote: 'Public hearing for Bylaw 10.' }],
+      },
+    ],
+    rawResponse: {
+      status: 'supported',
+      supportingFactIds: ['f-hearing', 'f-unknown'],
+      supportingEvidenceIds: ['e-minutes'],
+      contradictingFactIds: [],
+      contradictingEvidenceIds: [],
+    },
+    expectedNormalizedStatus: 'needs_review',
+    expectedErrors: ['unknown_fact', 'evidence_fact_mismatch'],
+  };
