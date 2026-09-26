@@ -1,7 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import { field } from '../decorators';
+import type {
+  DecisionClient,
+  DecisionConfig,
+  EvaluateOptions,
+  EvaluationResult,
+} from '../index';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+
+const exportedDecisionConfig: DecisionConfig = { type: 'typesafe' };
+const exportedEvaluateOptions: EvaluateOptions = { threshold: 0.5 };
+const exportedEvaluationResult: EvaluationResult = {
+  result: true,
+  route: 'decision',
+};
+const exportedDecisionClient: DecisionClient = {
+  getCapabilities: async () => ({ decisions: true }),
+  decide: async () => ({}),
+};
+// @ts-expect-error DecisionClient requires both runtime methods.
+const incompleteDecisionClient: DecisionClient = { decide: async () => ({}) };
+void [
+  exportedDecisionConfig,
+  exportedEvaluateOptions,
+  exportedEvaluationResult,
+  exportedDecisionClient,
+  incompleteDecisionClient,
+];
 
 @smrt()
 class DecisionProduct extends SmrtObject {
