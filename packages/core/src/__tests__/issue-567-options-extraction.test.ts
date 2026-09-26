@@ -60,6 +60,28 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
   });
 
   describe('Collection db config extraction from SmrtClass options', () => {
+    it('propagates an injected decision client to created and hydrated objects', async () => {
+      const decisions = {
+        getCapabilities: async () => ({ decisions: true }),
+        decide: async () => ({
+          provenance: { provider: 'test', model: 'test' },
+          answers: { result: { type: 'predicate', probability: 1 } },
+        }),
+      };
+      const collection = await Target567Collection.create({
+        db: { type: 'sqlite', url: ':memory:' },
+        decisions,
+      });
+
+      const created = await collection.create({ value: 'decision-aware' });
+      expect(await (created as any).getDecisionClient()).toBe(decisions);
+      await created.save();
+
+      const hydrated = await collection.get(created.id);
+      expect(hydrated).toBeDefined();
+      expect(await (hydrated as any).getDecisionClient()).toBe(decisions);
+    });
+
     it('should use the same db when using full options vs explicit extraction', async () => {
       // Create a parent class with options that include db config
       const parentOptions: SmrtClassOptions = {
