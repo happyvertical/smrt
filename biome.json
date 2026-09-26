@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/smrt-svelte/e2e/**/*.{js,ts,svelte}",
       "!packages/*/src/lib/server/smrt-register.ts",
       "packages/*/bin/**/*.js",
       "packages/*/playground/src/**/*.{js,ts,tsx,jsx,svelte}",

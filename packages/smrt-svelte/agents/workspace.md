@@ -37,6 +37,18 @@ them from the published artifact versus exporting them is tracked in #2286.
 - Shell activities are client-side records; server jobs, polling, WebSockets,
   and `smrt-web` SSE can feed them through app adapters
 
+At widths up to 48rem, side panels overlay the main area directly between the
+header and footer. App/system drawers span the shell width independently of
+saved desktop side-panel states and scroll within the available vertical space.
+App settings, tenant names and environment badges wrap within narrow drawers.
+`SystemStatusChips` stays on one horizontally scrollable row so fixed-height
+system bars never clip wrapped chips. Custom bars must allow this flex child
+to shrink; use safe alignment if aligning its contents to the end.
+
+Run `pnpm --filter @happyvertical/smrt-svelte test:e2e` after building the
+package dependencies. The package-local fixture exercises real Chromium bounds
+and touch input across mobile widths and desktop panel-state combinations.
+
 See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
 
 ### Live activity feed adapter (`./web`, #1779)

@@ -107,7 +107,8 @@
     "test:conformance": "node scripts/ensure-conformance-build.mjs && SMRT_SVELTE_PUBLISHED_ENTRY=1 vitest run src/web/__tests__/data-surface-conformance.integration.svelte.test.ts",
     "typecheck:conformance": "tsc --noEmit -p ./tsconfig.conformance.json",
     "typecheck": "tsc --noEmit && pnpm run typecheck:conformance && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "keywords": [
     "smrt",

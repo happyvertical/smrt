@@ -43,7 +43,9 @@ const { t } = useI18n();
 <style>
   .smrt-system-status-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-inline-size: 0;
+    overflow-x: auto;
     gap: var(--smrt-spacing-2);
     align-items: center;
   }
@@ -51,6 +53,8 @@ const { t } = useI18n();
   .smrt-system-status-chips a,
   .smrt-system-status-chips__chip {
     display: inline-flex;
+    flex: 0 0 auto;
+    white-space: nowrap;
     align-items: center;
     gap: var(--smrt-spacing-2);
     min-inline-size: 0;

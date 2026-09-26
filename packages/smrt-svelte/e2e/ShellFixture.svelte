@@ -1,0 +1,37 @@
+<script lang="ts">
+import AdminShell from '../src/components/workspace/admin-shell/AdminShell.svelte';
+import AppScopePanel from '../src/components/workspace/admin-shell/AppScopePanel.svelte';
+import SystemStatusChips from '../src/components/workspace/admin-shell/SystemStatusChips.svelte';
+import type { PanelState } from '../src/components/workspace/admin-shell/types.js';
+import '@happyvertical/smrt-ui/styles/tokens.css';
+
+const query = new URLSearchParams(window.location.search);
+function state(name: string): PanelState {
+  const value = query.get(name);
+  return value === 'expanded' || value === 'hidden' ? value : 'collapsed';
+}
+const config = {
+  left: { initial: state('left') },
+  right: { initial: state('right') },
+  top: { initial: state('top') },
+  bottom: { initial: state('bottom') },
+};
+const chips = Array.from({ length: 8 }, (_, index) => ({
+  id: String(index),
+  label: `Status ${index + 1}`,
+  value: index,
+}));
+</script>
+
+{#snippet appPanel()}<AppScopePanel appName="Mobile fixture" tenantName="mobile-qa@example.invalid" environment="Tenant 01234567-0123-4567-8901-012345678901" />{/snippet}
+
+{#snippet panel()}<p>Scrollable panel content</p>{/snippet}
+{#snippet systemBar()}<SystemStatusChips {chips} />{/snippet}
+<AdminShell {config} title="Mobile shell fixture" storageKey="mobile-shell-fixture"
+  {appPanel} systemPanel={panel} tenantPanel={panel} focusPanel={panel} {systemBar}>
+  <p>Main content</p>
+</AdminShell>
+
+<style>
+  :global(body) { margin: 0; font-family: sans-serif; }
+</style>

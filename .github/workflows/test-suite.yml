@@ -66,6 +66,7 @@ jobs:
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
             workbench:
+              - 'packages/smrt-svelte/**'
               - 'packages/smrt-workbench/**'
               - 'packages/smrt-playground/**'
               - 'packages/*/src/workbench.ts'
@@ -467,6 +468,7 @@ jobs:
           pnpm turbo run build
           --filter='@happyvertical/smrt-content...'
           --filter='@happyvertical/smrt-workbench...'
+          --filter='@happyvertical/smrt-svelte...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -476,8 +478,20 @@ jobs:
       - name: Verify packed Workbench exports
         run: pnpm --filter @happyvertical/smrt-workbench verify:pack
 
+      - name: Run mobile shell browser tests
+        run: pnpm --filter @happyvertical/smrt-svelte test:e2e
+
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
+
+      - name: Upload mobile shell failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mobile-shell-browser-evidence
+          path: packages/smrt-svelte/test-results
+          retention-days: 7
+          if-no-files-found: ignore
 
   m5-reference-gate:
     name: M5 Reference Fixture Gate
