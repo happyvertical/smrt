@@ -66,6 +66,24 @@ function createSemanticEmbeddings(text: string): number[] {
   ];
 }
 
+function decisionResult(choice: 'merge' | 'branch', confidence: number) {
+  return {
+    model: 'test-decision-model',
+    provenance: { provider: 'test', model: 'test-decision-model' },
+    answers: {
+      reconciliation: {
+        type: 'choice' as const,
+        choice,
+        probabilities:
+          choice === 'merge'
+            ? { merge: 0.9, branch: 0.1 }
+            : { merge: 0.1, branch: 0.9 },
+        confidence,
+      },
+    },
+  };
+}
+
 describe('reconcile()', () => {
   let tempDir: string;
   let dbPath: string;
@@ -238,6 +256,152 @@ describe('reconcile()', () => {
   });
 
   describe('AI disambiguation', () => {
+    async function createAmbiguousMatch(target: FactCollection) {
+      const existing = await target.create({
+        textRefined: 'The council approved a $2 million budget on Monday',
+        type: 'event',
+        domain: 'civic',
+        status: 'active',
+        sourceCount: 1,
+      });
+      await existing.generateEmbeddings();
+      vi.spyOn(target, 'semanticSearch').mockResolvedValue([
+        Object.assign(existing, { _similarity: 0.72 }),
+      ]);
+      return existing;
+    }
+
+    it('uses a confident typed merge for equivalent wording and records its source', async () => {
+      const message = vi.fn(async () => 'branch');
+      const decisions = {
+        getCapabilities: vi.fn(async () => ({ decisions: true })),
+        decide: vi.fn(async () => decisionResult('merge', 0.9)),
+      };
+      const decisionCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: { message, embed: collection.ai.embed } as any,
+        decisions,
+      });
+      const existing = await createAmbiguousMatch(decisionCollection);
+
+      const result = await decisionCollection.reconcile({
+        rawInput: 'On Monday, council passed a $2 million budget.',
+        source: { sourceType: 'minutes', credibility: 0.8 },
+        promptOverride: {
+          template: 'Choose merge or branch: {existingFact} / {newInput}',
+        },
+      });
+
+      expect(result.action).toBe('merged');
+      expect(result.fact.id).toBe(existing.id);
+      expect(result.source?.factId).toBe(existing.id);
+      expect(message).not.toHaveBeenCalled();
+      expect(decisions.decide.mock.calls[0]?.[0]).toMatchObject({
+        state: {
+          existingFact: existing.textRefined,
+          newInput: 'On Monday, council passed a $2 million budget.',
+        },
+        questions: {
+          reconciliation: {
+            type: 'choice',
+            criteria: { merge: null, branch: null },
+            instructions: expect.stringContaining('Choose merge or branch'),
+          },
+        },
+      });
+    });
+
+    it('branches contradictions and preserves evolution and source provenance', async () => {
+      const decisions = {
+        getCapabilities: vi.fn(async () => ({ decisions: true })),
+        decide: vi.fn(async () => decisionResult('branch', 0.9)),
+      };
+      const decisionCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: collection.ai,
+        decisions,
+      });
+      const existing = await createAmbiguousMatch(decisionCollection);
+
+      const result = await decisionCollection.reconcile({
+        rawInput: 'The council rejected the $3 million budget on Tuesday.',
+        source: { sourceType: 'minutes', credibility: 0.8 },
+      });
+
+      expect(result.action).toBe('branched');
+      expect(result.fact.previousFactId).toBe(existing.id);
+      expect(result.fact.evolutionType).toBe('correction');
+      expect(result.source?.factId).toBe(result.fact.id);
+      await expect(
+        decisionCollection.get({ id: existing.id }),
+      ).resolves.toMatchObject({ status: 'superseded' });
+    });
+
+    it('branches a low-confidence typed merge without comparing confidence to similarity', async () => {
+      const decisions = {
+        getCapabilities: vi.fn(async () => ({ decisions: true })),
+        decide: vi.fn(async () => decisionResult('merge', 0.72)),
+      };
+      const decisionCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: collection.ai,
+        decisions,
+      });
+      const existing = await createAmbiguousMatch(decisionCollection);
+
+      const result = await decisionCollection.reconcile({
+        rawInput: 'The council approved a revised $2 million budget.',
+        decisionConfidenceThreshold: 0.8,
+      });
+
+      expect(result.similarity).toBe(0.72);
+      expect(result.action).toBe('branched');
+      expect(result.fact.previousFactId).toBe(existing.id);
+    });
+
+    it('branches safely when the configured provider fails', async () => {
+      const message = vi.fn(async () => 'merge');
+      const decisions = {
+        getCapabilities: vi.fn(async () => ({ decisions: true })),
+        decide: vi.fn(async () => {
+          throw new Error('provider unavailable');
+        }),
+      };
+      const decisionCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: { message, embed: collection.ai.embed } as any,
+        decisions,
+      });
+      const existing = await createAmbiguousMatch(decisionCollection);
+
+      const result = await decisionCollection.reconcile({
+        rawInput: 'The council approved a different budget.',
+      });
+
+      expect(result.action).toBe('branched');
+      expect(result.fact.previousFactId).toBe(existing.id);
+      expect(message).not.toHaveBeenCalled();
+    });
+
+    it('retains legacy successful-text parsing when no decision client is configured', async () => {
+      const message = vi.fn(
+        async () => 'These records describe the same event.',
+      );
+      const legacyCollection = await FactCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: { message, embed: collection.ai.embed } as any,
+      });
+      const existing = await createAmbiguousMatch(legacyCollection);
+
+      const result = await legacyCollection.reconcile({
+        rawInput: 'The council approved a $2 million budget on Monday.',
+      });
+
+      expect(result.action).toBe('merged');
+      expect(result.fact.id).toBe(existing.id);
+      expect(message).toHaveBeenCalledTimes(1);
+    });
+
     it('should use AI when similarity is in ambiguous zone and merge when AI says merge', async () => {
       // Create existing fact about weather
       const existing = await collection.create({
