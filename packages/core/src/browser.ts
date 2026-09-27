@@ -45,6 +45,10 @@ export {
   isTransientDatabaseError,
   isUniqueViolationError,
 } from './db-errors';
+// Typed decision routing is provider-neutral and browser-safe. Keep this in
+// sync with the node entry because the package root selects browser.ts under
+// the browser condition while retaining index.d.ts for types.
+export * from './decisions';
 export * from './errors';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 export {

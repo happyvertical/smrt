@@ -75,6 +75,12 @@ describe('Issue #567: ObjectRegistry.getCollection() options extraction', () => 
 
       const created = await collection.create({ value: 'decision-aware' });
       expect(await (created as any).getDecisionClient()).toBe(decisions);
+      await expect(
+        created.evaluate('is decision-aware?'),
+      ).resolves.toMatchObject({
+        result: true,
+        provenance: { provider: 'test', model: 'test' },
+      });
       await created.save();
 
       const hydrated = await collection.get(created.id);

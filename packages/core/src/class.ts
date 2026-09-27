@@ -35,7 +35,14 @@ import type {
 } from './config.js';
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
-import type { DecisionClient, DecisionConfig } from './decisions.js';
+import {
+  type DecisionClient,
+  type DecisionConfig,
+  type DecisionOptions,
+  type DecisionRequest,
+  type DecisionResult,
+  executeDecision,
+} from './decisions.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
@@ -845,6 +852,35 @@ export class SmrtClass {
     } finally {
       this._decisionClientInitPromise = undefined;
     }
+  }
+
+  /**
+   * Attempt one typed decision batch against caller-curated state.
+   *
+   * `undefined` is the explicit legacy-route signal: no decision client was
+   * configured. Configured capability, provider, and response errors always
+   * propagate. Object methods with registered tools must retain their
+   * generation route and therefore do not call this helper.
+   */
+  protected async attemptDecision(
+    request: DecisionRequest,
+    options?: DecisionOptions,
+  ): Promise<DecisionResult | undefined> {
+    const decision = await this.getDecisionClient();
+    if (!decision) return undefined;
+
+    const result = await executeDecision(decision, request, options);
+    await this.recordAiUsageEvent(
+      {
+        provider: result.provenance.provider,
+        model: result.provenance.model,
+        operation: 'decision',
+        usage: result.usage,
+        tags: { operation: 'decision' },
+      },
+      result.provenance,
+    );
+    return result;
   }
 
   /** Resolve project, global, and instance decision options in that order. */

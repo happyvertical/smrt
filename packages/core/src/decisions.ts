@@ -6,7 +6,24 @@
  * object cold path while still making the SMRT result and configuration public.
  */
 
+import type {
+  DecisionAnswer,
+  DecisionOptions,
+  DecisionQuestion,
+  DecisionRequest,
+  DecisionResult,
+  DecisionValue,
+} from '@happyvertical/ai';
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
+
+export type {
+  DecisionAnswer,
+  DecisionOptions,
+  DecisionQuestion,
+  DecisionRequest,
+  DecisionResult,
+  DecisionValue,
+};
 
 export interface DecisionConfig {
   type: 'typesafe';
@@ -25,10 +42,193 @@ export interface DecisionConfig {
  * capability and projects the predicate result it consumes.
  */
 export interface DecisionClient {
-  getCapabilities: () => Promise<{
+  getCapabilities?: () => Promise<{
     decisions?: boolean;
   }>;
+  /**
+   * Keep injected clients source-compatible with the pre-routing seam.
+   * `executeDecision()` narrows and validates the result before consumers use
+   * it as an SDK `DecisionResult`.
+   */
   decide: (request: unknown, options?: unknown) => Promise<unknown>;
+}
+
+function asDecisionRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function assertDecisionProbability(value: unknown, name: string): void {
+  assertFiniteUnitInterval(value, name);
+}
+
+function assertDecisionDistribution(
+  value: unknown,
+  expectedKeys: readonly string[],
+  name: string,
+): void {
+  const distribution = asDecisionRecord(value);
+  if (
+    !distribution ||
+    Object.keys(distribution).length !== expectedKeys.length
+  ) {
+    throw new Error(`${name} must cover exactly the requested values.`);
+  }
+  let total = 0;
+  for (const key of expectedKeys) {
+    if (!Object.hasOwn(distribution, key)) {
+      throw new Error(`${name} must cover exactly the requested values.`);
+    }
+    assertDecisionProbability(distribution[key], `${name}.${key}`);
+    total += distribution[key] as number;
+  }
+  if (Math.abs(total - 1) > 1e-6) {
+    throw new Error(`${name} must sum to 1.`);
+  }
+}
+
+function sameDecisionValue(left: DecisionValue, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left)) {
+    return (
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameDecisionValue(value, right[index]))
+    );
+  }
+  if (left && typeof left === 'object') {
+    const rightRecord = asDecisionRecord(right);
+    if (!rightRecord) return false;
+    const leftEntries = Object.entries(left);
+    return (
+      leftEntries.length === Object.keys(rightRecord).length &&
+      leftEntries.every(
+        ([key, value]) =>
+          Object.hasOwn(rightRecord, key) &&
+          sameDecisionValue(value, rightRecord[key]),
+      )
+    );
+  }
+  return false;
+}
+
+/**
+ * Calls the SDK decision capability and validates the provider-neutral result.
+ *
+ * This is deliberately a small runtime boundary: question and response shapes
+ * are the SDK contracts, imported as types, rather than copied wire protocol.
+ * It is also used for injected clients, which do not receive SDK validation.
+ */
+export async function executeDecision(
+  client: DecisionClient,
+  request: DecisionRequest,
+  options?: DecisionOptions,
+): Promise<DecisionResult> {
+  const capabilities = await client.getCapabilities?.();
+  if (capabilities?.decisions !== true || typeof client.decide !== 'function') {
+    throw new Error(
+      'The configured decision client does not support typed decisions.',
+    );
+  }
+
+  const rawResult = await client.decide(request, options);
+  const result = asDecisionRecord(rawResult);
+  if (!result) {
+    throw new Error('Decision provider returned an invalid result.');
+  }
+  const provenance = asDecisionRecord(result.provenance);
+  if (
+    !provenance ||
+    typeof provenance.provider !== 'string' ||
+    provenance.provider.length === 0 ||
+    typeof provenance.model !== 'string' ||
+    provenance.model.length === 0
+  ) {
+    throw new Error('Decision provider returned invalid provenance.');
+  }
+
+  const answers = asDecisionRecord(result.answers);
+  const questionIds = Object.keys(request.questions);
+  if (!answers || questionIds.some((id) => !Object.hasOwn(answers, id))) {
+    throw new Error('Decision provider returned no answers.');
+  }
+  for (const [id, question] of Object.entries(request.questions)) {
+    const answer = asDecisionRecord(answers[id]);
+    if (!answer || answer.type !== question.type) {
+      throw new Error(
+        `Decision provider returned an invalid ${question.type} result for ${id}.`,
+      );
+    }
+    if (question.type === 'predicate') {
+      assertDecisionProbability(answer.probability, 'Decision probability');
+      continue;
+    }
+    if (question.type === 'choice') {
+      const keys = Object.keys(question.criteria);
+      if (
+        typeof answer.choice !== 'string' ||
+        !Object.hasOwn(question.criteria, answer.choice)
+      ) {
+        throw new Error(
+          `Decision answer ${id}.choice is not a requested option.`,
+        );
+      }
+      assertDecisionDistribution(
+        answer.probabilities,
+        keys,
+        `Decision answer ${id}.probabilities`,
+      );
+      assertDecisionProbability(
+        answer.confidence,
+        `Decision answer ${id}.confidence`,
+      );
+      continue;
+    }
+    if (
+      typeof answer.score !== 'number' ||
+      !Number.isFinite(answer.score) ||
+      answer.score < 0 ||
+      answer.score > question.criteria.length - 1
+    ) {
+      throw new Error(
+        `Decision answer ${id}.score is outside the requested rubric.`,
+      );
+    }
+    const levelKeys = question.criteria.map((_, index) => String(index));
+    assertDecisionDistribution(
+      answer.probabilities,
+      levelKeys,
+      `Decision answer ${id}.probabilities`,
+    );
+    assertDecisionProbability(
+      answer.confidence,
+      `Decision answer ${id}.confidence`,
+    );
+    const answerLevels = Array.isArray(answer.levels)
+      ? answer.levels
+      : undefined;
+    if (
+      !answerLevels ||
+      answerLevels.length !== question.criteria.length ||
+      !question.criteria.every((level, index) =>
+        sameDecisionValue(level, answerLevels[index]),
+      )
+    ) {
+      throw new Error(
+        `Decision answer ${id}.levels does not match the requested rubric.`,
+      );
+    }
+  }
+
+  // `evaluate()` historically accepted injected predicate results whose model
+  // lived only in provenance. Keep that source-compatible runtime shape while
+  // presenting the SDK result contract to new typed callers. Provenance is the
+  // validated provider identity, so it also normalizes redundant model metadata.
+  return {
+    ...result,
+    model: provenance.model,
+  } as DecisionResult;
 }
 
 export interface EvaluationResult {

@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import type {
   DecisionClient,
   DecisionConfig,
+  DecisionRequest,
   EvaluateOptions,
   EvaluationResult,
 } from '../index';
+import { executeDecision } from '../index';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
 
@@ -17,15 +20,25 @@ const exportedEvaluationResult: EvaluationResult = {
 };
 const exportedDecisionClient: DecisionClient = {
   getCapabilities: async () => ({ decisions: true }),
-  decide: async () => ({}),
+  decide: async () => ({
+    model: 'test',
+    provenance: { provider: 'test', model: 'test' },
+    answers: {},
+  }),
 };
-// @ts-expect-error DecisionClient requires both runtime methods.
+const exportedDecisionRequest: DecisionRequest = {
+  state: { content: 'explicitly bounded state' },
+  questions: {
+    result: { type: 'predicate', instructions: 'is this valid?' },
+  },
+};
 const incompleteDecisionClient: DecisionClient = { decide: async () => ({}) };
 void [
   exportedDecisionConfig,
   exportedEvaluateOptions,
   exportedEvaluationResult,
   exportedDecisionClient,
+  exportedDecisionRequest,
   incompleteDecisionClient,
 ];
 
@@ -36,6 +49,16 @@ class DecisionProduct extends SmrtObject {
 
   @field({ type: 'text', sensitive: true })
   apiKey = '';
+}
+
+class DecisionProductCollection extends SmrtCollection<DecisionProduct> {
+  static _itemClass = DecisionProduct;
+
+  async decide(
+    request: DecisionRequest,
+  ): ReturnType<DecisionProductCollection['attemptDecision']> {
+    return await this.attemptDecision(request);
+  }
 }
 
 function makeGenerativeClient(reply = '{"result": true}') {
@@ -83,6 +106,194 @@ function makeProductWithClients(
 }
 
 describe('SmrtObject.evaluate typed decisions (#3153)', () => {
+  it('shares one SDK-typed choice and score batch with collections over explicit state', async () => {
+    const decision = {
+      getCapabilities: vi.fn(async () => ({ decisions: true })),
+      decide: vi.fn(async () => ({
+        model: 'jev-test',
+        provenance: { provider: 'typesafe', model: 'jev-test' },
+        usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+        answers: {
+          sentiment: {
+            type: 'choice' as const,
+            choice: 'positive',
+            probabilities: { positive: 0.8, negative: 0.1, neutral: 0.1 },
+            confidence: 0.8,
+          },
+          priority: {
+            type: 'score' as const,
+            score: 1,
+            probabilities: { 0: 0.2, 1: 0.8 },
+            confidence: 0.8,
+            levels: ['low', 'high'],
+          },
+        },
+      })),
+    };
+    const request: DecisionRequest = {
+      state: { title: 'A bounded title', labels: ['feedback'] },
+      questions: {
+        sentiment: {
+          type: 'choice',
+          instructions: 'Choose the sentiment.',
+          criteria: { positive: null, negative: null, neutral: null },
+        },
+        priority: {
+          type: 'score',
+          instructions: 'Score the priority.',
+          criteria: ['low', 'high'],
+        },
+      },
+    };
+
+    await expect(executeDecision(decision, request)).resolves.toMatchObject({
+      answers: { sentiment: { choice: 'positive' }, priority: { score: 1 } },
+    });
+
+    const collection = new DecisionProductCollection({ decisions: decision });
+    await expect(collection.decide(request)).resolves.toMatchObject({
+      answers: { sentiment: { choice: 'positive' }, priority: { score: 1 } },
+    });
+    expect(decision.decide).toHaveBeenCalledTimes(2);
+    expect(collection.getAiUsageSnapshot()?.totalCalls).toBe(1);
+  });
+
+  it('rejects malformed injected decision answers instead of silently choosing a fallback', async () => {
+    const request: DecisionRequest = {
+      state: {},
+      questions: {
+        category: {
+          type: 'choice',
+          instructions: 'Choose one.',
+          criteria: { expected: null },
+        },
+      },
+    };
+    const malformed: DecisionClient = {
+      getCapabilities: async () => ({ decisions: true }),
+      decide: async () => ({
+        model: 'jev-test',
+        provenance: { provider: 'typesafe', model: 'jev-test' },
+        answers: {
+          category: {
+            type: 'choice',
+            choice: 'unexpected',
+            probabilities: { unexpected: 1 },
+            confidence: 1,
+          },
+        },
+      }),
+    };
+
+    await expect(executeDecision(malformed, request)).rejects.toThrow(
+      /not a requested option/,
+    );
+  });
+
+  it('keeps legacy injected predicate responses compatible with provenance-only models and extra answers', async () => {
+    const client: DecisionClient = {
+      getCapabilities: async () => ({ decisions: true }),
+      decide: async () => ({
+        model: 'redundant-but-different-model',
+        provenance: { provider: 'legacy-injected', model: 'provenance-model' },
+        answers: {
+          result: { type: 'predicate', probability: 1 },
+          retainedLegacyAnswer: { type: 'predicate', probability: 0 },
+        },
+      }),
+    };
+
+    const product = new DecisionProduct({
+      ai: makeGenerativeClient().client,
+      decisions: client,
+    });
+    await expect(product.evaluate('is compatible?')).resolves.toMatchObject({
+      result: true,
+      provenance: { provider: 'legacy-injected', model: 'provenance-model' },
+    });
+    await expect(
+      executeDecision(client, {
+        state: {},
+        questions: {
+          result: { type: 'predicate', instructions: 'is compatible?' },
+        },
+      }),
+    ).resolves.toMatchObject({ model: 'provenance-model' });
+  });
+
+  it('reports the documented unsupported-capability error when an injected client omits the optional probe', async () => {
+    const request: DecisionRequest = {
+      state: {},
+      questions: { result: { type: 'predicate', instructions: 'Check it.' } },
+    };
+    await expect(
+      executeDecision({ decide: async () => ({}) }, request),
+    ).rejects.toThrow('does not support typed decisions');
+  });
+
+  it.each([
+    {
+      answer: {
+        type: 'choice' as const,
+        choice: 'expected',
+        probabilities: { expected: 0.6 },
+        confidence: 0.6,
+      },
+      message: /must sum to 1/,
+    },
+    {
+      answer: {
+        type: 'score' as const,
+        score: 2,
+        probabilities: { 0: 0.5, 1: 0.5 },
+        confidence: 0.5,
+        levels: ['low', 'high'],
+      },
+      message: /outside the requested rubric/,
+    },
+    {
+      answer: {
+        type: 'score' as const,
+        score: 1,
+        probabilities: { 0: 0.5, 1: 0.5 },
+        confidence: 0.5,
+        levels: ['different', 'high'],
+      },
+      message: /does not match the requested rubric/,
+    },
+  ])('rejects malformed injected decision distributions', async ({
+    answer,
+    message,
+  }) => {
+    const isChoice = answer.type === 'choice';
+    const request: DecisionRequest = {
+      state: {},
+      questions: {
+        answer: isChoice
+          ? {
+              type: 'choice',
+              instructions: 'Choose one.',
+              criteria: { expected: null },
+            }
+          : {
+              type: 'score',
+              instructions: 'Score one.',
+              criteria: ['low', 'high'],
+            },
+      },
+    };
+    const client: DecisionClient = {
+      getCapabilities: async () => ({ decisions: true }),
+      decide: async () => ({
+        model: 'jev-test',
+        provenance: { provider: 'typesafe', model: 'jev-test' },
+        answers: { answer },
+      }),
+    };
+
+    await expect(executeDecision(client, request)).rejects.toThrow(message);
+  });
+
   it('drives evaluate through the installed SDK adapter with controlled HTTP', async () => {
     const generative = makeGenerativeClient();
     const product = new DecisionProduct({
@@ -236,6 +447,7 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
       '{"result": true}',
     );
     vi.spyOn(product, 'getAvailableTools').mockReturnValue([{} as any]);
+    const getDecisionClient = vi.spyOn(product as any, 'getDecisionClient');
 
     await expect(
       product.evaluate('is suitable?', {
@@ -244,6 +456,7 @@ describe('SmrtObject.evaluate typed decisions (#3153)', () => {
       }),
     ).resolves.toMatchObject({ result: true, route: 'generative' });
     expect(decision?.decide).not.toHaveBeenCalled();
+    expect(getDecisionClient).not.toHaveBeenCalled();
     expect(generative.message.mock.calls[0]?.[1]?.tools).toHaveLength(1);
     expect(generative.message.mock.calls[0]?.[1]).toMatchObject({
       model: 'generation-model',
