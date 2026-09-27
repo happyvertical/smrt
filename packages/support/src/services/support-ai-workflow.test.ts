@@ -852,6 +852,52 @@ describe('SupportAiWorkflow', () => {
     );
   });
 
+  it('hands ambiguous decision choices to a human and preserves their audit probabilities', async () => {
+    const decisions = triageDecisionClient({
+      severity: 'sev3',
+      severityProbabilities: { sev1: 0.4, sev2: 0.1, sev3: 0.4, sev4: 0.1 },
+      category: 'billing',
+      categoryProbabilities: { billing: 0.5, availability: 0.5 },
+    });
+    vi.spyOn(SupportCase.prototype, 'do').mockResolvedValue(
+      JSON.stringify({ reply: DEFAULT_REPLY, confidence: 1 }),
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    await workflow.policies.create({
+      name: 'ambiguous-decisions',
+      allowedCategories: JSON.stringify(['billing', 'availability']),
+    });
+    const supportCase = await openCase(workflow);
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+    const classification = runs
+      .find((run) => run.phase === 'classify')
+      ?.getClassification();
+
+    expect(classification).toMatchObject({
+      severity: '',
+      category: '',
+      sensitive: false,
+      confidence: 0.4,
+      metadata: {
+        severityProbability: 0.4,
+        categoryProbability: 0.5,
+        severityAmbiguous: true,
+        categoryAmbiguous: true,
+      },
+    });
+    const answerRun = runs.find((run) => run.phase === 'answer');
+    expect(answerRun?.outcome).toBe('handed_off');
+    expect(JSON.parse(answerRun?.metadata ?? '{}').reason).toBe(
+      'ambiguous-classification',
+    );
+    expect(
+      (await handoffPayloads(workflow, supportCase.id ?? '')).some(
+        (payload) => payload.trigger === 'ambiguous_classification',
+      ),
+    ).toBe(true);
+  });
+
   it('does nothing when the case opts out of AI or is no longer open', async () => {
     const { workflow, classifyCalls } = await createWorkflow();
 

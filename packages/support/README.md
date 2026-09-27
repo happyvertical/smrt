@@ -81,8 +81,8 @@ the case plan's ordered severity definitions and evaluates sensitivity as a
 predicate. `SupportPolicy.allowedCategories` is optional: supplying values
 turns category into a closed decision vocabulary; leaving it empty preserves
 free-category generation. A configured ambiguous severity/category stays
-unassigned, and an exactly ambiguous sensitivity predicate hands off to a
-human. The recorded classification confidence is an operating aggregate for
+unassigned and hands off to a human; an exactly ambiguous sensitivity predicate
+does so too. The recorded classification confidence is an operating aggregate for
 audit only, never a calibrated answer confidence or the policy answer threshold.
 App-injected `SupportAiBoundary` implementations remain authoritative.
 

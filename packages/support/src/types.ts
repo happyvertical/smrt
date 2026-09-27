@@ -177,6 +177,7 @@ export type SupportAiRunOutcome =
 export type HumanHandoffTrigger =
   | 'client_request'
   | 'low_confidence'
+  | 'ambiguous_classification'
   | 'high_severity'
   | 'sensitive'
   | 'failed_resolution'

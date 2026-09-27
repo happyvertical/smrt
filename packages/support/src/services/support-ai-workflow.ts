@@ -60,6 +60,8 @@ export interface SupportAiClassifyResult {
   category: string;
   /** Whether the matter is sensitive (always triggers a Human Handoff). */
   sensitive: boolean;
+  /** Whether a typed decision lacked a unique majority and requires a human. */
+  ambiguous?: boolean;
   /**
    * Classification certainty in `[0, 1]`. Typed decisions use an audit-only
    * operating aggregate; this is never the answer confidence policy consumes.
@@ -268,6 +270,7 @@ export class SupportAiWorkflow {
     // Phase: acknowledge (FR-28a — the client hears back immediately).
     runs.push(await this.runAcknowledge(supportCase, policy, interactionId));
 
+    let classificationAmbiguous = false;
     // Phase: classify (severity / category / sensitivity triage).
     if (!policy.autoClassify) {
       runs.push(
@@ -311,6 +314,7 @@ export class SupportAiWorkflow {
         classification.sensitive ||
         (classification.category !== '' &&
           policy.sensitiveCategories.includes(classification.category));
+      classificationAmbiguous = classification.ambiguous === true;
       // Persist triage only into empty fields — a human's triage is never
       // overwritten by the model.
       let caseDirty = false;
@@ -358,6 +362,13 @@ export class SupportAiWorkflow {
         'Case involves a sensitive matter',
       );
     }
+    if (classificationAmbiguous) {
+      await this.triggerHandoff(
+        supportCase,
+        'ambiguous_classification',
+        'AI classification did not produce a unique majority choice',
+      );
+    }
     const rank = severityRank(supportCase.severity);
     if (Number.isFinite(rank) && rank <= HIGH_SEVERITY_MAX_RANK) {
       await this.triggerHandoff(
@@ -386,6 +397,15 @@ export class SupportAiWorkflow {
           outcome: 'handed_off',
           interactionId,
           metadata: { reason: 'sensitive' },
+        }),
+      );
+    } else if (classificationAmbiguous) {
+      runs.push(
+        await this.writeRun(supportCase, {
+          phase: 'answer',
+          outcome: 'handed_off',
+          interactionId,
+          metadata: { reason: 'ambiguous-classification' },
         }),
       );
     } else if (supportCase.humanRequestedAt) {
@@ -880,6 +900,7 @@ function buildTriageDecisionRequest(input: {
 function selectedDecisionChoice(answer: unknown): {
   choice: string;
   probability: number;
+  ambiguous: boolean;
 } {
   if (
     !answer ||
@@ -912,8 +933,8 @@ function selectedDecisionChoice(answer: unknown): {
         choice === choiceAnswer.choice || probability > value,
     );
   return hasUniqueMajority
-    ? { choice: choiceAnswer.choice, probability }
-    : { choice: '', probability: 0 };
+    ? { choice: choiceAnswer.choice, probability, ambiguous: false }
+    : { choice: '', probability, ambiguous: true };
 }
 
 async function classifyGeneratively(
@@ -986,6 +1007,7 @@ export function createDefaultAiBoundary(
         : {
             choice: await classifyFreeCategory(supportCase, input),
             probability: undefined,
+            ambiguous: false,
           };
       const aggregateParts = [severity.probability, sensitivityCertainty];
       if (category.probability !== undefined)
@@ -995,6 +1017,7 @@ export function createDefaultAiBoundary(
         severity: severity.choice,
         category: category.choice,
         sensitive,
+        ambiguous: severity.ambiguous || category.ambiguous,
         confidence: Math.min(...aggregateParts),
         model: decision.provenance.model,
         metadata: {
@@ -1002,8 +1025,10 @@ export function createDefaultAiBoundary(
           confidenceKind: 'operating-aggregate-not-calibrated',
           provenance: decision.provenance,
           severityProbability: severity.probability,
+          severityAmbiguous: severity.ambiguous,
           sensitivityProbability: sensitivity.probability,
           categoryProbability: category.probability ?? null,
+          categoryAmbiguous: category.ambiguous,
         },
       };
     },
