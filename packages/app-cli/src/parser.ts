@@ -187,7 +187,7 @@ function makeRichParser(schema: Record<string, unknown>) {
     string,
     Record<string, unknown>
   >;
-  const required = new Set(((schema.required ?? []) as string[]) ?? []);
+  const required = new Set((schema.required ?? []) as string[]);
   const additionalProperties = schema.additionalProperties !== false;
 
   return (argv: string[], httpMethod: string): ParsedArgs => {
