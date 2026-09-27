@@ -20,21 +20,13 @@
 
 import { createHash } from 'node:crypto';
 import {
-  readDispatchHealth,
-  readJobHealth,
-  readMigrationStatus,
-  readRecentChanges,
-  readRegistryDrift,
-  readScheduleHealth,
-} from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/sql';
-import {
   closeRuntimeConnection,
   type RuntimeDatabaseArgs,
   redactConnectionString,
   resolveRuntimeConnection,
   safeErrorMessage,
 } from './connection.js';
+import { importProjectRuntimeModule } from './project-runtime.js';
 
 /** Provenance labels separating runtime facts from static/declared facts. */
 export const RUNTIME_PROVENANCE = 'runtime (live DB)';
@@ -58,7 +50,19 @@ type RuntimeReadParts = {
   diagnostics: RuntimeDiagnostic[];
 };
 
-type RuntimeRead = (db: DatabaseInterface) => Promise<RuntimeReadParts>;
+type RuntimeRead = (db: unknown) => Promise<RuntimeReadParts>;
+
+async function projectRead(
+  args: RuntimeDatabaseArgs,
+  name: string,
+  db: unknown,
+  options?: unknown,
+) {
+  const core = await importProjectRuntimeModule<
+    Record<string, (db: unknown, options?: unknown) => Promise<unknown>>
+  >(args.projectPath, '@happyvertical/smrt-core');
+  return core[name](db, options);
+}
 
 /**
  * Serialize resolve → read → close per connection target so overlapping tool
@@ -294,8 +298,8 @@ function toEnvelopeParts(rawResult: unknown): {
   return { data, diagnostics };
 }
 
-function readToParts(read: Promise<unknown>): Promise<RuntimeReadParts> {
-  return read.then((result) => toEnvelopeParts(result));
+function readToParts(read: unknown): Promise<RuntimeReadParts> {
+  return Promise.resolve(read).then((result) => toEnvelopeParts(result));
 }
 
 export interface MigrationStatusArgs extends RuntimeDatabaseArgs {
@@ -309,7 +313,10 @@ export async function runtimeMigrationStatus(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readMigrationStatus(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readMigrationStatus', db, { limit }).then(
+        readToParts,
+      ),
     'no migration status — the manifest still reports the declared schema',
   );
 }
@@ -325,7 +332,10 @@ export async function runtimeJobHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readJobHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readJobHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no job health snapshot — the manifest still reports declared job queues',
   );
 }
@@ -341,7 +351,10 @@ export async function runtimeScheduleHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readScheduleHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readScheduleHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no schedule health snapshot — the manifest still reports declared schedules',
   );
 }
@@ -357,7 +370,10 @@ export async function runtimeDispatchHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readDispatchHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readDispatchHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no dispatch health snapshot — the manifest still reports declared dispatch topology',
   );
 }
@@ -380,7 +396,12 @@ export async function runtimeRecentChanges(
   return withRuntimeConnection(
     connectionArgs,
     (db) =>
-      readToParts(readRecentChanges(db, { since, tables, tenantId, limit })),
+      projectRead(connectionArgs, 'readRecentChanges', db, {
+        since,
+        tables,
+        tenantId,
+        limit,
+      }).then(readToParts),
     'no recent changes — static knowledge artifacts are unchanged',
   );
 }
@@ -390,7 +411,7 @@ export async function runtimeRegistryDrift(
 ): Promise<RuntimeToolEnvelope> {
   return withRuntimeConnection(
     args,
-    (db) => readToParts(readRegistryDrift(db)),
+    (db) => projectRead(args, 'readRegistryDrift', db).then(readToParts),
     'no registry drift report — _smrt_registry is retired; declared objects come from the manifest',
   );
 }

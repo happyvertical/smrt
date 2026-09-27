@@ -21,9 +21,10 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { getPackageConfig, loadConfig } from '@happyvertical/smrt-config';
-import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import {
+  importProjectRuntimeModule,
+  loadProjectRuntime,
+} from './project-runtime.js';
 
 /** Engine labels `@happyvertical/sql`'s `getDatabase` accepts. */
 export type RuntimeDatabaseType = 'sqlite' | 'postgres' | 'duckdb';
@@ -40,6 +41,7 @@ function isRuntimeDatabaseType(value: string): value is RuntimeDatabaseType {
 
 /** Tool arguments every runtime-diagnostics tool accepts. */
 export interface RuntimeDatabaseArgs {
+  projectPath?: string;
   /** Optional database URL/connection string (overrides env and config). */
   dbUrl?: string;
   /**
@@ -56,7 +58,7 @@ export type ConnectionSource = 'argument' | 'environment' | 'config' | 'none';
 
 export interface ResolvedRuntimeConnection {
   /** Open connection, or `null` when no connection is configured. */
-  db: DatabaseInterface | null;
+  db: unknown | null;
   source: ConnectionSource;
   /** Redacted connection string for display; '' when no connection. */
   displayUrl: string;
@@ -232,7 +234,7 @@ export async function resolveRuntimeConnection(
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(argUrl, args.dbType),
     );
-    const db = await getDatabaseInstance({
+    const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
       url: normalizeDatabaseUrl(argUrl),
     });
@@ -249,7 +251,7 @@ export async function resolveRuntimeConnection(
     const databaseType = toRuntimeDatabaseType(
       inferDatabaseType(envUrl, args.dbType),
     );
-    const db = await getDatabaseInstance({
+    const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
       url: normalizeDatabaseUrl(envUrl),
     });
@@ -261,13 +263,13 @@ export async function resolveRuntimeConnection(
     };
   }
 
-  const config = await loadCliDatabaseConfig();
+  const config = await loadCliDatabaseConfig(args.projectPath);
   const configUrl = config?.database?.url?.trim();
   if (configUrl && !isMemoryDatabaseUrl(configUrl)) {
     const databaseType = toRuntimeDatabaseType(
       config.database?.type || inferDatabaseType(configUrl, args.dbType),
     );
-    const db = await getDatabaseInstance({
+    const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
       url: normalizeDatabaseUrl(configUrl),
     });
@@ -286,15 +288,24 @@ interface DatabaseConfigLike {
   database?: { type?: string; url?: string };
 }
 
-async function loadCliDatabaseConfig(): Promise<DatabaseConfigLike> {
+async function loadCliDatabaseConfig(
+  projectPath?: string,
+): Promise<DatabaseConfigLike> {
   try {
     // `getPackageConfig` only reads the synchronous cache and answers with
     // defaults until `loadConfig()` has run; nothing else in this server loads
     // the project config, so load it here. Cosmiconfig is resolved from the
     // server's cwd (the project the agent is working in); a missing or invalid
     // config falls back to the defaults.
-    await loadConfig();
-    const config = getPackageConfig(
+    const configModule = await importProjectRuntimeModule<{
+      loadConfig: () => Promise<void>;
+      getPackageConfig: (
+        name: string,
+        defaults: Record<string, unknown>,
+      ) => unknown;
+    }>(projectPath, '@happyvertical/smrt-config');
+    await configModule.loadConfig();
+    const config = configModule.getPackageConfig(
       'cli',
       DEFAULT_CLI_DATABASE as unknown as Record<string, unknown>,
     );
@@ -308,11 +319,17 @@ async function loadCliDatabaseConfig(): Promise<DatabaseConfigLike> {
   }
 }
 
-async function getDatabaseInstance(options: {
-  type: RuntimeDatabaseType;
-  url: string;
-}): Promise<DatabaseInterface> {
-  return getDatabase(options);
+async function getDatabaseInstance(
+  projectPath: string | undefined,
+  options: {
+    type: RuntimeDatabaseType;
+    url: string;
+  },
+): Promise<unknown> {
+  const { sql } = await loadProjectRuntime(projectPath);
+  return (
+    sql as { getDatabase: (value: typeof options) => Promise<unknown> }
+  ).getDatabase(options);
 }
 
 type MaybeCloseableDatabase = {

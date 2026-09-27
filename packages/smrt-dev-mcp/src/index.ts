@@ -27,25 +27,9 @@ import {
 } from './knowledge/index.js';
 import { SERVER_NAME, SERVER_VERSION } from './server-info.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
-import {
-  generateSmrtClass,
-  introspectProject,
-  reviewSmrtProject,
-} from './tools/index.js';
+import { generateSmrtClass } from './tools/generate-smrt-class.js';
+import { reviewSmrtProject } from './tools/review-smrt-project.js';
 import { redactConnectionString } from './tools/runtime/connection.js';
-import {
-  runtimeObject,
-  runtimeRegistry,
-  runtimeSchemaDiff,
-} from './tools/runtime/observation.js';
-import {
-  runtimeDispatchHealth,
-  runtimeJobHealth,
-  runtimeMigrationStatus,
-  runtimeRecentChanges,
-  runtimeRegistryDrift,
-  runtimeScheduleHealth,
-} from './tools/runtime/tools.js';
 
 export { SERVER_VERSION } from './server-info.js';
 export { TOOLS } from './tool-catalog.js';
@@ -486,9 +470,9 @@ export function createServer(): Server {
           break;
 
         case 'introspect-project':
-          result = await introspectProject(
-            args as unknown as Parameters<typeof introspectProject>[0],
-          );
+          result = await (
+            await import('./tools/introspect-project.js')
+          ).introspectProject(args as never);
           break;
 
         case 'review-smrt-project':
@@ -636,94 +620,36 @@ export function createServer(): Server {
           break;
 
         case 'migration-status':
-          result = JSON.stringify(
-            await runtimeMigrationStatus(
-              args as unknown as Parameters<typeof runtimeMigrationStatus>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'job-health':
-          result = JSON.stringify(
-            await runtimeJobHealth(
-              args as unknown as Parameters<typeof runtimeJobHealth>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'schedule-health':
-          result = JSON.stringify(
-            await runtimeScheduleHealth(
-              args as unknown as Parameters<typeof runtimeScheduleHealth>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'dispatch-health':
-          result = JSON.stringify(
-            await runtimeDispatchHealth(
-              args as unknown as Parameters<typeof runtimeDispatchHealth>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'recent-changes':
-          result = JSON.stringify(
-            await runtimeRecentChanges(
-              args as unknown as Parameters<typeof runtimeRecentChanges>[0],
-            ),
-            null,
-            2,
-          );
+        case 'registry-drift': {
+          const runtime = await import('./tools/runtime/tools.js');
+          const handlers = {
+            'migration-status': runtime.runtimeMigrationStatus,
+            'job-health': runtime.runtimeJobHealth,
+            'schedule-health': runtime.runtimeScheduleHealth,
+            'dispatch-health': runtime.runtimeDispatchHealth,
+            'recent-changes': runtime.runtimeRecentChanges,
+            'registry-drift': runtime.runtimeRegistryDrift,
+          };
+          result = JSON.stringify(await handlers[name](args as never), null, 2);
           break;
-
-        case 'registry-drift':
-          result = JSON.stringify(
-            await runtimeRegistryDrift(
-              args as unknown as Parameters<typeof runtimeRegistryDrift>[0],
-            ),
-            null,
-            2,
-          );
-          break;
+        }
 
         case 'runtime-registry':
-          result = JSON.stringify(
-            await runtimeRegistry(
-              args as unknown as Parameters<typeof runtimeRegistry>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'runtime-object':
-          result = JSON.stringify(
-            await runtimeObject(
-              args as unknown as Parameters<typeof runtimeObject>[0],
-            ),
-            null,
-            2,
-          );
+        case 'runtime-schema-diff': {
+          const observation = await import('./tools/runtime/observation.js');
+          const handlers = {
+            'runtime-registry': observation.runtimeRegistry,
+            'runtime-object': observation.runtimeObject,
+            'runtime-schema-diff': observation.runtimeSchemaDiff,
+          };
+          result = JSON.stringify(await handlers[name](args as never), null, 2);
           break;
-
-        case 'runtime-schema-diff':
-          result = JSON.stringify(
-            await runtimeSchemaDiff(
-              args as unknown as Parameters<typeof runtimeSchemaDiff>[0],
-            ),
-            null,
-            2,
-          );
-          break;
+        }
 
         default:
           throw new Error(`Unknown tool: ${name}`);
