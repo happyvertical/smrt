@@ -10,6 +10,7 @@
  */
 
 import { clearPromptCache } from '@happyvertical/smrt-prompts';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsReport } from '../models/AnalyticsReport.js';
 import {
@@ -214,5 +215,158 @@ describe('AnalyticsReport.hasPositiveTrends()', () => {
     expect(text).not.toContain('INTERNAL: token expired');
     // The descriptive report name is not in this leaner classifier prompt.
     expect(text).not.toContain('Weekly Traffic Report');
+  });
+
+  it('uses the configured typed decision route with only the curated report state', async () => {
+    const { report, aiMessageMock } = makeReport();
+    const attemptDecision = vi.fn().mockResolvedValue({
+      model: 'decision-test',
+      provenance: { provider: 'typesafe', model: 'decision-test' },
+      answers: {
+        result: { type: 'predicate', probability: 0.9 },
+      },
+    });
+    (report as any).attemptDecision = attemptDecision;
+
+    await expect(report.hasPositiveTrends()).resolves.toBe(true);
+    expect(aiMessageMock).not.toHaveBeenCalled();
+    expect(attemptDecision).toHaveBeenCalledTimes(1);
+
+    const [request] = attemptDecision.mock.calls[0];
+    expect(request.state).toEqual({
+      reportMetrics: report.metrics,
+      reportData: JSON.stringify(report.getResultData()),
+    });
+    expect(request.state).not.toHaveProperty('propertyId');
+    expect(request.state).not.toHaveProperty('tenantId');
+    expect(request.state).not.toHaveProperty('dimensionFilter');
+    expect(request.questions.result.instructions).toContain('activeUsers');
+    expect(request.questions.result.instructions).toContain('bounce or error');
+  });
+
+  it.each([
+    [
+      'rising favorable metric',
+      [{ name: 'activeUsers' }],
+      { rows: [{ activeUsers: 120 }, { activeUsers: 100 }] },
+      0.9,
+      true,
+    ],
+    [
+      'falling adverse metric',
+      [{ name: 'bounceRate' }],
+      { rows: [{ bounceRate: 0.4 }, { bounceRate: 0.2 }] },
+      0.1,
+      false,
+    ],
+    [
+      'incomplete period',
+      [{ name: 'sessions' }],
+      { rows: [{ sessions: 100 }] },
+      0.1,
+      false,
+    ],
+    ['insufficient data', [{ name: 'sessions' }], { rows: [] }, 0.1, false],
+  ])('projects the configured predicate result for %s without claiming model quality', async (_caseName, metrics, resultData, probability, expected) => {
+    const { report } = makeReport();
+    report.metrics = JSON.stringify(metrics);
+    report.resultData = JSON.stringify(resultData);
+    (report as any).attemptDecision = vi.fn().mockResolvedValue({
+      model: 'decision-test',
+      provenance: { provider: 'typesafe', model: 'decision-test' },
+      answers: { result: { type: 'predicate', probability } },
+    });
+
+    await expect(report.hasPositiveTrends()).resolves.toBe(expected);
+  });
+
+  it('uses the resolved generative prompt inside a configured uncertainty band', async () => {
+    const { report, aiMessageMock } = makeReport({ aiResponse: 'yes' });
+    (report as any).options.decisions = {
+      type: 'typesafe',
+      threshold: 0.5,
+      uncertaintyFallback: { band: 0.05 },
+    };
+    (report as any).attemptDecision = vi.fn().mockResolvedValue({
+      model: 'decision-test',
+      provenance: { provider: 'typesafe', model: 'decision-test' },
+      answers: { result: { type: 'predicate', probability: 0.5 } },
+    });
+
+    await expect(report.hasPositiveTrends()).resolves.toBe(true);
+    expect(aiMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['threshold', { type: 'typesafe', threshold: 1.1 }, 'Decision threshold'],
+    [
+      'uncertainty fallback band',
+      { type: 'typesafe', uncertaintyFallback: { band: -0.1 } },
+      'Decision uncertainty fallback band',
+    ],
+  ])('rejects an invalid decision %s before invoking the provider or recording usage', async (_name, decisions, error) => {
+    const { report } = makeReport();
+    const provider = vi.fn();
+    const recordUsage = vi.fn();
+    (report as any).options.decisions = decisions;
+    (report as any).getDecisionClient = vi
+      .fn()
+      .mockResolvedValue({ decide: provider });
+    (report as any).recordAiUsageEvent = recordUsage;
+
+    await expect(report.hasPositiveTrends()).rejects.toThrow(error);
+    expect(provider).not.toHaveBeenCalled();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it('propagates configured decision-provider failures instead of coercing them', async () => {
+    const { report } = makeReport();
+    (report as any).attemptDecision = vi
+      .fn()
+      .mockRejectedValue(new Error('invalid decision response'));
+
+    await expect(report.hasPositiveTrends()).rejects.toThrow(
+      'invalid decision response',
+    );
+  });
+
+  it('keeps the generative route when registered tools are available', async () => {
+    const { report, aiMessageMock } = makeReport({ aiResponse: 'yes' });
+    const attemptDecision = vi.fn();
+    (report as any).attemptDecision = attemptDecision;
+    (report as any).getAvailableTools = () => [{ name: 'report-tool' }];
+
+    await expect(report.hasPositiveTrends()).resolves.toBe(true);
+    expect(attemptDecision).not.toHaveBeenCalled();
+    expect(aiMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits tenantId when resolving the decision prompt so tenant overrides apply', async () => {
+    const { report } = makeReport();
+    (report as any).attemptDecision = vi.fn().mockResolvedValue({
+      model: 'decision-test',
+      provenance: { provider: 'typesafe', model: 'decision-test' },
+      answers: { result: { type: 'predicate', probability: 0.9 } },
+    });
+    const promptsModule = await import('@happyvertical/smrt-prompts');
+    const observed: Array<Record<string, unknown> | undefined> = [];
+    const originalResolve = promptsModule.resolvePrompt;
+    const spy = vi
+      .spyOn(promptsModule, 'resolvePrompt')
+      .mockImplementation((key, options) => {
+        observed.push(options as Record<string, unknown> | undefined);
+        return originalResolve(key, options);
+      });
+
+    try {
+      await withTenant({ tenantId: 'tenant-context-X' }, async () => {
+        await report.hasPositiveTrends();
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(observed).toHaveLength(1);
+    expect('tenantId' in (observed[0] ?? {})).toBe(false);
   });
 });
