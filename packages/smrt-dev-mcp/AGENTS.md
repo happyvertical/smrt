@@ -128,7 +128,8 @@ Source-scan enrichment (`introspect-project` without a built manifest) and the
 runtime tools require `@happyvertical/smrt-core` installed in the selected
 project. Install the project's dependencies first. The server resolves core's
 public exports from that project and resolves SQL/config from the same core
-installation; it never borrows its own development dependencies. Use `directory`
+installation using normal Node resolution, including hoisted workspace dependencies.
+It never retries resolution from the MCP server module location. Use `directory`
 for introspection, `projectPath` for runtime tools, or launch from the project
 root. HTTP `--project` and the in-app host pin the project explicitly.
 

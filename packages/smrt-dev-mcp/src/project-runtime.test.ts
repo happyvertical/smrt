@@ -10,7 +10,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { introspectProject } from './tools/introspect-project.js';
 import { resetRuntimeBootForTests } from './tools/runtime/boot.js';
-import { runtimeRegistry } from './tools/runtime/observation.js';
+import {
+  runtimeRegistry,
+  runtimeSchemaDiff,
+} from './tools/runtime/observation.js';
 import {
   importProjectRuntimeModule,
   loadProjectRuntime,
@@ -101,6 +104,25 @@ describe('selected project runtime boundary (#2961)', () => {
     }
   });
 
+  it('resolves hoisted workspace runtime from the selected project without changing its identity', async () => {
+    const workspace = project();
+    const root = join(workspace, 'packages', 'app');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'package.json'), '{"name":"app","type":"module"}');
+    const core = moduleAt(
+      workspace,
+      '@happyvertical/smrt-core',
+      'export const identity = "hoisted";',
+    );
+    moduleAt(core, '@happyvertical/sql', 'export const identity = "core-sql";');
+    const runtime = await loadProjectRuntime(root);
+    expect(runtime.core).toMatchObject({ identity: 'hoisted' });
+    expect(runtime.projectRoot).toBe(realpathSync(root));
+    await expect(loadProjectRuntime(workspace)).rejects.toMatchObject({
+      code: 'runtime_project_mismatch',
+    });
+  });
+
   it('loads import-only exports and SQL from the chosen core installation', async () => {
     const root = project();
     const core = moduleAt(
@@ -181,6 +203,65 @@ describe('selected project runtime boundary (#2961)', () => {
     await expect(introspectProject({ directory: root })).rejects.not.toThrow(
       /secret|password/,
     );
+  });
+
+  it.each([
+    'reader-missing',
+    'migrations-missing',
+    'comparer-incompatible',
+    'read-error',
+  ])('distinguishes runtime setup from database read failure: %s', async (kind) => {
+    const root = project();
+    const core = moduleAt(
+      root,
+      '@happyvertical/smrt-core',
+      `export const ObjectRegistry = { registerFromManifest() {} }; ${kind === 'read-error' ? 'export async function readMigrationStatus() { throw new Error("database read failed"); }' : ''}`,
+      {
+        './manifest/discover-smrt-packages': './discovery.js',
+        ...(kind === 'comparer-incompatible'
+          ? { './migrations': './migrations.js' }
+          : {}),
+      },
+    );
+    writeFileSync(
+      join(core, 'discovery.js'),
+      'export function discoverSmrtPackages() { return []; } export function resolveManifestPath() {}',
+    );
+    writeFileSync(
+      join(core, 'migrations.js'),
+      'export const SchemaComparer = undefined;',
+    );
+    moduleAt(
+      core,
+      '@happyvertical/sql',
+      'export let closed = false; export async function getDatabase() { return { close() { closed = true; } }; }',
+    );
+    const args = { projectPath: root, dbUrl: 'file:/tmp/selected.db' };
+    const result = await (kind.startsWith('migrations') ||
+    kind.startsWith('comparer')
+      ? runtimeSchemaDiff(args)
+      : runtimeMigrationStatus(args));
+    expect(
+      result.diagnostics.some(
+        (d) =>
+          d.code ===
+          (kind === 'read-error'
+            ? 'runtime_read_error'
+            : 'runtime_dependency_unavailable'),
+      ),
+    ).toBe(true);
+    expect(result.data).toMatchObject({
+      connected: kind === 'read-error',
+      provenance: kind === 'read-error' ? 'runtime (live DB)' : 'static',
+    });
+    if (kind !== 'read-error')
+      expect(result.data).not.toHaveProperty('displayUrl');
+    expect(JSON.stringify(result)).not.toContain(root);
+    const sql = await importProjectRuntimeModule<{ closed: boolean }>(
+      root,
+      '@happyvertical/sql',
+    );
+    expect(sql.closed).toBe(true);
   });
 
   it.each([

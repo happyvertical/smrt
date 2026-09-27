@@ -206,17 +206,26 @@ async function runWithRuntimeConnection(
       diagnostics: [
         {
           severity: 'warning',
-          code: 'runtime_read_error',
+          code:
+            error instanceof ProjectRuntimeResolutionError
+              ? error.code
+              : 'runtime_read_error',
           message: safeErrorMessage(error),
         },
       ],
-      data: {
-        provenance: RUNTIME_PROVENANCE,
-        connected: true,
-        connectionSource: source,
-        databaseType,
-        displayUrl,
-      },
+      data:
+        error instanceof ProjectRuntimeResolutionError
+          ? {
+              provenance: STATIC_PROVENANCE,
+              connected: false,
+            }
+          : {
+              provenance: RUNTIME_PROVENANCE,
+              connected: true,
+              connectionSource: source,
+              databaseType,
+              displayUrl,
+            },
     };
   } finally {
     await closeRuntimeConnection(db);
