@@ -455,6 +455,25 @@ export class AnalyticsReport extends SmrtObject {
     // Typed decisions cannot call tools. Check this before resolving the
     // optional client so a tool-enabled report stays on its existing route.
     if (this.getAvailableTools().length === 0) {
+      const config = this.getDecisionConfig();
+      const threshold = config?.threshold ?? 0.5;
+      if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+        throw new Error(
+          'Decision threshold must be a finite number in [0, 1].',
+        );
+      }
+      const uncertaintyBand = config?.uncertaintyFallback?.band;
+      if (
+        uncertaintyBand !== undefined &&
+        (!Number.isFinite(uncertaintyBand) ||
+          uncertaintyBand < 0 ||
+          uncertaintyBand > 1)
+      ) {
+        throw new Error(
+          'Decision uncertainty fallback band must be a finite number in [0, 1].',
+        );
+      }
+
       const decision = await this.attemptDecision({
         state: {
           reportMetrics: this.metrics || '[]',
@@ -475,24 +494,7 @@ export class AnalyticsReport extends SmrtObject {
         }
 
         const probability = answer.probability;
-        const config = this.getDecisionConfig();
-        const threshold = config?.threshold ?? 0.5;
-        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-          throw new Error(
-            'Decision threshold must be a finite number in [0, 1].',
-          );
-        }
-        const uncertaintyBand = config?.uncertaintyFallback?.band;
         if (uncertaintyBand !== undefined) {
-          if (
-            !Number.isFinite(uncertaintyBand) ||
-            uncertaintyBand < 0 ||
-            uncertaintyBand > 1
-          ) {
-            throw new Error(
-              'Decision uncertainty fallback band must be a finite number in [0, 1].',
-            );
-          }
           const outsideUncertaintyBand =
             probability < Math.max(0, threshold - uncertaintyBand) ||
             probability > Math.min(1, threshold + uncertaintyBand);

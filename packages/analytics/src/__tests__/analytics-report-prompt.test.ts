@@ -297,6 +297,28 @@ describe('AnalyticsReport.hasPositiveTrends()', () => {
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['threshold', { type: 'typesafe', threshold: 1.1 }, 'Decision threshold'],
+    [
+      'uncertainty fallback band',
+      { type: 'typesafe', uncertaintyFallback: { band: -0.1 } },
+      'Decision uncertainty fallback band',
+    ],
+  ])('rejects an invalid decision %s before invoking the provider or recording usage', async (_name, decisions, error) => {
+    const { report } = makeReport();
+    const provider = vi.fn();
+    const recordUsage = vi.fn();
+    (report as any).options.decisions = decisions;
+    (report as any).getDecisionClient = vi
+      .fn()
+      .mockResolvedValue({ decide: provider });
+    (report as any).recordAiUsageEvent = recordUsage;
+
+    await expect(report.hasPositiveTrends()).rejects.toThrow(error);
+    expect(provider).not.toHaveBeenCalled();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
   it('propagates configured decision-provider failures instead of coercing them', async () => {
     const { report } = makeReport();
     (report as any).attemptDecision = vi
