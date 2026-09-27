@@ -659,6 +659,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
                 // generated output has changed. SvelteKit type checking still
                 // runs after this config hook and needs these declarations.
                 await generateConfigTypes(routeManifest);
+                // The generated TS registration imports this runtime module.
+                // SvelteKit sync must resolve it before Vite buildStart runs.
+                await generateRegistrationFile(routeManifest, projectRoot);
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;
                 // Preflight has succeeded but no generated output has changed.
@@ -693,6 +696,9 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           // but still need physical virtual-module declarations before their
           // SvelteKit typecheck reaches Vite's later buildStart lifecycle.
           await generateConfigTypes();
+          if (options.svelteKit && typeManifest) {
+            await generateRegistrationFile(typeManifest, projectRoot);
+          }
           if (previousConsumerRouteRoots.length > 0) {
             await reconcileConsumerSvelteKitRouteRoots(
               routeLifecycle,

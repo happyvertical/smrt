@@ -1,7 +1,6 @@
 {
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "baseUrl": ".",
     "module": "esnext",
     "lib": ["ES2022", "DOM"],
     "jsx": "react-jsx",

@@ -33,7 +33,7 @@ export default defineConfig(async ({ mode }) => {
     const config = createPackageConfig('images', {
       entries: ['playground', 'ui', 'workbench'],
       svelte: 'svelte',
-      dtsExclude: ['src/routes/**/*'],
+      dtsExclude: ['src/lib/server/**/*', 'src/routes/**/*'],
     });
     // createPackageConfig returns a UserConfigExport; resolve it
     const resolved = typeof config === 'function' ? await (config as any)({ mode, command: 'build' }) : config;

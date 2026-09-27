@@ -37,7 +37,7 @@ export default defineConfig(async ({ mode }) => {
         'server',
       ],
       svelte: 'svelte',
-      dtsExclude: ['src/routes/**/*', 'src/hooks.server.ts'],
+      dtsExclude: ['src/lib/server/**/*', 'src/routes/**/*', 'src/hooks.server.ts'],
     });
     // createPackageConfig returns a UserConfigExport; resolve it
     const resolved = typeof config === 'function' ? await (config as any)({ mode, command: 'build' }) : config;

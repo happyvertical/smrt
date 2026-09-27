@@ -82,7 +82,7 @@
   "devDependencies": {
     "@types/node": "24.13.6",
     "svelte": "^5.57.1",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vitest": "4.1.10"
   },
   "author": "HappyVertical"

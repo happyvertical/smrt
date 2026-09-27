@@ -82,7 +82,7 @@
     "@sveltejs/package": "^2.5.8",
     "@types/node": "24.13.6",
     "svelte-check": "^4.7.6",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vitest": "4.1.10"
   },
   "publishConfig": {

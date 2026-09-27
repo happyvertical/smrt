@@ -122,7 +122,6 @@ export function validateQuickstart(quickstart, root = ROOT) {
     experimentalDecorators: true,
     skipLibCheck: true,
     noEmit: true,
-    baseUrl: root,
     typeRoots: typescriptPath
       ? [resolve(dirname(typescriptPath), '..', '..', '@types')]
       : undefined,

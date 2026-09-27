@@ -54,7 +54,7 @@ packages/<name>/
 | `src/__smrt-register__.ts` | Package defines `@smrt()` classes (issue #1132 self-registration pattern) |
 | `src/svelte/` and `ambient.d.ts` and `tsconfig.svelte.json` | Package ships Svelte UI components |
 | `src/manifest/` | Package participates in build-time manifest generation |
-| `tsconfig.build.json` | `vite-plugin-dts` needs different inclusions than `tsc --noEmit` |
+| `tsconfig.build.json` | declaration emission needs different inclusions than `tsc --noEmit` |
 | `tsconfig.typecheck.json` | `tsc --noEmit` needs different inclusions than build |
 | `bin/` | Package exposes a CLI binary |
 | `e2e/` and `playwright.config.ts` | Package has Playwright end-to-end tests |
@@ -139,7 +139,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - All `@happyvertical/smrt-*` references use `workspace:*`
   - All `@happyvertical/sdk` references (`ai`, `sql`, `files`, `utils`, `cache`, `documents`, `email`, `encryption`, `geo`, `images`, `jobs`, `json`, `logger`, `messages`, `ocr`, `pdf`, `projects`, `repos`, `secrets`, `spider`) use `catalog:`
   - `@types/node` always `catalog:`
-  - `vite`, `vitest`, `vite-plugin-dts`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
+  - `vite`, `vitest`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
 - **Coordinated releases**: every publishable `@happyvertical/smrt-*` package
   belongs to the fixed release group in `.changeset/config.json` and carries
@@ -173,10 +173,8 @@ export default createPackageConfig('<package-name>', {
 
 - **Always use `createPackageConfig`** from `vite.config.base.ts`. Hand-written `vite.config.ts` files require an explicit comment stating why and a tracking issue.
 - **Build target**: `es2022` for libraries; `node20` only for tools that must run server-side (CLIs); `node24` only when explicitly required.
-- **`vite-plugin-dts`**: comes via `vite.config.base.ts`; do not add to per-package devDependencies.
-- **DTS bundling**:
-  - `bundleTypes: false` for foundation packages (`core`, `cli`) — many internal types
-  - `bundleTypes: true` for narrow public APIs
+- **Declarations**: `scripts/declarations.ts` runs the pinned `tsc --emitDeclarationOnly` compiler through the shared and custom Vite builds. Declarations remain separate modules; no API Extractor or declaration bundler is used. Compiler errors fail every library build.
+- **Declaration layout**: all packages emit separate declaration modules. Keep component declarations in the existing `svelte-package` step.
 - **Output format**: ESM only (`formats: ['es']`)
 - **Sourcemaps**: on
 - **`vitest` package** is exempt — it must build with `tsc` because it provides the vite plugin to others. The empty `vite.config.ts` should be removed.
@@ -190,7 +188,7 @@ export default createPackageConfig('<package-name>', {
 | Base | Purpose |
 |---|---|
 | `tsconfig.json` | Default for libraries — strict, ES2022, ESNext modules, bundler resolution |
-| `tsconfig.package-build.json` | Settings for `vite-plugin-dts` build path |
+| `tsconfig.package-build.json` | Shared declaration/source-check settings |
 | `tsconfig.package-svelte.json` | Settings for packages with `.svelte` source |
 | `tsconfig.package-typecheck.json` | Settings for `tsc --noEmit` |
 | `tsconfig.package-ui.json` | Settings for packages shipping UI (extends svelte + adds DOM lib) |
@@ -200,7 +198,7 @@ export default createPackageConfig('<package-name>', {
 - Always have `tsconfig.json` extending the appropriate base
 - Add `tsconfig.svelte.json` only if `.svelte` source is present
 - Add `tsconfig.typecheck.json` only if typecheck inclusions differ from build
-- Add `tsconfig.build.json` only if `vite-plugin-dts` needs different inclusions
+- Add `tsconfig.build.json` only if declaration emission needs different inclusions
 - Maximum: 4 tsconfig files per package. If you need more, talk to maintainers first.
 - Do not extend `tsconfig.kit.json` unless the package ships a SvelteKit app (templates only)
 
@@ -765,3 +763,23 @@ A few of the rules above remove something that's currently in the repo. Justific
 **Why mandate `createPackageConfig`**: Hand-written vite configs duplicate ~80 lines of boilerplate per package and drift independently. Build targets, externals, and DTS settings that should be uniform are not. The base config is the only viable lever for a coordinated change (e.g. swapping the bundler).
 
 **Why `smrtVitestPlugin()` is non-negotiable**: It generates the manifest at vitest startup. Without it, tests pass that should fail (because cross-package classes aren't loaded) and tests fail with "No field metadata" for reasons that look like a bug in user code. The framework's own foundation packages currently violate this; they should be the first to fix it.
+
+### Declaration packaging
+
+TypeScript 6.0.3 emits source-shaped `.d.ts` and declaration maps. The build
+extends each package's build config (or ordinary tsconfig), disables workspace
+source aliases, and resolves dependency types through public built exports.
+Keep imports portable: declarations retain their original module specifiers,
+and each package must declare dependencies used by its published types. The
+compiler gets explicit Node types; path mappings use relative `./` targets
+without deprecated `baseUrl`.
+
+`createPackageConfig` creates type re-export entry files for named JS entries
+whose source path differs. Svelte components still use `svelte-package`;
+application-only routes and generated application registration are excluded
+from library declaration inputs. Ambient declarations remain compiler inputs;
+global augmentations stay in their original modules with the imports they need.
+
+Validate packaging with `node scripts/verify-package-types-exports.js <package>`
+and real packed-consumer TypeScript checks with `skipLibCheck: false`. The
+emitter regression tests run in `pnpm test:ci-scripts`.

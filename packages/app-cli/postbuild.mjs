@@ -36,7 +36,7 @@ for (const binPath of binPaths) {
 /**
  * Catch anything that looks like a test artifact slipping into `dist/`.
  * Broad pattern instead of an enumeration of suffixes — `.test.d.ts.map`,
- * `.spec.*`, and any future vite-plugin-dts config drift that re-enables
+ * `.spec.*`, and any future declaration build config drift that re-enables
  * declaration maps for excluded files all get caught here. (#1311 review #7.)
  */
 const TEST_ARTIFACT_RE = /\.(test|spec)\./;

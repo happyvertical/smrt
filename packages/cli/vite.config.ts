@@ -5,7 +5,7 @@
 // library-mode lib bundle. createPackageConfig is library-mode only.
 
 import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from '../../scripts/declarations.js';
 
 export default defineConfig({
   build: {
@@ -84,9 +84,7 @@ export default defineConfig({
     outDir: 'dist',
   },
   plugins: [
-    dts({
-      bundleTypes: { bundledPackages: [] },
-    }),
+    declarations({ packageDir: __dirname }),
   ],
   test: {
     globals: true,

@@ -5,6 +5,7 @@
     "pnpm-lock.yaml",
     "tsconfig*.json",
     "vite.config.base.ts",
+    "scripts/declarations.ts",
     "vitest.workspace.ts",
     "biome.json"
   ],

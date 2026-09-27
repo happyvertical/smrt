@@ -4,7 +4,7 @@
 // is library-mode only and doesn't support multi-entry bin builds.
 
 import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from '../../scripts/declarations.js';
 
 export default defineConfig({
   build: {
@@ -50,24 +50,7 @@ export default defineConfig({
     outDir: 'dist',
   },
   plugins: [
-    dts({
-      // bundleTypes inlines the type-only re-exports from
-      // @happyvertical/smrt-users/sveltekit (used by ./discovery.ts) into
-      // the consolidated dist/index.d.ts. Without this, the per-file
-      // discovery.d.ts retains `import type { ... } from
-      // '@happyvertical/smrt-users/sveltekit'` and downstream consumers
-      // who install smrt-app-cli without smrt-users get a TS error on
-      // the re-exported CliResource / CommandDefinition types. The peer
-      // `optional: true` flag only silences npm install warnings; it
-      // doesn't prevent tsc errors. (#1311 review #6.)
-      //
-      // bundledPackages tells the dts roller it's OK to follow into
-      // these packages and inline the referenced type shapes rather
-      // than leaving the external import.
-      bundleTypes: { bundledPackages: ['@happyvertical/smrt-users'] },
-      include: ['src/**/*.ts'],
-      exclude: ['src/**/*.test.ts', 'src/__tests__/**'],
-    }),
+    declarations({ packageDir: __dirname }),
   ],
   test: {
     globals: true,
