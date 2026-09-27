@@ -33,7 +33,7 @@ image.isLandscape;  // true
 image.aspectRatio;  // 1.778
 image.isHighResolution();  // false (below 4K)
 
-// AI-powered categorization (returns tags, description, confidence, subjects)
+// Metadata categorization (returns tags, description, confidence, subjects)
 const categorizer = new ImageCategorizer({ ai: aiConfig });
 const result = await categorizer.categorize(image);
 // Auto-tag: applies tags and sets description/alt text
@@ -72,7 +72,7 @@ const variations = await editor.generateVariation(image, 'winter theme', { count
 
 | Export | Description |
 |--------|------------|
-| `ImageCategorizer` | AI vision analysis returning tags, description, confidence, subjects. `autoTag()` applies results to the image. |
+| `ImageCategorizer` | Metadata categorization returning tags, description, confidence, subjects. `autoTag()` applies results to the image. |
 | `ImageDeriver` | Derive new images from sources + AI prompts with generic provenance links via `AssetAssociation` |
 | `ImageEditor` | Resize, crop, convert, thumbnail (via `@happyvertical/images`) + AI editing. Creates derivative Image records linked via `parentId`. |
 | `ImageMetadataExtractor` | Extract dimensions, format, EXIF from image buffers |
@@ -82,6 +82,28 @@ const variations = await editor.generateVariation(image, 'winter theme', { count
 ### Key Types
 
 `ImageOptions`, `CategoryResult`, `DeriveOptions`, `ImageMetadataResult`, `ImageSearchOptions`, `AssetSourceAdapter`, `SourceAsset`, `SourceAssetMetadata`
+
+### Optional vocabulary decisions
+
+`ImageCategorizer` remains generative unless both `decisions` and a tag or
+subject vocabulary are supplied. A vocabulary is a readonly array of
+`{ name, description? }` entries or an image resolver. Offered tag and subject
+labels are independent predicates: names are exact and case-sensitive, and only
+probabilities above `0.5` are selected. Tags and subjects can be constrained
+independently; an absent vocabulary keeps that generated field, while an
+explicit empty vocabulary returns no labels for that field without a decision
+provider call. Vocabulary entries are limited to 64 entries, 128-character
+names, and 512-character descriptions. Resolver and configured-provider errors
+propagate.
+
+Use `categorizeDetailed()` for selected-label probabilities and decision
+provenance. The existing `CategoryResult.confidence` remains the generative
+categorizer's confidence and is not a calibrated decision certainty.
+
+This path classifies only curated metadata: image name, description, MIME type,
+and dimensions. `categorize(image, buffer)` still ignores `buffer`; it does not
+send image bytes, EXIF, source URLs, or the metadata blob to either provider.
+A supported pixel/vision feature requires a separately scoped API.
 
 ## Dependencies
 

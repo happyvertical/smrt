@@ -44,8 +44,15 @@ export { smrtImagesGenerateAltTextPrompt } from './prompts';
 export { ImageSearch } from './search';
 // Types
 export type {
+  CategorizedImageLabel,
   CategoryResult,
   DeriveOptions,
+  DetailedCategoryResult,
+  ImageCategorizationDecisionDetail,
+  ImageCategorizerOptions,
+  ImageLabelVocabulary,
+  ImageLabelVocabularyEntry,
+  ImageLabelVocabularyResolver,
   ImageMetadataResult,
   ImageOptions,
   ImageSearchOptions,
