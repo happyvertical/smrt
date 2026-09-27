@@ -20,21 +20,16 @@
 
 import { createHash } from 'node:crypto';
 import {
-  readDispatchHealth,
-  readJobHealth,
-  readMigrationStatus,
-  readRecentChanges,
-  readRegistryDrift,
-  readScheduleHealth,
-} from '@happyvertical/smrt-core';
-import type { DatabaseInterface } from '@happyvertical/sql';
-import {
   closeRuntimeConnection,
   type RuntimeDatabaseArgs,
   redactConnectionString,
   resolveRuntimeConnection,
   safeErrorMessage,
 } from './connection.js';
+import {
+  importProjectRuntimeModule,
+  ProjectRuntimeResolutionError,
+} from './project-runtime.js';
 
 /** Provenance labels separating runtime facts from static/declared facts. */
 export const RUNTIME_PROVENANCE = 'runtime (live DB)';
@@ -58,7 +53,21 @@ type RuntimeReadParts = {
   diagnostics: RuntimeDiagnostic[];
 };
 
-type RuntimeRead = (db: DatabaseInterface) => Promise<RuntimeReadParts>;
+type RuntimeRead = (db: unknown) => Promise<RuntimeReadParts>;
+
+async function projectRead(
+  args: RuntimeDatabaseArgs,
+  name: string,
+  db: unknown,
+  options?: unknown,
+) {
+  const core = await importProjectRuntimeModule<
+    Record<string, (db: unknown, options?: unknown) => Promise<unknown>>
+  >(args.projectPath, '@happyvertical/smrt-core');
+  if (typeof core[name] !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
+  return core[name](db, options);
+}
 
 /**
  * Serialize resolve → read → close per connection target so overlapping tool
@@ -142,7 +151,10 @@ async function runWithRuntimeConnection(
       diagnostics: [
         {
           severity: 'warning',
-          code: 'runtime_connection_error',
+          code:
+            error instanceof ProjectRuntimeResolutionError
+              ? error.code
+              : 'runtime_connection_error',
           message: safeErrorMessage(error),
         },
       ],
@@ -194,17 +206,26 @@ async function runWithRuntimeConnection(
       diagnostics: [
         {
           severity: 'warning',
-          code: 'runtime_read_error',
+          code:
+            error instanceof ProjectRuntimeResolutionError
+              ? error.code
+              : 'runtime_read_error',
           message: safeErrorMessage(error),
         },
       ],
-      data: {
-        provenance: RUNTIME_PROVENANCE,
-        connected: true,
-        connectionSource: source,
-        databaseType,
-        displayUrl,
-      },
+      data:
+        error instanceof ProjectRuntimeResolutionError
+          ? {
+              provenance: STATIC_PROVENANCE,
+              connected: false,
+            }
+          : {
+              provenance: RUNTIME_PROVENANCE,
+              connected: true,
+              connectionSource: source,
+              databaseType,
+              displayUrl,
+            },
     };
   } finally {
     await closeRuntimeConnection(db);
@@ -294,8 +315,8 @@ function toEnvelopeParts(rawResult: unknown): {
   return { data, diagnostics };
 }
 
-function readToParts(read: Promise<unknown>): Promise<RuntimeReadParts> {
-  return read.then((result) => toEnvelopeParts(result));
+function readToParts(read: unknown): Promise<RuntimeReadParts> {
+  return Promise.resolve(read).then((result) => toEnvelopeParts(result));
 }
 
 export interface MigrationStatusArgs extends RuntimeDatabaseArgs {
@@ -309,7 +330,10 @@ export async function runtimeMigrationStatus(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readMigrationStatus(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readMigrationStatus', db, { limit }).then(
+        readToParts,
+      ),
     'no migration status — the manifest still reports the declared schema',
   );
 }
@@ -325,7 +349,10 @@ export async function runtimeJobHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readJobHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readJobHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no job health snapshot — the manifest still reports declared job queues',
   );
 }
@@ -341,7 +368,10 @@ export async function runtimeScheduleHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readScheduleHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readScheduleHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no schedule health snapshot — the manifest still reports declared schedules',
   );
 }
@@ -357,7 +387,10 @@ export async function runtimeDispatchHealth(
   const { limit, ...connectionArgs } = args;
   return withRuntimeConnection(
     connectionArgs,
-    (db) => readToParts(readDispatchHealth(db, { limit })),
+    (db) =>
+      projectRead(connectionArgs, 'readDispatchHealth', db, { limit }).then(
+        readToParts,
+      ),
     'no dispatch health snapshot — the manifest still reports declared dispatch topology',
   );
 }
@@ -380,7 +413,12 @@ export async function runtimeRecentChanges(
   return withRuntimeConnection(
     connectionArgs,
     (db) =>
-      readToParts(readRecentChanges(db, { since, tables, tenantId, limit })),
+      projectRead(connectionArgs, 'readRecentChanges', db, {
+        since,
+        tables,
+        tenantId,
+        limit,
+      }).then(readToParts),
     'no recent changes — static knowledge artifacts are unchanged',
   );
 }
@@ -390,7 +428,26 @@ export async function runtimeRegistryDrift(
 ): Promise<RuntimeToolEnvelope> {
   return withRuntimeConnection(
     args,
-    (db) => readToParts(readRegistryDrift(db)),
+    (db) => projectRead(args, 'readRegistryDrift', db).then(readToParts),
     'no registry drift report — _smrt_registry is retired; declared objects come from the manifest',
   );
+}
+
+/** Setup failures are safe static envelopes, never empty live/booted snapshots. */
+export async function withRuntimeSetup(
+  operation: () => Promise<RuntimeToolEnvelope>,
+): Promise<RuntimeToolEnvelope> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof ProjectRuntimeResolutionError)) throw error;
+    return {
+      ok: true,
+      coverage: null,
+      diagnostics: [
+        { severity: 'warning', code: error.code, message: error.message },
+      ],
+      data: { provenance: STATIC_PROVENANCE, connected: false },
+    };
+  }
 }

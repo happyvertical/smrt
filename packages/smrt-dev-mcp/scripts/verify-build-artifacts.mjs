@@ -6,9 +6,10 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
@@ -78,25 +79,36 @@ console.log('smrt-dev-mcp build artifacts verified');
 async function verifyPackedPlugin() {
   const packedTempDir = mkdtempSync(join(tmpdir(), 'smrt-dev-mcp-plugin-'));
   try {
-    const packOutput = execFileSync(
-      'npm',
-      ['pack', '--json', '--pack-destination', packedTempDir],
-      { cwd: packageRoot, encoding: 'utf8' },
-    );
-    const jsonStart = packOutput.lastIndexOf('\n[');
-    const packed = JSON.parse(packOutput.slice(jsonStart + 1));
-    const tarball = join(packedTempDir, packed[0].filename);
-    const unpackDir = join(packedTempDir, 'unpacked');
-    mkdirSync(unpackDir);
-    execFileSync('tar', ['-xzf', tarball, '-C', unpackDir], {
-      cwd: packedTempDir,
+    function pack(directory) {
+      const pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
+      execFileSync('pnpm', ['pack', '--pack-destination', packedTempDir], {
+        cwd: directory,
+        encoding: 'utf8',
+      });
+      return join(packedTempDir, `${pkg.name.replace('@', '').replace('/', '-')}-${pkg.version}.tgz`);
+    }
+    // Include the workspace siblings changed by this release. pnpm pack rewrites
+    // workspace: ranges; npm then installs the real production graph outside
+    // the checkout, with an empty cache and no borrowed node_modules links.
+    const tarballs = [
+      pack(packageRoot),
+      pack(resolve(packageRoot, '../scanner')),
+      pack(resolve(packageRoot, '../types')),
+    ];
+    const consumerRoot = join(packedTempDir, 'consumer');
+    mkdirSync(consumerRoot);
+    writeFileSync(join(consumerRoot, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+    execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--cache', join(packedTempDir, 'cache'), ...tarballs], {
+      cwd: consumerRoot,
+      encoding: 'utf8',
     });
-
-    const unpackedPackageRoot = join(unpackDir, 'package');
-    // The tarball intentionally excludes node_modules. Link the already
-    // installed runtime dependency graph so the packed package itself remains
-    // the process root while this offline verification runs.
-    symlinkSync(join(packageRoot, 'node_modules'), join(unpackedPackageRoot, 'node_modules'));
+    const installed = JSON.parse(readFileSync(join(consumerRoot, 'package-lock.json'), 'utf8')).packages;
+    for (const forbidden of ['@happyvertical/smrt-core', '@happyvertical/sql', '@happyvertical/files', '@happyvertical/ai']) {
+      if (Object.keys(installed).some((path) => path.endsWith(`node_modules/${forbidden}`))) {
+        throw new Error(`Cold MCP install unexpectedly includes ${forbidden}`);
+      }
+    }
+    const unpackedPackageRoot = join(consumerRoot, 'node_modules', '@happyvertical', 'smrt-dev-mcp');
     for (const path of [
       'plugin.json',
       'mcp.json',
@@ -121,7 +133,7 @@ async function verifyPackedPlugin() {
     const packedTransport = new StdioClientTransport({
       command: executable,
       args: server.args ?? [],
-      cwd: unpackedPackageRoot,
+      cwd: consumerRoot,
       stderr: 'pipe',
     });
     const packedClient = new Client(
@@ -132,12 +144,27 @@ async function verifyPackedPlugin() {
       },
     );
 
+    const protocolErrors = [];
+    packedClient.onerror = (error) => protocolErrors.push(error);
     try {
       await packedClient.connect(packedTransport);
       const tools = await packedClient.listTools();
-      if (!tools.tools.some((tool) => tool.name === 'get-agent-skill')) {
-        throw new Error('Packed plugin server did not complete tools/list');
+      if (tools.tools.length !== 21 || !tools.tools.some((tool) => tool.name === 'runtime-schema-diff')) {
+        throw new Error('Packed plugin did not preserve the complete 21-tool catalog');
       }
+      const generated = await packedClient.callTool({ name: 'generate-smrt-class', arguments: { className: 'ColdEntry', properties: [] } });
+      if (generated.isError) throw new Error('Cold static generation failed');
+      const knowledge = await packedClient.callTool({ name: 'reflect-knowledge', arguments: { rootDir: consumerRoot } });
+      if (knowledge.isError) throw new Error('Cold static knowledge failed');
+      const missing = await packedClient.callTool({ name: 'runtime-registry', arguments: {} });
+      if (missing.structuredContent?.diagnostics?.[0]?.code !== 'runtime_dependency_unavailable') {
+        throw new Error('Cold runtime setup must return an actionable missing-runtime diagnostic');
+      }
+      const missingDatabaseRuntime = await packedClient.callTool({ name: 'migration-status', arguments: {} });
+      if (missingDatabaseRuntime.structuredContent?.diagnostics?.[0]?.code !== 'runtime_dependency_unavailable') {
+        throw new Error('Cold migration status without overrides must preserve missing-runtime setup diagnostics');
+      }
+      if (protocolErrors.length) throw new Error('Packed MCP wrote invalid protocol output');
     } finally {
       await packedClient.close();
       await packedTransport.close();

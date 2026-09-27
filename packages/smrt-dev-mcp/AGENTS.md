@@ -61,7 +61,7 @@ discovery alone sees nothing. Every installed `@happyvertical/smrt-*` package,
 plus the known SDK packages, is resolved from the project's and each workspace
 package's `node_modules/@happyvertical` scope directory and marked
 `isInstalledDependency`. The filesystem enumeration and canonical doc reader are shared with CLI snapshots
-through `smrt-core/knowledge`; enrichment stays here. This is an enumeration, not a walk: pnpm materializes
+through `smrt-scanner/knowledge`; enrichment stays here. This is an enumeration, not a walk: pnpm materializes
 a store whose entries link back out to their siblings, so a descent reads the
 same package once per path that reaches it. Real paths deduplicate the result;
 each package is still read through its `node_modules` path, because a realpath
@@ -115,6 +115,32 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
   Agents should fetch it with `get-agent-skill`, then call `build-context` (`task: review`) for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
+
+
+## Project runtime prerequisite
+
+The standalone MCP installation includes static tooling and the scanner, not
+SMRT core, SQL drivers, AI, or filesystem providers. All 21 tools remain listed.
+Code generation, knowledge/context tools, agent skills, and introspection of a
+built manifest work without an installed runtime.
+
+Source-scan enrichment (`introspect-project` without a built manifest) and the
+runtime tools require `@happyvertical/smrt-core` installed in the selected
+project. Install the project's dependencies first. The server resolves core's
+public exports from that project and resolves SQL/config from the same core
+installation using normal Node resolution, including hoisted workspace dependencies.
+It never retries resolution from the MCP server module location. Use `directory`
+for introspection, `projectPath` for runtime tools, or launch from the project
+root. HTTP `--project` and the in-app host pin the project explicitly.
+
+A server process loads one runtime project. A request for another project fails
+with `runtime_project_mismatch`; start a separate server or restart it for that
+project. Missing/incompatible runtime installations return an actionable,
+sanitized `runtime_dependency_unavailable` diagnostic. Static tools remain usable.
+No DB configuration still returns the existing static-only diagnostic. Runtime
+module import executes installed framework code, never the project's app entry.
+Source enrichment runs in an isolated process with captured logs, preserving
+schema/tenant/inheritance detail without writing onto MCP stdout.
 
 ## Usage
 
@@ -177,10 +203,11 @@ launcher or a small wrapper script with an absolute Node path.
   validate against the packaged `schemas/agent-plugins-1.0.0/` snapshots
   offline, and do not add streamable HTTP until #2147 provides the endpoint.
 - **Field type mapping**: `text`, `integer`, `decimal`, `boolean`, `datetime`, `json` — maps to SMRT field helpers (but prefer TypeScript defaults per framework convention)
-- **Never call `ManifestGenerator` from a tool path**: `generateSchemas` and
+- **Capture manifest-enrichment output**: `generateSchemas` and
   friends write progress lines to **stdout** through the SDK logger, which is the
   MCP server's JSON-RPC channel. Suppressing `console.log` is not enough. The
-  knowledge scanner fallback therefore skips schema enrichment, so
+  source introspection therefore captures an isolated process’s output. The
+  knowledge scanner fallback skips schema enrichment, so
   scanner-provenance packages carry no `columnType` and contribute 0 to the
   `uuidColumns` fact — `objectSource` makes that visible.
 - **Aggregate manifests poison relationship facts**: a runtime
@@ -241,3 +268,13 @@ launcher or a small wrapper script with an absolute Node path.
 - **Coverage and diagnostics are computed before scope filtering**: they answer
   "did discovery work", which is a whole-workspace property. Deriving them from
   the scoped subset made `scope: 'sdk'` report a false discovery failure.
+
+## Validation
+
+Run package `test`, `typecheck`, and `build`, then
+`pnpm --filter @happyvertical/smrt-dev-mcp verify:pack`. The packaging gate packs
+MCP/scanner/types, installs only their production dependencies into a fresh
+external npm consumer/cache, rejects a core/SQL/files/AI closure, and exercises
+stdio initialization, all 21 tool declarations, static calls, and missing-runtime
+setup. It requires registry access. Core knowledge compatibility tests cover the
+scanner-owned discovery/graph algorithms through the existing core entrypoints.

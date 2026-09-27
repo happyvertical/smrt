@@ -20,17 +20,6 @@ import {
   sep,
 } from 'node:path';
 import {
-  AGENT_SURFACE_HASH_PREFIX,
-  checkKnowledgeGraphFreshness,
-  discoverKnowledgeArtifactPaths,
-  discoverScopedPackageDirectories,
-  MODULE_DOC_HASH_PREFIX,
-  readAgentModuleDocs,
-  readPackageAgentDoc,
-  resolveAgentModuleDocPaths,
-} from '@happyvertical/smrt-core/knowledge';
-import { toSnakeCase } from '@happyvertical/smrt-core/utils';
-import {
   type AgentSurface,
   isAgentSurfaceSourcePath,
   isPrunedAgentSurfacePath,
@@ -43,6 +32,16 @@ import {
   sourceMayContainNumericPrecisionIssue,
   sourceMayDeclareAgentSurface,
 } from '@happyvertical/smrt-scanner';
+import {
+  AGENT_SURFACE_HASH_PREFIX,
+  checkKnowledgeGraphFreshness,
+  discoverKnowledgeArtifactPaths,
+  discoverScopedPackageDirectories,
+  MODULE_DOC_HASH_PREFIX,
+  readAgentModuleDocs,
+  readPackageAgentDoc,
+  resolveAgentModuleDocPaths,
+} from '@happyvertical/smrt-scanner/knowledge';
 import type {
   DomainKnowledgeAgentSurface,
   DomainKnowledgeField,
@@ -2862,7 +2861,11 @@ function sensitiveKnowledgeFieldIdentifiers(
   return new Set(
     fields
       .filter(([, field]) => isSensitiveKnowledgeField(field))
-      .flatMap(([name]) => [name, toSnakeCase(name), camelToSnake(name)]),
+      .flatMap(([name]) => [
+        name,
+        coreCompatibleToSnakeCase(name),
+        camelToSnake(name),
+      ]),
   );
 }
 
@@ -4485,6 +4488,14 @@ function camelToSnake(value: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/[-\s]+/g, '_')
     .toLowerCase();
+}
+
+/** Mirrors smrt-core's stable lookup normalization without importing core. */
+export function coreCompatibleToSnakeCase(value: string): string {
+  return value
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '');
 }
 
 function uniqueStrings(values: string[]): string[] {

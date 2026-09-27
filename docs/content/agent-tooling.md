@@ -146,3 +146,22 @@ The same knowledge and checks are available without an MCP client:
 - The `_smrt_*` reader contract: `packages/core/agents/system-diagnostics.md`.
 - The sanitized registry snapshot: `packages/core/agents/registry-snapshot.md`.
 - The dev-MCP configuration section on the [core page](./core.md).
+
+
+### Lean development MCP installation
+
+`@happyvertical/smrt-dev-mcp` installs its scanner and static tooling without the
+ORM, AI providers, files SDK, or SQL drivers. All 21 tools remain available in the
+catalog. Generation, knowledge/context, skills, and built-manifest introspection
+work immediately. Source-scan enrichment and runtime observation/DB diagnostics
+use the SMRT runtime installed in the selected project; install that project's
+normal dependencies first. Select the project with `directory` for introspection,
+`projectPath` for runtime tools, or the server working directory. HTTP hosts use
+`--project` and pin their root.
+
+Missing or incompatible installations produce `runtime_dependency_unavailable`
+with setup guidance. One server process loads one runtime project: requests for
+another return `runtime_project_mismatch` and require a separate server or a
+restart. SQL and configuration resolve from the selected core installation.
+Source enrichment runs in a bounded subprocess with the selected project cwd and
+captured logs; it preserves schema, inheritance, validation, and tenant details.

@@ -48,7 +48,7 @@ const DATABASE_TYPE_PROPERTY = {
 const PROJECT_PATH_PROPERTY = {
   type: 'string',
   description:
-    'Project root to boot manifests from (default: the server working directory; ignored by the HTTP host, which boots once)',
+    'Project root to boot manifests from (default: the server working directory; pinned by the HTTP host; a different loaded project requires restart)',
 } as const;
 
 const LIMIT_PROPERTY = {
@@ -462,6 +462,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
         limit: LIMIT_PROPERTY,
@@ -475,6 +480,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
         limit: LIMIT_PROPERTY,
@@ -488,6 +498,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
         limit: LIMIT_PROPERTY,
@@ -501,6 +516,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
         limit: LIMIT_PROPERTY,
@@ -514,6 +534,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
         since: {
@@ -540,6 +565,11 @@ const TOOL_DEFINITIONS: Array<
     inputSchema: {
       type: 'object',
       properties: {
+        projectPath: {
+          type: 'string',
+          description:
+            'Project root with the installed SMRT runtime (default: server working directory)',
+        },
         dbUrl: DATABASE_URL_PROPERTY,
         dbType: DATABASE_TYPE_PROPERTY,
       },

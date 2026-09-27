@@ -2230,6 +2230,9 @@ importers:
 
   packages/scanner:
     dependencies:
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
@@ -2368,21 +2371,12 @@ importers:
 
   packages/smrt-dev-mcp:
     dependencies:
-      '@happyvertical/smrt-config':
-        specifier: workspace:*
-        version: link:../config
-      '@happyvertical/smrt-core':
-        specifier: workspace:*
-        version: link:../core
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
-      '@happyvertical/sql':
-        specifier: ^0.94.1
-        version: 0.94.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/node':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.12.27)
@@ -2390,6 +2384,15 @@ importers:
         specifier: 2.0.0
         version: 2.0.0
     devDependencies:
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/sql':
+        specifier: ^0.94.1
+        version: 0.94.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0

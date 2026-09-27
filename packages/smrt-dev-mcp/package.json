@@ -62,15 +62,15 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-build-artifacts.mjs"
   },
   "dependencies": {
-    "@happyvertical/smrt-config": "workspace:*",
-    "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "@happyvertical/smrt-types": "workspace:*"
   },
   "devDependencies": {
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
     "@types/node": "24.13.6",
@@ -79,5 +79,8 @@
     "vite": "8.1.4",
     "vitest": "4.1.10"
   },
-  "author": "HappyVertical"
+  "author": "HappyVertical",
+  "engines": {
+    "node": ">=24.18.0"
+  }
 }

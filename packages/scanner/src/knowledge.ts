@@ -1,4 +1,12 @@
-/** Compatibility exports; graph algorithms are owned by the lightweight scanner. */
+export {
+  AGENT_SURFACE_HASH_PREFIX,
+  discoverScopedPackageDirectories,
+  MODULE_DOC_HASH_PREFIX,
+  readAgentModuleDocs,
+  readPackageAgentDoc,
+  resolveAgentModuleDocPaths,
+  type ScopedPackageDirectory,
+} from './knowledge-discovery.js';
 export {
   type BuildKnowledgeGraphOptions,
   buildKnowledgeGraph,
@@ -12,4 +20,4 @@ export {
   type KnowledgeGraphPackageNode,
   type SmrtKnowledgeGraph,
   stableStringify,
-} from '@happyvertical/smrt-scanner/knowledge';
+} from './knowledge-graph.js';

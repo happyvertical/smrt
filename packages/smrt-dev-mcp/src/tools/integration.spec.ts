@@ -1,3 +1,4 @@
+import { installRuntimeFixture } from '../runtime-test-fixture.js';
 /**
  * Integration Tests for SMRT Dev MCP Tools
  * Tests code generation and introspection with real projects
@@ -16,6 +17,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
   beforeEach(async () => {
     tmpDir = join(tmpdir(), `smrt-dev-integration-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
+    installRuntimeFixture(tmpDir);
   });
 
   afterEach(async () => {

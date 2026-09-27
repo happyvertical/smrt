@@ -33,6 +33,10 @@ importing one fails at worker startup. A failure fails the build.
 
 ## Lightweight discovery
 
+Filesystem-only discovery, module-doc parsing, and graph freshness are owned by
+`@happyvertical/smrt-scanner/knowledge`. Core's knowledge exports remain compatible
+reexports. Runtime manifest projection and custom-action semantics stay in core.
+
 `src/knowledge-discovery.ts`, exported through `smrt-core/knowledge`, enumerates
 installed scope directories and reads canonical AGENTS/legacy CLAUDE docs without
 loading package code, artifacts, or scanning objects. CLI snapshots and MCP share
