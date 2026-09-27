@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.51.33
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - use project runtime for lean cold installs (#3180) (dev-mcp)
+  
+  ### Other Changes
+  
+  - build: emit unbundled declarations with TypeScript 6 (#3179)
+- @happyvertical/smrt-config@0.51.33
+  - @happyvertical/smrt-scanner@0.51.33
+  - @happyvertical/smrt-types@0.51.33
+
 ## 0.51.32
 
 ### Patch Changes

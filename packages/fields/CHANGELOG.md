@@ -1,5 +1,15 @@
 # @happyvertical/smrt-fields
 
+## 0.51.33
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.51.33
+  - @happyvertical/smrt-tenancy@0.51.33
+  - @happyvertical/smrt-users@0.51.33
+  - @happyvertical/smrt-ui@0.51.33
+
 ## 0.51.32
 
 ### Patch Changes
