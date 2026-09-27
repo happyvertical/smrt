@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.51.32
+
+### Patch Changes
+
+- ### Features
+  
+  - constrain metadata labels with decisions (#3177) (images)
+  - add optional decision triage (#3176) (support)
+  - route report trends through decisions (#3174) (analytics)
+  - use typed reconciliation decisions (#3173) (facts)
+  - add optional decision sentiment (#3170) (projects)
+  - share typed decision routing (#3169) (core)
+  
+  ### Other Changes
+  
+  - docs: record claim support decision research (#3168) (facts)
+- @happyvertical/smrt-config@0.51.32
+  - @happyvertical/smrt-scanner@0.51.32
+  - @happyvertical/smrt-types@0.51.32
+
 ## 0.51.31
 
 ### Patch Changes
