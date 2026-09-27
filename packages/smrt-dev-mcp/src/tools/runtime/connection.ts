@@ -314,6 +314,11 @@ async function loadCliDatabaseConfig(
         defaults: Record<string, unknown>,
       ) => unknown;
     }>(projectPath, '@happyvertical/smrt-config');
+    if (
+      typeof configModule.loadConfig !== 'function' ||
+      typeof configModule.getPackageConfig !== 'function'
+    )
+      throw new ProjectRuntimeResolutionError('@happyvertical/smrt-config');
     await configModule.loadConfig({
       searchFrom: projectRuntimeRoot(projectPath),
       cache: false,
@@ -328,11 +333,7 @@ async function loadCliDatabaseConfig(
     }
     return {};
   } catch (error) {
-    if (
-      error instanceof ProjectRuntimeResolutionError &&
-      error.code === 'runtime_project_mismatch'
-    )
-      throw error;
+    if (error instanceof ProjectRuntimeResolutionError) throw error;
     return {};
   }
 }

@@ -160,6 +160,10 @@ async function verifyPackedPlugin() {
       if (missing.structuredContent?.diagnostics?.[0]?.code !== 'runtime_dependency_unavailable') {
         throw new Error('Cold runtime setup must return an actionable missing-runtime diagnostic');
       }
+      const missingDatabaseRuntime = await packedClient.callTool({ name: 'migration-status', arguments: {} });
+      if (missingDatabaseRuntime.structuredContent?.diagnostics?.[0]?.code !== 'runtime_dependency_unavailable') {
+        throw new Error('Cold migration status without overrides must preserve missing-runtime setup diagnostics');
+      }
       if (protocolErrors.length) throw new Error('Packed MCP wrote invalid protocol output');
     } finally {
       await packedClient.close();

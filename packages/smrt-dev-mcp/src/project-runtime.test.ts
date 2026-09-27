@@ -7,7 +7,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { introspectProject } from './tools/introspect-project.js';
 import { resetRuntimeBootForTests } from './tools/runtime/boot.js';
 import { runtimeRegistry } from './tools/runtime/observation.js';
@@ -49,6 +49,7 @@ function moduleAt(
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   resetRuntimeBootForTests();
   resetProjectRuntimeForTests();
   for (const root of roots.splice(0))
@@ -81,7 +82,9 @@ describe('selected project runtime boundary (#2961)', () => {
 
   it('returns safe missing-runtime diagnostics for registry and live DB tools', async () => {
     const root = project();
+    vi.stubEnv('SMRT_DEV_DB_URL', '');
     for (const result of [
+      await runtimeMigrationStatus({ projectPath: root }),
       await runtimeRegistry({ projectPath: root }),
       await runtimeMigrationStatus({
         projectPath: root,
@@ -236,6 +239,32 @@ describe('selected project runtime boundary (#2961)', () => {
       file: 'selected.db',
       connectionSource: 'config',
     });
+  });
+
+  it.each([
+    'missing',
+    'incompatible',
+    'ordinary-config-error',
+  ])('preserves runtime setup errors while allowing absent config: %s', async (kind) => {
+    vi.stubEnv('SMRT_DEV_DB_URL', '');
+    const root = project();
+    const core = moduleAt(root, '@happyvertical/smrt-core', '');
+    if (kind !== 'missing')
+      moduleAt(
+        core,
+        '@happyvertical/smrt-config',
+        kind === 'incompatible'
+          ? 'export const incompatible = true;'
+          : 'export async function loadConfig() { throw new Error("config absent"); } export function getPackageConfig() { return {}; }',
+      );
+    const result = await runtimeMigrationStatus({ projectPath: root });
+    expect(result.diagnostics[0]?.code).toBe(
+      kind === 'ordinary-config-error'
+        ? 'runtime_connection_unavailable'
+        : 'runtime_dependency_unavailable',
+    );
+    expect(JSON.stringify(result)).not.toContain(root);
+    expect(result.data.provenance).toBe('static');
   });
 
   it('bounds a stalled enrichment process and returns no partial inventory', async () => {
