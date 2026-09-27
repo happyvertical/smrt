@@ -51,7 +51,7 @@ await issue.rollback();
 | `Issue` | Issue/ticket (STI base). Methods: `sync()`, `incorporateFeedback()`, `rollback()`, `suggestLabels()`, `close()`, `addLabels()`, `addComment()` |
 | `PullRequest` | Pull request (STI subclass of Issue). Methods: `sync()`, `summarize()`, `merge()`, `markReady()`, `convertToDraft()`, `requestReviewers()`, `findLinkedIssue()` |
 | `Project` | Project board (GitHub Projects V2). Methods: `sync()`, `addItem()`, `moveItem()`, `listItems()`, `updateItemStatus()`, `analyzeHealth()` |
-| `Comment` | Comment on an issue or PR. AI methods: `isQuestion()`, `isApproval()`, `requestsChanges()`, `extractActionItems()`, `summarize()` |
+| `Comment` | Comment on an issue or PR. AI methods: `isQuestion()`, `isApproval()`, `requestsChanges()`, `extractActionItems()`, `summarize()`, `getSentiment()` |
 | `Label` | Label/tag for issues. Methods: `isTypeLabel()`, `isPriorityLabel()`, `getCategory()`, `createInRepository()` |
 
 ### Collections
@@ -85,6 +85,7 @@ await issue.rollback();
 - **Living Spec** (`incorporateFeedback()`): AI synthesizes issue comments into updated body. Supports preview mode and `rollback()`
 - **Sync throttle**: sync operations skip if called within 5 minutes (override with `{ force: true }`)
 - **Provider-agnostic**: GitHub primary, GitLab/Bitbucket/Azure types defined. Uses `@happyvertical/repos` and `@happyvertical/projects` SDK packages
+- **Optional sentiment decisions**: `Comment.getSentiment()` keeps its existing generative behavior until typed decisions are configured. With no registered tools, it sends a bounded comment value to a three-choice decision request. A selected choice must be a unique probability maximum above 0.5; tied or low-probability responses, invalid configured responses, and provider failures reject instead of being silently treated as neutral. This is a routing certainty rule, not a calibrated quality claim.
 
 ## Dependencies
 
