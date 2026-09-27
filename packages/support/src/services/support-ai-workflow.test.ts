@@ -7,8 +7,10 @@
  * provider are mocked — they model the external AI calls.
  */
 
+import type { DecisionClient } from '@happyvertical/smrt-core';
 import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SupportCase } from '../models/support-case.js';
 import {
   type KnowledgeSnippet,
   type SupportAiAnswerResult,
@@ -38,6 +40,60 @@ interface BoundaryScript {
 }
 
 const DEFAULT_REPLY = 'Clearing the CDN cache resolves the 500 errors.';
+
+function triageDecisionClient(
+  options: {
+    severity?: string;
+    severityProbabilities?: Record<string, number>;
+    sensitivityProbability?: number;
+    category?: string;
+    categoryProbabilities?: Record<string, number>;
+  } = {},
+): DecisionClient & { decide: ReturnType<typeof vi.fn> } {
+  const decide = vi.fn(async (request: any) => {
+    const severityProbabilities = options.severityProbabilities ?? {
+      sev1: 0.1,
+      sev2: 0.2,
+      sev3: 0.6,
+      sev4: 0.1,
+    };
+    const severity = options.severity ?? 'sev3';
+    const answers: Record<string, unknown> = {
+      severity: {
+        type: 'choice',
+        choice: severity,
+        probabilities: severityProbabilities,
+        confidence: severityProbabilities[severity],
+      },
+      sensitive: {
+        type: 'predicate',
+        probability: options.sensitivityProbability ?? 0.2,
+      },
+    };
+    if (request.questions.category) {
+      const categoryProbabilities = options.categoryProbabilities ?? {
+        billing: 0.8,
+        availability: 0.2,
+      };
+      const category = options.category ?? 'billing';
+      answers.category = {
+        type: 'choice',
+        choice: category,
+        probabilities: categoryProbabilities,
+        confidence: categoryProbabilities[category],
+      };
+    }
+    return {
+      model: 'triage-test',
+      provenance: { provider: 'typesafe', model: 'triage-test' },
+      answers,
+    };
+  });
+  return {
+    getCapabilities: vi.fn(async () => ({ decisions: true })),
+    decide,
+  };
+}
 
 function createBoundary(script: BoundaryScript = {}) {
   const classifyCalls: Array<{
@@ -93,6 +149,7 @@ describe('SupportAiWorkflow', () => {
 
   afterEach(async () => {
     await ctx.cleanup();
+    vi.restoreAllMocks();
   });
 
   async function createWorkflow(
@@ -574,6 +631,301 @@ describe('SupportAiWorkflow', () => {
     expect(reloaded.severity).toBe('sev2');
     // Empty fields are still filled in.
     expect(reloaded.category).toBe('billing');
+  });
+
+  it('persists optional category vocabularies and keeps an absent vocabulary open', async () => {
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db });
+    const policy = await workflow.policies.create({
+      name: 'optional-category-vocabulary',
+    });
+
+    expect(
+      (await workflow.policies.get(policy.id ?? ''))?.getAllowedCategories(),
+    ).toEqual([]);
+
+    policy.setAllowedCategories(['billing', 'availability']);
+    await policy.save();
+
+    expect(
+      (await workflow.policies.get(policy.id ?? ''))?.getAllowedCategories(),
+    ).toEqual(['billing', 'availability']);
+  });
+
+  it('uses explicit decision vocabularies and records their audit-only aggregate', async () => {
+    const decisions = triageDecisionClient({
+      severity: 'urgent',
+      severityProbabilities: { urgent: 0.8, routine: 0.2 },
+      sensitivityProbability: 0.3,
+      category: 'billing',
+      categoryProbabilities: { billing: 0.7, availability: 0.3 },
+    });
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    const policy = await workflow.policies.create({
+      name: 'decision-vocabulary',
+      autoAnswer: false,
+    });
+    policy.setAllowedCategories(['billing', 'availability']);
+    await policy.save();
+    const persistedPolicy = await workflow.policies.get(policy.id ?? '');
+    expect(persistedPolicy?.getAllowedCategories()).toEqual([
+      'billing',
+      'availability',
+    ]);
+    const supportCase = await openCase(workflow);
+    supportCase.setPlanSnapshot({
+      severityDefinitions: {
+        urgent: { label: 'Urgent', description: 'Immediate impact' },
+        routine: { label: 'Routine', description: 'General question' },
+      },
+    });
+    await supportCase.save();
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+    const classify = runs.find((run) => run.phase === 'classify');
+    const classification = classify?.getClassification();
+
+    expect(decisions.decide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        questions: expect.objectContaining({
+          severity: expect.objectContaining({
+            criteria: {
+              urgent: { label: 'Urgent', description: 'Immediate impact' },
+              routine: { label: 'Routine', description: 'General question' },
+            },
+          }),
+          category: expect.objectContaining({
+            criteria: { billing: null, availability: null },
+          }),
+        }),
+      }),
+      undefined,
+    );
+    expect(classification).toMatchObject({
+      severity: 'urgent',
+      category: 'billing',
+      sensitive: false,
+      confidence: 0.7,
+      metadata: {
+        confidenceKind: 'operating-aggregate-not-calibrated',
+        provenance: { provider: 'typesafe', model: 'triage-test' },
+      },
+    });
+  });
+
+  it('keeps injected app boundaries authoritative when decisions are configured', async () => {
+    const decisions = triageDecisionClient();
+    const { boundary } = createBoundary({
+      classify: { severity: 'sev2', category: 'app-owned', confidence: 0.42 },
+    });
+    const workflow = await SupportAiWorkflow.create({
+      db: ctx.db,
+      decisions,
+      boundary,
+    });
+    await workflow.policies.create({ name: 'no-answer', autoAnswer: false });
+    const supportCase = await openCase(workflow);
+
+    await workflow.processCase(supportCase.id ?? '');
+
+    expect(decisions.decide).not.toHaveBeenCalled();
+    const reloaded = await workflow.caseService.getCase(supportCase.id ?? '');
+    expect(reloaded.category).toBe('app-owned');
+  });
+
+  it('preserves legacy classification when decisions are absent or tools are registered', async () => {
+    const legacy = vi
+      .spyOn(SupportCase.prototype, 'do')
+      .mockResolvedValue(
+        '{"severity":"sev4","category":"question","sensitive":false,"confidence":0.8}',
+      );
+    const noDecisionWorkflow = await SupportAiWorkflow.create({ db: ctx.db });
+    await noDecisionWorkflow.policies.create({
+      name: 'legacy-no-answer',
+      autoAnswer: false,
+    });
+    const noDecisionCase = await openCase(noDecisionWorkflow);
+
+    await noDecisionWorkflow.processCase(noDecisionCase.id ?? '');
+    expect(legacy).toHaveBeenCalledOnce();
+
+    legacy.mockClear();
+    const decisions = triageDecisionClient();
+    const toolWorkflow = await SupportAiWorkflow.create({
+      db: ctx.db,
+      decisions,
+    });
+    await toolWorkflow.policies.create({
+      name: 'tool-no-answer',
+      autoAnswer: false,
+    });
+    vi.spyOn(SupportCase.prototype, 'getAvailableTools').mockReturnValue([
+      {} as any,
+    ]);
+    const toolCase = await openCase(toolWorkflow, {
+      subject: 'Tool-enabled case',
+    });
+
+    await toolWorkflow.processCase(toolCase.id ?? '');
+    expect(decisions.decide).not.toHaveBeenCalled();
+    expect(legacy).toHaveBeenCalledOnce();
+  });
+
+  it('records configured decision failures and hands them off', async () => {
+    const decisions = triageDecisionClient();
+    decisions.decide.mockRejectedValueOnce(
+      new Error('decision provider unavailable'),
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    const supportCase = await openCase(workflow);
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    expect(runs.find((run) => run.phase === 'classify')).toMatchObject({
+      outcome: 'failed',
+      error: 'decision provider unavailable',
+    });
+    expect(await handoffPayloads(workflow, supportCase.id ?? '')).toHaveLength(
+      1,
+    );
+  });
+
+  it('rejects an unknown configured category through the shared decision contract', async () => {
+    const decisions = triageDecisionClient();
+    decisions.decide.mockResolvedValueOnce({
+      model: 'triage-test',
+      provenance: { provider: 'typesafe', model: 'triage-test' },
+      answers: {
+        severity: {
+          type: 'choice',
+          choice: 'sev3',
+          probabilities: { sev1: 0.1, sev2: 0.1, sev3: 0.7, sev4: 0.1 },
+          confidence: 0.7,
+        },
+        sensitive: { type: 'predicate', probability: 0.1 },
+        category: {
+          type: 'choice',
+          choice: 'unknown',
+          probabilities: { unknown: 1 },
+          confidence: 1,
+        },
+      },
+    });
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    await workflow.policies.create({
+      name: 'closed-category-vocabulary',
+      autoAnswer: false,
+      allowedCategories: JSON.stringify(['billing', 'availability']),
+    });
+    const supportCase = await openCase(workflow);
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    expect(runs.find((run) => run.phase === 'classify')).toMatchObject({
+      outcome: 'failed',
+      error: expect.stringMatching(/not a requested option/),
+    });
+    expect(await handoffPayloads(workflow, supportCase.id ?? '')).toHaveLength(
+      1,
+    );
+  });
+
+  it('hands ambiguous sensitivity to a human without using answer confidence thresholds', async () => {
+    const decisions = triageDecisionClient({ sensitivityProbability: 0.5 });
+    vi.spyOn(SupportCase.prototype, 'do').mockResolvedValue(
+      '{"category":"question"}',
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    await workflow.policies.create({
+      name: 'decision-ambiguity',
+      autoAnswer: true,
+    });
+    const supportCase = await openCase(workflow);
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    expect(runs.find((run) => run.phase === 'answer')?.outcome).toBe(
+      'handed_off',
+    );
+    expect(decisions.decide).toHaveBeenCalledOnce();
+    expect(await handoffPayloads(workflow, supportCase.id ?? '')).toHaveLength(
+      1,
+    );
+  });
+
+  it('sends a risk-bearing suffix beyond 4,000 characters to decision triage before answering', async () => {
+    const suffix =
+      ' Customer uploaded a passport scan containing account details.';
+    const decisions = triageDecisionClient({ sensitivityProbability: 0.9 });
+    vi.spyOn(SupportCase.prototype, 'do').mockResolvedValue(
+      JSON.stringify({ reply: DEFAULT_REPLY, confidence: 1 }),
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    const supportCase = await openCase(workflow, {
+      description: `${'x'.repeat(4_100)}${suffix}`,
+    });
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    expect(decisions.decide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          body: `${'x'.repeat(4_100)}${suffix}`,
+        }),
+      }),
+      undefined,
+    );
+    expect(runs.find((run) => run.phase === 'answer')?.outcome).toBe(
+      'handed_off',
+    );
+    expect(await handoffPayloads(workflow, supportCase.id ?? '')).toHaveLength(
+      1,
+    );
+  });
+
+  it('hands ambiguous decision choices to a human and preserves their audit probabilities', async () => {
+    const decisions = triageDecisionClient({
+      severity: 'sev3',
+      severityProbabilities: { sev1: 0.4, sev2: 0.1, sev3: 0.4, sev4: 0.1 },
+      category: 'billing',
+      categoryProbabilities: { billing: 0.5, availability: 0.5 },
+    });
+    vi.spyOn(SupportCase.prototype, 'do').mockResolvedValue(
+      JSON.stringify({ reply: DEFAULT_REPLY, confidence: 1 }),
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    await workflow.policies.create({
+      name: 'ambiguous-decisions',
+      allowedCategories: JSON.stringify(['billing', 'availability']),
+    });
+    const supportCase = await openCase(workflow);
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+    const classification = runs
+      .find((run) => run.phase === 'classify')
+      ?.getClassification();
+
+    expect(classification).toMatchObject({
+      severity: '',
+      category: '',
+      sensitive: false,
+      confidence: 0.4,
+      metadata: {
+        severityProbability: 0.4,
+        categoryProbability: 0.5,
+        severityAmbiguous: true,
+        categoryAmbiguous: true,
+      },
+    });
+    const answerRun = runs.find((run) => run.phase === 'answer');
+    expect(answerRun?.outcome).toBe('handed_off');
+    expect(JSON.parse(answerRun?.metadata ?? '{}').reason).toBe(
+      'ambiguous-classification',
+    );
+    expect(
+      (await handoffPayloads(workflow, supportCase.id ?? '')).some(
+        (payload) => payload.trigger === 'ambiguous_classification',
+      ),
+    ).toBe(true);
   });
 
   it('does nothing when the case opts out of AI or is no longer open', async () => {
