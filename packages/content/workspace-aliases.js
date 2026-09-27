@@ -32,6 +32,7 @@ const workspaceAliasEntries = [
     '../smrt-playground/src/svelte/index.ts',
   ],
   ['@happyvertical/smrt-scanner', '../scanner/src/index.ts'],
+  ['@happyvertical/smrt-scanner/knowledge', '../scanner/src/knowledge.ts'],
   ['@happyvertical/smrt-profiles', '../profiles/src/index.ts'],
   ['@happyvertical/smrt-secrets', '../secrets/src/index.ts'],
   ['@happyvertical/smrt-tags', '../tags/src/index.ts'],
