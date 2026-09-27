@@ -8,7 +8,7 @@ or architecture prompt bundles.
 ## Project runtime prerequisite
 
 The standalone MCP installation includes static tooling and the scanner, not
-SMRT core, SQL drivers, AI, or filesystem providers. All 21 tools remain listed.
+s-m-r-t core, SQL drivers, AI, or filesystem providers. All 21 tools remain listed.
 Code generation, knowledge/context tools, agent skills, and introspection of a
 built manifest work without an installed runtime.
 
@@ -464,7 +464,7 @@ returns a successful static-only result.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 | `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
@@ -478,7 +478,7 @@ read-only.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 | `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
@@ -492,7 +492,7 @@ read-only.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 | `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
@@ -506,7 +506,7 @@ read. Runtime provenance; read-only.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 | `limit` | `number` | No | Row budget for result lists (default 50, capped at 500) |
@@ -518,7 +518,7 @@ filterable by table and tenant. Runtime provenance; read-only.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 | `since` | `number` | No | Cursor to read after (default 0) |
@@ -535,7 +535,7 @@ static manifest tools. Read-only.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `projectPath` | `string` | No | Project root with the installed SMRT runtime (default: server working directory) |
+| `projectPath` | `string` | No | Project root with the installed s-m-r-t runtime (default: server working directory) |
 | `dbUrl` | `string` | No | Optional dev database URL override (read-only diagnostics); prefer `SMRT_DEV_DB_URL` or `cli.database` config |
 | `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Optional engine hint for `dbUrl` or the environment connection; inferred from the URL scheme when omitted |
 
