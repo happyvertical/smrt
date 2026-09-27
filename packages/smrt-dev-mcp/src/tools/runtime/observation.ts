@@ -11,12 +11,7 @@
  * code execution. `runtime-schema-diff` only *introspects* the live schema.
  */
 
-import {
-  ObjectRegistry,
-  type RegistrySnapshotObject,
-  snapshotRegistry,
-} from '@happyvertical/smrt-core';
-import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
+import type { RegistrySnapshotObject } from '@happyvertical/smrt-core';
 import {
   bootRuntime,
   getBootedProjectRoot,
@@ -25,9 +20,15 @@ import {
 } from './boot.js';
 import type { RuntimeDatabaseArgs } from './connection.js';
 import {
+  importProjectRuntimeModule,
+  loadProjectCore,
+  ProjectRuntimeResolutionError,
+} from './project-runtime.js';
+import {
   type RuntimeDiagnostic,
   type RuntimeToolEnvelope,
   withRuntimeConnection,
+  withRuntimeSetup,
 } from './tools.js';
 
 /** Row budget for `runtime-schema-diff` change lists. */
@@ -111,12 +112,15 @@ function objectKey(object: {
 }
 
 /** `runtime-registry`: sanitized snapshot of the booted registry. */
-export async function runtimeRegistry(
+async function runtimeRegistryFromProject(
   args: RuntimeRegistryArgs = {},
 ): Promise<RuntimeToolEnvelope> {
   const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const { snapshotRegistry } = await loadProjectCore(args.projectPath);
   // Paths are relativized against the root the process actually booted from,
   // never the per-request argument (which is ignored after the first boot).
+  if (typeof snapshotRegistry !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
   const snapshot = snapshotRegistry({
     projectRoot: getBootedProjectRoot() ?? undefined,
     objects: args.objects,
@@ -169,11 +173,16 @@ export interface RuntimeObjectArgs extends RuntimeProjectArgs {
 }
 
 /** `runtime-object`: one object's sanitized definition plus its generated DDL. */
-export async function runtimeObject(
+async function runtimeObjectFromProject(
   args: RuntimeObjectArgs,
 ): Promise<RuntimeToolEnvelope> {
   const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const { ObjectRegistry, snapshotRegistry } = await loadProjectCore(
+    args.projectPath,
+  );
   const name = typeof args.name === 'string' ? args.name.trim() : '';
+  if (typeof snapshotRegistry !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
   const snapshot = snapshotRegistry({
     projectRoot: getBootedProjectRoot() ?? undefined,
     objects: name ? [name] : [],
@@ -241,19 +250,30 @@ export interface RuntimeSchemaDiffArgs
  * using the same comparer `db:diff`/`db:migrate` use. Introspection only —
  * drop/relax options are pinned off and nothing is executed.
  */
-export async function runtimeSchemaDiff(
+async function runtimeSchemaDiffFromProject(
   args: RuntimeSchemaDiffArgs = {},
 ): Promise<RuntimeToolEnvelope> {
   const boot = await bootRuntime({ projectRoot: args.projectPath });
+  const { ObjectRegistry } = await loadProjectCore(args.projectPath);
   const envelope = await withRuntimeConnection(
     args,
     async (db) => {
-      const comparer = new SchemaComparer(db, {
-        includeDroppedTables: false,
-        includeDroppedColumns: false,
-        includeDroppedIndexes: false,
-        relaxColumns: false,
-      });
+      const { SchemaComparer } = await importProjectRuntimeModule<
+        typeof import('@happyvertical/smrt-core/migrations')
+      >(args.projectPath, '@happyvertical/smrt-core/migrations');
+      if (typeof SchemaComparer !== 'function')
+        throw new ProjectRuntimeResolutionError(
+          '@happyvertical/smrt-core/migrations',
+        );
+      const comparer = new SchemaComparer(
+        db as ConstructorParameters<typeof SchemaComparer>[0],
+        {
+          includeDroppedTables: false,
+          includeDroppedColumns: false,
+          includeDroppedIndexes: false,
+          relaxColumns: false,
+        },
+      );
       const diff = await comparer.compare(
         ObjectRegistry.getAllSchemasAsDefinitions(),
       );
@@ -294,3 +314,10 @@ export async function runtimeSchemaDiff(
   ];
   return envelope;
 }
+
+export const runtimeRegistry = (args: RuntimeRegistryArgs = {}) =>
+  withRuntimeSetup(() => runtimeRegistryFromProject(args));
+export const runtimeObject = (args: RuntimeObjectArgs) =>
+  withRuntimeSetup(() => runtimeObjectFromProject(args));
+export const runtimeSchemaDiff = (args: RuntimeSchemaDiffArgs = {}) =>
+  withRuntimeSetup(() => runtimeSchemaDiffFromProject(args));

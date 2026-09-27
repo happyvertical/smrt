@@ -26,7 +26,10 @@ import {
   resolveRuntimeConnection,
   safeErrorMessage,
 } from './connection.js';
-import { importProjectRuntimeModule } from './project-runtime.js';
+import {
+  importProjectRuntimeModule,
+  ProjectRuntimeResolutionError,
+} from './project-runtime.js';
 
 /** Provenance labels separating runtime facts from static/declared facts. */
 export const RUNTIME_PROVENANCE = 'runtime (live DB)';
@@ -61,6 +64,8 @@ async function projectRead(
   const core = await importProjectRuntimeModule<
     Record<string, (db: unknown, options?: unknown) => Promise<unknown>>
   >(args.projectPath, '@happyvertical/smrt-core');
+  if (typeof core[name] !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
   return core[name](db, options);
 }
 
@@ -146,7 +151,10 @@ async function runWithRuntimeConnection(
       diagnostics: [
         {
           severity: 'warning',
-          code: 'runtime_connection_error',
+          code:
+            error instanceof ProjectRuntimeResolutionError
+              ? error.code
+              : 'runtime_connection_error',
           message: safeErrorMessage(error),
         },
       ],
@@ -414,4 +422,23 @@ export async function runtimeRegistryDrift(
     (db) => projectRead(args, 'readRegistryDrift', db).then(readToParts),
     'no registry drift report — _smrt_registry is retired; declared objects come from the manifest',
   );
+}
+
+/** Setup failures are safe static envelopes, never empty live/booted snapshots. */
+export async function withRuntimeSetup(
+  operation: () => Promise<RuntimeToolEnvelope>,
+): Promise<RuntimeToolEnvelope> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!(error instanceof ProjectRuntimeResolutionError)) throw error;
+    return {
+      ok: true,
+      coverage: null,
+      diagnostics: [
+        { severity: 'warning', code: error.code, message: error.message },
+      ],
+      data: { provenance: STATIC_PROVENANCE, connected: false },
+    };
+  }
 }

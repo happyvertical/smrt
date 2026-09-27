@@ -64,12 +64,12 @@
   "dependencies": {
     "@happyvertical/smrt-scanner": "workspace:*",
     "@modelcontextprotocol/node": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "@happyvertical/smrt-types": "workspace:*"
   },
   "devDependencies": {
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/conformance": "0.2.0-alpha.11",
@@ -80,5 +80,8 @@
     "vite-plugin-dts": "^5.1.0",
     "vitest": "4.1.10"
   },
-  "author": "HappyVertical"
+  "author": "HappyVertical",
+  "engines": {
+    "node": ">=24.18.0"
+  }
 }

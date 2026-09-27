@@ -82,13 +82,35 @@ export function readPackageAgentDoc(
   };
 }
 
+/**
+ * Markdown inline links whose target is a `.md` file — `[label](agents/x.md)`,
+ * tolerating an `#anchor` and a `"title"`. This is how a package registers a
+ * sibling module doc (#2108): the link in `AGENTS.md` IS the registration, so
+ * there is no separate index to drift out of sync.
+ */
 const MARKDOWN_MD_LINK =
-  /\[[^\]]*\]\(\s*([^)\s#]+\.md)(?:#[^)]*)?(?:\s+"[^"]*")?\s*\)/g;
+  /\[[^\]]*\]\(\s*([^)\s#]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\s*\)/g;
 
+/** `sourceHashes` key prefix for a linked module doc, e.g. `moduleDoc:agents/crm.md`. */
 export const MODULE_DOC_HASH_PREFIX = 'moduleDoc:';
+
+/**
+ * `sourceHashes` key prefix for a module declaring a view intent or playbook,
+ * e.g. `agentSurface:src/lib/orders.intents.ts` (#2591).
+ */
 export const AGENT_SURFACE_HASH_PREFIX = 'agentSurface:';
 
-/** Resolve in-package Markdown module docs linked from an authored agent doc. */
+/**
+ * Module doc paths linked from a package's `AGENTS.md`, relative to the package
+ * root and in document order.
+ *
+ * Instruction chains are additive (see `scripts/check-agents-chain.mjs`), so an
+ * oversized package doc is split into `packages/<pkg>/agents/<module>.md` siblings
+ * instead of nested `AGENTS.md` files. Only links resolving to an existing file
+ * INSIDE the package are accepted — a cross-package reference such as
+ * `packages/affiliates/MIGRATION.md` belongs to that package's own chain and is
+ * ignored here.
+ */
 export function resolveAgentModuleDocPaths(
   rootDir: string,
   agentDoc: string | undefined,
@@ -110,7 +132,7 @@ export function resolveAgentModuleDocPaths(
   return paths;
 }
 
-/** Read the module docs accepted by {@link resolveAgentModuleDocPaths}. */
+/** {@link resolveAgentModuleDocPaths}, with each doc's contents read. */
 export function readAgentModuleDocs(
   rootDir: string,
   agentDoc: string | undefined,

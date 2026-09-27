@@ -16,11 +16,13 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
-  discoverSmrtPackages,
-  resolveManifestPath,
-} from '@happyvertical/smrt-core/manifest/discover-smrt-packages';
+  importProjectRuntimeModule,
+  loadProjectCore,
+  ProjectRuntimeResolutionError,
+  projectRuntimeRoot,
+  resetProjectRuntimeForTests,
+} from './project-runtime.js';
 
 /** Provenance label for facts read from authored/installed manifests. */
 export const DECLARED_PROVENANCE = 'declared (manifest)';
@@ -84,6 +86,7 @@ function readManifest(path: string): ManifestLike | null {
 }
 
 function registerManifest(
+  ObjectRegistry: typeof import('@happyvertical/smrt-core').ObjectRegistry,
   manifest: ManifestLike,
   fallbackPackageName: string | null,
 ): number {
@@ -111,6 +114,7 @@ function registerManifest(
   return count;
 }
 
+let booting: Promise<RuntimeBoot> | null = null;
 let booted: RuntimeBoot | null = null;
 let bootedProjectRoot: string | null = null;
 let bootedProjectManifestPath: string | null = null;
@@ -167,6 +171,8 @@ export function getBootedProjectRoot(): string | null {
 
 /** Test seam: forget the boot record (the registry itself is cleared by the caller). */
 export function resetRuntimeBootForTests(): void {
+  resetProjectRuntimeForTests();
+  booting = null;
   booted = null;
   bootedProjectRoot = null;
   bootedProjectManifestPath = null;
@@ -186,8 +192,43 @@ export interface BootRuntimeOptions {
 export async function bootRuntime(
   options: BootRuntimeOptions = {},
 ): Promise<RuntimeBoot> {
-  if (booted) return booted;
   const projectRoot = resolve(options.projectRoot ?? process.cwd());
+  if (
+    bootedProjectRoot &&
+    projectRuntimeRoot(bootedProjectRoot) !== projectRuntimeRoot(projectRoot)
+  ) {
+    throw new ProjectRuntimeResolutionError(
+      '@happyvertical/smrt-core',
+      'runtime_project_mismatch',
+    );
+  }
+  if (booted) return booted;
+  if (booting) return booting;
+  bootedProjectRoot = projectRoot;
+  booting = performBoot(projectRoot, options).catch((error) => {
+    booting = null;
+    bootedProjectRoot = null;
+    throw error;
+  });
+  return booting;
+}
+
+async function performBoot(
+  projectRoot: string,
+  options: BootRuntimeOptions,
+): Promise<RuntimeBoot> {
+  const { ObjectRegistry } = await loadProjectCore(projectRoot);
+  const { discoverSmrtPackages, resolveManifestPath } =
+    await importProjectRuntimeModule<
+      typeof import('@happyvertical/smrt-core/manifest/discover-smrt-packages')
+    >(projectRoot, '@happyvertical/smrt-core/manifest/discover-smrt-packages');
+  if (
+    typeof ObjectRegistry?.registerFromManifest !== 'function' ||
+    typeof discoverSmrtPackages !== 'function' ||
+    typeof resolveManifestPath !== 'function'
+  ) {
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
+  }
   const diagnostics: BootDiagnostic[] = [];
   const manifests: BootedManifest[] = [];
 
@@ -219,7 +260,11 @@ export async function bootRuntime(
             ? manifest.packageName
             : projectPackageName,
         path: relativePath(projectRoot, projectManifestPath),
-        objectCount: registerManifest(manifest, projectPackageName),
+        objectCount: registerManifest(
+          ObjectRegistry,
+          manifest,
+          projectPackageName,
+        ),
       });
     }
   }
@@ -262,7 +307,7 @@ export async function bootRuntime(
       kind: 'dependency',
       packageName: dependency,
       path: relativePath(projectRoot, manifestPath),
-      objectCount: registerManifest(manifest, dependency),
+      objectCount: registerManifest(ObjectRegistry, manifest, dependency),
     });
   }
 

@@ -24,6 +24,8 @@ import { pathToFileURL } from 'node:url';
 import {
   importProjectRuntimeModule,
   loadProjectRuntime,
+  ProjectRuntimeResolutionError,
+  projectRuntimeRoot,
 } from './project-runtime.js';
 
 /** Engine labels `@happyvertical/sql`'s `getDatabase` accepts. */
@@ -209,12 +211,17 @@ export function isMemoryDatabaseUrl(url: string): boolean {
   return /^(?:sqlite:(?:\/\/)?)?:memory:$/i.test(url.trim());
 }
 
-export function normalizeDatabaseUrl(url: string): string {
+export function normalizeDatabaseUrl(
+  url: string,
+  projectPath?: string,
+): string {
   const match = /^sqlite:(?:\/\/)?(.*)$/i.exec(url.trim());
   if (!match) return url.trim();
   const path = match[1];
   if (!path) return url.trim();
-  const absolute = path.startsWith('/') ? path : resolve(process.cwd(), path);
+  const absolute = path.startsWith('/')
+    ? path
+    : resolve(projectRuntimeRoot(projectPath), path);
   return pathToFileURL(absolute).href;
 }
 
@@ -236,7 +243,7 @@ export async function resolveRuntimeConnection(
     );
     const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
-      url: normalizeDatabaseUrl(argUrl),
+      url: normalizeDatabaseUrl(argUrl, args.projectPath),
     });
     return {
       db,
@@ -253,7 +260,7 @@ export async function resolveRuntimeConnection(
     );
     const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
-      url: normalizeDatabaseUrl(envUrl),
+      url: normalizeDatabaseUrl(envUrl, args.projectPath),
     });
     return {
       db,
@@ -271,7 +278,7 @@ export async function resolveRuntimeConnection(
     );
     const db = await getDatabaseInstance(args.projectPath, {
       type: databaseType,
-      url: normalizeDatabaseUrl(configUrl),
+      url: normalizeDatabaseUrl(configUrl, args.projectPath),
     });
     return {
       db,
@@ -298,13 +305,19 @@ async function loadCliDatabaseConfig(
     // server's cwd (the project the agent is working in); a missing or invalid
     // config falls back to the defaults.
     const configModule = await importProjectRuntimeModule<{
-      loadConfig: () => Promise<void>;
+      loadConfig: (options: {
+        searchFrom: string;
+        cache: boolean;
+      }) => Promise<unknown>;
       getPackageConfig: (
         name: string,
         defaults: Record<string, unknown>,
       ) => unknown;
     }>(projectPath, '@happyvertical/smrt-config');
-    await configModule.loadConfig();
+    await configModule.loadConfig({
+      searchFrom: projectRuntimeRoot(projectPath),
+      cache: false,
+    });
     const config = configModule.getPackageConfig(
       'cli',
       DEFAULT_CLI_DATABASE as unknown as Record<string, unknown>,
@@ -314,7 +327,12 @@ async function loadCliDatabaseConfig(
       return { database };
     }
     return {};
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof ProjectRuntimeResolutionError &&
+      error.code === 'runtime_project_mismatch'
+    )
+      throw error;
     return {};
   }
 }
@@ -327,9 +345,9 @@ async function getDatabaseInstance(
   },
 ): Promise<unknown> {
   const { sql } = await loadProjectRuntime(projectPath);
-  return (
-    sql as { getDatabase: (value: typeof options) => Promise<unknown> }
-  ).getDatabase(options);
+  if (typeof sql.getDatabase !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/sql');
+  return sql.getDatabase(options);
 }
 
 type MaybeCloseableDatabase = {

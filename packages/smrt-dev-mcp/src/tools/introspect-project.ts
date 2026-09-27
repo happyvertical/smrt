@@ -3,15 +3,17 @@
  * Returns a manifest-equivalent inventory of SMRT objects in a project.
  */
 
+import { spawn } from 'node:child_process';
 import type { Dirent } from 'node:fs';
 import { access, readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import {
-  ManifestGenerator,
-  type SmartObjectManifest,
-} from '@happyvertical/smrt-core/scanner';
+import { pathToFileURL } from 'node:url';
 import type { ScanError } from '@happyvertical/smrt-scanner';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
+import {
+  ProjectRuntimeResolutionError,
+  resolveProjectRuntimeEntry,
+} from './runtime/project-runtime.js';
 
 /**
  * `summary` (default) returns one compact record per object; `full` returns the
@@ -467,7 +469,7 @@ async function scanSourceManifest(
       typeAliases: results.typeAliases,
     },
   ) as ManifestLike;
-  finalizeScannerManifest(manifest, packageMetadata);
+  await finalizeScannerManifest(manifest, packageMetadata, projectPath);
 
   return {
     source: 'scanner',
@@ -478,34 +480,94 @@ async function scanSourceManifest(
   };
 }
 
-function finalizeScannerManifest(
+/**
+ * Enrichment executes only installed framework code in an isolated process.
+ * Its stdout/stderr are captured, never forwarded onto the MCP protocol. This
+ * also prevents the scanner's registry and config from contaminating the host.
+ */
+async function finalizeScannerManifest(
   manifest: ManifestLike,
   packageMetadata: PackageMetadata,
-): void {
-  const manifestGen = new ManifestGenerator();
-  const fullManifest = manifest as unknown as SmartObjectManifest;
-  withSuppressedConsoleLog(() => {
-    manifestGen.injectTenantScopedFields(fullManifest);
-    manifestGen.mergeInheritedFields(fullManifest);
-    manifestGen.generateValidationRules(fullManifest);
-    manifestGen.generateSchemas(fullManifest);
-    manifestGen.assertTenantScopedSchemaContract(fullManifest);
-    manifestGen.generateAgentManifests(
-      fullManifest,
-      packageMetadata.name,
-      packageMetadata.json,
-    );
-  });
-}
-
-function withSuppressedConsoleLog<T>(callback: () => T): T {
-  const originalLog = console.log;
-  console.log = () => undefined;
-  try {
-    return callback();
-  } finally {
-    console.log = originalLog;
-  }
+  projectPath: string,
+): Promise<void> {
+  const specifier = '@happyvertical/smrt-core/scanner';
+  const entry = resolveProjectRuntimeEntry(projectPath, specifier);
+  const enriched = await new Promise<ManifestLike>(
+    (resolveManifest, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `
+      const answer = (result) => process.send(result, () => process.disconnect());
+      process.once('message', async (workerData) => {
+        let module;
+        try { module = await import(workerData.entry); }
+        catch { answer({ unavailable: true }); return; }
+        if (typeof module.ManifestGenerator !== 'function') { answer({ unavailable: true }); return; }
+        try {
+          const generator = new module.ManifestGenerator();
+          const manifest = workerData.manifest;
+          generator.injectTenantScopedFields(manifest);
+          generator.mergeInheritedFields(manifest);
+          generator.generateValidationRules(manifest);
+          generator.generateSchemas(manifest);
+          generator.assertTenantScopedSchemaContract(manifest);
+          generator.generateAgentManifests(manifest, workerData.name, workerData.packageJson);
+          answer({ manifest });
+        } catch { answer({ failed: true }); }
+      });
+    `,
+        ],
+        { cwd: projectPath, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] },
+      );
+      child.send({
+        entry: pathToFileURL(entry).href,
+        manifest,
+        name: packageMetadata.name,
+        packageJson: packageMetadata.json,
+      });
+      const timeout = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(
+          new Error(
+            'Project runtime manifest enrichment timed out; run the project build to diagnose it.',
+          ),
+        );
+      }, 30_000);
+      let answered = false;
+      child.once('message', (message) => {
+        const result = message as {
+          unavailable?: boolean;
+          failed?: boolean;
+          manifest?: ManifestLike;
+        };
+        clearTimeout(timeout);
+        answered = true;
+        child.kill('SIGKILL');
+        if (result.unavailable)
+          reject(new ProjectRuntimeResolutionError(specifier));
+        else if (result.failed)
+          reject(
+            new Error(
+              'Project runtime manifest enrichment failed. Run the project build to diagnose its manifest; no partial inventory was returned.',
+            ),
+          );
+        else if (result.manifest) resolveManifest(result.manifest);
+        else reject(new ProjectRuntimeResolutionError(specifier));
+      });
+      child.once('error', () => {
+        clearTimeout(timeout);
+        reject(new ProjectRuntimeResolutionError(specifier));
+      });
+      child.once('exit', () => {
+        clearTimeout(timeout);
+        if (!answered) reject(new ProjectRuntimeResolutionError(specifier));
+      });
+    },
+  );
+  Object.assign(manifest, enriched);
 }
 
 function formatObject({

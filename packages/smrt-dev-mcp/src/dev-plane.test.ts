@@ -12,6 +12,7 @@ import {
   DEV_PLANE_TOOL_NAMES,
   LIVE_REGISTRY_PROVENANCE,
 } from './dev-plane.js';
+import { installRuntimeFixture } from './runtime-test-fixture.js';
 import { resetRuntimeBootForTests } from './tools/runtime/boot.js';
 
 const TOKEN = 'plane-secret';
@@ -32,6 +33,7 @@ beforeEach(() => {
   ObjectRegistry.clear();
   resetRuntimeBootForTests();
   projectRoot = mkdtempSync(join(tmpdir(), 'smrt-dev-plane-'));
+  installRuntimeFixture(projectRoot);
   mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
   writeFileSync(
     join(projectRoot, 'package.json'),

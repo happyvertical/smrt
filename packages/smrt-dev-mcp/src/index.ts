@@ -1,3 +1,4 @@
+import { ProjectRuntimeResolutionError } from './tools/runtime/project-runtime.js';
 /**
  * SMRT Development MCP Server
  * Provides code generation, project introspection, knowledge context,
@@ -680,7 +681,15 @@ export function createServer(): Server {
         structuredContent: {
           ok: false,
           coverage: null,
-          diagnostics: [{ severity: 'error', message: errorMessage }],
+          diagnostics: [
+            {
+              severity: 'error',
+              ...(error instanceof ProjectRuntimeResolutionError
+                ? { code: error.code }
+                : {}),
+              message: errorMessage,
+            },
+          ],
           data: null,
         },
       };

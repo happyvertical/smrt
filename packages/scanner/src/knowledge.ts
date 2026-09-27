@@ -8,6 +8,7 @@ export {
   type ScopedPackageDirectory,
 } from './knowledge-discovery.js';
 export {
+  type BuildKnowledgeGraphOptions,
   buildKnowledgeGraph,
   checkKnowledgeGraphFreshness,
   discoverKnowledgeArtifactPaths,

@@ -1,3 +1,4 @@
+import { installRuntimeFixture } from '../runtime-test-fixture.js';
 /**
  * Unit Tests for introspect-project Tool
  * Tests project scanning, SMRT object discovery, and analysis
@@ -16,6 +17,7 @@ describe('introspectProject', () => {
     // Create temp directory for test project
     tmpDir = join(tmpdir(), `smrt-introspect-test-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
+    installRuntimeFixture(tmpDir);
   });
 
   afterEach(async () => {
@@ -836,6 +838,7 @@ describe('introspectProject response budget', () => {
   beforeEach(async () => {
     tmpDir = join(tmpdir(), `smrt-introspect-budget-${Date.now()}`);
     await mkdir(join(tmpDir, 'src'), { recursive: true });
+    installRuntimeFixture(tmpDir);
     await writeFile(
       join(tmpDir, 'package.json'),
       JSON.stringify({ name: '@acme/budget', version: '1.0.0' }, null, 2),

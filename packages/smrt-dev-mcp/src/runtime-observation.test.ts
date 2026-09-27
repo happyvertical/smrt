@@ -22,6 +22,7 @@ import {
   startRuntimeHttpHost,
 } from './http.js';
 import { parseHttpCliArgs, TOOLS } from './index.js';
+import { installRuntimeFixture } from './runtime-test-fixture.js';
 import {
   bootRuntime,
   DECLARED_PROVENANCE,
@@ -96,6 +97,7 @@ beforeEach(() => {
   resetRuntimeBootForTests();
   resetBootPreambleForTests();
   projectRoot = mkdtempSync(join(tmpdir(), 'smrt-1831-'));
+  installRuntimeFixture(projectRoot);
   writeProject(projectRoot);
 });
 
@@ -142,7 +144,9 @@ describe('confined runtime boot (#1831)', () => {
     };
     writeFileSync(manifestPath, JSON.stringify(manifest));
     const boot = await bootRuntime({ projectRoot });
-    expect(boot.objectCount).toBe(2);
+    expect(boot.manifests.find((m) => m.kind === 'project')?.objectCount).toBe(
+      2,
+    );
     expect(getBootedProjectRoot()).toBe(projectRoot);
     expect(ObjectRegistry.getClass('Person')?.packageName).toBe('@acme/people');
     expect(ObjectRegistry.getClass('Article')?.packageName).toBe('@acme/app');
@@ -153,14 +157,18 @@ describe('confined runtime boot (#1831)', () => {
 
   it('boots once per process and reports a missing manifest as a warning', async () => {
     const first = await bootRuntime({ projectRoot });
-    const second = await bootRuntime({ projectRoot: '/nowhere' });
+    const second = await bootRuntime({ projectRoot });
+    await expect(
+      bootRuntime({ projectRoot: '/nowhere' }),
+    ).rejects.toMatchObject({ code: 'runtime_project_mismatch' });
     expect(second).toBe(first);
     resetRuntimeBootForTests();
     ObjectRegistry.clear();
     const empty = mkdtempSync(join(tmpdir(), 'smrt-1831-empty-'));
     try {
+      installRuntimeFixture(empty);
       const boot = await bootRuntime({ projectRoot: empty });
-      expect(boot.objectCount).toBe(0);
+      expect(boot.manifests.every((m) => m.kind === 'dependency')).toBe(true);
       expect(boot.diagnostics.map((d) => d.code)).toContain(
         'project_manifest_missing',
       );
@@ -179,7 +187,7 @@ describe('observation tools (#1831)', () => {
       summary: { objectCount: number };
       objects: Array<{ name: string; fields: unknown[]; sourceFile: string }>;
     };
-    expect(snapshot.summary.objectCount).toBe(1);
+    expect(snapshot.summary.objectCount).toBeGreaterThanOrEqual(1);
     expect(snapshot.objects[0].name).toBe('Article');
     // summary mode: no field detail unless asked
     expect(snapshot.objects[0].fields).toEqual([]);
@@ -207,7 +215,11 @@ describe('observation tools (#1831)', () => {
         '@acme/app',
       );
     }
-    const first = await runtimeRegistry({ projectPath: projectRoot, limit: 2 });
+    const first = await runtimeRegistry({
+      projectPath: projectRoot,
+      objects: ['Article', 'Alpha', 'Beta', 'Gamma'],
+      limit: 2,
+    });
     const page1 = first.data.page as {
       returned: number;
       matched: number;
@@ -224,6 +236,7 @@ describe('observation tools (#1831)', () => {
       projectPath: projectRoot,
       limit: 2,
       cursor: page1.nextCursor ?? undefined,
+      objects: ['Article', 'Alpha', 'Beta', 'Gamma'],
     });
     const page2 = second.data.page as {
       returned: number;
@@ -239,19 +252,17 @@ describe('observation tools (#1831)', () => {
     expect(
       (second.data.snapshot as { summary: { objectCount: number } }).summary
         .objectCount,
-    ).toBe(4);
+    ).toBeGreaterThanOrEqual(4);
   });
 
-  it('ignores a widened projectPath after boot and never relativizes against it', async () => {
+  it('rejects a different projectPath after boot without disclosing the first registry', async () => {
     await runtimeRegistry({ projectPath: projectRoot });
     const spoofed = await runtimeRegistry({
       projectPath: '/',
       objects: ['Article'],
     });
-    const snapshot = spoofed.data.snapshot as {
-      objects: Array<{ sourceFile: string }>;
-    };
-    expect(snapshot.objects[0].sourceFile).toBe('src/Article.ts');
+    expect(spoofed.data.snapshot).toBeUndefined();
+    expect(spoofed.diagnostics[0]?.code).toBe('runtime_project_mismatch');
     expect(JSON.stringify(spoofed)).not.toContain(projectRoot);
   });
 
@@ -294,12 +305,12 @@ describe('observation tools (#1831)', () => {
     const second = await runtimeRegistry({ projectPath: projectRoot });
     expect(
       (first.data.boot as { manifests?: unknown[] }).manifests,
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(
       (second.data.boot as { manifests?: unknown[] }).manifests,
     ).toBeUndefined();
     expect((second.data.boot as { manifestCount: number }).manifestCount).toBe(
-      1,
+      2,
     );
     expect(
       second.diagnostics.some((d) => d.code === 'manifest_newer_than_boot'),
@@ -393,7 +404,9 @@ describe('runtime HTTP host (#1831)', () => {
     });
     try {
       expect(host.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
-      expect(host.boot.objectCount).toBe(1);
+      expect(
+        host.boot.manifests.find((m) => m.kind === 'project')?.objectCount,
+      ).toBe(1);
 
       const unauthenticated = await fetch(host.url, {
         method: 'POST',

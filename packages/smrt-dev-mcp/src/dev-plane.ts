@@ -18,7 +18,6 @@
  * CRUD, custom actions, `do()`, and tool-backed `is()` are never mounted.
  */
 
-import { snapshotRegistry } from '@happyvertical/smrt-core';
 import {
   type CallToolResult,
   createMcpHandler,
@@ -34,6 +33,10 @@ import {
   runtimeRegistry,
   runtimeSchemaDiff,
 } from './tools/runtime/observation.js';
+import {
+  loadProjectCore,
+  ProjectRuntimeResolutionError,
+} from './tools/runtime/project-runtime.js';
 import {
   RUNTIME_PROVENANCE,
   type RuntimeToolEnvelope,
@@ -133,6 +136,9 @@ async function registryLive(
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  const { snapshotRegistry } = await loadProjectCore(projectRoot);
+  if (typeof snapshotRegistry !== 'function')
+    throw new ProjectRuntimeResolutionError('@happyvertical/smrt-core');
   const snapshot = snapshotRegistry({
     projectRoot,
     objects,

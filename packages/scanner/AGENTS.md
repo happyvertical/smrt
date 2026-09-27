@@ -306,3 +306,12 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   invoking it. Any other expression (a call, a computed reference) yields
   `related: undefined` — writing the raw source through produced a garbage FK
   table name and, once FK columns are indexed, a garbage index (#2379).
+
+
+## Filesystem knowledge
+
+The public `@happyvertical/smrt-scanner/knowledge` entry owns filesystem-only
+package/doc discovery, linked module-doc parsing, and knowledge-graph freshness.
+Core's existing knowledge entrypoints reexport these implementations for
+compatibility. Keep this entry free of ORM, SQL, AI, and configuration runtime
+imports so standalone development tooling remains lightweight.
