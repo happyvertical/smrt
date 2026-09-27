@@ -27,9 +27,14 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
+    },
+    "./knowledge": {
+      "types": "./dist/knowledge.d.ts",
+      "import": "./dist/knowledge.js"
     }
   },
   "dependencies": {
+    "@happyvertical/smrt-types": "workspace:*",
     "fast-glob": "3.3.3",
     "minimatch": "10.2.6",
     "oxc-parser": "^0.150.0",

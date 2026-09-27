@@ -14,9 +14,21 @@ import {
   buildPackageSpecialistContext,
   buildReviewContext,
   checkKnowledgeFreshness,
+  coreCompatibleToSnakeCase,
   smrtArchitecture,
   smrtReview,
 } from './index.js';
+
+describe('core-compatible snake case', () => {
+  it.each([
+    ['ProductName', 'product_name'],
+    ['productName', 'product_name'],
+    ['_rank', 'rank'],
+    ['API_TOKEN', 'a_p_i__t_o_k_e_n'],
+  ])('matches smrt-core normalization for %s', (value, expected) => {
+    expect(coreCompatibleToSnakeCase(value)).toBe(expected);
+  });
+});
 
 describe('SMRT knowledge index', () => {
   let rootDir: string;
