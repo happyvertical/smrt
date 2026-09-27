@@ -54,7 +54,7 @@ the per-fork heap with `NODE_OPTIONS=--max-old-space-size=...` instead.
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "typescript": "^5.9.3",
+    "typescript": "6.0.3",
     "vitest": "^4.0.0",
     "vite": "^6.0.0"
   }

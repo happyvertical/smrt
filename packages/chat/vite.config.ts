@@ -30,7 +30,7 @@ export default defineConfig(async ({ command, mode }) => {
         },
       ],
       svelte: 'svelte',
-      dtsExclude: ['src/routes/**/*', 'src/app.html'],
+      dtsExclude: ['src/lib/server/**/*', 'src/routes/**/*', 'src/app.html'],
     });
 
     return typeof config === 'function'

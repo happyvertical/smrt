@@ -119,3 +119,12 @@ digests; each plugin selects its own view. Reuse mode fails closed on
 byte/provenance/path/content drift, skips scans and manifest writes, and still
 generates routes, types, registration, and virtual modules. Omit it for normal
 local development and watch mode.
+
+## Clean consumer type checks (TypeScript 6)
+
+The consumer config hook writes `.smrt/register.js` alongside generated types
+after route preflight succeeds. Generated SvelteKit registration imports that
+module, so it must exist during `svelte-kit sync`, before Vite's `buildStart`.
+Both hosted routes and the legacy `svelteKit: true` mode follow this order.
+The clean-consumer regression fixture ships real provider declarations and
+checks the generated imports with `svelte-check`.

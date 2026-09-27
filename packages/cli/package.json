@@ -54,12 +54,10 @@
     "tar": "^7.5.22"
   },
   "devDependencies": {
-    "@microsoft/api-extractor": "7.59.1",
     "@types/node": "24.13.6",
     "tsx": "^4.23.13",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "8.1.4",
-    "vite-plugin-dts": "5.1.0",
     "vitest": "4.1.10"
   },
   "keywords": [

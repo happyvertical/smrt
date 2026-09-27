@@ -72,6 +72,7 @@
   "dependencies": {
     "@happyvertical/ai": "catalog:",
     "@happyvertical/files": "catalog:",
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
@@ -86,7 +87,6 @@
     "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
-    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sentry/node": "catalog:",
@@ -98,7 +98,7 @@
     "fast-glob": "3.3.3",
     "svelte-check": "^4.7.6",
     "svelte": "^5.57.1",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"
   },

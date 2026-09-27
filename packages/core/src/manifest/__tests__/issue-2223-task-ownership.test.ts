@@ -12,6 +12,7 @@ import {
   cpSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -139,6 +140,11 @@ function withIsolatedCoreFixture<T>(run: (fixtureDir: string) => T): T {
     cpSync(
       resolve(workspaceDir, 'tsconfig.package-build.json'),
       join(fixtureRoot, 'tsconfig.package-build.json'),
+    );
+    mkdirSync(join(fixtureRoot, 'scripts'), { recursive: true });
+    cpSync(
+      resolve(workspaceDir, 'scripts/declarations.ts'),
+      join(fixtureRoot, 'scripts/declarations.ts'),
     );
     symlinkSync(
       resolve(workspaceDir, 'node_modules'),

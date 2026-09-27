@@ -11,7 +11,7 @@
 
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from '../../scripts/declarations.js';
 
 const packageDir = resolve(__dirname);
 
@@ -85,16 +85,7 @@ export default defineConfig(async () => {
           types: true,
         },
       }),
-      dts({
-        outDirs: resolve(packageDir, 'dist'),
-        entryRoot: resolve(packageDir, 'src'),
-        include: [resolve(packageDir, 'src/**/*')],
-        exclude: ['**/*.test.ts', '**/*.spec.ts'],
-        insertTypesEntry: false,
-        bundleTypes: false,
-        tsconfigPath: resolve(packageDir, 'tsconfig.json'),
-        clearPureImport: true,
-      }),
+      declarations({ packageDir: __dirname }),
     ],
   };
 });

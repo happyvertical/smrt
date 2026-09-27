@@ -1,7 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@happyvertical/smrt-virt-web": [
         "./__tests__/setup/smrt-virt-web-stub.ts"

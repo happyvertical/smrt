@@ -2,13 +2,12 @@
 // docs/content/standards.md §3 and §9). Products is the reference for
 // triple-consumption (npm library + module federation + standalone
 // SvelteKit app). Uses @originjs/vite-plugin-federation, multi-mode
-// builds (lib/app/federation), workspace-import rewriting in the dts
-// plugin, and an index.html for the standalone variant — none of which
+// builds (lib/app/federation), declarations in dist/lib, and an index.html for the standalone variant — none of which
 // fit createPackageConfig's library-only output shape.
 
 import { dirname, resolve } from 'node:path';
 import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from '../../scripts/declarations.js';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const packageDir = resolve(__dirname, '.');
@@ -264,21 +263,10 @@ export default defineConfig(async ({ mode }) => {
 			// SMRT plugin for SMRT object scanning and code generation
 			smrt,
 			// TypeScript declarations
-			dts({
-				outDirs: resolve(packageDir, 'dist/lib'),
-				include: [resolve(packageDir, 'src/**/*.ts')],
-				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts', '**/*.d.ts'],
-				insertTypesEntry: false,
-				bundleTypes: false,
-				entryRoot: resolve(packageDir, 'src'),
-				tsconfigPath: resolve(packageDir, 'tsconfig.json'),
-				aliasesExclude: [
-					'@smrt/routes',
-					'@smrt/client',
-					'@smrt/mcp',
-					'@smrt/manifest',
-					'@smrt/types',
-				],
+			declarations({
+				packageDir: __dirname,
+				outDir: 'dist/lib',
+				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts'],
 			}),
 		],
 	};

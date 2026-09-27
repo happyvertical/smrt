@@ -6,7 +6,7 @@
 - **Monorepo Management**: Turbo
 
 ## Development Tools
-- **Build System**: Vite, vite-plugin-dts
+- **Build System**: Vite, TypeScript declaration-only emission
 - **Linting & Formatting**: Biome (2.2.4)
 - **Testing**: Vitest, Playwright
 

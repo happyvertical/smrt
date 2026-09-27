@@ -73,7 +73,11 @@ export const load = () => ({
     );
     writeFileSync(
       join(providerDir, 'dist/index.js'),
-      'export class Widget {}\n',
+      "import { SmrtObject } from '@happyvertical/smrt-core';\nexport class Widget extends SmrtObject {}\n",
+    );
+    writeFileSync(
+      join(providerDir, 'dist/index.d.ts'),
+      "import { SmrtObject } from '@happyvertical/smrt-core';\nexport declare class Widget extends SmrtObject {}\n",
     );
     writeFileSync(
       join(providerDir, 'dist/manifest.json'),

@@ -1,8 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 import { transform } from 'esbuild';
 import type { Plugin, UserConfig, UserConfigFnPromise } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from './scripts/declarations.js';
 
 interface PackageConfigOptions {
   /**
@@ -35,63 +35,6 @@ interface PackageConfigOptions {
    * publishable library types.
    */
   dtsExclude?: string[];
-  /**
-   * Public package specifiers that must remain intact in generated
-   * declarations instead of being rewritten through workspace source aliases.
-   */
-  dtsAliasesExclude?: (string | RegExp)[];
-  /**
-   * When true, abort the build if `vite-plugin-dts` surfaces any
-   * TypeScript error-level diagnostics while generating `.d.ts` files.
-   *
-   * Without this, the dts plugin prints errors to stderr but Vite still
-   * exits 0, so broken types can ship to npm (see PR #1129 / #1130).
-   *
-   * Off by default so the repo-wide latent TS errors in other packages
-   * (e.g. virtual `@smrt/*` modules, pre-existing type mismatches) do
-   * not regress existing builds. Enable per-package as each package is
-   * cleaned up.
-   *
-   * @default false
-   */
-  strictDts?: boolean;
-}
-
-interface WorkspacePackageInfo {
-  dir: string;
-  name: string;
-}
-
-function collectWorkspacePackages(rootDir: string): WorkspacePackageInfo[] {
-  return readdirSync(rootDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .flatMap((entry) => {
-      const dir = resolve(rootDir, entry.name);
-      const packageJsonPath = resolve(dir, 'package.json');
-      if (!existsSync(packageJsonPath)) {
-        return [];
-      }
-
-      try {
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-        if (typeof packageJson.name !== 'string' || packageJson.name === '') {
-          return [];
-        }
-
-        return [
-          {
-            dir,
-            name: packageJson.name,
-          },
-        ];
-      } catch {
-        return [];
-      }
-    });
-}
-
-function normalizePath(pathValue: string): string {
-  return pathValue.replace(/\\/g, '/');
 }
 
 function isPathInside(parentDir: string, targetPath: string): boolean {
@@ -100,106 +43,6 @@ function isPathInside(parentDir: string, targetPath: string): boolean {
     relativePath === '' ||
     (!relativePath.startsWith(`..${sep}`) && relativePath !== '..')
   );
-}
-
-function rewriteWorkspaceDeclarationImports(
-  filePath: string,
-  content: string,
-  packageDir: string,
-  workspacePackages: WorkspacePackageInfo[],
-): string {
-  const currentDir = dirname(filePath);
-  const rewriteSpecifier = (specifier: string): string => {
-    if (!specifier.startsWith('.')) {
-      return specifier;
-    }
-
-    const resolvedSpecifier = resolve(currentDir, specifier);
-    const targetPackage = workspacePackages.find(
-      (workspacePackage) =>
-        workspacePackage.dir !== packageDir &&
-        isPathInside(workspacePackage.dir, resolvedSpecifier),
-    );
-
-    if (!targetPackage) {
-      return specifier;
-    }
-
-    let relativeToPackage = normalizePath(
-      relative(targetPackage.dir, resolvedSpecifier),
-    );
-
-    // Un-transpose a workspace *subpath* import.
-    //
-    // `vite-plugin-dts` rebuilds `@happyvertical/smrt-core/migrations` by
-    // splicing the alias target in front of the specifier's own subpath, which
-    // swaps the segments: the emitted path is `…/core/migrations/src/index.ts`
-    // even though the file is `…/core/src/migrations/index.ts`. That shape
-    // starts with neither `src/` nor `dist/`, so without this the specifier
-    // falls through unchanged and ships as a relative path escaping `dist/` —
-    // which is exactly what the package-artifact check rejects.
-    //
-    // Only rewrite when the un-transposed path is a file that actually exists,
-    // so a package that genuinely nests `<subpath>/src/…` is left alone.
-    if (
-      !relativeToPackage.startsWith('src/') &&
-      !relativeToPackage.startsWith('dist/')
-    ) {
-      const transposed = relativeToPackage.match(/^(.+)\/(src|dist)\/(.*)$/);
-      const candidate = transposed
-        ? `${transposed[2]}/${transposed[1]}/${transposed[3]}`
-        : undefined;
-      if (candidate && existsSync(resolve(targetPackage.dir, candidate))) {
-        relativeToPackage = candidate;
-      }
-    }
-
-    if (
-      !relativeToPackage.startsWith('src/') &&
-      !relativeToPackage.startsWith('dist/')
-    ) {
-      return specifier;
-    }
-
-    let subpath = relativeToPackage.replace(/^(src|dist)\//, '');
-    subpath = subpath
-      .replace(/\.d\.ts$/, '')
-      .replace(/\.[mc]?ts$/, '')
-      .replace(/\.js$/, '');
-
-    // Keep the published smrt-ui data contract stable when declaration
-    // generation resolves the workspace source path first. Its public export
-    // is `@happyvertical/smrt-ui/data`, while the source entry lives under
-    // `src/components/data/index.ts`.
-    if (
-      targetPackage.name === '@happyvertical/smrt-ui' &&
-      subpath === 'components/data/index'
-    ) {
-      return `${targetPackage.name}/data`;
-    }
-
-    if (subpath === 'index') {
-      return targetPackage.name;
-    }
-
-    if (subpath.endsWith('/index')) {
-      subpath = subpath.slice(0, -'/index'.length);
-    }
-
-    return `${targetPackage.name}/${subpath}`;
-  };
-
-  return content
-    .replace(
-      /(from\s+['"])([^'"]+)(['"])/g,
-      (_match, prefix: string, specifier: string, suffix: string) =>
-        `${prefix}${rewriteSpecifier(specifier)}${suffix}`,
-    )
-    .replace(
-      /(import\(\s*['"])([^'"]+)(['"]\s*\))/g,
-      (_match, prefix: string, specifier: string, suffix: string) =>
-        `${prefix}${rewriteSpecifier(specifier)}${suffix}`,
-    );
 }
 
 function createLegacyDecoratorTransformPlugin(packageDir: string): Plugin {
@@ -254,9 +97,6 @@ export function createPackageConfig(
   packageName: string,
   options: PackageConfigOptions = {},
 ): UserConfigFnPromise {
-  const workspacePackages = collectWorkspacePackages(
-    resolve(__dirname, 'packages'),
-  );
   const packageDir = resolve(__dirname, 'packages', packageName);
   const buildTsconfigPath = resolve(packageDir, 'tsconfig.build.json');
   const tsconfigPath = existsSync(buildTsconfigPath)
@@ -478,60 +318,19 @@ export function createPackageConfig(
             ]
           : []),
         // Generate TypeScript declarations
-        dts({
-          outDirs: resolve(packageDir, 'dist'),
-          entryRoot: resolve(packageDir, 'src'),
-          include: [resolve(packageDir, 'src/**/*.ts')],
+        declarations({
+          packageDir,
+          tsconfigPath,
+          entries: entryPoints,
           exclude: [
-            // Test files
             '**/*.test.ts',
             '**/*.spec.ts',
             '**/*.test.*.ts',
-            // Config files
             '**/*.config.ts',
             '**/*.config.js',
-            // Declaration files
-            '**/*.d.ts',
-            // Svelte dir is handled by svelte-package
-            ...(options.svelte ? [`**/${options.svelte}/**`] : []),
+            ...(options.svelte ? [`src/${options.svelte}/**`] : []),
             ...(options.dtsExclude ?? []),
           ],
-          insertTypesEntry: false, // We handle this in package.json
-          // Don't bundle types when svelte subdir exists (separate entry points)
-          bundleTypes: !options.svelte,
-          // Prefer a package-specific build tsconfig when present so workspace
-          // source resolution stays clean without requiring sibling dist output.
-          tsconfigPath,
-          aliasesExclude: options.dtsAliasesExclude,
-          // Fail the build on TS error-level diagnostics during dts
-          // generation when opted in. Without this, `vite-plugin-dts`
-          // prints errors to stderr but still emits and exits 0, which
-          // means TS errors in package source can ship to npm (see PR
-          // #1129 / #1130).
-          ...(options.strictDts
-            ? {
-                afterDiagnostic: (diagnostics) => {
-                  // 1 === ts.DiagnosticCategory.Error; inlined so this
-                  // file does not need to import `typescript` for a
-                  // single numeric enum.
-                  const errors = diagnostics.filter((d) => d.category === 1);
-                  if (errors.length > 0) {
-                    throw new Error(
-                      `vite-plugin-dts: ${errors.length} TypeScript error(s) during declaration generation. See log above.`,
-                    );
-                  }
-                },
-              }
-            : {}),
-          beforeWriteFile: (filePath, content) => ({
-            filePath,
-            content: rewriteWorkspaceDeclarationImports(
-              filePath,
-              content,
-              packageDir,
-              workspacePackages,
-            ),
-          }),
         }),
       ],
     } satisfies UserConfig;

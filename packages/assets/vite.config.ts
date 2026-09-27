@@ -32,12 +32,7 @@ export default defineConfig(async ({ mode }) => {
     const config = createPackageConfig('assets', {
       entries: ['ui', 'playground', 'workbench', 'filesystem'],
       svelte: 'svelte',
-      dtsExclude: ['src/routes/**/*'],
-      // Fail the build on TS errors in dts generation so type-only bugs
-      // (e.g. DOM-only types under a non-DOM lib config, see PR #1130)
-      // can't ship to npm silently. Package-specific opt-in until the
-      // rest of the monorepo is ready to follow.
-      strictDts: true,
+      dtsExclude: ['src/routes/**/*', 'src/lib/server/**/*'],
     });
     // createPackageConfig returns a UserConfigExport; resolve it
     const resolved = typeof config === 'function' ? await (config as any)({ mode, command: 'build' }) : config;

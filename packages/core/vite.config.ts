@@ -12,7 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { declarations } from '../../scripts/declarations.js';
 
 // Function to read core package exports and generate entries
 export function getCoreEntries() {
@@ -203,23 +203,16 @@ export default defineConfig({
     reportCompressedSize: false,
   },
   plugins: [
-    dts({
-      outDirs: resolve(__dirname, 'dist'),
-      include: [resolve(__dirname, 'src/**/*.ts')],
+    declarations({
+      packageDir: __dirname,
       exclude: [
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/*.config.ts',
-        '**/*.config.js',
-        '**/*.d.ts',
-        // Test-only generated artifact; generate:test owns it exclusively.
+        // Test generation owns this artifact; templates ship as source text.
         'src/manifest/test-manifest-stub.ts',
-        // Exclude browser template - loaded as string, not compiled
-        'src/vite-plugin/templates/default-ui.ts',
+        'src/vite-plugin/templates/**',
       ],
-      insertTypesEntry: false,
-      bundleTypes: false,
-      tsconfigPath: resolve(__dirname, 'tsconfig.json'),
     }),
   ],
   test: {
