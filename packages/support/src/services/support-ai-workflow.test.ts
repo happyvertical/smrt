@@ -852,6 +852,36 @@ describe('SupportAiWorkflow', () => {
     );
   });
 
+  it('sends a risk-bearing suffix beyond 4,000 characters to decision triage before answering', async () => {
+    const suffix =
+      ' Customer uploaded a passport scan containing account details.';
+    const decisions = triageDecisionClient({ sensitivityProbability: 0.9 });
+    vi.spyOn(SupportCase.prototype, 'do').mockResolvedValue(
+      JSON.stringify({ reply: DEFAULT_REPLY, confidence: 1 }),
+    );
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
+    const supportCase = await openCase(workflow, {
+      description: `${'x'.repeat(4_100)}${suffix}`,
+    });
+
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    expect(decisions.decide).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          body: `${'x'.repeat(4_100)}${suffix}`,
+        }),
+      }),
+      undefined,
+    );
+    expect(runs.find((run) => run.phase === 'answer')?.outcome).toBe(
+      'handed_off',
+    );
+    expect(await handoffPayloads(workflow, supportCase.id ?? '')).toHaveLength(
+      1,
+    );
+  });
+
   it('hands ambiguous decision choices to a human and preserves their audit probabilities', async () => {
     const decisions = triageDecisionClient({
       severity: 'sev3',

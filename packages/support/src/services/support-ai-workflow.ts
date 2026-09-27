@@ -890,8 +890,8 @@ function buildTriageDecisionRequest(input: {
   }
   return {
     state: {
-      subject: input.subject.slice(0, 1_000),
-      body: input.body.slice(0, 4_000),
+      subject: input.subject,
+      body: input.body,
     },
     questions,
   };
