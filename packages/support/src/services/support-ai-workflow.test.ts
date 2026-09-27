@@ -633,6 +633,24 @@ describe('SupportAiWorkflow', () => {
     expect(reloaded.category).toBe('billing');
   });
 
+  it('persists optional category vocabularies and keeps an absent vocabulary open', async () => {
+    const workflow = await SupportAiWorkflow.create({ db: ctx.db });
+    const policy = await workflow.policies.create({
+      name: 'optional-category-vocabulary',
+    });
+
+    expect(
+      (await workflow.policies.get(policy.id ?? ''))?.getAllowedCategories(),
+    ).toEqual([]);
+
+    policy.setAllowedCategories(['billing', 'availability']);
+    await policy.save();
+
+    expect(
+      (await workflow.policies.get(policy.id ?? ''))?.getAllowedCategories(),
+    ).toEqual(['billing', 'availability']);
+  });
+
   it('uses explicit decision vocabularies and records their audit-only aggregate', async () => {
     const decisions = triageDecisionClient({
       severity: 'urgent',
@@ -642,11 +660,17 @@ describe('SupportAiWorkflow', () => {
       categoryProbabilities: { billing: 0.7, availability: 0.3 },
     });
     const workflow = await SupportAiWorkflow.create({ db: ctx.db, decisions });
-    await workflow.policies.create({
+    const policy = await workflow.policies.create({
       name: 'decision-vocabulary',
       autoAnswer: false,
-      allowedCategories: JSON.stringify(['billing', 'availability']),
     });
+    policy.setAllowedCategories(['billing', 'availability']);
+    await policy.save();
+    const persistedPolicy = await workflow.policies.get(policy.id ?? '');
+    expect(persistedPolicy?.getAllowedCategories()).toEqual([
+      'billing',
+      'availability',
+    ]);
     const supportCase = await openCase(workflow);
     supportCase.setPlanSnapshot({
       severityDefinitions: {
