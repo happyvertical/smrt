@@ -182,6 +182,13 @@ export interface ReconcileOptions {
   similarityThreshold?: number;
   /** Minimum similarity to consider a conflict (default: 0.60) */
   conflictThreshold?: number;
+  /**
+   * Minimum selected merge probability required before an ambiguous match can
+   * merge (default: 0.75). This is a conservative operating threshold, not a
+   * calibrated assurance score, and is separate from cosine similarity. Values
+   * outside [0, 1] are rejected before a configured provider is called.
+   */
+  decisionMergeProbabilityThreshold?: number;
   /** Fact type classification */
   type?: FactType;
   /** Domain for the fact */

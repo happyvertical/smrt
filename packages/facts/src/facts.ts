@@ -721,9 +721,9 @@ export class FactCollection extends SmrtCollection<Fact> {
    * 2. Decision:
    *    - No match above conflictThreshold (0.60) -> CREATE new fact
    *    - Top match >= similarityThreshold (0.85) -> MERGE (add source, bump sourceCount)
-   *    - Ambiguous zone (0.60-0.85) -> AI disambiguation via this.ai.message()
-   *      - AI says "merge" -> MERGE
-   *      - AI says "branch" -> BRANCH (new fact as successor, predecessor marked superseded)
+   *    - Ambiguous zone (0.60-0.85) -> optional typed decision, otherwise AI
+   *      text disambiguation. A typed merge must meet its separate confidence
+   *      probability threshold; uncertainty and failures branch conservatively.
    * 3. Record FactSource if source metadata provided
    * 4. Return { action, fact, source?, similarity?, matchedFact? }
    */
@@ -736,6 +736,17 @@ export class FactCollection extends SmrtCollection<Fact> {
       domain = '',
       source,
     } = options;
+    const decisionMergeProbabilityThreshold =
+      options.decisionMergeProbabilityThreshold ?? 0.75;
+    if (
+      !Number.isFinite(decisionMergeProbabilityThreshold) ||
+      decisionMergeProbabilityThreshold < 0 ||
+      decisionMergeProbabilityThreshold > 1
+    ) {
+      throw new Error(
+        'Decision merge probability threshold must be a finite number in [0, 1].',
+      );
+    }
 
     // 1. Semantic search against existing facts
     let matches: Array<Fact & { _similarity: number }> = [];
@@ -799,6 +810,7 @@ export class FactCollection extends SmrtCollection<Fact> {
           topMatch,
           options.promptOverride,
           options.tenantId ?? undefined,
+          decisionMergeProbabilityThreshold,
         );
 
         if (aiDecision === 'merge') {
@@ -1045,6 +1057,7 @@ export class FactCollection extends SmrtCollection<Fact> {
     existingFact: Fact,
     promptOverride?: PromptConfigOverrideInput,
     tenantId?: string,
+    decisionMergeProbabilityThreshold = 0.75,
   ): Promise<'merge' | 'branch'> {
     try {
       const resolvedPrompt = await resolvePrompt(smrtFactsReconcilePrompt.key, {
@@ -1056,6 +1069,41 @@ export class FactCollection extends SmrtCollection<Fact> {
           newInput,
         },
       });
+      const decision = await this.attemptDecision({
+        state: {
+          existingFact: existingFact.textRefined,
+          newInput,
+        },
+        questions: {
+          reconciliation: {
+            type: 'choice',
+            instructions: resolvedPrompt.text,
+            criteria: { merge: null, branch: null },
+          },
+        },
+      });
+
+      if (decision) {
+        const answer = decision.answers.reconciliation;
+        if (answer?.type === 'choice') {
+          const mergeProbability = answer.probabilities.merge;
+          const branchProbability = answer.probabilities.branch;
+          if (
+            answer.choice === 'merge' &&
+            typeof mergeProbability === 'number' &&
+            typeof branchProbability === 'number' &&
+            mergeProbability >= decisionMergeProbabilityThreshold &&
+            mergeProbability > branchProbability
+          ) {
+            return 'merge';
+          }
+        }
+        return 'branch';
+      }
+
+      // No typed-decision client is the explicit legacy route. Keep its
+      // successful-text parsing behavior: only a response containing
+      // "branch" branches; every other successful response merges.
       const response = await this.ai.message(
         resolvedPrompt.text,
         promptMessageOptions(resolvedPrompt.ai),
@@ -1066,7 +1114,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       }
       return 'merge';
     } catch {
-      // If AI fails, default to branch (safer)
+      // Provider, prompt, and malformed-decision failures default to branch.
       return 'branch';
     }
   }
