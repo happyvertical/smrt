@@ -1475,10 +1475,21 @@ async function pushToProvider(
     }
   }
   // A payer with its default card on file is charged automatically (#3139),
-  // decided when the invoice is first pushed.
-  const chargeAutomatically =
-    runtime.autoChargeInvoices &&
-    (await defaultCardFor(runtime, account, synced.providerCustomerId));
+  // decided once and recorded before the first push (#3190): a retry after a
+  // push whose response was lost must ask for, and report, the same method
+  // even if a card was saved since.
+  let collectionMethod = invoice.collectionMethod;
+  if (!collectionMethod) {
+    collectionMethod =
+      runtime.autoChargeInvoices &&
+      (await defaultCardFor(runtime, account, synced.providerCustomerId))
+        ? 'charge_automatically'
+        : 'send_invoice';
+    await withTenant({ tenantId: runtime.sellerTenantId }, async () => {
+      invoice.collectionMethod = collectionMethod;
+      await invoice.save();
+    });
+  }
   const { providerInvoiceId } = await runtime.provider.pushInvoice({
     invoiceId: String(invoice.id),
     invoiceNumber: invoice.invoiceNumber,
@@ -1490,9 +1501,7 @@ async function pushToProvider(
     subtotal: invoice.subtotal,
     idempotencyKey: `smrt-billing-close:${close.id}`,
     automaticTax: synced.automaticTax,
-    collectionMethod: chargeAutomatically
-      ? 'charge_automatically'
-      : 'send_invoice',
+    collectionMethod,
     memo: invoice.customerNotes || undefined,
   });
   await withTenant({ tenantId: runtime.sellerTenantId }, async () => {

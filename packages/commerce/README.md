@@ -352,7 +352,12 @@ const evaluator = await SpendingPolicyEvaluator.create({
 - **Automatically charged invoices.** With `autoChargeInvoices: true` on the
   runtime, a payer with a default card is invoiced `charge_automatically`:
   the provider charges the card after the invoice is sent, on its own
-  schedule, and retries failures. Activate service on the `current` standing
+  schedule, and retries failures. Each pushed invoice records the method in
+  `Invoice.collectionMethod` (`charge_automatically` or `send_invoice`; empty
+  for invoices pushed before #3190). Do not offer another payment rail on a
+  `charge_automatically` invoice the provider is still collecting.
+  Upgrading adds the `collection_method` column to `invoices` (run
+  `smrt db:migrate`). Activate service on the `current` standing
   from the `paid` event, not on send; a failure marks the payer `past_due`.
 - **Automatic top-ups.** Taxed accounts (the default: `automaticTax` on, not
   tax-exempt) are never topped up unless the hook is built with

@@ -86,8 +86,10 @@ for usage.
   transaction and must be idempotent.
 - **Card on file and top-ups (#3139).** A saved card is the payer customer's
   default `PaymentInstrument` (seller tenant, id from the provider method).
-  `autoChargeInvoices` bills such payers `charge_automatically`, decided at
-  first push; activation follows `paid`, never send. An auto top-up attempt
+  `autoChargeInvoices` bills such payers `charge_automatically`, decided once
+  and saved as `Invoice.collectionMethod` before the first push, which every
+  retry reuses (never recompute it: a lost push response would record a
+  method the provider was not asked for, #3190); activation follows `paid`, never send. An auto top-up attempt
   is a `PENDING` `Payment` (`reference` `auto-top-up:<policyId>`, id from the
   policy and `count()` of its attempts) inserted before the charge, so racing
   evaluations derive one id and one charge; the charge key is derived from
