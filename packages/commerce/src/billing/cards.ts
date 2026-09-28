@@ -170,13 +170,25 @@ export async function savedCardFromCheckout(
   if (
     !account?.id ||
     tenantKey(account.sellerTenantId) !== runtime.sellerTenantId ||
-    tenantKey(account.payerTenantId) !== tenantKey(metadata.smrt_payer) ||
+    tenantKey(account.payerTenantId) !== tenantKey(metadata.smrt_payer)
+  ) {
+    throw new Error(
+      `Checkout ${state.sessionId} does not belong to the billing account in its metadata.`,
+    );
+  }
+  if (
     account.provider !== runtime.provider.name ||
     !account.providerCustomerId ||
     state.providerCustomerId !== account.providerCustomerId
   ) {
+    // The account's provider customer changed while the checkout was open
+    // (#3152). A saved card would attach to the wrong customer, so that
+    // fails visibly; an address collected for a credit purchase is skipped
+    // (the next checkout or card setup collects it again) so the credit the
+    // payer paid for still settles.
+    if (!paymentMethodId) return null;
     throw new Error(
-      `Checkout ${state.sessionId} saved a card for a customer that is not its billing account's.`,
+      `Checkout ${state.sessionId} saved a card for provider customer ${state.providerCustomerId ?? '(none)'}, not its billing account's.`,
     );
   }
   return {

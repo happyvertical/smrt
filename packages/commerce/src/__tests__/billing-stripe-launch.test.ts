@@ -620,6 +620,57 @@ describe('smrt#3139 Stripe launch billing', () => {
       ]);
     });
 
+    it('settles an address-only purchase whose customer changed mid-checkout (#3152)', async () => {
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          billingAddress: {},
+        }),
+      );
+      const account = await world.provider.getAccount(SOLO);
+      if (!account) throw new Error('missing account');
+      await world.provider.ensureProviderCustomer(account, {
+        requireTaxLocation: false,
+      });
+      const policy = await balancePolicy(SOLO);
+      const checkout = await withTenant({ tenantId: SOLO }, () =>
+        world.provider.createCreditCheckout({
+          spendingPolicyId: String(policy.id),
+          amount: 1000,
+          purchaseId: 'customer-moved',
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      expect(world.stripe.sessions.get(checkout.sessionId)).toMatchObject({
+        metadata: { smrt_collect_address: '1' },
+      });
+      // An operator repoints the account while the checkout is open.
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          providerCustomerId: 'cus_repointed',
+        }),
+      );
+      const session = world.stripe.completeSession(checkout.sessionId, {
+        address: { country: 'US', postal_code: '10001' },
+      });
+      await deliver(world, checkoutEvent(session));
+      // The credit settles; the address collected for the old customer is
+      // not adopted.
+      expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([
+        1000,
+      ]);
+      const customer = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await CustomerCollection.create({ db: world.db })).get(
+          account.customerId,
+        ),
+      );
+      expect(customer?.defaultBillingAddress?.country).toBeFalsy();
+    });
+
     it('refuses to save cards with a provider that cannot apply them', async () => {
       const { getCheckout: _omit, ...partial } = world.provider
         .provider as BillingProvider;
