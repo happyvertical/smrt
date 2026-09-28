@@ -53,9 +53,9 @@ import {
   decideAttempt,
 } from './payment-attempts.js';
 import type {
-  BillingProviderCheckoutState,
   BillingPaymentAttemptState,
   BillingProvider,
+  BillingProviderCheckoutState,
   BillingProviderEvent,
   BillingProviderInvoiceState,
   BillingProviderSubscriptionState,
@@ -492,7 +492,7 @@ async function settlePaidInvoice(
   }
   // A written-off invoice paid later keeps its terminal status; the payment
   // and allocation above record the recovery.
-  if (invoice.status === InvoiceStatus.WRITTEN_OFF) return;
+  if (invoice.status === InvoiceStatus.WRITTEN_OFF) return true;
   invoice.updatePaymentStatus(
     await allocations.getTotalAllocatedToInvoice(String(invoice.id)),
   );

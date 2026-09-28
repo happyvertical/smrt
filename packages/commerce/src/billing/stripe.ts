@@ -142,6 +142,9 @@ export function createStripeBillingProvider(
   const markUncollectible = stripe.invoices.markUncollectible?.bind(
     stripe.invoices,
   );
+  const markPaidOutOfBand = stripe.invoices.markPaidOutOfBand?.bind(
+    stripe.invoices,
+  );
 
   const provider: BillingProvider = {
     name: 'stripe',
@@ -227,8 +230,17 @@ export function createStripeBillingProvider(
         subtotal: majorToMinorUnits(invoice.subtotal, currency),
         taxAmount: majorToMinorUnits(invoice.taxAmount, currency),
         total: majorToMinorUnits(invoice.totalAmount, currency),
-        amountPaid: majorToMinorUnits(invoice.amountPaid, currency),
-        amountDue: majorToMinorUnits(invoice.balance, currency),
+        // Closed out of band, Stripe collected nothing; the invoice is
+        // settled in full by whoever did (#3138).
+        amountPaid:
+          invoice.paidOutOfBand && status === 'paid'
+            ? majorToMinorUnits(invoice.totalAmount, currency)
+            : majorToMinorUnits(invoice.amountPaid, currency),
+        amountDue:
+          invoice.paidOutOfBand && status === 'paid'
+            ? 0
+            : majorToMinorUnits(invoice.balance, currency),
+        ...(invoice.paidOutOfBand ? { paidOutOfBand: true } : {}),
       };
     },
 
@@ -413,6 +425,12 @@ export function createStripeBillingProvider(
   if (markUncollectible) {
     provider.markInvoiceUncollectible = (providerInvoiceId) =>
       markUncollectible(providerInvoiceId);
+  }
+  if (markPaidOutOfBand) {
+    // Closes an invoice a payment rail collected (#3138): Stripe stops its
+    // emails, dunning, and automatic charges.
+    provider.markInvoicePaidOutOfBand = (providerInvoiceId) =>
+      markPaidOutOfBand(providerInvoiceId);
   }
   return provider;
 }

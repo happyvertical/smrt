@@ -128,6 +128,7 @@ describePostgres('smrt#3138 crypto payment rail on PostgreSQL', () => {
         cancelUrl: 'https://app.test/cancel',
         purchaseId: 'cart-1',
         provider: 'btcpay',
+        automaticTax: false,
       }),
     );
     world.gateway.set(credit.sessionId, 'confirming');

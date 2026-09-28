@@ -227,7 +227,7 @@ export async function createRailWorld(
       return outOfBand.includes(id) ? { ...state, paidOutOfBand: true } : state;
     },
     ...(options.outOfBand === false
-      ? {}
+      ? { markInvoicePaidOutOfBand: undefined }
       : {
           async markInvoicePaidOutOfBand(id: string) {
             if (!outOfBand.includes(id)) outOfBand.push(id);

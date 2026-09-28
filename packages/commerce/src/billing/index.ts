@@ -3,11 +3,12 @@
  * card on file, and automatic top-ups (#3139).
  * @packageDocumentation
  */
-export type { CreateCardSetupCheckoutInput } from './cards.js';
+
 export {
   type BtcPayBillingProviderOptions,
   createBtcPayBillingProvider,
 } from './btcpay.js';
+export type { CreateCardSetupCheckoutInput } from './cards.js';
 export type { CreateCreditCheckoutInput } from './credits.js';
 export {
   type CryptoBillingProviderOptions,
@@ -58,9 +59,9 @@ export {
   type BillingPaymentAttemptState,
   type BillingPaymentAttemptStatus,
   type BillingProvider,
+  type BillingProviderCapabilities,
   type BillingProviderChargeInput,
   type BillingProviderChargeResult,
-  type BillingProviderCapabilities,
   type BillingProviderCheckoutInput,
   type BillingProviderCheckoutSession,
   type BillingProviderCheckoutState,

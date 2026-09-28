@@ -23,6 +23,7 @@ import {
   BillingWebhookVerificationError,
 } from '../billing/provider.js';
 import { BillingRuntime } from '../billing/runtime.js';
+import { createStripeBillingProvider } from '../billing/stripe.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
@@ -38,7 +39,11 @@ import {
   RAIL_SIGNATURE,
   type RailWorld,
 } from './helpers/crypto-rail.js';
-import { invoiceEvent, signedEvent } from './helpers/fake-stripe.js';
+import {
+  invoiceEvent,
+  signedEvent,
+  WEBHOOK_SECRET,
+} from './helpers/fake-stripe.js';
 
 const system = <T>(fn: () => Promise<T>) => withSystemContext(fn);
 const memory = async () => {
@@ -87,6 +92,8 @@ async function buyCredit(world: RailWorld, policyId: string, amount = 5000) {
       cancelUrl: 'https://app.test/cancel',
       purchaseId: 'cart-1',
       provider: 'btcpay',
+      // The rail cannot charge tax; selling untaxed credit is explicit.
+      automaticTax: false,
     }),
   );
 }
@@ -162,6 +169,32 @@ describe('smrt#3138 crypto payment rail', () => {
         { provider: 'btcpay', headers: { 'x-rail-sig': RAIL_SIGNATURE } },
       );
       expect(ignored).toMatchObject({ accepted: false, kind: 'ignored' });
+    });
+
+    it('refuses a taxed credit purchase or a saved card on the rail', async () => {
+      const policy = await balancePolicy(world, SOLO);
+      const base = {
+        spendingPolicyId: String(policy.id),
+        amount: 5000,
+        successUrl: 'https://app.test/ok',
+        cancelUrl: 'https://app.test/cancel',
+        purchaseId: 'taxed',
+        provider: 'btcpay',
+      };
+      await expect(
+        withTenant({ tenantId: SOLO }, () =>
+          world.runtime.createCreditCheckout(base),
+        ),
+      ).rejects.toThrow(/cannot charge tax/);
+      await expect(
+        withTenant({ tenantId: SOLO }, () =>
+          world.runtime.createCreditCheckout({
+            ...base,
+            automaticTax: false,
+            savePaymentMethod: true,
+          }),
+        ),
+      ).rejects.toThrow(/cannot save a card/);
     });
 
     it('enforces the rail minimum', async () => {
@@ -537,6 +570,26 @@ describe('smrt#3138 crypto payment rail', () => {
       expect(payments.map((row) => row.method)).toEqual([PaymentMethod.CRYPTO]);
       expect((await soloInvoice(world)).status).toBe(InvoiceStatus.PAID);
       expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
+    });
+
+    it('closes a Stripe invoice out of band through the accounting SDK', async () => {
+      const invoice = await openInvoice();
+      const stripe = createStripeBillingProvider({
+        stripe: await world.stripe.provider(),
+        webhookSecret: WEBHOOK_SECRET,
+      });
+      expect(stripe.markInvoicePaidOutOfBand).toBeTypeOf('function');
+      await stripe.markInvoicePaidOutOfBand?.(String(invoice.externalId));
+      // Idempotent: already closed out of band.
+      await stripe.markInvoicePaidOutOfBand?.(String(invoice.externalId));
+      expect(await stripe.getInvoice(String(invoice.externalId))).toMatchObject(
+        {
+          status: 'paid',
+          paidOutOfBand: true,
+          amountPaid: invoice.totalAmount,
+          amountDue: 0,
+        },
+      );
     });
 
     it('records an out-of-band close made by someone else as an other-method payment', async () => {
