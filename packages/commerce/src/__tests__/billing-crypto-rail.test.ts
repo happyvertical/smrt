@@ -705,6 +705,82 @@ describe('smrt#3138 crypto payment rail', () => {
       );
     });
 
+    async function writeOff(externalId: string) {
+      world.stripe.setInvoiceStatus(externalId, 'uncollectible');
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.marked_uncollectible', externalId),
+      );
+    }
+
+    it('pays a written-off invoice and reinstates the payer (#3188)', async () => {
+      const invoice = await openInvoice();
+      await writeOff(String(invoice.externalId));
+      expect((await soloInvoice(world)).status).toBe(InvoiceStatus.WRITTEN_OFF);
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe(
+        'uncollectible',
+      );
+
+      const session = await payWithRail(String(invoice.id));
+      expect(world.gateway.checkouts.get(session.sessionId)?.amount).toBe(
+        invoice.totalAmount,
+      );
+      world.gateway.set(session.sessionId, 'settled');
+      await world.railEvent(session.sessionId);
+      expect(world.outOfBand).toEqual([invoice.externalId]);
+      // The status stays written off, as after a late card payment.
+      const paid = await soloInvoice(world);
+      expect(paid.status).toBe(InvoiceStatus.WRITTEN_OFF);
+      expect(paid.amountPaid).toBe(invoice.totalAmount);
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
+      const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt?.flag).toBe('');
+
+      // Stripe's paid event for the out-of-band close records nothing more.
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect(await sellerPayments(world)).toHaveLength(1);
+      await expect(payWithRail(String(invoice.id))).rejects.toEqual(
+        refused('nothing_due'),
+      );
+    });
+
+    it('keeps rail money as credit when a written-off invoice was paid by card meanwhile (#3188)', async () => {
+      const invoice = await openInvoice();
+      await writeOff(String(invoice.externalId));
+      const session = await payWithRail(String(invoice.id));
+      // The payer pays the hosted invoice page by card first.
+      world.stripe.pay(String(invoice.externalId));
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect((await world.runtime.getAccount(SOLO))?.standing).toBe('current');
+      world.gateway.set(session.sessionId, 'settled');
+      await world.railEvent(session.sessionId);
+      const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt?.flag).toBe('invoice_already_paid');
+      expect(world.outOfBand).toEqual([]);
+    });
+
+    it('closes a written-off Stripe invoice out of band through the accounting SDK (#3188)', async () => {
+      const invoice = await openInvoice();
+      world.stripe.setInvoiceStatus(
+        String(invoice.externalId),
+        'uncollectible',
+      );
+      const stripe = createStripeBillingProvider({
+        stripe: await world.stripe.provider(),
+        webhookSecret: WEBHOOK_SECRET,
+      });
+      await stripe.markInvoicePaidOutOfBand?.(String(invoice.externalId));
+      expect(await stripe.getInvoice(String(invoice.externalId))).toMatchObject(
+        { status: 'paid', paidOutOfBand: true, amountDue: 0 },
+      );
+    });
+
     it('records an out-of-band close made by someone else as an other-method payment', async () => {
       const invoice = await openInvoice();
       world.outOfBand.push(String(invoice.externalId));
