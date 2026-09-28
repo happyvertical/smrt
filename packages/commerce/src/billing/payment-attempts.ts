@@ -186,6 +186,12 @@ export interface AttemptTarget {
   invoiceId: string;
   spendingPolicyId: string;
   grantedByTenantId: string;
+  /**
+   * The issuer reported the invoice paid by its own collection (for example
+   * a card charge whose event has not been applied yet): the rail's money is
+   * kept as customer credit, never allocated to the invoice.
+   */
+  issuerCollected?: boolean;
 }
 
 /** Read the target from verified metadata; null when not this seller's. */
@@ -459,7 +465,7 @@ async function settleAttempt(
       throw new Error(`Invoice ${target.invoiceId} for an attempt is missing.`);
     }
     customerId = invoice.customerId;
-    if (invoice.status === InvoiceStatus.PAID) {
+    if (invoice.status === InvoiceStatus.PAID || target.issuerCollected) {
       // Paid elsewhere meanwhile: keep the money as customer credit for an
       // operator to refund or apply.
       flag = 'invoice_already_paid';
@@ -789,18 +795,17 @@ export async function recordCryptoConversion(
   } else if (gain < 0) {
     entries.push({ accountId: ledger.fxGainLossAccountId, debit: -gain });
   }
-  const journalId = await postOnce(
-    runtime,
-    runtime.db,
-    `conversion:${input.reference.trim()}`,
-    {
+  const inTransaction = <T>(work: (db: DatabaseInterface) => Promise<T>) =>
+    runtime.db.transaction ? runtime.db.transaction(work) : work(runtime.db);
+  const journalId = await inTransaction((db) =>
+    postOnce(runtime, db, `conversion:${input.reference.trim()}`, {
       description: `Convert ${input.nativeAmount} ${normalizeCurrency(
         input.nativeCurrency,
       )} minor units to ${normalizeCurrency(input.currency)} (${input.reference})`,
       entries: entries.filter(
         (entry) => (entry.debit ?? 0) > 0 || (entry.credit ?? 0) > 0,
       ),
-    },
+    }),
   );
   return { journalId };
 }
@@ -836,12 +841,39 @@ async function postOnce(
       limit: 1,
     });
     if (posted?.id) return String(posted.id);
-    const created = await journals.create({
-      date: new Date(),
-      description: journal.description,
-      sourceModule: 'smrt-commerce',
+    // A deterministic id makes a concurrent second writer fail on insert
+    // instead of posting a duplicate journal.
+    const id = await deterministicId([
+      'billing-journal',
+      runtime.sellerTenantId,
       sourceRef,
-    });
+    ]);
+    const existing = await journals.get(id);
+    if (existing) {
+      if (existing.status === 'posted') return id;
+      throw new Error(
+        `Journal ${sourceRef} was started but not posted; an operator must complete or void it.`,
+      );
+    }
+    let created: Awaited<ReturnType<typeof journals.create>>;
+    try {
+      created = await journals.create({
+        id,
+        date: new Date(),
+        description: journal.description,
+        sourceModule: 'smrt-commerce',
+        sourceRef,
+        _insertOnly: true,
+      });
+    } catch (error) {
+      if (await journals.get(id)) {
+        throw new Error(
+          `Journal ${sourceRef} is being recorded concurrently; retry to read its result.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     await created.save();
     for (const entry of journal.entries) {
       await created.addEntry({ ...entry, memo: sourceRef });

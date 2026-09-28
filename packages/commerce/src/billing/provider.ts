@@ -412,7 +412,9 @@ export interface BillingProvider {
   markInvoiceUncollectible?(providerInvoiceId: string): Promise<void>;
   /**
    * Close an issued invoice as paid outside the provider (#3138). Must be
-   * idempotent: an invoice already paid is a no-op.
+   * idempotent: an invoice already closed this way is a no-op. Callers check
+   * `getInvoice()` first and never close an invoice the provider collected
+   * itself (a provider may throw for one).
    */
   markInvoicePaidOutOfBand?(providerInvoiceId: string): Promise<void>;
   /**

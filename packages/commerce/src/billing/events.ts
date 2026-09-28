@@ -751,6 +751,18 @@ async function observeAttempt(
           `${runtime.provider.name} cannot close invoice ${invoice.invoiceNumber} paid on ${provider.name}.`,
         );
       }
+      // The issuer may have collected the invoice itself (a card charge
+      // whose event is not applied yet): then it must not be closed out of
+      // band, and the rail money becomes customer credit.
+      const issuer = await runtime.provider.getInvoice(invoice.externalId);
+      if (issuer.status === 'paid' && !issuer.paidOutOfBand) {
+        return {
+          event,
+          providerName: provider.name,
+          attempt,
+          target: { ...target, issuerCollected: true },
+        };
+      }
       // Committed before the issuer is told, so the issuer's own `paid`
       // event waits for this settlement instead of recording a payment.
       const row = await runtime.recordPaymentAttemptStart({

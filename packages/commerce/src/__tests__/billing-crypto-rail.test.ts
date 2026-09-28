@@ -625,6 +625,31 @@ describe('smrt#3138 crypto payment rail', () => {
       ).toEqual([PaymentMethod.CREDIT_CARD, PaymentMethod.CRYPTO].sort());
     });
 
+    it('keeps rail money as credit when the issuer collected first but its event is not applied yet', async () => {
+      const invoice = await openInvoice();
+      const session = await payWithRail(String(invoice.id));
+      // Stripe collects by card; its webhook has not been applied.
+      world.stripe.pay(String(invoice.externalId));
+      world.gateway.set(session.sessionId, 'settled');
+      await world.railEvent(session.sessionId);
+      expect(world.outOfBand).toEqual([]);
+      const [attempt] = await world.runtime.listPaymentAttempts({});
+      expect(attempt).toMatchObject({
+        flag: 'invoice_already_paid',
+        settlementOutcome: 'credit',
+      });
+      expect((await soloInvoice(world)).status).not.toBe(InvoiceStatus.PAID);
+      // The card payment is still recorded when Stripe's event arrives.
+      await deliverStripe(
+        world,
+        invoiceEvent('invoice.paid', String(invoice.externalId)),
+      );
+      expect((await soloInvoice(world)).status).toBe(InvoiceStatus.PAID);
+      expect(
+        (await sellerPayments(world)).map((row) => row.method).sort(),
+      ).toEqual([PaymentMethod.CREDIT_CARD, PaymentMethod.CRYPTO].sort());
+    });
+
     it('flags an issuer close whose payment never settled, and records a later close once resolved', async () => {
       const invoice = await openInvoice();
       await deliverStripe(
@@ -886,7 +911,17 @@ describe('smrt#3138 crypto payment rail', () => {
         proceeds: 5200,
         fees: 30,
       };
-      const first = await world.runtime.recordCryptoConversion(input);
+      const [first, concurrent] = await Promise.all([
+        world.runtime.recordCryptoConversion(input),
+        world.runtime.recordCryptoConversion(input).catch((error) => error),
+      ]);
+      if (!(concurrent instanceof Error)) {
+        expect(concurrent.journalId).toBe(first.journalId);
+      }
+      const conversions = await world.db.query(
+        "SELECT id FROM journals WHERE source_ref = 'conversion:trade-1'",
+      );
+      expect(conversions.rows).toHaveLength(1);
       expect(
         (await world.runtime.recordCryptoConversion(input)).journalId,
       ).toBe(first.journalId);
