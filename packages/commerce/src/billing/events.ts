@@ -218,6 +218,8 @@ export function createBillingEventProjector(
           providerCustomerId: value.event.providerCustomerId,
           amount: value.event.amount,
           currency: value.event.currency,
+          subtotal: value.event.subtotal,
+          tax: value.event.tax,
           failureCode: value.event.failureCode,
         });
       } else {

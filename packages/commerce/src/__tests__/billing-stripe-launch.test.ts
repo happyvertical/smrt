@@ -1246,7 +1246,11 @@ describe('smrt#3139 Stripe launch billing', () => {
           automaticTax: true,
         }),
       );
-      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      await spend(
+        evaluator({ onAutoTopUpSkipped, taxedAccounts: 'skip' }),
+        SOLO,
+        500,
+      );
       expect(reasons()).toEqual(['no_card', 'taxed_account']);
       // Charged (still processing): the live attempt is not a skip.
       await spend(
@@ -1295,7 +1299,11 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect(skips).toEqual([]);
       expect(world.stripe.paymentIntents.size).toBe(0);
       // Without the host's opt-out the same evaluation is a reported skip.
-      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      await spend(
+        evaluator({ onAutoTopUpSkipped, taxedAccounts: 'skip' }),
+        SOLO,
+        500,
+      );
       expect(skips.map((skip) => skip.reason)).toEqual(['taxed_account']);
     });
 
@@ -1336,26 +1344,288 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect(skips).toEqual([]);
     });
 
-    it('does not top up a taxed payer unless the seller opts in', async () => {
+    async function taxedPayer(country: string | undefined = 'US') {
       await system(() =>
         world.provider.upsertAccount({
           payerTenantId: SOLO,
           name: 'Solo LLC',
           automaticTax: true,
+          billingAddress: country ? { country, postalCode: '10001' } : {},
         }),
       );
+    }
+
+    async function taxJournals() {
+      return withTenant({ tenantId: PROVIDER }, async () => {
+        const journals = await (
+          await JournalCollection.create({ db: world.db })
+        ).list({ where: { status: 'posted' } });
+        const taxed = journals.filter((journal) =>
+          String(journal.sourceRef).endsWith(':tax'),
+        );
+        return Promise.all(
+          taxed.map(async (journal) =>
+            (await journal.getEntries()).map((entry) => [
+              entry.accountId,
+              entry.debit,
+              entry.credit,
+            ]),
+          ),
+        );
+      });
+    }
+
+    it('charges a taxed payer credit plus tax by default and books the tax (#3194)', async () => {
+      await taxedPayer('US');
       await balancePolicy(SOLO);
       await saveCard(SOLO, 'pm_taxed');
       expect(await spend(evaluator(), SOLO, 500)).toMatchObject({
-        allowed: false,
+        allowed: true,
       });
+      const [intent] = [...world.stripe.paymentIntents.values()];
+      // US is taxed at 5% by the fake: 500 credit + 25 tax.
+      expect(intent?.amount).toBe(525);
+      expect(intent?.metadata).toMatchObject({ hv_subtotal_amount: '500' });
+      expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([
+        500,
+      ]);
+      const [payment] = await sellerPayments();
+      expect(payment).toMatchObject({
+        status: PaymentStatus.COMPLETED,
+        amount: 500,
+      });
+      expect(payment?.notes).toContain('tax 25');
+      expect(await taxJournals()).toEqual([
+        expect.arrayContaining([
+          [world.ledger.cashAccountId, 25, 0],
+          [world.ledger.taxAccountId, 0, 25],
+        ]),
+      ]);
+    });
+
+    it('skips or charges untaxed only when the seller asks (#3194)', async () => {
+      await taxedPayer('US');
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_taxed_modes');
+      const skips: AutoTopUpSkip[] = [];
+      expect(
+        await spend(
+          evaluator({
+            taxedAccounts: 'skip',
+            onAutoTopUpSkipped: (skip) => {
+              skips.push(skip);
+            },
+          }),
+          SOLO,
+          500,
+        ),
+      ).toMatchObject({ allowed: false });
+      expect(skips.map((skip) => skip.reason)).toEqual(['taxed_account']);
       expect(world.stripe.paymentIntents.size).toBe(0);
-      expect(await sellerPayments()).toEqual([]);
       expect(
         await spend(evaluator({ taxedAccounts: 'charge_untaxed' }), SOLO, 500),
       ).toMatchObject({ allowed: true });
-      expect(world.stripe.paymentIntents.size).toBe(1);
+      const [intent] = [...world.stripe.paymentIntents.values()];
+      expect(intent?.amount).toBe(500);
+      expect(world.stripe.taxCalculations.size).toBe(0);
+      expect(await taxJournals()).toEqual([]);
     });
+
+    it('asks for a tax location instead of charging without one (#3194)', async () => {
+      await taxedPayer(undefined);
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_no_location');
+      // The payer's address is removed after the card was saved.
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          billingAddress: {},
+        }),
+      );
+      const skips: AutoTopUpSkip[] = [];
+      await spend(
+        evaluator({
+          onAutoTopUpSkipped: (skip) => {
+            skips.push(skip);
+          },
+        }),
+        SOLO,
+        500,
+      );
+      expect(skips.map((skip) => skip.reason)).toEqual([
+        'tax_location_invalid',
+      ]);
+      expect(world.stripe.paymentIntents.size).toBe(0);
+      expect(await sellerPayments()).toEqual([]);
+    });
+
+    it('reports a location the provider rejects as a failed charge, not retried hot (#3194)', async () => {
+      await taxedPayer('US');
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_rejected_location');
+      // Stripe no longer has a usable address for the customer.
+      const account = await world.provider.getAccount(SOLO);
+      const remote = world.stripe.customers.get(
+        String(account?.providerCustomerId),
+      );
+      if (remote) remote.address = undefined;
+      const failures: AutoTopUpFailure[] = [];
+      const runtime = await BillingRuntime.create({
+        db: world.db,
+        sellerTenantId: PROVIDER,
+        kind: 'provider',
+        provider: world.provider.provider,
+        billingRelationships: world.relationships,
+        ledger: world.ledger,
+        onAutoTopUpFailed: (failure) => {
+          failures.push(failure);
+        },
+      });
+      await spend(evaluator(undefined, runtime), SOLO, 500);
+      await spend(evaluator(undefined, runtime), SOLO, 500);
+      expect(failures.map((failure) => failure.failureCode)).toEqual([
+        'customer_tax_location_invalid',
+      ]);
+      expect(world.stripe.taxCalculations.size).toBe(0);
+      expect(world.stripe.paymentIntents.size).toBe(0);
+      expect(await grantsOf(SOLO)).toEqual([]);
+    });
+
+    it('settles a taxed charge from its webhook and re-drives it with the same tax decision (#3194)', async () => {
+      await taxedPayer('CA');
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_taxed_slow', 'processing');
+      await spend(evaluator(), SOLO, 1000);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      // The account stops being taxed while the charge is in flight; the
+      // re-drive still asks for the same (taxed) charge.
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: false,
+        }),
+      );
+      await spend(evaluator({ recheckAfterMs: 0 }), SOLO, 1000);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      const [intent] = [...world.stripe.paymentIntents.values()];
+      // CA is taxed at 13% by the fake.
+      expect(intent?.amount).toBe(1130);
+      const settled = world.stripe.settlePaymentIntent(
+        String(intent?.id),
+        'succeeded',
+      );
+      const success = paymentIntentEvent('payment_intent.succeeded', settled);
+      await deliver(world, success);
+      await deliver(world, success);
+      expect((await grantsOf(SOLO)).map((grant) => grant.amount)).toEqual([
+        1000,
+      ]);
+      expect(await taxJournals()).toEqual([
+        expect.arrayContaining([
+          [world.ledger.cashAccountId, 130, 0],
+          [world.ledger.taxAccountId, 0, 130],
+        ]),
+      ]);
+    });
+
+    it('classifies credit and invoice lines with the configured tax codes (#3194)', async () => {
+      const runtime = await BillingRuntime.create({
+        db: world.db,
+        sellerTenantId: PROVIDER,
+        kind: 'provider',
+        provider: world.provider.provider,
+        billingRelationships: world.relationships,
+        ledger: world.ledger,
+        taxCodes: { credit: 'txcd_10000000', invoice: 'txcd_20030000' },
+      });
+      await taxedPayer('US');
+      const policy = await balancePolicy(SOLO);
+      const checkout = await withTenant({ tenantId: SOLO }, () =>
+        runtime.createCreditCheckout({
+          spendingPolicyId: String(policy.id),
+          amount: 1000,
+          purchaseId: 'coded',
+          successUrl: 'https://a.test',
+          cancelUrl: 'https://a.test',
+        }),
+      );
+      expect(world.stripe.sessions.get(checkout.sessionId)?.tax_code).toBe(
+        'txcd_10000000',
+      );
+      await saveCard(SOLO, 'pm_coded', 'succeed', runtime);
+      await spend(evaluator(undefined, runtime), SOLO, 500);
+      expect(
+        [...world.stripe.taxCalculations.values()].map((row) => row.tax_code),
+      ).toEqual(['txcd_10000000']);
+      await world.usage(SOLO);
+      await runtime.closePeriod(period);
+      const solo = await runtime.getAccount(SOLO);
+      const items = [...world.stripe.invoiceItems.values()].filter(
+        (item) => item.customer === solo?.providerCustomerId,
+      );
+      expect(items.length).toBeGreaterThan(0);
+      expect(new Set(items.map((item) => item.tax_code))).toEqual(
+        new Set(['txcd_20030000']),
+      );
+      await expect(
+        BillingRuntime.create({
+          db: world.db,
+          sellerTenantId: PROVIDER,
+          kind: 'provider',
+          provider: world.provider.provider,
+          billingRelationships: world.relationships,
+          ledger: world.ledger,
+          taxCodes: { credit: ' ' },
+        }),
+      ).rejects.toThrow(/taxCodes.credit/);
+    });
+
+    it('keeps a failed taxed attempt taxed, so its webhook still applies (#3194)', async () => {
+      await taxedPayer('US');
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_taxed_declined', 'decline');
+      await spend(evaluator(), SOLO, 500);
+      const [attempt] = await sellerPayments();
+      expect(attempt?.status).toBe(PaymentStatus.FAILED);
+      expect(attempt?.notes).toContain('(automatic tax)');
+      expect(attempt?.notes).toContain('failed: card_declined');
+      const [intent] = [...world.stripe.paymentIntents.values()];
+      expect(intent?.amount).toBe(525);
+      await deliver(
+        world,
+        paymentIntentEvent('payment_intent.payment_failed', intent ?? {}),
+      );
+      const [row] = await deliveries(world);
+      expect(row?.status).not.toBe('retry');
+      expect(row?.last_error ?? '').toBe('');
+      expect(await grantsOf(SOLO)).toEqual([]);
+    });
+
+    it('refuses a charge outcome whose tax does not add up (#3194)', async () => {
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_untaxed_attempt', 'processing');
+      await spend(evaluator(), SOLO, 500);
+      const [attempt] = await sellerPayments();
+      await expect(
+        withTenant({ tenantId: PROVIDER }, () =>
+          world.db.transaction
+            ? world.db.transaction((tx) =>
+                applyAutoTopUpOutcome(world.provider, tx, String(attempt?.id), {
+                  status: 'succeeded',
+                  amount: 525,
+                  subtotal: 500,
+                  tax: 25,
+                  currency: 'USD',
+                }),
+              )
+            : Promise.resolve(),
+        ),
+      ).rejects.toThrow(/does not match/);
+      expect(await grantsOf(SOLO)).toEqual([]);
+    });
+
     it('charges the saved card once and credits the balance exactly once', async () => {
       const policy = await balancePolicy(SOLO);
       await saveCard(SOLO, 'pm_topup');

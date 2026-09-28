@@ -198,6 +198,7 @@ export function createStripeBillingProvider(
           unitPrice: minorToMajorUnits(line.amount, currency),
           periodStart: line.periodStart,
           periodEnd: line.periodEnd,
+          ...(line.taxCode ? { taxCode: line.taxCode } : {}),
         })),
         subtotal,
         taxAmount: 0,
@@ -298,6 +299,7 @@ export function createStripeBillingProvider(
               // ISO minor units; the SDK converts to Stripe's unit (sdk#1269).
               unitAmountMinor: input.amount,
               productName: input.description,
+              ...(input.taxCode ? { taxCode: input.taxCode } : {}),
             },
           },
         ],
@@ -407,12 +409,22 @@ export function createStripeBillingProvider(
         idempotencyKey: input.idempotencyKey,
         description: input.description,
         metadata: input.metadata,
+        ...(input.automaticTax
+          ? {
+              automaticTax: true,
+              ...(input.taxCode ? { taxCode: input.taxCode } : {}),
+            }
+          : {}),
       });
       return {
         status: result.status,
         providerPaymentId: result.paymentExternalId,
         amount: result.amountMinor,
         currency: result.currency,
+        ...(result.subtotalMinor !== undefined
+          ? { subtotal: result.subtotalMinor }
+          : {}),
+        ...(result.taxMinor !== undefined ? { tax: result.taxMinor } : {}),
         failureCode: result.failureCode,
         failureMessage: result.failureMessage,
       };
@@ -538,6 +550,10 @@ export async function normalizeStripeEvent(
       providerCustomerId: payment.customerExternalId,
       amount: payment.amountMinor,
       currency: payment.currency,
+      ...(payment.subtotalMinor !== undefined
+        ? { subtotal: payment.subtotalMinor }
+        : {}),
+      ...(payment.taxMinor !== undefined ? { tax: payment.taxMinor } : {}),
       failureCode: payment.failureCode,
     };
   }

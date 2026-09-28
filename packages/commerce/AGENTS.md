@@ -94,9 +94,12 @@ for usage.
   that id. `applyAutoTopUpOutcome()` must run in a transaction and starts with
   a conditional `UPDATE … WHERE status = 'pending'` row lock, so the hook and
   the `payment` webhook settle once; the grant is keyed by the charge key.
-  Never settle an attempt outside that function. Taxed accounts are skipped
-  unless `taxedAccounts: 'charge_untaxed'` (no tax on off-session charges,
-  happyvertical/sdk#1283). `claimAttempt()` is the only place that decides a
+  Never settle an attempt outside that function. Taxed accounts are charged
+  with provider tax by default (#3194): the attempt row holds the credit
+  (the charge subtotal), the tax is journaled to tax payable at settlement,
+  and the attempt's tax decision is recorded in its `notes` so a re-drive
+  repeats the same charge request (the provider refuses a key reused with
+  different tax). `claimAttempt()` is the only place that decides a
   skip and reports it (`onAutoTopUpSkipped`); `cardOnFile()` and period close
   use `defaultCardInstrument()` — never copy that predicate. A provider write-off moves the local invoice to
   `WRITTEN_OFF` (a later payment is recorded; the status stays).
