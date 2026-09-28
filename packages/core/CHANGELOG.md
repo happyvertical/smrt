@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.51.35
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - refresh confirming payment attempts before open ones (#3184) (commerce)
+  - keep vite a devDependency to stop pnpm peer fan-out (#3182) (core)
+- @happyvertical/smrt-config@0.51.35
+  - @happyvertical/smrt-scanner@0.51.35
+  - @happyvertical/smrt-types@0.51.35
+
 ## 0.51.34
 
 ### Patch Changes
