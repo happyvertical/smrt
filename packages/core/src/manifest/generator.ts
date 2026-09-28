@@ -10,6 +10,7 @@ import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
+import { importProjectVite } from '../utils/import-project-vite.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import {
@@ -483,7 +484,10 @@ export default ${exportName};
       logger.debug('[smrt] Found vite.config.ts, attempting to load...');
 
       // Use vite to load config which handles TypeScript
-      const { loadConfigFromFile } = await import('vite');
+      const { loadConfigFromFile } = await importProjectVite(
+        process.cwd(),
+        'Loading vite.config.ts',
+      );
       const loaded = await loadConfigFromFile(
         { command: 'build', mode: 'test' },
         viteConfigPath,

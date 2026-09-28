@@ -21,6 +21,7 @@
 
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Alias, ResolvedConfig } from 'vite';
+import { importProjectVite } from '../utils/import-project-vite.js';
 
 /** Directory (under the project root) the compiled registration is written to. */
 export const WORKER_REGISTRATION_DIR = '.smrt/runtime';
@@ -102,7 +103,7 @@ export async function buildWorkerRegistration(
     projectRoot,
     resolvedConfig.resolve.alias,
   );
-  const { build } = await import('vite');
+  const { build } = await importProjectVite(projectRoot, 'Worker registration');
   await build({
     configFile: false,
     envFile: false,
