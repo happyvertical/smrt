@@ -13,6 +13,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createBtcPayBillingProvider } from '../billing/btcpay.js';
 import { createCryptoBillingProvider } from '../billing/crypto.js';
 import {
   decideAttempt,
@@ -772,6 +773,50 @@ describe('smrt#3138 crypto payment rail', () => {
           }),
         ),
       ).rejects.toThrow(/cannot close an invoice/);
+    });
+  });
+
+  it('creates BTCPay checkouts that settle after 2 confirmations by default', async () => {
+    const created: Record<string, unknown>[] = [];
+    const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/invoices') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        created.push(body);
+        return new Response(
+          JSON.stringify({
+            id: 'inv_1',
+            status: 'New',
+            additionalStatus: 'None',
+            amount: body.amount,
+            currency: body.currency,
+            checkoutLink: 'https://btc.example/i/inv_1',
+            metadata: body.metadata,
+          }),
+        );
+      }
+      if (url.endsWith('/payment-methods')) return new Response('[]');
+      return new Response('[]');
+    };
+    const rail = createBtcPayBillingProvider({
+      baseUrl: 'https://btc.example',
+      apiKey: 'k',
+      storeId: 's',
+      webhookSecret: 'w',
+      metadataSecret: 'm'.repeat(32),
+      fetch,
+    });
+    await rail.createCheckout({
+      idempotencyKey: 'order-1',
+      currency: 'CAD',
+      amount: 2500,
+      description: 'x',
+      successUrl: 'https://a.test',
+      cancelUrl: 'https://a.test',
+      metadata: {},
+    });
+    expect(created[0]?.checkout).toMatchObject({
+      speedPolicy: 'LowMediumSpeed',
     });
   });
 

@@ -393,7 +393,7 @@ import {
 const btcpay = createBtcPayBillingProvider({
   baseUrl, apiKey, storeId,        // one BTCPay store per seller entity
   webhookSecret, metadataSecret,   // from the host's secret store, by name
-  speedPolicy: 'LowSpeed',         // BTCPay settles after 0/1/2/6 confirmations
+  speedPolicy: 'LowMediumSpeed',   // settle after 2 confirmations (BTCPay offers 0/1/2/6)
   rateSource: 'kraken',
   minimumAmount: { CAD: 500, USD: 500 },
 });
@@ -418,7 +418,7 @@ await billing.processEvents();
 - **Settlement is the gateway's.** Credit is granted and invoices are paid
   only when the gateway reports `settled` under its own confirmation policy;
   this package never counts confirmations. BTCPay offers 0, 1, 2 or 6
-  confirmations (`LowSpeed` = 6 is the default because BTCPay has no 3).
+  confirmations; the default is `LowMediumSpeed` (2 confirmations).
 - **Payment attempts.** Every rail checkout is a `BillingPaymentAttempt`
   recording the locked fiat price, fiat and native amounts received, rate and
   rate source, each payment's txid, rail and fee, a timeline of status changes,

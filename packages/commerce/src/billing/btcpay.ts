@@ -25,8 +25,8 @@ export interface BtcPayBillingProviderOptions {
   metadataSecret: string;
   /**
    * Confirmations before BTCPay settles on-chain: `HighSpeed` 0,
-   * `MediumSpeed` 1, `LowMediumSpeed` 2, `LowSpeed` 6 (default — BTCPay has
-   * no 3-confirmation policy, and 6 never settles on fewer).
+   * `MediumSpeed` 1, `LowMediumSpeed` 2 (default, the owner's settlement
+   * policy), `LowSpeed` 6.
    */
   speedPolicy?: BtcpaySpeedPolicy;
   /** Default `['BTC-CHAIN']`; add `BTC-LN` once the store has Lightning. */
@@ -55,7 +55,7 @@ export function createBtcPayBillingProvider(
       fetch: options.fetch,
     }),
     webhookSecret: options.webhookSecret,
-    speedPolicy: options.speedPolicy ?? 'LowSpeed',
+    speedPolicy: options.speedPolicy ?? 'LowMediumSpeed',
     paymentMethods: options.paymentMethods,
     expirationMinutes: options.expirationMinutes,
     monitoringMinutes: options.monitoringMinutes,
