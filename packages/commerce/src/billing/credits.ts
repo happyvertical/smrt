@@ -17,6 +17,7 @@ import {
   SAVE_CARD_METADATA,
 } from './cards.js';
 import {
+  BillingPaymentRefusedError,
   type BillingProviderCheckoutSession,
   providerCapabilities,
 } from './provider.js';
@@ -130,14 +131,20 @@ export async function createCreditCheckout(
   input: CreateCreditCheckoutInput,
 ): Promise<BillingProviderCheckoutSession> {
   if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
-    throw new Error('Credit amount must be positive integer minor units.');
+    throw new BillingPaymentRefusedError(
+      'invalid_amount',
+      'Credit amount must be positive integer minor units.',
+    );
   }
   if (!input.purchaseId) throw new Error('purchaseId is required.');
   const policy = await withSystemContext(() =>
     runtime.policies.get(input.spendingPolicyId),
   );
   if (!policy?.id || policy.period !== 'balance' || !policy.active) {
-    throw new Error(
+    throw new BillingPaymentRefusedError(
+      // One code whether it is missing or inactive: this runs before the
+      // caller is known to be the payer.
+      'not_found',
       `Spending policy ${input.spendingPolicyId} is not an active balance policy.`,
     );
   }
@@ -158,7 +165,10 @@ export async function createCreditCheckout(
   }
   const account = await runtime.getAccount(payer);
   if (!account?.id) {
-    throw new Error(`No billing account for payer ${payer}.`);
+    throw new BillingPaymentRefusedError(
+      'no_account',
+      `No billing account for payer ${payer}.`,
+    );
   }
   const currency = normalizeCurrency(policy.currency);
   const provider = runtime.providerFor(input.provider);

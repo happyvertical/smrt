@@ -415,6 +415,14 @@ await billing.acceptWebhook(rawBody, '', { provider: 'btcpay', headers: request.
 await billing.processEvents();
 ```
 
+- **Refusals are typed (#3185).** `createInvoicePayment()` and
+  `createCreditCheckout()` throw `BillingPaymentRefusedError` for requests the
+  payer can correct, with a stable `code`: `not_found`, `not_payable`,
+  `payment_in_progress`, `nothing_due`, `invalid_amount`, `below_minimum`
+  (under the rail's `minimumAmount`), or `no_account`. Show its message as a
+  4xx; any other error is a server failure, and `TenantIsolationError` still
+  means the caller is not the payer. Treat an unknown code like
+  `not_payable`.
 - **Settlement is the gateway's.** Credit is granted and invoices are paid
   only when the gateway reports `settled` under its own confirmation policy;
   this package never counts confirmations. BTCPay offers 0, 1, 2 or 6

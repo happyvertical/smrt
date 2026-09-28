@@ -127,6 +127,11 @@ export function canonicalTenantId(id: string, label = 'Tenant ID'): string {
   return id.toLowerCase();
 }
 
+/** Whether `id` is a UUID (any case), such as a billing record id. */
+export function isUuid(id: string): boolean {
+  return typeof id === 'string' && UUID_PATTERN.test(id);
+}
+
 /** Whether `id` is a tenant UUID (any case). */
 export function isTenantId(id: string): boolean {
   return typeof id === 'string' && UUID_PATTERN.test(id);

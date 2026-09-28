@@ -58,6 +58,8 @@ export {
   type BillingPaymentAttemptPayment,
   type BillingPaymentAttemptState,
   type BillingPaymentAttemptStatus,
+  type BillingPaymentRefusalCode,
+  BillingPaymentRefusedError,
   type BillingProvider,
   type BillingProviderCapabilities,
   type BillingProviderChargeInput,

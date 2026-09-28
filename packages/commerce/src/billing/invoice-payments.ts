@@ -17,11 +17,17 @@ import {
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { InvoiceStatus } from '../types/index.js';
 import {
+  BillingPaymentRefusedError,
   type BillingProviderCheckoutSession,
   providerCapabilities,
 } from './provider.js';
 import type { BillingRuntime } from './runtime.js';
-import { deterministicId, normalizeCurrency, tenantKey } from './units.js';
+import {
+  deterministicId,
+  isUuid,
+  normalizeCurrency,
+  tenantKey,
+} from './units.js';
 
 export const INVOICE_PAYMENT_PURPOSE = 'invoice_payment';
 
@@ -99,13 +105,18 @@ export async function createInvoicePayment(
   // Authorize before anything about the invoice is revealed: a payer may
   // only learn about, and pay, its own invoices.
   const notFound = () =>
-    new Error(`Invoice ${input.invoiceId} was not found for this payer.`);
-  let invoice: Awaited<ReturnType<BillingRuntime['getInvoice']>>;
-  try {
-    invoice = await runtime.getInvoice(input.invoiceId);
-  } catch {
-    throw notFound();
-  }
+    new BillingPaymentRefusedError(
+      'not_found',
+      `Invoice ${input.invoiceId} was not found for this payer.`,
+    );
+  // Billing invoice ids are UUIDs: anything else cannot be one, and must not
+  // reach a UUID column as a failed cast. A failed lookup is a server error,
+  // never reported to the payer as "not found" (#3185).
+  if (!isUuid(input.invoiceId)) throw notFound();
+  const invoice = await withTenant({ tenantId: runtime.sellerTenantId }, () =>
+    runtime.invoices.get(input.invoiceId),
+  );
+  if (!invoice?.id) throw notFound();
   const [close] = await runtime.closes.list({
     where: {
       invoiceId: String(invoice.id),
@@ -126,12 +137,14 @@ export async function createInvoicePayment(
     throw new TenantIsolationError('Only the payer of an invoice can pay it.');
   }
   if (!PAYABLE.has(invoice.status)) {
-    throw new Error(
+    throw new BillingPaymentRefusedError(
+      'not_payable',
       `Invoice ${invoice.invoiceNumber} is ${invoice.status}; only sent, unpaid invoices can be paid.`,
     );
   }
   if (invoice.externalProvider !== runtime.provider.name) {
-    throw new Error(
+    throw new BillingPaymentRefusedError(
+      'not_payable',
       `Invoice ${invoice.invoiceNumber} was not issued by ${runtime.provider.name}.`,
     );
   }
@@ -150,7 +163,10 @@ export async function createInvoicePayment(
   );
   const amountDue = invoice.totalAmount - allocated;
   if (!Number.isSafeInteger(amountDue) || amountDue <= 0) {
-    throw new Error(`Invoice ${invoice.invoiceNumber} has nothing due.`);
+    throw new BillingPaymentRefusedError(
+      'nothing_due',
+      `Invoice ${invoice.invoiceNumber} has nothing due.`,
+    );
   }
   const currency = normalizeCurrency(invoice.currency);
   const key = await deterministicId([
@@ -175,7 +191,8 @@ export async function createInvoicePayment(
   // the gateway, whose creation is idempotent by order id.
   const busy = live.find((row) => row.orderId && row.orderId !== orderId);
   if (busy) {
-    throw new Error(
+    throw new BillingPaymentRefusedError(
+      'payment_in_progress',
       `Invoice ${invoice.invoiceNumber} already has a payment in progress on ${busy.provider}.`,
     );
   }
