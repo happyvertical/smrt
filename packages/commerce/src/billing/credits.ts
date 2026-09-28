@@ -16,7 +16,10 @@ import {
   COLLECT_ADDRESS_METADATA,
   SAVE_CARD_METADATA,
 } from './cards.js';
-import type { BillingProviderCheckoutSession } from './provider.js';
+import {
+  type BillingProviderCheckoutSession,
+  providerCapabilities,
+} from './provider.js';
 import type { BillingRuntime } from './runtime.js';
 import {
   canonicalTenantId,
@@ -53,6 +56,11 @@ export interface CreateCreditCheckoutInput {
    * automatically charged invoices (#3139).
    */
   savePaymentMethod?: boolean;
+  /**
+   * The payment rail to pay with (a provider name from the runtime's
+   * `provider` or `paymentProviders`; default the issuing provider, #3138).
+   */
+  provider?: string;
 }
 
 /** The checkout metadata a completed purchase is settled from. */
@@ -153,6 +161,11 @@ export async function createCreditCheckout(
     throw new Error(`No billing account for payer ${payer}.`);
   }
   const currency = normalizeCurrency(policy.currency);
+  const provider = runtime.providerFor(input.provider);
+  const issuing = provider === runtime.provider;
+  if (!issuing && input.savePaymentMethod) {
+    throw new Error(`The ${provider.name} payment rail cannot save a card.`);
+  }
   // Saving a card needs a provider customer to attach it to; the address may
   // still be collected at checkout.
   // Saving a card is settled from the checkout event, so refuse a provider
@@ -178,14 +191,22 @@ export async function createCreditCheckout(
     runtime.sellerTenantId,
     String(policy.id),
     input.purchaseId,
+    // The issuing provider keeps the pre-#3138 key, so retries of existing
+    // purchases still return their checkout.
+    ...(issuing ? [] : [provider.name]),
   ]);
   const providerCustomerId =
     synced?.providerCustomerId ??
-    (account.provider === runtime.provider.name
-      ? account.providerCustomerId
-      : '');
+    (account.provider === provider.name ? account.providerCustomerId : '');
   const automaticTax =
     input.automaticTax ?? (await runtime.accountIsTaxed(account));
+  if (!issuing && automaticTax) {
+    // A payment rail cannot calculate tax (#3138). Selling untaxed credit on
+    // it is the host's explicit decision: pass `automaticTax: false`.
+    throw new Error(
+      `The ${provider.name} payment rail cannot charge tax; pass automaticTax: false to sell this payer untaxed credit on it.`,
+    );
+  }
   if (synced) metadata[SAVE_CARD_METADATA] = '1';
   // A taxed checkout for a provider customer collects the address onto that
   // customer; with no local tax location yet, it becomes the payer's (as a
@@ -194,12 +215,12 @@ export async function createCreditCheckout(
   if (
     automaticTax &&
     providerCustomerId &&
-    runtime.provider.getCheckout &&
+    provider.getCheckout &&
     !(await runtime.hasTaxLocation(account))
   ) {
     metadata[COLLECT_ADDRESS_METADATA] = '1';
   }
-  return runtime.provider.createCheckout({
+  const session = await provider.createCheckout({
     idempotencyKey: `smrt-credit-checkout:${key}`,
     providerCustomerId: providerCustomerId || undefined,
     customerEmail: providerCustomerId ? undefined : account.email || undefined,
@@ -212,4 +233,19 @@ export async function createCreditCheckout(
     automaticTax,
     ...(input.savePaymentMethod ? { savePaymentMethod: true } : {}),
   });
+  if (providerCapabilities(provider).paymentAttempts) {
+    await runtime.recordPaymentAttemptStart({
+      orderId: `smrt-credit-checkout:${key}`,
+      provider: provider.name,
+      checkoutId: session.sessionId,
+      checkoutUrl: session.url ?? '',
+      purpose: 'credit_purchase',
+      payerTenantId: payer,
+      billingAccountId: String(account.id),
+      spendingPolicyId: String(policy.id),
+      amount: input.amount,
+      currency,
+    });
+  }
+  return session;
 }

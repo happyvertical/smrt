@@ -56,6 +56,7 @@ interface FakeInvoice {
   amount_remaining: number;
   metadata: Record<string, string>;
   sent: number;
+  paid_out_of_band?: boolean;
 }
 
 interface FakeSession {
@@ -376,6 +377,19 @@ export class FakeStripe {
       if (match[2] === 'send') invoice.sent += 1;
       return { status: 200, body: this.view(invoice) };
     }
+    match = path.match(/^\/v1\/invoices\/([^/]+)\/pay$/);
+    if (match && method === 'POST') {
+      // Stripe `paid_out_of_band` (#3138): closed with nothing collected.
+      const invoice = this.invoices.get(match[1]);
+      if (!invoice) return { status: 404, body: { error: {} } };
+      if (body.paid_out_of_band !== 'true' || invoice.status !== 'open') {
+        return { status: 400, body: { error: { message: 'cannot pay' } } };
+      }
+      invoice.status = 'paid';
+      invoice.paid_out_of_band = true;
+      invoice.amount_remaining = 0;
+      return { status: 200, body: this.view(invoice) };
+    }
     match = path.match(/^\/v1\/invoices\/([^/]+)\/mark_uncollectible$/);
     if (match && method === 'POST') {
       const invoice = this.invoices.get(match[1]);
@@ -571,6 +585,7 @@ export class FakeStripe {
       status: invoice.status,
       currency: invoice.currency,
       metadata: invoice.metadata,
+      paid_out_of_band: invoice.paid_out_of_band === true,
     };
   }
 

@@ -63,6 +63,7 @@
   },
   "dependencies": {
     "@happyvertical/accounting": "catalog:",
+    "@happyvertical/payments": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",

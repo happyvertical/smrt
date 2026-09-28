@@ -142,6 +142,9 @@ export function createStripeBillingProvider(
   const markUncollectible = stripe.invoices.markUncollectible?.bind(
     stripe.invoices,
   );
+  const markPaidOutOfBand = stripe.invoices.markPaidOutOfBand?.bind(
+    stripe.invoices,
+  );
 
   const provider: BillingProvider = {
     name: 'stripe',
@@ -227,8 +230,17 @@ export function createStripeBillingProvider(
         subtotal: majorToMinorUnits(invoice.subtotal, currency),
         taxAmount: majorToMinorUnits(invoice.taxAmount, currency),
         total: majorToMinorUnits(invoice.totalAmount, currency),
-        amountPaid: majorToMinorUnits(invoice.amountPaid, currency),
-        amountDue: majorToMinorUnits(invoice.balance, currency),
+        // Closed out of band, Stripe collected nothing; the invoice is
+        // settled in full by whoever did (#3138).
+        amountPaid:
+          invoice.paidOutOfBand && status === 'paid'
+            ? majorToMinorUnits(invoice.totalAmount, currency)
+            : majorToMinorUnits(invoice.amountPaid, currency),
+        amountDue:
+          invoice.paidOutOfBand && status === 'paid'
+            ? 0
+            : majorToMinorUnits(invoice.balance, currency),
+        ...(invoice.paidOutOfBand ? { paidOutOfBand: true } : {}),
       };
     },
 
@@ -414,6 +426,12 @@ export function createStripeBillingProvider(
     provider.markInvoiceUncollectible = (providerInvoiceId) =>
       markUncollectible(providerInvoiceId);
   }
+  if (markPaidOutOfBand) {
+    // Closes an invoice a payment rail collected (#3138): Stripe stops its
+    // emails, dunning, and automatic charges.
+    provider.markInvoicePaidOutOfBand = (providerInvoiceId) =>
+      markPaidOutOfBand(providerInvoiceId);
+  }
   return provider;
 }
 
@@ -534,7 +552,8 @@ function stripeObject(event: WebhookEvent): Record<string, unknown> {
     : {};
 }
 
-const SIGNATURE_KEY = 'smrt_sig';
+/** Metadata key holding the `smrt_*` HMAC (shared with crypto rails, #3138). */
+export const SIGNATURE_KEY = 'smrt_sig';
 
 async function hmacHex(secret: string, message: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -563,7 +582,7 @@ function canonicalMetadata(metadata: Record<string, string>): string {
   );
 }
 
-async function signMetadata(
+export async function signMetadata(
   metadata: Record<string, string>,
   secret: string,
 ): Promise<Record<string, string>> {
@@ -576,7 +595,7 @@ async function signMetadata(
   };
 }
 
-async function metadataSignatureValid(
+export async function metadataSignatureValid(
   metadata: Record<string, string>,
   secret: string,
 ): Promise<boolean> {
@@ -594,7 +613,7 @@ async function metadataSignatureValid(
   return diff === 0;
 }
 
-function smrtMetadata(value: unknown): Record<string, string> {
+export function smrtMetadata(value: unknown): Record<string, string> {
   const result: Record<string, string> = {};
   if (!value || typeof value !== 'object') return result;
   for (const [key, entry] of Object.entries(value)) {

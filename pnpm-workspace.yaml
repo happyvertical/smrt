@@ -18,6 +18,7 @@ overrides:
   '@happyvertical/geo': ^0.94.1
   '@happyvertical/images': ^0.94.1
   '@happyvertical/jobs': ^0.94.1
+  '@happyvertical/payments': ^0.94.1
   '@happyvertical/json': ^0.94.1
   '@happyvertical/logger': ^0.94.1
   '@happyvertical/messages': ^0.94.1
@@ -156,6 +157,7 @@ catalog:
   '@happyvertical/geo': ^0.94.1
   '@happyvertical/images': ^0.94.1
   '@happyvertical/jobs': ^0.94.1
+  '@happyvertical/payments': ^0.94.1
   '@happyvertical/json': ^0.94.1
   '@happyvertical/logger': ^0.94.1
   '@happyvertical/messages': ^0.94.1

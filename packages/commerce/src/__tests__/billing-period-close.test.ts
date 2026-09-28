@@ -113,13 +113,17 @@ describe('smrt#3060 billing-period close', () => {
       'BillingAccount',
       'BillingPeriodClose',
       'BillingLineSource',
+      'BillingPaymentAttempt',
       'BillingRuntime',
+      'createBtcPayBillingProvider',
+      'createCryptoBillingProvider',
       'createStripeBillingProvider',
       'registerBillingRuntime',
     ]) {
       expect(commerceRoot, name).toHaveProperty(name);
     }
     expect('BillingLineSourceCollection' in commerceRoot).toBe(false);
+    expect('BillingPaymentAttemptCollection' in commerceRoot).toBe(false);
   });
 
   it('invoices flat and usage lines per billing owner, pushes them with provider tax, and posts revenue', async () => {

@@ -100,6 +100,23 @@ for usage.
   `WRITTEN_OFF` (a later payment is recorded; the status stays).
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is
   server-managed (not API-writable). `toAccountingInput()` emits major units.
+- **Payment rails (#3138).** A runtime has one issuing `provider` and any
+  number of `paymentProviders` (unique names, one inbox namespace each; a
+  provider with `capabilities.issuesInvoices === false` can never issue).
+  `observe()` resolves the provider from the delivery namespace, never the
+  payload. Crypto rails implement the port over `@happyvertical/payments`'
+  `CryptoCheckoutGateway`; never call BTCPay (or any gateway) from here.
+  Settlement is decided by the pure `decideAttempt()` from gateway state and
+  `paymentPolicy` — the gateway's `settled` is authoritative and nothing here
+  counts confirmations. A `BillingPaymentAttempt` (`(provider, checkout_id)`
+  deterministic id) records every state and settles once; grants and payments
+  are keyed by checkout id. Invoice payments close the issuer's invoice out of
+  band in `observe()` (idempotent) before `project()` records the payment, and
+  `settlePaidInvoice` skips (records nothing for) a `paidOutOfBand` invoice
+  the rail latched with `outOfBandRequestedAt`; other out-of-band closes are
+  recorded as `OTHER` payments. Rails never save cards or charge tax: a taxed
+  credit purchase on a rail needs an explicit `automaticTax: false`. Exceptions are flags for operators;
+  nothing reverses or refunds automatically.
 - **Known limits**: write-offs post no bad-debt journal (AR stays until paid
   or journaled by an operator); discounts still reach Stripe as negative lines (the SDK's
   line `discount` would change the lines a replayed push reconciles, so it
