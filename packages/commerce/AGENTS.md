@@ -96,7 +96,9 @@ for usage.
   the `payment` webhook settle once; the grant is keyed by the charge key.
   Never settle an attempt outside that function. Taxed accounts are skipped
   unless `taxedAccounts: 'charge_untaxed'` (no tax on off-session charges,
-  happyvertical/sdk#1283). A provider write-off moves the local invoice to
+  happyvertical/sdk#1283). `claimAttempt()` is the only place that decides a
+  skip and reports it (`onAutoTopUpSkipped`); `cardOnFile()` and period close
+  use `defaultCardInstrument()` — never copy that predicate. A provider write-off moves the local invoice to
   `WRITTEN_OFF` (a later payment is recorded; the status stays).
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is
   server-managed (not API-writable). `toAccountingInput()` emits major units.

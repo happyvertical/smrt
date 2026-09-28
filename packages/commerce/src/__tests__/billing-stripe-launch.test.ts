@@ -25,6 +25,7 @@ import { BillingRuntime } from '../billing/runtime.js';
 import {
   type AutoTopUpFailure,
   type AutoTopUpHookOptions,
+  type AutoTopUpSkip,
   applyAutoTopUpOutcome,
 } from '../billing/top-up.js';
 import {
@@ -1206,6 +1207,133 @@ describe('smrt#3139 Stripe launch billing', () => {
         500,
       ]);
       expect((await sellerPayments())[0]?.status).toBe(PaymentStatus.COMPLETED);
+    });
+
+    it('reports why a needed top-up is skipped, but not while one is in flight (#3189)', async () => {
+      const skips: AutoTopUpSkip[] = [];
+      const onAutoTopUpSkipped = (skip: AutoTopUpSkip) => {
+        skips.push(skip);
+      };
+      const reasons = () => skips.map((skip) => skip.reason);
+      const policy = await balancePolicy(SOLO);
+      // An account without a provider customer yet.
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(skips).toEqual([
+        {
+          sellerTenantId: PROVIDER,
+          payerTenantId: SOLO,
+          spendingPolicyId: String(policy.id),
+          currency: 'USD',
+          shortfall: 500,
+          reason: 'no_account',
+        },
+      ]);
+      skips.length = 0;
+      // Untaxed with a provider customer, but no card saved yet.
+      const account = await world.provider.getAccount(SOLO);
+      if (!account) throw new Error('missing account');
+      await world.provider.ensureProviderCustomer(account, {
+        requireTaxLocation: false,
+      });
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(reasons()).toEqual(['no_card']);
+      // Taxed, with a card.
+      await saveCard(SOLO, 'pm_skip_taxed', 'processing');
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: true,
+        }),
+      );
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(reasons()).toEqual(['no_card', 'taxed_account']);
+      // Charged (still processing): the live attempt is not a skip.
+      await spend(
+        evaluator({ onAutoTopUpSkipped, taxedAccounts: 'charge_untaxed' }),
+        SOLO,
+        500,
+      );
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(reasons()).toEqual(['no_card', 'taxed_account']);
+      // A payer without a billing account.
+      await balancePolicy(STRANGER);
+      await spend(evaluator({ onAutoTopUpSkipped }), STRANGER, 500);
+      expect(skips.at(-1)).toMatchObject({
+        payerTenantId: STRANGER,
+        reason: 'no_account',
+      });
+    });
+
+    it('does not report a skip for a top-up the host declines or no longer needs (#3189)', async () => {
+      const skips: AutoTopUpSkip[] = [];
+      const onAutoTopUpSkipped = (skip: AutoTopUpSkip) => {
+        skips.push(skip);
+      };
+      await balancePolicy(SOLO);
+      // No provider customer, and the host's amount declines the top-up.
+      await spend(
+        evaluator({ onAutoTopUpSkipped, amount: () => 0 }),
+        SOLO,
+        500,
+      );
+      // Taxed with a card, and the host's amount declines the top-up.
+      await saveCard(SOLO, 'pm_skip_declined_amount');
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: true,
+        }),
+      );
+      await spend(
+        evaluator({ onAutoTopUpSkipped, amount: () => 0 }),
+        SOLO,
+        500,
+      );
+      expect(skips).toEqual([]);
+      expect(world.stripe.paymentIntents.size).toBe(0);
+      // Without the host's opt-out the same evaluation is a reported skip.
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(skips.map((skip) => skip.reason)).toEqual(['taxed_account']);
+    });
+
+    it('does not report a skip for a charge in flight when the provider customer is gone (#3189)', async () => {
+      const skips: AutoTopUpSkip[] = [];
+      const onAutoTopUpSkipped = (skip: AutoTopUpSkip) => {
+        skips.push(skip);
+      };
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_in_flight', 'processing');
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      const account = await world.provider.getAccount(SOLO);
+      await world.db.query(
+        'UPDATE _smrt_billing_accounts SET provider_customer_id = ? WHERE id = ?',
+        '',
+        String(account?.id),
+      );
+      await spend(
+        evaluator({ onAutoTopUpSkipped, recheckAfterMs: 0 }),
+        SOLO,
+        500,
+      );
+      expect(skips).toEqual([]);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+    });
+
+    it('does not report a skip while a declined card waits to retry (#3189)', async () => {
+      const skips: AutoTopUpSkip[] = [];
+      const onAutoTopUpSkipped = (skip: AutoTopUpSkip) => {
+        skips.push(skip);
+      };
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_skip_declined', 'decline');
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      await spend(evaluator({ onAutoTopUpSkipped }), SOLO, 500);
+      expect(world.stripe.paymentIntents.size).toBe(1);
+      expect(skips).toEqual([]);
     });
 
     it('does not top up a taxed payer unless the seller opts in', async () => {

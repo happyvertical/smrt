@@ -100,6 +100,9 @@ export type {
   AutoTopUpFailure,
   AutoTopUpFailureHook,
   AutoTopUpHookOptions,
+  AutoTopUpSkip,
+  AutoTopUpSkipHook,
+  AutoTopUpSkipReason,
 } from './top-up.js';
 export {
   currencyMinorUnitExponent,

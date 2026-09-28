@@ -357,7 +357,13 @@ const evaluator = await SpendingPolicyEvaluator.create({
 - **Automatic top-ups.** Taxed accounts (the default: `automaticTax` on, not
   tax-exempt) are never topped up unless the hook is built with
   `taxedAccounts: 'charge_untaxed'`, because an off-session charge carries no
-  tax yet (happyvertical/sdk#1283); the skip is silent (no attempt row).
+  tax yet (happyvertical/sdk#1283); the skip records no attempt row. Pass
+  `onAutoTopUpSkipped` to learn when a needed top-up will not be charged
+  because of the payer's account — `reason` is `taxed_account`, `no_card`,
+  or `no_account` (more may be added) — for example to ask the payer to top
+  up by hand; it is not called while a charge is processing, while a
+  declined card waits out `retryAfterMs`, or when the top-up is no longer
+  needed or `amount` declines it (#3189).
   `billing.autoTopUpHook()` is the `autoTopUp` hook for
   `SpendingPolicyEvaluator`: when a balance would run out it charges the
   payer's saved card off-session (the delegating parent's, for a delegated
