@@ -301,6 +301,188 @@ export class BillingLineSource extends SmrtObject {
   periodEnd: Date | null = null;
 }
 
+/** Why a payment attempt was taken (#3138). */
+export type BillingPaymentAttemptPurpose =
+  | 'credit_purchase'
+  | 'invoice_payment';
+
+/**
+ * Something about an attempt that an operator must resolve (#3138). Empty
+ * when nothing needs attention.
+ */
+export type BillingPaymentAttemptFlag =
+  | ''
+  | 'overpaid'
+  | 'underpaid'
+  | 'paid_late'
+  | 'manually_marked'
+  | 'invalidated_after_settlement'
+  | 'invoice_already_paid'
+  | 'amount_mismatch'
+  /** The issuer's invoice was closed out of band but the payment never settled. */
+  | 'out_of_band_without_settlement';
+
+/** One entry of an attempt's append-only status history. */
+export interface BillingPaymentAttemptTransition {
+  at: string;
+  status: string;
+  exception: string;
+  source: 'created' | 'webhook' | 'poll';
+}
+
+/**
+ * One payment attempt on a payment rail (#3138): a short-lived provider
+ * checkout (for example a BTCPay invoice) paying a credit purchase or an
+ * issued invoice. It records everything the provider reported — the locked
+ * fiat price, the native amounts, rate and source, each payment's txid and
+ * fee — plus a timeline of status transitions and what settlement produced.
+ * Its id is derived from `(provider, checkoutId)`.
+ */
+@smrt({
+  tableName: '_smrt_billing_payment_attempts',
+  conflictColumns: ['provider', 'checkout_id'],
+  api: false,
+  cli: false,
+  mcp: false,
+})
+export class BillingPaymentAttempt extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-users:Tenant')
+  @field({ required: true })
+  sellerTenantId: string = '';
+  @crossPackageRef('@happyvertical/smrt-users:Tenant')
+  @field({ required: true })
+  payerTenantId: string = '';
+  billingAccountId: string = '';
+  purpose: BillingPaymentAttemptPurpose = 'credit_purchase';
+  /** The invoice paid (`invoice_payment`). */
+  invoiceId: string = '';
+  /** The balance credited (`credit_purchase`). */
+  spendingPolicyId: string = '';
+  /** Provider (rail) name, for example `btcpay`. */
+  provider: string = '';
+  /** The rail order id (checkout idempotency key) the checkout was made for. */
+  orderId: string = '';
+  checkoutId: string = '';
+  status: string = 'open';
+  exception: string = 'none';
+  flag: BillingPaymentAttemptFlag = '';
+  /** Locked fiat price, integer minor units. */
+  amount: number = 0;
+  currency: string = 'USD';
+  /** Fiat value received at the locked rate, minor units (rounded down). */
+  amountPaid: number = 0;
+  nativeCurrency: string = '';
+  /** Native minor units (satoshis). */
+  nativeAmountDue: number = 0;
+  nativeAmountPaid: number = 0;
+  rate: string = '';
+  rateSource: string = '';
+  checkoutUrl: string = '';
+  @field({ type: 'datetime', nullable: true })
+  expiresAt: Date | null = null;
+  /** The provider's payments (JSON). */
+  payments: Record<string, unknown>[] = [];
+  /** Append-only status history (JSON). */
+  timeline: BillingPaymentAttemptTransition[] = [];
+  @field({ type: 'datetime', nullable: true })
+  settledAt: Date | null = null;
+  /** The commerce `Payment` settlement recorded. */
+  paymentId: string = '';
+  /** The credit grant settlement recorded. */
+  creditGrantId: string = '';
+  /** An operator's note when resolving a flag. */
+  resolution: string = '';
+  @field({ type: 'datetime', nullable: true })
+  resolvedAt: Date | null = null;
+  /**
+   * Set before the issuer's invoice is closed out of band, so the issuer's
+   * own `paid` event waits for this settlement instead of recording one.
+   */
+  @field({ type: 'datetime', nullable: true })
+  outOfBandRequestedAt: Date | null = null;
+  /**
+   * The most severe standing an issuer event asked for while this payment
+   * was confirming (dunning paused); re-applied if it ends unsettled.
+   */
+  pausedStanding: string = '';
+  /** Fiat received above the price, booked as customer credit (minor units). */
+  excessAmount: number = 0;
+  /** Number of excess adjustments posted (keys each adjustment journal). */
+  excessRevision: number = 0;
+  /**
+   * How settlement booked the price: `credit` (prepaid credit, or customer
+   * credit for an invoice already paid elsewhere — refundable) or `applied`
+   * (allocated to its invoice — not refundable here).
+   */
+  settlementOutcome: string = '';
+  /** Refunds recorded by operators, total (minor units). */
+  refundedAmount: number = 0;
+  /** The part of `refundedAmount` taken from the price, not the excess. */
+  refundedPrincipal: number = 0;
+  /** Refund records (JSON): reference, amount, basis, journal, at. */
+  refunds: Record<string, unknown>[] = [];
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    this.sellerTenantId = canonicalTenantId(
+      this.sellerTenantId,
+      'sellerTenantId',
+    );
+    this.payerTenantId = canonicalTenantId(this.payerTenantId, 'payerTenantId');
+    this.currency = normalizeCurrency(this.currency);
+    if (
+      this.purpose !== 'credit_purchase' &&
+      this.purpose !== 'invoice_payment'
+    ) {
+      throw new Error('Payment attempt purpose is invalid.');
+    }
+    if (!this.provider || !this.checkoutId) {
+      throw new Error('Payment attempts require a provider and checkoutId.');
+    }
+    for (const value of [
+      this.amount,
+      this.amountPaid,
+      this.nativeAmountDue,
+      this.nativeAmountPaid,
+      this.excessAmount,
+      this.refundedAmount,
+      this.refundedPrincipal,
+    ]) {
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new Error('Payment attempt amounts must be minor units.');
+      }
+    }
+  }
+
+  /** The timeline, tolerating a JSON string from the database. */
+  get transitions(): BillingPaymentAttemptTransition[] {
+    return jsonArray(this.timeline) as BillingPaymentAttemptTransition[];
+  }
+
+  /** The recorded payments, tolerating a JSON string from the database. */
+  get paymentRecords(): Record<string, unknown>[] {
+    return jsonArray(this.payments) as Record<string, unknown>[];
+  }
+
+  /** The recorded refunds, tolerating a JSON string from the database. */
+  get refundRecords(): Record<string, unknown>[] {
+    return jsonArray(this.refunds) as Record<string, unknown>[];
+  }
+}
+
+function jsonArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export class BillingAccountCollection extends SmrtCollection<BillingAccount> {
   static readonly _itemClass = BillingAccount;
 }
@@ -309,4 +491,7 @@ export class BillingPeriodCloseCollection extends SmrtCollection<BillingPeriodCl
 }
 export class BillingLineSourceCollection extends SmrtCollection<BillingLineSource> {
   static readonly _itemClass = BillingLineSource;
+}
+export class BillingPaymentAttemptCollection extends SmrtCollection<BillingPaymentAttempt> {
+  static readonly _itemClass = BillingPaymentAttempt;
 }
