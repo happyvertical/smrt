@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { importProjectVite } from './import-project-vite.js';
 
@@ -45,6 +45,14 @@ describe('importProjectVite (#3181)', () => {
     );
   });
 
+  it('accepts a project root relative to the working directory', async () => {
+    const root = await project({ '.': './dist/node/index.js' });
+    const vite = await importProjectVite(relative(process.cwd(), root), 'test');
+    expect((vite.build as unknown as () => string)()).toBe(
+      `project vite:${root}`,
+    );
+  });
+
   it('follows conditional exports to the ESM entry', async () => {
     const root = await project({
       '.': { types: './dist/node/index.d.ts', import: './dist/node/index.js' },
@@ -58,17 +66,11 @@ describe('importProjectVite (#3181)', () => {
 
   it('names the purpose when the application has no Vite', async () => {
     // Node's global folders (NODE_PATH, set by pnpm bin shims) can supply a
-    // hoisted Vite for any directory, so simulate a failed resolution.
+    // hoisted Vite for any directory, so simulate an empty lookup.
     vi.resetModules();
     vi.doMock('node:module', async (importOriginal) => ({
       ...(await importOriginal<typeof import('node:module')>()),
-      createRequire: () => ({
-        resolve: () => {
-          throw Object.assign(new Error("Cannot find module 'vite'"), {
-            code: 'MODULE_NOT_FOUND',
-          });
-        },
-      }),
+      createRequire: () => ({ resolve: { paths: () => [] } }),
     }));
     const { importProjectVite: isolated } = await import(
       './import-project-vite.js'

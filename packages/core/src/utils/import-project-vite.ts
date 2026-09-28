@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -18,7 +18,8 @@ function esmEntry(target: ExportTarget | undefined): string | null {
 }
 
 /**
- * Imports the Vite installed in the application at `projectRoot`.
+ * Imports the Vite installed in the application at `projectRoot` (absolute,
+ * or relative to the current working directory).
  *
  * smrt-core does not depend on Vite at runtime (happyvertical/smrt#3181): a
  * `vite` dependency makes pnpm resolve smrt-core once per peer set of Vite's
@@ -31,15 +32,18 @@ export async function importProjectVite(
   projectRoot: string,
   purpose: string,
 ): Promise<ViteModule> {
-  let manifestPath: string;
-  try {
-    manifestPath = createRequire(join(projectRoot, 'package.json')).resolve(
-      'vite/package.json',
-    );
-  } catch (error) {
+  // Node's own lookup order from the application root (its node_modules
+  // ancestors, then global folders). Finding the package directory directly
+  // does not depend on vite exporting `./package.json`.
+  const lookup =
+    createRequire(resolve(projectRoot, 'package.json')).resolve.paths('vite') ??
+    [];
+  const manifestPath = lookup
+    .map((dir) => join(dir, 'vite', 'package.json'))
+    .find((candidate) => existsSync(candidate));
+  if (!manifestPath) {
     throw new Error(
       `[smrt] ${purpose} needs Vite, but 'vite' is not installed in ${projectRoot}. Add vite to the application's devDependencies.`,
-      { cause: error },
     );
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
