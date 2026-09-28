@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.51.34
+
+### Patch Changes
+
+- ### Features
+  
+  - crypto (BTC) payment rail for BillingRuntime (#3146) (commerce)
+- @happyvertical/smrt-config@0.51.34
+  - @happyvertical/smrt-scanner@0.51.34
+  - @happyvertical/smrt-types@0.51.34
+
 ## 0.51.33
 
 ### Patch Changes
