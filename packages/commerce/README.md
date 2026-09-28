@@ -345,7 +345,10 @@ const evaluator = await SpendingPolicyEvaluator.create({
   completion the card becomes the provider customer's default and the
   payer's default `PaymentInstrument`. When the checkout collected the billing
   address (a taxed payer with no tax location), it becomes the payer's tax
-  location.
+  location. `cardOnFile(payerTenantId)` returns `{ onFile, savedAt? }` from
+  the same check automatic charges use (a default card with the account's
+  provider customer), for "card on file" displays and signup activation;
+  the payer or a system context may call it (#3187).
 - **Automatically charged invoices.** With `autoChargeInvoices: true` on the
   runtime, a payer with a default card is invoiced `charge_automatically`:
   the provider charges the card after the invoice is sent, on its own
@@ -354,7 +357,13 @@ const evaluator = await SpendingPolicyEvaluator.create({
 - **Automatic top-ups.** Taxed accounts (the default: `automaticTax` on, not
   tax-exempt) are never topped up unless the hook is built with
   `taxedAccounts: 'charge_untaxed'`, because an off-session charge carries no
-  tax yet (happyvertical/sdk#1283); the skip is silent (no attempt row).
+  tax yet (happyvertical/sdk#1283); the skip records no attempt row. Pass
+  `onAutoTopUpSkipped` to learn when a needed top-up will not be charged
+  because of the payer's account — `reason` is `taxed_account`, `no_card`,
+  or `no_account` (more may be added) — for example to ask the payer to top
+  up by hand; it is not called while a charge is processing, while a
+  declined card waits out `retryAfterMs`, or when the top-up is no longer
+  needed or `amount` declines it (#3189).
   `billing.autoTopUpHook()` is the `autoTopUp` hook for
   `SpendingPolicyEvaluator`: when a balance would run out it charges the
   payer's saved card off-session (the delegating parent's, for a delegated
@@ -415,6 +424,14 @@ await billing.acceptWebhook(rawBody, '', { provider: 'btcpay', headers: request.
 await billing.processEvents();
 ```
 
+- **Refusals are typed (#3185).** `createInvoicePayment()` and
+  `createCreditCheckout()` throw `BillingPaymentRefusedError` for requests the
+  payer can correct, with a stable `code`: `not_found`, `not_payable`,
+  `payment_in_progress`, `nothing_due`, `invalid_amount`, `below_minimum`
+  (under the rail's `minimumAmount`), or `no_account`. Show its message as a
+  4xx; any other error is a server failure, and `TenantIsolationError` still
+  means the caller is not the payer. Treat an unknown code like
+  `not_payable`.
 - **Settlement is the gateway's.** Credit is granted and invoices are paid
   only when the gateway reports `settled` under its own confirmation policy;
   this package never counts confirmations. BTCPay offers 0, 1, 2 or 6
@@ -423,8 +440,10 @@ await billing.processEvents();
   recording the locked fiat price, fiat and native amounts received, rate and
   rate source, each payment's txid, rail and fee, a timeline of status changes,
   and what settlement produced. `listPaymentAttempts()` feeds "payment
-  confirming" displays and operator queues; `refreshPaymentAttempts()` is the
-  polling fallback for missed webhooks.
+  confirming" displays and operator queues; every filter applies before its
+  `limit` and `offset`, so paging through `{ unresolved: true }` lists every
+  open exception (flagged, not yet resolved) however old. `refreshPaymentAttempts()` is the polling
+  fallback for missed webhooks.
 - **Dunning pauses** for an invoice while a payment for it is confirming
   (0-conf seen); if the payment then expires or is invalidated the payer's
   standing is re-applied.

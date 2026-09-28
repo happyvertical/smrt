@@ -19,6 +19,7 @@ import {
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { PaymentInstrumentCollection } from '../collections/PaymentInstrumentCollection.js';
 import type { BillingAccount } from '../models/billing.js';
+import type { PaymentInstrument } from '../models/PaymentInstrument.js';
 import { PaymentInstrumentStatus } from '../types/index.js';
 import type {
   BillingProviderCheckoutSession,
@@ -170,13 +171,25 @@ export async function savedCardFromCheckout(
   if (
     !account?.id ||
     tenantKey(account.sellerTenantId) !== runtime.sellerTenantId ||
-    tenantKey(account.payerTenantId) !== tenantKey(metadata.smrt_payer) ||
+    tenantKey(account.payerTenantId) !== tenantKey(metadata.smrt_payer)
+  ) {
+    throw new Error(
+      `Checkout ${state.sessionId} does not belong to the billing account in its metadata.`,
+    );
+  }
+  if (
     account.provider !== runtime.provider.name ||
     !account.providerCustomerId ||
     state.providerCustomerId !== account.providerCustomerId
   ) {
+    // The account's provider customer changed while the checkout was open
+    // (#3152). A saved card would attach to the wrong customer, so that
+    // fails visibly; an address collected for a credit purchase is skipped
+    // (the next checkout or card setup collects it again) so the credit the
+    // payer paid for still settles.
+    if (!paymentMethodId) return null;
     throw new Error(
-      `Checkout ${state.sessionId} saved a card for a customer that is not its billing account's.`,
+      `Checkout ${state.sessionId} saved a card for provider customer ${state.providerCustomerId ?? '(none)'}, not its billing account's.`,
     );
   }
   return {
@@ -250,21 +263,72 @@ async function recordInstrument(
 }
 
 /**
- * Whether the payer's default card is with this runtime's provider customer:
- * what `autoChargeInvoices` bills and automatic top-ups charge.
+ * The payer's default card when it is with this runtime's provider customer,
+ * else null: what `autoChargeInvoices` bills and automatic top-ups charge.
  */
+export async function defaultCardInstrument(
+  runtime: BillingRuntime,
+  account: BillingAccount,
+  providerCustomerId: string,
+): Promise<PaymentInstrument | null> {
+  const instrument = await withTenant(
+    { tenantId: runtime.sellerTenantId },
+    () => runtime.instruments.findDefaultForCustomer(account.customerId),
+  );
+  return instrument?.isActive() &&
+    instrument.backendId === runtime.provider.name &&
+    instrument.providerCustomerId === providerCustomerId
+    ? instrument
+    : null;
+}
+
+/** Whether {@link defaultCardInstrument} finds a card. */
 export async function defaultCardFor(
   runtime: BillingRuntime,
   account: BillingAccount,
   providerCustomerId: string,
 ): Promise<boolean> {
-  const instrument = await withTenant(
-    { tenantId: runtime.sellerTenantId },
-    () => runtime.instruments.findDefaultForCustomer(account.customerId),
-  );
   return Boolean(
-    instrument?.isActive() &&
-      instrument.backendId === runtime.provider.name &&
-      instrument.providerCustomerId === providerCustomerId,
+    await defaultCardInstrument(runtime, account, providerCustomerId),
   );
+}
+
+/** Whether a payer has a card on file, and since when (#3187). */
+export interface BillingCardOnFile {
+  /**
+   * The payer has a default card with this runtime's provider customer: the
+   * card automatically charged invoices bill and automatic top-ups charge.
+   */
+  onFile: boolean;
+  /** When that card was first recorded. */
+  savedAt?: Date;
+}
+
+/** See {@link BillingRuntime.cardOnFile}. */
+export async function cardOnFile(
+  runtime: BillingRuntime,
+  payerTenantId: string,
+): Promise<BillingCardOnFile> {
+  const payer = canonicalTenantId(payerTenantId, 'payerTenantId');
+  assertPayerContext(payer);
+  const account = await runtime.getAccount(payer);
+  if (
+    !account?.id ||
+    account.provider !== runtime.provider.name ||
+    !account.providerCustomerId
+  ) {
+    return { onFile: false };
+  }
+  const instrument = await defaultCardInstrument(
+    runtime,
+    account,
+    account.providerCustomerId,
+  );
+  if (!instrument) return { onFile: false };
+  const created = instrument.created_at;
+  const savedAt =
+    created instanceof Date ? created : created ? new Date(created) : null;
+  return savedAt && Number.isFinite(savedAt.getTime())
+    ? { onFile: true, savedAt }
+    : { onFile: true };
 }

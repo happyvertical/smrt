@@ -80,6 +80,39 @@ export type AutoTopUpFailureHook = (
   failure: AutoTopUpFailure,
 ) => void | Promise<void>;
 
+/**
+ * Why a needed top-up will not be charged (#3189). New reasons may be added in
+ * a minor release (for example when taxed off-session charges become
+ * possible, happyvertical/sdk#1283); treat an unknown reason like `no_card`.
+ *
+ * - `taxed_account`: the payer's account is taxed and the hook was built with
+ *   `taxedAccounts: 'skip'` (the default).
+ * - `no_card`: the payer has no default card with this provider customer
+ *   (see `BillingRuntime.cardOnFile`).
+ * - `no_account`: the payer has no billing account or provider customer yet.
+ */
+export type AutoTopUpSkipReason = 'taxed_account' | 'no_card' | 'no_account';
+
+/** A top-up the balance needed that will not be charged. */
+export interface AutoTopUpSkip {
+  sellerTenantId: string;
+  /** Who would have been charged (the delegating parent, if delegated). */
+  payerTenantId: string;
+  spendingPolicyId: string;
+  currency: string;
+  /** The shortfall still to cover, recomputed at the skip, minor units. */
+  shortfall: number;
+  reason: AutoTopUpSkipReason;
+}
+
+/**
+ * Host hook for a skipped top-up, for example to ask the payer to top up by
+ * hand. It runs on the spending evaluation's path, on every evaluation that
+ * needed a top-up and was skipped, so dedupe notifications and keep it
+ * cheap; an error it throws fails the evaluation.
+ */
+export type AutoTopUpSkipHook = (skip: AutoTopUpSkip) => void | Promise<void>;
+
 export interface AutoTopUpHookOptions {
   /**
    * How much to charge, in integer minor units of the policy currency.
@@ -110,6 +143,15 @@ export interface AutoTopUpHookOptions {
    * account for tax on this credit elsewhere.
    */
   taxedAccounts?: 'skip' | 'charge_untaxed';
+  /**
+   * Called when no charge will be made for a needed top-up because of the
+   * payer's account (#3189): see {@link AutoTopUpSkipReason}. It is not
+   * called while an attempt is still processing, while a declined card waits
+   * out `retryAfterMs` (`onAutoTopUpFailed` already reported it), when the
+   * recomputed shortfall is already covered, or when `amount` returns 0
+   * (which is evaluated first, as for a charge).
+   */
+  onAutoTopUpSkipped?: AutoTopUpSkipHook;
 }
 
 /** The outcome of a charge, from the provider's result or its webhook. */
@@ -165,6 +207,10 @@ export function createAutoTopUpHook(
     const attempt = await withSystemContext(() =>
       claimAttempt(runtime, request, options, retryAfterMs, recheckAfterMs),
     );
+    if (attempt && 'skip' in attempt) {
+      await options.onAutoTopUpSkipped?.(attempt.skip);
+      return null;
+    }
     if (!attempt) return null;
     const { payment, payerTenantId, providerCustomerId } = attempt;
     const paymentId = String(payment.id);
@@ -205,13 +251,17 @@ interface ClaimedAttempt {
   providerCustomerId: string;
 }
 
+interface SkippedAttempt {
+  skip: AutoTopUpSkip;
+}
+
 async function claimAttempt(
   runtime: BillingRuntime,
   request: AutoTopUpRequest,
   options: AutoTopUpHookOptions,
   retryAfterMs: number,
   recheckAfterMs: number,
-): Promise<ClaimedAttempt | null> {
+): Promise<ClaimedAttempt | SkippedAttempt | null> {
   const policy = await runtime.policies.get(request.policyId);
   if (!policy?.id || policy.period !== 'balance' || !policy.active) {
     return null;
@@ -223,15 +273,42 @@ async function claimAttempt(
     tenantKey(policy.setByTenantId) || String(policy.tenantId),
     'payerTenantId',
   );
-  const account = await runtime.getAccount(payerTenantId);
-  if (
-    !account?.id ||
-    account.provider !== runtime.provider.name ||
-    !account.providerCustomerId
-  ) {
-    return null; // No provider customer, so no saved card to charge.
-  }
-  const providerCustomerId = account.providerCustomerId;
+  // What a top-up would charge now, or null when none is needed: another
+  // evaluation may have topped the balance up since this one read it (its
+  // attempt is completed, so its grant is visible), and `amount` may decline.
+  // A skip is reported only for a top-up that is still needed (#3189).
+  const needed = async (): Promise<{
+    shortfall: number;
+    requested: number;
+  } | null> => {
+    const shortfall = request.currentShortfall
+      ? await request.currentShortfall()
+      : request.shortfall;
+    if (shortfall <= 0) return null;
+    const requested = options.amount
+      ? await options.amount({ ...request, shortfall })
+      : shortfall;
+    if (!requested) return null;
+    if (!Number.isSafeInteger(requested) || requested <= 0) {
+      throw new Error(
+        'Auto top-up amount must be positive integer minor units.',
+      );
+    }
+    return { shortfall, requested };
+  };
+  const skipped = (
+    reason: AutoTopUpSkipReason,
+    shortfall: number,
+  ): SkippedAttempt => ({
+    skip: {
+      sellerTenantId: runtime.sellerTenantId,
+      payerTenantId,
+      spendingPolicyId: String(policy.id),
+      currency,
+      shortfall,
+      reason,
+    },
+  });
   const payments = await PaymentCollection.create({ db: runtime.db });
   const where = {
     tenantId: runtime.sellerTenantId,
@@ -259,10 +336,17 @@ async function claimAttempt(
     throw new Error(`Auto top-up attempt ${sequence - 1} is missing.`);
   }
   const now = Date.now();
+  const account = await runtime.getAccount(payerTenantId);
+  const providerCustomerId =
+    account?.id && account.provider === runtime.provider.name
+      ? account.providerCustomerId
+      : '';
   if (latest?.status === PaymentStatus.PENDING) {
     // One live attempt per policy: re-drive it (same key, same amount) only
-    // when it has not been checked recently.
-    if (now - timeOf(latest) < recheckAfterMs) return null;
+    // when it has not been checked recently. Never a reported skip (#3189).
+    if (now - timeOf(latest) < recheckAfterMs || !providerCustomerId) {
+      return null;
+    }
     return { payment: latest, payerTenantId, providerCustomerId };
   }
   if (
@@ -272,6 +356,12 @@ async function claimAttempt(
     return null;
   }
 
+  const need = await needed();
+  if (!need) return null;
+  if (!account?.id || !providerCustomerId) {
+    // No provider customer, so no saved card to charge.
+    return skipped('no_account', need.shortfall);
+  }
   // New charges only (an attempt already charged is still re-driven above):
   // no tax on an off-session charge, so a taxed account is never silently
   // charged untaxed.
@@ -279,25 +369,14 @@ async function claimAttempt(
     options.taxedAccounts !== 'charge_untaxed' &&
     (await runtime.accountIsTaxed(account))
   ) {
-    return null;
+    return skipped('taxed_account', need.shortfall);
   }
   // Only a payer with a card on file is charged (no failed attempt per
   // shortfall for payers who never saved one).
   if (!(await defaultCardFor(runtime, account, providerCustomerId))) {
-    return null;
+    return skipped('no_card', need.shortfall);
   }
-  // Another evaluation may have topped the balance up since this one read it
-  // (its attempt is completed, so its grant is visible): recompute.
-  const shortfall = request.currentShortfall
-    ? await request.currentShortfall()
-    : request.shortfall;
-  if (shortfall <= 0) return null;
-  const current = { ...request, shortfall };
-  const requested = options.amount ? await options.amount(current) : shortfall;
-  if (!requested) return null;
-  if (!Number.isSafeInteger(requested) || requested <= 0) {
-    throw new Error('Auto top-up amount must be positive integer minor units.');
-  }
+  const requested = need.requested;
   const id = await attemptId(sequence);
   try {
     const payment = await payments.create({

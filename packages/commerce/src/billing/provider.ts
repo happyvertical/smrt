@@ -443,6 +443,44 @@ export class BillingProviderUnsupportedError extends Error {
   }
 }
 
+/**
+ * Why a payer's payment request was refused (#3185). New codes may be added
+ * in a minor release; treat an unknown code like `not_payable`.
+ *
+ * - `not_found`: no such invoice for this payer, or no active balance policy.
+ * - `not_payable`: the invoice exists but cannot be paid now (not sent and
+ *   unpaid, or not issued by this runtime's provider).
+ * - `payment_in_progress`: another payment for the invoice is still open.
+ * - `nothing_due`: the invoice has no amount left to pay.
+ * - `invalid_amount`: the requested amount is not positive minor units.
+ * - `below_minimum`: the amount is under the rail's minimum.
+ * - `no_account`: the payer has no billing account with this seller.
+ */
+export type BillingPaymentRefusalCode =
+  | 'not_found'
+  | 'not_payable'
+  | 'payment_in_progress'
+  | 'nothing_due'
+  | 'invalid_amount'
+  | 'below_minimum'
+  | 'no_account';
+
+/**
+ * A payment request refused for a reason the payer can act on (#3185): show
+ * the message as a 4xx. Anything else thrown by the same call (provider,
+ * database, or configuration failures) is a server error.
+ * `TenantIsolationError` (a caller who is not the payer) stays separate.
+ */
+export class BillingPaymentRefusedError extends Error {
+  readonly code: BillingPaymentRefusalCode;
+
+  constructor(code: BillingPaymentRefusalCode, message: string) {
+    super(message);
+    this.name = 'BillingPaymentRefusedError';
+    this.code = code;
+  }
+}
+
 export class BillingWebhookVerificationError extends Error {
   constructor(message = 'Billing webhook signature verification failed.') {
     super(message);

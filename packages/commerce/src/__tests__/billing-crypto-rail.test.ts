@@ -12,7 +12,7 @@ import {
   withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBtcPayBillingProvider } from '../billing/btcpay.js';
 import { createCryptoBillingProvider } from '../billing/crypto.js';
 import {
@@ -20,6 +20,7 @@ import {
   normalizePaymentPolicy,
 } from '../billing/payment-attempts.js';
 import {
+  BillingPaymentRefusedError,
   BillingProviderUnsupportedError,
   BillingWebhookVerificationError,
 } from '../billing/provider.js';
@@ -47,6 +48,12 @@ import {
 } from './helpers/fake-stripe.js';
 
 const system = <T>(fn: () => Promise<T>) => withSystemContext(fn);
+/** A payer-facing refusal with a stable code (#3185). */
+const refused = (code: string) =>
+  expect.objectContaining({
+    name: 'BillingPaymentRefusedError',
+    code,
+  });
 const memory = async () => {
   const { TenantUsageMetricCollection } = await import(
     '@happyvertical/smrt-subscriptions'
@@ -208,6 +215,12 @@ describe('smrt#3138 crypto payment rail', () => {
       await expect(buyCredit(world, String(policy.id), 50)).rejects.toThrow(
         /at least 100 USD/,
       );
+      await expect(
+        buyCredit(world, String(policy.id), 50),
+      ).rejects.toBeInstanceOf(BillingPaymentRefusedError);
+      await expect(buyCredit(world, String(policy.id), 50)).rejects.toEqual(
+        refused('below_minimum'),
+      );
     });
   });
 
@@ -229,6 +242,78 @@ describe('smrt#3138 crypto payment rail', () => {
       expect(await grants(world, SOLO)).toEqual([
         expect.objectContaining({ amount: 5000, sourceId: paid.sessionId }),
       ]);
+    });
+
+    it('filters flagged and unresolved attempts before the limit (#3186)', async () => {
+      const policy = await balancePolicy(world, SOLO);
+      const sessions = [];
+      for (const cart of ['old', 'mid', 'new-1', 'new-2']) {
+        sessions.push(await buyCredit(world, String(policy.id), 5000, cart));
+      }
+      const table = world.runtime.attempts.tableName;
+      for (const [index, session] of sessions.entries()) {
+        const id = await world.runtime.paymentAttemptId(
+          'btcpay',
+          session.sessionId,
+        );
+        await world.db.query(
+          `UPDATE ${table} SET created_at = ? WHERE id = ?`,
+          new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
+          id,
+        );
+      }
+      const idOf = (index: number) =>
+        world.runtime.paymentAttemptId(
+          'btcpay',
+          sessions[index]?.sessionId ?? '',
+        );
+      // The oldest attempt carries an open flag; the middle one was resolved.
+      await world.db.query(
+        `UPDATE ${table} SET flag = 'underpaid' WHERE id = ?`,
+        await idOf(0),
+      );
+      await world.db.query(
+        `UPDATE ${table} SET flag = 'paid_late' WHERE id = ?`,
+        await idOf(1),
+      );
+      await world.runtime.resolvePaymentAttempt(await idOf(1), 'refunded');
+
+      const ids = (rows: { id?: unknown }[]) => rows.map((row) => row.id);
+      // Newer unflagged rows fill the limit, yet the flags are still found.
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({ flagged: true, limit: 2 }),
+        ),
+      ).toEqual([await idOf(1), await idOf(0)]);
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({
+            unresolved: true,
+            limit: 1,
+          }),
+        ),
+      ).toEqual([await idOf(0)]);
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({ flagged: false, limit: 5 }),
+        ),
+      ).toEqual([await idOf(3), await idOf(2)]);
+      expect(
+        ids(await world.runtime.listPaymentAttempts({ limit: 1 })),
+      ).toEqual([await idOf(3)]);
+      // Paging reaches every flag, oldest last.
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({
+            flagged: true,
+            limit: 1,
+            offset: 1,
+          }),
+        ),
+      ).toEqual([await idOf(0)]);
+      await expect(
+        world.runtime.listPaymentAttempts({ flagged: false, unresolved: true }),
+      ).rejects.toThrow(/always flagged/);
     });
 
     it('grants once only when the rail settles, recording everything', async () => {
@@ -547,6 +632,9 @@ describe('smrt#3138 crypto payment rail', () => {
       await expect(payWithRail(String(invoice.id))).rejects.toThrow(
         /only sent, unpaid invoices/,
       );
+      await expect(payWithRail(String(invoice.id))).rejects.toEqual(
+        refused('not_payable'),
+      );
       // An applied invoice payment is not refundable here.
       await expect(
         world.runtime.recordManualRefund({
@@ -718,12 +806,95 @@ describe('smrt#3138 crypto payment rail', () => {
             cancelUrl: 'https://a.test',
           }),
         ),
-      ).rejects.toThrow(/already has a payment in progress/);
+      ).rejects.toEqual(refused('payment_in_progress'));
       // Retrying the same purchase returns the same checkout.
       expect((await payWithRail(String(invoice.id))).sessionId).toBeTruthy();
       await expect(
         payWithRail('00000000-0000-4000-8000-0000000000ff'),
       ).rejects.toThrow(/was not found for this payer/);
+      await expect(
+        payWithRail('00000000-0000-4000-8000-0000000000ff'),
+      ).rejects.toEqual(refused('not_found'));
+    });
+
+    it('refuses an invoice with nothing due, and bad credit requests, with codes (#3185)', async () => {
+      const invoice = await openInvoice();
+      // Fully allocated, but its status not yet updated.
+      await withTenant({ tenantId: PROVIDER }, async () => {
+        const { PaymentAllocationCollection } = await import(
+          '../collections/PaymentAllocationCollection.js'
+        );
+        const payments = await PaymentCollection.create({ db: world.db });
+        const payment = await payments.create({
+          tenantId: PROVIDER,
+          customerId: invoice.customerId,
+          amount: invoice.totalAmount,
+          currency: invoice.currency,
+          method: PaymentMethod.OTHER,
+        });
+        await (
+          await PaymentAllocationCollection.create({ db: world.db })
+        ).create({
+          tenantId: PROVIDER,
+          paymentId: String(payment.id),
+          invoiceId: String(invoice.id),
+          amount: invoice.totalAmount,
+        });
+      });
+      await expect(payWithRail(String(invoice.id))).rejects.toEqual(
+        refused('nothing_due'),
+      );
+
+      const policy = await balancePolicy(world, SOLO);
+      await expect(buyCredit(world, String(policy.id), 0)).rejects.toEqual(
+        refused('invalid_amount'),
+      );
+      await expect(
+        buyCredit(world, '00000000-0000-4000-8000-0000000000fe'),
+      ).rejects.toEqual(refused('not_found'));
+      // A payer without a billing account.
+      const other = await balancePolicy(world, STRANGER);
+      await expect(
+        withTenant({ tenantId: STRANGER }, () =>
+          world.runtime.createCreditCheckout({
+            spendingPolicyId: String(other.id),
+            amount: 5000,
+            successUrl: 'https://a.test',
+            cancelUrl: 'https://a.test',
+            purchaseId: 'no-account',
+            provider: 'btcpay',
+            automaticTax: false,
+          }),
+        ),
+      ).rejects.toEqual(refused('no_account'));
+      // Not the payer: still a tenant-isolation error, not a refusal.
+      await expect(
+        withTenant({ tenantId: STRANGER }, () =>
+          world.runtime.createCreditCheckout({
+            spendingPolicyId: String(policy.id),
+            amount: 5000,
+            successUrl: 'https://a.test',
+            cancelUrl: 'https://a.test',
+            purchaseId: 'stranger',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(TenantIsolationError);
+    });
+
+    it('reports an invoice lookup failure as a server error, not a refusal (#3185)', async () => {
+      const invoice = await openInvoice();
+      await expect(payWithRail('not-a-uuid')).rejects.toEqual(
+        refused('not_found'),
+      );
+      const outage = new Error('connection lost');
+      const spy = vi
+        .spyOn(world.runtime.invoices, 'get')
+        .mockRejectedValueOnce(outage);
+      try {
+        await expect(payWithRail(String(invoice.id))).rejects.toBe(outage);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('resumes dunning when a confirming payment is refused at settlement', async () => {

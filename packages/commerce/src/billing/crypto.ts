@@ -17,6 +17,7 @@ import {
 import {
   type BillingPaymentAttemptPayment,
   type BillingPaymentAttemptState,
+  BillingPaymentRefusedError,
   type BillingProvider,
   type BillingProviderCheckoutInput,
   type BillingProviderCheckoutSession,
@@ -108,7 +109,8 @@ export function createCryptoBillingProvider(
       }
       const minimum = minimums.get(currency) ?? 0;
       if (input.amount < minimum) {
-        throw new Error(
+        throw new BillingPaymentRefusedError(
+          'below_minimum',
           `The ${name} payment rail accepts at least ${minimum} ${currency} minor units.`,
         );
       }

@@ -37,7 +37,9 @@ import {
 import type { Invoice } from '../models/Invoice.js';
 import { type Address, InvoiceStatus } from '../types/index.js';
 import {
+  type BillingCardOnFile,
   type CreateCardSetupCheckoutInput,
+  cardOnFile,
   createCardSetupCheckout,
 } from './cards.js';
 import {
@@ -737,6 +739,16 @@ export class BillingRuntime {
   }
 
   /**
+   * Whether the payer has a card on file (#3187): the default card that
+   * `autoChargeInvoices` bills and automatic top-ups charge, decided by the
+   * same check they use. Read-only; callable by the payer or in a system
+   * context.
+   */
+  cardOnFile(payerTenantId: string): Promise<BillingCardOnFile> {
+    return cardOnFile(this, payerTenantId);
+  }
+
+  /**
    * The `autoTopUp` hook for smrt-subscriptions' `SpendingPolicyEvaluator`:
    * charges the payer's saved card off-session and credits the balance once
    * the charge succeeds. Without a provider that can charge a saved card (or
@@ -850,15 +862,25 @@ export class BillingRuntime {
 
   /**
    * This seller's rail payment attempts, newest first — for "payment
-   * confirming" displays and operator queues.
+   * confirming" displays and operator queues. Every filter is applied in the
+   * query, before `limit` (default 100) and `offset`, so paging through
+   * `{ unresolved: true }` lists every open exception however old (#3186).
    */
   async listPaymentAttempts(
     filter: {
       payerTenantId?: string;
       invoiceId?: string;
       status?: string;
+      /** Only attempts with (`true`) or without (`false`) a flag. */
       flagged?: boolean;
+      /**
+       * Only open exceptions: flagged attempts no operator has resolved yet.
+       * Combine with `flagged: true` or leave `flagged` unset.
+       */
+      unresolved?: true;
       limit?: number;
+      /** Rows to skip, for paging (default 0). */
+      offset?: number;
     } = {},
   ): Promise<BillingPaymentAttempt[]> {
     const where: Record<string, unknown> = {
@@ -872,14 +894,19 @@ export class BillingRuntime {
     }
     if (filter.invoiceId) where.invoiceId = filter.invoiceId;
     if (filter.status) where.status = filter.status;
-    const rows = await this.attempts.list({
+    if (filter.unresolved && filter.flagged === false) {
+      throw new Error('An unresolved attempt is always flagged.');
+    }
+    if (filter.flagged === true || filter.unresolved) where['flag !='] = '';
+    else if (filter.flagged === false) where.flag = '';
+    if (filter.unresolved) where.resolvedAt = null;
+    return this.attempts.list({
       where,
-      orderBy: 'created_at DESC',
+      // `id` breaks created_at ties, so pages neither repeat nor skip rows.
+      orderBy: ['created_at DESC', 'id DESC'],
       limit: filter.limit ?? 100,
+      offset: filter.offset ?? 0,
     });
-    return filter.flagged === undefined
-      ? rows
-      : rows.filter((row) => Boolean(row.flag) === filter.flagged);
   }
 
   /**
