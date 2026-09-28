@@ -8,7 +8,10 @@ export {
   type BtcPayBillingProviderOptions,
   createBtcPayBillingProvider,
 } from './btcpay.js';
-export type { CreateCardSetupCheckoutInput } from './cards.js';
+export type {
+  BillingCardOnFile,
+  CreateCardSetupCheckoutInput,
+} from './cards.js';
 export type { CreateCreditCheckoutInput } from './credits.js';
 export {
   type CryptoBillingProviderOptions,

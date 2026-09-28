@@ -37,7 +37,9 @@ import {
 import type { Invoice } from '../models/Invoice.js';
 import { type Address, InvoiceStatus } from '../types/index.js';
 import {
+  type BillingCardOnFile,
   type CreateCardSetupCheckoutInput,
+  cardOnFile,
   createCardSetupCheckout,
 } from './cards.js';
 import {
@@ -734,6 +736,16 @@ export class BillingRuntime {
     input: CreateCardSetupCheckoutInput,
   ): Promise<BillingProviderCheckoutSession> {
     return createCardSetupCheckout(this, input);
+  }
+
+  /**
+   * Whether the payer has a card on file (#3187): the default card that
+   * `autoChargeInvoices` bills and automatic top-ups charge, decided by the
+   * same check they use. Read-only; callable by the payer or in a system
+   * context.
+   */
+  cardOnFile(payerTenantId: string): Promise<BillingCardOnFile> {
+    return cardOnFile(this, payerTenantId);
   }
 
   /**

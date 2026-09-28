@@ -345,7 +345,10 @@ const evaluator = await SpendingPolicyEvaluator.create({
   completion the card becomes the provider customer's default and the
   payer's default `PaymentInstrument`. When the checkout collected the billing
   address (a taxed payer with no tax location), it becomes the payer's tax
-  location.
+  location. `cardOnFile(payerTenantId)` returns `{ onFile, savedAt? }` from
+  the same check automatic charges use (a default card with the account's
+  provider customer), for "card on file" displays and signup activation;
+  the payer or a system context may call it (#3187).
 - **Automatically charged invoices.** With `autoChargeInvoices: true` on the
   runtime, a payer with a default card is invoiced `charge_automatically`:
   the provider charges the card after the invoice is sent, on its own

@@ -460,6 +460,49 @@ describe('smrt#3139 Stripe launch billing', () => {
   // -------------------------------------------------------------------------
 
   describe('card on file', () => {
+    it('reports the card on file the way automatic charges see it (#3187)', async () => {
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          automaticTax: false,
+        }),
+      );
+      const asPayer = () =>
+        withTenant({ tenantId: SOLO }, () => world.provider.cardOnFile(SOLO));
+      expect(await asPayer()).toEqual({ onFile: false });
+      const before = Date.now();
+      await saveCard(SOLO, 'pm_on_file');
+      const onFile = await asPayer();
+      expect(onFile.onFile).toBe(true);
+      expect(onFile.savedAt).toBeInstanceOf(Date);
+      expect(onFile.savedAt?.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(await system(() => world.provider.cardOnFile(SOLO))).toMatchObject(
+        { onFile: true },
+      );
+      await expect(
+        withTenant({ tenantId: STRANGER }, () =>
+          world.provider.cardOnFile(SOLO),
+        ),
+      ).rejects.toBeInstanceOf(TenantIsolationError);
+      // A card saved for a provider customer the account no longer uses is
+      // not billed, so it is not on file either.
+      await system(() =>
+        world.provider.upsertAccount({
+          payerTenantId: SOLO,
+          name: 'Solo LLC',
+          providerCustomerId: 'cus_other',
+        }),
+      );
+      expect(await asPayer()).toEqual({ onFile: false });
+      // A payer with no billing account has no card.
+      expect(
+        await withTenant({ tenantId: STRANGER }, () =>
+          world.provider.cardOnFile(STRANGER),
+        ),
+      ).toEqual({ onFile: false });
+    });
+
     it('saves the card, makes it the default, and adopts the collected address', async () => {
       await system(() =>
         world.provider.upsertAccount({
