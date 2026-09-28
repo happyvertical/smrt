@@ -886,12 +886,25 @@ export class BillingRuntime {
    * Queue a re-read of open and confirming attempts (the polling fallback
    * for missed webhooks). Returns how many were queued; apply them with
    * `processEvents()`.
+   *
+   * Confirming attempts (money seen) go first, then open ones, each oldest
+   * first, so a burst of newer or abandoned checkouts cannot starve a paid
+   * attempt whose settlement webhook was missed (#3183). Rows leave the set
+   * once the gateway reports a terminal state.
    */
   async refreshPaymentAttempts(limit = 100): Promise<number> {
-    const rows = [
-      ...(await this.listPaymentAttempts({ status: 'open', limit })),
-      ...(await this.listPaymentAttempts({ status: 'confirming', limit })),
-    ].slice(0, limit);
+    const rows: BillingPaymentAttempt[] = [];
+    for (const status of ['confirming', 'open']) {
+      const remaining = limit - rows.length;
+      if (remaining <= 0) break;
+      rows.push(
+        ...(await this.attempts.list({
+          where: { sellerTenantId: this.sellerTenantId, status },
+          orderBy: 'created_at ASC',
+          limit: remaining,
+        })),
+      );
+    }
     let queued = 0;
     for (const row of rows) {
       if (await this.refreshPaymentAttempt(row.provider, row.checkoutId)) {

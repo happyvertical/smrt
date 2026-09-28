@@ -84,14 +84,19 @@ async function sellerPayments(world: RailWorld) {
   );
 }
 
-async function buyCredit(world: RailWorld, policyId: string, amount = 5000) {
+async function buyCredit(
+  world: RailWorld,
+  policyId: string,
+  amount = 5000,
+  purchaseId = 'cart-1',
+) {
   return withTenant({ tenantId: SOLO }, () =>
     world.runtime.createCreditCheckout({
       spendingPolicyId: policyId,
       amount,
       successUrl: 'https://app.test/ok',
       cancelUrl: 'https://app.test/cancel',
-      purchaseId: 'cart-1',
+      purchaseId,
       provider: 'btcpay',
       // The rail cannot charge tax; selling untaxed credit is explicit.
       automaticTax: false,
@@ -207,6 +212,25 @@ describe('smrt#3138 crypto payment rail', () => {
   });
 
   describe('prepaid credit', () => {
+    it('refreshes confirming attempts before open ones, oldest first (#3183)', async () => {
+      const policy = await balancePolicy(world, SOLO);
+      const paid = await buyCredit(world, String(policy.id), 5000, 'cart-paid');
+      world.gateway.set(paid.sessionId, 'confirming');
+      await world.railEvent(paid.sessionId);
+      // Newer open checkouts outnumber the refresh limit.
+      await buyCredit(world, String(policy.id), 5000, 'cart-open-1');
+      await buyCredit(world, String(policy.id), 5000, 'cart-open-2');
+      // The settlement webhook is missed; only the polling fallback sees it.
+      world.gateway.set(paid.sessionId, 'settled');
+
+      expect(await world.runtime.refreshPaymentAttempts(1)).toBe(1);
+      await world.runtime.processEvents();
+
+      expect(await grants(world, SOLO)).toEqual([
+        expect.objectContaining({ amount: 5000, sourceId: paid.sessionId }),
+      ]);
+    });
+
     it('grants once only when the rail settles, recording everything', async () => {
       const policy = await balancePolicy(world, SOLO);
       const session = await buyCredit(world, String(policy.id));
