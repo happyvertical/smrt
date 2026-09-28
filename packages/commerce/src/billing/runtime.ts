@@ -850,15 +850,25 @@ export class BillingRuntime {
 
   /**
    * This seller's rail payment attempts, newest first — for "payment
-   * confirming" displays and operator queues.
+   * confirming" displays and operator queues. Every filter is applied in the
+   * query, before `limit` (default 100) and `offset`, so paging through
+   * `{ unresolved: true }` lists every open exception however old (#3186).
    */
   async listPaymentAttempts(
     filter: {
       payerTenantId?: string;
       invoiceId?: string;
       status?: string;
+      /** Only attempts with (`true`) or without (`false`) a flag. */
       flagged?: boolean;
+      /**
+       * Only open exceptions: flagged attempts no operator has resolved yet.
+       * Combine with `flagged: true` or leave `flagged` unset.
+       */
+      unresolved?: true;
       limit?: number;
+      /** Rows to skip, for paging (default 0). */
+      offset?: number;
     } = {},
   ): Promise<BillingPaymentAttempt[]> {
     const where: Record<string, unknown> = {
@@ -872,14 +882,19 @@ export class BillingRuntime {
     }
     if (filter.invoiceId) where.invoiceId = filter.invoiceId;
     if (filter.status) where.status = filter.status;
-    const rows = await this.attempts.list({
+    if (filter.unresolved && filter.flagged === false) {
+      throw new Error('An unresolved attempt is always flagged.');
+    }
+    if (filter.flagged === true || filter.unresolved) where['flag !='] = '';
+    else if (filter.flagged === false) where.flag = '';
+    if (filter.unresolved) where.resolvedAt = null;
+    return this.attempts.list({
       where,
-      orderBy: 'created_at DESC',
+      // `id` breaks created_at ties, so pages neither repeat nor skip rows.
+      orderBy: ['created_at DESC', 'id DESC'],
       limit: filter.limit ?? 100,
+      offset: filter.offset ?? 0,
     });
-    return filter.flagged === undefined
-      ? rows
-      : rows.filter((row) => Boolean(row.flag) === filter.flagged);
   }
 
   /**

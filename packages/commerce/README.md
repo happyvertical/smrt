@@ -423,8 +423,10 @@ await billing.processEvents();
   recording the locked fiat price, fiat and native amounts received, rate and
   rate source, each payment's txid, rail and fee, a timeline of status changes,
   and what settlement produced. `listPaymentAttempts()` feeds "payment
-  confirming" displays and operator queues; `refreshPaymentAttempts()` is the
-  polling fallback for missed webhooks.
+  confirming" displays and operator queues; every filter applies before its
+  `limit` and `offset`, so paging through `{ unresolved: true }` lists every
+  open exception (flagged, not yet resolved) however old. `refreshPaymentAttempts()` is the polling
+  fallback for missed webhooks.
 - **Dunning pauses** for an invoice while a payment for it is confirming
   (0-conf seen); if the payment then expires or is invalidated the payer's
   standing is re-applied.

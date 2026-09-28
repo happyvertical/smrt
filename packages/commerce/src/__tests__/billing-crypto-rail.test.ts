@@ -231,6 +231,78 @@ describe('smrt#3138 crypto payment rail', () => {
       ]);
     });
 
+    it('filters flagged and unresolved attempts before the limit (#3186)', async () => {
+      const policy = await balancePolicy(world, SOLO);
+      const sessions = [];
+      for (const cart of ['old', 'mid', 'new-1', 'new-2']) {
+        sessions.push(await buyCredit(world, String(policy.id), 5000, cart));
+      }
+      const table = world.runtime.attempts.tableName;
+      for (const [index, session] of sessions.entries()) {
+        const id = await world.runtime.paymentAttemptId(
+          'btcpay',
+          session.sessionId,
+        );
+        await world.db.query(
+          `UPDATE ${table} SET created_at = ? WHERE id = ?`,
+          new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
+          id,
+        );
+      }
+      const idOf = (index: number) =>
+        world.runtime.paymentAttemptId(
+          'btcpay',
+          sessions[index]?.sessionId ?? '',
+        );
+      // The oldest attempt carries an open flag; the middle one was resolved.
+      await world.db.query(
+        `UPDATE ${table} SET flag = 'underpaid' WHERE id = ?`,
+        await idOf(0),
+      );
+      await world.db.query(
+        `UPDATE ${table} SET flag = 'paid_late' WHERE id = ?`,
+        await idOf(1),
+      );
+      await world.runtime.resolvePaymentAttempt(await idOf(1), 'refunded');
+
+      const ids = (rows: { id?: unknown }[]) => rows.map((row) => row.id);
+      // Newer unflagged rows fill the limit, yet the flags are still found.
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({ flagged: true, limit: 2 }),
+        ),
+      ).toEqual([await idOf(1), await idOf(0)]);
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({
+            unresolved: true,
+            limit: 1,
+          }),
+        ),
+      ).toEqual([await idOf(0)]);
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({ flagged: false, limit: 5 }),
+        ),
+      ).toEqual([await idOf(3), await idOf(2)]);
+      expect(
+        ids(await world.runtime.listPaymentAttempts({ limit: 1 })),
+      ).toEqual([await idOf(3)]);
+      // Paging reaches every flag, oldest last.
+      expect(
+        ids(
+          await world.runtime.listPaymentAttempts({
+            flagged: true,
+            limit: 1,
+            offset: 1,
+          }),
+        ),
+      ).toEqual([await idOf(0)]);
+      await expect(
+        world.runtime.listPaymentAttempts({ flagged: false, unresolved: true }),
+      ).rejects.toThrow(/always flagged/);
+    });
+
     it('grants once only when the rail settles, recording everything', async () => {
       const policy = await balancePolicy(world, SOLO);
       const session = await buyCredit(world, String(policy.id));
