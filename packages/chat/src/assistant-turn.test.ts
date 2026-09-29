@@ -8,6 +8,7 @@
  * single-use continuations, untrusted marking, and persistence.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -762,6 +763,39 @@ describe('assistant turn', () => {
       expect(outcome.done?.stoppedReason).toBe('no_tools');
       expect(seen).toContain('token');
       expect(seen).toContain('status');
+    });
+
+    it('pulls every event in the async context the response was created in', async () => {
+      const scope = new AsyncLocalStorage<string>();
+      async function* events(): AsyncGenerator<
+        AssistantTurnEvent<unknown>,
+        unknown
+      > {
+        yield { type: 'token', text: scope.getStore() ?? 'none' };
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        yield {
+          type: 'done',
+          stoppedReason: 'no_tools',
+          message: { scope: scope.getStore() ?? 'none' },
+        };
+      }
+      const response = scope.run('tenant-a', () =>
+        createAssistantTurnResponse(events(), { heartbeatMs: 0 }),
+      );
+      // Read slowly, from outside the scope, so every pull after the first is
+      // driven by the reader (as an HTTP adapter's backpressure does).
+      if (!response.body) throw new Error('expected a streamed body');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value);
+      }
+      expect(text).toContain('"text":"tenant-a"');
+      expect(text).toContain('"message":{"scope":"tenant-a"}');
     });
 
     it('rejects a stream that closes without a terminal event', async () => {

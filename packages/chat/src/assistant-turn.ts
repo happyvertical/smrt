@@ -31,6 +31,7 @@
  * @module
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AIInterface, AIMessage, ChatOptions } from '@happyvertical/ai';
 import type {
   PrincipalAuditSink,
@@ -608,12 +609,19 @@ export const DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS = 15_000;
  * Wrap a turn's events as a `text/event-stream` `Response`. Heartbeat
  * comments keep idle intermediaries from cutting a quiet tool round; a
  * client disconnect ends the generator (the turn still persists what it did).
+ *
+ * The body is pulled by the runtime after the handler returns, outside the
+ * handler's async context. Every `next()` therefore runs in the async context
+ * captured here (`AsyncLocalStorage.snapshot()`), so a turn started inside
+ * `withTenant(...)` keeps its tenant scope for every step, including the
+ * reply it persists at the end.
  */
 export function createAssistantTurnResponse(
   events: AsyncGenerator<AssistantTurnEvent<unknown>, unknown>,
   options: { heartbeatMs?: number; headers?: Record<string, string> } = {},
 ): Response {
   const encoder = new TextEncoder();
+  const inCallerContext = AsyncLocalStorage.snapshot();
   const heartbeatMs =
     options.heartbeatMs ?? DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -635,7 +643,7 @@ export function createAssistantTurnResponse(
     },
     async pull(controller) {
       try {
-        const { value, done } = await events.next();
+        const { value, done } = await inCallerContext(() => events.next());
         if (done) {
           stop();
           controller.close();
