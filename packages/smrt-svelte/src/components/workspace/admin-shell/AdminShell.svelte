@@ -772,9 +772,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__drawer--bottom {
     inset-block-end: var(--smrt-admin-shell-bottom-track);
-    inset-inline: var(--smrt-admin-shell-left-track)
-      var(--smrt-admin-shell-right-track);
+    /* The system scope is the application footer. Its expanded drawer must
+       remain footer-wide while it rises above every desktop pane. */
+    inset-inline: 0;
     max-block-size: var(--smrt-admin-shell-bottom-expanded);
+    animation: smrt-admin-shell-bottom-drawer-in var(--smrt-duration-short2)
+      var(--smrt-easing-standard);
+  }
+
+  @keyframes smrt-admin-shell-bottom-drawer-in {
+    from {
+      transform: translateY(100%);
+    }
   }
 
   .smrt-admin-shell__corner {
@@ -911,6 +920,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     .smrt-admin-shell__edge--left,
     .smrt-admin-shell__edge--right {
       transition: none;
+    }
+
+    .smrt-admin-shell__drawer--bottom {
+      animation: none;
     }
   }
 </style>

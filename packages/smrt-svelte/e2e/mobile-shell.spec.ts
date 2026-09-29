@@ -32,9 +32,13 @@ for (const viewport of [
               .map(Number.parseFloat);
             return { left: columns[0], right: columns[2] };
           });
-          expect(box.x).toBeCloseTo(viewport.width <= 768 ? 0 : tracks.left, 0);
+          expect(box.x).toBeCloseTo(
+            edge === 'bottom' || viewport.width <= 768 ? 0 : tracks.left,
+            0,
+          );
           expect(box.x + box.width).toBeCloseTo(
-            viewport.width - (viewport.width <= 768 ? 0 : tracks.right),
+            viewport.width -
+              (edge === 'bottom' || viewport.width <= 768 ? 0 : tracks.right),
             0,
           );
           const header = await page
@@ -71,6 +75,47 @@ for (const viewport of [
     }
   }
 }
+
+test('the collapsed system bar stays a full-width application footer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (const left of ['collapsed', 'expanded', 'hidden']) {
+    for (const right of ['collapsed', 'expanded', 'hidden']) {
+      await page.goto(`/?left=${left}&right=${right}&bottom=collapsed`);
+      const footer = page.locator('.smrt-admin-shell__edge--bottom');
+      const box = await footer.boundingBox();
+      if (!box) throw new Error('Missing footer bounds');
+      expect(box.x).toBeCloseTo(0, 0);
+      expect(box.width).toBeCloseTo(1280, 0);
+    }
+  }
+});
+
+test('the expanded system footer is on top of the side panes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?left=expanded&right=expanded&bottom=expanded');
+  const drawer = page.locator('.smrt-admin-shell__drawer--bottom');
+  await expect(drawer).toBeVisible();
+  await page.waitForTimeout(200);
+  const box = await drawer.boundingBox();
+  if (!box) throw new Error('Missing bottom drawer bounds');
+  expect(
+    await page.evaluate(
+      ({ x, y }) =>
+        (() => {
+          const hit = document.elementFromPoint(x, y);
+          return (
+            hit !== null &&
+            hit.closest('.smrt-admin-shell__drawer--bottom') !== null
+          );
+        })(),
+      { x: 8, y: box.y + 8 },
+    ),
+  ).toBe(true);
+});
 
 test('status chips stay in the footer and scroll to the final chip', async ({
   page,
