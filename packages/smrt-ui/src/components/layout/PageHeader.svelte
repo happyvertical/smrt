@@ -114,7 +114,7 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
   </div>
 
   {#if children}
-    <div class="header-extra">
+    <div class="header-extra" data-page-header-extra>
       {@render children()}
     </div>
   {/if}

@@ -1350,6 +1350,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     border: 0;
   }
 
+  /* Tabs inside a page header (a content item's tabs under its title) stick
+     like any page tabs: the header's boxes step aside on phones so the tabs'
+     sticky range is the page, not the header. */
+  .smrt-admin-shell[data-phone-top]
+    :global([data-page-header]:has([data-shell-tabs])),
+  .smrt-admin-shell[data-phone-top]
+    :global([data-page-header-extra]:has([data-shell-tabs])) {
+    display: contents;
+  }
+
   .smrt-admin-shell[data-phone-top] :global([data-shell-tabs]) {
     position: sticky;
     inset-block-start: var(--smrt-admin-shell-phone-top-size);
