@@ -382,7 +382,11 @@ export class FakeStripe {
       // Stripe `paid_out_of_band` (#3138): closed with nothing collected.
       const invoice = this.invoices.get(match[1]);
       if (!invoice) return { status: 404, body: { error: {} } };
-      if (body.paid_out_of_band !== 'true' || invoice.status !== 'open') {
+      // Stripe pays an open or an uncollectible (written-off) invoice.
+      if (
+        body.paid_out_of_band !== 'true' ||
+        (invoice.status !== 'open' && invoice.status !== 'uncollectible')
+      ) {
         return { status: 400, body: { error: { message: 'cannot pay' } } };
       }
       invoice.status = 'paid';

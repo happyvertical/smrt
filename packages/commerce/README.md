@@ -451,6 +451,11 @@ await billing.processEvents();
   `markInvoicePaidOutOfBand` (Stripe `paid_out_of_band`), so Stripe stops
   collecting; Stripe's own `paid` event then records nothing more.
   `createInvoicePayment` refuses when the issuing provider cannot do that.
+  A written-off (uncollectible) invoice with an amount due can be paid on a
+  rail too, as it can by card at Stripe (#3188): the payment is recorded,
+  Stripe's invoice is closed out of band, and the payer returns to `current`;
+  the invoice keeps its `WRITTEN_OFF` status (its `amountPaid` shows the
+  recovery).
 - **Exceptions never auto-refund.** Underpaid, overpaid, late, manually marked
   (at the gateway), invalidated-after-settlement, and paid-twice attempts are
   flagged for an operator (`resolvePaymentAttempt`). Per-seller

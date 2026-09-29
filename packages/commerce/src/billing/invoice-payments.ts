@@ -31,12 +31,18 @@ import {
 
 export const INVOICE_PAYMENT_PURPOSE = 'invoice_payment';
 
-/** Invoices a rail payment may be opened for. */
+/**
+ * Invoices a rail payment may be opened for. A written-off invoice is still
+ * payable, as it is at the issuer (#3188): settlement records the payment,
+ * closes the issuer's invoice out of band, and returns the payer to
+ * `current`; the invoice keeps its `WRITTEN_OFF` status.
+ */
 const PAYABLE = new Set<string>([
   InvoiceStatus.SENT,
   InvoiceStatus.VIEWED,
   InvoiceStatus.PARTIAL,
   InvoiceStatus.OVERDUE,
+  InvoiceStatus.WRITTEN_OFF,
 ]);
 
 export interface CreateInvoicePaymentInput {

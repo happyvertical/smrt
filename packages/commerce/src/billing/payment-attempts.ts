@@ -465,7 +465,20 @@ async function settleAttempt(
       throw new Error(`Invoice ${target.invoiceId} for an attempt is missing.`);
     }
     customerId = invoice.customerId;
-    if (invoice.status === InvoiceStatus.PAID || target.issuerCollected) {
+    // A written-off invoice keeps its status when paid (#3188), so "paid
+    // elsewhere" is read from its allocations.
+    const settledElsewhere =
+      invoice.status === InvoiceStatus.WRITTEN_OFF &&
+      (await withTenant({ tenantId: runtime.sellerTenantId }, async () =>
+        (
+          await PaymentAllocationCollection.create({ db })
+        ).getTotalAllocatedToInvoice(String(invoice?.id)),
+      )) >= invoice.totalAmount;
+    if (
+      invoice.status === InvoiceStatus.PAID ||
+      target.issuerCollected ||
+      settledElsewhere
+    ) {
       // Paid elsewhere meanwhile: keep the money as customer credit for an
       // operator to refund or apply.
       flag = 'invoice_already_paid';

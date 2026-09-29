@@ -99,7 +99,9 @@ for usage.
   happyvertical/sdk#1283). `claimAttempt()` is the only place that decides a
   skip and reports it (`onAutoTopUpSkipped`); `cardOnFile()` and period close
   use `defaultCardInstrument()` — never copy that predicate. A provider write-off moves the local invoice to
-  `WRITTEN_OFF` (a later payment is recorded; the status stays).
+  `WRITTEN_OFF` (a later payment, by card or on a rail (#3188), is recorded
+  and reinstates the payer; the status stays, so "paid in full" for a
+  written-off invoice is read from its allocations).
 - **`Invoice.providerTaxAmount`** is added to line-item tax; it is
   server-managed (not API-writable). `toAccountingInput()` emits major units.
 - **Payment rails (#3138).** A runtime has one issuing `provider` and any

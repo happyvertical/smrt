@@ -832,7 +832,7 @@ async function applyAttempt(
   const accounts = await BillingAccountCollection.create({ db });
   const account = await accounts.get(close.billingAccountId);
   if (!account) return;
-  if (outcome.settled && invoice.status === InvoiceStatus.PAID) {
+  if (outcome.settled && (await invoiceSettled(runtime, db, invoice))) {
     await applyStanding(
       runtime,
       db,
@@ -862,6 +862,27 @@ async function applyAttempt(
       );
     }
   }
+}
+
+/**
+ * Paid in full: `PAID`, or a written-off invoice (which keeps its status)
+ * whose payments now cover it (#3188).
+ */
+async function invoiceSettled(
+  runtime: BillingRuntime,
+  db: DatabaseInterface,
+  invoice: Invoice,
+): Promise<boolean> {
+  if (invoice.status === InvoiceStatus.PAID) return true;
+  if (invoice.status !== InvoiceStatus.WRITTEN_OFF) return false;
+  const allocated = await withTenant(
+    { tenantId: runtime.sellerTenantId },
+    async () =>
+      (
+        await PaymentAllocationCollection.create({ db })
+      ).getTotalAllocatedToInvoice(String(invoice.id)),
+  );
+  return allocated >= invoice.totalAmount;
 }
 
 const STANDING_SEVERITY: Record<string, number> = {
