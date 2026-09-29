@@ -15,6 +15,7 @@ import type {
   ControlInteractionRegistry,
   ControlSnapshot,
 } from '@happyvertical/smrt-ui/forms';
+import { WEBMCP_TOOL_EFFECT } from '@happyvertical/smrt-web/webmcp-page-tools';
 import {
   reserveWebMcpToolNames,
   type WebMcpToolNameReservation,
@@ -666,7 +667,20 @@ export function registerWebMcpUiTools(
   };
   try {
     for (const tool of specs) {
-      const registration = modelContext.registerTool(tool, {
+      // The in-page tool registry (#2908) reads the resolved effect from this
+      // stamp. The two execute tools are `write`, not destructive: an agent
+      // can only stage values or change visible state; apply, clear, and undo
+      // need a separate human-confirmed path, so their mutations are
+      // proposals. Their browser annotations are unchanged.
+      const stamped = Object.assign(
+        {
+          [WEBMCP_TOOL_EFFECT]: tool.annotations?.readOnlyHint
+            ? 'read'
+            : 'write',
+        },
+        tool,
+      );
+      const registration = modelContext.registerTool(stamped, {
         signal: controller.signal,
       });
       if (registration) {

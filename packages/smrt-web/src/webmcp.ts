@@ -49,6 +49,7 @@ import {
   mutationTargetHydrators,
   persistedMutationResults,
 } from './internal.js';
+import { WEBMCP_TOOL_EFFECT } from './webmcp-page-tools.js';
 import {
   reserveWebMcpToolNames,
   type WebMcpToolNameOwner,
@@ -62,6 +63,8 @@ export interface WebMcpToolExecutionOptions {
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
+  /** The resolved effect, for the in-page tool registry (#2908). */
+  [WEBMCP_TOOL_EFFECT]?: WebMcpToolEffect;
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -355,6 +358,7 @@ export function registerWebMcpTools(
           Promise.resolve(
             ctx.registerTool(
               {
+                [WEBMCP_TOOL_EFFECT]: tool.effect,
                 name: tool.name,
                 description: descriptor.description,
                 inputSchema: descriptor.inputSchema,
@@ -399,6 +403,7 @@ export function registerWebMcpTools(
         Promise.resolve(
           ctx.registerTool(
             {
+              [WEBMCP_TOOL_EFFECT]: tool.effect,
               name: tool.name,
               description: definition.description,
               inputSchema: definition.inputSchema,
@@ -520,6 +525,7 @@ function registerSingleTool(
   try {
     registration = ctx.registerTool(
       {
+        [WEBMCP_TOOL_EFFECT]: semantics.effect,
         name: spec.name,
         description: spec.description,
         inputSchema: spec.inputSchema,
