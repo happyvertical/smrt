@@ -56,6 +56,25 @@ import './__smrt-register__.js';
 // methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
 // getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
+// Streamed assistant turn over the tool loop, with browser-executed tools
+// (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
+export {
+  type AssistantContinuationStore,
+  type AssistantTurnAuthor,
+  type AssistantTurnContinuation,
+  type AssistantTurnOptions,
+  type AssistantTurnResult,
+  type AuthoredToolReply,
+  type ContinuationSessionLike,
+  createAssistantTurnResponse,
+  createMemoryContinuationStore,
+  createSessionContinuationStore,
+  DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS,
+  DEFAULT_CONTINUATION_TTL_MS,
+  runAssistantTurn,
+  SESSION_CONTINUATIONS_FIELD,
+} from './assistant-turn.js';
+export * from './assistant-turn-events.js';
 export {
   acceptAppliedChange,
   type CaptureChatFeedbackOptions,
@@ -144,17 +163,30 @@ export {
 // Services
 export { ChatService } from './services/index.js';
 export {
+  appendClientToolResults,
   buildManifestToolCatalog,
+  CLIENT_TOOL_RESULT_GUIDANCE,
+  type ClientToolDefinition,
+  type ClientToolEffect,
+  type ClientToolResultInput,
   DEFAULT_MAX_STEPS,
   invokeManifestTool,
+  MAX_CLIENT_TOOL_RESULT_CHARS,
+  MAX_CLIENT_TOOL_SCHEMA_BYTES,
+  MAX_CLIENT_TOOLS,
   type ManifestTool,
   manifestToolToAITool,
+  matchesToolAllowList,
+  type PendingClientToolCall,
   runToolLoop,
+  sanitizeClientToolDeclarations,
   type ToolExecutionContext,
   type ToolInvocation,
   type ToolLoopOptions,
   type ToolLoopResult,
+  type ToolLoopStepEvent,
   type ToolLoopStopReason,
+  type ToolLoopUsage,
 } from './tool-loop.js';
 // Types
 export type {

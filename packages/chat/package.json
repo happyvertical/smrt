@@ -16,6 +16,10 @@
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js"
     },
+    "./assistant-turn": {
+      "types": "./dist/assistant-turn-events.d.ts",
+      "import": "./dist/assistant-turn-events.js"
+    },
     "./data-surface-bridge": {
       "types": "./dist/data-surface-bridge.d.ts",
       "import": "./dist/data-surface-bridge.js"
