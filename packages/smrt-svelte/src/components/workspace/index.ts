@@ -7,6 +7,14 @@
  * at the four-edge AdminShell contract.
  */
 
+// Phone surfaces and swipe-to-dismiss live in the smrt-ui leaf; re-exported
+// here so a shell host has one import for its chrome.
+export {
+  type SwipeDirection,
+  type SwipeDismissOptions,
+  swipeDismiss,
+  swipeDismisses,
+} from '@happyvertical/smrt-ui/feedback';
 export { default as ActivityBadge } from './admin-shell/ActivityBadge.svelte';
 export { default as ActivityItem } from './admin-shell/ActivityItem.svelte';
 export { default as ActivityList } from './admin-shell/ActivityList.svelte';
@@ -29,29 +37,72 @@ export {
   shellActionFromKeyboardEvent,
   shouldIgnoreShellHotkey,
 } from './admin-shell/hotkeys.js';
+export {
+  type BottomBarMode,
+  bottomBarMode,
+  FORM_ACTION_BAR_SELECTOR,
+  findShellNavTrail,
+  keyboardLikelyOpen,
+  normalizeShellPath,
+  type PhoneBottomBarItem,
+  type PhoneTopBarInput,
+  type PhoneTopBarModel,
+  phoneTopBarFor,
+  ScrollChrome,
+  type ScrollChromeOptions,
+  type ScrollSample,
+  type ShellIcon,
+  type ShellNavPathItem,
+  shellNavItemMatches,
+  viewportFor,
+} from './admin-shell/mobile-shell.js';
+export {
+  installKeyboardWatcher,
+  installScrollChrome,
+  installShellViewport,
+  watchFormActionBar,
+} from './admin-shell/mobile-shell-dom.js';
+export { default as PhoneBottomBar } from './admin-shell/PhoneBottomBar.svelte';
+export { default as PhoneTopBar } from './admin-shell/PhoneTopBar.svelte';
 export { default as ShellCorner } from './admin-shell/ShellCorner.svelte';
 export { default as ShellDockTool } from './admin-shell/ShellDockTool.svelte';
+export { default as ShellNavToggle } from './admin-shell/ShellNavToggle.svelte';
 export { default as ShellSettingsPanel } from './admin-shell/ShellSettingsPanel.svelte';
+export { default as ShellTitle } from './admin-shell/ShellTitle.svelte';
 export { default as ShortcutsOverlay } from './admin-shell/ShortcutsOverlay.svelte';
 export { default as SystemScopePanel } from './admin-shell/SystemScopePanel.svelte';
 export { default as SystemStatusChips } from './admin-shell/SystemStatusChips.svelte';
 export {
+  clampPanelSize,
   DEFAULT_SHELL_KEYMAP,
+  DEFAULT_SHELL_PANEL_RESIZE,
   LocalStorageShellSettingsAdapter,
   mergeShellSettingsDelta,
+  panelPersists,
   pruneShellSettingsDelta,
   resolveHotkey,
   resolveInitialPanelState,
+  resolvePanelResize,
   resolveShellConfig,
+  stripUnpersistedSettings,
 } from './admin-shell/settings.js';
-export { createShellState, ShellState } from './admin-shell/state.svelte.js';
+export {
+  ADMIN_SHELL_DESKTOP_QUERY,
+  ADMIN_SHELL_PHONE_QUERY,
+  createShellState,
+  detectShellViewport,
+  ShellState,
+  type ShellStateOptions,
+} from './admin-shell/state.svelte.js';
 export { default as TenantNav } from './admin-shell/TenantNav.svelte';
 export type {
   ActivityStatus,
+  AdminShellPhoneOptions,
   AdminShellProps,
   PanelEdge,
   PanelPresentation,
   PanelState,
+  PhonePanelPresentation,
   ResolvedShellConfig,
   ShellActivity,
   ShellActivityBadge,
@@ -63,6 +114,8 @@ export type {
   ShellNavItem,
   ShellPanelConfig,
   ShellPanelDefaults,
+  ShellPanelPersist,
+  ShellPanelResize,
   ShellScope,
   ShellSettingsAdapter,
   ShellSettingsDelta,
@@ -71,10 +124,16 @@ export type {
   ShellStatusTone,
   ShellSystemItem,
   ShellSystemPanel,
+  ShellViewport,
   VisiblePanelState,
   WorkspaceAccountTenant,
 } from './admin-shell/types.js';
-export { EDGE_SCOPES, PANEL_EDGES, SCOPE_EDGES } from './admin-shell/types.js';
+export {
+  ADMIN_SHELL_REGION_IDS,
+  EDGE_SCOPES,
+  PANEL_EDGES,
+  SCOPE_EDGES,
+} from './admin-shell/types.js';
 export { default as WorkspaceAccountMenu } from './admin-shell/WorkspaceAccountMenu.svelte';
 
 export {

@@ -319,6 +319,86 @@ fetch) and mount `AdminShell` in `+layout.svelte`. The `template-sveltekit`
 scaffold adopts AdminShell as its default chrome exactly this way; copy its
 `src/routes/+layout.server.ts` / `+layout.svelte` / `settings/+page.svelte`.
 
+#### Responsive chrome and resizable edges
+
+AdminShell carries the phone/tablet/desktop chrome itself, so hosts do not
+wrap it in a frame. Everything below is opt-in; without these props and config
+keys the shell renders exactly as before.
+
+```svelte
+<script lang="ts">
+  import {
+    AdminShell,
+    createShellState,
+    PhoneBottomBar,
+    PhoneTopBar,
+    ShellNavToggle,
+    ShellTitle,
+    phoneTopBarFor,
+  } from '@happyvertical/smrt-svelte/workspace';
+
+  const shell = createShellState({
+    config: {
+      top: false,
+      bottom: false,
+      left: {
+        label: 'Navigation',
+        // Drawer on phones, icons on tablets, open on desktop.
+        viewportDefaults: { phone: 'collapsed', tablet: 'collapsed', desktop: 'expanded' },
+      },
+      right: {
+        label: 'Assistant',
+        expandedSize: '28rem',
+        resizable: { min: 320, max: 720 }, // drag, arrows, Home/End, double-click resets
+        phone: 'sheet', // or 'hidden' when the host shows it elsewhere on phones
+      },
+    },
+    storageKey: 'my-app-shell',
+  });
+</script>
+
+<AdminShell state={shell} path={page.url.pathname} phone={{ scrim: true, swipeToClose: true }}>
+  {#snippet header()}
+    <ShellNavToggle expanded={shell.panels.left === 'expanded'} onclick={() => shell.togglePanel('left')} />
+    <ShellTitle title="Acme" href="/" />
+  {/snippet}
+  {#snippet phoneTopBar()}
+    <PhoneTopBar model={phoneTopBarFor({ path, homeHref: '/', homeTitle: 'Acme', navItems })} homeHref="/" />
+  {/snippet}
+  {#snippet phoneBottomBar()}
+    <PhoneBottomBar {items} />
+  {/snippet}
+  {#snippet overlays({ viewport })}<!-- PhoneSheet, WorkingStrip, … -->{/snippet}
+  …
+</AdminShell>
+```
+
+- **`header`** is a full-width row above every edge (`#smrt-admin-shell-header`,
+  `--smrt-admin-shell-header-size`, default 3.5rem). On phones it is replaced
+  by `phoneTopBar` when one is given.
+- **Viewport classes**: `shell.viewport` is `phone` (≤ 48rem), `tablet`
+  (≤ 64rem) or `desktop`; `ADMIN_SHELL_PHONE_QUERY` / `ADMIN_SHELL_DESKTOP_QUERY`.
+  `viewportDefaults` apply on first render and whenever the class changes; such
+  an edge never persists its open/closed state.
+- **Phone chrome**: `phoneTopBar` overlays the top of the main region and hides
+  on scroll (`phone.hideOnScroll`, pinned by `pinChrome` or an open drawer);
+  `phoneBottomBar` is a bottom row that a form's `[data-form-action-bar]` (see
+  smrt-ui `FormActionBar`) replaces and the on-screen keyboard hides
+  (`:root[data-keyboard-open]`). `phone.scrim` dims the page behind a drawer or
+  sheet, `phone.swipeToClose` closes drawers by swiping. A `path` change on a
+  phone closes open drawers. `overlays` is a layer above the edges (and above
+  the bottom bar's row) for `PhoneSheet`s and status strips.
+- **Page contracts** on phones: `data-shell-breadcrumbs` is hidden,
+  `data-shell-tabs` sticks under the top bar and slides away with it.
+- **Resizable edges**: `resizable` on a `push` side edge adds a
+  `role="separator"` (with `aria-valuenow/min/max` in px) on its inner border.
+  Sizes are stored as `ShellSettingsDelta.sizes` through the settings adapter;
+  `persist: false` / `{ state?: false, size?: false }` opts an edge out of
+  storage.
+- **Public region ids** (`ADMIN_SHELL_REGION_IDS`): `smrt-admin-shell-header`,
+  `smrt-admin-shell-{top,left,right,bottom}-panel`, and
+  `smrt-admin-shell-main`, which is the page scroller.
+
 - **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
   `AdminShell`; adoption is additive and non-breaking):
   [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
