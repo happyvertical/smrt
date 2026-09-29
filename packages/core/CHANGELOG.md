@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.51.36
+
+### Patch Changes
+
+- ### Features
+  
+  - tax automatic top-ups and classify credit and invoice lines (#3194) (#3201) (commerce)
+  - record an invoice's collection method (#3190) (#3200) (commerce)
+  - let a payment rail pay a written-off invoice (#3199) (commerce)
+  - classify issue labels from a vocabulary (#3175) (projects)
+  
+  ### Bug Fixes
+  
+  - billing adoption follow-ups (#3185 #3186 #3187 #3189 #3152) (#3191) (commerce)
+  - raise the fast-uri override past 3.1.6 (#3196) (deps)
+  
+  ### Other Changes
+  
+  - chore: sync sdk packages to v0.96.0 (#3193) (deps)
+- @happyvertical/smrt-config@0.51.36
+  - @happyvertical/smrt-scanner@0.51.36
+  - @happyvertical/smrt-types@0.51.36
+
 ## 0.51.35
 
 ### Patch Changes
