@@ -4,8 +4,12 @@
  * page title (`<h1>`), and the page's own actions, right-aligned.
  *
  * Page-header contract (shared with AdminShell in smrt-svelte/workspace):
- * - `crumbs` are the page's ancestors only, never the page itself; pass none
- *   on section homes. Derive them from the nav with `shellPageTrailFor()`.
+ * - `crumbs` are the page's ancestors only, never the page itself; none on
+ *   section homes. Inside a shell that sets `setPageHeaderContext()`, pages
+ *   pass only `parents` (ancestors the nav doesn't know, e.g. the article
+ *   above its video) and the shell adds the rest; the shell also hears the
+ *   title (for its phone top bar). smrt-svelte's `shellPageTrailFor()`
+ *   computes such a trail from a nav.
  * - The crumb row carries `data-shell-breadcrumbs` and the title
  *   `data-shell-page-title`: on phones AdminShell hides the crumbs and
  *   visually hides the title, because its phone top bar shows the back arrow
@@ -16,19 +20,25 @@
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
-
-export interface PageHeaderCrumb {
-  label: string;
-  href: string;
-}
+import {
+  getPageHeaderContext,
+  type PageHeaderCrumb,
+} from './page-header-context.js';
 
 export interface Props {
   /** Page title */
   title: string;
   /** Optional subtitle/description */
   subtitle?: string;
-  /** Ancestors of this page, outermost first (never the page itself). */
+  /**
+   * All ancestors of this page, outermost first (never the page itself).
+   * Overrides the shell's trail; usually pass `parents` instead.
+   */
   crumbs?: readonly PageHeaderCrumb[];
+  /** Ancestors past the shell's nav, outermost first. */
+  parents?: readonly PageHeaderCrumb[];
+  /** Shorter title for the shell (e.g. its phone top bar); default `title`. */
+  shortTitle?: string;
   /** Accessible name of the breadcrumb nav. */
   crumbsLabel?: string;
   /**
@@ -49,7 +59,9 @@ export interface Props {
 const {
   title,
   subtitle,
-  crumbs = [],
+  crumbs,
+  parents = [],
+  shortTitle,
   crumbsLabel = 'Breadcrumb',
   backHref,
   backLabel = 'Back',
@@ -57,13 +69,20 @@ const {
   meta,
   children,
 }: Props = $props();
+
+const shell = getPageHeaderContext();
+const trail = $derived<readonly PageHeaderCrumb[]>(
+  crumbs ?? (shell ? shell.crumbs(parents) : parents),
+);
+
+$effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
 </script>
 
 <header class="page-header" data-page-header>
-  {#if crumbs.length > 0}
+  {#if trail.length > 0}
     <nav class="page-crumbs" aria-label={crumbsLabel} data-shell-breadcrumbs>
       <ol>
-        {#each crumbs as crumb, index (`${index}:${crumb.href}`)}
+        {#each trail as crumb, index (`${index}:${crumb.href}`)}
           <li><a href={crumb.href}>{crumb.label}</a></li>
         {/each}
       </ol>

@@ -5,7 +5,7 @@
  * title, optional subtitle, optional back link, and actions/children snippets.
  */
 import { render, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
+import { createRawSnippet, flushSync } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import PageHeader from '../PageHeader.svelte';
@@ -110,6 +110,44 @@ describe('PageHeader', () => {
       props: { title: 'Detail', meta: snippet('<span>Draft</span>') },
     });
     expect(screen.getByText('Draft')).toBeInTheDocument();
+  });
+
+  it('takes its trail from the shell and reports its title', () => {
+    const reports: unknown[] = [];
+    const context = new Map([
+      [
+        Symbol.for('smrt-ui.page-header'),
+        {
+          crumbs: (parents: { label: string; href: string }[]) => [
+            { label: 'Alpha Times', href: '/sites/alpha' },
+            ...parents,
+          ],
+          report: (page: unknown) => {
+            reports.push(page);
+            return undefined;
+          },
+        },
+      ],
+    ]);
+    render(PageHeader, {
+      props: {
+        title: 'Create video',
+        parents: [{ label: 'Videos', href: '/sites/alpha/articles/a1/videos' }],
+      },
+      context,
+    });
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect([...nav.querySelectorAll('a')].map((a) => a.textContent)).toEqual([
+      'Alpha Times',
+      'Videos',
+    ]);
+    flushSync();
+    expect(reports).toEqual([
+      {
+        title: 'Create video',
+        parents: [{ label: 'Videos', href: '/sites/alpha/articles/a1/videos' }],
+      },
+    ]);
   });
 
   it('is axe-clean with subtitle, back link, and actions', async () => {
