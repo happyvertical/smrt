@@ -534,6 +534,8 @@ export async function applyAutoTopUpOutcome(
   if (
     !Number.isSafeInteger(tax) ||
     tax < 0 ||
+    // The total must be exact minor units, never a rounded float sum.
+    !Number.isSafeInteger(payment.amount + tax) ||
     (tax > 0 && !taxedAttempt) ||
     (outcome.subtotal !== undefined && outcome.subtotal !== payment.amount) ||
     (outcome.amount !== undefined && outcome.amount !== payment.amount + tax) ||

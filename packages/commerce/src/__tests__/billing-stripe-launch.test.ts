@@ -1603,6 +1603,36 @@ describe('smrt#3139 Stripe launch billing', () => {
       expect(await grantsOf(SOLO)).toEqual([]);
     });
 
+    it('refuses a taxed total beyond safe integer minor units (#3194)', async () => {
+      await taxedPayer('US');
+      await balancePolicy(SOLO);
+      await saveCard(SOLO, 'pm_taxed_huge', 'processing');
+      await spend(evaluator(), SOLO, 500);
+      const [attempt] = await sellerPayments();
+      const huge = Number.MAX_SAFE_INTEGER - 1;
+      await world.db.query(
+        'UPDATE payments SET amount = ? WHERE id = ?',
+        huge,
+        String(attempt?.id),
+      );
+      await expect(
+        withTenant({ tenantId: PROVIDER }, () =>
+          world.db.transaction
+            ? world.db.transaction((tx) =>
+                applyAutoTopUpOutcome(world.provider, tx, String(attempt?.id), {
+                  status: 'succeeded',
+                  subtotal: huge,
+                  tax: 3,
+                  amount: huge + 3,
+                  currency: 'USD',
+                }),
+              )
+            : Promise.resolve(),
+        ),
+      ).rejects.toThrow(/does not match/);
+      expect(await grantsOf(SOLO)).toEqual([]);
+    });
+
     it('refuses a charge outcome whose tax does not add up (#3194)', async () => {
       await balancePolicy(SOLO);
       await saveCard(SOLO, 'pm_untaxed_attempt', 'processing');
