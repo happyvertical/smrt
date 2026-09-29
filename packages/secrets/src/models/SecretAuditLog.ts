@@ -213,6 +213,9 @@ export class SecretAuditLog extends SmrtObject {
   }
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Create an audit log entry for a secret operation
  */
@@ -236,10 +239,19 @@ export function createAuditEntry(params: {
   // `'system'`/empty sentinels are not valid UUIDs, so normalize them all to
   // null — a system-initiated operation has no authenticated user. Callers may
   // pass `null`/`undefined` directly to express that (#1444).
-  const userId =
+  // Any other value that is not a uuid (an email-login identity, a service
+  // name) would fail the insert and with it the audited operation; record it
+  // in `details.actorId` instead so the actor is never lost.
+  const rawUserId =
     params.userId == null || params.userId === 'system' || params.userId === ''
       ? null
       : params.userId;
+  const userId =
+    rawUserId !== null && UUID_PATTERN.test(rawUserId) ? rawUserId : null;
+  const details =
+    rawUserId !== null && userId === null
+      ? { ...(params.details ?? {}), actorId: rawUserId }
+      : (params.details ?? {});
 
   const entry: SmrtCreateInput<SecretAuditLog> = {
     secretId: params.secretId ?? null,
@@ -249,7 +261,7 @@ export function createAuditEntry(params: {
     result: params.result,
     ipAddress: params.ipAddress ?? '',
     userAgent: params.userAgent ?? '',
-    details: params.details ?? {},
+    details,
     tenantId,
   };
   return entry;
