@@ -35,6 +35,7 @@ interface FakeInvoiceItem {
   description: string;
   invoice: string | null;
   metadata: Record<string, string>;
+  tax_code?: string;
 }
 
 interface FakeInvoice {
@@ -76,6 +77,16 @@ interface FakeSession {
   setup_future_usage: string | null;
   payment_method: string | null;
   metadata: Record<string, string>;
+  tax_code: string | null;
+}
+
+/** A Stripe Tax calculation for an off-session charge (#3194). */
+interface FakeTaxCalculation {
+  id: string;
+  customer: string;
+  amount_total: number;
+  tax_amount_exclusive: number;
+  tax_code: string | null;
 }
 
 /** How a saved payment method answers an off-session charge. */
@@ -146,6 +157,7 @@ export class FakeStripe {
   readonly invoices = new Map<string, FakeInvoice>();
   readonly sessions = new Map<string, FakeSession>();
   readonly paymentIntents = new Map<string, FakePaymentIntent>();
+  readonly taxCalculations = new Map<string, FakeTaxCalculation>();
   /** False while Stripe's search index lags behind writes. */
   searchable = true;
   /** Behavior of each saved payment method (default `succeed`). */
@@ -284,6 +296,7 @@ export class FakeStripe {
         description: String(body.description ?? ''),
         invoice: null,
         metadata: (body.metadata as Record<string, string>) ?? {},
+        ...(body.tax_code ? { tax_code: String(body.tax_code) } : {}),
       };
       this.invoiceItems.set(item.id, item);
       return { status: 200, body: item };
@@ -418,7 +431,11 @@ export class FakeStripe {
         | Record<
             string,
             {
-              price_data: { currency: string; unit_amount: string };
+              price_data: {
+                currency: string;
+                unit_amount: string;
+                product_data?: { tax_code?: string };
+              };
               quantity: string;
             }
           >
@@ -458,6 +475,7 @@ export class FakeStripe {
           : null,
         setup_future_usage: paymentIntentData?.setup_future_usage ?? null,
         payment_method: null,
+        tax_code: line?.price_data.product_data?.tax_code ?? null,
         // Stripe treats an empty metadata value as unset.
         metadata: Object.fromEntries(
           Object.entries(
@@ -486,6 +504,44 @@ export class FakeStripe {
     }
     if (method === 'POST' && path === '/v1/payment_intents') {
       return this.createPaymentIntent(body);
+    }
+    if (method === 'POST' && path === '/v1/tax/calculations') {
+      // Stripe Tax for an off-session charge: exclusive tax at the
+      // customer's address rate; no address is a tax location error.
+      const customer = this.customers.get(String(body.customer));
+      const country = customer?.address?.country;
+      if (!country) {
+        return {
+          status: 400,
+          body: {
+            error: {
+              type: 'invalid_request_error',
+              code: 'customer_tax_location_invalid',
+              message: 'The customer tax location is invalid.',
+            },
+          },
+        };
+      }
+      const line = (body.line_items as Record<string, Record<string, string>>)[
+        '0'
+      ];
+      const amount = Number(line?.amount);
+      const tax =
+        customer?.tax_exempt === 'exempt'
+          ? 0
+          : Math.round(amount * (TAX_RATES[country] ?? 0));
+      const calculation: FakeTaxCalculation = {
+        id: this.nextId('taxcalc'),
+        customer: String(body.customer),
+        amount_total: amount + tax,
+        tax_amount_exclusive: tax,
+        tax_code: line?.tax_code ?? null,
+      };
+      this.taxCalculations.set(calculation.id, calculation);
+      return {
+        status: 200,
+        body: { object: 'tax.calculation', ...calculation },
+      };
     }
     match = path.match(/^\/v1\/subscriptions\/([^/]+)$/);
     if (match) {

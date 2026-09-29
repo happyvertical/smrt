@@ -19,6 +19,7 @@
  */
 import { isUniqueViolationError } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
+import { JournalCollection } from '@happyvertical/smrt-ledgers';
 import {
   type AutoTopUpGrant,
   type AutoTopUpHook,
@@ -82,16 +83,23 @@ export type AutoTopUpFailureHook = (
 
 /**
  * Why a needed top-up will not be charged (#3189). New reasons may be added in
- * a minor release (for example when taxed off-session charges become
- * possible, happyvertical/sdk#1283); treat an unknown reason like `no_card`.
+ * a minor release; treat an unknown reason like `no_card`.
  *
  * - `taxed_account`: the payer's account is taxed and the hook was built with
- *   `taxedAccounts: 'skip'` (the default).
+ *   `taxedAccounts: 'skip'`.
  * - `no_card`: the payer has no default card with this provider customer
  *   (see `BillingRuntime.cardOnFile`).
  * - `no_account`: the payer has no billing account or provider customer yet.
+ * - `tax_location_invalid`: a taxed payer has no tax location (billing
+ *   address country), so tax cannot be calculated (#3194). A location the
+ *   provider rejects instead fails the charge with `failureCode:
+ *   'customer_tax_location_invalid'` through `onAutoTopUpFailed`.
  */
-export type AutoTopUpSkipReason = 'taxed_account' | 'no_card' | 'no_account';
+export type AutoTopUpSkipReason =
+  | 'taxed_account'
+  | 'no_card'
+  | 'no_account'
+  | 'tax_location_invalid';
 
 /** A top-up the balance needed that will not be charged. */
 export interface AutoTopUpSkip {
@@ -136,13 +144,16 @@ export interface AutoTopUpHookOptions {
   /** Charge description shown to the payer where supported. */
   description?: string;
   /**
-   * A payer whose account is taxed (`automaticTax`, not tax-exempt) is not
-   * topped up by default (`'skip'`): an off-session charge carries no
-   * provider-calculated tax, while a checkout purchase of the same credit
-   * does. `'charge_untaxed'` charges them without tax, for sellers that
-   * account for tax on this credit elsewhere.
+   * How a payer whose account is taxed (`automaticTax`, not tax-exempt) is
+   * topped up (#3194). `'charge_taxed'` (the default) adds
+   * provider-calculated tax on top of the credit, as a checkout purchase of
+   * the same credit does: the payer is charged credit plus tax, the balance
+   * is credited the credit, and the tax is booked to tax payable.
+   * `'skip'` does not top them up (reported as `taxed_account`);
+   * `'charge_untaxed'` charges them without tax, for sellers that account
+   * for tax on this credit elsewhere. Untaxed accounts are never taxed.
    */
-  taxedAccounts?: 'skip' | 'charge_untaxed';
+  taxedAccounts?: 'charge_taxed' | 'skip' | 'charge_untaxed';
   /**
    * Called when no charge will be made for a needed top-up because of the
    * payer's account (#3189): see {@link AutoTopUpSkipReason}. It is not
@@ -159,11 +170,22 @@ export interface AutoTopUpChargeOutcome {
   status: BillingChargeStatus;
   providerPaymentId?: string;
   providerCustomerId?: string;
-  /** Minor units, when reported. */
+  /** Minor units charged (with tax for a taxed charge), when reported. */
   amount?: number;
   currency?: string;
+  /** A taxed charge's pre-tax amount: the credit (#3194). */
+  subtotal?: number;
+  /** A taxed charge's provider-calculated tax (#3194). */
+  tax?: number;
   failureCode?: string;
 }
+
+/**
+ * Marks an attempt charged with provider tax (#3194) in its `notes`, so a
+ * re-drive of the same charge key repeats the same request whatever the
+ * account's tax status is by then.
+ */
+const TAXED_ATTEMPT_NOTE = ' (automatic tax)';
 
 export function autoTopUpChargeKey(paymentId: string): string {
   return `${AUTO_TOP_UP_CHARGE_PREFIX}${paymentId}`;
@@ -214,6 +236,7 @@ export function createAutoTopUpHook(
     if (!attempt) return null;
     const { payment, payerTenantId, providerCustomerId } = attempt;
     const paymentId = String(payment.id);
+    const automaticTax = isTaxedAttempt(payment);
     const result = await charge.call(runtime.provider, {
       providerCustomerId,
       amount: payment.amount,
@@ -226,6 +249,14 @@ export function createAutoTopUpHook(
         smrt_payer: payerTenantId,
         smrt_policy: request.policyId,
       },
+      ...(automaticTax
+        ? {
+            automaticTax: true,
+            ...(runtime.taxCodes.credit
+              ? { taxCode: runtime.taxCodes.credit }
+              : {}),
+          }
+        : {}),
     });
     const outcome: AutoTopUpChargeOutcome = {
       status: result.status,
@@ -233,6 +264,8 @@ export function createAutoTopUpHook(
       providerCustomerId,
       amount: result.amount,
       currency: result.currency,
+      subtotal: result.subtotal,
+      tax: result.tax,
       failureCode: result.failureCode,
     };
     // Settle in the seller's books, like event processing does.
@@ -362,19 +395,23 @@ async function claimAttempt(
     // No provider customer, so no saved card to charge.
     return skipped('no_account', need.shortfall);
   }
-  // New charges only (an attempt already charged is still re-driven above):
-  // no tax on an off-session charge, so a taxed account is never silently
-  // charged untaxed.
-  if (
-    options.taxedAccounts !== 'charge_untaxed' &&
-    (await runtime.accountIsTaxed(account))
-  ) {
+  // New charges only (an attempt already charged is re-driven above with
+  // the tax decision it was made with).
+  const taxedAccounts = options.taxedAccounts ?? 'charge_taxed';
+  const taxed = await runtime.accountIsTaxed(account);
+  if (taxed && taxedAccounts === 'skip') {
     return skipped('taxed_account', need.shortfall);
   }
   // Only a payer with a card on file is charged (no failed attempt per
   // shortfall for payers who never saved one).
   if (!(await defaultCardFor(runtime, account, providerCustomerId))) {
     return skipped('no_card', need.shortfall);
+  }
+  const automaticTax = taxed && taxedAccounts === 'charge_taxed';
+  // Without a tax location the provider cannot tax the charge: no attempt
+  // (and no failed charge per shortfall) until the payer adds one.
+  if (automaticTax && !(await runtime.hasTaxLocation(account))) {
+    return skipped('tax_location_invalid', need.shortfall);
   }
   const requested = need.requested;
   const id = await attemptId(sequence);
@@ -390,7 +427,7 @@ async function claimAttempt(
       reference: where.reference,
       externalProvider: runtime.provider.name,
       backendId: runtime.provider.name,
-      notes: `attempt ${sequence}`,
+      notes: `attempt ${sequence}${automaticTax ? TAXED_ATTEMPT_NOTE : ''}`,
       _insertOnly: true,
     });
     return { payment, payerTenantId, providerCustomerId };
@@ -416,6 +453,13 @@ function inTransaction<T>(
       result = await operation(tx);
     })
     .then(() => result as T);
+}
+
+function isTaxedAttempt(payment: Payment): boolean {
+  return (
+    payment.notes.startsWith('attempt ') &&
+    payment.notes.includes(TAXED_ATTEMPT_NOTE)
+  );
 }
 
 function timeOf(payment: Payment): number {
@@ -481,8 +525,20 @@ export async function applyAutoTopUpOutcome(
   const account = await withSystemContext(() =>
     runtime.getAccount(payerTenantId),
   );
+  // The attempt row holds the credit: a taxed charge is compared by its
+  // pre-tax subtotal, and its total must be that plus the tax (#3194). An
+  // untaxed attempt never accepts tax (the payer was charged more than the
+  // credit it asked for).
+  const tax = outcome.tax ?? 0;
+  const taxedAttempt = isTaxedAttempt(payment);
   if (
-    (outcome.amount !== undefined && outcome.amount !== payment.amount) ||
+    !Number.isSafeInteger(tax) ||
+    tax < 0 ||
+    // The total must be exact minor units, never a rounded float sum.
+    !Number.isSafeInteger(payment.amount + tax) ||
+    (tax > 0 && !taxedAttempt) ||
+    (outcome.subtotal !== undefined && outcome.subtotal !== payment.amount) ||
+    (outcome.amount !== undefined && outcome.amount !== payment.amount + tax) ||
     (outcome.currency !== undefined &&
       normalizeCurrency(outcome.currency) !==
         normalizeCurrency(payment.currency)) ||
@@ -491,11 +547,18 @@ export async function applyAutoTopUpOutcome(
   ) {
     throw new Error(
       `Charge for auto top-up ${paymentId} does not match it: ` +
-        `${outcome.amount} ${outcome.currency} for ${payment.amount} ${payment.currency}.`,
+        `${outcome.amount} ${outcome.currency} (tax ${tax}) for ${payment.amount} ${payment.currency}.`,
     );
   }
 
   if (outcome.status === 'succeeded') {
+    if (taxedAttempt && outcome.tax === undefined) {
+      // A taxed charge that reports no tax cannot be booked correctly: fail
+      // visibly rather than leave the collected tax out of the ledger.
+      throw new Error(
+        `Taxed auto top-up ${paymentId} succeeded without a reported tax amount.`,
+      );
+    }
     if (payment.status === PaymentStatus.FAILED) {
       // The attempt was closed as failed, then the provider collected: an
       // operator must reconcile it (credit or refund).
@@ -526,11 +589,35 @@ export async function applyAutoTopUpOutcome(
       if (outcome.providerPaymentId) {
         payment.externalId = outcome.providerPaymentId;
       }
+      if (tax > 0) payment.notes = `${payment.notes}; tax ${tax}`;
       await payment.recordPayment({
         ledgerId: '',
         cashAccountId: runtime.ledger.cashAccountId,
         receivablesAccountId: runtime.ledger.prepaidCreditAccountId,
       });
+      if (tax > 0) {
+        // The payer paid credit plus tax: the tax is the seller's to remit,
+        // booked once with the settlement it belongs to.
+        const journals = await JournalCollection.create({ db });
+        const journal = await journals.create({
+          date: new Date(),
+          description: `Tax collected on automatic top-up ${paymentId}`,
+          sourceModule: 'smrt-commerce',
+          sourceRef: `${paymentId}:tax`,
+        });
+        await journal.save();
+        await journal.addEntry({
+          accountId: runtime.ledger.cashAccountId,
+          debit: tax,
+          memo: `Tax on top-up ${policyId}`,
+        });
+        await journal.addEntry({
+          accountId: runtime.ledger.taxAccountId,
+          credit: tax,
+          memo: `Tax on top-up ${policyId}`,
+        });
+        await journal.post();
+      }
     }
     return { grant };
   }
@@ -551,7 +638,9 @@ export async function applyAutoTopUpOutcome(
   if (outcome.providerPaymentId && !payment.externalId) {
     payment.externalId = outcome.providerPaymentId;
   }
-  payment.notes = `${outcome.status}${outcome.failureCode ? `: ${outcome.failureCode}` : ''}`;
+  // Appended, never replaced: the notes carry the attempt's tax decision,
+  // which a later webhook for the same charge is checked against.
+  payment.notes = `${payment.notes}; ${outcome.status}${outcome.failureCode ? `: ${outcome.failureCode}` : ''}`;
   await payment.save();
   await runtime.onAutoTopUpFailed?.({
     sellerTenantId: runtime.sellerTenantId,

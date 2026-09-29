@@ -163,11 +163,24 @@ export interface BillingRuntimeOptions extends SmrtClassOptions {
    */
   autoChargeInvoices?: boolean;
   /**
+   * Product tax codes for provider-calculated tax (Stripe Tax `txcd_...`,
+   * #3194): `credit` classifies prepaid credit (checkout purchases and
+   * automatic top-ups), `invoice` the lines of billing-period invoices.
+   * Omitted: the provider account's default product tax code.
+   */
+  taxCodes?: BillingTaxCodes;
+  /**
    * Called when an automatic top-up charge ends without collecting (a
    * decline, or the issuer requiring the payer to authenticate), from the
    * hook or the provider's `payment` event (#3139).
    */
   onAutoTopUpFailed?: AutoTopUpFailureHook;
+}
+
+/** Product tax codes (#3194). */
+export interface BillingTaxCodes {
+  credit?: string;
+  invoice?: string;
 }
 
 export interface UpsertBillingAccountInput {
@@ -234,6 +247,7 @@ export class BillingRuntime {
   readonly leaseMs: number;
   readonly pageSize: number;
   readonly autoChargeInvoices: boolean;
+  readonly taxCodes: Readonly<BillingTaxCodes>;
   readonly onAutoTopUpFailed?: AutoTopUpFailureHook;
   /** The inbox provider namespace for the issuing provider's events. */
   readonly eventProvider: string;
@@ -279,6 +293,12 @@ export class BillingRuntime {
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
     this.pageSize = options.pageSize ?? 500;
     this.autoChargeInvoices = options.autoChargeInvoices ?? false;
+    this.taxCodes = Object.freeze({ ...options.taxCodes });
+    for (const [key, code] of Object.entries(this.taxCodes)) {
+      if (code !== undefined && (typeof code !== 'string' || !code.trim())) {
+        throw new Error(`taxCodes.${key} must be a non-empty string.`);
+      }
+    }
     this.onAutoTopUpFailed = options.onAutoTopUpFailed;
     // One inbox namespace per seller: the delivery claim is cross-tenant, so
     // a runtime must never be able to claim another seller's events.
@@ -332,6 +352,7 @@ export class BillingRuntime {
       leaseMs: _leaseMs,
       pageSize: _pageSize,
       autoChargeInvoices: _autoCharge,
+      taxCodes: _taxCodes,
       onAutoTopUpFailed: _topUpFailed,
       ...classOptions
     } = options;

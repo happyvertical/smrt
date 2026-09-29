@@ -241,6 +241,9 @@ export async function createCreditCheckout(
     cancelUrl: input.cancelUrl,
     metadata,
     automaticTax,
+    ...(automaticTax && runtime.taxCodes.credit
+      ? { taxCode: runtime.taxCodes.credit }
+      : {}),
     ...(input.savePaymentMethod ? { savePaymentMethod: true } : {}),
   });
   if (providerCapabilities(provider).paymentAttempts) {

@@ -29,6 +29,11 @@ export interface BillingProviderInvoiceLine {
   amount: number;
   periodStart?: Date;
   periodEnd?: Date;
+  /**
+   * Product tax code for provider-calculated tax (Stripe Tax `txcd_...`,
+   * #3194). Omitted: the provider account's default.
+   */
+  taxCode?: string;
 }
 
 /**
@@ -119,6 +124,11 @@ export interface BillingProviderCheckoutInput {
    */
   automaticTax?: boolean;
   /**
+   * Product tax code for the checkout line (Stripe Tax `txcd_...`, #3194).
+   * Omitted: the provider account's default.
+   */
+  taxCode?: string;
+  /**
    * Also save the payment method for later off-session charges (for example
    * automatic top-ups). Requires `providerCustomerId`.
    */
@@ -194,15 +204,30 @@ export interface BillingProviderChargeInput {
   idempotencyKey: string;
   description?: string;
   metadata?: Record<string, string>;
+  /**
+   * Add provider-calculated tax on top of `amount` from the customer's tax
+   * location (#3194): `amount` is then the pre-tax subtotal. A customer whose
+   * tax location cannot be determined yields a `failed` result with
+   * `failureCode: 'customer_tax_location_invalid'`, charging nothing. A
+   * provider that cannot calculate tax must throw, never charge untaxed.
+   * Every retry of a charge key must pass the same value.
+   */
+  automaticTax?: boolean;
+  /** Product tax code (requires `automaticTax`). */
+  taxCode?: string;
 }
 
 export interface BillingProviderChargeResult {
   status: BillingChargeStatus;
   /** The provider payment id, when one was created. */
   providerPaymentId?: string;
-  /** Minor units. */
+  /** Minor units charged, including tax for an `automaticTax` charge. */
   amount: number;
   currency: string;
+  /** `automaticTax` charges: the pre-tax amount, minor units. */
+  subtotal?: number;
+  /** `automaticTax` charges: the provider-calculated tax, minor units. */
+  tax?: number;
   failureCode?: string;
   failureMessage?: string;
 }
@@ -258,9 +283,16 @@ export type BillingProviderEvent =
       status: BillingChargeStatus;
       providerPaymentId: string;
       providerCustomerId?: string;
-      /** Minor units, when the provider amount converts exactly. */
+      /**
+       * Minor units charged (with tax for an `automaticTax` charge), when the
+       * provider amount converts exactly.
+       */
       amount?: number;
       currency?: string;
+      /** `automaticTax` charges: the pre-tax amount, minor units (#3194). */
+      subtotal?: number;
+      /** `automaticTax` charges: the provider-calculated tax, minor units. */
+      tax?: number;
       failureCode?: string;
     }
   | {

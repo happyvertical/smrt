@@ -1457,6 +1457,10 @@ async function pushToProvider(
     runtime.lineItems.findByInvoice(String(invoice.id)),
   );
   const lines: BillingProviderInvoiceLine[] = [];
+  const taxCode =
+    synced.automaticTax && runtime.taxCodes.invoice
+      ? { taxCode: runtime.taxCodes.invoice }
+      : {};
   for (const item of [...lineItems].sort((a, b) => a.sortOrder - b.sortOrder)) {
     const gross = item.quantity * item.unitPrice;
     lines.push({
@@ -1464,6 +1468,7 @@ async function pushToProvider(
       amount: gross,
       periodStart: item.periodStart ?? undefined,
       periodEnd: item.periodEnd ?? undefined,
+      ...taxCode,
     });
     if (item.discount > 0) {
       lines.push({
@@ -1471,6 +1476,7 @@ async function pushToProvider(
         amount: -item.discount,
         periodStart: item.periodStart ?? undefined,
         periodEnd: item.periodEnd ?? undefined,
+        ...taxCode,
       });
     }
   }

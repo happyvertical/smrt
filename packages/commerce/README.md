@@ -234,9 +234,8 @@ const setup = await billing.createCardSetupCheckout({
 });
 
 // Automatic top-ups: charge the saved card when a balance would run out.
-// Accounts are taxed by default (`automaticTax`), and a taxed account is not
-// topped up (no tax on off-session charges, sdk#1283): set
-// `automaticTax: false` on the account or pass `taxedAccounts: 'charge_untaxed'`.
+// Accounts are taxed by default (`automaticTax`); a taxed account is charged
+// the credit plus provider-calculated tax (#3194).
 const evaluator = await SpendingPolicyEvaluator.create({
   db,
   autoTopUp: billing.autoTopUpHook({ amount: () => 2500 }),
@@ -360,13 +359,17 @@ const evaluator = await SpendingPolicyEvaluator.create({
   `smrt db:migrate`). Activate service on the `current` standing
   from the `paid` event, not on send; a failure marks the payer `past_due`.
 - **Automatic top-ups.** Taxed accounts (the default: `automaticTax` on, not
-  tax-exempt) are never topped up unless the hook is built with
-  `taxedAccounts: 'charge_untaxed'`, because an off-session charge carries no
-  tax yet (happyvertical/sdk#1283); the skip records no attempt row. Pass
+  tax-exempt) are charged the credit plus provider-calculated tax (#3194):
+  the balance is credited the credit, the payment records the credit, and
+  the tax is booked to the tax account. `taxedAccounts: 'skip'` does not top
+  them up, and `'charge_untaxed'` charges them without tax. A taxed payer
+  without a tax location is not charged. A location Stripe rejects fails the
+  attempt with `failureCode: 'customer_tax_location_invalid'`
+  (`onAutoTopUpFailed`), and it is retried only after `retryAfterMs`. Pass
   `onAutoTopUpSkipped` to learn when a needed top-up will not be charged
-  because of the payer's account — `reason` is `taxed_account`, `no_card`,
-  or `no_account` (more may be added) — for example to ask the payer to top
-  up by hand; it is not called while a charge is processing, while a
+  because of the payer's account. Its `reason` is `taxed_account`, `no_card`,
+  `no_account`, or `tax_location_invalid`, and more may be added. Use it, for
+  example, to ask the payer to top up by hand or to add a billing address; it is not called while a charge is processing, while a
   declined card waits out `retryAfterMs`, or when the top-up is no longer
   needed or `amount` declines it (#3189).
   `billing.autoTopUpHook()` is the `autoTopUp` hook for
@@ -378,10 +381,14 @@ const evaluator = await SpendingPolicyEvaluator.create({
   attempt, and calls the runtime's `onAutoTopUpFailed` (ask the payer to
   re-save their card with a setup checkout). One attempt runs per policy at a
   time, retries of a declined card wait `retryAfterMs` (default one hour),
-  and the credit is granted exactly once however the outcome arrives. An
-  off-session charge carries no tax (happyvertical/sdk#1283), so taxed
-  accounts are not topped up unless the seller passes
-  `taxedAccounts: 'charge_untaxed'`; they buy credit through checkout.
+  and the credit is granted exactly once however the outcome arrives.
+- **Product tax codes (#3194).** `taxCodes: { credit, invoice }` on the
+  runtime classifies prepaid credit (checkout purchases and taxed top-ups)
+  and billing-period invoice lines for Stripe Tax (`txcd_...`). Without it,
+  the Stripe account's default product tax code applies.
+- **Upgrading to #3194.** Requires `@happyvertical/accounting` 0.96 or later.
+  No schema change. Taxed accounts are now topped up with tax. To keep the
+  previous behaviour, pass `taxedAccounts: 'skip'`.
 - **Upgrading to #3139.** Requires `@happyvertical/accounting` 0.92 or later.
   No schema change. Credit checkouts are now taxed for taxed accounts (pass
   `automaticTax: false` to keep them untaxed), and Stripe customers are
