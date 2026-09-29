@@ -50,7 +50,7 @@ components are exempt — they *are* the primitives.
 | `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` and their types — a **component barrel**: it re-exports `.svelte` files, so a plain Node `import()` of it throws `ERR_UNKNOWN_FILE_EXTENSION` |
 | `./data-surface` | **Svelte-free**: registry contracts and shared protocol limits (`DATA_SURFACE_MAX_REQUEST_BYTES`, `DATA_SURFACE_IDENTIFIER_MAX_LENGTH`, …). Server adapters must import these from here, not from `./data` — a server entry that reaches the barrel breaks the `smrt` CLI's plain-Node `.smrt/register.js` load (issue #2924) |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
-| `./calendar` | `Calendar`, `DayView` |
+| `./calendar` | `CalendarView` (time-zone-aware month grid + phone agenda) and its Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`, …); deprecated `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, plus the transport-neutral control interaction registry |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
@@ -148,6 +148,11 @@ other text pairing clears WCAG AA in both schemes.
   hook; legacy `setValue` is always invoked with exactly one argument.
 
 ## Gotchas
+
+- **Calendar dates are `YYYY-MM-DD` keys in the view's `timeZone`.** Project
+  instants into the zone once (`dateKeyInZone`) and do all grid/span math on
+  keys; never `new Date(y, m, d)` / `getDay()` in the browser zone. Months are
+  1-12 in the public API (`CalendarMonth`), unlike `Date#getMonth`.
 
 - **i18n split**: the client (here) is dependency-free; the Node-only server
   resolver (`buildI18nSnapshot`, → `@happyvertical/smrt-languages`) stays in

@@ -437,7 +437,7 @@ resolve against `smrt-ui`:
 | `@happyvertical/smrt-ui` | `PermissionCheck`, `permission` / `hasPermission` / `hasAnyPermission` / `hasAllPermissions` |
 | `@happyvertical/smrt-ui/ui` | UI primitives (Button, Card, Badge, Pagination) |
 | `@happyvertical/smrt-ui/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
-| `@happyvertical/smrt-ui/calendar` | Calendar and DayView |
+| `@happyvertical/smrt-ui/calendar` | CalendarView (deprecated: Calendar, DayView) |
 | `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
 | `@happyvertical/smrt-ui/feedback` | Modal, ConfirmDialog, LoadingOverlay, ProgressBar |
 | `@happyvertical/smrt-ui/chat` | Message bubble, reaction picker, typing indicator |

@@ -5,6 +5,7 @@ const loadInteractiveControls = () =>
   import('./playground/InteractiveControlsPreview.svelte');
 const loadFeedback = () => import('./playground/FeedbackPreview.svelte');
 const loadCollections = () => import('./playground/CollectionsPreview.svelte');
+const loadCalendar = () => import('./playground/CalendarPreview.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-ui',
@@ -69,6 +70,16 @@ export default {
           label: 'Interactive',
         },
       },
+    },
+    {
+      id: 'calendar',
+      title: 'Calendar',
+      description:
+        'Time-zone-aware month grid with all-day bands and "+N more", and the phone agenda (day strip + day list).',
+      loadComponent: loadCalendar,
+      order: 6,
+      tags: ['calendar', 'events', 'agenda', 'mobile'],
+      modes: { mock: { label: 'Interactive' } },
     },
   ],
 };

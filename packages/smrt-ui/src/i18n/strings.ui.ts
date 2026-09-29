@@ -16,6 +16,19 @@ export const M = defineMessages({
   'ui.calendar.select_month': 'Select month',
   'ui.calendar.select_year': 'Select year',
 
+  // calendar/CalendarView.svelte
+  'ui.calendar.today': 'Today',
+  'ui.calendar.more': '+{count} more',
+  'ui.calendar.more_short': '+{count}',
+  'ui.calendar.all_day': 'All day',
+  'ui.calendar.until': 'Until {date}',
+  'ui.calendar.items_one': '1 item',
+  'ui.calendar.items_other': '{count} items',
+  'ui.calendar.nothing_day': 'Nothing scheduled',
+  'ui.calendar.nothing_month': 'Nothing scheduled this month',
+  'ui.calendar.days_in': 'Days in {month}',
+  'ui.calendar.close_day': 'Close {date}',
+
   // calendar/DayView.svelte
   'ui.day_view.back_to_calendar': 'Back to Calendar',
   'ui.day_view.no_events': 'No events scheduled for this day',

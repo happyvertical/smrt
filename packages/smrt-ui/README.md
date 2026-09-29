@@ -38,6 +38,7 @@ pnpm add @happyvertical/smrt-ui
 | Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
 | Layout and navigation | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+| Calendar | `CalendarView` (deprecated: `Calendar`, `DayView`) |
 
 ### Phone surfaces
 
@@ -62,6 +63,63 @@ Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
+
+## Calendar
+
+`CalendarView` (`@happyvertical/smrt-ui/calendar`) is a generic month grid
+with a phone agenda:
+
+```svelte
+<script lang="ts">
+  import { CalendarView } from '@happyvertical/smrt-ui/calendar';
+  import { goto } from '$app/navigation';
+  let { data } = $props(); // { year, month, items }
+</script>
+
+<CalendarView
+  items={data.items}
+  year={data.year}
+  month={data.month}
+  timeZone="America/Edmonton"
+  onNavigate={({ year, month }) => goto(`?y=${year}&m=${month}`, { keepFocus: true })}
+/>
+```
+
+- **Items** are generic `CalendarItem`s: `{ id, title, start, end?, allDay?,
+  tone?, color?, label?, group?, href? }`. `start`/`end` take a `Date`, an ISO
+  date-time, or a `YYYY-MM-DD` date (all-day). Timed `end` is exclusive; an
+  all-day `YYYY-MM-DD` end is the inclusive last day, and an all-day end
+  instant at local midnight is exclusive. `tone` maps to the theme's color
+  roles; without it, `group` picks a stable tone. Items with `href` render as
+  links, others as buttons; both call `onItemSelect`.
+- **Time zone and locale**: every day is computed in `timeZone` (IANA;
+  defaults to the browser's — pass it explicitly so server and client
+  agree). Month, weekday, date, and time text come from `Intl` in `locale`
+  (defaults to the i18n locale); `weekStartsOn` defaults to the locale's.
+- **Modes**: `month` is a `role="grid"` month with roving focus (arrows,
+  Home/End, PageUp/PageDown cross months). All-day and multi-day items are
+  bands across the days they cover; a day with more than `maxPerDay` rows
+  shows "+N more", which opens the day in a panel under the grid, or follows
+  `dayHref` when given. `agenda` is a horizontally scrolling strip of the
+  month's days (44px targets, arrow keys) above a day-by-day list. `auto`
+  (default) uses the agenda below 48rem, matching AdminShell's phone
+  breakpoint. No modals.
+- **URL state**: `year` + `month` (1-12) and `selectedDate` (`YYYY-MM-DD`) are
+  controlled when passed; changes are reported via `onNavigate` and
+  `onSelectDate`, so a page can keep them in its URL.
+- The Svelte-free date model (`toEntries`, `layoutMonth`, `dateKeyInZone`,
+  `monthWeeks`, `shiftMonth`, …) is exported from the same subpath for
+  server-side range queries and tests.
+
+**Migrating from `Calendar` / `DayView` (deprecated).** They compute days in
+the browser zone, print English-only names, and hard-code game/meeting/event
+emoji and routes. Map each `DayEventDetail` to a `CalendarItem` (`name` →
+`title`, `type` → `group`/`label`, your own route → `href`), replace
+`Calendar`'s `year`/`month` (0-indexed) with `CalendarView`'s `year`/`month`
+(1-12) and `onMonthNavigate` with `onNavigate`, `baseUrl` with a `dayHref`
+function that builds your day route from the `YYYY-MM-DD` key, and a `DayView`
+page with `CalendarView` in agenda mode (`selectedDate` set to the day) or the
+month grid's day panel. They will be removed in a future minor release.
 
 ### Currency display
 
