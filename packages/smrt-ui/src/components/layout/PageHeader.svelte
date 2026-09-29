@@ -16,6 +16,12 @@
  *   and the title instead.
  * - No in-page back link: the crumbs (and the phone top bar) are the way
  *   back. `backHref` is kept only for pages outside such a shell.
+ * - An editable title (`titleField`, e.g. an article's headline) renders
+ *   inside the `<h1>`, so the heading is still the page's title in the
+ *   outline and is named by the field's value, while the field keeps its own
+ *   label. Such a heading has no `data-shell-page-title`: it stays visible on
+ *   phones, because it is the input. Pass the live value as `title` so the
+ *   shell (the phone top bar) follows along as the person types.
  */
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
@@ -48,6 +54,12 @@ export interface Props {
   backHref?: string;
   /** Back link label */
   backLabel?: string;
+  /**
+   * An editable title rendered inside the `<h1>` in place of `title`'s text
+   * (a labelled text field styled as the heading). `title` still names the
+   * page for the shell; keep it in sync with the field's value.
+   */
+  titleField?: Snippet;
   /** Slot for action buttons (right-aligned beside the title) */
   actions?: Snippet;
   /** Small line under the title (status, dates, counts) */
@@ -65,6 +77,7 @@ const {
   crumbsLabel = 'Breadcrumb',
   backHref,
   backLabel = 'Back',
+  titleField,
   actions,
   meta,
   children,
@@ -97,7 +110,13 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
           <span>{backLabel}</span>
         </a>
       {/if}
-      <h1 class="page-title" data-shell-page-title>{title}</h1>
+      {#if titleField}
+        <h1 class="page-title page-title-field" data-page-title-field>
+          {@render titleField()}
+        </h1>
+      {:else}
+        <h1 class="page-title" data-shell-page-title>{title}</h1>
+      {/if}
       {#if subtitle}
         <p class="page-subtitle">{subtitle}</p>
       {/if}
@@ -211,6 +230,10 @@ $effect(() => shell?.report?.({ title: shortTitle ?? title, parents }));
     margin: 0;
     letter-spacing: -0.5px;
     overflow-wrap: anywhere;
+  }
+
+  .page-title-field {
+    min-width: 0;
   }
 
   .page-subtitle {

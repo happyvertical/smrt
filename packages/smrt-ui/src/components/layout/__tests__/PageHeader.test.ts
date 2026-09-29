@@ -150,6 +150,27 @@ describe('PageHeader', () => {
     ]);
   });
 
+  it('renders an editable title inside the h1 and keeps it visible on phones', async () => {
+    const { container } = render(PageHeader, {
+      props: {
+        title: 'Council passes budget',
+        titleField: snippet(
+          '<input name="title" aria-label="Title" value="Council passes budget" />',
+        ),
+      },
+    });
+    const heading = screen.getByRole('heading', { level: 1 });
+    const field = screen.getByRole('textbox', { name: 'Title' });
+    expect(heading).toContainElement(field);
+    // The heading is named by the field's value; the field keeps its label.
+    expect(heading).toHaveAccessibleName('Council passes budget');
+    // No data-shell-page-title: the shell must not hide the input on phones.
+    expect(heading).not.toHaveAttribute('data-shell-page-title');
+    expect(heading).toHaveAttribute('data-page-title-field');
+    expect(container.querySelectorAll('h1')).toHaveLength(1);
+    await expectNoA11yViolations(container);
+  });
+
   it('is axe-clean with subtitle, back link, and actions', async () => {
     const { container } = render(PageHeader, {
       props: {
