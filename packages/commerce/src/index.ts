@@ -145,6 +145,7 @@ export {
   CustomerType,
   FulfillmentStatus,
   FulfillmentType,
+  type InvoiceCollectionMethod,
   InvoiceStatus,
   PaymentInstrumentStatus,
   PaymentIntentStatus,

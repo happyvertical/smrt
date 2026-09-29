@@ -15,6 +15,7 @@ import { minorToMajorUnits } from '../billing/units.js';
 import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
+  type InvoiceCollectionMethod,
   type InvoiceOptions,
   InvoiceStatus,
   type RecognizeRevenueOptions,
@@ -328,6 +329,15 @@ export class Invoice extends SmrtObject {
    */
   syncedAt: Date | null = null;
 
+  /**
+   * How the provider collects this invoice (#3190), decided once by billing
+   * period close before its first push and reused on every retry, so it is
+   * what the provider was asked for. Server-managed. A host must not offer
+   * another payment rail on a `charge_automatically` invoice the provider is
+   * still collecting.
+   */
+  collectionMethod: InvoiceCollectionMethod = '';
+
   // ============================================================================
   // Communication
   // ============================================================================
@@ -401,6 +411,8 @@ export class Invoice extends SmrtObject {
     if (options.externalProvider !== undefined)
       this.externalProvider = options.externalProvider;
     if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
+    if (options.collectionMethod !== undefined)
+      this.collectionMethod = options.collectionMethod;
     if (options.sentAt !== undefined) this.sentAt = options.sentAt;
     if (options.viewedAt !== undefined) this.viewedAt = options.viewedAt;
     if (options.remindersSent !== undefined)

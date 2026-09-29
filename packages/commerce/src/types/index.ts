@@ -445,6 +445,16 @@ export interface ContractLineItemOptions extends SmrtObjectOptions {
 }
 
 /**
+ * How the provider collects an invoice (#3190): `charge_automatically`
+ * charges the payer's saved card; `send_invoice` asks the payer to pay. Empty
+ * for an invoice never pushed to a provider, or pushed before it was recorded.
+ */
+export type InvoiceCollectionMethod =
+  | ''
+  | 'send_invoice'
+  | 'charge_automatically';
+
+/**
  * Constructor options for {@link Invoice}.
  */
 export interface InvoiceOptions extends SmrtObjectOptions {
@@ -469,6 +479,7 @@ export interface InvoiceOptions extends SmrtObjectOptions {
   customerExternalId?: string;
   externalProvider?: string;
   syncedAt?: Date | null;
+  collectionMethod?: InvoiceCollectionMethod;
   sentAt?: Date | null;
   viewedAt?: Date | null;
   remindersSent?: number;

@@ -872,6 +872,16 @@ describe('smrt#3139 Stripe launch billing', () => {
         ),
       );
       expect(local?.status).toBe(InvoiceStatus.SENT);
+      // Each invoice records how it is collected (#3190).
+      expect(local?.collectionMethod).toBe('charge_automatically');
+      const sentForPayment = await withTenant(
+        { tenantId: PROVIDER },
+        async () =>
+          (await InvoiceCollection.create({ db: world.db })).findByExternalId(
+            String(manual?.id),
+          ),
+      );
+      expect(sentForPayment?.collectionMethod).toBe('send_invoice');
       expect(await sellerPayments()).toEqual([]);
 
       expect(world.stripe.collect(String(auto?.id))).toBe('paid');
@@ -928,6 +938,14 @@ describe('smrt#3139 Stripe launch billing', () => {
         collection_method: 'send_invoice',
         sent: 1,
       });
+      // The local invoice records what Stripe was asked for, not what the
+      // retry would have chosen (#3190).
+      const local = await withTenant({ tenantId: PROVIDER }, async () =>
+        (await InvoiceCollection.create({ db: world.db })).findByExternalId(
+          String(invoices[0]?.id),
+        ),
+      );
+      expect(local?.collectionMethod).toBe('send_invoice');
     });
 
     it('sends invoices when the runtime does not auto-charge, card or not', async () => {
