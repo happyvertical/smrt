@@ -1,41 +1,75 @@
 <script lang="ts">
 /**
- * PageHeader - Standard page header with optional back navigation
- * refactored for Material 3
+ * PageHeader - one header per page: an ancestors-only breadcrumb row, the
+ * page title (`<h1>`), and the page's own actions, right-aligned.
  *
- * Provides consistent page header layout with title, optional back link,
- * and slot for action buttons.
+ * Page-header contract (shared with AdminShell in smrt-svelte/workspace):
+ * - `crumbs` are the page's ancestors only, never the page itself; pass none
+ *   on section homes. Derive them from the nav with `shellPageTrailFor()`.
+ * - The crumb row carries `data-shell-breadcrumbs` and the title
+ *   `data-shell-page-title`: on phones AdminShell hides the crumbs and
+ *   visually hides the title, because its phone top bar shows the back arrow
+ *   and the title instead.
+ * - No in-page back link: the crumbs (and the phone top bar) are the way
+ *   back. `backHref` is kept only for pages outside such a shell.
  */
 import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
+
+export interface PageHeaderCrumb {
+  label: string;
+  href: string;
+}
 
 export interface Props {
   /** Page title */
   title: string;
   /** Optional subtitle/description */
   subtitle?: string;
-  /** Back navigation URL */
+  /** Ancestors of this page, outermost first (never the page itself). */
+  crumbs?: readonly PageHeaderCrumb[];
+  /** Accessible name of the breadcrumb nav. */
+  crumbsLabel?: string;
+  /**
+   * Back navigation URL.
+   * @deprecated Use `crumbs`; inside AdminShell the phone top bar goes back.
+   */
   backHref?: string;
   /** Back link label */
   backLabel?: string;
-  /** Slot for action buttons */
+  /** Slot for action buttons (right-aligned beside the title) */
   actions?: Snippet;
-  /** Slot for additional content below title */
+  /** Small line under the title (status, dates, counts) */
+  meta?: Snippet;
+  /** Slot for additional content below the title row (e.g. page tabs) */
   children?: Snippet;
 }
 
 const {
   title,
   subtitle,
+  crumbs = [],
+  crumbsLabel = 'Breadcrumb',
   backHref,
   backLabel = 'Back',
   actions,
+  meta,
   children,
 }: Props = $props();
 </script>
 
-<header class="page-header">
+<header class="page-header" data-page-header>
+  {#if crumbs.length > 0}
+    <nav class="page-crumbs" aria-label={crumbsLabel} data-shell-breadcrumbs>
+      <ol>
+        {#each crumbs as crumb, index (`${index}:${crumb.href}`)}
+          <li><a href={crumb.href}>{crumb.label}</a></li>
+        {/each}
+      </ol>
+    </nav>
+  {/if}
+
   <div class="header-main">
     <div class="header-content">
       {#if backHref}
@@ -44,9 +78,12 @@ const {
           <span>{backLabel}</span>
         </a>
       {/if}
-      <h1 class="page-title">{title}</h1>
+      <h1 class="page-title" data-shell-page-title>{title}</h1>
       {#if subtitle}
         <p class="page-subtitle">{subtitle}</p>
+      {/if}
+      {#if meta}
+        <div class="page-meta">{@render meta()}</div>
       {/if}
     </div>
 
@@ -66,15 +103,60 @@ const {
 
 <style>
   .page-header {
-    margin-bottom: 2rem;
-    padding-top: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .page-crumbs {
+    margin-bottom: var(--smrt-spacing-1, 4px);
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    font-size: 0.84rem;
+  }
+
+  .page-crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .page-crumbs li {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .page-crumbs li + li::before {
+    content: '/';
+    margin-inline-end: 0.35rem;
+    color: var(--smrt-color-outline);
+  }
+
+  .page-crumbs a {
+    color: inherit;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+
+  .page-crumbs a:hover {
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+  }
+
+  .page-crumbs a:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+    border-radius: var(--smrt-radius-sm, 4px);
   }
 
   .header-main {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1.5rem;
+    gap: 0.75rem 1.5rem;
     flex-wrap: wrap;
   }
 
@@ -83,7 +165,7 @@ const {
     flex-direction: column;
     gap: var(--smrt-spacing-1, 4px);
     flex: 1;
-    min-width: 200px;
+    min-width: min(100%, 200px);
   }
 
   .back-link {
@@ -109,13 +191,22 @@ const {
     color: var(--smrt-color-on-surface);
     margin: 0;
     letter-spacing: -0.5px;
+    overflow-wrap: anywhere;
   }
 
   .page-subtitle {
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface-variant);
     margin: 0;
-    margin-top: var(--smrt-spacing-1, 4px);
+  }
+
+  .page-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    font: var(--smrt-typography-body-small-font);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .header-actions {
@@ -123,9 +214,10 @@ const {
     gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
+    margin-inline-start: auto;
   }
 
   .header-extra {
-    margin-top: 1.5rem;
+    margin-top: 1rem;
   }
 </style>

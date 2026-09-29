@@ -148,12 +148,95 @@ export function findShellNavTrail<T extends ShellNavPathItem>(
   return [];
 }
 
+// ---- Page trail (breadcrumbs + phone back) --------------------------------
+
+/** One ancestor of the current page: a breadcrumb and a possible back target. */
+export interface ShellCrumb {
+  label: string;
+  href: string;
+}
+
+/** Input for {@link shellPageTrailFor}. */
+export interface ShellPageTrailInput<
+  T extends ShellNavPathItem & { label: string },
+> {
+  /** Current pathname. */
+  path: string;
+  /** The workspace home (overview) page. */
+  homeHref: string;
+  /** Workspace name: the first ancestor of every non-home page. */
+  homeTitle: string;
+  /** The workspace nav. */
+  navItems: T[];
+  /**
+   * Ancestors deeper than the nav knows (an article above its video, a
+   * council above its meeting), nearest last. They follow the nav trail.
+   */
+  parents?: readonly ShellCrumb[] | null;
+}
+
+/** Where a page sits: a section home, or a page with ancestors. */
+export interface ShellPageTrail {
+  /** The home page or a top-level nav page (and no page-given parents). */
+  sectionHome: boolean;
+  /** Ancestors only, never the current page; empty on section homes. */
+  crumbs: ShellCrumb[];
+  /** The nav item for the current page itself, if it is one. */
+  current: { label: string; href: string } | null;
+}
+
+/**
+ * The single source for a page's place in the workspace: breadcrumbs on
+ * wider screens and the phone top bar's back target both come from here.
+ *
+ * Section homes (the home page and top-level nav pages) have no ancestors.
+ * Anything else lists the workspace home, the nav items above it (a nested
+ * nav page's parent item counts, even when its URL is not below it), then the
+ * page-given `parents`. The current page is never a crumb.
+ */
+export function shellPageTrailFor<
+  T extends ShellNavPathItem & { label: string },
+>(input: ShellPageTrailInput<T>): ShellPageTrail {
+  const path = normalizeShellPath(input.path);
+  const home = normalizeShellPath(input.homeHref);
+  const parents = [...(input.parents ?? [])];
+  const trail = findShellNavTrail(input.navItems, path);
+  const last = trail.at(-1);
+  const currentItem =
+    last && normalizeShellPath(last.href) === path ? last : null;
+  const current = currentItem
+    ? { label: currentItem.label, href: currentItem.href }
+    : null;
+
+  const topLevelHome =
+    path === home ||
+    input.navItems.some((item) => normalizeShellPath(item.href) === path);
+  if (topLevelHome && parents.length === 0) {
+    return { sectionHome: true, crumbs: [], current };
+  }
+
+  const crumbs: ShellCrumb[] = [
+    { label: input.homeTitle, href: input.homeHref },
+  ];
+  for (const item of trail) {
+    if (item === currentItem) continue;
+    const href = normalizeShellPath(item.href);
+    if (href === home || href === path) continue;
+    crumbs.push({ label: item.label, href: item.href });
+  }
+  for (const parent of parents) {
+    if (normalizeShellPath(parent.href) === path) continue;
+    crumbs.push({ label: parent.label, href: parent.href });
+  }
+  return { sectionHome: false, crumbs, current };
+}
+
 // ---- Phone top bar --------------------------------------------------------
 
 /**
  * What the phone top bar shows: the workspace name on section home pages, or
- * a back arrow (to the parent list, never `history.back()`) plus the page's
- * title on detail pages.
+ * a back arrow (to the parent, never `history.back()`) plus the page's
+ * title on every other page.
  */
 export type PhoneTopBarModel =
   | { kind: 'home'; title: string }
@@ -162,56 +245,38 @@ export type PhoneTopBarModel =
 /** Input for {@link phoneTopBarFor}. */
 export interface PhoneTopBarInput<
   T extends ShellNavPathItem & { label: string },
-> {
-  /** Current pathname. */
-  path: string;
-  /** The workspace home (overview) page. */
-  homeHref: string;
-  /** Workspace name, shown on section homes. */
-  homeTitle: string;
-  /** The workspace nav. */
-  navItems: T[];
+> extends ShellPageTrailInput<T> {
   /** Title the page provided (article headline, person's name, …). */
   pageTitle?: string | null;
-  /** Parent the page provided when the nav can't infer it. */
+  /**
+   * Explicit back target. Prefer `parents` (the same ancestors the page's
+   * breadcrumbs show); this overrides the last one.
+   */
   backHref?: string | null;
   /** Back label used with an explicit `backHref` (default "Back"). */
   backLabel?: string;
 }
 
-function flattenNav<T extends ShellNavPathItem>(items: T[]): T[] {
-  return items.flatMap((item) => [
-    item,
-    ...flattenNav((item.children ?? []) as T[]),
-  ]);
-}
-
 /**
- * Section home pages (the home page or any page a nav item links to) show the
- * workspace name. Anything deeper is a detail page: back arrow to the parent
- * list (the deepest matching nav item) and the page's title.
+ * Section homes (see {@link shellPageTrailFor}) show the workspace name.
+ * Every other page shows a back arrow to its nearest ancestor (the last
+ * breadcrumb) and the page's title.
  */
 export function phoneTopBarFor<T extends ShellNavPathItem & { label: string }>(
   input: PhoneTopBarInput<T>,
 ): PhoneTopBarModel {
-  const path = normalizeShellPath(input.path);
-  const home = normalizeShellPath(input.homeHref);
-  const isSectionHome =
-    path === home ||
-    flattenNav(input.navItems).some(
-      (item) => normalizeShellPath(item.href) === path,
-    );
-  if (isSectionHome && !input.backHref) {
+  const trail = shellPageTrailFor(input);
+  if (trail.sectionHome && !input.backHref) {
     return { kind: 'home', title: input.homeTitle };
   }
 
-  const trail = findShellNavTrail(input.navItems, path);
-  const parent = trail.at(-1);
-  const backHref = input.backHref ?? (parent ? parent.href : input.homeHref);
-  const backLabel = input.backHref
-    ? (input.backLabel ?? 'Back')
-    : (parent?.label ?? input.homeTitle);
-  const title = input.pageTitle?.trim() || parent?.label || input.homeTitle;
+  const parent = trail.crumbs.at(-1) ?? {
+    label: input.homeTitle,
+    href: input.homeHref,
+  };
+  const backHref = input.backHref ?? parent.href;
+  const backLabel = input.backHref ? (input.backLabel ?? 'Back') : parent.label;
+  const title = input.pageTitle?.trim() || trail.current?.label || parent.label;
   return { kind: 'detail', title, backHref, backLabel };
 }
 

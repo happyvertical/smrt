@@ -389,7 +389,15 @@ keys the shell renders exactly as before.
   phone closes open drawers. `overlays` is a layer above the edges (and above
   the bottom bar's row) for `PhoneSheet`s and status strips.
 - **Page contracts** on phones: `data-shell-breadcrumbs` is hidden,
-  `data-shell-tabs` sticks under the top bar and slides away with it.
+  `data-shell-page-title` is visually hidden while the phone top bar shows
+  (the bar carries the title), `data-shell-tabs` sticks under the top bar and
+  slides away with it. smrt-ui's `PageHeader` renders the first two.
+- **Page trail**: `shellPageTrailFor({ path, homeHref, homeTitle, navItems,
+  parents })` is the one source for a page's ancestors: section homes (home
+  and top-level nav pages) have none; other pages get the home, the nav items
+  above them, then page-given `parents`, never the page itself. Pass the
+  `crumbs` to `PageHeader`; `phoneTopBarFor` (same input plus `pageTitle`)
+  sends the phone back arrow to the last crumb.
 - **Resizable edges**: `resizable` on a `push` side edge adds a
   `role="separator"` (with `aria-valuenow/min/max` in px) on its inner border.
   Sizes are stored as `ShellSettingsDelta.sizes` through the settings adapter;

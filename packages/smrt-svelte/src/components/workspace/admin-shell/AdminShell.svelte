@@ -1330,11 +1330,24 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     background: var(--smrt-color-outline-variant);
   }
 
-  /* Phone page contracts: breadcrumbs give way to the top bar; page tabs
-     stick under it and slide away with it; a form's action row is fixed to
-     the bottom and replaces the bottom bar. */
+  /* Phone page contracts: breadcrumbs give way to the top bar, and so does
+     the page title (visually hidden: screen readers and the outline keep
+     it); page tabs stick under it and slide away with it; a form's action
+     row is fixed to the bottom and replaces the bottom bar. */
   .smrt-admin-shell[data-viewport='phone'] :global([data-shell-breadcrumbs]) {
     display: none;
+  }
+
+  .smrt-admin-shell[data-phone-top] :global([data-shell-page-title]) {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   .smrt-admin-shell[data-phone-top] :global([data-shell-tabs]) {

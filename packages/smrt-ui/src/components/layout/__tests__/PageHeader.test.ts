@@ -76,6 +76,42 @@ describe('PageHeader', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('renders ancestors-only crumbs above the title', () => {
+    render(PageHeader, {
+      props: {
+        title: 'Fair opens Friday',
+        crumbs: [
+          { label: 'Alpha Times', href: '/sites/alpha' },
+          { label: 'Content', href: '/sites/alpha/articles' },
+        ],
+      },
+    });
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(nav).toHaveAttribute('data-shell-breadcrumbs');
+    const links = nav.querySelectorAll('a');
+    expect([...links].map((a) => a.textContent)).toEqual([
+      'Alpha Times',
+      'Content',
+    ]);
+    // The current page is the heading, not a crumb.
+    expect(nav).not.toHaveTextContent('Fair opens Friday');
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Fair opens Friday' }),
+    ).toHaveAttribute('data-shell-page-title');
+  });
+
+  it('renders no crumb row without ancestors', () => {
+    render(PageHeader, { props: { title: 'Content', crumbs: [] } });
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+  });
+
+  it('renders the meta snippet under the title', () => {
+    render(PageHeader, {
+      props: { title: 'Detail', meta: snippet('<span>Draft</span>') },
+    });
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+  });
+
   it('is axe-clean with subtitle, back link, and actions', async () => {
     const { container } = render(PageHeader, {
       props: {

@@ -51,9 +51,13 @@ export {
   ScrollChrome,
   type ScrollChromeOptions,
   type ScrollSample,
+  type ShellCrumb,
   type ShellIcon,
   type ShellNavPathItem,
+  type ShellPageTrail,
+  type ShellPageTrailInput,
   shellNavItemMatches,
+  shellPageTrailFor,
   viewportFor,
 } from './admin-shell/mobile-shell.js';
 export {

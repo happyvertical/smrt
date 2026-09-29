@@ -10,6 +10,7 @@ import {
   normalizeShellPath,
   phoneTopBarFor,
   ScrollChrome,
+  shellPageTrailFor,
   viewportFor,
 } from '../admin-shell/mobile-shell.js';
 
@@ -136,9 +137,36 @@ describe('phoneTopBarFor', () => {
     expect(
       phoneTopBarFor({ ...base, path: '/sites/alpha/articles/' }).kind,
     ).toBe('home');
+  });
+
+  it('gives a nested nav page a back arrow to its parent nav item', () => {
     expect(
-      phoneTopBarFor({ ...base, path: '/sites/alpha/settings/health' }).kind,
-    ).toBe('home');
+      phoneTopBarFor({ ...base, path: '/sites/alpha/settings/health' }),
+    ).toEqual({
+      kind: 'detail',
+      title: 'Health',
+      backHref: '/sites/alpha/settings',
+      backLabel: 'Settings',
+    });
+  });
+
+  it('goes back to the last page-given parent', () => {
+    expect(
+      phoneTopBarFor({
+        ...base,
+        path: '/sites/alpha/articles/a1/video/create',
+        pageTitle: 'Create video',
+        parents: [
+          { label: 'Fair opens Friday', href: '/sites/alpha/articles/a1' },
+          { label: 'Videos', href: '/sites/alpha/articles/a1/videos' },
+        ],
+      }),
+    ).toEqual({
+      kind: 'detail',
+      title: 'Create video',
+      backHref: '/sites/alpha/articles/a1/videos',
+      backLabel: 'Videos',
+    });
   });
 
   it('shows back to the parent list and the page title on detail pages', () => {
@@ -180,6 +208,64 @@ describe('phoneTopBarFor', () => {
       backHref: '/sites/alpha/articles/a1/videos',
       backLabel: 'Videos',
     });
+  });
+});
+
+describe('shellPageTrailFor', () => {
+  const navItems = [
+    { href: '/sites/alpha/articles', label: 'Content' },
+    {
+      href: '/sites/alpha/settings',
+      label: 'Settings',
+      children: [{ href: '/sites/alpha/health', label: 'Health' }],
+    },
+  ];
+  const base = { homeHref: '/sites/alpha', homeTitle: 'Alpha Times', navItems };
+  const labels = (path: string, parents?: { label: string; href: string }[]) =>
+    shellPageTrailFor({ ...base, path, parents }).crumbs.map((c) => c.label);
+
+  it('has no crumbs on section homes', () => {
+    expect(shellPageTrailFor({ ...base, path: '/sites/alpha' })).toMatchObject({
+      sectionHome: true,
+      crumbs: [],
+    });
+    expect(
+      shellPageTrailFor({ ...base, path: '/sites/alpha/articles/' }),
+    ).toMatchObject({
+      sectionHome: true,
+      crumbs: [],
+      current: { label: 'Content' },
+    });
+  });
+
+  it('lists ancestors only, never the current page', () => {
+    expect(labels('/sites/alpha/articles/a1')).toEqual([
+      'Alpha Times',
+      'Content',
+    ]);
+    // A nested nav page: its parent item is an ancestor even when the URL
+    // is not below it.
+    expect(labels('/sites/alpha/health')).toEqual(['Alpha Times', 'Settings']);
+    expect(labels('/sites/alpha/health/job-1')).toEqual([
+      'Alpha Times',
+      'Settings',
+      'Health',
+    ]);
+    expect(labels('/sites/alpha/other')).toEqual(['Alpha Times']);
+  });
+
+  it('appends page-given parents after the nav trail', () => {
+    expect(
+      labels('/sites/alpha/articles/a1/videos', [
+        { label: 'Fair opens Friday', href: '/sites/alpha/articles/a1' },
+      ]),
+    ).toEqual(['Alpha Times', 'Content', 'Fair opens Friday']);
+    // A parent on a section home makes it a child page.
+    expect(
+      labels('/sites/alpha/articles', [
+        { label: 'Somewhere', href: '/sites/alpha/somewhere' },
+      ]),
+    ).toEqual(['Alpha Times', 'Somewhere']);
   });
 });
 

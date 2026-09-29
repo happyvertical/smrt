@@ -33,7 +33,7 @@ restoration at mobile and desktop widths.
 - `tenantNavFromManifest`
 - Responsive chrome: `ShellNavToggle`, `ShellTitle`, `PhoneTopBar`,
   `PhoneBottomBar`, the pure `mobile-shell` helpers (`ScrollChrome`,
-  `phoneTopBarFor`, `bottomBarMode`, `keyboardLikelyOpen`, …) and their DOM
+  `shellPageTrailFor`, `phoneTopBarFor`, `bottomBarMode`, `keyboardLikelyOpen`, …) and their DOM
   installers (`installShellViewport`, `installScrollChrome`,
   `installKeyboardWatcher`, `watchFormActionBar`)
 
