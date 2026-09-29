@@ -399,13 +399,21 @@ function applyManifestFieldColumnMetadata(
       continue;
     }
 
-    columns[columnName] = {
+    const column: ColumnDefinition = {
       ...existingColumn,
       ...(sqlType
         ? { type: String(sqlType).toUpperCase() as ColumnDefinition['type'] }
         : {}),
       ...(referenceKind ? { referenceKind } : {}),
     };
+    // Same rule as the manifest generator: a uuid column never defaults to ''.
+    // Manifest JSON carries `default`; runtime definitions carry `defaultValue`.
+    if (String(column.type).toUpperCase() === 'UUID') {
+      const loose = column as ColumnDefinition & { default?: unknown };
+      if (loose.default === '') delete loose.default;
+      if (loose.defaultValue === '') delete loose.defaultValue;
+    }
+    columns[columnName] = column;
   }
 }
 

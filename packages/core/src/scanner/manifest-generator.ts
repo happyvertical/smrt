@@ -1318,11 +1318,22 @@ export class ManifestGenerator {
         continue;
       }
 
-      obj.schema.columns[columnName] = {
+      const column = {
         ...obj.schema.columns[columnName],
         ...(sqlType ? { type: String(sqlType).toUpperCase() } : {}),
         ...(referenceKind ? { referenceKind } : {}),
       };
+      // A `''` initializer (e.g. `tenantId: string = ''`) is not a uuid: as a
+      // column default PostgreSQL stores `(''::text)::uuid` unevaluated and
+      // every INSERT that omits the column fails with 22P02. An identifier
+      // column has no default.
+      if (
+        String(column.type).toUpperCase() === 'UUID' &&
+        column.default === ''
+      ) {
+        delete column.default;
+      }
+      obj.schema.columns[columnName] = column;
     }
   }
 
