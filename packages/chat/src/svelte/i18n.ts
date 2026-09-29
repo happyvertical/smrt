@@ -62,7 +62,16 @@ export const M = defineMessages({
 
   // AssistantDock (#2904)
   'chat.assistant_dock.no_surfaces':
-    'No data surfaces are mounted on this route — the assistant can chat but has no actions available here.',
+    'Nothing on this page can be changed from the chat. You can still ask questions.',
+  // Streamed turns and browser tools (#2908)
+  'chat.assistant_dock.stop': 'Stop',
+  'chat.assistant_dock.tool_request_title': 'The assistant wants to do this:',
+  'chat.assistant_dock.tool_request_allow': 'Allow',
+  'chat.assistant_dock.tool_request_decline': "Don't allow",
+  'chat.assistant_dock.tool_request_destructive': "This can't be undone.",
+  'chat.assistant_dock.tool_request_details': 'Details',
+  'chat.assistant_dock.steps_label': 'What the assistant did',
+  'chat.assistant_dock.reply_in_progress': 'Reply in progress',
   'chat.assistant_dock.taking_longer':
     'The assistant is taking longer than expected.',
   'chat.assistant_dock.retry': 'Retry "{content}"',

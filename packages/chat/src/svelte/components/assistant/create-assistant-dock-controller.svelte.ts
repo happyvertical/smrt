@@ -44,14 +44,32 @@ import {
   type DataSurfaceRegistry,
   normalizeDataSurfaceActionRequest,
 } from '@happyvertical/smrt-ui/data-surface';
+import { untrack } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
+import type {
+  AssistantClientToolCall,
+  AssistantClientToolResult,
+  AssistantStatus,
+  AssistantTurnStep,
+} from '../../../assistant-turn-events.js';
 import type {
   AssistantAttachmentRef,
   AssistantMessage,
+  AssistantSendMessageResult,
   AssistantThreadSummary,
   AssistantTransport,
+  AssistantTransportEvent,
   ModelOption,
 } from './assistant-transport.js';
+import {
+  ASSISTANT_PROPOSE_ACTION_TOOL,
+  type AssistantClientTool,
+  type AssistantClientToolPolicy,
+  type AssistantClientToolSource,
+  type AssistantToolRequest,
+  declareClientTools,
+  resolveClientToolPolicy,
+} from './client-tools.js';
 
 export type AssistantPendingSendStatus =
   | 'sending'
@@ -207,6 +225,17 @@ export interface AssistantDockControllerOptions {
   /** Initial composer draft text (#2991). Seeds the composer; it is never
    * sent until the user sends it. */
   initialDraft?: string;
+  /** The page's browser tools (#2908), offered to the model each turn and
+   * run here when it calls them — typically
+   * `@happyvertical/smrt-web/webmcp-page-tools`'s page registry. See
+   * `./client-tools.ts` for when a call runs and when it waits for the
+   * user. */
+  pageTools?: AssistantClientToolSource;
+  /** Narrows when a browser tool call waits for the user. A destructive
+   * tool always waits, whatever this returns. */
+  clientToolPolicy?: (tool: AssistantClientTool) => AssistantClientToolPolicy;
+  /** Called whenever `status` changes (#2908). */
+  onStatus?: (status: AssistantStatus) => void;
 }
 
 export interface AssistantDockController {
@@ -233,6 +262,25 @@ export interface AssistantDockController {
    * user to edit. Never sends. Survives registry/transport swaps: it is the
    * user's unsent text, not conversation state. */
   setDraft(text: string): void;
+  /** What the assistant is doing, as one generic status (#2908): `working`
+   * with a plain-language label while a turn, a browser tool, or an action
+   * runs; `done` (with the number of changes applied) or `error` after;
+   * `idle` otherwise. `cancellable` is true while `cancel()` can stop it. */
+  readonly status: AssistantStatus;
+  /** The current turn's progress steps (#2908), newest last. */
+  readonly steps: AssistantTurnStep[];
+  /** Live preview of the reply being generated (#2908). Cleared once the
+   * persisted reply arrives. */
+  readonly streamingText: string;
+  /** Browser tool calls that wait for the user's decision (#2908). */
+  readonly toolRequests: AssistantToolRequest[];
+  /** Lets a waiting browser tool call run. */
+  approveToolRequest(id: string): void;
+  /** Refuses a waiting browser tool call; the model is told it was declined. */
+  declineToolRequest(id: string): void;
+  /** Stops the turn in flight (#2908): aborts the stream and declines every
+   * waiting browser tool call. A no-op when nothing is running. */
+  cancel(): void;
   /** Records (or clears, with `null`) a background failure for `error` to
    * report. Distinct from a failed `AssistantPendingSend`/`AssistantActionState`,
    * which already carry their own `error` field — this is for failures with
@@ -327,6 +375,17 @@ export function createAssistantDockController(
   let selectedModel = $state<string | undefined>(undefined);
   let error = $state<string | null>(null);
   let draft = $state<string>(options.initialDraft ?? '');
+
+  // ---- streamed turns and browser tools (#2908) ---------------------------
+  let turnActive = $state(false);
+  let turnStatus = $state<AssistantStatus | null>(null);
+  let lastStatus = $state<AssistantStatus>({ state: 'idle', label: null });
+  let changesThisTurn = $state(0);
+  let steps = $state<AssistantTurnStep[]>([]);
+  let streamingText = $state('');
+  let toolRequests = $state<AssistantToolRequest[]>([]);
+  let turnAbort: AbortController | null = null;
+  const decisionWaiters = new Map<string, (approved: boolean) => void>();
 
   function setError(message: string | null) {
     error = message;
@@ -535,6 +594,7 @@ export function createAssistantDockController(
   //     under the new context; a host that seeded a context-specific prompt
   //     replaces it with setDraft()).
   function resetConversationStateForContextSwap() {
+    cancel();
     threads = [];
     activeThreadId = null;
     messages = [];
@@ -921,6 +981,7 @@ export function createAssistantDockController(
     // belongs to the current transport.
     const epoch = contextEpoch;
 
+    const turn = beginTurn();
     try {
       const result = await options.transport.sendMessage({
         threadId,
@@ -928,14 +989,19 @@ export function createAssistantDockController(
         attachments,
         clientRequestId,
         model: selectedModel,
+        ...turnInputs(threadId, turn, epoch),
       });
       // Cycle-3 first final sweep: dispose() can run while sendMessage() is
       // in flight — bail before any of the writes below run on a torn-down
       // controller. draftIds is a plain (non-reactive) Map so clearing it is
       // harmless either way, but it's skipped too for a clean, single bail
       // point.
-      if (disposed || epoch !== contextEpoch) return;
+      if (disposed || epoch !== contextEpoch) {
+        endTurn(turn, 'discarded');
+        return;
+      }
       if (result.inProgress) {
+        endTurn(turn, 'discarded');
         // F5 (#2904 review): do NOT clear the draft id here — the turn is
         // still unresolved. Clearing it now would let a same-draft resend
         // during this window mint a fresh clientRequestId, defeating the
@@ -951,19 +1017,47 @@ export function createAssistantDockController(
         return;
       }
       draftIds.delete(draftKey(threadId, content, attachments));
-      if (activeThreadId === threadId) {
-        const toAppend = [result.userMessage, result.assistantMessage].filter(
-          (m): m is AssistantMessage => Boolean(m),
-        );
-        const byId = new Map(messages.map((m) => [m.id, m]));
-        for (const m of toAppend) byId.set(m.id, m);
-        messages = Array.from(byId.values());
+      mergeResultMessages(threadId, result);
+      // #2908: a turn suspended on browser tools continues here — run (or
+      // ask about) each call, then resume the turn with the results.
+      let current = result;
+      while (current.clientToolCalls && !turn.signal.aborted) {
+        const suspension = current.clientToolCalls;
+        const results = await runClientToolCalls(suspension.calls, turn);
+        if (turn.signal.aborted || disposed || epoch !== contextEpoch) break;
+        if (!options.transport.resumeTurn) {
+          throw new Error(
+            'AssistantDock: the transport returned browser tool calls but has no resumeTurn',
+          );
+        }
+        current = await options.transport.resumeTurn({
+          threadId,
+          clientRequestId,
+          continuationId: suspension.continuationId,
+          results,
+          model: selectedModel,
+          ...turnInputs(threadId, turn, epoch),
+        });
+        if (disposed || epoch !== contextEpoch) break;
+        mergeResultMessages(threadId, current);
       }
       pendingSends = pendingSends.filter(
         (p) => p.clientRequestId !== clientRequestId,
       );
+      endTurn(turn, turn.signal.aborted ? 'cancelled' : 'done');
     } catch (error) {
       draftIds.delete(draftKey(threadId, content, attachments));
+      if (turn.signal.aborted) {
+        // The user stopped it: not a failure to retry.
+        endTurn(turn, 'cancelled');
+        if (!disposed && epoch === contextEpoch) {
+          pendingSends = pendingSends.filter(
+            (p) => p.clientRequestId !== clientRequestId,
+          );
+        }
+        return;
+      }
+      endTurn(turn, 'error', error);
       // Cycle-3 first final sweep: same disposed re-check as the success
       // branch above; the throw below still needs to happen regardless (the
       // pending send's own 'failed' status is best-effort UI polish, not
@@ -979,6 +1073,367 @@ export function createAssistantDockController(
       throw error;
     }
   }
+
+  function beginTurn(): AbortController {
+    turnAbort?.abort();
+    const controller = new AbortController();
+    turnAbort = controller;
+    turnActive = true;
+    turnStatus = { state: 'working', label: 'Sending…', cancellable: true };
+    changesThisTurn = 0;
+    steps = [];
+    streamingText = '';
+    toolRequests = [];
+    return controller;
+  }
+
+  function endTurn(
+    turn: AbortController,
+    outcome: 'done' | 'cancelled' | 'error' | 'discarded',
+    cause?: unknown,
+  ) {
+    if (turnAbort !== turn) return;
+    turnAbort = null;
+    turnActive = false;
+    turnStatus = null;
+    streamingText = '';
+    for (const [id, resolve] of decisionWaiters) {
+      decisionWaiters.delete(id);
+      resolve(false);
+    }
+    if (outcome === 'discarded') return;
+    lastStatus =
+      outcome === 'done'
+        ? { state: 'done', label: 'Done', changes: changesThisTurn }
+        : outcome === 'cancelled'
+          ? { state: 'idle', label: 'Stopped' }
+          : {
+              state: 'error',
+              label: cause instanceof Error ? cause.message : String(cause),
+            };
+  }
+
+  function cancel() {
+    const turn = turnAbort;
+    if (!turn) return;
+    turn.abort();
+    for (const [id, resolve] of decisionWaiters) {
+      decisionWaiters.delete(id);
+      resolve(false);
+    }
+  }
+
+  function mergeResultMessages(
+    threadId: string,
+    result: AssistantSendMessageResult,
+  ) {
+    if (activeThreadId !== threadId) return;
+    const toAppend = [
+      result.userMessage,
+      ...(result.messages ?? []),
+      result.assistantMessage,
+    ].filter((m): m is AssistantMessage => Boolean(m));
+    if (toAppend.length === 0) return;
+    const byId = new Map(messages.map((m) => [m.id, m]));
+    for (const m of toAppend) byId.set(m.id, m);
+    messages = Array.from(byId.values());
+  }
+
+  function handleTurnEvent(
+    threadId: string,
+    turn: AbortController,
+    epoch: number,
+    event: AssistantTransportEvent,
+  ) {
+    if (disposed || epoch !== contextEpoch || turnAbort !== turn) return;
+    switch (event.type) {
+      case 'status':
+        if (event.status.state === 'working') {
+          turnStatus = { ...event.status, cancellable: true };
+        }
+        return;
+      case 'token':
+        streamingText = (streamingText + event.text).slice(-20_000);
+        return;
+      case 'step':
+        steps = [...steps, event.step].slice(-30);
+        return;
+      case 'message':
+        if (activeThreadId === threadId) {
+          const byId = new Map(messages.map((m) => [m.id, m]));
+          byId.set(event.message.id, event.message);
+          messages = Array.from(byId.values());
+        }
+        if (event.message.role === 'assistant') streamingText = '';
+        return;
+      case 'done':
+        streamingText = '';
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** The dock's own proposal tool, offered when an action surface is mounted. */
+  function proposeActionTool(): AssistantClientTool | null {
+    if (!options.actionClient) return null;
+    const mounted = options.registry
+      .list()
+      .filter((d) => isSurfaceMounted(d.identity) && d.actions.length > 0);
+    if (mounted.length === 0) return null;
+    const lines = mounted.map(
+      (d) =>
+        `${d.identity.surfaceId}: ${d.label} — ${d.actions
+          .map((a) => `${a.id} (${a.label})`)
+          .join(', ')}`,
+    );
+    return {
+      name: ASSISTANT_PROPOSE_ACTION_TOOL,
+      description: [
+        'Propose an action on something shown on this page. Nothing changes until the user confirms it in the chat.',
+        'Available:',
+        ...lines,
+      ]
+        .join('\n')
+        .slice(0, 1_000),
+      inputSchema: {
+        type: 'object',
+        required: ['surfaceId', 'actionId'],
+        additionalProperties: false,
+        properties: {
+          surfaceId: {
+            type: 'string',
+            enum: [...new Set(mounted.map((d) => d.identity.surfaceId))],
+          },
+          subjectId: { type: 'string' },
+          actionId: { type: 'string' },
+          rowIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'The rows to act on; omit for the rows on screen.',
+          },
+          payload: { type: 'object' },
+        },
+      },
+      effect: 'read',
+    };
+  }
+
+  function availableClientTools(): AssistantClientTool[] {
+    const fromPage = options.pageTools?.list() ?? [];
+    const propose = proposeActionTool();
+    return propose ? [...fromPage, propose] : fromPage;
+  }
+
+  function turnInputs(threadId: string, turn: AbortController, epoch: number) {
+    const tools = availableClientTools();
+    return {
+      ...(tools.length > 0 ? { clientTools: declareClientTools(tools) } : {}),
+      onEvent: (event: AssistantTransportEvent) =>
+        handleTurnEvent(threadId, turn, epoch, event),
+      signal: turn.signal,
+    };
+  }
+
+  function updateToolRequest(id: string, patch: Partial<AssistantToolRequest>) {
+    toolRequests = toolRequests.map((r) =>
+      r.id === id ? { ...r, ...patch } : r,
+    );
+  }
+
+  function waitForDecision(
+    id: string,
+    turn: AbortController,
+  ): Promise<boolean> {
+    if (turn.signal.aborted) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      decisionWaiters.set(id, resolve);
+    });
+  }
+
+  function decide(id: string, approved: boolean) {
+    const resolve = decisionWaiters.get(id);
+    if (!resolve) return;
+    decisionWaiters.delete(id);
+    resolve(approved);
+  }
+
+  async function proposeFromCall(
+    call: AssistantClientToolCall,
+  ): Promise<AssistantClientToolResult> {
+    const args = call.args ?? {};
+    const surfaceId = typeof args.surfaceId === 'string' ? args.surfaceId : '';
+    const actionId = typeof args.actionId === 'string' ? args.actionId : '';
+    const subjectId =
+      typeof args.subjectId === 'string' ? args.subjectId : undefined;
+    const descriptor = options.registry
+      .list()
+      .find(
+        (d) =>
+          d.identity.surfaceId === surfaceId &&
+          isSurfaceMounted(d.identity) &&
+          (subjectId === undefined || d.identity.subject?.id === subjectId),
+      );
+    if (!descriptor) {
+      return { id: call.id, ok: false, error: 'not_on_this_page' };
+    }
+    if (!descriptor.actions.some((a) => a.id === actionId)) {
+      return { id: call.id, ok: false, error: 'unknown_action' };
+    }
+    const rowIds = Array.isArray(args.rowIds)
+      ? args.rowIds.filter(
+          (id): id is string | number =>
+            typeof id === 'string' || typeof id === 'number',
+        )
+      : [];
+    const payload =
+      args.payload &&
+      typeof args.payload === 'object' &&
+      !Array.isArray(args.payload)
+        ? (args.payload as DataSurfaceActionRequest['payload'])
+        : undefined;
+    const request: DataSurfaceActionRequest = {
+      version: 1,
+      requestId: `assistant-${call.id}`,
+      identity: descriptor.identity,
+      actionId,
+      phase: 'preview',
+      selection:
+        rowIds.length > 0
+          ? { scope: 'explicit-ids', rowIds }
+          : { scope: 'current-page' },
+      ...(payload !== undefined ? { payload } : {}),
+    };
+    await previewAction(request);
+    const state = actions.get(request.requestId);
+    if (state?.status === 'previewed') {
+      return {
+        id: call.id,
+        ok: true,
+        result: JSON.stringify({
+          proposed: true,
+          waitingForUser: true,
+          preview: state.previewResult?.details ?? null,
+        }),
+      };
+    }
+    return {
+      id: call.id,
+      ok: false,
+      error: state?.error ?? state?.previewResult?.reason ?? 'not_proposed',
+    };
+  }
+
+  async function runClientToolCalls(
+    calls: AssistantClientToolCall[],
+    turn: AbortController,
+  ): Promise<AssistantClientToolResult[]> {
+    const results: AssistantClientToolResult[] = [];
+    for (const call of calls) {
+      if (turn.signal.aborted) {
+        results.push({ id: call.id, ok: false, error: 'cancelled' });
+        continue;
+      }
+      if (call.name === ASSISTANT_PROPOSE_ACTION_TOOL && proposeActionTool()) {
+        results.push(await proposeFromCall(call));
+        continue;
+      }
+      // The effect is read from the page's own registry, never from the
+      // server's echo of what the page declared.
+      const tool = options.pageTools?.list().find((t) => t.name === call.name);
+      if (!tool || !options.pageTools) {
+        results.push({ id: call.id, ok: false, error: 'not_available' });
+        continue;
+      }
+      const policy = resolveClientToolPolicy(tool, options.clientToolPolicy);
+      if (policy === 'confirm') {
+        toolRequests = [
+          ...toolRequests,
+          {
+            id: call.id,
+            name: tool.name,
+            description: tool.description,
+            args: call.args ?? {},
+            effect: tool.effect,
+            status: 'waiting',
+          },
+        ];
+        const approved = await waitForDecision(call.id, turn);
+        if (!approved) {
+          updateToolRequest(call.id, { status: 'declined' });
+          results.push({
+            id: call.id,
+            ok: false,
+            error: turn.signal.aborted ? 'cancelled' : 'declined',
+          });
+          continue;
+        }
+        updateToolRequest(call.id, { status: 'running' });
+      }
+      try {
+        const output = await options.pageTools.execute(
+          tool.name,
+          call.args ?? {},
+          { signal: turn.signal },
+        );
+        if (policy === 'confirm') {
+          updateToolRequest(call.id, { status: 'done' });
+          if (tool.effect !== 'read') changesThisTurn += 1;
+        }
+        results.push({ id: call.id, ok: true, result: output });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (policy === 'confirm') {
+          updateToolRequest(call.id, { status: 'failed', error: message });
+        }
+        results.push({ id: call.id, ok: false, error: message });
+      }
+    }
+    return results;
+  }
+
+  function computeStatus(): AssistantStatus {
+    if (turnActive) {
+      if (toolRequests.some((r) => r.status === 'waiting')) {
+        return {
+          state: 'working',
+          label: 'Waiting for your OK…',
+          cancellable: true,
+        };
+      }
+      return {
+        ...(turnStatus ?? { state: 'working', label: 'Working on it…' }),
+        state: 'working',
+        cancellable: true,
+      };
+    }
+    const actionStates = [...actions.values()];
+    if (actionStates.some((a) => a.status === 'applying')) {
+      return { state: 'working', label: 'Making the change…' };
+    }
+    if (actionStates.some((a) => a.status === 'previewing')) {
+      return { state: 'working', label: 'Getting a change ready…' };
+    }
+    if (pendingSends.some((p) => p.status === 'processing')) {
+      return { state: 'working', label: 'Working on it…' };
+    }
+    return lastStatus;
+  }
+
+  const stopStatusEffect = options.onStatus
+    ? $effect.root(() => {
+        $effect(() => {
+          const next = computeStatus();
+          untrack(() => {
+            try {
+              options.onStatus?.(next);
+            } catch {
+              // A host callback never breaks the dock.
+            }
+          });
+        });
+      })
+    : null;
 
   async function send(content: string, attachments?: AssistantAttachmentRef[]) {
     if (!activeThreadId) {
@@ -1379,6 +1834,10 @@ export function createAssistantDockController(
     request: DataSurfaceActionRequest,
     outcome: AssistantActionOutcome,
   ) {
+    if (outcome.status === 'applied') {
+      if (turnActive) changesThisTurn += 1;
+      else lastStatus = { state: 'done', label: 'Done', changes: 1 };
+    }
     try {
       options.onActionSettled?.(request, outcome);
     } catch {
@@ -1408,6 +1867,8 @@ export function createAssistantDockController(
     // re-arm the timer or double-unsubscribe.
     if (disposed) return;
     disposed = true;
+    cancel();
+    stopStatusEffect?.();
     stopPolling();
     unsubscribeRegistry?.();
     unsubscribeRegistry = null;
@@ -1444,6 +1905,21 @@ export function createAssistantDockController(
     get draft() {
       return draft;
     },
+    get status() {
+      return computeStatus();
+    },
+    get steps() {
+      return steps;
+    },
+    get streamingText() {
+      return streamingText;
+    },
+    get toolRequests() {
+      return toolRequests;
+    },
+    approveToolRequest: (id: string) => decide(id, true),
+    declineToolRequest: (id: string) => decide(id, false),
+    cancel,
     setDraft,
     setError,
     loadThreads,

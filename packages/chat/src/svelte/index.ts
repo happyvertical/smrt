@@ -63,6 +63,18 @@ import MiniChat from './components/tabs/MiniChat.svelte';
 // `@happyvertical/smrt-ui/chat` primitives (consolidated in #1589);
 // ReactionPicker keeps a thin chat-local adapter for the package's i18n + palette.
 export { MessageBubble, TypingIndicator } from '@happyvertical/smrt-ui/chat';
+// The assistant-turn wire contract (#2908), for hosts writing a transport.
+export {
+  type AssistantClientToolCall,
+  type AssistantClientToolDeclaration,
+  type AssistantClientToolResult,
+  type AssistantStatus,
+  type AssistantStatusState,
+  type AssistantTurnEvent,
+  type AssistantTurnStep,
+  AssistantTurnStreamError,
+  readAssistantTurnStream,
+} from '../assistant-turn-events.js';
 export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
@@ -73,15 +85,29 @@ export { default as AssistantThreadList } from './components/assistant/Assistant
 export {
   type AssistantAttachmentRef,
   type AssistantMessage,
+  type AssistantResumeTurnInput,
   type AssistantSendMessageInput,
   type AssistantSendMessageResult,
   type AssistantThreadSummary,
   type AssistantTransport,
+  type AssistantTransportEvent,
+  type AssistantTurnStreamInput,
   createInMemoryAssistantTransport,
   createSmrtAssistantTransport,
   type InMemoryAssistantTransportOptions,
+  readAssistantTurnResult,
   type SmrtAssistantTransportOptions,
 } from './components/assistant/assistant-transport.js';
+export {
+  ASSISTANT_PROPOSE_ACTION_TOOL,
+  type AssistantClientTool,
+  type AssistantClientToolPolicy,
+  type AssistantClientToolSource,
+  type AssistantToolRequest,
+  declareClientTools,
+  defaultClientToolPolicy,
+  resolveClientToolPolicy,
+} from './components/assistant/client-tools.js';
 export {
   ASSISTANT_ACTION_UNKNOWN_OUTCOME_REASONS,
   type AssistantActionClient,
