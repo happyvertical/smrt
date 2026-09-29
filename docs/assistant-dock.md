@@ -459,6 +459,88 @@ registry or transport swap because it is the user's unsent text.
 />
 ```
 
+## Streamed turns and browser tools (#2908)
+
+The dock can run a real model tool loop and show it live. Three pieces:
+
+**Server engine.** `runAssistantTurn(options)` (`packages/chat/src/assistant-turn.ts`,
+package index) runs one turn over `runToolLoop` and yields
+`AssistantTurnEvent`s; `createAssistantTurnResponse(events)` wraps them as
+`text/event-stream`. The host route authenticates, persists the user message,
+and passes an already-authorized `principal`:
+
+- `extraTools` / `tools` are server tools, narrowed to
+  `principal.allowedTools` (offer gate) and re-asserted by each tool
+  (execution gate). `maxSteps` bounds the turn, `signal` cancels it
+  (pass the request's own abort signal), and `onUsage` reports each model
+  round's tokens for the host's usage attribution.
+- `clientTools` are the page's browser tools, declared by the request body.
+  They are untrusted: pass them through
+  `sanitizeClientToolDeclarations(body.clientTools, allowList)` first
+  (name/schema/size checks, an unknown effect becomes `destructive`, and
+  `allowList` entries match exactly or as `prefix*`). A server tool wins a
+  name clash.
+- When the model calls a browser tool the turn **suspends**: the transcript
+  goes into the host's `AssistantContinuationStore` (for example
+  `createSessionContinuationStore(agentSession)`, which keeps it in the
+  session's `sessionContext`, keyed by thread) and the stream ends with a
+  `client_tool_calls` event. The browser answers with
+  `resume: { continuationId, results }`. Continuations are single-use and
+  expire after 15 minutes; `maxSteps` spans every leg. Results reach the model
+  wrapped `{ untrusted: true, … }`, and the system prompt says so
+  (`CLIENT_TOOL_RESULT_GUIDANCE`).
+- `author` persists through the trusted `sendAgentReply` bridge: the reply,
+  plus any server tool invocation `authorInvocation` maps to a message (its
+  tool name must be on the session's `allowedTools`).
+
+Events (`@happyvertical/smrt-chat/assistant-turn`, browser-safe):
+`status` (`AssistantStatus`), `token` (a live preview only), `step`
+(`thinking`, `tool_call`, `tool_result`, each with a plain label), `message`
+(a persisted message), and exactly one terminal `done`, `error`, or
+`client_tool_calls`.
+
+**Transport.** `AssistantSendMessageInput` gains `clientTools`, `onEvent`, and
+`signal`; `AssistantSendMessageResult` gains `messages` and
+`clientToolCalls`; a streaming transport adds `resumeTurn`. A host transport
+whose route answers `text/event-stream` turns the response into a result with
+`readAssistantTurnResult(response, { mapMessage, onEvent })`.
+`createSmrtAssistantTransport` passes `writeEndpoint.resumeTurn` through.
+
+**Dock.** Pass `pageTools` — the page's WebMCP registry from
+`installWebMcpPageToolRegistry()` (`@happyvertical/smrt-web/webmcp-page-tools`,
+see `docs/content/webmcp-integration.md`), so the in-page assistant offers the
+model exactly the tools an outside agent sees. The dock runs each call
+through that registry, deciding from the registry's own description of the
+tool, never the server's echo:
+
+| Effect | Behaviour |
+|---|---|
+| `read` | runs |
+| `write` from the `ui` or `intent` owner | runs — those tools only stage a value or dispatch a registry command as `source: 'agent'`, so the change stays a proposal the user applies |
+| any other `write` | waits for **Allow** / **Don't allow** in the dock |
+| `destructive` | always waits, whatever `clientToolPolicy` says |
+
+A declined call reaches the model as `{ ok: false, error: 'declined' }`.
+With an `actionClient` and a mounted surface that has actions, the dock also
+offers its own `assistant_propose_action` tool: the model proposes a
+data-surface action, the dock previews it, and it renders with the usual
+Confirm/Reject — nothing changes until the user confirms. Add that name to the
+server's browser-tool allow-list to offer it.
+
+`controller.status` is the generic `AssistantStatus`
+(`{ state: 'idle' | 'working' | 'done' | 'error', label, changes?, cancellable? }`)
+covering turns, waiting tool calls, and action preview/apply; `onstatus`
+reports every change, for a host's own "working" line.
+`controller.cancel()` (the dock's **Stop**) aborts the stream and declines
+waiting calls. `controller.steps` and `controller.streamingText` expose the
+live progress; the dock renders the status line, the reply preview, and the
+waiting calls itself.
+
+Tests: `src/assistant-turn.test.ts` (loop suspension/resume, bounds,
+allow-lists, cancel, continuations, SSE round trip) and
+`src/svelte/components/assistant/__tests__/assistant-dock-client-tools.test.ts`
+(effect rules, decline/allow, cancel, status, the proposal tool).
+
 ## Gaps / follow-ups
 
 1. **`AssistantActionClient` has no shipped HTTP implementation.** The
@@ -486,7 +568,8 @@ registry or transport swap because it is the user's unsent text.
    own route-discovered `DataSurfaceDescriptor`s, the same pattern
    `PortalChatTool.svelte`'s `assistantStore` already uses for a global dock
    mount. No anytown-specific API was added to this package.
-6. **Streaming remains out of scope**, tracked separately as #2908.
+6. **Streaming shipped with #2908** — see "Streamed turns and browser
+   tools" below.
 7. **`readEndpoint` has no shipped HTTP implementation either** (Copilot PR
    #2919 review, threads jAwqo/jAwrQ/jAwvV). The package now requires a
    host-supplied, member-scoped read endpoint (see "Transport" above) rather

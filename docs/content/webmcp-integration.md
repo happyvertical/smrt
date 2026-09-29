@@ -190,6 +190,30 @@ exposed. Unlike generated tools, a bespoke tool never receives the
 author already chose a stable name, and budgeting one intent against a shared
 generated-tool set could make an unrelated tool fail to register.
 
+## The in-page assistant sees the same tools
+
+The browser's `modelContext` is write-only from page script, so an in-page
+assistant cannot list the tools an outside agent sees. Install the page tool
+registry once, early in the app's root layout and before the first
+registration:
+
+```ts
+import { installWebMcpPageToolRegistry } from '@happyvertical/smrt-web/webmcp-page-tools';
+
+const pageTools = installWebMcpPageToolRegistry(); // undefined during SSR
+```
+
+It puts a recording `modelContext` on the document that keeps every
+registration from all four sources (and forwards it to the browser's native
+context when there is one, so outside agents are unaffected). `list()`
+returns the live tools with their resolved effect and owner, and
+`execute(name, args)` runs one through its own registered `execute`, so every
+effect, consent, and REST gate stays where it is. Registrars stamp their
+resolved effect on the registration (`WEBMCP_TOOL_EFFECT`), because the
+annotations they send the browser mark every non-read tool destructive; a
+registration without a stamp falls back to the annotations. Pass the registry
+to `AssistantDock`'s `pageTools` (see `docs/assistant-dock.md`).
+
 ## Lifecycle and verification
 
 WebMCP registration is client-only. A missing `modelContext` must not prevent

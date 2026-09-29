@@ -123,6 +123,23 @@ The gateway bearer token proves only "this request came from the gateway"; it ne
 - **Persona path reuses the harness's own gates unchanged** — persona principal, fail-closed `allowedTools` offer+execution gates, tenant binding. `onToken` is best-effort telemetry threaded through `runToolLoop`; it never changes what the loop persists or authorizes.
 - **Custom tools stream via `binding.extraTools`** — the persona binding threads an optional `extraTools?: PrincipalTool[]` down to `runPersonaConversationTurn`, so a *streamed* persona chat can offer non-manifest, service-backed tools (the persona messaging tool `messages.send`, or an assistance-request/lead-ticket tool wrapping a `@smrt({ api:false, mcp:false })` service) and thus *act*, not only answer — matching the non-streaming persona path. It is resolved server-side by `authorize` (trusted), never from request input, and stays fully gated: each tool is filtered by the persona's `allowedTools` (offer gate) and re-asserts the bound principal's authority in `execute` (execution gate). Offering a tool is not authorizing it.
 
+## Streamed assistant turns with browser tools (#2908)
+
+`runAssistantTurn()` (`assistant-turn.ts`) is the host-route engine for the
+AssistantDock: one turn over `runToolLoop` with server tools (offer-gated by
+`principal.allowedTools`), browser tools (validated by
+`sanitizeClientToolDeclarations` + a server allow-list), `maxSteps`, `signal`,
+and `onUsage`. A browser tool call SUSPENDS the turn (`stoppedReason:
+'client_tools'`); the transcript waits in an `AssistantContinuationStore`
+(single-use, 15-minute TTL; `createSessionContinuationStore` keeps it in the
+AgentSession's `sessionContext`) and the browser resumes it with results,
+which reach the model wrapped `untrusted`. `createAssistantTurnResponse`
+serves the events as SSE; `assistant-turn-events.ts` is the browser-safe wire
+contract (`./assistant-turn` subpath, also a vite library entry because the
+Svelte dock imports it). The dock decides whether a browser call runs or waits
+for the user from the page registry, never the server's echo; destructive
+always waits. Details: [`docs/assistant-dock.md`](../../docs/assistant-dock.md).
+
 ## AssistantDock (#2904)
 
 `AssistantDock` (`svelte/components/assistant/`, exported from `./svelte`) is a
