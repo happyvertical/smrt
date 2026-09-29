@@ -105,9 +105,13 @@ test('the expanded system footer is on top of the side panes', async ({
   expect(
     await page.evaluate(
       ({ x, y }) =>
-        document
-          .elementFromPoint(x, y)
-          ?.closest('.smrt-admin-shell__drawer--bottom') !== null,
+        (() => {
+          const hit = document.elementFromPoint(x, y);
+          return (
+            hit !== null &&
+            hit.closest('.smrt-admin-shell__drawer--bottom') !== null
+          );
+        })(),
       { x: 8, y: box.y + 8 },
     ),
   ).toBe(true);
