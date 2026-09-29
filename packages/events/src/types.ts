@@ -54,6 +54,8 @@ export interface RecurrencePattern {
   byMonthDay?: number[]; // Days of month (e.g., [1, 15])
   byMonth?: number[]; // Months (1-12)
   bySetPos?: number[]; // Specific occurrence (e.g., [2] for second Tuesday)
+  /** IANA zone the pattern repeats in (RRULE `DTSTART;TZID`); expansion falls back to it. */
+  timeZone?: string;
 }
 
 /**
