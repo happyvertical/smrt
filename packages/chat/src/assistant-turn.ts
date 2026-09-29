@@ -128,15 +128,30 @@ export const SESSION_CONTINUATIONS_FIELD = '__assistantContinuations';
  * id. Needs no schema: the session is already tenant-bound and
  * participant-checked by the host that loaded it. Expired entries are pruned
  * on every write.
+ *
+ * Pass a LOADER rather than a session instance whenever the turn also writes
+ * chat messages: authoring a reply updates the session row, so an instance
+ * loaded at the start of the request is stale by the time the turn suspends,
+ * and saving it fails its revision check. The loader is called before every
+ * read-modify-write so each one starts from the current row.
  */
 export function createSessionContinuationStore(
-  session: ContinuationSessionLike,
+  session:
+    | ContinuationSessionLike
+    | (() => Promise<ContinuationSessionLike | null | undefined>),
   options: { ttlMs?: number; now?: () => number } = {},
 ): AssistantContinuationStore {
   const ttl = options.ttlMs ?? DEFAULT_CONTINUATION_TTL_MS;
   const now = options.now ?? (() => Date.now());
-  const read = (): Record<string, AssistantTurnContinuation> => {
-    const raw = session.getSessionContext()[SESSION_CONTINUATIONS_FIELD];
+  const load = async (): Promise<ContinuationSessionLike> => {
+    const current = typeof session === 'function' ? await session() : session;
+    if (!current) throw new Error('The assistant session is no longer active.');
+    return current;
+  };
+  const read = (
+    current: ContinuationSessionLike,
+  ): Record<string, AssistantTurnContinuation> => {
+    const raw = current.getSessionContext()[SESSION_CONTINUATIONS_FIELD];
     return raw && typeof raw === 'object' && !Array.isArray(raw)
       ? { ...(raw as Record<string, AssistantTurnContinuation>) }
       : {};
@@ -149,18 +164,20 @@ export function createSessionContinuationStore(
   };
   return {
     async save(key, continuation) {
-      const all = prune(read());
+      const current = await load();
+      const all = prune(read(current));
       all[key] = continuation;
-      await session.updateSessionContext({
+      await current.updateSessionContext({
         [SESSION_CONTINUATIONS_FIELD]: all,
       });
     },
     async take(key, id) {
-      const all = read();
+      const current = await load();
+      const all = read(current);
       const entry = all[key];
       if (!entry || entry.id !== id) return null;
       delete all[key];
-      await session.updateSessionContext({
+      await current.updateSessionContext({
         [SESSION_CONTINUATIONS_FIELD]: prune(all),
       });
       return now() - Number(entry.createdAt) > ttl ? null : entry;

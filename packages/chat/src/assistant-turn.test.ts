@@ -695,6 +695,31 @@ describe('assistant turn', () => {
       expect(await store.take('thread', 'k1')).toBeNull();
     });
 
+    it('re-reads the session through a loader before every write', async () => {
+      let context: Record<string, unknown> = {};
+      let loads = 0;
+      const store = createSessionContinuationStore(async () => {
+        loads += 1;
+        return {
+          getSessionContext: () => context,
+          async updateSessionContext(updates: Record<string, unknown>) {
+            context = { ...context, ...updates };
+          },
+        };
+      });
+      await store.save('t', {
+        version: 1,
+        id: 'a',
+        createdAt: Date.now(),
+        steps: 0,
+        messages: [],
+        pending: [],
+        clientTools: [],
+      });
+      expect(await store.take('t', 'a')).toMatchObject({ id: 'a' });
+      expect(loads).toBe(2);
+    });
+
     it('expires a stale continuation', async () => {
       let now = 1_000;
       const store = createMemoryContinuationStore({
