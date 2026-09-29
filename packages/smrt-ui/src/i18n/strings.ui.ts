@@ -23,6 +23,18 @@ export const M = defineMessages({
   // feedback/Modal.svelte
   'ui.modal.close': 'Close modal',
 
+  // feedback/PhoneSheet.svelte
+  'ui.phone_sheet.close': 'Close {title}',
+
+  // feedback/WorkingStrip.svelte
+  'ui.working_strip.working': 'Working…',
+  'ui.working_strip.done': 'Done',
+  'ui.working_strip.open': 'Open',
+  'ui.working_strip.stop': 'Stop',
+
+  // forms/FormActionBar.svelte
+  'ui.form_action_bar.label': 'Form actions',
+
   // feedback/ProgressBar.svelte
   'ui.progress_bar.label': 'Progress',
   'ui.progress_bar.over_by': 'Over by {amount}',

@@ -55,6 +55,7 @@ export { default as ErrorSummary } from './ErrorSummary.svelte';
 export { default as Fieldset } from './Fieldset.svelte';
 export { default as FilePicker } from './FilePicker.svelte';
 export { default as Form } from './Form.svelte';
+export { default as FormActionBar } from './FormActionBar.svelte';
 export { default as Field, default as FormGroup } from './FormGroup.svelte';
 export {
   type FormGroupContextValue,

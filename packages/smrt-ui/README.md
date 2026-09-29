@@ -29,15 +29,33 @@ pnpm add @happyvertical/smrt-ui
 
 | Area | Components |
 | --- | --- |
-| Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary` |
+| Fields | `Form`, `Field`/`FormGroup`, `Fieldset`, `InputGroup`, `ErrorSummary`, `FormActionBar` |
 | Text and structured input | `Input`, `Textarea`, `Select`, `Combobox`, `Listbox`, `MultiSelect`, `TagsInput` |
 | Choices | `Checkbox`, `RadioGroup`/`Radio`, `Switch`, `Toggle`, `ToggleButton`, `SegmentedControl` |
 | Values and files | `Slider`, `RangeSlider`, `DatePicker`, `TimePicker`, `FilePicker` |
 | Actions and display | `Button`, `Dropdown`/`Menu`, `Badge`, `Chip`, `Avatar`, `Card`, `Skeleton`, `Tooltip`, `Tree` |
-| Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `ConfirmDialog` |
-| Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay` |
+| Disclosure and overlays | `Popover`, `Disclosure`, `Accordion`/`AccordionItem`, `Modal`, `Drawer`/`Sheet`, `PhoneSheet`, `ConfirmDialog` |
+| Feedback | `Alert`, `ToastViewport`, `Progress`, `Meter`, `Spinner`, `LoadingOverlay`, `WorkingStrip` |
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
 | Layout and navigation | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
+
+### Phone surfaces
+
+- `PhoneSheet` (`/feedback`) is the phone replacement for drawers and centered
+  modals: `variant="page"` covers the area, `variant="sheet"` rises from the
+  bottom and closes on a swipe down its header. It is non-modal, closes on its
+  button and Escape, returns focus to the opener, and can stay mounted while
+  closed (hidden and inert) so its content keeps state. It is
+  `position: absolute; inset: 0` — render it in AdminShell's `overlays`.
+- `WorkingStrip` (`/feedback`) shows a transport-neutral `WorkingStatus`
+  (`idle` · `working` · `done`) as a strip above a phone bottom bar or a line
+  at the top of a pane, with an optional reopen action and Stop button and a
+  polite live region.
+- `FormActionBar` (`/forms`) groups a form's actions (primary last). On phones
+  it is fixed to the bottom, carries `data-form-action-bar` so AdminShell hides
+  its phone bottom bar, and hides while `:root[data-keyboard-open]`.
+- `swipeDismiss` / `swipeDismisses` (`/feedback`) are the touch action and pure
+  decision behind swipe-to-close.
 
 Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
