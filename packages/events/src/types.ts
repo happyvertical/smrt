@@ -104,6 +104,10 @@ export interface EventOptions extends SmrtObjectOptions {
   description?: string;
   startDate?: Date | null;
   endDate?: Date | null;
+  /** Whole-day event; `endDate` is the exclusive end (midnight after the last day). */
+  allDay?: boolean;
+  /** IANA time zone (e.g. `America/Edmonton`); empty inherits from series/place/site. */
+  timeZone?: string;
   status?: EventStatus;
   round?: number | null; // Sequence/round number in series
   metadata?: Record<string, unknown> | string;
