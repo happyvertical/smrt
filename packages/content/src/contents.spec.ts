@@ -6,7 +6,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { syncSchema } from '@happyvertical/sql';
 import { makeSlug } from '@happyvertical/utils';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { ContentAssetCollection } from './content-assets';
 import './content-feed-source';
 import { Contents } from './contents';
@@ -518,6 +518,44 @@ it('removes content_assets links when the linked picture is deleted', async () =
   expect(links.map((link) => link.assetId)).toEqual([kept.id]);
   const assets = await content.getAssets();
   expect(assets.map((asset) => asset.id)).toEqual([kept.id]);
+});
+
+it('skips a content_assets link whose asset row is gone, with a warning', async () => {
+  const dbUrl = getTestDbUrl('asset-dangling-link');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-dangling-link',
+    title: 'Asset dangling link',
+    body: 'One picture, one dangling link',
+    status: 'draft',
+  });
+  const kept = await images.create({
+    name: 'kept-2.jpg',
+    sourceUri: 'file:///tmp/kept-2.jpg',
+    mimeType: 'image/jpeg',
+  });
+  await content.addAsset(kept, 'inline', 0);
+  // A link left behind by a delete outside the model.
+  const missingId = '00000000-0000-4000-8000-00000000dead';
+  await contentAssets
+    .create({
+      contentId: content.id as string,
+      assetId: missingId,
+      relationship: 'inline',
+      sortOrder: 1,
+    })
+    .then((link) => link.save());
+
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const assets = await content.getAssets();
+  expect(assets.map((asset) => asset.id)).toEqual([kept.id]);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining(missingId));
+  warn.mockRestore();
 });
 
 it('should sync editor-style assetIds on save', async () => {

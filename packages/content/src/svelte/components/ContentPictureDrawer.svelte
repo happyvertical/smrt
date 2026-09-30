@@ -210,8 +210,24 @@ function handleGridFocus(event: FocusEvent) {
   if (tiles.indexOf(tile) >= tiles.length - MORE_FOCUS_TILES) requestMore();
 }
 
-// A searching host already sent only the matches.
-const visible = $derived(onSearch ? pictures : filterPictures(pictures, query));
+// A searching host already sent only the matches. A picture whose preview
+// could not be loaded (its file or row is gone) is left out, not shown as a
+// broken tile.
+const visible = $derived(
+  (onSearch ? pictures : filterPictures(pictures, query)).filter(
+    (picture) => !brokenPreviews[picture.id],
+  ),
+);
+
+function hideBrokenPicture(picture: ContentPicture) {
+  if (brokenPreviews[picture.id]) return;
+  console.warn(
+    '[ContentPictureDrawer] Leaving out a picture whose preview could not be loaded',
+    picture.id,
+  );
+  brokenPreviews = { ...brokenPreviews, [picture.id]: true };
+  selectedIds = selectedIds.filter((id) => id !== picture.id);
+}
 const inStory = $derived(new Set(inStoryIds));
 const selected = $derived(
   selectedIds
@@ -340,14 +356,14 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
             aria-label={t(M['content.content_picture_drawer.select'], { name: picture.title })}
             onclick={() => toggle(picture)}
           >
-            {#if picture.previewUrl && !brokenPreviews[picture.id]}
+            {#if picture.previewUrl}
               <img
                 src={picture.previewUrl}
                 alt=""
                 loading="lazy"
                 decoding="async"
                 draggable="false"
-                onerror={() => (brokenPreviews = { ...brokenPreviews, [picture.id]: true })}
+                onerror={() => hideBrokenPicture(picture)}
               />
             {:else}
               <span class="drawer-picture-missing">
@@ -378,7 +394,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     </ul>
   {:else if loading}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.loading'])}</p>
-  {:else if pictures.length > 0 || (onSearch && query.trim())}
+  {:else if pictures.some((picture) => !brokenPreviews[picture.id]) || (onSearch && query.trim())}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.no_match'])}</p>
   {:else}
     <p class="drawer-hint">{t(M['content.content_picture_drawer.empty'])}</p>

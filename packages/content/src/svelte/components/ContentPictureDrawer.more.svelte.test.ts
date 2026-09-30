@@ -62,3 +62,31 @@ describe('ContentPictureDrawer loading more', () => {
     );
   });
 });
+
+describe('ContentPictureDrawer missing pictures', () => {
+  it('leaves out a picture whose preview cannot be loaded, with a console warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mounted.push(
+      mount(ContentPictureDrawer, { target, props: { pictures: PICTURES } }),
+    );
+    flushSync();
+    expect(target.querySelectorAll('.drawer-picture')).toHaveLength(3);
+
+    const broken = target.querySelector('img[src="/p/2"]') as HTMLImageElement;
+    broken.dispatchEvent(new Event('error'));
+    flushSync();
+
+    const titles = Array.from(
+      target.querySelectorAll('.drawer-picture-title'),
+    ).map((node) => node.textContent);
+    expect(titles).toEqual(['Arena at night', 'Main street']);
+    expect(target.textContent).not.toContain('No preview');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not be loaded'),
+      'p-2',
+    );
+    warn.mockRestore();
+  });
+});

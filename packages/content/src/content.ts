@@ -1,3 +1,4 @@
+import { createLogger } from '@happyvertical/logger';
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import type {
   SmrtObjectOptions,
@@ -68,6 +69,8 @@ import {
 } from './serialization';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
+
+const logger = createLogger({ level: 'info' });
 
 const USED_FACT_RELATIONSHIPS = new Set<FactContentRelationship>([
   'supports',
@@ -1700,6 +1703,15 @@ export class Content
         .filter((asset) => asset.id)
         .map((asset) => [asset.id as string, asset]),
     );
+
+    const missing = assetIds.filter((assetId) => !assetsById.has(assetId));
+    if (missing.length > 0) {
+      // A link whose asset row is gone (deleted outside the model) is skipped.
+      logger.warn(
+        '[smrt-content] Content links assets that no longer exist; skipping them',
+        { contentId: this.id, assetIds: missing },
+      );
+    }
 
     return links
       .map((link) => assetsById.get(link.assetId))

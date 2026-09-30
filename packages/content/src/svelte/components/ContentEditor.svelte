@@ -927,6 +927,19 @@ function handleImageSelect(selected: ImageLike | File | string) {
   })();
 }
 
+// An attached picture whose file or row is gone is left out of the media
+// list (with a console warning) instead of showing a broken image.
+let brokenAssetImages = $state<Record<string, true>>({});
+
+function hideBrokenAssetImage(assetId: string) {
+  if (!assetId || brokenAssetImages[assetId]) return;
+  console.warn(
+    '[ContentEditor] Leaving out an attached picture that could not be loaded',
+    assetId,
+  );
+  brokenAssetImages = { ...brokenAssetImages, [assetId]: true };
+}
+
 function getAssetImageSource(asset: ContentEditorAsset): string {
   return String(asset?.sourceUri || asset?.url || asset?.src || '');
 }
@@ -1165,6 +1178,7 @@ function removeAsset(id: string) {
                   <div class="media-grid">
                     {#each formData.assets as asset, index (asset.id || `asset-${index}`)}
                       {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
+                      {#if !(assetId && brokenAssetImages[assetId])}
                       <div
                         class="media-item"
                         class:is-thumbnail={assetId === formData.thumbnailAssetId}
@@ -1172,7 +1186,12 @@ function removeAsset(id: string) {
                         title={t(M['content.content_editor.drag_into_body'])}
                         ondragstart={(event) => handleAttachedImageDragStart(event, asset)}
                       >
-                        <img class="media-item-image" src={getAssetImageSource(asset)} alt={asset.name || 'Asset image'} />
+                        <img
+                          class="media-item-image"
+                          src={getAssetImageSource(asset)}
+                          alt={asset.name || 'Asset image'}
+                          onerror={() => hideBrokenAssetImage(assetId)}
+                        />
                         <div class="media-item-overlay">
                            {#if assetId && assetId !== formData.thumbnailAssetId}
                              <Button variant="ghost" size="sm" type="button" class="btn-make-thumbnail" aria-label={t(M['content.content_editor.make_thumbnail'])} title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
@@ -1189,6 +1208,7 @@ function removeAsset(id: string) {
                           <div class="thumbnail-badge">Thumbnail</div>
                         {/if}
                       </div>
+                      {/if}
                     {/each}
                   </div>
                 {:else}
