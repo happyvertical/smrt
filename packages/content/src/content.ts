@@ -1661,6 +1661,7 @@ export class Content
 
   private async getContentAssetLinks(
     relationship?: string,
+    excludeRelationships: readonly string[] = [],
   ): Promise<Array<{ assetId: string; sortOrder: number }>> {
     if (!this.id) {
       return [];
@@ -1673,8 +1674,10 @@ export class Content
         relationship ? { relationship } : {},
       );
 
+      const excluded = new Set(excludeRelationships);
       return links
         .filter((link) => link.assetId)
+        .filter((link) => !excluded.has(link.relationship))
         .map((link) => ({
           assetId: link.assetId,
           sortOrder: link.sortOrder ?? 0,
@@ -4103,16 +4106,39 @@ export class Content
   /**
    * Get all assets associated with this content
    * @param relationship - Optional filter by relationship type (e.g., 'thumbnail', 'attachment')
+   * @param options.excludeRelationships - Relationship types to leave out
+   *   (e.g. page renders of a source document that a picture picker should
+   *   not offer). Their links are not resolved, and stay in the data.
    * @returns Promise resolving to array of assets
    */
-  async getAssets(relationship?: string): Promise<Asset[]> {
+  async getAssets(
+    relationship?: string,
+    options: { excludeRelationships?: readonly string[] } = {},
+  ): Promise<Asset[]> {
     if (!this.id) {
       return [];
     }
 
     return this.resolveAssetsForLinks(
-      await this.getContentAssetLinks(relationship),
+      await this.getContentAssetLinks(
+        relationship,
+        options.excludeRelationships ?? [],
+      ),
     );
+  }
+
+  /**
+   * The ids of the assets linked to this content, without loading the asset
+   * rows (a link whose asset row is gone is included). Use it to learn which
+   * assets a listing left out with `getAssets(..., { excludeRelationships })`.
+   * @param relationship - Optional filter by relationship type
+   */
+  async getAssetIds(relationship?: string): Promise<string[]> {
+    if (!this.id) {
+      return [];
+    }
+    const links = await this.getContentAssetLinks(relationship);
+    return [...new Set(links.map((link) => link.assetId))];
   }
 
   /**

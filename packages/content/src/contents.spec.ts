@@ -558,6 +558,52 @@ it('skips a content_assets link whose asset row is gone, with a warning', async 
   warn.mockRestore();
 });
 
+it('getAssets leaves out excluded relationships but keeps their links', async () => {
+  const dbUrl = getTestDbUrl('asset-excluded-relationships');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-excluded-relationships',
+    title: 'Asset excluded relationships',
+    body: 'A story with a photo and a document page render',
+    status: 'draft',
+  });
+  const photo = await images.create({
+    name: 'photo.jpg',
+    sourceUri: 'file:///tmp/photo-excl.jpg',
+    mimeType: 'image/jpeg',
+  });
+  const page = await images.create({
+    name: 'agenda-page-1.png',
+    sourceUri: 'file:///tmp/agenda-page-1.png',
+    mimeType: 'image/png',
+  });
+  await content.addAsset(photo, 'inline', 0);
+  await content.addAsset(page, 'document_image', 1);
+
+  const all = await content.getAssets();
+  expect(all.map((asset) => asset.id).sort()).toEqual(
+    [photo.id, page.id].sort(),
+  );
+
+  const visible = await content.getAssets(undefined, {
+    excludeRelationships: ['document_image', 'source_document'],
+  });
+  expect(visible.map((asset) => asset.id)).toEqual([photo.id]);
+
+  expect(await content.getAssetIds('document_image')).toEqual([page.id]);
+
+  // The link stays in the data; only the listing leaves it out.
+  const links = await contentAssets.byLeft(content.id as string, {
+    relationship: 'document_image',
+  });
+  expect(links).toHaveLength(1);
+});
+
 it('should sync editor-style assetIds on save', async () => {
   const dbUrl = getTestDbUrl('editor-asset-sync');
   const contents = await Contents.create({
