@@ -11,17 +11,18 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Find the monorepo root by walking up from cwd looking for turbo.json
+ * Find the monorepo root by walking up from cwd looking for pnpm-workspace.yaml.
+ * Package-level turbo.json files configure tasks, not workspace boundaries.
  */
 function findMonorepoRoot(): string {
   let dir = process.cwd();
   while (dir !== '/') {
-    if (existsSync(join(dir, 'turbo.json'))) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) {
       return dir;
     }
     dir = resolve(dir, '..');
   }
-  throw new Error('Could not find monorepo root (turbo.json)');
+  throw new Error('Could not find monorepo root (pnpm-workspace.yaml)');
 }
 
 /**
