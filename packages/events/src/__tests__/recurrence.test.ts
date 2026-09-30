@@ -40,6 +40,57 @@ describe('zoned wall time helpers', () => {
     });
   });
 
+  it('resolves a spring-forward gap time forward by the gap', () => {
+    const wall = {
+      year: 2026,
+      month: 3,
+      day: 8,
+      hour: 2,
+      minute: 30,
+      second: 0,
+      millisecond: 0,
+    };
+    // 02:30 does not exist in Edmonton on 2026-03-08 (02:00 MST -> 03:00 MDT):
+    // it lands at 03:30 MDT, never back at 01:30 MST.
+    const edmonton = fromZonedWallTime(wall, 'America/Edmonton');
+    expect(edmonton.toISOString()).toBe('2026-03-08T09:30:00.000Z');
+    expect(toZonedWallTime(edmonton, 'America/Edmonton')).toMatchObject({
+      day: 8,
+      hour: 3,
+      minute: 30,
+    });
+    // An east-of-UTC zone: Berlin skips 02:00-03:00 on 2026-03-29.
+    const berlin = fromZonedWallTime({ ...wall, day: 29 }, 'Europe/Berlin');
+    expect(berlin.toISOString()).toBe('2026-03-29T01:30:00.000Z');
+    expect(toZonedWallTime(berlin, 'Europe/Berlin')).toMatchObject({
+      hour: 3,
+      minute: 30,
+    });
+  });
+
+  it('resolves a fall-back repeated time to its first occurrence', () => {
+    const wall = {
+      year: 2026,
+      month: 11,
+      day: 1,
+      hour: 1,
+      minute: 30,
+      second: 0,
+      millisecond: 0,
+    };
+    // 01:30 happens twice in Edmonton on 2026-11-01; the first is MDT.
+    expect(fromZonedWallTime(wall, 'America/Edmonton').toISOString()).toBe(
+      '2026-11-01T07:30:00.000Z',
+    );
+    // Berlin repeats 02:00-03:00 on 2026-10-25; the first is CEST.
+    expect(
+      fromZonedWallTime(
+        { ...wall, month: 10, day: 25, hour: 2 },
+        'Europe/Berlin',
+      ).toISOString(),
+    ).toBe('2026-10-25T00:30:00.000Z');
+  });
+
   it('validates zone names', () => {
     expect(isValidTimeZone('America/Edmonton')).toBe(true);
     expect(isValidTimeZone('Mars/Olympus')).toBe(false);
@@ -69,6 +120,25 @@ describe('expandRecurrence', () => {
       // After spring-forward: 19:00 MDT
       '2026-03-13T01:00:00.000Z',
     ]);
+  });
+
+  it('a daily 02:30 series moves forward across the spring-forward gap', () => {
+    const out = expandRecurrence(
+      { frequency: 'daily' },
+      {
+        // 2026-03-07 02:30 MST
+        start: new Date('2026-03-07T09:30:00Z'),
+        rangeStart: new Date('2026-03-07T00:00:00Z'),
+        rangeEnd: new Date('2026-03-10T00:00:00Z'),
+        timeZone: 'America/Edmonton',
+      },
+    );
+    expect(
+      out.map((d) => {
+        const w = toZonedWallTime(d, 'America/Edmonton');
+        return `${w.day} ${w.hour}:${w.minute}`;
+      }),
+    ).toEqual(['7 2:30', '8 3:30', '9 2:30']);
   });
 
   it('expands daily with interval and count', () => {

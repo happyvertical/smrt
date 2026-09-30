@@ -127,8 +127,14 @@ function offsetAt(epochMs: number, timeZone: string): number {
 }
 
 /**
- * Instant for a wall-clock time in a time zone. A time skipped by a
- * daylight-saving jump resolves forward by the size of the gap.
+ * Instant for a wall-clock time in a time zone.
+ *
+ * - A time skipped by a daylight-saving jump (spring forward) resolves
+ *   FORWARD by the size of the gap: 02:30 on a 02:00 -> 03:00 day is 03:30.
+ * - A time that occurs twice (fall back) resolves to its FIRST occurrence.
+ *
+ * These are the RFC 5545 / Temporal `compatible` rules, independent of the
+ * zone's sign or the host time zone.
  *
  * @param wall - Local date and time
  * @param timeZone - IANA time zone
@@ -144,11 +150,24 @@ export function fromZonedWallTime(wall: ZonedWallTime, timeZone: string): Date {
     wall.second,
     wall.millisecond,
   );
-  const firstOffset = offsetAt(guess, timeZone);
-  let epoch = guess - firstOffset;
-  const secondOffset = offsetAt(epoch, timeZone);
-  if (secondOffset !== firstOffset) epoch = guess - secondOffset;
-  return new Date(epoch);
+  // Zone offsets in force a day either side bracket any single transition
+  // near this wall time; together with the offsets at the naive guess they
+  // are every offset the wall time can resolve under.
+  const before = offsetAt(guess - DAY_MS, timeZone);
+  const offsets = new Set([
+    before,
+    offsetAt(guess, timeZone),
+    offsetAt(guess + DAY_MS, timeZone),
+  ]);
+  const matches = [...offsets]
+    .map((offset) => guess - offset)
+    .filter((epoch) => offsetAt(epoch, timeZone) === guess - epoch)
+    .sort((a, b) => a - b);
+  if (matches.length > 0) return new Date(matches[0]);
+  // No offset reproduces the wall time: it falls in a gap. Read it with the
+  // offset in force before the jump, which lands after the jump by exactly
+  // the gap's size.
+  return new Date(guess - before);
 }
 
 function civilToDayNumber(date: CivilDate): number {
