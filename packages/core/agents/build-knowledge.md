@@ -88,7 +88,8 @@ Test generation uses that same effective configuration and publishes knowledge
 matching the manifest it generated. Disabling knowledge removes a previous local
 knowledge artifact, so consumers cannot mistake it for current enabled output.
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
-at that explicit root; omitting the argument retains the current-working-directory
+at that explicit root, including installed providers and external base classes;
+omitting the argument retains the current-working-directory
 behavior. Both manifest writers retain declared package dependencies when merging
 their local and consumed-object projections.
 
