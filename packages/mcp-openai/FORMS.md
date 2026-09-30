@@ -82,3 +82,8 @@ transmission occurs in fixtures. Accepting a form does not approve an applicatio
 Run package build, typecheck, test, test:forms:e2e and verify:forms:pack. See
 [FORMS-TEST-DESIGN.md](FORMS-TEST-DESIGN.md) for the evidence contract. Tests use
 synthetic data only; PostgreSQL authority tests use `SMRT_TEST_POSTGRES_URL`.
+
+In the application form, an untouched optional array without a default is
+omitted from the reply. Editing then clearing an array submits an explicit
+empty array, which must satisfy `minItems`. Required arrays and declared
+defaults always remain subject to the schema's normal reply validation.
