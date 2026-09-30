@@ -26,13 +26,7 @@
  * @packageDocumentation
  */
 
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1159,6 +1153,7 @@ async function refreshTestKnowledgeArtifact(
   const {
     AGENT_SURFACE_HASH_PREFIX,
     buildDomainKnowledgeManifest,
+    publishArtifactFiles,
     resolveFileKnowledgeConfig,
   } = await importSmrtCoreKnowledgeModule();
   const manifestPath = join(root, '.smrt/manifest.json');
@@ -1205,7 +1200,9 @@ async function refreshTestKnowledgeArtifact(
       Object.fromEntries(priorSurfaceHashes),
     );
   }
-  writeFileSync(knowledgePath, JSON.stringify(knowledge, null, 2), 'utf8');
+  publishArtifactFiles([
+    { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
+  ]);
 }
 
 /**

@@ -12,6 +12,7 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
 import {
   loadVerifiedSmrtGenerationSnapshot,
   type SmrtGenerationSnapshotOptions,
@@ -773,7 +774,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       return;
     }
 
-    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { mkdirSync } = await import('node:fs');
     const { dirname } = await import('node:path');
     mkdirSync(dirname(outputPath), { recursive: true });
     const artifact = buildDomainKnowledgeManifest({
@@ -786,7 +787,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     const emitted = deterministic
       ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
       : preserveKnowledgeGeneratedAt(outputPath, artifact);
-    writeFileSync(outputPath, JSON.stringify(emitted, null, 2), 'utf-8');
+    publishArtifactFiles([
+      { path: outputPath, content: JSON.stringify(emitted, null, 2) },
+    ]);
   }
 
   async function resolveKnowledgeConfig(
