@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
 import { describe, expect, it } from 'vitest';
-import { PlaceAssetCollection, PlaceCollection } from './index.js';
+import {
+  PLACE_MAIN_ASSET_RELATIONSHIP,
+  PlaceAssetCollection,
+  PlaceCollection,
+} from './index.js';
 
 function getTestDbUrl(name: string): string {
   return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
@@ -133,5 +137,87 @@ describe('Place owned assets', () => {
     expect(
       (await place.getAssets('floorplan')).map((asset) => asset.id),
     ).toEqual([globalAsset.id]);
+  });
+
+  it('keeps one main picture per place', async () => {
+    const dbUrl = getTestDbUrl('place-assets-main');
+    const { assets, place } = await createPlaceFixture(dbUrl);
+    const front = await assets.create({
+      name: 'front.jpg',
+      sourceUri: 'file:///tmp/front.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+    const side = await assets.create({
+      name: 'side.jpg',
+      sourceUri: 'file:///tmp/side.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+
+    expect(await place.getMainAsset()).toBeNull();
+    await place.addAsset(front, 'depicts');
+    await place.setMainAsset(front);
+    await place.setMainAsset(side);
+
+    expect((await place.getMainAsset())?.id).toBe(side.id);
+    expect(
+      (await place.getAssets(PLACE_MAIN_ASSET_RELATIONSHIP)).map((a) => a.id),
+    ).toEqual([side.id]);
+    // The other links of the old main picture stay.
+    expect((await place.getAssets('depicts')).map((a) => a.id)).toEqual([
+      front.id,
+    ]);
+
+    await place.setMainAsset(null);
+    expect(await place.getMainAsset()).toBeNull();
+  });
+
+  it('refuses an asset from another tenant', async () => {
+    const dbUrl = getTestDbUrl('place-assets-cross-tenant');
+    const { assets, place } = await createPlaceFixture(dbUrl);
+    const foreign = await assets.create({
+      name: 'elsewhere.jpg',
+      sourceUri: 'file:///tmp/elsewhere.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-b',
+    });
+
+    await expect(place.addAsset(foreign, 'depicts')).rejects.toThrow(
+      /another tenant/,
+    );
+    await expect(place.setMainAsset(foreign)).rejects.toThrow(/another tenant/);
+    expect(await place.getAssets()).toEqual([]);
+  });
+
+  it('removes place links when the asset or the place is deleted', async () => {
+    const dbUrl = getTestDbUrl('place-assets-cascade');
+    const { assets, places, place } = await createPlaceFixture(dbUrl);
+    const links = await PlaceAssetCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    const photo = await assets.create({
+      name: 'photo.jpg',
+      sourceUri: 'file:///tmp/photo.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+    const other = await assets.create({
+      name: 'other.jpg',
+      sourceUri: 'file:///tmp/other.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+    await place.addAsset(photo, 'depicts');
+    await place.addAsset(other, 'depicts');
+
+    await photo.delete();
+    expect((await links.list({})).map((link) => link.assetId)).toEqual([
+      other.id,
+    ]);
+
+    const loaded = await places.get({ id: place.id as string });
+    await loaded?.delete();
+    expect(await links.list({})).toEqual([]);
   });
 });

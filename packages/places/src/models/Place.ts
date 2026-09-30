@@ -24,6 +24,9 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { GeoData, PlaceOptions } from '../types';
 
+/** `place_assets.relationship` of a place's main picture. */
+export const PLACE_MAIN_ASSET_RELATIONSHIP = 'hero';
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
@@ -227,6 +230,15 @@ export class Place extends SmrtHierarchical {
     if (!this.id || !asset.id) {
       throw new Error('Cannot associate unsaved place or asset');
     }
+    if (
+      asset.tenantId &&
+      this.tenantId &&
+      String(asset.tenantId) !== String(this.tenantId)
+    ) {
+      throw new Error(
+        'Cannot associate an asset from another tenant with this place',
+      );
+    }
 
     assertValidOwnedAssetRelationship(relationship);
     assertValidOwnedAssetSortOrder(sortOrder);
@@ -237,6 +249,37 @@ export class Place extends SmrtHierarchical {
       sortOrder,
       tenantId: this.tenantId,
     });
+  }
+
+  /**
+   * The place's main picture: its `hero` asset (see `ASSET_ROLES.HERO`), or
+   * null when none is set.
+   */
+  async getMainAsset(): Promise<Asset | null> {
+    const [main] = await this.getAssets(PLACE_MAIN_ASSET_RELATIONSHIP);
+    return main ?? null;
+  }
+
+  /**
+   * Make `asset` the place's one main picture: it becomes the only `hero`
+   * link (any other is removed). Pass `null` to clear the main picture.
+   * Other links of the asset (e.g. `depicts`) are left alone.
+   */
+  async setMainAsset(asset: Asset | null): Promise<void> {
+    if (!this.id) {
+      throw new Error('Cannot set the main asset of an unsaved place');
+    }
+    const placeAssets = await this.getPlaceAssetCollection();
+    const current = await placeAssets.byLeft(this.id, {
+      relationship: PLACE_MAIN_ASSET_RELATIONSHIP,
+    });
+    if (asset) await this.addAsset(asset, PLACE_MAIN_ASSET_RELATIONSHIP, 0);
+    for (const link of current) {
+      if (asset && link.assetId === asset.id) continue;
+      await placeAssets.detach(this.id, link.assetId, {
+        relationship: PLACE_MAIN_ASSET_RELATIONSHIP,
+      });
+    }
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {

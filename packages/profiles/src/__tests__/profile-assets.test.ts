@@ -148,4 +148,38 @@ describe('Profile owned assets', () => {
       (await profile.getAssets('avatar')).map((asset) => asset.id),
     ).toEqual([globalAsset.id]);
   });
+
+  it('refuses a picture from another tenant and drops links with the picture', async () => {
+    const dbUrl = getTestDbUrl('profile-assets-tenant-cascade');
+    const { assets, profile } = await createProfileFixture(dbUrl);
+    const links = await ProfileAssetCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+
+    const foreign = await assets.create({
+      name: 'elsewhere.jpg',
+      sourceUri: 'file:///tmp/elsewhere.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-b',
+    });
+    await expect(profile.addAsset(foreign, 'depicts')).rejects.toThrow(
+      /another tenant/,
+    );
+
+    const photo = await assets.create({
+      name: 'photo.jpg',
+      sourceUri: 'file:///tmp/photo.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-a',
+    });
+    await profile.addAsset(photo, 'depicts');
+    expect((await profile.getAssets('depicts')).map((a) => a.id)).toEqual([
+      photo.id,
+    ]);
+    const [row] = await links.list({});
+    expect(row?.tenantId).toBe('tenant-a');
+
+    await photo.delete();
+    expect(await links.list({})).toEqual([]);
+  });
 });

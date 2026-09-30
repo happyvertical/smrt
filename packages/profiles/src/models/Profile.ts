@@ -358,6 +358,15 @@ export class Profile extends SmrtObject {
     if (!this.id || !asset.id) {
       throw new Error('Cannot associate unsaved profile or asset');
     }
+    if (
+      asset.tenantId &&
+      this.tenantId &&
+      String(asset.tenantId) !== String(this.tenantId)
+    ) {
+      throw new Error(
+        'Cannot associate an asset from another tenant with this profile',
+      );
+    }
 
     assertValidOwnedAssetRelationship(relationship);
     assertValidOwnedAssetSortOrder(sortOrder);
