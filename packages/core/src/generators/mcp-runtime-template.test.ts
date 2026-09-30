@@ -3,12 +3,37 @@ import { ObjectRegistry } from '../registry.js';
 import {
   MCP_STABLE_CATALOG_TTL_MS,
   MCPGenerator,
+  mcpToolAnnotations,
   resolveMCPToolListCacheHint,
   sortMCPTools,
 } from './mcp.js';
 import { generateRuntimeBootstrap } from './mcp-runtime-template.js';
 
 describe('generated MCP custom-action runtime (#2182)', () => {
+  it('derives advisory MCP annotations from the canonical action classifier', () => {
+    expect(mcpToolAnnotations('list')).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+    expect(
+      mcpToolAnnotations('publish', {
+        scope: 'item',
+        idRequired: true,
+        isStatic: false,
+        effect: 'write',
+        idempotent: false,
+        openWorld: true,
+      }),
+    ).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+  });
+
   it('emits the SDK v2 stateless lifecycle', () => {
     const source = generateRuntimeBootstrap({ tools: [], customActions: {} });
 

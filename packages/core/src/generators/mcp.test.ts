@@ -325,6 +325,30 @@ describe('MCPGenerator with Custom Actions', () => {
       expect(toolNames).toContain('mcptestagent_analyze');
     });
 
+    it('attaches canonical effect annotations to generated CRUD and custom tools', async () => {
+      const tools = await generator.generateTools();
+      expect(
+        tools.find((tool) => tool.name === 'mcptestagent_list'),
+      ).toMatchObject({
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      });
+      expect(
+        tools.find((tool) => tool.name === 'mcptestagent_research'),
+      ).toMatchObject({
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      });
+    });
+
     it('should have correct schema for custom action tools', async () => {
       const tools = await generator.generateTools();
       const researchTool = tools.find(

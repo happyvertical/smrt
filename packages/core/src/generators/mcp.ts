@@ -28,6 +28,7 @@ import {
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
+  type ToolEffect,
 } from './custom-action.js';
 import {
   type GeneratedSourceExtension,
@@ -49,7 +50,14 @@ import {
   fieldTypeToJsonSchema,
   finalizeMcpJsonSchema,
   isCrudAction,
+  resolveToolSemantics,
   type ToolFieldMeta,
+  type ToolJsonSchema,
+} from './tool-schema.js';
+
+export type { ToolEffect } from './custom-action.js';
+export {
+  assertMcpJsonSchemaSafety,
   type ToolJsonSchema,
 } from './tool-schema.js';
 
@@ -221,6 +229,57 @@ export interface MCPTool {
   inputSchema: ToolJsonSchema;
   /** Public result schema for tools/call structuredContent. */
   outputSchema: ToolJsonSchema;
+  /** Advisory capability hints derived from the canonical effect classifier. */
+  annotations?: MCPToolAnnotations;
+  /** Optional host-facing display title. It never grants authority. */
+  title?: string;
+  /** Optional host-facing icon descriptors. They never grant authority. */
+  icons?: MCPToolIcon[];
+  /** Portable extension metadata. Unknown keys are preserved but inert. */
+  _meta?: Record<string, unknown>;
+}
+
+/** MCP-compatible advisory capability hints. Authorization never reads them. */
+export interface MCPToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+/** A host-facing icon descriptor accepted by the SDK v2 tool shape. */
+export interface MCPToolIcon {
+  src: string;
+  mimeType?: string;
+  sizes?: string[];
+  theme?: 'light' | 'dark';
+}
+
+/** Map a canonical effect classification into inert MCP capability hints. */
+export function mcpToolAnnotations(
+  action: string,
+  customAction?: CustomActionMetadata,
+): MCPToolAnnotations {
+  const semantics = resolveToolSemantics(action, customAction);
+  return mcpToolAnnotationsFor(
+    semantics.effect,
+    semantics.idempotent,
+    semantics.openWorld,
+  );
+}
+
+/** Map an explicitly declared canonical classification into inert MCP hints. */
+export function mcpToolAnnotationsFor(
+  effect: ToolEffect,
+  idempotent: boolean,
+  openWorld: boolean,
+): MCPToolAnnotations {
+  return {
+    readOnlyHint: effect === 'read',
+    destructiveHint: effect === 'destructive',
+    idempotentHint: idempotent,
+    openWorldHint: openWorld,
+  };
 }
 
 /** Return a copied, canonical tool sequence for byte-stable tools/list output. */
@@ -442,6 +501,7 @@ export class MCPGenerator {
         description: `List ${objectName} objects with optional filtering`,
         inputSchema: this.buildInputSchema(objectName, 'list', fields),
         outputSchema: this.buildOutputSchema(objectName, 'list', fields),
+        annotations: mcpToolAnnotations('list'),
       });
     }
 
@@ -452,6 +512,7 @@ export class MCPGenerator {
         description: `Get a specific ${objectName} by ID or slug`,
         inputSchema: this.buildInputSchema(objectName, 'get', fields),
         outputSchema: this.buildOutputSchema(objectName, 'get', fields),
+        annotations: mcpToolAnnotations('get'),
       });
     }
 
@@ -462,6 +523,7 @@ export class MCPGenerator {
         description: `Create a new ${objectName}`,
         inputSchema: this.buildInputSchema(objectName, 'create', fields),
         outputSchema: this.buildOutputSchema(objectName, 'create', fields),
+        annotations: mcpToolAnnotations('create'),
       });
     }
 
@@ -472,6 +534,7 @@ export class MCPGenerator {
         description: `Update an existing ${objectName}`,
         inputSchema: this.buildInputSchema(objectName, 'update', fields),
         outputSchema: this.buildOutputSchema(objectName, 'update', fields),
+        annotations: mcpToolAnnotations('update'),
       });
     }
 
@@ -482,6 +545,7 @@ export class MCPGenerator {
         description: `Delete a ${objectName} by ID`,
         inputSchema: this.buildInputSchema(objectName, 'delete', fields),
         outputSchema: this.buildOutputSchema(objectName, 'delete', fields),
+        annotations: mcpToolAnnotations('delete'),
       });
     }
 
@@ -701,6 +765,7 @@ export class MCPGenerator {
         methodName,
         ObjectRegistry.getFields(objectName),
       ),
+      annotations: mcpToolAnnotations(methodName, metadata),
     };
   }
 
@@ -2221,6 +2286,15 @@ export const tools: Array<{
   description: string;
   inputSchema: any;
   outputSchema: any;
+  annotations?: {
+    readOnlyHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint: boolean;
+    openWorldHint: boolean;
+  };
+  title?: string;
+  icons?: Array<{ src: string; mimeType?: string; sizes?: string[]; theme?: 'light' | 'dark' }>;
+  _meta?: Record<string, unknown>;
 }> = ${JSON.stringify(tools, null, 2)};
 `;
   }
