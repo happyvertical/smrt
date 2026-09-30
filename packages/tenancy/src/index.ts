@@ -135,11 +135,13 @@ export {
 // Registry (for advanced use)
 // ─────────────────────────────────────────────────────────────────────────────
 export {
+  auditTenantScopedRegistrations,
   clearTenantScopedRegistry,
   getAllTenantScopedClasses,
   getTenantScopedConfig,
   isTenantScopedClass,
   registerTenantScopedClass,
+  type TenantRegistrationFinding,
   type TenantScopedConfig,
   unregisterTenantScopedClass,
 } from './registry.js';
