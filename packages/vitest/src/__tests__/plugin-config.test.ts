@@ -24,6 +24,10 @@ vi.mock('@happyvertical/smrt-core', () => ({
 
 vi.mock('@happyvertical/smrt-core/manifest', () => ({
   ManifestManager: class {
+    loadForTest() {
+      return mockedModules.loadLocal();
+    }
+
     loadLocal() {
       return mockedModules.loadLocal();
     }

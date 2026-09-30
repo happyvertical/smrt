@@ -34,11 +34,33 @@ export class ManifestManager {
   }
 
   /**
+   * Test manifests are intentionally separate from the canonical development
+   * manifest so a test scan cannot invalidate its paired knowledge artifact.
+   */
+  getTestOutputPath(): string {
+    return join(this.projectRoot, '.smrt/test-manifest.json');
+  }
+
+  /**
    * Loads the local manifest from the standard locations.
    * Priority: .smrt/manifest.json -> dist/manifest.json -> src/manifest/manifest.json
    */
   loadLocal(): SmartObjectManifest | null {
     return this._loadFromPaths([
+      this.getOutputPath('dev'),
+      this.getOutputPath('build'),
+      this.getOutputPath('source'),
+    ]);
+  }
+
+  /**
+   * Loads the manifest used by the test runtime. Prefer the test-only scan,
+   * then retain the ordinary local fallbacks for projects without one.
+   */
+  loadForTest(): SmartObjectManifest | null {
+    return this._loadFromPaths([
+      this.getTestOutputPath(),
+      join(this.projectRoot, 'src/manifest/test-manifest.json'),
       this.getOutputPath('dev'),
       this.getOutputPath('build'),
       this.getOutputPath('source'),
