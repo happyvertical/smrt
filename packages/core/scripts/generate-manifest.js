@@ -7,7 +7,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -64,9 +64,10 @@ async function generateManifest() {
         moduleType: 'smrt',
       });
 
-      const { buildDomainKnowledgeManifest } = await import(
-        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
-      );
+      const { buildDomainKnowledgeManifest, publishAtomicArtifact } =
+        await import(
+          pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+        );
       const sourceManifestPath = resolve(
         process.cwd(),
         'src/manifest/static-manifest.json',
@@ -104,7 +105,38 @@ async function generateManifest() {
           },
         }),
       );
-      writeFileSync(knowledgePath, JSON.stringify(knowledge, null, 2), 'utf8');
+      publishAtomicArtifact({
+        path: knowledgePath,
+        content: JSON.stringify(knowledge, null, 2),
+      });
+      // Core has no Vite producer during its own package build, yet its
+      // declared build cache owns this canonical runtime pair. Refresh it
+      // from the current production projection, replacing stale test output.
+      const localDir = resolve(process.cwd(), '.smrt');
+      mkdirSync(localDir, { recursive: true });
+      const localManifestPath = resolve(localDir, 'manifest.json');
+      const localKnowledgePath = resolve(localDir, 'smrt-knowledge.json');
+      publishAtomicArtifact({
+        path: localManifestPath,
+        content: JSON.stringify(manifest, null, 2),
+      });
+      publishAtomicArtifact({
+        path: localKnowledgePath,
+        content: JSON.stringify(
+          withDeterministicGeneratedAt(
+            DeterministicGeneratedAt,
+            buildDomainKnowledgeManifest({
+              manifest,
+              rootDir: process.cwd(),
+              packageJson,
+              manifestPath: localManifestPath,
+              config: { includeDocs: true, includePrompts: true },
+            }),
+          ),
+          null,
+          2,
+        ),
+      });
     } finally {
       await unregister();
     }
@@ -121,47 +153,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 function withDeterministicGeneratedAt(generatedAt, nextKnowledge) {
   return { ...nextKnowledge, generatedAt };
-}
-
-function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {
-  if (!existsSync(path)) {
-    return nextKnowledge;
-  }
-
-  try {
-    const current = JSON.parse(readFileSync(path, 'utf8'));
-    if (semanticArtifactJson(current) === semanticArtifactJson(nextKnowledge)) {
-      return {
-        ...nextKnowledge,
-        generatedAt: current.generatedAt,
-      };
-    }
-  } catch {
-    // Replace malformed artifacts.
-  }
-
-  return nextKnowledge;
-}
-
-function semanticArtifactJson(artifact) {
-  const { generatedAt: _generatedAt, ...rest } = artifact ?? {};
-  return stableJson(rest);
-}
-
-function stableJson(value) {
-  return JSON.stringify(sortJson(value));
-}
-
-function sortJson(value) {
-  if (Array.isArray(value)) return value.map(sortJson);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, entry]) => [key, sortJson(entry)]),
-    );
-  }
-  return value;
 }
 
 export { generateManifest };
