@@ -258,6 +258,10 @@ describe('registerWebMcpUiTools', () => {
       focus: () => {
         throw new Error('never-serialize-this cannot be focused');
       },
+      // An agent's `focus` reveals instead of moving keyboard focus.
+      reveal: () => {
+        throw new Error('never-serialize-this cannot be revealed');
+      },
     });
     registerWebMcpUiTools({
       controlRegistry: controls,

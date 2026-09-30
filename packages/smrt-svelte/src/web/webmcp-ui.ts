@@ -463,7 +463,7 @@ function tools(
     {
       name: `${prefix}execute_form_control`,
       description:
-        'Execute an allowed command on a mounted SMRT form control. Agent mutations are consent-gated.',
+        'Execute an allowed command on a mounted SMRT form control. Agent mutations are consent-gated. An agent never moves keyboard focus: `focus` scrolls the control into view and highlights it.',
       inputSchema: {
         type: 'object',
         required: ['action', 'identity'],

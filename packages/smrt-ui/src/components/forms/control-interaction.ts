@@ -1336,7 +1336,14 @@ export function createControlInteractionRegistry(
 
         switch (command.action) {
           case 'focus':
-            await registration.focus?.();
+            // An agent never moves the person's keyboard focus: its `focus`
+            // shows the control instead (scroll into view and highlight).
+            if (context.source === 'agent') {
+              await registration.reveal?.();
+              await registration.highlight?.();
+            } else {
+              await registration.focus?.();
+            }
             break;
           case 'reveal':
             await registration.reveal?.();
