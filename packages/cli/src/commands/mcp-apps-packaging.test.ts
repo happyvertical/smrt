@@ -257,3 +257,111 @@ describe('portable MCP Apps validator fail-closed boundaries', () => {
     );
   });
 });
+
+describe('portable MCP Apps validator isolated security regressions', () => {
+  const roots: string[] = [];
+  function root() {
+    const value = mkdtempSync(join(tmpdir(), 'smrt-mcp-apps-isolated-'));
+    roots.push(value);
+    return value;
+  }
+  function valid(value: string) {
+    scaffoldMcpAppsPackage(value, 'example');
+  }
+  function codes(value: string) {
+    return validateMcpAppsPackage(value).findings.map(
+      (finding) => finding.code,
+    );
+  }
+  afterEach(() => {
+    roots.splice(0).forEach((value) => {
+      rmSync(value, { recursive: true, force: true });
+    });
+  });
+
+  it('does not echo a malformed JSON secret marker', () => {
+    const value = root();
+    valid(value);
+    writeFileSync(join(value, 'plugin.json'), '{"secret":SYNSECRET}');
+    const messages = validateMcpAppsPackage(value).findings.map(
+      (finding) => finding.message,
+    );
+    expect(messages.join('\n')).not.toContain('SYNSECRET');
+  });
+
+  it.each([
+    ['.env', 'TOKEN=not-logged'],
+    ['.env.production', 'TOKEN=not-logged'],
+    ['id_rsa', 'not-a-key'],
+    ['private.key', 'not-a-key'],
+    ['server.pem', '-----BEGIN PRIVATE KEY-----\nnot-a-key'],
+  ])('rejects credential carrier %s', (file, content) => {
+    const value = root();
+    valid(value);
+    writeFileSync(join(value, file), content);
+    expect(codes(value)).toContain('secret-artifact');
+  });
+
+  it('allows a public certificate without other unsafe content', () => {
+    const value = root();
+    valid(value);
+    writeFileSync(
+      join(value, 'public.pem'),
+      '-----BEGIN CERTIFICATE-----\npublic',
+    );
+    expect(validateMcpAppsPackage(value)).toEqual({
+      findings: [],
+      valid: true,
+    });
+  });
+
+  it('rejects URL userinfo', () => {
+    const value = root();
+    valid(value);
+    const mcp = JSON.parse(readFileSync(join(value, 'mcp.json'), 'utf8'));
+    mcp.mcpServers.smrt.url = 'https://user:password@example.test/mcp';
+    writeFileSync(join(value, 'mcp.json'), JSON.stringify(mcp));
+    expect(codes(value)).toContain('server-url');
+  });
+
+  it('accepts an existing in-root screenshot', () => {
+    const value = root();
+    valid(value);
+    writeFileSync(join(value, 'screenshot.png'), 'png');
+    const plugin = JSON.parse(readFileSync(join(value, 'plugin.json'), 'utf8'));
+    plugin.extensions['com.openai'].interface.screenshots = [
+      './screenshot.png',
+    ];
+    writeFileSync(join(value, 'plugin.json'), JSON.stringify(plugin));
+    expect(validateMcpAppsPackage(value)).toEqual({
+      findings: [],
+      valid: true,
+    });
+  });
+
+  it.each([
+    ['outside', '../outside.png', 'unsafe-path'],
+    ['absolute', '/absolute.png', 'unsafe-path'],
+    ['missing', './missing.png', 'missing-resource'],
+  ])('rejects %s screenshot paths', (_name, screenshot, expectedCode) => {
+    const value = root();
+    valid(value);
+    const plugin = JSON.parse(readFileSync(join(value, 'plugin.json'), 'utf8'));
+    plugin.extensions['com.openai'].interface.screenshots = [screenshot];
+    writeFileSync(join(value, 'plugin.json'), JSON.stringify(plugin));
+    expect(codes(value)).toContain(expectedCode);
+  });
+
+  it('rejects a symlink screenshot as an invalid resource', () => {
+    const value = root();
+    valid(value);
+    writeFileSync(join(value, 'asset.png'), 'png');
+    symlinkSync('asset.png', join(value, 'screenshot.png'));
+    const plugin = JSON.parse(readFileSync(join(value, 'plugin.json'), 'utf8'));
+    plugin.extensions['com.openai'].interface.screenshots = [
+      './screenshot.png',
+    ];
+    writeFileSync(join(value, 'plugin.json'), JSON.stringify(plugin));
+    expect(codes(value)).toContain('invalid-resource');
+  });
+});
