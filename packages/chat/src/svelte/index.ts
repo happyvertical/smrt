@@ -64,6 +64,8 @@ import MiniChat from './components/tabs/MiniChat.svelte';
 // ReactionPicker keeps a thin chat-local adapter for the package's i18n + palette.
 export { MessageBubble, TypingIndicator } from '@happyvertical/smrt-ui/chat';
 // The assistant-turn wire contract (#2908), for hosts writing a transport.
+// From the assistant-turn entry: the svelte build only resolves files the
+// library build emits as entries (tool-allow-list.ts is bundled into it).
 export {
   type AssistantClientToolCall,
   type AssistantClientToolDeclaration,
@@ -73,9 +75,9 @@ export {
   type AssistantTurnEvent,
   type AssistantTurnStep,
   AssistantTurnStreamError,
+  matchesToolAllowList,
   readAssistantTurnStream,
 } from '../assistant-turn-events.js';
-export { matchesToolAllowList } from '../tool-allow-list.js';
 export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
