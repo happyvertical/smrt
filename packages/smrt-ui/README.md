@@ -58,6 +58,18 @@ pnpm add @happyvertical/smrt-ui
 - `swipeDismiss` / `swipeDismisses` (`/feedback`) are the touch action and pure
   decision behind swipe-to-close.
 
+### Link tabs
+
+`Tabs` with an `href` on every tab renders a page's sections as navigation —
+a `<nav>` of links, `aria-current="page"` on the active one, each tab its own
+URL — instead of an ARIA tablist. `maxVisible` moves extra tabs into a "More"
+menu while the active tab always stays in the row (`splitTabs` is the pure
+rule), `badge` marks a tab needing attention (and dots "More" when a hidden
+tab has one), and the row scrolls sideways on phones with the active tab
+kept in view. It carries `data-shell-tabs`, so AdminShell keeps it sticky
+under the phone top bar. Pair it with `useLinkSurface` (smrt-svelte) so
+agents can switch tabs too.
+
 Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
 `/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
 Svelte-free `/data-surface` entry exposes the registry contracts and shared
