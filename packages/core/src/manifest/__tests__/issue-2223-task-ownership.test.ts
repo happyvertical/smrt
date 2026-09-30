@@ -294,6 +294,47 @@ describe('Issue #2223 - test manifest task ownership', () => {
     });
   }, 180_000);
 
+  it('does not restore a nonproducer package manifest over test knowledge', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const workspace = resolve(fixtureDir, '../..');
+      const turboPath = resolve(workspace, 'turbo.json');
+      const packagePath = resolve(fixtureDir, 'package.json');
+      const smrtDir = resolve(fixtureDir, '.smrt');
+      const manifestPath = resolve(smrtDir, 'manifest.json');
+      const knowledgePath = resolve(smrtDir, 'smrt-knowledge.json');
+      const turbo = JSON.parse(readFileSync(turboPath, 'utf8'));
+      const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+      turbo.tasks.build.dependsOn = [];
+      turbo.tasks.build.inputs = ['package.json'];
+      packageJson.scripts.build = 'node -e ""';
+      writeFileSync(turboPath, JSON.stringify(turbo));
+      writeFileSync(packagePath, JSON.stringify(packageJson));
+      mkdirSync(smrtDir, { recursive: true });
+      writeFileSync(manifestPath, JSON.stringify({ version: 'old' }));
+      runCommand(
+        resolve(workspaceDir, 'node_modules/.bin/turbo'),
+        ['run', 'build', '--filter=@happyvertical/smrt-core'],
+        workspace,
+      );
+      writeFileSync(manifestPath, JSON.stringify({ version: 'test-current' }));
+      writeFileSync(
+        knowledgePath,
+        JSON.stringify({ sourceHashes: { manifest: 'current' } }),
+      );
+      runCommand(
+        resolve(workspaceDir, 'node_modules/.bin/turbo'),
+        ['run', 'build', '--filter=@happyvertical/smrt-core'],
+        workspace,
+      );
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8')).version).toBe(
+        'test-current',
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).sourceHashes.manifest,
+      ).toBe('current');
+    });
+  }, 180_000);
+
   it('cleans up an isolated fixture when an assertion fails', () => {
     let fixtureDir = '';
 
