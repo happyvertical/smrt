@@ -234,6 +234,23 @@ export class Repository extends SmrtObject {
   }
 
   /**
+   * Options for an issue or pull request created from this repository: the
+   * database connection and tenant context, without this repository's own
+   * identity. A repository loaded from the database holds its row's
+   * `id`/`slug` in `this.options`; spread into a new issue they would give
+   * every issue the repository's primary key and slug, so each save would
+   * overwrite the previous issue.
+   */
+  private childOptions(): Record<string, unknown> {
+    const rest = { ...(this.options as Record<string, unknown>) };
+    delete rest.id;
+    delete rest.slug;
+    delete rest.context;
+    delete rest._skipLoad;
+    return rest;
+  }
+
+  /**
    * Create a new issue in this repository
    *
    * @param data - Issue creation data
@@ -251,7 +268,7 @@ export class Repository extends SmrtObject {
     // Create SMRT Issue from remote data
     const { Issue } = await import('./Issue');
     const issue = new Issue({
-      ...this.options,
+      ...this.childOptions(),
       repositoryId,
       number: created.number,
       nodeId: created.id,
@@ -290,7 +307,7 @@ export class Repository extends SmrtObject {
     // Create SMRT PullRequest from remote data
     const { PullRequest } = await import('./PullRequest');
     const pr = new PullRequest({
-      ...this.options,
+      ...this.childOptions(),
       repositoryId,
       number: created.number,
       nodeId: created.id,
