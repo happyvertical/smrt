@@ -83,6 +83,16 @@ function getCoreBuildTask(cwd: string): TurboTask {
   return getCoreTask(cwd, 'build');
 }
 
+function generateProductionFixture(fixtureDir: string): void {
+  // A supplied historical script runs only in the disposable fixture, so the
+  // same assertions can demonstrate the pre-fix behavior without editing the
+  // live generator or any of its artifacts.
+  const baseline = process.env.SMRT_TEST_GENERATOR_BASELINE;
+  if (baseline)
+    cpSync(baseline, resolve(fixtureDir, 'scripts/generate-manifest.js'));
+  runPnpm(['--dir', fixtureDir, 'run', 'generate']);
+}
+
 function snapshotPath(path: string): string {
   if (!existsSync(path)) return 'missing';
 
@@ -291,6 +301,24 @@ describe('Issue #2223 - test manifest task ownership', () => {
       expect(
         JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
       ).toContain('# @happyvertical/smrt-core');
+
+      appendFileSync(
+        resolve(fixtureDir, 'AGENTS.md'),
+        '\nfixture cache sentinel\n',
+      );
+      const withChangedInstructions = getCoreTask(
+        fixtureWorkspace,
+        'generate:test',
+      );
+      expect(withChangedInstructions.hash).not.toBe(withDocs.hash);
+      runCommand(
+        turbo,
+        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
+        fixtureWorkspace,
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
+      ).toContain('fixture cache sentinel');
     });
   }, 180_000);
 
@@ -332,6 +360,54 @@ describe('Issue #2223 - test manifest task ownership', () => {
       expect(
         JSON.parse(readFileSync(knowledgePath, 'utf8')).sourceHashes.manifest,
       ).toBe('current');
+    });
+  }, 180_000);
+
+  it('removes stale local knowledge when production config disables it', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const localKnowledge = resolve(fixtureDir, '.smrt/smrt-knowledge.json');
+      mkdirSync(resolve(fixtureDir, '.smrt'), { recursive: true });
+      writeFileSync(localKnowledge, '{"stale":true}');
+      writeFileSync(
+        resolve(fixtureDir, 'smrt.config.json'),
+        JSON.stringify({ knowledge: { enabled: false } }),
+      );
+      generateProductionFixture(fixtureDir);
+      expect(existsSync(localKnowledge)).toBe(false);
+    });
+  }, 180_000);
+
+  it('uses the package knowledge override for the local production pair', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const packageName = JSON.parse(
+        readFileSync(resolve(fixtureDir, 'package.json'), 'utf8'),
+      ).name;
+      writeFileSync(
+        resolve(fixtureDir, 'smrt.config.json'),
+        JSON.stringify({
+          knowledge: { includeDocs: true, tags: ['top-level'] },
+          packages: {
+            [packageName]: {
+              knowledge: { includeDocs: false, tags: ['package-override'] },
+            },
+          },
+        }),
+      );
+      generateProductionFixture(fixtureDir);
+      const knowledge = JSON.parse(
+        readFileSync(resolve(fixtureDir, '.smrt/smrt-knowledge.json'), 'utf8'),
+      );
+      expect(knowledge.tags).toEqual(['package-override']);
+      expect(knowledge.agentDoc).toBeUndefined();
+      // Published core knowledge retains its documented build defaults;
+      // local configuration must not rewrite that separate package artifact.
+      const published = JSON.parse(
+        readFileSync(
+          resolve(fixtureDir, 'src/manifest/smrt-knowledge.json'),
+          'utf8',
+        ),
+      );
+      expect(published.agentDoc).toContain('# @happyvertical/smrt-core');
     });
   }, 180_000);
 
