@@ -3255,7 +3255,7 @@ importers:
         specifier: ^0.96.0
         version: 0.96.0
       svelte:
-        specifier: ^5.57.1
+        specifier: ^5.57.0
         version: 5.57.1
     devDependencies:
       '@happyvertical/smrt-vitest':
@@ -3341,7 +3341,7 @@ importers:
         specifier: ^0.96.0
         version: 0.96.0
       svelte:
-        specifier: ^5.57.1
+        specifier: ^5.57.0
         version: 5.57.1
     devDependencies:
       '@happyvertical/logger':
