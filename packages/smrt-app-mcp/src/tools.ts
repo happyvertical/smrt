@@ -73,9 +73,10 @@ export function isPublicMcpTool(
   },
   patterns: readonly string[],
 ): boolean {
+  const readOnly =
+    tool.annotations?.readOnlyHint ?? isReadOnlyToolName(tool.name);
   return (
-    (tool.annotations?.readOnlyHint === true ||
-      isReadOnlyToolName(tool.name)) &&
+    readOnly &&
     patterns.some((pattern) => matchesToolPattern(tool.name, pattern))
   );
 }
