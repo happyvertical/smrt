@@ -14,6 +14,9 @@ const packageJson = JSON.parse(
   devDependencies: Record<string, string>;
   scripts: Record<string, string>;
 };
+const publishedPackageJson = JSON.parse(
+  readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
+) as { files: string[] };
 const itemSource = readFileSync(
   join(__dirname, '..', 'template', 'src', 'lib', 'objects', 'Item.ts'),
   'utf8',
@@ -49,6 +52,10 @@ describe('generated project metadata', () => {
   it('keeps gnode metadata aligned with the generated package', () => {
     expect(templateConfig.dependencies).toEqual(packageJson.dependencies);
     expect(templateConfig.devDependencies).toEqual(packageJson.devDependencies);
+  });
+
+  it('publishes the gnode configuration needed by installed consumers', () => {
+    expect(publishedPackageJson.files).toContain('template.config.js');
   });
 
   it('uses the current migration command rather than deprecated db:setup', () => {
