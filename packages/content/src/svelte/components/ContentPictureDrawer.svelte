@@ -169,7 +169,7 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
   <header class="drawer-header">
     <h2>{t(M['content.content_picture_drawer.title'])}</h2>
     {#if onClose}
-      <Button type="button" variant="secondary" size="sm" onclick={onClose}>
+      <Button type="button" variant="secondary" size="sm" class="drawer-done" onclick={onClose}>
         {t(M['content.content_picture_drawer.close'])}
       </Button>
     {/if}
@@ -331,6 +331,10 @@ function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
     margin: 0;
     font-size: 1rem;
     color: var(--smrt-color-on-surface);
+  }
+
+  .content-picture-drawer :global(.drawer-done) {
+    min-height: 2.75rem;
   }
 
   .drawer-hint,
