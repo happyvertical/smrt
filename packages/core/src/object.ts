@@ -2335,13 +2335,15 @@ export class SmrtObject extends SmrtClass {
     // guard, so a conflict target that omits an ownership column present in
     // the row takes the per-item path, where a cross-tenant collision is
     // refused instead of rewriting the other tenant's row.
-    const tenantColumn = ObjectRegistry.getTenantColumn(
+    // Every ownership column counts, exactly as in guardNaturalKeyUpsert():
+    // `tenant_id`, the declared tenant column, and any `@tenantId`-marked
+    // field under its own column name.
+    const ownershipColumns = SmrtObject.ownershipColumnsFor(
       first.getResolvedQualifiedName(),
     );
-    const ownershipUncovered = [
-      'tenant_id',
-      ...(tenantColumn ? [tenantColumn] : []),
-    ].some((column) => columns.includes(column) && !conflict.includes(column));
+    const ownershipUncovered = [...ownershipColumns].some(
+      (column) => columns.includes(column) && !conflict.includes(column),
+    );
     if (
       ownershipUncovered ||
       columns.length * added.length > 900 ||
@@ -2360,6 +2362,58 @@ export class SmrtObject extends SmrtClass {
       })
     )
       return false;
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    const bindValue = (value: unknown): unknown =>
+      value instanceof Date
+        ? value.toISOString()
+        : value === undefined
+          ? null
+          : value !== null && typeof value === 'object'
+            ? JSON.stringify(value)
+            : typeof value === 'boolean' && engine === 'sqlite'
+              ? Number(value)
+              : value;
+    // A new item whose natural key already names a row (other than one this
+    // batch removes first) takes the per-item path: its guard adopts the
+    // existing id instead of letting `DO UPDATE` rewrite the primary key, and
+    // `ON UPDATE CASCADE` re-point the row's children. Conflict values are
+    // never NULL here (checked above), so plain equality matches the index.
+    if (added.length > 0 && conflict.length > 0) {
+      const probeValues: unknown[] = [];
+      const placeholder = () =>
+        engine === 'postgres' ? `$${probeValues.length}` : '?';
+      const clauses = prepared.map(
+        ({ data }) =>
+          `(${conflict
+            .map((column) => {
+              probeValues.push(bindValue(data[column]));
+              return `${quote(column)} = ${placeholder()}`;
+            })
+            .join(' AND ')})`,
+      );
+      const removedIds = new Set(
+        removed.map((item) => String(item.id).toLowerCase()),
+      );
+      let existingRows: Array<Record<string, unknown>>;
+      try {
+        existingRows =
+          (
+            await first.db.query(
+              `SELECT ${quote('id')} FROM ${quote(first.tableName)} WHERE ${clauses.join(' OR ')}`,
+              ...probeValues,
+            )
+          )?.rows ?? [];
+      } catch {
+        return false;
+      }
+      if (
+        existingRows.some(
+          (row) => !removedIds.has(String(row.id).toLowerCase()),
+        )
+      )
+        return false;
+    }
     const deletions: BulkMutationEntry[] = [];
     for (const instance of removed) {
       const context = createInterceptorContext(
@@ -2408,30 +2462,26 @@ export class SmrtObject extends SmrtClass {
       await GlobalInterceptors.executeBulkAfter('afterDelete', deletions);
     }
     if (added.length > 0) {
-      const quote = (identifier: string) =>
-        `"${identifier.replaceAll('"', '""')}"`;
       const values: unknown[] = [];
       const tuples = prepared.map(
         ({ data }) =>
           `(${columns
             .map((column) => {
-              const value = data[column];
-              values.push(
-                value instanceof Date
-                  ? value.toISOString()
-                  : value === undefined
-                    ? null
-                    : value !== null && typeof value === 'object'
-                      ? JSON.stringify(value)
-                      : typeof value === 'boolean' && engine === 'sqlite'
-                        ? Number(value)
-                        : value,
-              );
+              values.push(bindValue(data[column]));
               return engine === 'postgres' ? `$${values.length}` : '?';
             })
             .join(', ')})`,
       );
+      // Defense in depth for a row inserted between the probe above and this
+      // statement: `DO UPDATE` never rewrites the primary key, the row's
+      // ownership, or its creation time.
       const updates = columns
+        .filter(
+          (column) =>
+            column !== 'id' &&
+            column !== 'created_at' &&
+            !ownershipColumns.has(column),
+        )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
       const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates}`;
@@ -2478,6 +2528,25 @@ export class SmrtObject extends SmrtClass {
       await GlobalInterceptors.executeBulkAfter('afterSave', completions);
     }
     return true;
+  }
+
+  /**
+   * The columns that record a row's owner: `tenant_id`, the declared tenant
+   * column, and every `@tenantId`-marked field under its own column name.
+   */
+  private static ownershipColumnsFor(qualifiedName: string): Set<string> {
+    const ownershipColumns = new Set<string>(['tenant_id']);
+    const declared = ObjectRegistry.getTenantColumn(qualifiedName);
+    if (declared) ownershipColumns.add(declared);
+    for (const [name, field] of ObjectRegistry.getFields(qualifiedName)) {
+      if (
+        field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField
+      ) {
+        ownershipColumns.add(toSnakeCase(name));
+      }
+    }
+    return ownershipColumns;
   }
 
   /** Shared preparation for ordinary saves and compatible bulk creates. */
@@ -3293,18 +3362,9 @@ export class SmrtObject extends SmrtClass {
     if (!found) return;
     const existing = found;
 
-    const qualifiedName = this.getResolvedQualifiedName();
-    const ownershipColumns = new Set<string>(['tenant_id']);
-    const declared = ObjectRegistry.getTenantColumn(qualifiedName);
-    if (declared) ownershipColumns.add(declared);
-    for (const [name, field] of ObjectRegistry.getFields(qualifiedName)) {
-      if (
-        field.__tenancy?.isTenantIdField ||
-        field._meta?.__tenancy?.isTenantIdField
-      ) {
-        ownershipColumns.add(toSnakeCase(name));
-      }
-    }
+    const ownershipColumns = SmrtObject.ownershipColumnsFor(
+      this.getResolvedQualifiedName(),
+    );
     const normalizeOwner = (value: unknown): string | null => {
       if (value === null || value === undefined || value === '') return null;
       return String(value).trim().toLowerCase();

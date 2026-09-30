@@ -179,7 +179,9 @@ describe('SmrtJunction', () => {
       query.mockRestore();
       const rows = await links.byLeft('owner-race');
       expect(rows.map((row) => row.assetId)).toEqual(['a', 'b']);
-      expect(rows[0].id).not.toBe(competitorId);
+      // The racing row is updated in place: `DO UPDATE` never rewrites its
+      // primary key (which would re-point its children).
+      expect(rows[0].id).toBe(competitorId);
     });
 
     it('retries a transient batch failure without duplicating feed entries', async () => {

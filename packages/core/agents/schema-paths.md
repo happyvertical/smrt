@@ -435,7 +435,10 @@ A same-owner row is adopted by id, so `DO UPDATE SET` never rewrites a primary
 key (no `ON UPDATE CASCADE` churn). The read and upsert are separate
 statements; the tenant-inclusive unique is what makes a racing cross-tenant
 insert impossible. The junction batch path falls back to per-item saves when
-its conflict target omits an ownership column present in the row. Strict
+its conflict target omits an ownership column present in the row (`tenant_id`,
+the declared tenant column, or any `@tenantId`-marked field), and when any new
+item's natural key already names a row the batch is not removing; its
+`DO UPDATE SET` never lists `id`, `created_at` or an ownership column. Strict
 inserts (`_insertOnly`) check NULL-bearing keys the same way, because NULLs
 are distinct in the unique index on SQLite, DuckDB and PostgreSQL < 15.
 
