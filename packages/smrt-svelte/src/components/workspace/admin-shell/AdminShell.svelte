@@ -957,7 +957,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-inline-size: 0;
     min-block-size: 0;
     padding: 0 var(--smrt-spacing-3) 0 var(--smrt-spacing-2);
-    overflow: hidden;
+    /* Clip long titles sideways only: menus and popovers opened from the
+       header's actions (a notifications bell, an account menu) must be able
+       to drop below it. `clip` (unlike `hidden`) allows a visible block axis. */
+    overflow-x: clip;
+    overflow-y: visible;
     border-block-end: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
