@@ -421,6 +421,18 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     return panelState(edge) === 'expanded';
   }
 
+  /** Collapsed edge whose panel content stays mounted (`keepMounted`). */
+  function keepsContent(edge: PanelEdge): boolean {
+    return (
+      panelState(edge) === 'collapsed' &&
+      shell.config.panels[edge].keepMounted === true
+    );
+  }
+
+  function panelMounted(edge: PanelEdge): boolean {
+    return edgeExpanded(edge) || keepsContent(edge);
+  }
+
   function labelFor(edge: PanelEdge): string {
     return shell.config.panels[edge].label;
   }
@@ -596,10 +608,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render topRightCorner()}
         </div>
       {/if}
-      {#if edgeExpanded('top')}
+      {#if panelMounted('top')}
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--top"
           aria-label={labelFor('top')}
+          hidden={!edgeExpanded('top')}
         >
           {#if appPanel}
             {@render appPanel()}
@@ -630,8 +643,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
-        {#if edgeExpanded('left')}
-          <div class="smrt-admin-shell__tenant-stack">
+        {#if edgeExpanded('left') || (tenantPanel && keepsContent('left'))}
+          <div
+            class="smrt-admin-shell__tenant-stack"
+            hidden={!edgeExpanded('left')}
+          >
             <div class="smrt-admin-shell__tenant-content">
               {#if tenantPanel}
                 {@render tenantPanel()}
@@ -647,10 +663,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
               </div>
             {/if}
           </div>
-        {:else if tenantRail}
-          {@render tenantRail()}
-        {:else}
-          {@render edgeToggle('left')}
+        {/if}
+        {#if !edgeExpanded('left')}
+          {#if tenantRail}
+            {@render tenantRail()}
+          {:else}
+            {@render edgeToggle('left')}
+          {/if}
         {/if}
       </div>
     </aside>
@@ -752,8 +771,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render edgeToggle('right')}
         {/if}
       </div>
-      {#if edgeExpanded('right')}
-        <div class="smrt-admin-shell__panel smrt-admin-shell__panel--right">
+      {#if panelMounted('right')}
+        <div
+          class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
+          hidden={!edgeExpanded('right')}
+        >
           {#key shell.activeFocusToolId}
             {@render focusContent(resolveActiveFocusTool())}
           {/key}
@@ -790,10 +812,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
           {@render bottomRightCorner()}
         </div>
       {/if}
-      {#if edgeExpanded('bottom')}
+      {#if panelMounted('bottom')}
         <section
           class="smrt-admin-shell__drawer smrt-admin-shell__drawer--bottom"
           aria-label={labelFor('bottom')}
+          hidden={!edgeExpanded('bottom')}
         >
           {#if systemPanel}
             {@render systemPanel()}
@@ -1065,6 +1088,15 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   .smrt-admin-shell__edge--left[data-state='expanded']
     .smrt-admin-shell__rail {
     overflow: hidden;
+  }
+
+  /* A collapsed `keepMounted` edge keeps its panel in the DOM but hidden;
+     the panel classes set `display`, which would otherwise win over the
+     `hidden` attribute. */
+  .smrt-admin-shell__tenant-stack[hidden],
+  .smrt-admin-shell__panel[hidden],
+  .smrt-admin-shell__drawer[hidden] {
+    display: none !important;
   }
 
   .smrt-admin-shell__tenant-stack {

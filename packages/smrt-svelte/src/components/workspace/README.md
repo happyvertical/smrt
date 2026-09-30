@@ -39,7 +39,8 @@ restoration at mobile and desktop widths.
 
 `AdminShell` takes `header`, `phoneTopBar`, `phoneBottomBar` and `overlays`
 snippets plus `phone`, `pinChrome` and `path` props; edges take
-`viewportDefaults`, `phone`, `resizable` and `persist`. See the package README
+`viewportDefaults`, `phone`, `resizable`, `persist` and `keepMounted`; nav
+items take `attention`. See the package README
 ("Responsive chrome and resizable edges") for the contract.
 
 Use `AdminShell`'s `tenantFooter` snippet with `WorkspaceAccountMenu` to keep a

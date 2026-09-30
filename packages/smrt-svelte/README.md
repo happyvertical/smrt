@@ -411,6 +411,7 @@ keys the shell renders exactly as before.
         expandedSize: '28rem',
         resizable: { min: 320, max: 720 }, // drag, arrows, Home/End, double-click resets
         phone: 'sheet', // or 'hidden' when the host shows it elsewhere on phones
+        keepMounted: true, // closing the sheet keeps the chat (and its draft) alive
       },
     },
     storageKey: 'my-app-shell',
@@ -463,6 +464,14 @@ keys the shell renders exactly as before.
   Sizes are stored as `ShellSettingsDelta.sizes` through the settings adapter;
   `persist: false` / `{ state?: false, size?: false }` opts an edge out of
   storage.
+- **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
+  (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
+  `hidden` attribute instead of unmounting it, so component state (a chat
+  draft, scroll position) survives closing. The rail renders as usual; the
+  left edge keeps only a `tenantPanel`.
+- **Nav attention**: a `ShellNavItem` with `attention: true` (or a string
+  label) shows a dot in `TenantNav`, over the icon when collapsed, and
+  announces the label ("Needs attention" by default) inside the link.
 - **Public region ids** (`ADMIN_SHELL_REGION_IDS`): `smrt-admin-shell-header`,
   `smrt-admin-shell-{top,left,right,bottom}-panel`, and
   `smrt-admin-shell-main`, which is the page scroller.

@@ -62,6 +62,15 @@ export interface ShellPanelConfig {
    * `false` stores nothing; `{ state: false }` keeps only the size.
    */
   persist?: boolean | ShellPanelPersist;
+  /**
+   * Keep the edge's panel content mounted (and hidden) while the edge is
+   * collapsed, instead of unmounting it. Use it when the panel holds state
+   * that must survive closing, such as an assistant chat's draft on the
+   * phone sheet. Applies to the expanded content (`appPanel`,
+   * `tenantPanel`, the focus panel, `systemPanel`); the rail still renders
+   * as usual. A hidden edge unmounts everything.
+   */
+  keepMounted?: boolean;
 }
 
 /** Limits for a resizable side edge, in CSS pixels. */
@@ -116,6 +125,13 @@ export interface ShellNavItem {
   icon?: string;
   description?: string;
   badge?: number | string | null;
+  /**
+   * Show a "needs attention" dot on the item (also over its icon when the
+   * nav is collapsed). `true` announces the default label ("Needs
+   * attention"); a string is the accessible label to announce instead
+   * (e.g. "A background job failed recently").
+   */
+  attention?: boolean | string | null;
   children?: ShellNavItem[];
 }
 
