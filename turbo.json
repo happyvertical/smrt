@@ -88,6 +88,9 @@
         "dist/**",
         ".next/**",
         "docs/**",
+        ".smrt/manifest.json",
+        ".smrt/smrt-knowledge.json",
+        "src/lib/server/smrt-register.ts",
         "tsconfig.*.tsbuildinfo"
       ],
       "cache": true
