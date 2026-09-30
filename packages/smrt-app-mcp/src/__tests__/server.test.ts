@@ -18,6 +18,18 @@ vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
     async generateTools() {
       return generateToolsMock();
     }
+    getToolIdentity(tool: {
+      name: string;
+      identity?: { objectName: string; action: string; originalName: string };
+    }) {
+      return (
+        tool.identity ?? {
+          objectName: tool.name.slice(0, tool.name.indexOf('_')),
+          action: tool.name.slice(tool.name.indexOf('_') + 1),
+          originalName: tool.name,
+        }
+      );
+    }
     async handleToolCall(request: unknown) {
       return handleToolCallMock(request);
     }
@@ -25,11 +37,15 @@ vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
   return { MCPGenerator, MCP_STABLE_CATALOG_TTL_MS: 86_400_000 };
 });
 
-function tool(name: string) {
+function tool(
+  name: string,
+  identity?: { objectName: string; action: string; originalName: string },
+) {
   return {
     name,
     description: name,
     inputSchema: { type: 'object', properties: {} },
+    ...(identity ? { identity } : {}),
   };
 }
 
@@ -57,6 +73,56 @@ describe('createMcpAppServer', () => {
       'opportunity_create',
       'opportunity_list',
     ]);
+  });
+
+  it('keeps canonical aliases for an allowed original class discoverable and callable', async () => {
+    const alias = 'owner_srecord_performlongworkflow_0123456789abcdef';
+    generateToolsMock.mockResolvedValue([
+      tool(alias, {
+        objectName: "Owner'sRecord",
+        action: 'performLongWorkflow',
+        originalName: "owner'srecord_performlongworkflow",
+      }),
+    ]);
+    handleToolCallMock.mockResolvedValue({ content: [] });
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ["Owner'sRecord"],
+    });
+
+    await expect(server.listTools({ authenticated: true })).resolves.toEqual([
+      expect.objectContaining({ name: alias }),
+    ]);
+    await server.callTool({ name: alias, user: { id: 'operator-1' } });
+    expect(handleToolCallMock).toHaveBeenCalledWith({
+      method: 'tools/call',
+      params: { arguments: {}, name: alias },
+    });
+  });
+
+  it('keeps a canonical alias for an excluded original class unavailable', async () => {
+    const alias = 'owner_srecord_performlongworkflow_0123456789abcdef';
+    generateToolsMock.mockResolvedValue([
+      tool(alias, {
+        objectName: "Owner'sRecord",
+        action: 'performLongWorkflow',
+        originalName: "owner'srecord_performlongworkflow",
+      }),
+    ]);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+    });
+
+    await expect(server.listTools({ authenticated: true })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      server.callTool({ name: alias, user: { id: 'operator-1' } }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(handleToolCallMock).not.toHaveBeenCalled();
   });
 
   it('drops mutating tools from the unauthenticated view even if pattern matches', async () => {
@@ -263,6 +329,66 @@ describe('createMcpAppServer', () => {
         name: 'application_update',
       },
     });
+  });
+
+  it('applies both alias and original workflow assertions to a canonical direct call', async () => {
+    const alias = 'verylongworkflowrecord_performlongworkflow_0123456789abcdef';
+    const originalName =
+      'verylongworkflowrecord_performlongworkflowthatcrossestheprotocolboundary';
+    const aliasAssertion = vi.fn();
+    const originalAssertion = vi.fn();
+    generateToolsMock.mockResolvedValue([
+      tool(alias, {
+        objectName: 'VeryLongWorkflowRecord',
+        action: 'performLongWorkflowThatCrossesTheProtocolBoundary',
+        originalName,
+      }),
+    ]);
+    handleToolCallMock.mockResolvedValue({ content: [] });
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['VeryLongWorkflowRecord'],
+      workflowAssertions: {
+        [alias]: aliasAssertion,
+        [originalName]: originalAssertion,
+      },
+    });
+
+    await server.callTool({ name: alias, user: { id: 'operator-1' } });
+    expect(aliasAssertion).toHaveBeenCalledOnce();
+    expect(originalAssertion).toHaveBeenCalledOnce();
+  });
+
+  it('runs an original-name workflow assertion before canonical direct and task dispatch', async () => {
+    const alias = 'verylongworkflowrecord_performlongworkflow_0123456789abcdef';
+    const originalName =
+      'verylongworkflowrecord_performlongworkflowthatcrossestheprotocolboundary';
+    const reject = vi.fn(() => {
+      throw new McpAccessError(403, 'workflow denied');
+    });
+    generateToolsMock.mockResolvedValue([
+      tool(alias, {
+        objectName: 'VeryLongWorkflowRecord',
+        action: 'performLongWorkflowThatCrossesTheProtocolBoundary',
+        originalName,
+      }),
+    ]);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['VeryLongWorkflowRecord'],
+      workflowAssertions: { [originalName]: reject },
+    });
+
+    await expect(
+      server.callTool({ name: alias, user: { id: 'operator-1' } }),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      server.callTask?.({ name: alias, user: { id: 'operator-1' } }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(reject).toHaveBeenCalledTimes(2);
+    expect(handleToolCallMock).not.toHaveBeenCalled();
   });
 
   it('reads public patterns lazily so env stubbing in tests works', async () => {
