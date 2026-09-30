@@ -82,6 +82,7 @@ export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
 export { default as ToolCallDisplay } from './components/agent/ToolCallDisplay.svelte';
+export { default as AssistantChoiceCards } from './components/assistant/AssistantChoiceCards.svelte';
 export { default as AssistantComposer } from './components/assistant/AssistantComposer.svelte';
 export { default as AssistantDock } from './components/assistant/AssistantDock.svelte';
 export { default as AssistantThreadList } from './components/assistant/AssistantThreadList.svelte';
