@@ -332,7 +332,14 @@ describe('ContentList agent data surface', () => {
         },
         db: undefined,
       }),
-    ).rejects.toThrow('Data surface query request is invalid.');
+    ).rejects.toMatchObject({
+      code: 'DATA_SURFACE_REQUEST_INVALID',
+      reason: 'DATA_QUERY_PROJECTION_NOT_ALLOWED',
+      // Actionable: names what may be projected instead, from the visible
+      // (and projectable) schema only.
+      message:
+        'Data query projection field is not allowed: audit_note. Projectable fields: id, title.',
+    });
     expect(list).not.toHaveBeenCalled();
     expect(facets).not.toHaveBeenCalled();
   });
