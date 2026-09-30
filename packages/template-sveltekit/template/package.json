@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
-    "build": "node --env-file-if-exists=.env scripts/smrt-vite.mjs build",
+    "build": "node scripts/smrt-mcp-apps.mjs validate-if-present && node --env-file-if-exists=.env scripts/smrt-vite.mjs build",
     "preview": "node scripts/smrt-app.mjs start",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
