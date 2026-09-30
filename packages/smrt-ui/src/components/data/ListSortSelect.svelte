@@ -13,11 +13,14 @@ import type {
   ListSortDirection,
   ListSortSelectColumn,
 } from './list-sort.js';
+import type { ListSortState } from './list-sort-state.svelte.js';
 
 interface Props {
   columns: readonly ListSortSelectColumn[];
-  sort: ListSort;
-  onChange: (sort: ListSort) => void;
+  /** The list's sort state; supplies `sort` and `onChange`. */
+  list?: ListSortState;
+  sort?: ListSort;
+  onChange?: (sort: ListSort) => void;
   label?: string;
   id?: string;
   class?: string;
@@ -25,8 +28,9 @@ interface Props {
 
 let {
   columns,
-  sort,
-  onChange,
+  list,
+  sort: sortProp,
+  onChange: onChangeProp,
   label = 'Sort by',
   id = `list-sort-${Math.random().toString(36).slice(2, 9)}`,
   class: className = '',
@@ -42,6 +46,15 @@ function directionWords(
     return direction === 'desc' ? 'highest first' : 'lowest first';
   return direction === 'asc' ? 'A–Z' : 'Z–A';
 }
+
+const sort = $derived<ListSort>(
+  list?.sort ??
+    sortProp ?? { columnId: columns[0]?.id ?? '', direction: 'desc' },
+);
+const onChange = (next: ListSort) => {
+  if (list) void list.set(next);
+  else onChangeProp?.(next);
+};
 
 const options = $derived(
   columns.flatMap((column) => {

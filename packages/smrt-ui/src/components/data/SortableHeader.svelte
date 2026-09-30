@@ -4,7 +4,9 @@
   Renders the `<th>` itself so `aria-sort` sits on the column header. The
   control inside is a link when `href` is given (server-sorted lists keep the
   sort in the URL; build it with `listSortHref`) or a button calling `onSort`
-  (client-sorted lists; compute the next sort with `toggleListSort`). Both are
+  (client-sorted lists; compute the next sort with `toggleListSort`) — or
+  pass a list's state (`createUrlListSort` / `createLocalListSort`) as `list`
+  and it supplies all three. Both are
   reachable by Tab and activated with Enter (a button also with Space). The
   indicator shows ↑/↓ on the sorted column and a faint ↕ on the others.
 
@@ -19,12 +21,15 @@ import {
   listSortActionLabel,
   listSortAria,
 } from './list-sort.js';
+import type { ListSortState } from './list-sort-state.svelte.js';
 
 interface Props {
   columnId: string;
   label: string;
+  /** The list's sort state; supplies `sort`, `spec`, `href`, and `onSort`. */
+  list?: ListSortState;
   /** Current sort of the list. */
-  sort: ListSort | null | undefined;
+  sort?: ListSort | null;
   /** Link to the list sorted by this column (server-sorted lists). */
   href?: string;
   /** Called on activation (client-sorted lists). */
@@ -40,16 +45,23 @@ interface Props {
 let {
   columnId,
   label,
-  sort,
-  href,
-  onSort,
-  spec,
+  list,
+  sort: sortProp,
+  href: hrefProp,
+  onSort: onSortProp,
+  spec: specProp,
   as = 'th',
   align = 'start',
   class: className = '',
   children,
 }: Props = $props();
 
+const sort = $derived(list ? list.sort : sortProp);
+const spec = $derived(list ? list.spec : specProp);
+const href = $derived(list ? list.href(columnId) : hrefProp);
+const onSort = $derived(
+  list ? (id: string) => void list.toggle(id) : onSortProp,
+);
 const aria = $derived(listSortAria(sort, columnId));
 const active = $derived(aria !== 'none');
 const actionLabel = $derived(listSortActionLabel(sort, columnId, label, spec));

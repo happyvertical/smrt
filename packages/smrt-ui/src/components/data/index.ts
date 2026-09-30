@@ -17,6 +17,7 @@ export * from './data-table-surface.js';
 export { default as ListSortSelect } from './ListSortSelect.svelte';
 export * from './link-surface.js';
 export * from './list-sort.js';
+export * from './list-sort-state.svelte.js';
 export { default as SortableHeader } from './SortableHeader.svelte';
 export * from './step-surface.js';
 export * from './types.js';
