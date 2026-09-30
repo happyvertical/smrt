@@ -158,3 +158,10 @@ other text pairing clears WCAG AA in both schemes.
   resolver (`buildI18nSnapshot`, → `@happyvertical/smrt-languages`) stays in
   `@happyvertical/smrt-svelte/i18n/server`. Package string catalogs register via
   `defineMessages` imported from `@happyvertical/smrt-ui/i18n`.
+
+- **Consumers type-checking a local checkout** hit "two different types with
+  this name" on `Snippet` when two Svelte copies meet (svelte2tsx's
+  `/// <reference types="svelte" />` in compiled sources ignores `paths`). Keep
+  every Svelte export's `types` condition first and pointing at built
+  `*.svelte.d.ts`; the consumer recipe is
+  [docs/development/svelte-consumer-linking.md](../../docs/development/svelte-consumer-linking.md).
