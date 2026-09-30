@@ -101,8 +101,8 @@ let {
     position: relative;
     display: inline-grid;
     place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.55rem;
     background: var(--smrt-color-surface-container-low);
