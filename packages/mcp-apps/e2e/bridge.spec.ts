@@ -310,3 +310,37 @@ test("a newly mounted connection ignores prior lifetime response IDs", async ({
     view.getByText("Synthetic role details: synthetic-1.", { exact: false }),
   ).toBeVisible();
 });
+
+test('registered optional extension uses the bound transport and detaches on disposal', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.frameLocator('iframe').getByText('Synthetic opportunity summary')).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).view.remove();
+    (window as any).mount({ experimental: { 'example/resources': {} } });
+    addEventListener('message', (event) => {
+      if (event.source !== (window as any).view.contentWindow || event.data.method !== 'example/resources/read') return;
+      (window as any).view.contentWindow.postMessage({ jsonrpc: '2.0', id: event.data.id, result: { contents: [{ uri: 'test://fixture', text: 'Extension content' }] } }, '*');
+    });
+  });
+  await expect(page.frameLocator('iframe').getByText('Synthetic opportunity summary')).toBeVisible();
+  const child = page.frames().find((frame) => frame.url().endsWith('/view'))!;
+  const result = await child.evaluate(async () => {
+    const owner = window as any;
+    owner.extensionNotifications = [];
+    owner.extension = owner.fixture.bridge.registerExtension({ id: 'example.resources', capability: { path: ['experimental', 'example/resources'] }, methods: ['example/resources/read', 'example/resources/hold'], notifications: ['notifications/resources/updated'] });
+    owner.extension.subscribe((method: string, params: unknown) => owner.extensionNotifications.push({ method, params }));
+    return owner.extension.request('example/resources/read', { uri: 'test://fixture' });
+  });
+  expect(result).toEqual({ contents: [{ uri: 'test://fixture', text: 'Extension content' }] });
+  await page.evaluate(() => (window as any).view.contentWindow.postMessage({ jsonrpc: '2.0', method: 'notifications/resources/updated', params: { uri: 'test://fixture' } }, '*'));
+  await expect.poll(() => child.evaluate(() => (window as any).extensionNotifications.length)).toBe(1);
+  expect(await child.evaluate(() => (window as any).extension.request('example/resources/unlisted', {}).catch((error: Error) => error.message))).toContain('not registered');
+  await child.evaluate(() => {
+    const owner = window as any;
+    owner.extensionPending = owner.extension.request('example/resources/hold', {}).catch((error: Error) => error.message);
+    owner.extension.dispose();
+  });
+  expect(await child.evaluate(() => (window as any).extensionPending)).toMatch(/cancelled|disposed/);
+  await page.evaluate(() => (window as any).view.contentWindow.postMessage({ jsonrpc: '2.0', method: 'notifications/resources/updated', params: { uri: 'test://late' } }, '*'));
+  expect(await child.evaluate(() => (window as any).extensionNotifications.length)).toBe(1);
+});

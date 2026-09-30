@@ -412,3 +412,328 @@ it('bounds accumulated raw context across individually valid updates atomically'
   expect(f.bridge.snapshot.hostContext).toEqual(before.hostContext);
   f.bridge.dispose();
 });
+
+const extensionDeclaration = () => ({
+  id: 'example.resources',
+  capability: { path: ['experimental', 'example/resources'] },
+  methods: [
+    'resources/read',
+    'resources/subscribe',
+    'resources/unsubscribe',
+    'example/resources/write',
+  ],
+  notifications: ['notifications/resources/updated'],
+});
+const extensionCapabilities = { experimental: { 'example/resources': {} } };
+
+it('requires initialized plain-object extension capability and declared matching versions', async () => {
+  const absent = fixture({});
+  expect(() => absent.bridge.registerExtension(extensionDeclaration())).toThrow(
+    'not ready',
+  );
+  await absent.connect();
+  (
+    absent.bridge.snapshot.rawHostCapabilities as Record<string, unknown>
+  ).experimental = extensionCapabilities.experimental;
+  expect(() => absent.bridge.registerExtension(extensionDeclaration())).toThrow(
+    'unavailable',
+  );
+  absent.bridge.dispose();
+  const malformed = fixture({ experimental: { 'example/resources': true } });
+  await malformed.connect();
+  expect(() =>
+    malformed.bridge.registerExtension(extensionDeclaration()),
+  ).toThrow('object');
+  malformed.bridge.dispose();
+  const f = fixture({
+    experimental: { 'example/resources': { version: '2' } },
+  });
+  await f.connect();
+  expect(() =>
+    f.bridge.registerExtension({
+      ...extensionDeclaration(),
+      capability: {
+        path: ['experimental', 'example/resources'],
+        version: { key: 'version', supported: ['1'] },
+      },
+    }),
+  ).toThrow('version');
+  const handle = f.bridge.registerExtension({
+    ...extensionDeclaration(),
+    capability: {
+      path: ['experimental', 'example/resources'],
+      version: { key: 'version', supported: ['2'] },
+    },
+  });
+  expect(handle.signal.aborted).toBe(false);
+  f.bridge.dispose();
+});
+
+it('copies allowlists, rejects reserved/unregistered methods and duplicate owners', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  for (const method of [
+    'tools/call',
+    'ui/initialize',
+    'ui/open-link',
+    'notifications/cancelled',
+  ])
+    expect(() =>
+      f.bridge.registerExtension({
+        ...extensionDeclaration(),
+        methods: [method],
+      }),
+    ).toThrow('Reserved');
+  const declaration = extensionDeclaration();
+  const handle = f.bridge.registerExtension(declaration);
+  declaration.methods.push('example/unsafe');
+  expect(() => f.bridge.registerExtension(extensionDeclaration())).toThrow(
+    'registered',
+  );
+  expect(() =>
+    f.bridge.registerExtension({
+      ...extensionDeclaration(),
+      id: 'example.other',
+    }),
+  ).toThrow('registered');
+  await expect(handle.request('example/unsafe', {})).rejects.toThrow(
+    'not registered',
+  );
+  const promise = handle.request('resources/read', { uri: 'test://fixture' });
+  expect(f.sent.at(-1)).toMatchObject({
+    method: 'resources/read',
+    params: { uri: 'test://fixture' },
+  });
+  f.reply({ contents: [{ uri: 'test://fixture', text: 'Synthetic content' }] });
+  await expect(promise).resolves.toMatchObject({
+    contents: [{ text: 'Synthetic content' }],
+  });
+  f.bridge.dispose();
+});
+
+it('isolates subscribed extension notifications and denies unknown/host-request dispatch', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  const handle = f.bridge.registerExtension(extensionDeclaration());
+  const received = vi.fn();
+  handle.subscribe((_method, params) => {
+    params.uri = 'changed';
+    throw new Error('Observer error');
+  });
+  const unsubscribe = handle.subscribe(received);
+  f.notify('notifications/resources/updated', { uri: 'test://fixture' });
+  expect(received).toHaveBeenCalledWith('notifications/resources/updated', {
+    uri: 'test://fixture',
+  });
+  f.notify('notifications/resources/unknown', { uri: 'test://fixture' });
+  f.receive({
+    jsonrpc: '2.0',
+    id: 'host-request',
+    method: 'notifications/resources/updated',
+    params: { uri: 'test://fixture' },
+  });
+  expect(f.sent.at(-1)).toMatchObject({ error: { code: -32601 } });
+  expect(received).toHaveBeenCalledTimes(1);
+  unsubscribe();
+  f.notify('notifications/resources/updated', { uri: 'test://fixture' });
+  expect(received).toHaveBeenCalledTimes(1);
+  f.bridge.dispose();
+});
+
+it('drops hostile extension messages before notification observers', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  const handle = f.bridge.registerExtension(extensionDeclaration());
+  const received = vi.fn();
+  handle.subscribe(received);
+  const data = {
+    jsonrpc: '2.0',
+    method: 'notifications/resources/updated',
+    params: { uri: 'test://fixture' },
+  };
+  f.receive(data, {} as Window);
+  f.receive(data, f.host, 'https://evil.example');
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  for (const params of [
+    [],
+    { uri: 'x'.repeat(131073) },
+    cyclic,
+    JSON.parse('{"__proto__":{}}'),
+    {
+      get uri() {
+        throw new Error('Accessor must not run');
+      },
+    },
+  ])
+    f.receive({ ...data, params });
+  expect(received).not.toHaveBeenCalled();
+  f.receive(data);
+  expect(received).toHaveBeenCalledTimes(1);
+  handle.dispose();
+  f.receive(data);
+  expect(received).toHaveBeenCalledTimes(1);
+  expect(handle.signal.aborted).toBe(true);
+  f.bridge.dispose();
+});
+
+it('cancels extension pending work and refuses stale handles/responses after remount', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  const first = f.bridge.registerExtension(extensionDeclaration());
+  const old = first.request('resources/read', { uri: 'test://old' });
+  const oldRequest = f.sent.at(-1);
+  first.dispose();
+  await expect(old).rejects.toThrow(/cancelled|disposed/);
+  await expect(first.request('resources/read', {})).rejects.toThrow('disposed');
+  const second = f.bridge.registerExtension(extensionDeclaration());
+  const next = second.request('resources/read', { uri: 'test://new' });
+  const nextRequest = f.sent.at(-1);
+  f.reply({ contents: ['stale'] }, oldRequest);
+  f.reply({ contents: ['current'] }, nextRequest);
+  await expect(next).resolves.toEqual({ contents: ['current'] });
+  const pending = second.request('resources/read', {});
+  f.receive({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'ui/resource-teardown',
+    params: {},
+  });
+  await expect(pending).rejects.toThrow(/cancelled|disposed/);
+  expect(second.signal.aborted).toBe(true);
+});
+
+it('rejects malformed extension params/results and preserves upstream failures', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  const handle = f.bridge.registerExtension(extensionDeclaration());
+  for (const params of [
+    { uri: 'x'.repeat(131073) },
+    { fn: () => 1 },
+    JSON.parse('{"constructor":{}}'),
+    {
+      get uri() {
+        throw new Error('Accessor must not run');
+      },
+    },
+  ])
+    await expect(handle.request('resources/read', params)).rejects.toThrow();
+  const badResult = handle.request('resources/read', {});
+  f.reply([]);
+  await expect(badResult).rejects.toThrow('object');
+  const failure = handle.request('resources/read', {});
+  f.receive({
+    jsonrpc: '2.0',
+    id: f.sent.at(-1)?.id,
+    error: { code: -32000, message: 'Extension denied' },
+  });
+  await expect(failure).rejects.toThrow('Extension denied');
+  f.bridge.dispose();
+});
+
+it('native text extensions preserve metadata but cannot bypass core capabilities/modalities', async () => {
+  const declaration = {
+    ...extensionDeclaration(),
+    methods: ['ui/message', 'ui/update-model-context'],
+    notifications: [],
+  };
+  const absent = fixture(extensionCapabilities);
+  await absent.connect();
+  const denied = absent.bridge.registerExtension(declaration);
+  await expect(
+    denied.request('ui/message', {
+      role: 'user',
+      content: [{ type: 'text', text: 'test' }],
+    }),
+  ).rejects.toThrow('unavailable');
+  absent.bridge.dispose();
+  const f = fixture({
+    ...extensionCapabilities,
+    message: { text: {} },
+    updateModelContext: { text: {} },
+  });
+  await f.connect();
+  const handle = f.bridge.registerExtension(declaration);
+  const params = {
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text: 'test',
+        _meta: { 'example/title': 'Title' },
+        annotations: { audience: ['assistant'] },
+      },
+    ],
+    _meta: { 'example/message': { target: 'new' } },
+  };
+  const sent = handle.request('ui/message', params);
+  expect(f.sent.at(-1)?.params).toEqual(params);
+  f.reply({});
+  await sent;
+  await expect(
+    handle.request('ui/message', { ...params, role: 'assistant' }),
+  ).rejects.toThrow('shape');
+  await expect(
+    handle.request('ui/message', {
+      role: 'user',
+      content: [{ type: 'image', data: 'AAAA' }],
+    }),
+  ).rejects.toThrow('modality');
+  await expect(
+    handle.request('ui/update-model-context', { structuredContent: {} }),
+  ).rejects.toThrow('structured');
+  const rejected = handle.request('ui/update-model-context', {
+    content: [{ type: 'text', text: 'test' }],
+  });
+  f.reply({ isError: true });
+  await expect(rejected).rejects.toThrow('rejected');
+  f.bridge.dispose();
+});
+
+it('does not deliver an in-flight notification to a replacement registration', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  const first = f.bridge.registerExtension(extensionDeclaration());
+  const replacement = vi.fn();
+  first.subscribe(() => {
+    first.dispose();
+    f.bridge.registerExtension(extensionDeclaration()).subscribe(replacement);
+  });
+  f.notify('notifications/resources/updated', { uri: 'test://first-lifetime' });
+  expect(replacement).not.toHaveBeenCalled();
+  f.notify('notifications/resources/updated', { uri: 'test://new-lifetime' });
+  expect(replacement).toHaveBeenCalledTimes(1);
+  f.bridge.dispose();
+});
+
+it('bounds extension declarations, registrations and listeners', async () => {
+  const f = fixture(extensionCapabilities);
+  await f.connect();
+  for (const change of [
+    { capability: { path: [] } },
+    { methods: Array.from({ length: 17 }, (_, n) => `example/method-${n}`) },
+    { methods: ['resources/read', 'resources/read'] },
+    { notifications: ['ui/notifications/tool-result'] },
+    { methods: ['example/request'], notifications: ['example/request'] },
+  ])
+    expect(() =>
+      f.bridge.registerExtension({ ...extensionDeclaration(), ...change }),
+    ).toThrow();
+  for (let n = 0; n < 16; n++)
+    f.bridge.registerExtension({
+      ...extensionDeclaration(),
+      id: `example.owner-${n}`,
+      methods: [`example/method-${n}`],
+      notifications: [],
+    });
+  expect(() => f.bridge.registerExtension(extensionDeclaration())).toThrow(
+    'limit',
+  );
+  f.bridge.dispose();
+  const g = fixture(extensionCapabilities);
+  await g.connect();
+  const handle = g.bridge.registerExtension(extensionDeclaration());
+  for (let n = 0; n < 32; n++) handle.subscribe(() => {});
+  expect(() => handle.subscribe(() => {})).toThrow('limit');
+  g.bridge.dispose();
+});
