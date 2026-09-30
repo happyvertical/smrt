@@ -12,6 +12,8 @@ import { createMcpAppServer } from '../server.js';
 
 const generateToolsMock = vi.fn();
 const handleToolCallMock = vi.fn();
+const supportsTaskToolMock = vi.fn();
+const createTaskMock = vi.fn();
 
 vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
   class MCPGenerator {
@@ -20,6 +22,12 @@ vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
     }
     async handleToolCall(request: unknown) {
       return handleToolCallMock(request);
+    }
+    async supportsTaskTool(name: string) {
+      return supportsTaskToolMock(name);
+    }
+    async createTask(request: unknown) {
+      return createTaskMock(request);
     }
   }
   return {
@@ -53,6 +61,8 @@ describe('createMcpAppServer', () => {
   beforeEach(() => {
     generateToolsMock.mockReset();
     handleToolCallMock.mockReset();
+    supportsTaskToolMock.mockReset();
+    createTaskMock.mockReset();
   });
 
   it('filters tools to the allow-listed class prefixes', async () => {
@@ -85,14 +95,6 @@ describe('createMcpAppServer', () => {
       smrtOptions: () => ({}),
       serverInfo: { name: 'app', version: '0.1.0' },
       allowedClassNames: ['Application'],
-      resources: [
-        {
-          uri: 'ui://application/v1/prepare.html',
-          name: 'Prepare',
-          version: 'v1',
-          html: '<title>Prepare</title>',
-        },
-      ],
       workflowTools: [
         {
           name: 'application_prepare',
@@ -100,7 +102,7 @@ describe('createMcpAppServer', () => {
           title: 'Prepare application',
           icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
           ui: {
-            resourceUri: 'ui://application/v1/prepare.html',
+            resourceUri: 'ui://application/prepare.html',
             visibility: ['app'],
           },
           metadata: { 'example.extension': { enabled: true } },
@@ -137,7 +139,7 @@ describe('createMcpAppServer', () => {
           _meta: {
             'example.extension': { enabled: true },
             ui: {
-              resourceUri: 'ui://application/v1/prepare.html',
+              resourceUri: 'ui://application/prepare.html',
               visibility: ['app'],
             },
           },
@@ -331,6 +333,73 @@ describe('createMcpAppServer', () => {
       'opportunity_get',
       'opportunity_list',
     ]);
+  });
+
+  it.each([
+    'write',
+    'destructive',
+  ] as const)('does not expose or execute a canonically %s workflow with a read-like name', async (effect) => {
+    generateToolsMock.mockResolvedValue([]);
+    const execute = vi.fn();
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      publicToolPatterns: () => ['application_*'],
+      workflowTools: [
+        {
+          name: 'application_get',
+          description: 'Apply a mutation',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect,
+          idempotent: false,
+          openWorld: false,
+          execute,
+        },
+      ],
+    });
+
+    await expect(server.listTools({ principal: null })).resolves.toEqual([]);
+    await expect(
+      server.callTool({ name: 'application_get', principal: null }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('never treats an authored workflow alias as a generated task', async () => {
+    generateToolsMock.mockResolvedValue([]);
+    supportsTaskToolMock.mockResolvedValue(true);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: [],
+      workflowTools: [
+        {
+          name: 'excludedprobe_slow',
+          description: 'Run the app workflow',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
+          effect: 'write',
+          idempotent: false,
+          openWorld: false,
+          execute: async () => ({ content: [] }),
+        },
+      ],
+    });
+
+    await expect(server.hasTaskSupport?.()).resolves.toBe(false);
+    await expect(server.isTaskTool?.('excludedprobe_slow')).resolves.toBe(
+      false,
+    );
+    await expect(
+      server.callTask?.({
+        name: 'excludedprobe_slow',
+        principal: { id: 'operator-1' },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(supportsTaskToolMock).not.toHaveBeenCalled();
+    expect(createTaskMock).not.toHaveBeenCalled();
   });
 
   it('applies one principal policy to unauthenticated, human, and scoped-service discovery', async () => {
