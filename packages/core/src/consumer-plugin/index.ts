@@ -492,15 +492,16 @@ function selectConsumerRouteManifest(
     // generator signal from the immutable full manifest rather than treating
     // absent metadata as an empty provider inventory.
     smrtDependencies: [
-      ...new Set(
-        Object.values(manifest.objects)
+      ...new Set([
+        ...(manifest.smrtDependencies ?? []),
+        ...Object.values(manifest.objects)
           .map((objectDef) => objectDef.packageName)
           .filter(
             (packageName): packageName is string =>
               typeof packageName === 'string' &&
               packageName !== manifest.packageName,
           ),
-      ),
+      ]),
     ].sort(),
     objects,
   } as unknown as SmartObjectManifest;

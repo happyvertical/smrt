@@ -74,6 +74,28 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     );
   });
 
+  it('binds the task store to the same tenant as task creation (#3211)', () => {
+    for (const tenantScopedObjects of [[], ['report']]) {
+      const source = generateRuntimeBootstrap({
+        tools: [],
+        tenantScopedObjects,
+        taskActions: {
+          report_generate: {
+            objectName: 'Report',
+            objectType: '@test/reports:Report',
+          },
+        },
+      });
+      const tenant = tenantScopedObjects.length
+        ? 'MCP_TENANT_ID ?? null'
+        : 'null';
+      expect(source).toContain(
+        `ownerId: process.env.SMRT_MCP_TENANT_ID || null, tenantId: ${tenant}`,
+      );
+      expect(source).toContain(`tenantId: ${tenant},`);
+    }
+  });
+
   it('emits the Tasks extension only for eligible generated actions', () => {
     const disabled = generateRuntimeBootstrap({ tools: [], taskActions: {} });
     const enabled = generateRuntimeBootstrap({
@@ -132,12 +154,16 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     const generator = new MCPGenerator();
     const detector = generator as unknown as {
       hasTenantScopedTools(tools: Array<{ name: string }>): Promise<boolean>;
+      toolTargets: WeakMap<object, { objectName: string; action: string }>;
     };
 
+    const tool = { name: 'tenantcachedocument_list' };
+    detector.toolTargets.set(tool, {
+      objectName: 'TenantCacheDocument',
+      action: 'list',
+    });
     try {
-      await expect(
-        detector.hasTenantScopedTools([{ name: 'tenantcachedocument_list' }]),
-      ).resolves.toBe(true);
+      await expect(detector.hasTenantScopedTools([tool])).resolves.toBe(true);
     } finally {
       allClasses.mockRestore();
       isTenantScoped.mockRestore();
@@ -225,15 +251,15 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain("actionMeta.scope === 'item' && !id");
     expect(source).toContain("actionMeta.scope === 'collection' && id");
     expect(source).toContain(
-      "? ObjectRegistry.getClass('Document')?.constructor",
+      '? ObjectRegistry.getClass("Document")?.constructor',
     );
     expect(source).toContain("parameterName === 'id'");
     expect(source).toContain("? 'actionId'");
     expect(source).toMatch(/actionMeta\.optionsParameter\s+\? \[options\]/);
     expect(source).toContain('actionMethod.call(target, ...methodArgs)');
-    expect(source).toContain("target[actionMeta.methodName || 'apply']");
+    expect(source).toContain('target[actionMeta.methodName || "apply"]');
     expect(source).toContain(
-      "target[actionMeta.methodName || 'restoreintocontent']",
+      'target[actionMeta.methodName || "restoreintocontent"]',
     );
     expect(source).toContain('"methodName":"restoreIntoContent"');
     expect(source).toContain('normalizeCustomActionFailure(result)');

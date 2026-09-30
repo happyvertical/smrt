@@ -23,6 +23,11 @@
  */
 
 export {
+  continueMcpWorkflow,
+  createMcpContinuationTool,
+  type McpWorkflowContinuation,
+} from './continuation.js';
+export {
   MCP_TOOL_ACCESS_DENIED_CODE,
   McpAccessError,
   type McpAccessErrorMetadata,
@@ -72,4 +77,5 @@ export {
   type McpWorkflowTool,
   type McpWorkflowToolContext,
   type McpWorkflowToolDefinition,
+  type McpWorkflowToolVisibility,
 } from './workflow-tools.js';

@@ -130,7 +130,10 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
             },
             icons: [{ src: 'https://example.test/icon.svg', theme: 'light' }],
             _meta: {
-              ui: { resourceUri: 'ui://application/prepare.html' },
+              ui: {
+                resourceUri: 'ui://application/prepare.html',
+                visibility: ['app'],
+              },
               'example.extension': { enabled: true },
             },
           },
@@ -148,7 +151,10 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
         title: 'Prepare application',
         annotations: expect.objectContaining({ idempotentHint: true }),
         _meta: {
-          ui: { resourceUri: 'ui://application/prepare.html' },
+          ui: {
+            resourceUri: 'ui://application/prepare.html',
+            visibility: ['app'],
+          },
           'example.extension': { enabled: true },
         },
       }),

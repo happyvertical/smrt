@@ -59,15 +59,15 @@ workflowTools: [{
   inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
   effect: 'write', idempotent: true, openWorld: false,
-  ui: { resourceUri: 'ui://application/prepare.html' },
+  ui: { resourceUri: 'ui://application/prepare.html', visibility: ['app'] },
   async execute({ arguments: args, principal }) {
     return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
   },
 }],
 ```
 
-The resulting descriptor preserves `_meta.ui.resourceUri` through SDK-v2
-`tools/list`, while ordinary clients retain the text and structured result.
+The resulting descriptor preserves `_meta.ui.resourceUri` and optional
+`_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
 The resource implementation itself is staged separately; metadata neither
 loads a resource nor grants an application permission.
 
@@ -180,8 +180,7 @@ const server = createMcpAppServer({
 });
 ```
 
-Resources are private by default and require a stable principal id plus an explicit
-`resourcePolicy`; an omitted policy denies both listing and reads. Only an
+Resources are private by default and require a stable principal id. Only an
 explicit `public: true` declaration permits anonymous reads of a static
 artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
 fail closed. Every associated tool must also pass the ordinary tool policy.

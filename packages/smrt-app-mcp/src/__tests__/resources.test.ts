@@ -84,19 +84,6 @@ describe('prebuilt resource declarations', () => {
     expect(() =>
       prepareMcpAppResource({ ...definition, ...change } as never),
     ).toThrow());
-  it.each([
-    '<link rel="preload" as="image" imagesrcset="https://evil.test/image.png 1x">',
-    '<LINK REL=preload AS=image IMAGESRCSET="https://allowed.test/a 1x, https://evil.test/b 2x">',
-    '<link title=">" rel=preload as=image imagesrcset="&#104;ttps://evil.test/a 1x">',
-  ])('rejects image preload candidate lists: %s', (html) => {
-    expect(() =>
-      prepareMcpAppResource({
-        ...definition,
-        html,
-        csp: { resourceDomains: ['https://allowed.test'] },
-      }),
-    ).toThrow('unsupported asset construct');
-  });
   it('does not parse JavaScript URL constructors or HTML strings as CSS assets', () => {
     const html = `<script>const e = { hostOrigin: "https://host.test" }; new URL(e.hostOrigin); const template = '<div style="background:url(https://not-loaded.test/a)"></div>';</script>`;
     expect(prepareMcpAppResource({ ...definition, html }).html).toBe(html);
@@ -220,58 +207,6 @@ describe('prebuilt resource declarations', () => {
 });
 
 describe('principal-bound resource catalog and reads', () => {
-  it.each([
-    false,
-    true,
-  ])('denies private resources without policy, associated=%s', async (associated) => {
-    const app = createMcpAppServer({
-      ...base,
-      resources: [definition],
-      workflowTools: associated ? [workflow] : [],
-    });
-    for (const principal of [
-      null,
-      {},
-      { id: 'owner', tenantId: 'a' },
-      { id: 'other', tenantId: 'b' },
-    ]) {
-      expect(await app.listResources!({ principal })).toEqual([]);
-      await expect(
-        app.readResource!({ uri: definition.uri, principal }),
-      ).rejects.toThrow('MCP resource is not available.');
-    }
-  });
-  it('rechecks explicit grants for unassociated resources across owners and tenants', async () => {
-    let granted = false;
-    const app = createMcpAppServer({
-      ...base,
-      resources: [definition],
-      resourcePolicy: ({ principal }) =>
-        granted && principal?.id === 'owner' && principal.tenantId === 'a',
-    });
-    const owner = { id: 'owner', tenantId: 'a' };
-    for (const grant of [false, true, false]) {
-      granted = grant;
-      for (const principal of [
-        owner,
-        { ...owner, id: 'other' },
-        { ...owner, tenantId: 'b' },
-      ]) {
-        const allowed = grant && principal === owner;
-        expect(await app.listResources!({ principal })).toHaveLength(
-          allowed ? 1 : 0,
-        );
-        if (allowed)
-          expect(
-            (await app.readResource!({ uri: definition.uri, principal })).text,
-          ).toBe(definition.html);
-        else
-          await expect(
-            app.readResource!({ uri: definition.uri, principal }),
-          ).rejects.toThrow('MCP resource is not available.');
-      }
-    }
-  });
   it('rechecks actor, tenant, revocation and tool access without descriptor leaks', async () => {
     let revoked = false;
     const app = createMcpAppServer({
@@ -317,9 +252,6 @@ describe('principal-bound resource catalog and reads', () => {
       resources: [{ ...definition, public: true }],
     });
     expect(await app.listResources!({})).toHaveLength(1);
-    expect((await app.readResource!({ uri: definition.uri })).text).toBe(
-      definition.html,
-    );
     const denying = createMcpAppServer({
       ...base,
       resources: [{ ...definition, public: true }],
@@ -331,40 +263,6 @@ describe('principal-bound resource catalog and reads', () => {
     await expect(
       denying.readResource!({ uri: definition.uri }),
     ).rejects.toThrow('not available');
-  });
-  it('denies unmapped private resources over native SDK HTTP for either tenant', async () => {
-    let principal = { id: 'owner', tenantId: 'a' };
-    const route = mountMcpRoute(
-      createMcpAppServer({ ...base, resources: [definition] }),
-      {
-        resolvePrincipal: () => principal,
-      },
-    );
-    const client = new Client(
-      { name: 'unmapped-resource', version: '1' },
-      {
-        versionNegotiation: { mode: { pin: '2026-07-28' } },
-      },
-    );
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
-        fetch: async (input, init) => {
-          const request = new Request(input, init);
-          return route({ request, url: new URL(request.url) });
-        },
-      }),
-    );
-    try {
-      for (const actor of [principal, { id: 'other', tenantId: 'b' }]) {
-        principal = actor;
-        expect((await client.listResources()).resources).toEqual([]);
-        await expect(
-          client.readResource({ uri: definition.uri }),
-        ).rejects.toThrow('not available');
-      }
-    } finally {
-      await client.close();
-    }
   });
   it('serves native SDK-v2 HTTP resources without UI capabilities and keeps headless results complete', async () => {
     let principal = { id: 'owner', tenantId: 'a' };

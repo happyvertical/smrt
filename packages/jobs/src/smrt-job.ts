@@ -392,7 +392,11 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     options: { limit?: number; queues?: string[] } = {},
   ): Promise<SmrtJob[]> {
     const now = new Date().toISOString();
-    const whereConditions: string[] = ["status = 'pending'", 'run_at <= ?'];
+    const whereConditions: string[] = [
+      "status = 'pending'",
+      'run_at <= ?',
+      '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
+    ];
     const params: unknown[] = [now];
 
     if (options.queues?.length) {
@@ -435,7 +439,11 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
-    const whereConditions: string[] = ["status = 'pending'", 'run_at <= ?'];
+    const whereConditions: string[] = [
+      "status = 'pending'",
+      'run_at <= ?',
+      '(task_input_requests IS NULL OR task_input_responses IS NOT NULL)',
+    ];
     const whereParams: unknown[] = [nowIso];
 
     if (options.queues?.length) {
