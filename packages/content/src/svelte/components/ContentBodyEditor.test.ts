@@ -172,3 +172,89 @@ describe('ContentBodyEditor image panel', () => {
     expect(button?.hasAttribute('aria-controls')).toBe(false);
   });
 });
+
+describe('ContentBodyEditor pictures', () => {
+  function dropEvent(payload: unknown): DragEvent {
+    const event = new Event('drop', {
+      bubbles: true,
+      cancelable: true,
+    }) as DragEvent;
+    Object.defineProperty(event, 'dataTransfer', {
+      value: {
+        files: [],
+        getData: (type: string) =>
+          type === 'application/x-smrt-image' ? JSON.stringify(payload) : '',
+      },
+    });
+    Object.defineProperty(event, 'clientX', { value: 0 });
+    Object.defineProperty(event, 'clientY', { value: 0 });
+    return event;
+  }
+
+  it('inserts every picture dragged in together, resolving each', async () => {
+    const onResolveImage = vi.fn(async (picture: { id: string }) => ({
+      id: `asset-${picture.id}`,
+      sourceUri: `/assets/${picture.id}`,
+      name: picture.id,
+    }));
+    const onChange = vi.fn();
+    const target = renderEditor({ onResolveImage, onChange });
+    const surface = target.querySelector('[contenteditable]') as HTMLElement;
+    surface.dispatchEvent(
+      dropEvent([
+        { id: 'p-1', name: 'One' },
+        { id: 'p-2', name: 'Two' },
+      ]),
+    );
+    await vi.waitFor(() => expect(onResolveImage).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(surface.querySelectorAll('img[data-smrt-asset-id]')).toHaveLength(
+        2,
+      ),
+    );
+    const ids = Array.from(surface.querySelectorAll('img')).map((image) =>
+      image.getAttribute('data-smrt-asset-id'),
+    );
+    expect(ids.sort()).toEqual(['asset-p-1', 'asset-p-2']);
+  });
+
+  it('replaces a picture in place, keeping its layout', () => {
+    const onChange = vi.fn();
+    const component = mount(ContentBodyEditor, {
+      target: document.body.appendChild(document.createElement('div')),
+      props: {
+        value:
+          '<p>a</p><img src="/a/1.jpg" alt="" data-smrt-asset-id="a-1" data-smrt-placement="right" data-smrt-width="300">',
+        format: 'html',
+        onChange,
+      },
+    });
+    mounted.push(component);
+    flushSync();
+    const replaced = (
+      component as unknown as {
+        replaceImage: (index: number, asset: unknown) => boolean;
+      }
+    ).replaceImage(0, {
+      id: 'a-2',
+      sourceUri: '/a/2.jpg?width=800&height=800&fit=cover',
+    });
+    expect(replaced).toBe(true);
+    const image = document.body.querySelector('img') as HTMLImageElement;
+    expect(image.getAttribute('src')).toBe(
+      '/a/2.jpg?width=800&height=800&fit=cover',
+    );
+    expect(image.getAttribute('data-smrt-asset-id')).toBe('a-2');
+    expect(image.getAttribute('data-smrt-placement')).toBe('right');
+    expect(onChange).toHaveBeenCalled();
+    expect(
+      (
+        component as unknown as {
+          replaceImage: (i: number, a: unknown) => boolean;
+        }
+      ).replaceImage(5, {
+        sourceUri: '/x.jpg',
+      }),
+    ).toBe(false);
+  });
+});

@@ -35,6 +35,7 @@ import ContentImageBrowser from './components/ContentImageBrowser.svelte';
 import ContentImageChooser from './components/ContentImageChooser.svelte';
 import ContentList from './components/ContentList.svelte';
 import ContentMetadataFields from './components/ContentMetadataFields.svelte';
+import ContentPictureDrawer from './components/ContentPictureDrawer.svelte';
 import ContentReferencesPanel from './components/ContentReferencesPanel.svelte';
 import ContentReviewStatusTray from './components/ContentReviewStatusTray.svelte';
 import ContentStatusFields from './components/ContentStatusFields.svelte';
@@ -91,6 +92,7 @@ export {
   ContentImageChooser,
   ContentList,
   ContentMetadataFields,
+  ContentPictureDrawer,
   ContentReferencesPanel,
   ContentReviewStatusTray,
   ContentStatusFields,
@@ -117,6 +119,15 @@ export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
 export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
+export type ContentPictureDrawerProps = ComponentProps<
+  typeof ContentPictureDrawer
+>;
+export {
+  CONTENT_PICTURE_DRAG_TYPE,
+  type ContentPicture,
+  filterPictures,
+  pictureDragPayload,
+} from './components/ContentPictureDrawer.svelte';
 export type ContentImageChooserProps = ComponentProps<
   typeof ContentImageChooser
 >;
@@ -413,16 +424,22 @@ export type {
   ContentBodyImage,
   ContentBodyThumbnail,
   ContentBodyThumbnailPlacement,
+  ContentMainPicture,
+  ContentMainPictureMode,
   RenderContentBodyOptions,
 } from '../body-format.js';
 export {
+  BODY_MAIN_IMAGE_ATTRIBUTE,
   BODY_THUMBNAIL_ATTRIBUTE,
+  bodyHasImage,
   bodyHasThumbnail,
   extractBodyImages,
   placeThumbnailInBody,
   removeThumbnailFromBody,
   renderContentBodyHtml,
   resolveBodyFormat,
+  resolveBodyMainPicture,
+  setBodyMainImage,
   THUMBNAIL_WIDE_ASPECT_RATIO,
   thumbnailPlacementForSize,
 } from '../body-format.js';

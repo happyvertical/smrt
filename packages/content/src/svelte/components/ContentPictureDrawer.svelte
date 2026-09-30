@@ -1,0 +1,472 @@
+<script lang="ts" module>
+/** One picture the drawer offers (from the host's picture library). */
+export interface ContentPicture {
+  /** Stable id; passed back to the host on insert/drag/main. */
+  id: string;
+  /** Plain name shown under the picture and used by search. */
+  title: string;
+  /**
+   * Same-origin preview URL for the `<img>`. Never a signed/tokened
+   * provider URL: the host serves previews through its own route.
+   */
+  previewUrl: string | null;
+  width?: number | null;
+  height?: number | null;
+  /** Extra words search matches (alt text, tags). */
+  keywords?: string;
+}
+
+/** The MIME type a dragged picture (or a JSON array of them) travels as. */
+export const CONTENT_PICTURE_DRAG_TYPE = 'application/x-smrt-image';
+
+/** The drag payload ContentBodyEditor turns into inserted pictures. */
+export function pictureDragPayload(pictures: ContentPicture[]): string {
+  return JSON.stringify(
+    pictures.map((picture) => ({
+      id: picture.id,
+      name: picture.title,
+      sourceUri: picture.previewUrl,
+      width: picture.width ?? null,
+      height: picture.height ?? null,
+    })),
+  );
+}
+
+/** Pictures whose title or keywords contain every word of `query`. */
+export function filterPictures(
+  pictures: ContentPicture[],
+  query: string,
+): ContentPicture[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return pictures;
+  return pictures.filter((picture) => {
+    const haystack = `${picture.title} ${picture.keywords ?? ''}`.toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+</script>
+
+<script lang="ts">
+/**
+ * ContentPictureDrawer — the one "Add pictures" drawer for a content editor.
+ *
+ * Shows the host's picture library as a plain grid with one search box and an
+ * upload button. A picture is dragged into the story (drop position), or
+ * tapped to pick it (several at once) and inserted at the cursor with Insert —
+ * the keyboard and phone path. It also shows and changes the main picture:
+ * the first picture in the story, unless the person chose one.
+ *
+ * It holds no data of its own: the host loads pictures, uploads files, and
+ * resolves an inserted picture into its stored asset.
+ */
+import { Input } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
+import type { ContentMainPictureMode } from '../../body-format';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
+
+export interface Props {
+  /** The library's pictures (loaded by the host). */
+  pictures?: ContentPicture[];
+  /** Pictures are loading. */
+  loading?: boolean;
+  /** A plain-language load or upload problem, or null. */
+  error?: string | null;
+  /** More pictures can be loaded with `onLoadMore`. */
+  hasMore?: boolean;
+  /** An upload is in progress. */
+  uploading?: boolean;
+  /** Asset ids of pictures already in the story. */
+  inStoryIds?: string[];
+  /** Id of the current main picture. */
+  mainPictureId?: string | null;
+  /** How the main picture was decided (see `resolveBodyMainPicture`). */
+  mainPictureMode?: ContentMainPictureMode;
+  /** Insert these pictures at the cursor, in order. */
+  onInsert?: (pictures: ContentPicture[]) => void;
+  /** Upload these files (then insert them). */
+  onUpload?: (files: File[]) => void;
+  onLoadMore?: () => void;
+  /** Make this picture the main picture. */
+  onUseAsMain?: (picture: ContentPicture) => void;
+  /** Clear the choice: the first picture in the story is the main picture. */
+  onClearMainChoice?: () => void;
+  onClose?: () => void;
+}
+
+let {
+  pictures = [],
+  loading = false,
+  error = null,
+  hasMore = false,
+  uploading = false,
+  inStoryIds = [],
+  mainPictureId = null,
+  mainPictureMode = 'none',
+  onInsert,
+  onUpload,
+  onLoadMore,
+  onUseAsMain,
+  onClearMainChoice,
+  onClose,
+}: Props = $props();
+
+let query = $state('');
+let selectedIds = $state<string[]>([]);
+let fileInput = $state<HTMLInputElement | null>(null);
+let brokenPreviews = $state<Record<string, true>>({});
+
+const visible = $derived(filterPictures(pictures, query));
+const inStory = $derived(new Set(inStoryIds));
+const selected = $derived(
+  selectedIds
+    .map((id) => pictures.find((picture) => picture.id === id))
+    .filter((picture): picture is ContentPicture => Boolean(picture)),
+);
+
+function toggle(picture: ContentPicture) {
+  selectedIds = selectedIds.includes(picture.id)
+    ? selectedIds.filter((id) => id !== picture.id)
+    : [...selectedIds, picture.id];
+}
+
+function insertSelected() {
+  if (selected.length === 0) return;
+  onInsert?.(selected);
+  selectedIds = [];
+}
+
+function handleDragStart(event: DragEvent, picture: ContentPicture) {
+  if (!event.dataTransfer) return;
+  // Dragging a picked picture drags every picked one, in pick order.
+  const dragged = selectedIds.includes(picture.id) ? selected : [picture];
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData(
+    CONTENT_PICTURE_DRAG_TYPE,
+    pictureDragPayload(dragged),
+  );
+}
+
+function handleFiles(event: Event & { currentTarget: HTMLInputElement }) {
+  const files = Array.from(event.currentTarget.files ?? []).filter((file) =>
+    file.type.startsWith('image/'),
+  );
+  event.currentTarget.value = '';
+  if (files.length > 0) onUpload?.(files);
+}
+</script>
+
+<div class="content-picture-drawer">
+  <header class="drawer-header">
+    <h2>{t(M['content.content_picture_drawer.title'])}</h2>
+    {#if onClose}
+      <Button type="button" variant="secondary" size="sm" onclick={onClose}>
+        {t(M['content.content_picture_drawer.close'])}
+      </Button>
+    {/if}
+  </header>
+
+  <p class="drawer-hint">{t(M['content.content_picture_drawer.hint'])}</p>
+
+  {#if mainPictureMode === 'chosen'}
+    <p class="drawer-main">
+      <span>{t(M['content.content_picture_drawer.main_chosen'])}</span>
+      {#if onClearMainChoice}
+        <Button type="button" variant="ghost" size="sm" onclick={onClearMainChoice}>
+          {t(M['content.content_picture_drawer.main_reset'])}
+        </Button>
+      {/if}
+    </p>
+  {:else if mainPictureMode === 'automatic'}
+    <p class="drawer-main">{t(M['content.content_picture_drawer.main_automatic'])}</p>
+  {/if}
+
+  <div class="drawer-tools">
+    <Input
+      type="search"
+      bind:value={query}
+      placeholder={t(M['content.content_picture_drawer.search'])}
+      aria-label={t(M['content.content_picture_drawer.search'])}
+    />
+    {#if onUpload}
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={uploading}
+        onclick={() => fileInput?.click()}
+      >
+        {uploading
+          ? t(M['content.content_picture_drawer.uploading'])
+          : t(M['content.content_picture_drawer.upload'])}
+      </Button>
+      <!-- raw-primitive-allow: hidden file input opened by the Upload button (needs the DOM element for .click()) -->
+      <input
+        bind:this={fileInput}
+        class="drawer-file-input"
+        type="file"
+        accept="image/*"
+        multiple
+        tabindex="-1"
+        aria-hidden="true"
+        onchange={handleFiles}
+      />
+    {/if}
+  </div>
+
+  {#if error}
+    <p class="drawer-error" role="alert">{error}</p>
+  {/if}
+
+  {#if visible.length > 0}
+    <ul class="drawer-grid">
+      {#each visible as picture (picture.id)}
+        {@const isSelected = selectedIds.includes(picture.id)}
+        {@const isMain = mainPictureId === picture.id}
+        <li
+          class="drawer-picture"
+          class:selected={isSelected}
+          class:main={isMain}
+          draggable="true"
+          ondragstart={(event) => handleDragStart(event, picture)}
+        >
+          <!-- raw-primitive-allow: a large picture tile that toggles selection (aria-pressed) and wraps an image; Button would impose its own padding and label layout -->
+          <button
+            type="button"
+            class="drawer-picture-pick"
+            aria-pressed={isSelected}
+            aria-label={t(M['content.content_picture_drawer.select'], { name: picture.title })}
+            onclick={() => toggle(picture)}
+          >
+            {#if picture.previewUrl && !brokenPreviews[picture.id]}
+              <img
+                src={picture.previewUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                draggable="false"
+                onerror={() => (brokenPreviews = { ...brokenPreviews, [picture.id]: true })}
+              />
+            {:else}
+              <span class="drawer-picture-missing" aria-hidden="true">?</span>
+            {/if}
+            {#if isSelected}
+              <span class="drawer-picture-check" aria-hidden="true">
+                {selectedIds.indexOf(picture.id) + 1}
+              </span>
+            {/if}
+          </button>
+          <span class="drawer-picture-title">{picture.title}</span>
+          <span class="drawer-picture-tags">
+            {#if isMain}
+              <span class="tag tag-main">{t(M['content.content_picture_drawer.main'])}</span>
+            {:else if inStory.has(picture.id)}
+              <span class="tag">{t(M['content.content_picture_drawer.in_story'])}</span>
+            {/if}
+          </span>
+          {#if onUseAsMain && !isMain}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              class="drawer-picture-main"
+              onclick={() => onUseAsMain?.(picture)}
+            >
+              {t(M['content.content_picture_drawer.use_as_main'])}
+            </Button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {:else if loading}
+    <p class="drawer-hint">{t(M['content.content_picture_drawer.loading'])}</p>
+  {:else if pictures.length > 0}
+    <p class="drawer-hint">{t(M['content.content_picture_drawer.no_match'])}</p>
+  {:else}
+    <p class="drawer-hint">{t(M['content.content_picture_drawer.empty'])}</p>
+  {/if}
+
+  {#if hasMore && onLoadMore}
+    <Button type="button" variant="ghost" disabled={loading} onclick={onLoadMore}>
+      {loading
+        ? t(M['content.content_picture_drawer.loading'])
+        : t(M['content.content_picture_drawer.more'])}
+    </Button>
+  {/if}
+
+  {#if selected.length > 0 && onInsert}
+    <div class="drawer-actions">
+      <Button type="button" variant="primary" onclick={insertSelected}>
+        {selected.length === 1
+          ? t(M['content.content_picture_drawer.insert'])
+          : t(M['content.content_picture_drawer.insert_count'], { count: selected.length })}
+      </Button>
+      <Button type="button" variant="ghost" onclick={() => (selectedIds = [])}>
+        {t(M['content.content_picture_drawer.clear_selection'])}
+      </Button>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .content-picture-drawer {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .drawer-header h2 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--smrt-color-on-surface);
+  }
+
+  .drawer-hint,
+  .drawer-main {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.85rem;
+  }
+
+  .drawer-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .drawer-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .drawer-tools :global(input) {
+    flex: 1 1 12rem;
+    min-height: 2.75rem;
+  }
+
+  .drawer-file-input {
+    display: none;
+  }
+
+  .drawer-error {
+    margin: 0;
+    color: var(--smrt-color-error);
+    font-size: 0.85rem;
+  }
+
+  .drawer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 0.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .drawer-picture {
+    display: grid;
+    gap: 0.25rem;
+    align-content: start;
+    min-width: 0;
+    cursor: grab;
+  }
+
+  .drawer-picture-pick {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    padding: 0;
+    overflow: hidden;
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    cursor: pointer;
+  }
+
+  .drawer-picture.selected .drawer-picture-pick {
+    border-color: var(--smrt-color-primary);
+  }
+
+  .drawer-picture.main .drawer-picture-pick {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 30%, transparent);
+  }
+
+  .drawer-picture-pick img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  .drawer-picture-check {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.35rem;
+    display: grid;
+    place-items: center;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .drawer-picture-title {
+    overflow: hidden;
+    color: var(--smrt-color-on-surface);
+    font-size: 0.8rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .drawer-picture-tags {
+    min-height: 0;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.72rem;
+  }
+
+  .tag-main {
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
+  }
+
+  .content-picture-drawer :global(.drawer-picture-main) {
+    justify-self: start;
+    min-height: 2.75rem;
+    font-size: 0.78rem;
+  }
+
+  .drawer-actions {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    background: var(--smrt-color-surface);
+  }
+
+  .drawer-actions :global(button) {
+    min-height: 2.75rem;
+  }
+</style>

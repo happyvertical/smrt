@@ -62,6 +62,11 @@ export interface Props {
   onSelectImage?: (index: number) => void;
   /** Fired when the user sets an image as the content thumbnail. */
   onUseImageAsThumbnail?: (assetId: string) => void;
+  /**
+   * Asset id of the current main picture (thumbnail). The selected image's
+   * "Use as main picture" button shows as pressed when it is this one.
+   */
+  mainImageAssetId?: string | null;
   /** Resolves an image file, asset, or ID to a persisted image URL or object. */
   onResolveImage?: (
     selected: ImageLike | File | string,
@@ -94,6 +99,7 @@ let {
   onOpenImageChooser = undefined,
   onSelectImage = undefined,
   onUseImageAsThumbnail = undefined,
+  mainImageAssetId = null,
   onResolveImage = undefined,
   imagePanel = undefined,
   imagePanelOpen = false,
@@ -817,6 +823,34 @@ export function insertImageAsset(asset: ImageAssetLike | null | undefined) {
   insertImageHtml(imageAssetToHtml(asset));
 }
 
+/**
+ * Replace the picture at `index` (in story order) with `asset`, keeping its
+ * place, size, and layout: for example a cropped or edited version of the
+ * same picture. Returns false when there is no picture at `index` or the
+ * asset has no usable source.
+ */
+export function replaceImage(
+  index: number,
+  asset: (ImageAssetLike & { height?: unknown }) | null | undefined,
+): boolean {
+  const image = getEditorImages()[index];
+  const template = document.createElement('template');
+  template.innerHTML = imageAssetToHtml(asset).trim();
+  const next = template.content.querySelector('img');
+  const src = next?.getAttribute('src');
+  if (!image || !src) {
+    return false;
+  }
+  image.setAttribute('src', src);
+  const assetId = next?.getAttribute('data-smrt-asset-id');
+  if (assetId) {
+    image.setAttribute('data-smrt-asset-id', assetId);
+  }
+  refreshSelectedImageChrome();
+  emitChange();
+  return true;
+}
+
 export function focusImage(index: number) {
   if (!editorElement || index < 0) {
     return;
@@ -1019,16 +1053,24 @@ async function resolveAndInsertImage(selected: ImageLike | File | string) {
   }
 }
 
-function parseDraggedImage(dataTransfer: DataTransfer): ImageLike | null {
+/**
+ * Images dragged in from a picker: `application/x-smrt-image` carries one
+ * image object, or an array of them when several are dragged together.
+ */
+function parseDraggedImages(dataTransfer: DataTransfer): ImageLike[] {
   const payload = dataTransfer.getData('application/x-smrt-image');
   if (!payload) {
-    return null;
+    return [];
   }
 
   try {
-    return JSON.parse(payload) as ImageLike;
+    const parsed = JSON.parse(payload) as unknown;
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    return list.filter(
+      (item): item is ImageLike => Boolean(item) && typeof item === 'object',
+    );
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -1073,12 +1115,14 @@ async function handleDrop(event: DragEvent) {
     return;
   }
 
-  const draggedImage = parseDraggedImage(event.dataTransfer);
-  if (draggedImage) {
+  const draggedImages = parseDraggedImages(event.dataTransfer);
+  if (draggedImages.length > 0) {
     if (dropRange) {
       savedRange = dropRange.cloneRange();
     }
-    await resolveAndInsertImage(draggedImage);
+    for (const draggedImage of draggedImages) {
+      await resolveAndInsertImage(draggedImage);
+    }
     return;
   }
 
@@ -1318,7 +1362,7 @@ function handleEditorDragEnd() {
         </svg>
       </Button>
       {#if selectedImageAssetId && onUseImageAsThumbnail}
-        <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} onclick={useSelectedImageAsThumbnail}>
+        <Button variant="ghost" size="sm" class={`editor-popover-button${mainImageAssetId && selectedImageAssetId === mainImageAssetId ? ' editor-popover-button--active' : ''}`} type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} aria-pressed={Boolean(mainImageAssetId) && selectedImageAssetId === mainImageAssetId} onclick={useSelectedImageAsThumbnail}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
             <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2 7.5 14 3 9.6l6.2-.9L12 3Z"></path>
           </svg>

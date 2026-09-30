@@ -792,7 +792,7 @@ describe('ContentEditor component', () => {
       (button) => button.getAttribute('title') === 'Make larger',
     );
     const primaryButton = Array.from(target.querySelectorAll('button')).find(
-      (button) => button.getAttribute('title') === 'Use as primary image',
+      (button) => button.getAttribute('title') === 'Use as main picture',
     );
     expect(wrapRightButton).toBeDefined();
     expect(largerButton).toBeDefined();

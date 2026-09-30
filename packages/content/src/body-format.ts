@@ -17,6 +17,11 @@ export interface ContentBodyImage {
   width?: number;
   /** True for the content's thumbnail block (see `placeThumbnailInBody`). */
   thumbnail?: boolean;
+  /**
+   * True for a picture in the story the person chose as the main picture
+   * (see `setBodyMainImage`).
+   */
+  main?: boolean;
   index: number;
 }
 
@@ -271,6 +276,7 @@ const IMAGE_MARKER_ATTRIBUTES = [
   'data-smrt-placement',
   'data-smrt-width',
   'data-smrt-thumbnail',
+  'data-smrt-main',
 ];
 
 const SANITIZER_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
@@ -397,6 +403,7 @@ const EMPTY_VALUE_ATTRIBUTES = new Set([
   'alt',
   'data-smrt-inline-image',
   'data-smrt-thumbnail',
+  'data-smrt-main',
 ]);
 
 /**
@@ -438,6 +445,7 @@ function allowedAttributeValue(name: string, value: string): string | null {
       return IMAGE_PLACEMENTS.has(value) ? value : '';
     case 'data-smrt-inline-image':
     case 'data-smrt-thumbnail':
+    case 'data-smrt-main':
       // Boolean markers: keep the bare / `="true"` forms the editor writes.
       return value === '' || value === 'true' ? value : null;
     case 'data-smrt-asset-id':
@@ -978,6 +986,12 @@ export function extractBodyImages(
           )
             ? { thumbnail: true }
             : {}),
+          ...(isThumbnailMarker(
+            parsedFigure[BODY_MAIN_IMAGE_ATTRIBUTE] ||
+              parsedImage[BODY_MAIN_IMAGE_ATTRIBUTE],
+          )
+            ? { main: true }
+            : {}),
           index: images.length,
         });
       }
@@ -1005,6 +1019,9 @@ export function extractBodyImages(
         ...(width ? { width } : {}),
         ...(isThumbnailMarker(parsed[BODY_THUMBNAIL_ATTRIBUTE])
           ? { thumbnail: true }
+          : {}),
+        ...(isThumbnailMarker(parsed[BODY_MAIN_IMAGE_ATTRIBUTE])
+          ? { main: true }
           : {}),
         index: images.length,
       });
@@ -1083,6 +1100,13 @@ export const THUMBNAIL_WIDE_ASPECT_RATIO = 1.3;
 
 /** Attribute that marks the thumbnail block's `<img>` in HTML bodies. */
 export const BODY_THUMBNAIL_ATTRIBUTE = 'data-smrt-thumbnail';
+
+/**
+ * Attribute that marks a picture already in the story as the one the person
+ * chose as the main picture (HTML bodies). It travels with the picture, so a
+ * choice sticks when pictures are moved or reordered.
+ */
+export const BODY_MAIN_IMAGE_ATTRIBUTE = 'data-smrt-main';
 
 const MARKDOWN_THUMBNAIL_TITLE_PREFIX = 'smrt-thumbnail:';
 
@@ -1318,5 +1342,122 @@ export function renderContentBodyHtml(
   return sanitizeBodyHtml(
     resolved === 'markdown' ? renderMarkdownToHtml(source) : source,
     replacement ? { thumbnailSrc: replacement } : {},
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main picture
+//
+// The first picture in the story is the main picture (the thumbnail) unless
+// the person chose one: either a picture in the story marked with
+// `data-smrt-main="true"` (`setBodyMainImage`), or a thumbnail block placed
+// for a picture that is not otherwise in the story (`placeThumbnailInBody`).
+// A choice sticks until it is cleared, whatever order the pictures are in.
+// Only pictures with an asset id count; Markdown bodies carry no asset ids,
+// so they resolve to `none`.
+// ---------------------------------------------------------------------------
+
+/** How the main picture was decided. */
+export type ContentMainPictureMode = 'chosen' | 'automatic' | 'none';
+
+export interface ContentMainPicture {
+  /** The main picture's asset id, or null when there is none. */
+  assetId: string | null;
+  /**
+   * `chosen`: the person picked it. `automatic`: the first picture in the
+   * story. `none`: the story has no pictures with an asset id, so the
+   * current value (passed in) is kept as it is.
+   */
+  mode: ContentMainPictureMode;
+}
+
+/**
+ * The content's main picture according to its body: the chosen picture when
+ * there is one, otherwise the first picture in the story. Returns `none`
+ * with `currentAssetId` when the story has no pictures with asset ids, so
+ * a caller never clears a thumbnail set some other way.
+ */
+export function resolveBodyMainPicture(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+  currentAssetId: string | null = null,
+): ContentMainPicture {
+  const source = body || '';
+  const images = source
+    ? extractBodyImages(source, resolveBodyFormat(format, source)).filter(
+        (image) => Boolean(image.assetId),
+      )
+    : [];
+  const chosen =
+    images.find((image) => image.thumbnail) ??
+    images.find((image) => image.main);
+  if (chosen?.assetId) {
+    return { assetId: chosen.assetId, mode: 'chosen' };
+  }
+  if (images[0]?.assetId) {
+    return { assetId: images[0].assetId, mode: 'automatic' };
+  }
+  return { assetId: currentAssetId, mode: 'none' };
+}
+
+const MAIN_IMAGE_ATTRIBUTE_PATTERN =
+  /\s+data-smrt-main(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?/gi;
+
+function withoutMainMarker(tag: string): string {
+  return tag.replace(MAIN_IMAGE_ATTRIBUTE_PATTERN, '');
+}
+
+/**
+ * Mark the first picture in the story with `assetId` as the chosen main
+ * picture, clearing the mark from every other picture. `null` clears the
+ * choice, so the first picture is the main picture again. HTML bodies only;
+ * a Markdown body, or one without that picture, is returned with only the
+ * old marks cleared.
+ */
+export function setBodyMainImage(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  assetId: string | null,
+): string {
+  const source = body || '';
+  if (!source || resolveBodyFormat(format, source) !== 'html') {
+    return source;
+  }
+  const cleared = source.replace(/<(img|figure)\b[^>]*>/gi, withoutMainMarker);
+  if (!assetId) {
+    return cleared;
+  }
+  let marked = false;
+  return cleared.replace(
+    /<img\b([^>]*?)(\s*\/?)>/gi,
+    (tag, attrs: string, end: string) => {
+      if (marked) {
+        return tag;
+      }
+      const parsed = parseHtmlAttributes(attrs);
+      if (
+        parsed['data-smrt-asset-id'] !== assetId ||
+        isThumbnailMarker(parsed[BODY_THUMBNAIL_ATTRIBUTE])
+      ) {
+        return tag;
+      }
+      marked = true;
+      return `<img${attrs} ${BODY_MAIN_IMAGE_ATTRIBUTE}="true"${end}>`;
+    },
+  );
+}
+
+/** True when the story contains the picture with this asset id (not the thumbnail block). */
+export function bodyHasImage(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  assetId: string,
+): boolean {
+  const source = body || '';
+  if (!source || !assetId) {
+    return false;
+  }
+  return extractBodyImages(source, resolveBodyFormat(format, source)).some(
+    (image) => !image.thumbnail && image.assetId === assetId,
   );
 }

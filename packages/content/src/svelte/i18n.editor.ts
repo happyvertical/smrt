@@ -19,6 +19,32 @@ export const M = defineMessages({
   'content.content_agent_chat.new': 'New',
   'content.content_agent_chat.untitled_topic': 'Untitled Topic',
 
+  // ContentPictureDrawer
+  'content.content_picture_drawer.title': 'Add pictures',
+  'content.content_picture_drawer.close': 'Done',
+  'content.content_picture_drawer.hint':
+    'Drag a picture into the story, or pick some and press Insert.',
+  'content.content_picture_drawer.search': 'Search pictures',
+  'content.content_picture_drawer.upload': 'Upload pictures',
+  'content.content_picture_drawer.upload_hint': 'From your computer or phone',
+  'content.content_picture_drawer.uploading': 'Uploading…',
+  'content.content_picture_drawer.loading': 'Loading pictures…',
+  'content.content_picture_drawer.empty':
+    'No pictures yet. Upload one to start.',
+  'content.content_picture_drawer.no_match': 'No pictures match.',
+  'content.content_picture_drawer.more': 'Show more pictures',
+  'content.content_picture_drawer.insert': 'Insert',
+  'content.content_picture_drawer.insert_count': 'Insert {count} pictures',
+  'content.content_picture_drawer.clear_selection': 'Clear',
+  'content.content_picture_drawer.select': 'Pick {name}',
+  'content.content_picture_drawer.in_story': 'In the story',
+  'content.content_picture_drawer.main': 'Main picture',
+  'content.content_picture_drawer.use_as_main': 'Use as main picture',
+  'content.content_picture_drawer.main_automatic':
+    'The first picture in the story is the main picture.',
+  'content.content_picture_drawer.main_chosen': 'You chose the main picture.',
+  'content.content_picture_drawer.main_reset': 'Use the first picture instead',
+
   // ContentBodyEditor
   'content.content_body_editor.toolbar': 'Body editor toolbar',
   'content.content_body_editor.bold': 'Bold',
@@ -39,7 +65,7 @@ export const M = defineMessages({
   'content.content_body_editor.make_image_smaller': 'Make image smaller',
   'content.content_body_editor.make_larger': 'Make larger',
   'content.content_body_editor.make_image_larger': 'Make image larger',
-  'content.content_body_editor.use_as_primary_image': 'Use as primary image',
+  'content.content_body_editor.use_as_primary_image': 'Use as main picture',
   'content.content_body_editor.remove_image': 'Remove image',
   'content.content_body_editor.resize_image': 'Resize image',
   'content.content_body_editor.resize_selected_image': 'Resize selected image',
