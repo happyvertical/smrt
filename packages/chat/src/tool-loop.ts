@@ -55,6 +55,7 @@ import {
 import {
   ObjectRegistry,
   type SmrtClassOptions,
+  ValidationError,
 } from '@happyvertical/smrt-core';
 import {
   OperationPermissionError,
@@ -107,7 +108,11 @@ export interface ToolInvocation {
   observation: unknown;
   /** True when the call was denied (not on the allow-list / not permitted). */
   rejected: boolean;
-  /** Error summary when `ok` is false. */
+  /**
+   * Error summary when `ok` is false: `not_permitted` (denied),
+   * `invalid_request` (the tool refused the arguments — a 4xx or validation
+   * error the model can fix and retry), or `execution_error` (the tool failed).
+   */
   error?: string;
 }
 
@@ -879,15 +884,16 @@ export async function runToolLoop(
               const rejected =
                 error instanceof PrincipalToolNotAllowedError ||
                 error instanceof OperationPermissionError;
+              const kind = rejected
+                ? 'not_permitted'
+                : classifyToolError(error);
               invocation = {
                 slug,
                 args,
                 ok: false,
                 rejected,
-                observation: {
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                error: rejected ? 'not_permitted' : 'execution_error',
+                observation: toolErrorObservation(error, kind),
+                error: kind,
               };
             }
           }
@@ -1099,4 +1105,66 @@ export function appendClientToolResults(
 
 function truncate(value: string, max = MAX_CLIENT_TOOL_RESULT_CHARS): string {
   return value.length > max ? `${value.slice(0, max)}… [truncated]` : value;
+}
+
+/** How a thrown tool error is reported to the model and the invocation log. */
+export type ToolErrorKind =
+  | 'not_permitted'
+  | 'invalid_request'
+  | 'execution_error';
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const { status, statusCode } = error as {
+    status?: unknown;
+    statusCode?: unknown;
+  };
+  if (typeof status === 'number') return status;
+  if (typeof statusCode === 'number') return statusCode;
+  return undefined;
+}
+
+/**
+ * Classify an error a tool threw. A validation error or any error carrying a
+ * 4xx `status`/`statusCode` means the tool refused the model's arguments —
+ * `invalid_request`, which the model can correct and retry. Everything else
+ * (5xx, database, network, programming errors) is a real `execution_error`.
+ * Permission denials are classified by the caller before this runs.
+ */
+export function classifyToolError(
+  error: unknown,
+): Exclude<ToolErrorKind, 'not_permitted'> {
+  if (error instanceof ValidationError) return 'invalid_request';
+  const status = errorStatus(error);
+  if (status !== undefined && status >= 400 && status < 500) {
+    return 'invalid_request';
+  }
+  return 'execution_error';
+}
+
+/**
+ * The observation fed back to the model for a failed call. An
+ * `invalid_request` carries the tool's actionable message (preferring a
+ * caller-safe `publicMessage`), its machine code when it has one, and a nudge
+ * to fix the arguments rather than retry the same call.
+ */
+function toolErrorObservation(
+  error: unknown,
+  kind: ToolErrorKind,
+): Record<string, unknown> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (kind !== 'invalid_request') return { error: message };
+  const { publicMessage, code } = error as {
+    publicMessage?: unknown;
+    code?: unknown;
+  };
+  return {
+    error:
+      typeof publicMessage === 'string' && publicMessage
+        ? publicMessage
+        : message,
+    kind,
+    ...(typeof code === 'string' && code ? { code } : {}),
+    hint: 'The request was invalid. Correct the arguments as the error describes and call the tool again.',
+  };
 }
