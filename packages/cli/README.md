@@ -110,6 +110,19 @@ upgrades have no automatic down migration. `smrt db:diff
 queries and prints the read-only `_smrt_*` conversion plan without initializing
 the tracker or writing to the database.
 
+Empty text blocks those conversions too: `''` (or whitespace) is not a
+timestamp, JSON document, or integer. When the manifest and live columns are
+both nullable, opt in to storing it as NULL:
+
+```bash
+smrt db:diff --empty-text-as-null      # preview; notes how many values become NULL
+smrt db:migrate --empty-text-as-null
+```
+
+It covers `text` -> `timestamptz`, `jsonb` and integer conversions. Any other
+value that does not convert still blocks, and NOT NULL columns are never
+changed. Without the flag, the blocking advisory names the empty-text count.
+
 ### Code Generation
 
 | Command | Description |
