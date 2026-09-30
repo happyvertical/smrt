@@ -207,6 +207,12 @@ describe('Issue #2223 - test manifest task ownership', () => {
         '!src/manifest/test-manifest-stub.ts',
       ]),
     );
+    expect(turbo.tasks.build.outputs).not.toEqual(
+      expect.arrayContaining([
+        '.smrt/manifest.json',
+        '.smrt/smrt-knowledge.json',
+      ]),
+    );
   });
 
   it('keeps a cold build hash and production output independent of test artifacts', () => {
