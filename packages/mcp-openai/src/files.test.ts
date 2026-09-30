@@ -32,6 +32,8 @@ function fixture(
   let mime = 'text/plain';
   let etag = true;
   let foreign = false;
+  let registered = false;
+  const holds = new Map<string, Promise<void>>();
   const bridge = {
     signal: lifecycle.signal,
     snapshot: {
@@ -47,50 +49,56 @@ function fixture(
         structuredContent: { path: '/synthetic/file.txt' },
       };
     },
-    registerExtension: () => ({
-      signal: lifecycle.signal,
-      request: async (method: string, params: Record<string, unknown>) => {
-        calls.push({ method, params });
-        if (fail) throw new Error('Unknown upstream outcome');
-        if (method === 'resources/read')
-          return {
-            contents: [
-              {
-                uri: foreign
-                  ? 'host-resource://foreign'
-                  : input.file.resourceUri,
-                text: content,
-                mimeType: mime,
-                _meta: {
-                  'openai/resource': {
-                    writable,
-                    ...(etag ? { etag: `v${revision}` } : {}),
+    registerExtension: () => {
+      if (registered) throw new Error('Extension already registered');
+      registered = true;
+      return {
+        signal: lifecycle.signal,
+        request: async (method: string, params: Record<string, unknown>) => {
+          calls.push({ method, params });
+          await holds.get(method);
+          if (fail) throw new Error('Unknown upstream outcome');
+          if (method === 'resources/read')
+            return {
+              contents: [
+                {
+                  uri: foreign
+                    ? 'host-resource://foreign'
+                    : input.file.resourceUri,
+                  text: content,
+                  mimeType: mime,
+                  _meta: {
+                    'openai/resource': {
+                      writable,
+                      ...(etag ? { etag: `v${revision}` } : {}),
+                    },
                   },
                 },
-              },
-            ],
+              ],
+            };
+          if (method === 'openai/resources/write') {
+            if (outcome === 'too-large') return { outcome, maxBytes: 1 };
+            if (outcome === 'broken') return { outcome: 'unknown' };
+            if (params.ifMatch !== `v${revision}` || outcome === 'conflict')
+              return { outcome: 'conflict', etag: `v${revision}` };
+            content = String(params.text);
+            revision++;
+            return { outcome: 'saved', etag: `v${revision}` };
+          }
+          return {};
+        },
+        subscribe: (callback: typeof listener) => {
+          listener = callback;
+          return () => {
+            listener = undefined;
           };
-        if (method === 'openai/resources/write') {
-          if (outcome === 'too-large') return { outcome, maxBytes: 1 };
-          if (outcome === 'broken') return { outcome: 'unknown' };
-          if (params.ifMatch !== `v${revision}` || outcome === 'conflict')
-            return { outcome: 'conflict', etag: `v${revision}` };
-          content = String(params.text);
-          revision++;
-          return { outcome: 'saved', etag: `v${revision}` };
-        }
-        return {};
-      },
-      subscribe: (callback: typeof listener) => {
-        listener = callback;
-        return () => {
+        },
+        dispose: () => {
+          registered = false;
           listener = undefined;
-        };
-      },
-      dispose: () => {
-        listener = undefined;
-      },
-    }),
+        },
+      };
+    },
   } as unknown as McpAppBridge;
   const session = () =>
     new OpenAiFileSession({
@@ -103,6 +111,19 @@ function fixture(
     });
   return {
     bridge,
+    hold: (method: string) => {
+      let release!: () => void;
+      holds.set(
+        method,
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      );
+      return () => {
+        holds.delete(method);
+        release();
+      };
+    },
     calls,
     session,
     revoke: () => {
@@ -316,6 +337,57 @@ describe('scoped host file sessions', () => {
     f.notify();
     expect(reads).toHaveLength(1);
     await expect(session.read()).rejects.toThrow('disposed');
+  });
+  it('coalesces updates across a pending save and retains fresh authority and ETag', async () => {
+    const f = fixture();
+    const session = f.session();
+    const reads: unknown[] = [];
+    const errors: unknown[] = [];
+    await session.read();
+    await session.subscribe(
+      (value) => reads.push(value),
+      (error) => errors.push(error),
+    );
+    const releaseWrite = f.hold('openai/resources/write');
+    const releaseRead = f.hold('resources/read');
+    const write = session.write({ text: 'saved' });
+    f.notify();
+    f.notify();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseWrite();
+    await write;
+    releaseRead();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errors).toEqual([]);
+    expect(session.signal.aborted).toBe(false);
+    expect(reads).toHaveLength(1);
+    await session.write({ text: 'again' });
+    expect(
+      f.calls.filter((call) => call.method === 'openai/resources/write').at(-1)
+        ?.params.ifMatch,
+    ).toBe('v2');
+    f.revoke();
+    f.notify();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errors).toHaveLength(1);
+    expect(session.signal.aborted).toBe(true);
+  });
+  it('releases registration immediately while host unsubscribe remains pending', async () => {
+    const f = fixture();
+    const session = f.session();
+    await session.subscribe(
+      () => {},
+      () => {},
+    );
+    const release = f.hold('resources/unsubscribe');
+    session.dispose();
+    const replacement = f.session();
+    expect(session.signal.aborted).toBe(true);
+    await replacement.read();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await replacement.read();
+    replacement.dispose();
   });
   it('uses the ordinary authorized workflow when capability is absent or malformed', async () => {
     for (const caps of [
