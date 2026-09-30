@@ -15,7 +15,7 @@
  *     { "type": "message", "message": {...} }            (a persisted message)
  *     { "type": "client_tool_calls", "continuationId": "...", "calls": [...] }
  *     { "type": "done", "message": {...}?, "stoppedReason": "..." }
- *     { "type": "error", "error": "..." }
+ *     { "type": "error", "error": "...", "code": "..." }
  *   plus `: heartbeat` comment lines, which readers ignore.
  *
  * A turn ends with exactly one of `done`, `error`, or `client_tool_calls`.
@@ -111,7 +111,16 @@ export type AssistantTurnEvent<M = Record<string, unknown>> =
       calls: AssistantClientToolCall[];
     }
   | { type: 'done'; message?: M; stoppedReason: AssistantTurnStopReason }
-  | { type: 'error'; error: string };
+  | {
+      type: 'error';
+      /**
+       * A message safe to show the user: either a deliberate user-facing
+       * message or a generic one. Server detail is logged, never sent.
+       */
+      error: string;
+      /** A stable machine code (`internal_error` for an unexpected failure). */
+      code?: string;
+    };
 
 /** Serialize one event as an SSE frame. */
 export function encodeAssistantTurnEvent(

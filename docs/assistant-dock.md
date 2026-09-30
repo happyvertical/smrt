@@ -499,6 +499,13 @@ Events (`@happyvertical/smrt-chat/assistant-turn`, browser-safe):
 (a persisted message), and exactly one terminal `done`, `error`, or
 `client_tool_calls`.
 
+An `error` event carries a message safe to show the user and a stable
+`code`. Only an `AssistantTurnUserError` (an expired step, an empty message,
+an ended session) reaches the browser verbatim; any other failure is sent as
+`ASSISTANT_TURN_GENERIC_ERROR` with `code: 'internal_error'`, and its detail
+goes to `onError` (on `runAssistantTurn` and `createAssistantTurnResponse`,
+default `console.error`) on the server.
+
 **Transport.** `AssistantSendMessageInput` gains `clientTools`, `onEvent`, and
 `signal`; `AssistantSendMessageResult` gains `messages` and
 `clientToolCalls`; a streaming transport adds `resumeTurn`. A host transport

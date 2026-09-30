@@ -27,6 +27,7 @@ import {
 } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ASSISTANT_TURN_GENERIC_ERROR,
   createAssistantTurnResponse,
   createMemoryContinuationStore,
   createSessionContinuationStore,
@@ -738,6 +739,82 @@ describe('assistant turn', () => {
       });
       now += 500;
       expect(await store.take('k', 'a')).toBeNull();
+    });
+  });
+
+  describe('error redaction on the wire', () => {
+    it('sends a generic message and stable code, and logs the detail server-side', async () => {
+      const logged: unknown[] = [];
+      const ai = {
+        async chat() {
+          throw new Error(
+            'connect ECONNREFUSED 10.0.0.5:5432 password=hunter2',
+          );
+        },
+      } as unknown as AIInterface;
+      const events = await collect(
+        runAssistantTurn({
+          ai,
+          db,
+          principal: principal(),
+          audit: () => {},
+          userMessage: 'hi',
+          onError: (error) => logged.push(error),
+        }),
+      );
+      const error = events.find((e) => e.type === 'error') as Extract<
+        AssistantTurnEvent,
+        { type: 'error' }
+      >;
+      expect(error).toEqual({
+        type: 'error',
+        error: ASSISTANT_TURN_GENERIC_ERROR,
+        code: 'internal_error',
+      });
+      expect(JSON.stringify(events)).not.toContain('hunter2');
+      expect(JSON.stringify(events)).not.toContain('10.0.0.5');
+      expect(logged).toHaveLength(1);
+      expect(String((logged[0] as Error).message)).toContain('hunter2');
+    });
+
+    it('keeps a deliberate user-facing message with its code', async () => {
+      const events = await collect(
+        runAssistantTurn({
+          ai: scriptedAI([text('x')]),
+          db,
+          principal: principal(),
+          audit: () => {},
+          resume: { continuationId: 'missing', results: [] },
+          continuations: createMemoryContinuationStore(),
+          continuationKey: 'thread-1',
+          onError: () => {},
+        }),
+      );
+      expect(events.find((e) => e.type === 'error')).toEqual({
+        type: 'error',
+        error:
+          'This step expired or was already answered. Ask again to continue.',
+        code: 'continuation_expired',
+      });
+    });
+
+    it('redacts a failure thrown while the response body is pulled', async () => {
+      const logged: unknown[] = [];
+      async function* events(): AsyncGenerator<
+        AssistantTurnEvent<unknown>,
+        unknown
+      > {
+        yield { type: 'token', text: 'a' };
+        throw new Error('SELECT secret FROM vault');
+      }
+      const response = createAssistantTurnResponse(events(), {
+        heartbeatMs: 0,
+        onError: (error) => logged.push(error),
+      });
+      const text = await response.text();
+      expect(text).not.toContain('vault');
+      expect(text).toContain('"code":"internal_error"');
+      expect(logged).toHaveLength(1);
     });
   });
 

@@ -146,7 +146,12 @@ export function createSessionContinuationStore(
   const now = options.now ?? (() => Date.now());
   const load = async (): Promise<ContinuationSessionLike> => {
     const current = typeof session === 'function' ? await session() : session;
-    if (!current) throw new Error('The assistant session is no longer active.');
+    if (!current) {
+      throw new AssistantTurnUserError(
+        'The assistant session is no longer active.',
+        'session_inactive',
+      );
+    }
     return current;
   };
   const read = (
@@ -252,6 +257,11 @@ export interface AssistantTurnOptions<M = Record<string, unknown>> {
   describeTool?: (name: string) => string;
   /** Mint continuation ids (tests). Default `crypto.randomUUID()`. */
   createId?: () => string;
+  /**
+   * Server-side log for an unexpected failure (default `console.error`). The
+   * browser only ever gets a generic message and code for these.
+   */
+  onError?: AssistantTurnErrorLogger;
   now?: () => number;
 }
 
@@ -273,8 +283,48 @@ function defaultDescribe(name: string): string {
   return name.replace(/[_.-]+/g, ' ').trim();
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** What the browser is told when a turn fails unexpectedly. */
+export const ASSISTANT_TURN_GENERIC_ERROR =
+  'The assistant ran into a problem. Please try again.';
+
+/**
+ * A failure whose message is deliberately written for the user (an expired
+ * step, an empty message). Only these reach the browser verbatim, with their
+ * `code`; every other error is replaced by {@link ASSISTANT_TURN_GENERIC_ERROR}
+ * and code `internal_error`, and its detail goes to the server-side log.
+ */
+export class AssistantTurnUserError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = 'AssistantTurnUserError';
+  }
+}
+
+/** Server-side sink for an unexpected turn failure. */
+export type AssistantTurnErrorLogger = (error: unknown) => void;
+
+function defaultLogError(error: unknown): void {
+  // biome-ignore lint/suspicious/noConsole: the server-side default for detail withheld from the browser; hosts pass `onError` to route it to their logger
+  console.error('[smrt-chat] assistant turn failed:', error);
+}
+
+/** The wire form of a failure; logs anything that is not user-facing. */
+function wireError(
+  error: unknown,
+  log: AssistantTurnErrorLogger,
+): { error: string; code: string } {
+  if (error instanceof AssistantTurnUserError) {
+    return { error: error.message, code: error.code };
+  }
+  try {
+    log(error);
+  } catch {
+    // Logging never breaks the response.
+  }
+  return { error: ASSISTANT_TURN_GENERIC_ERROR, code: 'internal_error' };
 }
 
 /**
@@ -314,8 +364,9 @@ export async function* runAssistantTurn<M = Record<string, unknown>>(
     try {
       result = await runTurn(options, emit, status, serialize, describe);
     } catch (error) {
-      emit({ type: 'error', error: errorMessage(error) });
-      emit(status({ state: 'error', label: errorMessage(error) }));
+      const wire = wireError(error, options.onError ?? defaultLogError);
+      emit({ type: 'error', ...wire });
+      emit(status({ state: 'error', label: wire.error }));
       result = { stoppedReason: 'error', content: '' };
     } finally {
       finished = true;
@@ -371,8 +422,9 @@ async function runTurn<M>(
       options.resume.continuationId,
     );
     if (!continuation) {
-      throw new Error(
+      throw new AssistantTurnUserError(
         'This step expired or was already answered. Ask again to continue.',
+        'continuation_expired',
       );
     }
     messages = appendClientToolResults(
@@ -402,7 +454,12 @@ async function runTurn<M>(
     }
   } else {
     const userMessage = options.userMessage?.trim();
-    if (!userMessage) throw new Error('No user message to respond to.');
+    if (!userMessage) {
+      throw new AssistantTurnUserError(
+        'No user message to respond to.',
+        'empty_message',
+      );
+    }
     const system = [
       options.systemPrompt?.trim(),
       clientTools.length > 0 ? CLIENT_TOOL_RESULT_GUIDANCE : undefined,
@@ -533,9 +590,14 @@ async function runTurn<M>(
             tool: invocation.slug,
             label: labelFor(invocation.slug),
             ok: false,
-            error: errorMessage(error),
+            error: 'not_saved',
           },
         });
+        try {
+          (options.onError ?? defaultLogError)(error);
+        } catch {
+          // Logging never breaks the turn.
+        }
       }
     },
   });
@@ -618,7 +680,12 @@ export const DEFAULT_ASSISTANT_TURN_HEARTBEAT_MS = 15_000;
  */
 export function createAssistantTurnResponse(
   events: AsyncGenerator<AssistantTurnEvent<unknown>, unknown>,
-  options: { heartbeatMs?: number; headers?: Record<string, string> } = {},
+  options: {
+    heartbeatMs?: number;
+    headers?: Record<string, string>;
+    /** Server-side log for a failure while pulling (default `console.error`). */
+    onError?: AssistantTurnErrorLogger;
+  } = {},
 ): Response {
   const encoder = new TextEncoder();
   const inCallerContext = AsyncLocalStorage.snapshot();
@@ -656,7 +723,7 @@ export function createAssistantTurnResponse(
           encoder.encode(
             encodeAssistantTurnEvent({
               type: 'error',
-              error: errorMessage(error),
+              ...wireError(error, options.onError ?? defaultLogError),
             }),
           ),
         );

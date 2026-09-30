@@ -59,11 +59,14 @@ import './__smrt-register__.js';
 // Streamed assistant turn over the tool loop, with browser-executed tools
 // (#2908). The wire types are browser-safe (`./assistant-turn` subpath).
 export {
+  ASSISTANT_TURN_GENERIC_ERROR,
   type AssistantContinuationStore,
   type AssistantTurnAuthor,
   type AssistantTurnContinuation,
+  type AssistantTurnErrorLogger,
   type AssistantTurnOptions,
   type AssistantTurnResult,
+  AssistantTurnUserError,
   type AuthoredToolReply,
   type ContinuationSessionLike,
   createAssistantTurnResponse,
