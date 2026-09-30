@@ -86,9 +86,8 @@ export interface ListSurfaceOptions {
    * Re-order the list (the page's header-click path). Return `false` to deny.
    * Server-sorted lists navigate to the new `?sort=&dir=` URL here.
    */
-  onSort?: (
-    sort: ListSort,
-  ) => boolean | undefined | Promise<boolean | undefined>;
+  // biome-ignore lint/suspicious/noConfusingVoidType: a page's sort handler usually returns nothing.
+  onSort?: (sort: ListSort) => boolean | void | Promise<boolean | void>;
 }
 
 function sortEnabled(options: ListSurfaceOptions): boolean {
