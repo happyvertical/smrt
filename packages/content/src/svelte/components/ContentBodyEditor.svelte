@@ -191,6 +191,8 @@ let editorHtml = $state('');
 let lastExternalKey = $state('');
 let isFocused = $state(false);
 let isDragging = $state(false);
+/** Where a moved picture would land (px from the editor's top), while dragging. */
+let dropIndicatorTop = $state<number | null>(null);
 let selectedImageIndexState = $state(-1);
 let selectedImageBox = $state<ImageBox | null>(null);
 let selectedImagePlacement = $state<ContentBodyImagePlacement>('block');
@@ -971,6 +973,149 @@ function startImageResize(event: PointerEvent) {
   window.addEventListener('pointerup', handleResizePointerUp);
 }
 
+/** A top-level node that shows something (text or a picture). */
+function isSignificantBlock(node: Node): boolean {
+  if (node.nodeType === TEXT_NODE) {
+    return Boolean(node.textContent?.trim());
+  }
+  if (node.nodeType !== ELEMENT_NODE) {
+    return false;
+  }
+  const element = node as HTMLElement;
+  return (
+    Boolean(element.textContent?.trim()) ||
+    Boolean(element.tagName === 'IMG' || element.querySelector('img'))
+  );
+}
+
+function significantBlocks(exclude?: Node | null): Node[] {
+  if (!editorElement) {
+    return [];
+  }
+  return Array.from(editorElement.childNodes).filter(
+    (node) => node !== exclude && isSignificantBlock(node),
+  );
+}
+
+function nodeRect(node: Node): DOMRect | null {
+  if (node.nodeType === ELEMENT_NODE) {
+    return (node as Element).getBoundingClientRect();
+  }
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  return range.getBoundingClientRect();
+}
+
+/** The picture's movable unit: its top-level block, or the picture itself when it sits inside text. */
+function imageMoveUnit(image: HTMLImageElement): HTMLElement {
+  const root = getImageLayoutRoot(image);
+  return root.parentElement === editorElement ? root : getImageFrame(image);
+}
+
+/** The top-level block holding `node`. */
+function topLevelBlockOf(node: Node): Node | null {
+  let current: Node | null = node;
+  while (current && current.parentNode !== editorElement) {
+    current = current.parentNode;
+  }
+  return current;
+}
+
+/**
+ * The gap between top-level blocks nearest to `clientY`: the block to go in
+ * front of (null: the end), and where to draw the drop line.
+ */
+function dropSlotFromPoint(
+  clientY: number,
+  exclude: Node | null,
+): { before: Node | null; top: number } | null {
+  if (!editorElement || !rootElement) {
+    return null;
+  }
+  const rootTop = rootElement.getBoundingClientRect().top;
+  const blocks = significantBlocks(exclude);
+  for (const block of blocks) {
+    const rect = nodeRect(block);
+    if (rect && clientY < rect.top + rect.height / 2) {
+      return { before: block, top: rect.top - rootTop - 2 };
+    }
+  }
+  const last = blocks.at(-1);
+  const lastRect = last ? nodeRect(last) : null;
+  const editorRect = editorElement.getBoundingClientRect();
+  return {
+    before: null,
+    top: (lastRect ? lastRect.bottom : editorRect.top + 8) - rootTop + 2,
+  };
+}
+
+/** Put the picture in front of `before` (null: at the end of the story). */
+function moveImageBefore(image: HTMLImageElement, before: Node | null) {
+  if (!editorElement) {
+    return;
+  }
+  const unit = imageMoveUnit(image);
+  if (before === unit) {
+    return;
+  }
+  editorElement.insertBefore(unit, before);
+  selectImageElement(image);
+  emitChange();
+}
+
+function imageMoveTargets(image: HTMLImageElement): {
+  up: Node | null | undefined;
+  down: Node | null | undefined;
+} {
+  const unit = imageMoveUnit(image);
+  if (unit.parentElement !== editorElement) {
+    // Inside a paragraph: up puts it just above that paragraph, down just below.
+    const block = topLevelBlockOf(unit);
+    return {
+      up: block,
+      down: block ? (block.nextSibling ?? null) : undefined,
+    };
+  }
+  const blocks = significantBlocks();
+  const index = blocks.indexOf(unit);
+  const previous = index > 0 ? blocks[index - 1] : undefined;
+  const next = index >= 0 ? blocks[index + 1] : undefined;
+  return {
+    up: previous,
+    down: next ? (next.nextSibling ?? null) : undefined,
+  };
+}
+
+/** Move the selected picture one block up or down (the keyboard and touch path). */
+function moveSelectedImage(direction: 'up' | 'down') {
+  const image = getSelectedImage();
+  if (!image) {
+    return;
+  }
+  const target = imageMoveTargets(image)[direction];
+  if (target === undefined) {
+    return;
+  }
+  moveImageBefore(image, target);
+  image.scrollIntoView?.({ block: 'nearest' });
+}
+
+const selectedImageMoves = $derived.by(() => {
+  // Recomputed whenever the selection chrome refreshes.
+  void selectedImageBox;
+  const image = selectedImageIndexState >= 0 ? getSelectedImage() : null;
+  if (!image) {
+    return { up: false, down: false };
+  }
+  const targets = imageMoveTargets(image);
+  return { up: targets.up !== undefined, down: targets.down !== undefined };
+});
+
+function showDropIndicator(clientY: number, exclude: Node | null) {
+  const slot = dropSlotFromPoint(clientY, exclude);
+  dropIndicatorTop = slot ? slot.top : null;
+}
+
 function moveImageToRange(
   imageIndex: number,
   range: Range | null,
@@ -1017,11 +1162,24 @@ function handleMovePointerUp(event: PointerEvent) {
   const imageIndex = moveState.imageIndex;
   moveState = null;
   window.removeEventListener('pointerup', handleMovePointerUp);
-  moveImageToRange(
-    imageIndex,
-    getRangeFromPoint(event.clientX, event.clientY),
-    event.clientX,
-  );
+  window.removeEventListener('pointermove', handleMovePointerMove);
+  dropIndicatorTop = null;
+  const image = getEditorImages()[imageIndex];
+  if (!image) {
+    return;
+  }
+  const slot = dropSlotFromPoint(event.clientY, imageMoveUnit(image));
+  if (slot) {
+    moveImageBefore(image, slot.before);
+  }
+}
+
+function handleMovePointerMove(event: PointerEvent) {
+  if (!moveState) {
+    return;
+  }
+  const image = getEditorImages()[moveState.imageIndex];
+  showDropIndicator(event.clientY, image ? imageMoveUnit(image) : null);
 }
 
 function startImageMove(event: PointerEvent) {
@@ -1040,6 +1198,7 @@ function startImageMove(event: PointerEvent) {
     frame,
   };
   window.addEventListener('pointerup', handleMovePointerUp);
+  window.addEventListener('pointermove', handleMovePointerMove);
 }
 
 async function resolveAndInsertImage(selected: ImageLike | File | string) {
@@ -1077,6 +1236,10 @@ function parseDraggedImages(dataTransfer: DataTransfer): ImageLike[] {
 function handleDragOver(event: DragEvent) {
   event.preventDefault();
   isDragging = true;
+  if (movingImageIndex !== null) {
+    const image = getEditorImages()[movingImageIndex];
+    showDropIndicator(event.clientY, image ? imageMoveUnit(image) : null);
+  }
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = movingImageIndex === null ? 'copy' : 'move';
   }
@@ -1090,11 +1253,13 @@ function handleDragLeave(event: DragEvent) {
   }
 
   isDragging = false;
+  dropIndicatorTop = null;
 }
 
 async function handleDrop(event: DragEvent) {
   event.preventDefault();
   isDragging = false;
+  dropIndicatorTop = null;
   if (!event.dataTransfer) {
     return;
   }
@@ -1110,7 +1275,18 @@ async function handleDrop(event: DragEvent) {
     Number.isInteger(parsedBodyImageIndex) &&
     parsedBodyImageIndex >= 0
   ) {
-    moveImageToRange(parsedBodyImageIndex, dropRange, event.clientX);
+    // A picture already in the story goes into the gap between blocks
+    // nearest the pointer: above the first paragraph, between any two, or
+    // at the end.
+    const image = getEditorImages()[parsedBodyImageIndex];
+    const slot = image
+      ? dropSlotFromPoint(event.clientY, imageMoveUnit(image))
+      : null;
+    if (image && slot) {
+      moveImageBefore(image, slot.before);
+    } else {
+      moveImageToRange(parsedBodyImageIndex, dropRange, event.clientX);
+    }
     movingImageIndex = null;
     return;
   }
@@ -1186,6 +1362,7 @@ function handleEditorDragStart(event: DragEvent) {
 function handleEditorDragEnd() {
   movingImageIndex = null;
   isDragging = false;
+  dropIndicatorTop = null;
   refreshSelectedImageChrome();
 }
 </script>
@@ -1261,6 +1438,15 @@ function handleEditorDragEnd() {
     </section>
   {/if}
 
+  {#if dropIndicatorTop !== null}
+    <div
+      class="body-drop-indicator"
+      style={`top: ${dropIndicatorTop}px;`}
+      aria-hidden="true"
+      data-testid="body-drop-indicator"
+    ></div>
+  {/if}
+
   {#if selectedImageBox}
     <div
       class="image-control-popover"
@@ -1275,6 +1461,18 @@ function handleEditorDragEnd() {
           <path d="m19 9 3 3-3 3"></path>
           <path d="m9 5 3-3 3 3"></path>
           <path d="m9 19 3 3 3-3"></path>
+        </svg>
+      </Button>
+      <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--move" type="button" title={t(M['content.content_body_editor.move_image_up'])} aria-label={t(M['content.content_body_editor.move_image_up'])} disabled={!selectedImageMoves.up} onclick={() => moveSelectedImage('up')}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19V5"></path>
+          <path d="m5 12 7-7 7 7"></path>
+        </svg>
+      </Button>
+      <Button variant="ghost" size="sm" class="editor-popover-button editor-popover-button--move" type="button" title={t(M['content.content_body_editor.move_image_down'])} aria-label={t(M['content.content_body_editor.move_image_down'])} disabled={!selectedImageMoves.down} onclick={() => moveSelectedImage('down')}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 5v14"></path>
+          <path d="m19 12-7 7-7-7"></path>
         </svg>
       </Button>
       <span class="image-control-divider"></span>
@@ -1732,6 +1930,30 @@ function handleEditorDragEnd() {
     min-width: 2rem;
     padding: 0;
     border-radius: var(--smrt-radius-full, 9999px);
+  }
+
+  /* Move up / Move down: full 44px touch targets. */
+  .image-control-popover :global(.editor-popover-button.editor-popover-button--move) {
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .image-control-popover :global(.editor-popover-button:disabled) {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .body-drop-indicator {
+    position: absolute;
+    z-index: 19;
+    left: 1rem;
+    right: 1rem;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--smrt-color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 25%, transparent);
+    pointer-events: none;
   }
 
   .image-control-popover :global(.editor-popover-button:hover),

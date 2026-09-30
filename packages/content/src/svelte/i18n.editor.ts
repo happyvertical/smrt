@@ -59,6 +59,8 @@ export const M = defineMessages({
   'content.content_body_editor.selected_image_controls':
     'Selected image controls',
   'content.content_body_editor.move_image': 'Move image',
+  'content.content_body_editor.move_image_up': 'Move up',
+  'content.content_body_editor.move_image_down': 'Move down',
   'content.content_body_editor.wrap_text_on_right': 'Wrap text on right',
   'content.content_body_editor.center_image': 'Center image',
   'content.content_body_editor.wrap_text_on_left': 'Wrap text on left',
