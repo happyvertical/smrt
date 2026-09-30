@@ -205,7 +205,9 @@ const controller: AssistantDockController = createAssistantDockController({
   settle: () => settle?.(),
   // Read per call so a changed setting applies to the next step.
   clientToolFilter: (tool) => clientToolFilter?.(tool) ?? true,
-  maxPauseMs: untrack(() => maxPauseMs),
+  get maxPauseMs() {
+    return maxPauseMs;
+  },
   onRun: (run) => onrun?.(run),
 });
 

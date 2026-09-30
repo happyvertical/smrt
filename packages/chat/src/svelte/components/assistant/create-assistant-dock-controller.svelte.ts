@@ -532,7 +532,8 @@ export function createAssistantDockController(
   const holds = new SvelteMap<string, AssistantUserHold>();
   let pauseWaiter: ((proceed: boolean) => void) | null = null;
   let pausedAt = 0;
-  const maxPauseMs = options.maxPauseMs ?? 15 * 60 * 1000;
+  // Read per pause, so a host that learns its limit later is observed.
+  const maxPauseMs = () => options.maxPauseMs ?? 15 * 60 * 1000;
 
   function patchRun(id: string, patch: Partial<RunCore>) {
     if (runCore && runCore.id === id) runCore = { ...runCore, ...patch };
@@ -605,7 +606,7 @@ export function createAssistantDockController(
             runCore = { ...runCore, stoppedReason: 'paused_too_long' };
           cancel();
         },
-        Math.max(0, pausedAt + maxPauseMs - now()),
+        Math.max(0, pausedAt + maxPauseMs() - now()),
       );
       pauseWaiter = (proceed) => {
         clearTimeout(timer);
