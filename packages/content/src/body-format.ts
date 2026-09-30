@@ -13,6 +13,8 @@ export interface ContentBodyImage {
   assetId?: string;
   placement?: ContentBodyImagePlacement;
   width?: number;
+  /** True for the content's thumbnail block (see `placeThumbnailInBody`). */
+  thumbnail?: boolean;
   index: number;
 }
 
@@ -331,13 +333,20 @@ export function sanitizeHtml(value: string): string {
 function renderInlineMarkdown(value: string): string {
   let html = value;
 
+  // Markdown is HTML-escaped before inline rendering, so an image title's
+  // quotes arrive as `&quot;`; accept both spellings.
   html = html.replace(
-    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+(?:"|&quot;)(.*?)(?:"|&quot;))?\)/g,
     (_match, alt: string, src: string, title = '') => {
       const safeSrc = sanitizeUrl(src);
       const safeAlt = escapeAttribute(decodeBasicEntities(alt));
-      const titleAttr = title
-        ? ` title="${escapeAttribute(decodeBasicEntities(title))}"`
+      const decodedTitle = decodeBasicEntities(title);
+      const thumbnailPlacement = parseMarkdownThumbnailTitle(decodedTitle);
+      if (thumbnailPlacement) {
+        return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}" ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${thumbnailPlacement}">`;
+      }
+      const titleAttr = decodedTitle
+        ? ` title="${escapeAttribute(decodedTitle)}"`
         : '';
       return `<img src="${escapeAttribute(safeSrc)}" alt="${safeAlt}"${titleAttr}>`;
     },
@@ -500,7 +509,11 @@ function fallbackHtmlToMarkdown(html: string): string {
     if (!src) {
       return '';
     }
-    return `\n\n![${parsed.alt || ''}](${src})\n\n`;
+    const thumbnailTitle = markdownThumbnailTitle(
+      parsed[BODY_THUMBNAIL_ATTRIBUTE],
+      parsed['data-smrt-placement'],
+    );
+    return `\n\n![${parsed.alt || ''}](${src}${thumbnailTitle})\n\n`;
   });
   markdown = markdown.replace(
     /<a\b([^>]*)>([\s\S]*?)<\/a>/gi,
@@ -597,7 +610,11 @@ function nodeToMarkdown(node: MarkdownDomNode): string {
         return '';
       }
       const alt = node.getAttribute?.('alt') || '';
-      return `\n\n![${alt}](${src})\n\n`;
+      const thumbnailTitle = markdownThumbnailTitle(
+        node.getAttribute?.(BODY_THUMBNAIL_ATTRIBUTE),
+        node.getAttribute?.('data-smrt-placement'),
+      );
+      return `\n\n![${alt}](${src}${thumbnailTitle})\n\n`;
     }
     case 'li':
       return `- ${trimmedChildren}\n`;
@@ -689,10 +706,17 @@ export function extractBodyImages(
       (_match, alt: string, src: string, title = '') => {
         const safeSrc = sanitizeUrl(src);
         if (safeSrc) {
+          const decodedTitle = decodeBasicEntities(title);
+          const thumbnailPlacement = parseMarkdownThumbnailTitle(decodedTitle);
           images.push({
             src: safeSrc,
             alt: decodeBasicEntities(alt),
-            ...(title ? { title: decodeBasicEntities(title) } : {}),
+            ...(decodedTitle && !thumbnailPlacement
+              ? { title: decodedTitle }
+              : {}),
+            ...(thumbnailPlacement
+              ? { placement: thumbnailPlacement, thumbnail: true }
+              : {}),
             index: images.length,
           });
         }
@@ -734,6 +758,12 @@ export function extractBodyImages(
             : {}),
           ...(placement ? { placement } : {}),
           ...(width ? { width } : {}),
+          ...(isThumbnailMarker(
+            parsedFigure[BODY_THUMBNAIL_ATTRIBUTE] ||
+              parsedImage[BODY_THUMBNAIL_ATTRIBUTE],
+          )
+            ? { thumbnail: true }
+            : {}),
           index: images.length,
         });
       }
@@ -759,6 +789,9 @@ export function extractBodyImages(
           : {}),
         ...(placement ? { placement } : {}),
         ...(width ? { width } : {}),
+        ...(isThumbnailMarker(parsed[BODY_THUMBNAIL_ATTRIBUTE])
+          ? { thumbnail: true }
+          : {}),
         index: images.length,
       });
     }
@@ -811,4 +844,276 @@ export function imageAssetToHtml(
   );
 
   return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(getImageAlt(asset))}"${assetId} data-smrt-inline-image="true" data-smrt-placement="block" data-smrt-width="${width}" style="width: ${width}px; max-width: 100%; height: auto">`;
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnail block
+//
+// When content gets a thumbnail (featured image) it is also shown in the body
+// at a standard spot chosen from its shape: a wide picture becomes a
+// full-width header image at the top; a portrait or square one floats at the
+// top right of the first paragraph so the text wraps beside it (renderers
+// stack it full width on phones). The block carries a stable marker so it is
+// replaced — never duplicated — when the thumbnail changes, and removed when
+// the thumbnail is cleared. HTML bodies mark the `<img>` with
+// `data-smrt-thumbnail="true"`; Markdown bodies use the image title
+// `smrt-thumbnail:<placement>`, which the Markdown renderer turns back into
+// the same marked `<img>`.
+// ---------------------------------------------------------------------------
+
+/** Where the thumbnail block sits: header (`full`) or floated `right`. */
+export type ContentBodyThumbnailPlacement = 'full' | 'right';
+
+/** Width ÷ height at or above which a thumbnail counts as wide (a header). */
+export const THUMBNAIL_WIDE_ASPECT_RATIO = 1.3;
+
+/** Attribute that marks the thumbnail block's `<img>` in HTML bodies. */
+export const BODY_THUMBNAIL_ATTRIBUTE = 'data-smrt-thumbnail';
+
+const MARKDOWN_THUMBNAIL_TITLE_PREFIX = 'smrt-thumbnail:';
+
+export interface ContentBodyThumbnail {
+  /** Image URL written into the body. */
+  src: string;
+  /** Alternative text (default: empty — the article title usually says it). */
+  alt?: string | null;
+  /** Asset id, kept on the HTML `<img>` as `data-smrt-asset-id`. */
+  assetId?: string | null;
+  /** Natural width in pixels, used with `height` to choose the placement. */
+  width?: number | null;
+  /** Natural height in pixels. */
+  height?: number | null;
+  /** Force a placement instead of deriving it from `width`/`height`. */
+  placement?: ContentBodyThumbnailPlacement;
+}
+
+/**
+ * The standard thumbnail placement for an image of this size: wide
+ * (ratio ≥ {@link THUMBNAIL_WIDE_ASPECT_RATIO}) → `full` header; portrait or
+ * square → `right`. Unknown sizes default to `full`.
+ */
+export function thumbnailPlacementForSize(
+  width: unknown,
+  height: unknown,
+): ContentBodyThumbnailPlacement {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return 'full';
+  }
+  return w / h >= THUMBNAIL_WIDE_ASPECT_RATIO ? 'full' : 'right';
+}
+
+function isThumbnailMarker(value: unknown): boolean {
+  return value === 'true' || value === '' || value === true;
+}
+
+function parseMarkdownThumbnailTitle(
+  title: string,
+): ContentBodyThumbnailPlacement | undefined {
+  if (!title.startsWith(MARKDOWN_THUMBNAIL_TITLE_PREFIX)) {
+    return undefined;
+  }
+  const placement = title.slice(MARKDOWN_THUMBNAIL_TITLE_PREFIX.length);
+  return placement === 'full' || placement === 'right' ? placement : undefined;
+}
+
+function markdownThumbnailTitle(
+  marker: string | null | undefined,
+  placement: string | null | undefined,
+): string {
+  if (marker !== 'true' && marker !== '') {
+    return '';
+  }
+  const resolved: ContentBodyThumbnailPlacement =
+    placement === 'right' ? 'right' : 'full';
+  return ` "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${resolved}"`;
+}
+
+const HTML_THUMBNAIL_FIGURE_PATTERN =
+  /\s*<figure\b[^>]*>(?:(?!<\/figure>)[\s\S])*?<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>[\s\S]*?<\/figure>\s*/gi;
+const HTML_THUMBNAIL_MARKED_FIGURE_PATTERN =
+  /\s*<figure\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>[\s\S]*?<\/figure>\s*/gi;
+const HTML_THUMBNAIL_PARAGRAPH_PATTERN =
+  /\s*<p\b[^>]*>\s*(?:<br\s*\/?>\s*)?<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>\s*(?:<br\s*\/?>\s*)?<\/p>\s*/gi;
+const HTML_THUMBNAIL_IMAGE_PATTERN =
+  /\s*<img\b[^>]*\bdata-smrt-thumbnail\s*=[^>]*>\s*/gi;
+const MARKDOWN_THUMBNAIL_LINE_PATTERN =
+  /^[ \t]*!\[[^\]]*\]\([^)\s]+\s+"smrt-thumbnail:(?:full|right)"\)[ \t]*(?:\n|$)/gm;
+
+/** True when the body already contains a thumbnail block. */
+export function bodyHasThumbnail(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+): boolean {
+  if (!body) {
+    return false;
+  }
+  return extractBodyImages(body, resolveBodyFormat(format, body)).some(
+    (image) => image.thumbnail,
+  );
+}
+
+/** The body without its thumbnail block (unchanged when it has none). */
+export function removeThumbnailFromBody(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+): string {
+  const source = body || '';
+  if (!source) {
+    return '';
+  }
+  const resolved = resolveBodyFormat(format, source);
+  if (resolved === 'markdown') {
+    if (!source.match(MARKDOWN_THUMBNAIL_LINE_PATTERN)) {
+      return source;
+    }
+    return source
+      .replace(MARKDOWN_THUMBNAIL_LINE_PATTERN, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+/, '');
+  }
+
+  const stripped = source
+    .replace(HTML_THUMBNAIL_MARKED_FIGURE_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_FIGURE_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_PARAGRAPH_PATTERN, '\n')
+    .replace(HTML_THUMBNAIL_IMAGE_PATTERN, '\n');
+  return stripped === source ? source : stripped.trim();
+}
+
+function thumbnailHtml(
+  thumbnail: ContentBodyThumbnail,
+  placement: ContentBodyThumbnailPlacement,
+): string {
+  const src = sanitizeUrl(thumbnail.src || '');
+  if (!src) {
+    return '';
+  }
+  const assetId = thumbnail.assetId
+    ? ` data-smrt-asset-id="${escapeAttribute(String(thumbnail.assetId))}"`
+    : '';
+  return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(String(thumbnail.alt || ''))}"${assetId} ${BODY_THUMBNAIL_ATTRIBUTE}="true" data-smrt-inline-image="true" data-smrt-placement="${placement}">`;
+}
+
+function thumbnailMarkdown(
+  thumbnail: ContentBodyThumbnail,
+  placement: ContentBodyThumbnailPlacement,
+): string {
+  const src = sanitizeUrl(thumbnail.src || '');
+  if (!src || /\s/.test(src)) {
+    return '';
+  }
+  const alt = String(thumbnail.alt || '').replace(/[[\]\n]/g, ' ');
+  return `![${alt}](${src} "${MARKDOWN_THUMBNAIL_TITLE_PREFIX}${placement}")`;
+}
+
+/** Index of the first Markdown paragraph (not a heading, list or image). */
+function firstMarkdownParagraphOffset(markdown: string): number {
+  const blockPattern = /(^|\n\n)([^\n][\s\S]*?)(?=\n\n|$)/g;
+  for (const match of markdown.matchAll(blockPattern)) {
+    const block = match[2] || '';
+    const trimmed = block.trimStart();
+    if (!trimmed || /^(?:#{1,6}\s|[-*]\s|!\[|>)/.test(trimmed)) {
+      continue;
+    }
+    return (match.index ?? 0) + (match[1] || '').length;
+  }
+  return -1;
+}
+
+/**
+ * Put `thumbnail` into `body` at its standard spot, replacing any previous
+ * thumbnail block: `full` goes first in the body; `right` goes immediately
+ * before the first paragraph, floated so that paragraph wraps beside it.
+ * The placement comes from `thumbnail.placement` or its width/height
+ * ({@link thumbnailPlacementForSize}). Returns the body unchanged (minus any
+ * old block) when the image has no usable `src`.
+ */
+export function placeThumbnailInBody(
+  body: string | null | undefined,
+  format: ContentBodyFormat | null | undefined,
+  thumbnail: ContentBodyThumbnail,
+): string {
+  const source = body || '';
+  const resolved = resolveBodyFormat(format, source);
+  const withoutOld = removeThumbnailFromBody(source, resolved);
+  const placement =
+    thumbnail.placement ??
+    thumbnailPlacementForSize(thumbnail.width, thumbnail.height);
+
+  if (resolved === 'markdown') {
+    const block = thumbnailMarkdown(thumbnail, placement);
+    if (!block) {
+      return withoutOld;
+    }
+    const trimmed = withoutOld.replace(/^\n+/, '');
+    if (!trimmed) {
+      return block;
+    }
+    const offset =
+      placement === 'right' ? firstMarkdownParagraphOffset(trimmed) : 0;
+    const at = offset < 0 ? 0 : offset;
+    return `${trimmed.slice(0, at)}${block}\n\n${trimmed.slice(at)}`;
+  }
+
+  const block = thumbnailHtml(thumbnail, placement);
+  if (!block) {
+    return withoutOld;
+  }
+  const trimmed = withoutOld.trim();
+  if (!trimmed) {
+    return block;
+  }
+  let at = 0;
+  if (placement === 'right') {
+    const paragraph = /<p\b/i.exec(trimmed);
+    at = paragraph ? paragraph.index : 0;
+  }
+  return `${trimmed.slice(0, at)}${block}\n${trimmed.slice(at)}`;
+}
+
+export interface RenderContentBodyOptions {
+  /**
+   * Replace the thumbnail block's image URL — for renderers (e.g. a public
+   * site) that serve assets from a different origin than the editor that
+   * wrote the body.
+   */
+  thumbnailSrc?: string | null;
+}
+
+/**
+ * Sanitized HTML for a stored body in either format — what a public page
+ * renders. Markdown thumbnail blocks come out as the same marked `<img>` as
+ * HTML ones, so one stylesheet handles both.
+ */
+export function renderContentBodyHtml(
+  body: string | null | undefined,
+  format?: ContentBodyFormat | null,
+  options: RenderContentBodyOptions = {},
+): string {
+  const source = body || '';
+  if (!source) {
+    return '';
+  }
+  const resolved = resolveBodyFormat(format, source);
+  let html =
+    resolved === 'markdown'
+      ? renderMarkdownToHtml(source)
+      : sanitizeHtml(source);
+  const replacement = options.thumbnailSrc
+    ? sanitizeUrl(options.thumbnailSrc)
+    : '';
+  if (replacement && replacement !== '#') {
+    html = html.replace(/<img\b[^>]*>/gi, (tag) => {
+      if (!/\bdata-smrt-thumbnail\s*=/i.test(tag)) {
+        return tag;
+      }
+      return tag.replace(
+        /\bsrc\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/i,
+        `src="${escapeAttribute(replacement)}"`,
+      );
+    });
+  }
+  return html;
 }

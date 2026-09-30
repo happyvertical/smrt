@@ -26,6 +26,7 @@ export const M = defineMessages({
   'content.content_body_editor.heading': 'Heading',
   'content.content_body_editor.bulleted_list': 'Bulleted list',
   'content.content_body_editor.insert_image': 'Insert image',
+  'content.content_body_editor.image_panel': 'Pictures',
   'content.content_body_editor.save_as': 'Save as',
   'content.content_body_editor.selected_image_controls':
     'Selected image controls',

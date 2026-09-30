@@ -9,6 +9,8 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import type { Snippet } from 'svelte';
+import { slide } from 'svelte/transition';
 import {
   bodyToEditorHtml,
   type ContentBodyFormat,
@@ -58,6 +60,19 @@ export interface Props {
   onResolveImage?: (
     selected: ImageLike | File | string,
   ) => Promise<unknown> | unknown;
+  /**
+   * The image panel (chooser/editor) the toolbar's image button opens. When
+   * provided it renders between the toolbar and the writing surface, sliding
+   * open above the text, and the image button reports `aria-expanded` /
+   * `aria-controls`. Without it the button only fires `onOpenImageChooser`.
+   */
+  imagePanel?: Snippet;
+  /** Whether the image panel is open (controlled by the parent). */
+  imagePanelOpen?: boolean;
+  /** Accessible name of the image panel region (default "Pictures"). */
+  imagePanelLabel?: string;
+  /** Fired when the panel asks to close (Escape inside it). */
+  onCloseImagePanel?: () => void;
 }
 
 let {
@@ -73,7 +88,57 @@ let {
   onSelectImage = undefined,
   onUseImageAsThumbnail = undefined,
   onResolveImage = undefined,
+  imagePanel = undefined,
+  imagePanelOpen = false,
+  imagePanelLabel = undefined,
+  onCloseImagePanel = undefined,
 }: Props = $props();
+
+const imagePanelId = $derived(`${id}-image-panel`);
+const resolvedImagePanelLabel = $derived(
+  imagePanelLabel ?? t(M['content.content_body_editor.image_panel']),
+);
+let imageButtonElement = $state<HTMLElement | null>(null);
+let imagePanelElement = $state<HTMLElement | null>(null);
+let imagePanelWasOpen = false;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+// Opening moves focus into the panel (its region is focusable) so keyboard and
+// screen-reader users land on what they opened; closing returns focus to the
+// toolbar button that opened it.
+$effect(() => {
+  const open = Boolean(imagePanel && imagePanelOpen);
+  if (open === imagePanelWasOpen) {
+    return;
+  }
+  imagePanelWasOpen = open;
+  if (open) {
+    queueMicrotask(() => imagePanelElement?.focus({ preventScroll: false }));
+  } else if (typeof document !== 'undefined') {
+    const active = document.activeElement;
+    if (
+      !active ||
+      active === document.body ||
+      (active !== editorElement && rootElement?.contains(active))
+    ) {
+      imageButtonElement?.querySelector('button')?.focus();
+    }
+  }
+});
+
+function handleImagePanelKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && onCloseImagePanel) {
+    event.stopPropagation();
+    onCloseImagePanel();
+  }
+}
 
 const resolvedLabel = $derived(label ?? t(M['content.content_fields.body']));
 const interactionContext = tryGetControlInteractionContext();
@@ -1086,7 +1151,7 @@ function handleEditorDragEnd() {
       H2
     </Button>
     <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bulleted_list'])} aria-label={t(M['content.content_body_editor.bulleted_list'])} onclick={() => runCommand('insertUnorderedList')}>
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <line x1="9" y1="6" x2="21" y2="6"></line>
         <line x1="9" y1="12" x2="21" y2="12"></line>
         <line x1="9" y1="18" x2="21" y2="18"></line>
@@ -1095,13 +1160,25 @@ function handleEditorDragEnd() {
         <circle cx="4" cy="18" r="1"></circle>
       </svg>
     </Button>
-    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.insert_image'])} aria-label={t(M['content.content_body_editor.insert_image'])} onclick={() => onOpenImageChooser?.()}>
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <span class="editor-toolbar-slot" bind:this={imageButtonElement}>
+    <Button
+      variant="ghost"
+      size="sm"
+      class="editor-toolbar-button"
+      type="button"
+      title={t(M['content.content_body_editor.insert_image'])}
+      aria-label={t(M['content.content_body_editor.insert_image'])}
+      aria-expanded={imagePanel ? imagePanelOpen : undefined}
+      aria-controls={imagePanel ? imagePanelId : undefined}
+      onclick={() => onOpenImageChooser?.()}
+    >
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <polyline points="21 15 16 10 5 21"></polyline>
       </svg>
     </Button>
+    </span>
 
     <label class="format-select">
       <span>{t(M['content.content_body_editor.save_as'])}</span>
@@ -1114,6 +1191,22 @@ function handleEditorDragEnd() {
       </Select>
     </label>
   </div>
+
+  {#if imagePanel && imagePanelOpen}
+    <!-- Escape bubbling up from any control inside the panel closes it. -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <section
+      bind:this={imagePanelElement}
+      id={imagePanelId}
+      class="body-editor-image-panel"
+      aria-label={resolvedImagePanelLabel}
+      tabindex="-1"
+      onkeydown={handleImagePanelKeydown}
+      transition:slide={{ duration: prefersReducedMotion() ? 0 : 180 }}
+    >
+      {@render imagePanel()}
+    </section>
+  {/if}
 
   {#if selectedImageBox}
     <div
@@ -1303,9 +1396,16 @@ function handleEditorDragEnd() {
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
   }
 
+  /* Icon buttons are a fixed square. smrt-ui's `size="sm"` padding
+     (0.5rem 0.75rem) would leave a 2rem button ~6px of content width, which
+     squeezed the SVG icons (list, image) far below the text glyphs (B, I, H2).
+     Zero the padding and never let an icon shrink: every toolbar glyph renders
+     at the same --smrt-content-editor-icon-size. */
   .body-editor-toolbar :global(.editor-toolbar-button) {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    min-width: 2.25rem;
+    padding: 0;
     display: inline-grid;
     place-items: center;
     border: 1px solid transparent;
@@ -1315,9 +1415,43 @@ function handleEditorDragEnd() {
     cursor: pointer;
   }
 
+  .body-editor-toolbar :global(.editor-toolbar-button svg),
+  .image-control-popover :global(.editor-popover-button svg) {
+    flex-shrink: 0;
+    width: var(--smrt-content-editor-icon-size, 1.125rem);
+    height: var(--smrt-content-editor-icon-size, 1.125rem);
+  }
+
+  .body-editor-toolbar :global(.editor-toolbar-button[aria-expanded='true']) {
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container, var(--smrt-color-surface-container));
+    color: var(--smrt-color-on-primary-container, var(--smrt-color-primary));
+  }
+
   .body-editor-toolbar :global(.editor-toolbar-button:hover) {
     border-color: var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
+  }
+
+  .editor-toolbar-slot {
+    display: inline-flex;
+  }
+
+  /* The image panel sits between the toolbar and the text so it opens above
+     the story rather than below it. Full width, in the page flow (no modal),
+     so it works the same on a phone. */
+  .body-editor-image-panel {
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-lowest, var(--smrt-color-surface));
+    padding: 0.75rem;
+    max-height: min(70vh, 40rem);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .body-editor-image-panel:focus-visible {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
   }
 
   .format-select {
@@ -1469,6 +1603,26 @@ function handleEditorDragEnd() {
     max-width: 100%;
   }
 
+  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='full']) {
+    margin-top: 0;
+  }
+
+  .body-editor-surface :global(img[data-smrt-thumbnail][data-smrt-placement='right']) {
+    margin-top: 0.25rem;
+  }
+
+  /* Phones: wrapped images stack full width, as the published page shows them. */
+  @media (max-width: 36rem) {
+    .body-editor-surface :global(figure[data-smrt-placement='left']),
+    .body-editor-surface :global(figure[data-smrt-placement='right']),
+    .body-editor-surface :global(img[data-smrt-placement='left']),
+    .body-editor-surface :global(img[data-smrt-placement='right']) {
+      float: none;
+      width: 100% !important;
+      margin: 0.75rem 0;
+    }
+  }
+
   .body-editor-surface :global(img[data-smrt-selected='true']) {
     outline: 3px solid var(--smrt-color-primary);
     outline-offset: 3px;
@@ -1506,8 +1660,10 @@ function handleEditorDragEnd() {
   }
 
   .image-control-popover :global(.editor-popover-button) {
-    width: 1.85rem;
-    height: 1.85rem;
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0;
     border-radius: var(--smrt-radius-full, 9999px);
   }
 

@@ -408,10 +408,23 @@ export type PublishedArticleRouteProps = ComponentProps<
   typeof PublishedArticleRoute
 >;
 
-export type { ContentBodyFormat, ContentBodyImage } from '../body-format.js';
+export type {
+  ContentBodyFormat,
+  ContentBodyImage,
+  ContentBodyThumbnail,
+  ContentBodyThumbnailPlacement,
+  RenderContentBodyOptions,
+} from '../body-format.js';
 export {
+  BODY_THUMBNAIL_ATTRIBUTE,
+  bodyHasThumbnail,
   extractBodyImages,
+  placeThumbnailInBody,
+  removeThumbnailFromBody,
+  renderContentBodyHtml,
   resolveBodyFormat,
+  THUMBNAIL_WIDE_ASPECT_RATIO,
+  thumbnailPlacementForSize,
 } from '../body-format.js';
 // Export types
 export type {
@@ -454,10 +467,12 @@ export {
   getContentEditorSnapshot,
   normalizePublishDate,
 } from './content-editor-form.js';
+export type { ContentEditorImageDimensions } from './content-editor-media.js';
 export {
   createContentEditorImageRecord,
   getContentEditorAssetImageSource,
   readContentEditorFileAsDataUrl,
+  resolveContentEditorImageDimensions,
   resolveContentEditorImageSelection,
 } from './content-editor-media.js';
 export type {

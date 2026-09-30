@@ -508,6 +508,27 @@ Applications that compose their own article editor can use
 `resolveContentEditorImageSelection` to share the same form normalization,
 thumbnail selection, and save payload behavior as the package editors.
 
+#### Image panel and thumbnail block
+
+`ContentBodyEditor` takes an `imagePanel` snippet with `imagePanelOpen` and
+`onCloseImagePanel`: the application's picture chooser/editor opens between
+the toolbar and the text (full width, in the page flow, no modal), the image
+button reports `aria-expanded`/`aria-controls`, focus moves into the panel on
+open and back to the button on close, and Escape inside it asks to close.
+
+When content gets a thumbnail, `placeThumbnailInBody(body, format, image)`
+also shows it in the body at the standard spot for its shape
+(`thumbnailPlacementForSize`: width ÷ height ≥ 1.3 is a full-width header at
+the top; portrait or square floats right of the first paragraph, stacking full
+width on phones). The block is marked (`data-smrt-thumbnail` in HTML, the
+image title `smrt-thumbnail:<placement>` in Markdown) so placing again
+replaces it and `removeThumbnailFromBody` clears it.
+`resolveContentEditorImageDimensions(asset, src)` reads the size from the
+asset or by loading the image. Public pages render stored bodies of either
+format with `renderContentBodyHtml(body, format, { thumbnailSrc })` (or
+`ContentBodyRenderer`), which sanitizes, turns the Markdown token into the same
+marked `<img>`, and can point the thumbnail at the page's own asset URL.
+
 ### Governance
 
 | Component | Props | Description |
