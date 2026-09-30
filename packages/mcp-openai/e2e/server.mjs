@@ -1,0 +1,33 @@
+import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import { build } from 'vite';
+const result = await build({ configFile: false, logLevel: 'error', build: { write: false, minify: true, lib: { entry: new URL('reference.ts', import.meta.url).pathname, name: 'NavigationReference', formats: ['iife'] } } });
+const script = (Array.isArray(result) ? result[0] : result).output.find(item => item.type === 'chunk').code;
+const hash = createHash('sha256').update(script).digest('base64');
+const html = `<!doctype html><html lang="en"><head><title>Synthetic navigation</title></head><body><script>${script}</script></body></html>`;
+if (Buffer.byteLength(html) > 102400) throw new Error('Reference exceeds 100 KiB');
+const host = `<!doctype html><html lang="en"><head><title>Synthetic host</title></head><body><iframe title="Navigation" sandbox="allow-scripts" src="/view"></iframe><script>
+window.calls=[]; const frame=document.querySelector('iframe');
+const mode=new URLSearchParams(location.search).get('mode');
+window.send=(params)=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/host-context-changed',params},'*');
+addEventListener('message', e=>{
+ if(e.source!==frame.contentWindow) return;
+ const m=e.data; window.calls.push(m);
+ const reply=result=>e.source.postMessage({jsonrpc:'2.0',id:m.id,result},'*');
+ if(m.method==='ui/initialize') reply({protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:mode==='absent'?{}:mode==='unknown'?{futureTools:{}}:{serverTools:{}},hostContext:{availableDisplayModes:mode==='absent'||mode==='unknown'?['inline']:['inline','fullscreen'],'openai/deepLink':{url:'/items/owned'}}});
+ if(m.method==='tools/call') {
+  if(m.params.arguments.url==='/items/denied') reply({isError:true,content:[{type:'text',text:'Denied'}]});
+  else if(m.params.arguments.url==='/items/slow') setTimeout(()=>reply({content:[{type:'text',text:'Stale'}]}),100);
+  else reply({content:[{type:'text',text:'Authorized synthetic item'}]});
+ }
+ if(m.method==='ui/request-display-mode') {
+  if(mode==='failure') e.source.postMessage({jsonrpc:'2.0',id:m.id,error:{code:-32000,message:'Unsupported'}},'*');
+  else reply({mode:m.params.mode});
+ }
+});
+</script></body></html>`;
+createServer((req,res)=>{
+ res.setHeader('Content-Type','text/html');
+ if(req.url==='/view') {res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'sha256-${hash}'; connect-src 'none'; img-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`);res.end(html);}
+ else res.end(host);
+}).listen(47865,'127.0.0.1');

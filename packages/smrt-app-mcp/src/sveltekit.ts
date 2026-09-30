@@ -20,7 +20,11 @@ import {
   isJsonContentType,
 } from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
-import { createMcpProtocolServer, MCP_TASKS_EXTENSION } from './protocol.js';
+import {
+  createMcpProtocolServerForRequest,
+  MCP_TASKS_EXTENSION,
+  type McpProtocolRequestOptions,
+} from './protocol.js';
 import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
 
 /** Minimal subset of a SvelteKit RequestEvent we actually touch. */
@@ -89,6 +93,8 @@ function listToolsInput(resolved: ResolvedRequestPrincipal) {
 
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
+  /** Optional extension discovery projected from the request-authorized tool catalog. */
+  extensions?: McpProtocolRequestOptions['extensions'];
   /**
    * Resolve the request principal once for both discovery and direct calls.
    * Defaults to `event.locals.user`.
@@ -142,9 +148,13 @@ export function mountMcpRoute(
     if (taskResponse) return taskResponse;
     const handler = createMcpHandler(
       () =>
-        createMcpProtocolServer(protocolServerForRequest(server, resolved), {
-          principal: resolved.principal,
-        }),
+        createMcpProtocolServerForRequest(
+          protocolServerForRequest(server, resolved),
+          {
+            principal: resolved.principal,
+            extensions: options.extensions,
+          },
+        ),
       {
         // The legacy REST-shaped mounts below remain a deprecated migration
         // path. This endpoint accepts only the modern MCP protocol.
