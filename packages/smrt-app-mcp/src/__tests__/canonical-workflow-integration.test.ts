@@ -56,6 +56,7 @@ describe('real canonical generator composed with authored workflows', () => {
           name: 'review_get',
           description: 'Destructive workflow',
           inputSchema: { type: 'object' },
+          outputSchema: { type: 'object' },
           effect: 'destructive',
           idempotent: false,
           openWorld: false,

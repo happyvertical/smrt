@@ -2810,12 +2810,7 @@ export async function createServer() {
       }
 
       return {
-        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0).map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-          outputSchema: tool.outputSchema,
-        })),
+        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 
