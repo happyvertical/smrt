@@ -18,3 +18,13 @@ gate, not evidence of an external host product.
 | Reference fallback | List/detail render | Text/structured data, review link | No tools/link caps, tool error | Synthetic viewer | No final approval/submission | Chromium / test:e2e |
 | CSP/budget | Resource rendering | Inline bundle below 100KiB | Network/external assets blocked | Sandboxed browser | M3 metadata/deterministic HTML | Chromium / test:e2e |
 | Package boundary | Published imports | Browser entry, explicit Svelte subpath | No server/Svelte deps in bridge | Package consumer | Packed exports | build, typecheck, verify:pack |
+
+## M3 integration completion
+
+| Behavior/invariant | Reachable trigger | Positive | Negative/failure | Actor/context | Executor/transaction | Runtime | Contract edge | Level / command |
+|---|---|---|---|---|---|---|---|---|
+| Resource transport | Load reference iframe | M3 prepared/read resource digest/MIME/CSP preserved | Revoked resource/tool policy denies; budget fails | Synthetic server principal vs unprivileged caller | N/A, read-only workflows | Node host + Chromium view | M3 prepare/readResource + callTool | Browser / test:e2e |
+| Readable navigation | 320/390px and keyboard | Wrapping URL, no horizontal overflow, tab/enter list-detail-review | Focus clipping/offscreen targets | Keyboard/mobile reader | N/A | Chromium | Reference UI | Browser / test:e2e |
+| Stale call isolation | Two overlapping detail calls | Latest result rendered | Delayed superseded result ignored | Same mounted client | N/A, read-only | Chromium | request correlation + abort | Browser / test:e2e |
+| Reconnect isolation | Dispose/remount new client | New handshake and calls succeed | Old response ID cannot settle new request | New view lifetime | N/A | Chromium | initialize + random ID generation | Browser / test:e2e |
+| Extension observation | Handshake/context notification | Bounded raw context/capabilities, snapshot isolation | Oversize/cycle/prototype/accessor, post-disposal updates, no capability elevation | Configured host vs extension consumer | N/A | Browser + unit fixture | Generic snapshot; extension owns field schemas | Unit / test |
