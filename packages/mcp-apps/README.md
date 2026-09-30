@@ -104,9 +104,14 @@ After `pnpm install` and documented dependency builds:
 - `pnpm --filter @happyvertical/smrt-svelte exec playwright test -c e2e/playwright.config.ts mcp-apps.spec.ts`
 
 The Chromium host fixture bundles an Iolaus-shaped synthetic list/detail viewer,
-checks raw generated HTML below 100 KiB, applies hash-only script CSP with no
-network/assets, and tests hostile messages, capability absence and repeated
-teardown. The Svelte browser fixture uses real public registries and a genuine
+prepares and reads it through the public M3 resource APIs, and routes host-proxied
+calls through `createMcpAppServer` with a server-owned synthetic principal.
+It checks resource digest/MIME/CSP metadata and revoked-resource/tool denial,
+raw generated HTML below 100 KiB, and hash-only script/style CSP with no external
+network/assets. Browser gates cover hostile messages, capability absence,
+repeated teardown/reconnect, late superseded results, and keyboard navigation at
+320/390px without horizontal overflow. The visible review URL wraps and remains
+copyable even where sandbox policy blocks opening a new window. The Svelte browser fixture uses real public registries and a genuine
 Playwright click to apply a staged proposal; fabricated approval is denied.
 These fixtures prove synthetic browser behavior only. No actual OpenAI or other
 external host compatibility is claimed. M3 resource metadata still requires the

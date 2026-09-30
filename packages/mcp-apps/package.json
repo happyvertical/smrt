@@ -27,6 +27,7 @@
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-mcp": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",
