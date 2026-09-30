@@ -33,6 +33,26 @@ Multi-channel messaging with STI hierarchies for both messages and accounts. Cre
 - Account, endpoint, and route generated surfaces are read-only. Do not add
   generated mutations around the settings service or make secret fields writable.
 
+## In-app notifications (`UserNotification`)
+
+The in-app channel: one stored row per person, with read state.
+`user_notifications`: `tenantId` (required), `recipientUserId`
+(`@crossPackageRef` smrt-users:User, uuid), `kind`, `title`, `body`, `href`,
+`severity` (info/success/warning/error), `sourceRef`, `occurredAt`, `readAt`,
+`dismissedAt`. Conflict identity `(tenant_id, recipient_user_id, source_ref)`.
+
+- `UserNotificationService` is the only access path: `notify()` /
+  `notifyMany()` (dedupe on `sourceRef`, existing row returned untouched;
+  a unique ref is generated when omitted), `listForUser()` / `countUnread()`
+  across explicit `tenantIds` (each read under `withTenant`), `markRead()`,
+  `dismiss()` (also marks read), `markAllRead()`. Every write filters on the
+  recipient, so another user's id matches nothing.
+- Generated REST/MCP/CLI are off (`api`/`mcp`/`cli: false`): a tenant-scoped
+  list would expose every member's rows. Hosts expose their own routes that
+  pass the signed-in user's id, never a request-chosen one.
+- Hosts decide who is told (e.g. `SocialPost.createdByUserId` for a failed
+  post). New table: consumers run `db:migrate`.
+
 ## Credential Security
 
 Account credentials stored via tenant-bound `credentialSecretId` →
