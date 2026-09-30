@@ -421,6 +421,7 @@ async function start(operationLock) {
   const runtime = await assertLocalOperation('app:start');
   const { env } = runtimeEnvironment(runtime);
   const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
+  env.ORIGIN ||= url;
   const configuration = runtimeConfigurationFingerprint(runtime, env);
   const existing = readProcess();
   if (existing) {

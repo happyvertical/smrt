@@ -99,6 +99,7 @@ export function runtimeConfigurationFingerprint(
         databaseTarget: databaseTargetIdentity(environment.DATABASE_URL),
         host: environment.HOST || null,
         port: environment.PORT || null,
+        origin: environment.ORIGIN || null,
         backgroundJobs: environment.SMRT_BACKGROUND_JOBS === 'true',
         readinessModules: {
           authentication: environment.SMRT_AUTH_READINESS_MODULE || null,
