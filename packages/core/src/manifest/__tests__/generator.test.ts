@@ -38,6 +38,35 @@ describe('ManifestBuilder', () => {
   });
 
   describe('File Discovery', () => {
+    it('uses an explicit project root instead of process.cwd()', async () => {
+      writeFileSync(
+        resolve(testFixturesDir, 'package.json'),
+        '{"name":"@test/root"}',
+      );
+      writeFileSync(
+        resolve(testFixturesDir, 'src', 'root.ts'),
+        'export const root = true;',
+      );
+      mkdirSync(testOutputDir, { recursive: true });
+      const originalCwd = process.cwd();
+      try {
+        process.chdir(testOutputDir);
+        const manifest = await new ManifestBuilder(testFixturesDir).generate({
+          include: ['src/**/*.ts'],
+          outputDir: resolve(testFixturesDir, '.smrt'),
+          outputName: 'manifest.json',
+          generateTypeStub: false,
+          injectPackageInfo: true,
+        });
+        expect(manifest.packageName).toBe('@test/root');
+        expect(
+          existsSync(resolve(testFixturesDir, '.smrt', 'manifest.json')),
+        ).toBe(true);
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
     it('should discover TypeScript files with default patterns', async () => {
       // Create test files
       writeFileSync(

@@ -8,6 +8,8 @@
     "scripts/declarations.ts",
     "vitest.workspace.ts",
     "biome.json",
+    "**/AGENTS.md",
+    "**/agents/**/*.md",
     "**/smrt.config.js",
     "**/smrt.config.mjs",
     "**/smrt.config.cjs",
