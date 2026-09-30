@@ -32,6 +32,7 @@ import type { AuditLog } from './AuditLog';
 import type { NostrIdentity } from './NostrIdentity';
 import type { OidcIdentity } from './OidcIdentity';
 import type { ProfileMetadata } from './ProfileMetadata';
+import type { ProfileMetafield } from './ProfileMetafield';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -145,13 +146,10 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    // Get or create metafield collection
-    const metafieldCollection = await ProfileMetafieldCollection.create(
-      this.options,
+    const metafield = await this.resolveMetafield(
+      await ProfileMetafieldCollection.create(this.options),
+      metafieldSlug,
     );
-
-    // Find the metafield by slug
-    const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
     }
@@ -174,6 +172,11 @@ export class Profile extends SmrtObject {
       // Update existing
       const metadata = existing[0];
       metadata.value = String(value);
+      // A row written before metadata inherited its profile's tenant is
+      // healed on its next write.
+      if (!metadata.tenantId && this.tenantId) {
+        metadata.tenantId = this.tenantId;
+      }
       await metadata.save();
     } else {
       // Create new
@@ -182,10 +185,14 @@ export class Profile extends SmrtObject {
           'Profile.addMetadata requires a persisted profile and metafield (missing id)',
         );
       }
+      // Metadata belongs to its profile's tenant. Relying on tenant
+      // auto-population left it NULL whenever the write ran under a
+      // super-admin bypass or system context (smrt#3235).
       const metadata = await metadataCollection.create({
         profileId: this.id,
         metafieldId: metafield.id,
         value: String(value),
+        ...(this.tenantId ? { tenantId: this.tenantId } : {}),
       });
       await metadata.save();
     }
@@ -232,11 +239,10 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    const metafieldCollection = await ProfileMetafieldCollection.create(
-      this.options,
+    const metafield = await this.resolveMetafield(
+      await ProfileMetafieldCollection.create(this.options),
+      metafieldSlug,
     );
-
-    const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
     }
@@ -253,6 +259,33 @@ export class Profile extends SmrtObject {
     if (existing.length > 0) {
       await existing[0].delete();
     }
+  }
+
+  /**
+   * The metafield a slug names for this profile: the profile tenant's own
+   * definition first, then a global (NULL-tenant) one. A tenant profile never
+   * takes another tenant's definition, which a super-admin or system read
+   * would otherwise return.
+   */
+  private async resolveMetafield(
+    metafields: {
+      list(options: {
+        where: Record<string, unknown>;
+        limit?: number;
+      }): Promise<ProfileMetafield[]>;
+    },
+    slug: string,
+  ): Promise<ProfileMetafield | null> {
+    const candidates = await metafields.list({ where: { slug }, limit: 50 });
+    return (
+      candidates.find(
+        (candidate) => this.tenantId && candidate.tenantId === this.tenantId,
+      ) ??
+      candidates.find((candidate) => !candidate.tenantId) ??
+      // A tenant-less profile read inside a tenant context only sees that
+      // tenant's definitions; keep using them as before.
+      (this.tenantId ? null : (candidates[0] ?? null))
+    );
   }
 
   private async getProfileAssetCollection() {
