@@ -471,7 +471,8 @@ keys the shell renders exactly as before.
   docks. `shell.presentationFor(edge)` reports the live presentation. While
   an overlay is open the page and the other edge are `inert`, the panel takes
   focus (unless something inside already has it) and returns it on close;
-  Escape or a scrim click closes it. Resizing applies only while docked.
+  Escape or a scrim click closes it, sliding it back out as the scrim fades
+  (no motion under `prefers-reduced-motion`). Resizing applies only while docked.
 - **Kept panels**: `keepMounted: true` keeps a collapsed edge's panel content
   (`appPanel`, `tenantPanel`, the focus panel, `systemPanel`) mounted with the
   `hidden` attribute instead of unmounting it, so component state (a chat

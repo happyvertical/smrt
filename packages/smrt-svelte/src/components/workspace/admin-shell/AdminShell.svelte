@@ -244,6 +244,32 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   // has it) and hands it back to whatever opened it when it closes.
   let overlayReturnFocus: HTMLElement | null = null;
   let lastOverlayEdge: SideEdge | null = null;
+  /**
+   * An overlay that was just closed and is sliding back out: it keeps its
+   * expanded look (inert, above a fading scrim) until the animation ends.
+   */
+  let closingEdge = $state<SideEdge | null>(null);
+  let closingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function endClosing(): void {
+    if (closingTimer) clearTimeout(closingTimer);
+    closingTimer = null;
+    closingEdge = null;
+  }
+
+  function prefersReducedMotion(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /** An edge shown open: expanded, or an overlay still sliding out. */
+  function shownOpen(edge: PanelEdge): boolean {
+    return edgeExpanded(edge) || closingEdge === edge;
+  }
+
   $effect(() => {
     const edge = overlayEdge;
     untrack(() => {
@@ -252,6 +278,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       lastOverlayEdge = edge;
       if (typeof document === 'undefined') return;
       if (edge) {
+        endClosing();
         const active = document.activeElement;
         overlayReturnFocus =
           active instanceof HTMLElement && active !== document.body
@@ -272,8 +299,27 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         overlayReturnFocus.focus({ preventScroll: true });
       }
       overlayReturnFocus = null;
+      // Closed (not just docked by a wider window): slide back out.
+      if (
+        previous &&
+        panelState(previous) !== 'expanded' &&
+        shell.presentationFor(previous) === 'overlay' &&
+        !isPhone &&
+        !prefersReducedMotion()
+      ) {
+        endClosing();
+        closingEdge = previous;
+        // Fallback when animationend never fires (hidden tab, no CSS).
+        closingTimer = setTimeout(endClosing, 600);
+      }
     });
   });
+
+  function onEdgeAnimationEnd(event: AnimationEvent, edge: SideEdge): void {
+    if (closingEdge === edge && event.target === event.currentTarget) {
+      endClosing();
+    }
+  }
 
   function collapsePhoneSurfaces(): void {
     for (const edge of SIDE_EDGES) {
@@ -333,6 +379,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       window.removeEventListener('keydown', handleKeydown);
       offViewport();
       offOverlayMedia();
+      if (closingTimer) clearTimeout(closingTimer);
       offKeyboard();
       offFormActions();
       scrollChrome?.destroy();
@@ -503,7 +550,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   function panelMounted(edge: PanelEdge): boolean {
-    return edgeExpanded(edge) || keepsContent(edge);
+    return shownOpen(edge) || keepsContent(edge);
   }
 
   function labelFor(edge: PanelEdge): string {
@@ -705,12 +752,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     <aside
       id="smrt-admin-shell-left-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--left"
-      data-state={panelState('left')}
+      data-state={closingEdge === 'left' ? 'expanded' : panelState('left')}
+      data-closing={closingEdge === 'left' ? '' : undefined}
       data-presentation={shell.presentationFor('left')}
       role="navigation"
       aria-label={labelFor('left')}
       tabindex={overlayEdge === 'left' ? -1 : undefined}
-      inert={(isPhone && !edgeExpanded('left')) || overlayEdge === 'right'}
+      inert={(isPhone && !edgeExpanded('left')) ||
+        overlayEdge === 'right' ||
+        closingEdge === 'left'}
+      onanimationend={(event) => onEdgeAnimationEnd(event, 'left')}
       bind:this={sideElements.left}
       use:swipeDismiss={{
         direction: 'left',
@@ -720,10 +771,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       {@render resizer('left')}
       <div class="smrt-admin-shell__rail">
-        {#if edgeExpanded('left') || (tenantPanel && keepsContent('left'))}
+        {#if shownOpen('left') || (tenantPanel && keepsContent('left'))}
           <div
             class="smrt-admin-shell__tenant-stack"
-            hidden={!edgeExpanded('left')}
+            hidden={!shownOpen('left')}
           >
             <div class="smrt-admin-shell__tenant-content">
               {#if tenantPanel}
@@ -741,7 +792,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
             {/if}
           </div>
         {/if}
-        {#if !edgeExpanded('left')}
+        {#if !shownOpen('left')}
           {#if tenantRail}
             {@render tenantRail()}
           {:else}
@@ -781,8 +832,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     ></button>
   {/if}
 
-  {#if overlayEdge}
-    {@const scrimEdge = overlayEdge}
+  {#if overlayEdge || closingEdge}
+    {@const scrimEdge = (overlayEdge ?? closingEdge) as SideEdge}
     <!-- raw-primitive-allow: click-catching backdrop behind an overlaid side panel -->
     <button
       type="button"
@@ -790,7 +841,10 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       tabindex="-1"
       aria-label={t(M['ui.admin_shell.close_panel'], { label: labelFor(scrimEdge) })}
       data-testid="admin-shell-overlay-scrim"
-      onclick={() => shell.collapsePanel(scrimEdge)}
+      data-closing={overlayEdge ? undefined : ''}
+      onclick={() => {
+        if (overlayEdge) shell.collapsePanel(scrimEdge);
+      }}
     ></button>
   {/if}
 
@@ -801,12 +855,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     <aside
       id="smrt-admin-shell-right-panel"
       class="smrt-admin-shell__edge smrt-admin-shell__edge--right"
-      data-state={panelState('right')}
+      data-state={closingEdge === 'right' ? 'expanded' : panelState('right')}
+      data-closing={closingEdge === 'right' ? '' : undefined}
       data-presentation={shell.presentationFor('right')}
       data-phone={rightPhone}
       aria-label={labelFor('right')}
       tabindex={overlayEdge === 'right' ? -1 : undefined}
-      inert={(isPhone && !edgeExpanded('right')) || overlayEdge === 'left'}
+      inert={(isPhone && !edgeExpanded('right')) ||
+        overlayEdge === 'left' ||
+        closingEdge === 'right'}
+      onanimationend={(event) => onEdgeAnimationEnd(event, 'right')}
       bind:this={sideElements.right}
       use:swipeDismiss={{
         direction: 'right',
@@ -869,7 +927,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {#if panelMounted('right')}
         <div
           class="smrt-admin-shell__panel smrt-admin-shell__panel--right"
-          hidden={!edgeExpanded('right')}
+          hidden={!shownOpen('right')}
         >
           {#key shell.activeFocusToolId}
             {@render focusContent(resolveActiveFocusTool())}
@@ -1488,6 +1546,40 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       ease-out;
   }
 
+  .smrt-admin-shell__edge--left[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-left
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  .smrt-admin-shell__edge--right[data-presentation='overlay'][data-closing] {
+    animation: smrt-admin-shell-slide-to-right
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  .smrt-admin-shell__overlay-scrim[data-closing] {
+    pointer-events: none;
+    animation: smrt-admin-shell-scrim-out
+      var(--smrt-admin-shell-chrome-duration) ease-in forwards;
+  }
+
+  @keyframes smrt-admin-shell-slide-to-right {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-slide-to-left {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes smrt-admin-shell-scrim-out {
+    to {
+      opacity: 0;
+    }
+  }
+
   @keyframes smrt-admin-shell-slide-from-right {
     from {
       transform: translateX(100%);
@@ -1509,6 +1601,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   @media (prefers-reduced-motion: reduce) {
     .smrt-admin-shell__edge--left[data-presentation='overlay'][data-state='expanded'],
     .smrt-admin-shell__edge--right[data-presentation='overlay'][data-state='expanded'],
+    .smrt-admin-shell__edge[data-presentation='overlay'][data-closing],
     .smrt-admin-shell__overlay-scrim {
       animation: none;
     }

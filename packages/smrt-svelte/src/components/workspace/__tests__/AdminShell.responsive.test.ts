@@ -34,6 +34,7 @@ beforeEach(() => {
     const min = /min-width:\s*([\d.]+)rem/.exec(query);
     return {
       get matches() {
+        if (query.includes('prefers-reduced-motion')) return false;
         return (
           (!max || width <= Number(max[1]) * 16) &&
           (!min || width >= Number(min[1]) * 16)
@@ -561,6 +562,67 @@ describe('AdminShell overlay edges (overlayMedia)', () => {
     await settle();
     await settle();
     expect(wide.panels.right).toBe('expanded');
+  });
+
+  it('slides a closed overlay back out before hiding it', async () => {
+    vi.useFakeTimers();
+    try {
+      setWidth(1100);
+      const shell = overlayShell();
+      render(AdminShell, {
+        props: { state: shell, children: html('<p>page</p>') },
+      });
+      await settle();
+      shell.expandPanel('right');
+      await settle();
+      shell.collapsePanel('right');
+      await settle();
+
+      // Closed at once for the page (not inert), still shown while it slides.
+      expect(document.getElementById('smrt-admin-shell-main')?.inert).toBe(
+        false,
+      );
+      expect(rightEdge().dataset.state).toBe('expanded');
+      expect(rightEdge().hasAttribute('data-closing')).toBe(true);
+      expect(rightEdge().inert).toBe(true);
+      const scrim = screen.getByTestId('admin-shell-overlay-scrim');
+      expect(scrim.hasAttribute('data-closing')).toBe(true);
+      await fireEvent.click(scrim);
+      expect(shell.panels.right).toBe('collapsed');
+
+      vi.advanceTimersByTime(700);
+      await settle();
+      expect(rightEdge().dataset.state).toBe('collapsed');
+      expect(rightEdge().hasAttribute('data-closing')).toBe(false);
+      expect(screen.queryByTestId('admin-shell-overlay-scrim')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips the slide-out when reduced motion is preferred', async () => {
+    setWidth(1100);
+    const base = window.matchMedia;
+    window.matchMedia = ((query: string) =>
+      query.includes('prefers-reduced-motion')
+        ? ({
+            matches: true,
+            media: query,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+          } as unknown as MediaQueryList)
+        : base(query)) as typeof window.matchMedia;
+    const shell = overlayShell();
+    render(AdminShell, {
+      props: { state: shell, children: html('<p>page</p>') },
+    });
+    await settle();
+    shell.expandPanel('right');
+    await settle();
+    shell.collapsePanel('right');
+    await settle();
+    expect(rightEdge().dataset.state).toBe('collapsed');
+    expect(screen.queryByTestId('admin-shell-overlay-scrim')).toBeNull();
   });
 
   it('keeps the phone presentation on phones', async () => {
