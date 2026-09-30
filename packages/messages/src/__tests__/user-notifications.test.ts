@@ -56,6 +56,42 @@ describe('UserNotificationService', () => {
     expect(a.notification.sourceRef).not.toBe(b.notification.sourceRef);
   });
 
+  it('a notify that loses the dedupe race keeps the stored row and its read state', async () => {
+    const input = {
+      tenantId: tenantA,
+      recipientUserId: alice,
+      kind: 'render.failed',
+      title: 'Original',
+      sourceRef: 'render:r1:failed',
+    };
+    const first = await service.notify(input);
+    await service.dismiss(alice, [first.notification.id as string], {
+      tenantId: tenantA,
+    });
+
+    // Simulate the race: the pre-check runs before the winner's row is
+    // visible, so this notify goes straight to its insert.
+    const list = vi
+      .spyOn(UserNotificationCollection.prototype, 'list')
+      .mockResolvedValueOnce([]);
+    let raced: Awaited<ReturnType<UserNotificationService['notify']>>;
+    try {
+      raced = await service.notify({ ...input, title: 'Loser' });
+    } finally {
+      list.mockRestore();
+    }
+
+    expect(raced.created).toBe(false);
+    expect(raced.notification.id).toBe(first.notification.id);
+    const [row] = await service.listForUser(alice, {
+      tenantIds: [tenantA],
+      includeDismissed: true,
+    });
+    expect(row.title).toBe('Original');
+    expect(row.readAt).toBeInstanceOf(Date);
+    expect(row.dismissedAt).toBeInstanceOf(Date);
+  });
+
   it('ignores malformed ids when marking read or dismissing', async () => {
     const { notification } = await service.notify({
       tenantId: tenantA,

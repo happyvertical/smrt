@@ -1,4 +1,7 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isUniqueViolationError,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { UserNotificationCollection } from '../collections/UserNotificationCollection.js';
 import {
@@ -105,25 +108,42 @@ export class UserNotificationService {
 
     return withTenant({ tenantId }, async () => {
       const notifications = await this.collection();
-      const existing = await notifications.list({
-        where: { tenantId, recipientUserId, sourceRef },
-        limit: 1,
-      });
-      if (existing[0]) return { notification: existing[0], created: false };
+      const findExisting = async () =>
+        (
+          await notifications.list({
+            where: { tenantId, recipientUserId, sourceRef },
+            limit: 1,
+          })
+        )[0];
+      const existing = await findExisting();
+      if (existing) return { notification: existing, created: false };
 
-      const notification = await notifications.create({
-        tenantId,
-        recipientUserId,
-        kind,
-        title,
-        body: input.body?.trim() ?? '',
-        href: input.href ?? null,
-        severity,
-        sourceRef,
-        occurredAt: input.occurredAt ?? new Date(),
-        readAt: null,
-        dismissedAt: null,
-      });
+      // Insert-only: a concurrent notify() for the same event may have stored
+      // the row since the lookup above. An upsert would then overwrite it —
+      // title, and read/dismissed state reset to null — so a collision is
+      // resolved by returning the stored row untouched instead.
+      let notification: UserNotification;
+      try {
+        notification = await notifications.create({
+          _insertOnly: true,
+          tenantId,
+          recipientUserId,
+          kind,
+          title,
+          body: input.body?.trim() ?? '',
+          href: input.href ?? null,
+          severity,
+          sourceRef,
+          occurredAt: input.occurredAt ?? new Date(),
+          readAt: null,
+          dismissedAt: null,
+        });
+      } catch (error) {
+        if (!isUniqueViolationError(error)) throw error;
+        const winner = await findExisting();
+        if (!winner) throw error;
+        return { notification: winner, created: false };
+      }
       return { notification, created: true };
     });
   }
