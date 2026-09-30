@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
+import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -412,7 +413,10 @@ export class ManifestBuilder {
     const unifiedPath = manager.getOutputPath(mode);
 
     if (resolve(manifestPath) !== resolve(unifiedPath)) {
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      publishAtomicArtifact({
+        path: manifestPath,
+        content: JSON.stringify(manifest, null, 2),
+      });
     }
 
     // Write TypeScript stub if requested

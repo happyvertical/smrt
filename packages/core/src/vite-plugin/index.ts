@@ -725,7 +725,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     rootDir: string,
   ): Promise<void> {
     try {
-      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { mkdirSync } = await import('node:fs');
       const { resolve } = await import('node:path');
 
       const smrtDir = resolve(rootDir, '.smrt');
@@ -733,7 +733,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       const manifestPath = resolve(smrtDir, 'manifest.json');
       const merged = mergeExternalManifestEntries(m, manifestPath);
-      writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
+      publishAtomicArtifact({
+        path: manifestPath,
+        content: JSON.stringify(merged, null, 2),
+      });
       await writeDomainKnowledgeArtifact(
         merged,
         rootDir,
@@ -1404,7 +1407,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         mkdirSync(dirname(manifestPath), { recursive: true });
 
         // Write manifest file
-        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+        publishAtomicArtifact({
+          path: manifestPath,
+          content: JSON.stringify(manifest, null, 2),
+        });
         await writeDomainKnowledgeArtifact(
           manifest,
           projectRoot,
