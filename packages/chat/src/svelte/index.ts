@@ -75,6 +75,7 @@ export {
   AssistantTurnStreamError,
   readAssistantTurnStream,
 } from '../assistant-turn-events.js';
+export { matchesToolAllowList } from '../tool-allow-list.js';
 export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';

@@ -62,6 +62,7 @@ import {
   PermissionCatalogService,
   type PermissionDefinition,
 } from '@happyvertical/smrt-users';
+import { matchesToolAllowList } from './tool-allow-list.js';
 
 /** Default ceiling on tool-executing rounds before the loop force-terminates. */
 export const DEFAULT_MAX_STEPS = 8;
@@ -1019,16 +1020,7 @@ export function sanitizeClientToolDeclarations(
 }
 
 /** Whether `name` matches an allow-list entry (exact, or `prefix*`). */
-export function matchesToolAllowList(
-  name: string,
-  allowList: readonly string[],
-): boolean {
-  return allowList.some((pattern) =>
-    pattern.endsWith('*')
-      ? pattern.length > 1 && name.startsWith(pattern.slice(0, -1))
-      : pattern === name,
-  );
-}
+export { matchesToolAllowList };
 
 function clientToolToAITool(tool: ClientToolDefinition): AITool {
   return {

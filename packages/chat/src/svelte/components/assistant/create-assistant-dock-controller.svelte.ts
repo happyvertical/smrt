@@ -43,6 +43,7 @@ import {
   type DataSurfaceIdentity,
   type DataSurfaceRegistry,
   normalizeDataSurfaceActionRequest,
+  whenSurfaceNavigationSettled,
 } from '@happyvertical/smrt-ui/data-surface';
 import { untrack } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -236,6 +237,18 @@ export interface AssistantDockControllerOptions {
   clientToolPolicy?: (tool: AssistantClientTool) => AssistantClientToolPolicy;
   /** Called whenever `status` changes (#2908). */
   onStatus?: (status: AssistantStatus) => void;
+  /**
+   * Waits for the page to settle after the browser tools of one step ran,
+   * before the turn resumes and the model is shown the page's tools again
+   * (e.g. SvelteKit: resolve once `navigating` is null). The dock also waits
+   * for navigations tracked on `registry` (`registerLinkSurface`) and for the
+   * registry and `pageTools` to go quiet, so the next step sees the new
+   * page's tools rather than the old page's or none. Bounded by
+   * `settleTimeoutMs`; a throw is ignored.
+   */
+  settle?: () => Promise<void> | void;
+  /** Longest wait for the page to settle after a step. Default 5000ms. */
+  settleTimeoutMs?: number;
 }
 
 export interface AssistantDockController {
@@ -1025,6 +1038,10 @@ export function createAssistantDockController(
         const suspension = current.clientToolCalls;
         const results = await runClientToolCalls(suspension.calls, turn);
         if (turn.signal.aborted || disposed || epoch !== contextEpoch) break;
+        // A call may have changed the page: let it finish and register its
+        // tools, so the resumed step is offered the page as it is now.
+        await settlePage(turn);
+        if (turn.signal.aborted || disposed || epoch !== contextEpoch) break;
         if (!options.transport.resumeTurn) {
           throw new Error(
             'AssistantDock: the transport returned browser tool calls but has no resumeTurn',
@@ -1217,6 +1234,32 @@ export function createAssistantDockController(
       },
       effect: 'read',
     };
+  }
+
+  async function settlePage(turn: AbortController): Promise<void> {
+    const timeoutMs = options.settleTimeoutMs ?? 5_000;
+    const started = now();
+    if (options.settle) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          Promise.resolve(options.settle()),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, timeoutMs);
+          }),
+        ]);
+      } catch {
+        // A host settle hook never breaks the turn.
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    if (turn.signal.aborted) return;
+    await whenSurfaceNavigationSettled(options.registry, {
+      timeoutMs: Math.max(0, timeoutMs - (now() - started)),
+      alsoWatch: [options.pageTools],
+      signal: turn.signal,
+    });
   }
 
   function availableClientTools(): AssistantClientTool[] {

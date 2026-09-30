@@ -238,3 +238,6 @@ export async function readAssistantTurnStream<M = Record<string, unknown>>(
     'The assistant stopped responding before finishing.',
   );
 }
+
+/** Tool allow-list matching (browser-safe), re-exported for hosts. */
+export { matchesToolAllowList } from './tool-allow-list.js';

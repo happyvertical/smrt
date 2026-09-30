@@ -135,6 +135,9 @@ export interface Props {
   /** Called whenever the assistant's generic status changes (#2908), for a
    * host's own "working" line. Also readable as `controller.status`. */
   onstatus?: (status: AssistantStatus) => void;
+  /** Waits for the page to settle after a step's browser tools ran, before
+   * the turn resumes. See `AssistantDockControllerOptions.settle`. */
+  settle?: () => Promise<void> | void;
 }
 
 const {
@@ -152,6 +155,7 @@ const {
   pageTools,
   clientToolPolicy,
   onstatus,
+  settle,
 }: Props = $props();
 const { t } = useI18n();
 
@@ -186,6 +190,7 @@ const controller: AssistantDockController = createAssistantDockController({
   clientToolPolicy: (tool) =>
     (clientToolPolicy ?? defaultClientToolPolicy)(tool),
   onStatus: (status) => onstatus?.(status),
+  settle: () => settle?.(),
 });
 
 function formatToolArgs(args: Record<string, unknown>): string {
