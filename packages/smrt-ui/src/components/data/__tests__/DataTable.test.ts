@@ -81,6 +81,42 @@ describe('DataTable', () => {
     expect(nameHeader).not.toHaveAttribute('aria-sort');
   });
 
+  it('starts a date/count column descending and toggles without clearing when not clearable', async () => {
+    render(DataTable, {
+      props: {
+        data,
+        columns: [
+          columns[0],
+          {
+            id: 'age',
+            label: 'Age',
+            accessor: 'age',
+            sortable: true,
+            sortFirstDirection: 'desc' as const,
+          },
+        ],
+        sortable: true,
+        sortClearable: false,
+      },
+    });
+    const ageHeader = screen.getByRole('columnheader', { name: 'Age' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'descending');
+    const firstCell = () => screen.getAllByRole('row')[1]?.textContent ?? '';
+    expect(firstCell()).toContain('Linus');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age ascending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'ascending');
+    expect(firstCell()).toContain('Ada');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    );
+    expect(ageHeader).toHaveAttribute('aria-sort', 'descending');
+  });
+
   it('announces the next action for each rule in a multi-column sort', async () => {
     const multiSortColumns = [columns[0], { ...columns[1], sortable: true }];
     render(DataTable, {
