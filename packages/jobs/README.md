@@ -310,3 +310,9 @@ input returns. Applications must call `context.task.assertAuthorized()` again
 immediately before later side effects. Direct `McpTaskStore` callers default to
 trusted-local compatibility; set `requireAuthorization: true` for any remote
 or multi-user application. This default does not confer human identity.
+
+Shutdown includes any in-flight claim in the existing bounded drain and keeps
+the worker lease until that drain finishes. A claim returning after shutdown
+started is released without dispatch or consuming an attempt, even if the
+shutdown deadline has elapsed; the next incarnation may claim it normally.
+The same runner cannot restart while an earlier poll or handler is still draining.
