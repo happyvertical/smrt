@@ -41,8 +41,18 @@ provider or auth implementation.
 Dependency provenance and exact heads belong in the review packet; root validation
 and independent high-risk reviews remain coordinator-owned.
 
-## Accepted round-1 regressions
+## M6b context, messages and mentions — #3213
 
-- Navigation A → invalid → A must resolve again whether A completed or remains pending. Browser cases observe cancellation, restore the same route, and prove a late original reply cannot replace the restored result.
-- Settings schema object-key order is immaterial at all nested levels. Changed numeric limits, enum contents, and enum array order remain rejected. Baseline tests fail before either fix and pass after.
-- The reported frozen-install mismatch is rejected with actual clean-archive evidence: workspace Node-type override applies, and both baseline and current frozen installs exit0. No dependency or lockfile change is required.
+Risk is high: model-visible context crosses a privacy boundary, and composer
+selection crosses principal and active-tenant authorization. Baseline: OpenAI
+extensions `e314720a0daac326217d1f123fcf51647868fa9f`, Apps `2026-01-26`, and
+server MCP `2026-07-28`. Synthetic browser/HTTP evidence does not claim an
+observed OpenAI host.
+
+| Behavior / reachable trigger | Positive | Negative / failure | Actor/context | Executor/transaction | Runtime / external edge | Level / command |
+|---|---|---|---|---|---|---|
+| Model context replacement | Bounded text with title/thumbnail; assistant-only background marked explicitly | Unknown fields, malformed icon, oversize text/cycle, missing capability, disposal or host error | Host metadata is inert; background still reaches model/provider | N/A, idempotent host replacement | Browser native capability / portable text+structured fallback | unit + synthetic browser / `test`, `test:e2e` |
+| Message composition | Active target uses portable text; negotiated host gets exact native target metadata | Unknown capability, unsupported target/modality/resource link, mobile native limitation, upstream error | No principal or private host state accepted from message | N/A | Browser, capability absent or malformed | unit + synthetic browser / `test`, `test:e2e` |
+| Composer discovery/search | Authorized workflow returns <=25 opaque resource handles | Forged tenant/ID, malformed/oversized query/result, anonymous/other owner/tenant/revoked caller denied | Verified principal and active tenant come from app-MCP request context | Existing M1 workflow and its owning read executor | SDK v2 HTTP transport; `app` visibility metadata | unit + HTTP integration / `test` |
+| Selected mention use | Selected opaque handle is routed through current authorized workflow | Revocation after search, guessed/cross-tenant handle and upstream error denied | Principal and active tenant are re-read for selected call | Existing application workflow, no adapter transaction/retry | SDK v2 HTTP | integration / `test` |
+| Package boundary | Node mention entry and browser context/message entries load packed | No v1 helper or OpenAI public types; malformed host never enables native path | Consumer package | N/A | packed Node/browser exports | build/types/pack / `build`, `typecheck`, `verify:pack` |

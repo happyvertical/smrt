@@ -14,7 +14,7 @@ addEventListener('message', e=>{
  if(e.source!==frame.contentWindow) return;
  const m=e.data; window.calls.push(m);
  const reply=result=>e.source.postMessage({jsonrpc:'2.0',id:m.id,result},'*');
- if(m.method==='ui/initialize') reply({protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:mode==='absent'?{}:mode==='unknown'?{futureTools:{}}:{serverTools:{}},hostContext:{availableDisplayModes:mode==='absent'||mode==='unknown'?['inline']:['inline','fullscreen'],'openai/deepLink':{url:'/items/owned'}}});
+ if(m.method==='ui/initialize') reply({protocolVersion:'2026-01-26',hostInfo:{name:'synthetic',version:'1'},hostCapabilities:mode==='absent'?{}:mode==='unknown'?{futureTools:{}}:{serverTools:{},message:{text:{}},updateModelContext:{text:{}},experimental:mode==='mobile'?{}:{'openai/modelContext':{},'openai/message':{}}},hostContext:{availableDisplayModes:mode==='absent'||mode==='unknown'?['inline']:['inline','fullscreen'],'openai/deepLink':{url:'/items/owned'}}});
  if(m.method==='tools/call') {
   if(mode==='pending'&&!initialHeld) { initialHeld=true; window.releaseInitial=()=>reply({content:[{type:'text',text:'Stale initial response'}]}); }
   else if(m.params.arguments.url==='/items/denied') reply({isError:true,content:[{type:'text',text:'Denied'}]});
@@ -24,6 +24,9 @@ addEventListener('message', e=>{
  if(m.method==='ui/request-display-mode') {
   if(mode==='failure') e.source.postMessage({jsonrpc:'2.0',id:m.id,error:{code:-32000,message:'Unsupported'}},'*');
   else reply({mode:m.params.mode});
+ }
+ if(m.method==='ui/update-model-context'||m.method==='ui/message') {
+  if(mode==='failure') e.source.postMessage({jsonrpc:'2.0',id:m.id,error:{code:-32000,message:'Synthetic failure'}},'*'); else reply({});
  }
 });
 </script></body></html>`;
