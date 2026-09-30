@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import type { McpAppBridge } from '@happyvertical/smrt-mcp-apps';
+import { describe, expect, it, vi } from 'vitest';
 import {
   hasOpenAiModelContext,
   openAiContextText,
   openAiModelContextUpdate,
+  updateOpenAiModelContext,
 } from './context.js';
 
 describe('OpenAI model context', () => {
@@ -46,5 +48,55 @@ describe('OpenAI model context', () => {
         experimental: { 'openai/modelContext': 'future' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('exported context transport helper', () => {
+  it('replaces context through the portable bridge after a native failure', async () => {
+    const updateModelContext = vi.fn(async () => {});
+    const bridge = {
+      snapshot: {
+        rawHostCapabilities: { experimental: { 'openai/modelContext': {} } },
+      },
+      updateModelContext,
+    } as unknown as McpAppBridge;
+    const native = vi.fn(async () => {
+      throw new Error('native unavailable');
+    });
+    const value = {
+      text: { text: 'Replacement', title: 'Native title', background: true },
+      structuredContent: { selected: 'new' },
+    };
+    await expect(
+      updateOpenAiModelContext({ bridge, value, native }),
+    ).resolves.toBe('portable');
+    expect(native).toHaveBeenCalledOnce();
+    expect(updateModelContext).toHaveBeenCalledExactlyOnceWith(
+      { text: 'Replacement', structuredContent: { selected: 'new' } },
+      undefined,
+    );
+  });
+  it('does not revive an aborted native context operation', async () => {
+    const controller = new AbortController();
+    const updateModelContext = vi.fn(async () => {});
+    const bridge = {
+      snapshot: {
+        rawHostCapabilities: { experimental: { 'openai/modelContext': {} } },
+      },
+      updateModelContext,
+    } as unknown as McpAppBridge;
+    const failure = new Error('aborted native');
+    await expect(
+      updateOpenAiModelContext({
+        bridge,
+        value: { text: { text: 'Replacement' } },
+        signal: controller.signal,
+        native: async () => {
+          controller.abort();
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    expect(updateModelContext).not.toHaveBeenCalled();
   });
 });

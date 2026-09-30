@@ -61,3 +61,20 @@ observed OpenAI host.
 - Navigation A → invalid → A must resolve again whether A completed or remains pending. Browser cases observe cancellation, restore the same route, and prove a late original reply cannot replace the restored result.
 - Settings schema object-key order is immaterial at all nested levels. Changed numeric limits, enum contents, and enum array order remain rejected. Baseline tests fail before either fix and pass after.
 - The reported frozen-install mismatch is rejected with actual clean-archive evidence: workspace Node-type override applies, and both baseline and current frozen installs exit0. No dependency or lockfile change is required.
+
+### Accepted review regressions
+
+The Chromium fixture imports the packed-output context/message helpers instead of
+choosing a status label itself. It records every native and portable wire call.
+
+| Trigger | Required observation | Regression level |
+|---|---|---|
+| Negotiated native context rejects | Helper awaits a second, portable replacement with plain text and structured content; native title/thumbnail/background metadata is absent | Exported-helper unit and Chromium wire/result |
+| Caller aborts or bridge disposes while native context is pending | Late native failure cannot send any portable replacement | Unit abort and Chromium abort/disposal with held failure |
+| New-conversation target with absent/unknown capability or missing native callback | Reject before dispatch; no portable `ui/message` reaches active conversation | Exported-helper unit and Chromium wire count |
+| Active conversation without native support | One successful portable text message | Exported-helper unit and Chromium wire/result |
+| Negotiated new conversation | One native message retains `target: new` and `send: true` metadata | Exported-helper unit and Chromium wire payload |
+
+The same new tests against pre-fix production helpers fail on native rejection
+fallback and all three unsupported new-conversation routes. These tests use a
+synthetic host and do not establish actual OpenAI host compatibility.
