@@ -59,15 +59,15 @@ workflowTools: [{
   inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   outputSchema: { type: 'object', properties: { prepared: { type: 'boolean' } } },
   effect: 'write', idempotent: true, openWorld: false,
-  ui: { resourceUri: 'ui://application/prepare.html' },
+  ui: { resourceUri: 'ui://application/prepare.html', visibility: ['app'] },
   async execute({ arguments: args, principal }) {
     return { content: [{ type: 'text', text: 'Prepared for review.' }], structuredContent: { prepared: true } };
   },
 }],
 ```
 
-The resulting descriptor preserves `_meta.ui.resourceUri` through SDK-v2
-`tools/list`, while ordinary clients retain the text and structured result.
+The resulting descriptor preserves `_meta.ui.resourceUri` and optional
+`_meta.ui.visibility` through SDK-v2 `tools/list`, while ordinary clients retain the text and structured result.
 The resource implementation itself is staged separately; metadata neither
 loads a resource nor grants an application permission.
 
@@ -180,7 +180,8 @@ const server = createMcpAppServer({
 });
 ```
 
-Resources are private by default and require a stable principal id. Only an
+Resources are private by default and require a stable principal id plus an explicit
+`resourcePolicy`; an omitted policy denies both listing and reads. Only an
 explicit `public: true` declaration permits anonymous reads of a static
 artifact. `resourcePolicy` runs afresh for both catalog and direct reads; errors
 fail closed. Every associated tool must also pass the ordinary tool policy.
@@ -212,3 +213,18 @@ bridge now defaults to this modern `/api/mcp` endpoint; use explicit
 migration from `/api/mcp/tools` and `/api/mcp/call`. The modern bridge uses SDK v2,
 re-resolves credentials per request, refuses redirects, and forwards resource
 and tool metadata without inventing UI or extension capabilities.
+
+Generated tool allow-lists use the generator-owned original class identity, even
+when the advertised name is a canonical alias. Guards keyed by either the alias
+or original tool name run before both direct and task dispatch. Authored workflows
+retain their explicit names and effect policy; catalogs containing authored
+workflows keep private cache scope because they have no generated tenant identity.
+
+## Remote JWT authorization
+
+The server-only `@happyvertical/smrt-app-mcp/auth` entry exports
+`createMcpResourceAuth` for protected-resource metadata, bearer challenges and
+JWT verification against a configured existing issuer. A required application
+callback rechecks actor and active tenant membership per request. See the
+[remote authorization contract](../../docs/content/architecture/remote-mcp-authorization.md)
+for route wiring, local/hosted profiles and the explicit JWT revocation limits.

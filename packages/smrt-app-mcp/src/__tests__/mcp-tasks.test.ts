@@ -10,7 +10,7 @@ import {
   type JobExecutionContext,
   TaskRunner,
 } from '@happyvertical/smrt-jobs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMcpAppServer, type McpAppPrincipal } from '../server.js';
 import { mountMcpRoute } from '../sveltekit.js';
 
@@ -40,6 +40,18 @@ class AppTaskProbe extends SmrtObject {
 
 class AppTaskProbeCollection extends SmrtCollection<AppTaskProbe> {
   static readonly _itemClass = AppTaskProbe;
+}
+
+@smrt({ mcp: { include: ['slow'], tasks: ['slow'] } })
+class ExcludedTaskProbe extends SmrtObject {
+  @backgroundEligible()
+  async slow() {
+    return { source: 'excluded-core-action' };
+  }
+}
+
+class ExcludedTaskProbeCollection extends SmrtCollection<ExcludedTaskProbe> {
+  static readonly _itemClass = ExcludedTaskProbe;
 }
 
 afterEach(() => {
@@ -131,6 +143,59 @@ function waitForCompleted(
 }
 
 describe('app MCP Tasks extension', () => {
+  it('executes a workflow collision normally instead of queueing an excluded generated task', async () => {
+    ObjectRegistry.registerCollection('AppTaskProbe', AppTaskProbeCollection);
+    ObjectRegistry.registerCollection(
+      'ExcludedTaskProbe',
+      ExcludedTaskProbeCollection,
+    );
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'workflow result' }],
+      structuredContent: { source: 'workflow' },
+    }));
+    const handler = mountMcpRoute(
+      createMcpAppServer({
+        smrtOptions: () => ({}),
+        serverInfo: { name: 'app-task-test', version: '0.0.0' },
+        // This enables Tasks while keeping ExcludedTaskProbe out of the
+        // generated application catalog.
+        allowedClassNames: ['AppTaskProbe'],
+        workflowTools: [
+          {
+            name: 'excludedtaskprobe_slow',
+            description: 'Run the app-owned workflow',
+            inputSchema: { type: 'object' },
+            outputSchema: { type: 'object' },
+            effect: 'write',
+            idempotent: false,
+            openWorld: false,
+            execute,
+          },
+        ],
+      }),
+      {
+        resolvePrincipal: (event) =>
+          event.locals?.principal as { id: string } | undefined,
+      },
+    );
+
+    const response = await handler(
+      taskEvent('tools/call', {
+        name: 'excludedtaskprobe_slow',
+        arguments: {},
+      }),
+    );
+    const body = (await response.json()) as {
+      result?: { resultType?: string; structuredContent?: unknown };
+    };
+
+    expect(body.result).toMatchObject({
+      structuredContent: { source: 'workflow' },
+    });
+    expect(body.result).not.toMatchObject({ resultType: 'task' });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
   it('advertises only when enabled and completes a task over stateless HTTP', async () => {
     ObjectRegistry.registerCollection('AppTaskProbe', AppTaskProbeCollection);
     const db = await getTestDatabase({
