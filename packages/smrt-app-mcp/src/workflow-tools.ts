@@ -49,7 +49,7 @@ export interface McpWorkflowTool {
   execute: McpWorkflowToolDefinition['execute'];
 }
 
-const TOOL_NAME = /^[a-z][a-z0-9_]{0,127}$/;
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 
 function assertRecord(
   value: unknown,
@@ -212,8 +212,10 @@ function normalizeIcons(
 export function createMcpWorkflowTool(
   definition: McpWorkflowToolDefinition,
 ): McpWorkflowTool {
-  if (!TOOL_NAME.test(definition.name)) {
-    throw new TypeError('Workflow tool name must be lowercase snake_case.');
+  if (typeof definition.name !== 'string' || !TOOL_NAME.test(definition.name)) {
+    throw new TypeError(
+      'Workflow tool name must be lowercase snake_case with at most 64 characters.',
+    );
   }
   if (
     typeof definition.description !== 'string' ||
@@ -243,6 +245,8 @@ export function createMcpWorkflowTool(
   ) {
     throw new TypeError('Workflow tool title must be a non-empty string.');
   }
+  assertRecord(definition.inputSchema, 'Workflow tool input schema');
+  assertRecord(definition.outputSchema, 'Workflow tool output schema');
   assertMcpJsonSchemaSafety(definition.inputSchema);
   assertMcpJsonSchemaSafety(definition.outputSchema);
   const metadata = cloneMetadata(definition.metadata);

@@ -26,7 +26,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   McpIntegrationTestProduct,
   McpIntegrationTestProductCollection,
@@ -84,7 +84,7 @@ async function installGeneratedServerRuntimeStubs(
     ),
     writeFile(
       join(serverPackage, 'index.js'),
-      'export class Server { setRequestHandler() {} }\n',
+      'export class Server { handlers = new Map(); setRequestHandler(name, handler) { this.handlers.set(name, handler); } }\n',
     ),
     writeFile(
       join(serverPackage, 'stdio.js'),
@@ -327,6 +327,51 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
       await expectParsesAsEsModule(join(outputDir, relative));
     }
     await expectGeneratedServerStarts(indexPath);
+  });
+
+  it.each([
+    false,
+    true,
+  ])('preserves descriptor metadata in the actual emitted listing (modular=%s)', async (modular) => {
+    const tools = (await generator.generateTools()).slice(0, 2);
+    expect(tools).toHaveLength(2);
+    // Keep the exact generator-owned descriptors and their source identities.
+    Object.assign(tools[0], {
+      title: 'Review',
+      icons: [{ src: 'https://example.test/icon.svg' }],
+      _meta: {
+        ui: { resourceUri: 'ui://review/view', visibility: ['app'] },
+        'example.extension': { enabled: true },
+      },
+    });
+    delete tools[1].annotations;
+    vi.spyOn(generator, 'generateTools').mockResolvedValue(tools);
+    const outputDir = join(
+      tmpDir,
+      modular ? 'metadata-modular' : 'metadata-single',
+    );
+    const outputPath = join(outputDir, 'index.mjs');
+    await generator.generateServer({
+      outputPath,
+      modular,
+      generateClaudeConfigFile: false,
+      generateReadme: false,
+    });
+    await installGeneratedServerRuntimeStubs(outputDir);
+    const probe = join(outputDir, 'list.mjs');
+    await writeFile(
+      probe,
+      `import { createServer } from './index.mjs'; const server = await createServer(); console.log(JSON.stringify(await server.handlers.get('tools/list')()));`,
+    );
+    const { stdout } = await execFileAsync(process.execPath, [probe], {
+      cwd: outputDir,
+    });
+    const result = JSON.parse(stdout.trim());
+    expect(result.tools).toEqual(
+      [...tools].sort((a, b) =>
+        a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+      ),
+    );
   });
 
   it('emits modular TypeScript with matching sibling specifiers', async () => {

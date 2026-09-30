@@ -603,7 +603,18 @@ export function createMcpAppServer(
     const { args, principal } = await authorizeCall(input);
     const workflowTool = workflowToolsByName.get(input.name);
     if (workflowTool) {
-      return workflowTool.execute({ arguments: args, principal });
+      try {
+        return await workflowTool.execute({ arguments: args, principal });
+      } catch (error) {
+        if (error instanceof McpAccessError) throw error;
+        // Handler exceptions may contain credentials or application records.
+        const message = 'Workflow execution failed.';
+        return {
+          isError: true,
+          content: [{ type: 'text', text: message }],
+          structuredContent: { error: { message } },
+        };
+      }
     }
     return makeGenerator(principal).handleToolCall({
       method: 'tools/call',

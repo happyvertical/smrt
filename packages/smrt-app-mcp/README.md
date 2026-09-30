@@ -50,6 +50,12 @@ same catalog. Every workflow must declare its canonical `effect`,
 association are host presentation metadata only. The configured `toolPolicy`
 and `workflowAssertions` run for both discovery and direct calls before the
 workflow handler receives the trusted principal and arguments.
+Authored names must be lowercase snake_case strings of at most 64 characters;
+input and output schemas must both have object roots. Invalid declarations fail
+at server construction. Ordinary handler exceptions return a generic `isError`
+result with text and structured error data; internal exception details are not
+exposed. Intentional `McpAccessError` denials retain the transport's access-error
+contract.
 
 ```ts
 workflowTools: [{
