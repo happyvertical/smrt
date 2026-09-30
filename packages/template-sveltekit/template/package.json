@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.11.0",
+  "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">=24.18.0",
-    "pnpm": "11.11.0"
+    "pnpm": "11.25.0"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
