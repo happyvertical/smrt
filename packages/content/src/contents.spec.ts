@@ -483,6 +483,43 @@ it('should persist content assets via content_assets', async () => {
   expect(assets?.[0]?.id).toBe(image.id);
 });
 
+it('removes content_assets links when the linked picture is deleted', async () => {
+  const dbUrl = getTestDbUrl('asset-delete-cascade');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+  const images = await ImageCollection.create({ db: { url: dbUrl } });
+  const contentAssets = await ContentAssetCollection.create({
+    db: { url: dbUrl },
+  });
+
+  const content = await contents.create({
+    name: 'asset-delete-cascade',
+    title: 'Asset delete cascade',
+    body: 'Two pictures',
+    status: 'draft',
+  });
+  const kept = await images.create({
+    name: 'kept.jpg',
+    sourceUri: 'file:///tmp/kept.jpg',
+    mimeType: 'image/jpeg',
+  });
+  const removed = await images.create({
+    name: 'removed.jpg',
+    sourceUri: 'file:///tmp/removed.jpg',
+    mimeType: 'image/jpeg',
+  });
+  await content.addAsset(kept, 'inline', 0);
+  await content.addAsset(removed, 'inline', 1);
+
+  await removed.delete();
+
+  // The link cannot outlive the picture (asset_id is part of the junction's
+  // natural key, so the model delete cascades to it).
+  const links = await contentAssets.byLeft(content.id as string);
+  expect(links.map((link) => link.assetId)).toEqual([kept.id]);
+  const assets = await content.getAssets();
+  expect(assets.map((asset) => asset.id)).toEqual([kept.id]);
+});
+
 it('should sync editor-style assetIds on save', async () => {
   const dbUrl = getTestDbUrl('editor-asset-sync');
   const contents = await Contents.create({
