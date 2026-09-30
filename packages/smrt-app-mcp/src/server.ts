@@ -489,12 +489,14 @@ export function createMcpAppServer(
     const tools = await catalogTools();
     const generator = makeGenerator();
     for (const tool of tools) {
+      if (workflowToolsByName.has(tool.name)) continue;
       if (await generator.supportsTaskTool(tool.name)) return true;
     }
     return false;
   }
 
   async function isTaskTool(name: string): Promise<boolean> {
+    if (workflowToolsByName.has(name)) return false;
     const tools = await catalogTools();
     if (!tools.some((tool) => tool.name === name)) return false;
     return makeGenerator().supportsTaskTool(name);
@@ -502,6 +504,9 @@ export function createMcpAppServer(
 
   async function callTask(input: CallToolInput): Promise<MCPResponse> {
     const { args, principal } = await authorizeCall(input);
+    if (workflowToolsByName.has(input.name)) {
+      throw new McpAccessError(400, 'Workflow MCP tools do not support tasks.');
+    }
     const taskStore = await taskStoreFor(principal);
     return makeGenerator(principal, taskStore).createTask({
       method: 'tools/call',
