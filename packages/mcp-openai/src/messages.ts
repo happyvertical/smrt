@@ -57,6 +57,9 @@ export async function sendOpenAiMessage(options: {
     await options.native(params, options.signal);
     return 'native';
   }
+  if (options.value.target === 'new') {
+    throw new TypeError('New-conversation messages require native support');
+  }
   await options.bridge.sendMessage(
     text(options.value.text.text, 16384),
     options.signal,
