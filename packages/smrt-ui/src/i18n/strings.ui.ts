@@ -44,6 +44,14 @@ export const M = defineMessages({
   'ui.working_strip.done': 'Done',
   'ui.working_strip.open': 'Open',
   'ui.working_strip.stop': 'Stop',
+  'ui.working_strip.paused': 'Paused',
+  'ui.working_strip.waiting': 'Waiting for you',
+  'ui.working_strip.failed': "Couldn't finish",
+  'ui.working_strip.cancelled': 'Stopped',
+  'ui.working_strip.pause': 'Pause',
+  'ui.working_strip.resume': 'Continue',
+  'ui.working_strip.review': 'Review',
+  'ui.working_strip.dismiss': 'Close',
 
   // forms/FormActionBar.svelte
   'ui.form_action_bar.label': 'Form actions',

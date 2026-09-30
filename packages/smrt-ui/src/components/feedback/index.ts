@@ -33,4 +33,8 @@ export type {
 } from './toast.js';
 export { createToaster, toaster } from './toast.js';
 export { default as WorkingStrip } from './WorkingStrip.svelte';
-export type { WorkingStatus } from './working-status.js';
+export {
+  WORKING_ASSERTIVE_PHASES,
+  type WorkingPhase,
+  type WorkingStatus,
+} from './working-status.js';
