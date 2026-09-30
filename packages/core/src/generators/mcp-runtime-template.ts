@@ -585,7 +585,7 @@ async function getTaskRuntime() {
         persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
       });
       const db = collection.db;
-      const store = await McpTaskStore.create(db, { ownerId: process.env.SMRT_MCP_TENANT_ID || null });
+      const store = await McpTaskStore.create(db, { ownerId: process.env.SMRT_MCP_TENANT_ID || null, tenantId: ${hasTenantScoped ? 'MCP_TENANT_ID ?? null' : 'null'} });
       const runner = new TaskRunner({ queues: ['mcp-tasks'] });
       await runner.initialize(db);
       await runner.start();

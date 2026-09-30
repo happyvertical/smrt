@@ -17,8 +17,9 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
 - Treat list/get tools as read-only; mutating tools require authentication unless the app deliberately wraps them with stronger policy.
 - Keep app policy outside generated tool schemas. The wrapper owns auth, allow-list, and workflow assertion behavior.
 - Return 404 for tools outside the app allow-list so private generated tools are not enumerated by mistake.
-- Trust only a principal supplied by the application adapter. This package does
-  not validate bearer tokens or implement an OAuth authorization server.
+- Trust only a principal supplied by the application adapter. This package
+  does not implement an OAuth authorization server. The opt-in `./auth` entry
+  validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
 - Keep tool catalogs private by default. Public caching requires an explicit

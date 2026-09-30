@@ -26,6 +26,27 @@ export interface McpTask {
   error?: { code: number; message: string };
 }
 
+/** Immutable reference to an owning workflow record, never an approval. */
+export interface McpTaskContinuation {
+  recordId: string;
+  revision: string;
+  inputKey: string;
+}
+
+/** Live runner authority: implementations resolve current grants, never snapshots. */
+export interface McpTaskAuthority {
+  continuation?: Readonly<McpTaskContinuation>;
+  ownerId: string;
+  tenantId: string | null;
+  taskId: string;
+  objectType: string;
+  objectId: string;
+  method: string;
+}
+
+/** Internal control flow after input is durably persisted and the worker released. */
+export class McpTaskSuspendedError extends Error {}
+
 /** Arguments passed through an MCP tool action into its backing job. */
 export interface CreateMcpTaskInput {
   objectType: string;
@@ -34,6 +55,7 @@ export interface CreateMcpTaskInput {
   /** Exact positional custom-action invocation produced by the MCP generator. */
   invocationArgs: unknown[];
   tenantId?: string | null;
+  continuation?: McpTaskContinuation;
   /** Optional agent constructor configuration retained by normal background jobs. */
   agentConfig?: Record<string, unknown>;
   timeout?: number;
@@ -43,6 +65,9 @@ export interface CreateMcpTaskInput {
 
 /** Internal persisted marker distinguishing task invocations from normal jobs. */
 export interface McpTaskJobMarker {
+  /** Set by the trusted app task store, never by tool arguments. */
+  authorizationRequired?: boolean;
+  continuation?: McpTaskContinuation;
   invocationArgs: unknown[];
   pollIntervalMs: number;
   ttlMs: number;
@@ -86,16 +111,23 @@ export class McpTaskCancelledError extends Error {
  */
 export class McpTaskStore {
   private readonly ownerId: string | null;
+  private readonly requireAuthorization: boolean;
+  private readonly tenantId: string | null;
 
   private constructor(
     private readonly collection: SmrtJobCollection,
     options: {
+      /** Require live worker authorization for every task from this store. */
+      requireAuthorization?: boolean;
       ownerId?: string | null;
+      tenantId?: string | null;
       pollIntervalMs?: number;
       ttlMs?: number;
     },
   ) {
     this.ownerId = options.ownerId ?? null;
+    this.requireAuthorization = options.requireAuthorization ?? false;
+    this.tenantId = options.tenantId ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
     this.ttlMs = options.ttlMs ?? 86_400_000;
   }
@@ -106,7 +138,10 @@ export class McpTaskStore {
   static async create(
     db: DatabaseInterface,
     options: {
+      /** Require live worker authorization for every task from this store. */
+      requireAuthorization?: boolean;
       ownerId?: string | null;
+      tenantId?: string | null;
       pollIntervalMs?: number;
       ttlMs?: number;
     } = {},
@@ -117,11 +152,23 @@ export class McpTaskStore {
 
   /** Create one pending job and return its immediately-pollable task projection. */
   async createTask(input: CreateMcpTaskInput): Promise<McpTask> {
+    if ((input.tenantId ?? null) !== this.tenantId) {
+      throw new Error('MCP task tenant does not match active tenant');
+    }
+    if (this.requireAuthorization && !this.ownerId)
+      throw new Error('Authorized tasks require an owner');
+    if (input.continuation) {
+      validateContinuation(input.continuation);
+      if (!this.ownerId)
+        throw new Error('Durable continuation requires an owner');
+    }
     const taskId = createId();
     const pollIntervalMs = input.pollIntervalMs ?? this.pollIntervalMs;
     const ttlMs = input.ttlMs ?? this.ttlMs;
     const marker: McpTaskJobMarker = {
       invocationArgs: input.invocationArgs,
+      ...(this.requireAuthorization ? { authorizationRequired: true } : {}),
+      ...(input.continuation ? { continuation: input.continuation } : {}),
       pollIntervalMs,
       ttlMs,
     };
@@ -138,6 +185,9 @@ export class McpTaskStore {
       method: input.method,
       args,
       timeout: input.timeout,
+      ...(input.continuation || this.requireAuthorization
+        ? { maxAttempts: 1 }
+        : {}),
       taskId,
       taskOwnerId: this.ownerId,
       taskInputRequests: null,
@@ -145,6 +195,23 @@ export class McpTaskStore {
     });
 
     return taskFromJob(job, { pollIntervalMs, ttlMs });
+  }
+
+  /**
+   * Read a waiting task's application input descriptor for an explicitly declared
+   * workflow tool or authenticated form. This is not an MCP protocol extension.
+   */
+  async getContinuation(taskId: string): Promise<{
+    binding: McpTaskContinuation;
+    inputRequests: Record<string, unknown>;
+  } | null> {
+    const job = await this.findTaskJob(taskId);
+    const binding = getMcpTaskMarker(job)?.continuation;
+    if (!binding || job.status !== 'pending' || job.taskInputResponses !== null)
+      return null;
+    const inputRequests = asRecord(job.taskInputRequests);
+    if (!Object.keys(inputRequests).length) return null;
+    return { binding, inputRequests };
   }
 
   /** Get a task only when it belongs to this store's principal. */
@@ -170,6 +237,31 @@ export class McpTaskStore {
   ): Promise<void> {
     const job = await this.findTaskJob(taskId);
     const requested = asRecord(job.taskInputRequests);
+    if (getMcpTaskMarker(job)?.continuation) {
+      if (
+        !Object.keys(requested).length ||
+        !Object.keys(requested).every((key) =>
+          Object.hasOwn(inputResponses, key),
+        )
+      )
+        return;
+      const selected = Object.fromEntries(
+        Object.keys(requested).map((key) => [key, inputResponses[key]]),
+      );
+      await this.collection.query(
+        `UPDATE _smrt_jobs SET task_input_responses = ?, updated_at = ?
+          WHERE id = ? AND task_id = ? AND status = 'pending'
+            AND task_input_responses IS NULL`,
+        [
+          encodeContinuationJson(selected),
+          new Date().toISOString(),
+          job.id,
+          taskId,
+        ],
+        { allowRawOnTenantScoped: true },
+      );
+      return;
+    }
     if (Object.keys(requested).length === 0) return;
 
     const current = asRecord(job.taskInputResponses);
@@ -216,9 +308,13 @@ export class McpTaskStore {
   private async findTaskJob(taskId: string): Promise<SmrtJob> {
     const ownerPredicate =
       this.ownerId === null ? 'task_owner_id IS NULL' : 'task_owner_id = ?';
-    const params = this.ownerId === null ? [taskId] : [taskId, this.ownerId];
+    const params: unknown[] =
+      this.ownerId === null ? [taskId] : [taskId, this.ownerId];
+    const tenantPredicate =
+      this.tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    if (this.tenantId !== null) params.push(this.tenantId);
     const jobs = await this.collection.query(
-      `SELECT * FROM _smrt_jobs WHERE task_id = ? AND ${ownerPredicate} LIMIT 1`,
+      `SELECT * FROM _smrt_jobs WHERE task_id = ? AND ${ownerPredicate} AND ${tenantPredicate} LIMIT 1`,
       params,
       { allowRawOnTenantScoped: true },
     );
@@ -236,8 +332,103 @@ export function getMcpTaskMarker(
   if (!Array.isArray(marker.invocationArgs)) return null;
   return {
     invocationArgs: marker.invocationArgs,
+    ...(marker.authorizationRequired === true
+      ? { authorizationRequired: true }
+      : {}),
+    ...(marker.continuation
+      ? { continuation: validateContinuation(marker.continuation) }
+      : {}),
     pollIntervalMs: asPositiveInt(marker.pollIntervalMs, 250),
     ttlMs: asPositiveInt(marker.ttlMs, 86_400_000),
+  };
+}
+
+/**
+ * Persist one immutable input round and release the worker. On replay the handler
+ * starts again; work before this seam must be read-only or use owning runOnce /
+ * action idempotency. An answer is input only, never domain approval.
+ */
+export async function requestMcpTaskContinuation(
+  db: DatabaseInterface,
+  job: Pick<SmrtJob, 'id' | 'taskId' | 'workerId' | 'args'>,
+  binding: McpTaskContinuation,
+  inputRequest: unknown,
+): Promise<unknown> {
+  validateContinuation(binding);
+  const expected = getMcpTaskMarker(job)?.continuation;
+  if (
+    !expected ||
+    expected.recordId !== binding.recordId ||
+    expected.revision !== binding.revision ||
+    expected.inputKey !== binding.inputKey
+  ) {
+    throw new Error('MCP continuation binding mismatch');
+  }
+  const found = await db.query(
+    `SELECT task_input_responses FROM _smrt_jobs
+      WHERE id = ? AND task_id = ? AND worker_id = ? AND status = 'running'`,
+    job.id,
+    job.taskId,
+    job.workerId,
+  );
+  if (found.rows.length !== 1)
+    throw new McpTaskCancelledError(job.taskId ?? '');
+  const answers = asRecord(parseJson(found.rows[0].task_input_responses));
+  if (Object.hasOwn(answers, binding.inputKey))
+    return answers[binding.inputKey];
+  const suspended = await db.query(
+    `UPDATE _smrt_jobs SET status = 'pending', worker_id = NULL,
+      worker_heartbeat = NULL, task_input_requests = ?, updated_at = ?
+      WHERE id = ? AND task_id = ? AND worker_id = ? AND status = 'running'
+      RETURNING id`,
+    encodeContinuationJson({ [binding.inputKey]: inputRequest }),
+    new Date().toISOString(),
+    job.id,
+    job.taskId,
+    job.workerId,
+  );
+  if (suspended.rows.length !== 1)
+    throw new McpTaskCancelledError(job.taskId ?? '');
+  throw new McpTaskSuspendedError('MCP task awaits durable input');
+}
+
+function encodeContinuationJson(value: unknown): string {
+  try {
+    const json = JSON.stringify(value, (_key, item) => {
+      if (
+        item === undefined ||
+        typeof item === 'function' ||
+        typeof item === 'symbol' ||
+        typeof item === 'bigint' ||
+        (typeof item === 'number' && !Number.isFinite(item))
+      ) {
+        throw new Error('Invalid JSON');
+      }
+      return item;
+    });
+    if (!json || new TextEncoder().encode(json).byteLength > 65_536)
+      throw new Error('Oversized JSON');
+    return json;
+  } catch {
+    throw new Error('MCP continuation input must be JSON within 65536 bytes');
+  }
+}
+
+function validateContinuation(value: unknown): McpTaskContinuation {
+  const record = asRecord(value);
+  for (const key of ['recordId', 'revision', 'inputKey']) {
+    if (
+      typeof record[key] !== 'string' ||
+      !record[key] ||
+      record[key].length > 256
+    ) {
+      throw new Error('Invalid MCP continuation binding');
+    }
+  }
+  return {
+    recordId: record.recordId as string,
+    revision: record.revision as string,
+    inputKey: record.inputKey as string,
   };
 }
 

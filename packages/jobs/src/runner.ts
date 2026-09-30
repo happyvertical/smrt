@@ -28,6 +28,9 @@ import {
 import {
   createMcpTaskResult,
   getMcpTaskMarker,
+  type McpTaskAuthority,
+  McpTaskSuspendedError,
+  requestMcpTaskContinuation,
   requestMcpTaskInput,
 } from './mcp-task.js';
 import {
@@ -89,6 +92,10 @@ export function getActiveJobExecutionContext():
 export interface TaskRunnerConfig {
   /** Worker ID (auto-generated if not provided) */
   id?: string;
+  /** Resolve live authority for durable tasks at each execution/replay. */
+  authorizeMcpTask?: (
+    authority: Readonly<McpTaskAuthority>,
+  ) => Promise<boolean>;
   /** Number of concurrent jobs to process */
   concurrency?: number;
   /** Queues to process (default: ['default']) */
@@ -176,6 +183,7 @@ export class JobTimeoutError extends Error {
  */
 const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   id: '',
+  authorizeMcpTask: async () => false,
   concurrency: 5,
   queues: ['default'],
   pollInterval: 1000,
@@ -756,6 +764,7 @@ export class TaskRunner extends EventEmitter {
       resultPointer?: string;
       taskResult?: Record<string, unknown>;
     }> => {
+      await this.assertMcpTaskAuthority(job);
       // Get the object class from registry
       const registeredClass = ObjectRegistry.getClass(job.objectType);
       if (!registeredClass) {
@@ -915,6 +924,7 @@ export class TaskRunner extends EventEmitter {
    * Handle job execution error
    */
   private async handleJobError(job: SmrtJob, error: Error): Promise<void> {
+    if (error instanceof McpTaskSuspendedError) return;
     const strategy = fromConfig(job.retryStrategy);
     const decision: RetryDecision = strategy.shouldRetry(job.attempts, error);
 
@@ -994,6 +1004,37 @@ export class TaskRunner extends EventEmitter {
     }
   }
 
+  private async assertMcpTaskAuthority(job: SmrtJob): Promise<void> {
+    const marker = getMcpTaskMarker(job);
+    const continuation = marker?.continuation;
+    if (!continuation && !marker?.authorizationRequired) return;
+    if (
+      !job.taskOwnerId ||
+      !(await this.config.authorizeMcpTask(
+        Object.freeze({
+          ownerId: job.taskOwnerId,
+          tenantId: job.tenantId ?? null,
+          taskId: job.taskId ?? '',
+          objectType: job.objectType,
+          objectId: job.objectId ?? '',
+          method: job.method,
+          ...(continuation
+            ? { continuation: Object.freeze({ ...continuation }) }
+            : {}),
+        }),
+      ))
+    )
+      throw new Error('MCP task authorization denied');
+    // Authority lookup may await network I/O; cancellation can win meanwhile.
+    const owned = await this.db?.query(
+      `SELECT id FROM _smrt_jobs WHERE id = ? AND worker_id = ? AND status = 'running'`,
+      job.id,
+      job.workerId,
+    );
+    if (owned?.rows.length !== 1)
+      throw new Error('MCP task is no longer active');
+  }
+
   private createExecutionContext(
     job: SmrtJob,
     contextLogger: JobContextLogger,
@@ -1047,12 +1088,24 @@ export class TaskRunner extends EventEmitter {
       ...(job.taskId && this.db
         ? {
             task: {
-              requestInput: (inputRequests: Record<string, unknown>) =>
-                requestMcpTaskInput(
+              assertAuthorized: () => this.assertMcpTaskAuthority(job),
+              requestContinuation: (binding, inputRequest) =>
+                requestMcpTaskContinuation(
+                  this.db as DatabaseInterface,
+                  job,
+                  binding,
+                  inputRequest,
+                ),
+              requestInput: async (inputRequests: Record<string, unknown>) => {
+                await this.assertMcpTaskAuthority(job);
+                const answers = await requestMcpTaskInput(
                   this.db as DatabaseInterface,
                   job,
                   inputRequests,
-                ),
+                );
+                await this.assertMcpTaskAuthority(job);
+                return answers;
+              },
             },
           }
         : {}),
