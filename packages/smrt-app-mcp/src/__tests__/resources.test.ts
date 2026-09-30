@@ -84,6 +84,47 @@ describe('prebuilt resource declarations', () => {
     expect(() =>
       prepareMcpAppResource({ ...definition, ...change } as never),
     ).toThrow());
+  it('does not parse JavaScript URL constructors or HTML strings as CSS assets', () => {
+    const html = `<script>const e = { hostOrigin: "https://host.test" }; new URL(e.hostOrigin); const template = '<div style="background:url(https://not-loaded.test/a)"></div>';</script>`;
+    expect(prepareMcpAppResource({ ...definition, html }).html).toBe(html);
+  });
+  it.each([
+    '<style>body { background: url(https://evil.test/x) }</style>',
+    '<div style="background: url(https://evil.test/x)"></div>',
+    "<div style='background:url(https://evil.test/x)'></div>",
+    '<div style=background:url(https://evil.test/x)></div>',
+  ])('still rejects undeclared CSS assets in their CSS context: %s', (html) => {
+    expect(() => prepareMcpAppResource({ ...definition, html })).toThrow(
+      'undeclared external asset',
+    );
+    expect(
+      prepareMcpAppResource({
+        ...definition,
+        html,
+        csp: { resourceDomains: ['https://evil.test'] },
+      }).html,
+    ).toBe(html);
+  });
+  it('uses HTML parsing for comments, decoded CSS attributes and raw text', () => {
+    const inert =
+      '<!-- <div style="background:url(https://inert.test/x)"></div> --><script>new URL(e.hostOrigin)</script>';
+    expect(prepareMcpAppResource({ ...definition, html: inert }).html).toBe(
+      inert,
+    );
+    for (const html of [
+      '<!--><img src="https://evil.test/x">',
+      '<div style="background:u&#114;l(https://evil.test/x)"></div>',
+      '<svg><rect fill="url(https://evil.test/x)"></rect></svg>',
+      '<style>body{background:image-set("https://evil.test/x" 1x)}</style>',
+      '<script src="https://evil.test/script.js">new URL(e.hostOrigin)</script>',
+    ])
+      expect(() => prepareMcpAppResource({ ...definition, html })).toThrow();
+    const raster =
+      '<div style="background:url(data:image/png;base64,AAAA)"></div>';
+    expect(prepareMcpAppResource({ ...definition, html: raster }).html).toBe(
+      raster,
+    );
+  });
   it('allows explicitly declared assets and permissions', () => {
     expect(
       prepareMcpAppResource({
@@ -96,6 +137,62 @@ describe('prebuilt resource declarations', () => {
         permissions: { clipboardWrite: {} },
       }).descriptor._meta.ui.permissions,
     ).toEqual({ clipboardWrite: {} });
+  });
+  it('snapshots bounded extension metadata into both catalog and resource contents', async () => {
+    const metadata = {
+      'openai/ui': { displayModes: ['inline'] },
+      'example.org/optional': { enabled: true, nullable: null },
+    };
+    const app = createMcpAppServer({
+      ...base,
+      resources: [{ ...definition, public: true, metadata }],
+    });
+    metadata['openai/ui'].displayModes.push('future');
+    const listed = await app.listResources!({});
+    expect(listed[0]._meta['openai/ui']).toEqual({ displayModes: ['inline'] });
+    expect((await app.readResource!({ uri: definition.uri }))._meta).toEqual(
+      listed[0]._meta,
+    );
+  });
+  it.each([
+    { ui: {} },
+    { 'com.happyvertical.smrt/resource': {} },
+    { bad: undefined },
+    { bad: Number.NaN },
+    { bad: () => true },
+    { bad: new Date() },
+    { bad: 'x'.repeat(65537) },
+  ])('rejects reserved or non-JSON extension metadata: %j', (metadata) => {
+    expect(() => prepareMcpAppResource({ ...definition, metadata })).toThrow();
+  });
+  it('rejects cyclic and accessor metadata without executing getters', () => {
+    let deep: Record<string, unknown> = {};
+    for (let depth = 0; depth < 18; depth++) deep = { nested: deep };
+    expect(() =>
+      prepareMcpAppResource({ ...definition, metadata: deep }),
+    ).toThrow('16 levels');
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() =>
+      prepareMcpAppResource({ ...definition, metadata: cyclic }),
+    ).toThrow('cycles');
+    const getter = vi.fn(() => 'secret');
+    const metadata = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get: getter,
+    });
+    expect(() => prepareMcpAppResource({ ...definition, metadata })).toThrow(
+      'accessors',
+    );
+    expect(getter).not.toHaveBeenCalled();
+    const toJSON = vi.fn(() => ({ leaked: true }));
+    expect(() =>
+      prepareMcpAppResource({
+        ...definition,
+        metadata: Object.defineProperty({}, 'toJSON', { value: toJSON }),
+      }),
+    ).toThrow('plain JSON');
+    expect(toJSON).not.toHaveBeenCalled();
   });
   it('rejects duplicate declarations and dangling associations', async () => {
     expect(() =>
