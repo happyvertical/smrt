@@ -104,7 +104,7 @@ function toggle(key: string | number) {
 <style>
   .collection { display: grid; gap: var(--smrt-spacing-2); margin: 0; padding: 0; list-style: none; }
   .collection--grid { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
-  li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-medium); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
+  li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--smrt-spacing-3); min-width: 0; padding: var(--smrt-spacing-3); border: var(--smrt-card-border, 1px solid var(--smrt-color-outline-variant)); border-radius: var(--smrt-radius-medium); background: var(--smrt-card-background, var(--smrt-color-surface)); color: var(--smrt-color-on-surface); }
   li.selected { border-color: var(--smrt-color-primary); background: var(--smrt-color-primary-container); }
   input { width: 1.125rem; height: 1.125rem; accent-color: var(--smrt-color-primary); }
   .main { display: grid; min-width: 0; gap: var(--smrt-spacing-1); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }

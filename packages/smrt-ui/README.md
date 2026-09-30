@@ -698,6 +698,30 @@ hand-authored, and every text pairing clears WCAG AA.
 Run the shared playground to inspect the full catalog under every preset and
 light/dark scheme.
 
+### Card look tokens
+
+`Card` and `CollectionList` rows read these custom properties, so an app can
+change the card look once in its own theme layer instead of per page. Unset,
+they keep the stock look.
+
+| Property | Default | Used for |
+| --- | --- | --- |
+| `--smrt-card-border` | `1px solid var(--smrt-color-outline-variant)` | edge of `default` and `elevated` cards, CollectionList rows |
+| `--smrt-card-background` | `var(--smrt-color-surface)` | card and row fill |
+| `--smrt-card-shadow` | `none` | shadow of `default` cards (`elevated` keeps its elevation) |
+| `--smrt-card-divider` | `1px solid var(--smrt-color-outline-variant)` | rule under a card header / above its footer |
+
+The `outlined` variant always draws its outline. For borderless cards on a
+`surface` page, pair `--smrt-card-border: none` with a tinted background such
+as `var(--smrt-color-surface-variant)` so cards stay distinct in both schemes:
+
+```css
+:root {
+  --smrt-card-border: none;
+  --smrt-card-background: var(--smrt-color-surface-variant);
+}
+```
+
 ## Development
 
 ```bash
