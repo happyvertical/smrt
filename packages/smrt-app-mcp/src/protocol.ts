@@ -87,6 +87,11 @@ export function createMcpProtocolServer(
   appServer: McpAppServer,
   options: McpProtocolServerOptions = {},
 ): Server {
+  if ('extensions' in options) {
+    throw new TypeError(
+      'Extension discovery requires createMcpProtocolServerForRequest.',
+    );
+  }
   return protocolServer(appServer, options, {});
 }
 

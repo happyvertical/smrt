@@ -3,6 +3,7 @@ import {
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
 import { describe, expect, it } from 'vitest';
+import { createMcpProtocolServer } from '../protocol.js';
 import { createMcpAppServer } from '../server.js';
 import { mountMcpRoute } from '../sveltekit.js';
 
@@ -47,6 +48,11 @@ function app() {
   });
 }
 describe('request-local extension discovery', () => {
+  it('refuses async extension options on the synchronous factory', () => {
+    expect(() =>
+      createMcpProtocolServer(app(), { extensions: () => ({}) } as never),
+    ).toThrow('createMcpProtocolServerForRequest');
+  });
   it('derives metadata from the same principal-filtered catalog and never caches it globally', async () => {
     let principal = { id: 'owner', tenantId: 'a' };
     const route = mountMcpRoute(app(), {
