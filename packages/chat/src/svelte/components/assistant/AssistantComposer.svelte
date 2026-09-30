@@ -280,8 +280,8 @@ function removeAttachment(id: string) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-full, 9999px);
@@ -312,6 +312,14 @@ function removeAttachment(id: string) {
     resize: none;
     /* #3000: form controls don't inherit font; use the theme's family. */
     font-family: var(--smrt-font-family, inherit);
+  }
+
+  /* Phones: 16px text so iOS Safari doesn't zoom the page when the
+     message field gets focus. */
+  @media (max-width: 48rem) {
+    :global(.assistant-composer-textarea) {
+      font-size: max(1rem, 16px);
+    }
   }
 
   :global(.assistant-composer-send) {
