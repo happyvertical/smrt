@@ -30,6 +30,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { SmrtPluginApi } from '@happyvertical/smrt-core/vite-plugin';
 import type { Plugin } from 'vitest/config';
 import { isVerbose, shouldLogManifestSummaryOnce } from './log.js';
 
@@ -866,6 +867,19 @@ async function importSmrtCoreManifestModule(): Promise<
   }
 }
 
+async function importSmrtCoreKnowledgeModule(): Promise<
+  typeof import('@happyvertical/smrt-core/knowledge')
+> {
+  const specifier = '@happyvertical/smrt-core/knowledge';
+  try {
+    return await import(specifier);
+  } catch {
+    const fallbackHref = new URL('../../core/src/knowledge.ts', import.meta.url)
+      .href;
+    return await importWorkspaceSourceModule(fallbackHref);
+  }
+}
+
 async function importDiscoverBaseClassesModule(): Promise<
   typeof import('@happyvertical/smrt-core/manifest/discover-base-classes')
 > {
@@ -1069,9 +1083,10 @@ async function loadAndRegisterLocalManifest(
  * The ~1-2s overhead is minimal compared to test execution time.
  */
 async function generateLocalManifest(
-  _root: string,
+  root: string,
   options: SmrtVitestPluginOptions,
   verbose: boolean,
+  producerApi?: SmrtPluginApi,
 ): Promise<boolean> {
   try {
     console.log('[smrt-vitest] Generating test manifest...');
@@ -1118,6 +1133,7 @@ async function generateLocalManifest(
     });
 
     const objectCount = Object.keys(manifest.objects).length;
+    await refreshTestKnowledgeArtifact(root, manifest, producerApi);
     console.log(
       `[smrt-vitest] ✓ Generated manifest with ${objectCount} object(s)`,
     );
@@ -1127,6 +1143,66 @@ async function generateLocalManifest(
     console.error('[smrt-vitest] Failed to generate manifest:', error);
     return false;
   }
+}
+
+async function refreshTestKnowledgeArtifact(
+  root: string,
+  manifest: import('@happyvertical/smrt-core/scanner/types').SmartObjectManifest,
+  producerApi?: SmrtPluginApi,
+): Promise<void> {
+  const {
+    AGENT_SURFACE_HASH_PREFIX,
+    buildDomainKnowledgeManifest,
+    publishArtifactFiles,
+    resolveFileKnowledgeConfig,
+  } = await importSmrtCoreKnowledgeModule();
+  const manifestPath = join(root, '.smrt/manifest.json');
+  const knowledgePath = join(root, '.smrt/smrt-knowledge.json');
+  let priorKnowledge:
+    | {
+        agentSurface?: unknown;
+        sourceHashes?: Record<string, string>;
+      }
+    | undefined;
+  try {
+    priorKnowledge = JSON.parse(readFileSync(knowledgePath, 'utf8'));
+  } catch {
+    // A missing or malformed prior artifact is replaced by current generation.
+  }
+  const config = producerApi
+    ? await producerApi.resolveKnowledgeConfig(manifest)
+    : await resolveFileKnowledgeConfig(root, manifest.packageName);
+  if (config.enabled === false) return;
+  const agentSurface = producerApi
+    ? await producerApi.resolveKnowledgeAgentSurface()
+    : undefined;
+  const knowledge = buildDomainKnowledgeManifest({
+    manifest,
+    rootDir: root,
+    manifestPath,
+    config,
+    agentSurface,
+  });
+  const priorSurfaceHashes = Object.entries(
+    priorKnowledge?.sourceHashes ?? {},
+  ).filter(([key]) => key.startsWith(AGENT_SURFACE_HASH_PREFIX));
+  if (
+    !agentSurface &&
+    priorKnowledge?.agentSurface &&
+    priorSurfaceHashes.length
+  ) {
+    // Without the producer API we cannot rescan declarations. Preserve the
+    // last surface *and its old source hashes*: rebuilding hashes from files
+    // under a stale declaration would incorrectly certify it as fresh.
+    knowledge.agentSurface = priorKnowledge.agentSurface as never;
+    Object.assign(
+      knowledge.sourceHashes,
+      Object.fromEntries(priorSurfaceHashes),
+    );
+  }
+  publishArtifactFiles([
+    { path: knowledgePath, content: JSON.stringify(knowledge, null, 2) },
+  ]);
 }
 
 /**
@@ -1403,13 +1479,16 @@ export function smrtVitestPlugin(
     },
 
     // Run during config resolution to ensure manifests are loaded before tests
-    async configResolved() {
+    async configResolved(resolvedConfig) {
       if (manifestsLoaded) return;
 
       // Step 1: Generate local manifest if enabled (default: true)
       // This ensures manifest is always fresh after adding new classes/fields
       if (generateManifest) {
-        await generateLocalManifest(root, options, verbose);
+        const producerApi = (resolvedConfig.plugins ?? []).find(
+          (plugin) => plugin?.name === 'smrt-auto-service',
+        )?.api as SmrtPluginApi | undefined;
+        await generateLocalManifest(root, options, verbose, producerApi);
       }
 
       // Step 2: Load the local manifest so late-imported local classes are

@@ -10,7 +10,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -36,7 +36,7 @@ async function generateTestManifest() {
 
       const builder = new ManifestBuilder();
 
-      await builder.generate({
+      const manifest = await builder.generate({
         // === FILE DISCOVERY ===
         // Scan all source files including test files for test manifest
         // Test classes defined inline need to be in the manifest for proper field detection
@@ -65,6 +65,41 @@ async function generateTestManifest() {
         injectPackageInfo: true,
         moduleType: 'smrt',
       });
+      const { buildDomainKnowledgeManifest, resolveFileKnowledgeConfig } =
+        await import(
+          pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+        );
+      const manifestPath = resolve(process.cwd(), '.smrt/manifest.json');
+      const knowledgePath = resolve(process.cwd(), '.smrt/smrt-knowledge.json');
+      let agentSurface;
+      try {
+        agentSurface = JSON.parse(
+          readFileSync(knowledgePath, 'utf8'),
+        ).agentSurface;
+      } catch {
+        // A missing or malformed prior artifact is replaced by current generation.
+      }
+      const config = await resolveFileKnowledgeConfig(
+        process.cwd(),
+        manifest.packageName,
+      );
+      if (config.enabled !== false) {
+        writeFileSync(
+          knowledgePath,
+          JSON.stringify(
+            buildDomainKnowledgeManifest({
+              manifest,
+              rootDir: process.cwd(),
+              manifestPath,
+              config,
+              agentSurface,
+            }),
+            null,
+            2,
+          ),
+          'utf8',
+        );
+      }
     } finally {
       await unregister();
     }
