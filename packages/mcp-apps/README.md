@@ -71,7 +71,7 @@ list permits only inline. Host rejection (`isError: true`) and RPC errors propag
 
 Payload limits: 24 nested levels, 4096 array items, 1024 object keys, conservative
 128 KiB character/node budget; text blocks 32 KiB, 128 blocks; 32 pending requests;
-15-second default timeout (configurable 1–120000 ms). Cycles/non-JSON/accessors and
+15-second default timeout (configurable 1–120000 ms). Arrays must be dense own data properties with no named/symbol properties; their iterators are never invoked. Cycles/non-JSON/accessors and
 prototype keys are rejected. Requests use per-instance random correlated IDs.
 Timeout, abort and disposal reject pending calls and send best-effort cancellation.
 Disposal removes the listener, aborts `signal`, and clears observers. Cancellation
