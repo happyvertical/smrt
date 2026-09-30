@@ -188,13 +188,19 @@ Unknown and denied URIs return the same error. The resource policy owns tenant
 and owner restrictions; static templates contain no candidate records, tokens
 or sessions. Retrieve changing data through authorized tools instead.
 
+Optional `metadata` carries extension JSON into catalog/read `_meta`, with a
+64 KiB and 16-level limit. Non-JSON values, accessors, cycles and reserved `ui`
+or `com.happyvertical.smrt/resource` keys are rejected. Metadata grants no access.
+
 The raw HTML budget is 100 KiB. CSP connection, resource, frame and base origins
 default to empty lists; permissions default to none. Origins must be exact HTTPS
 origins (WSS is additionally accepted for connections). Unknown CSP/permission
 fields are rejected. Bundle assets inline or use literal absolute references to
-explicitly declared resource/frame origins. Relative/encoded asset references,
-CSS imports/escapes, base/object/embed/meta tags, srcset and srcdoc are rejected
-by the conservative static validation profile. Raster data images are permitted.
+explicitly declared resource/frame origins. Relative asset references,
+CSS imports/escapes and alternate image/source functions, base/object/embed/meta tags, srcset and srcdoc are rejected
+by the conservative static validation profile. HTML is parsed before validation;
+script raw text and inert comments are not CSS. Decoded attribute URLs must still
+match declared origins. Raster data images are permitted.
 Dynamic JavaScript networking requires host CSP enforcement; declarations are
 not a JavaScript sandbox. Host rendering and enforcement remain M4/M8 gates.
 
