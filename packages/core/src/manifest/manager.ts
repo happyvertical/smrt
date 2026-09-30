@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
+import { publishAtomicArtifact } from '../consumer-plugin/artifact-publication.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { ScanResult, SmartObjectManifest } from '../scanner/types.js';
 
@@ -90,7 +91,10 @@ export class ManifestManager {
       mkdirSync(outputDir, { recursive: true });
     }
 
-    writeFileSync(outputPath, JSON.stringify(manifest, null, 2));
+    publishAtomicArtifact({
+      path: outputPath,
+      content: JSON.stringify(manifest, null, 2),
+    });
   }
 
   /**

@@ -18,6 +18,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
@@ -56,10 +57,13 @@ type TurboTask = {
   taskId: string;
 };
 
-function getCoreBuildTask(cwd: string): TurboTask {
+function getCoreTask(
+  cwd: string,
+  taskName: 'build' | 'generate:test',
+): TurboTask {
   const output = runCommand(
     resolve(workspaceDir, 'node_modules/.bin/turbo'),
-    ['run', 'build', '--filter=@happyvertical/smrt-core', '--dry=json'],
+    ['run', taskName, '--filter=@happyvertical/smrt-core', '--dry=json'],
     cwd,
   );
   const jsonStart = output.indexOf('\n{');
@@ -67,12 +71,16 @@ function getCoreBuildTask(cwd: string): TurboTask {
     output.slice(jsonStart === -1 ? 0 : jsonStart + 1),
   ).tasks.find(
     (candidate: TurboTask) =>
-      candidate.taskId === '@happyvertical/smrt-core#build',
+      candidate.taskId === `@happyvertical/smrt-core#${taskName}`,
   ) as TurboTask | undefined;
 
   if (!task)
-    throw new Error('Core build task was missing from the Turbo graph');
+    throw new Error(`Core ${taskName} task was missing from the Turbo graph`);
   return task;
+}
+
+function getCoreBuildTask(cwd: string): TurboTask {
+  return getCoreTask(cwd, 'build');
 }
 
 function snapshotPath(path: string): string {
@@ -141,6 +149,10 @@ function withIsolatedCoreFixture<T>(run: (fixtureDir: string) => T): T {
       resolve(workspaceDir, 'tsconfig.package-build.json'),
       join(fixtureRoot, 'tsconfig.package-build.json'),
     );
+    cpSync(
+      resolve(workspaceDir, 'vite.config.base.ts'),
+      join(fixtureRoot, 'vite.config.base.ts'),
+    );
     mkdirSync(join(fixtureRoot, 'scripts'), { recursive: true });
     cpSync(
       resolve(workspaceDir, 'scripts/declarations.ts'),
@@ -195,6 +207,12 @@ describe('Issue #2223 - test manifest task ownership', () => {
         '!src/manifest/test-manifest-stub.ts',
       ]),
     );
+    expect(turbo.tasks.build.outputs).not.toEqual(
+      expect.arrayContaining([
+        '.smrt/manifest.json',
+        '.smrt/smrt-knowledge.json',
+      ]),
+    );
   });
 
   it('keeps a cold build hash and production output independent of test artifacts', () => {
@@ -235,6 +253,104 @@ describe('Issue #2223 - test manifest task ownership', () => {
     });
 
     expect(snapshotLiveGeneratedArtifacts()).toEqual(liveBefore);
+  }, 180_000);
+
+  it('invalidates cached test knowledge when its supported config changes', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const fixtureWorkspace = resolve(fixtureDir, '../..');
+      const configPath = resolve(fixtureDir, 'smrt.config.json');
+      const turbo = resolve(workspaceDir, 'node_modules/.bin/turbo');
+      const knowledgePath = resolve(fixtureDir, '.smrt/smrt-knowledge.json');
+
+      writeFileSync(
+        configPath,
+        JSON.stringify({ knowledge: { includeDocs: false } }),
+      );
+      const withoutDocs = getCoreTask(fixtureWorkspace, 'generate:test');
+      runCommand(
+        turbo,
+        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
+        fixtureWorkspace,
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
+      ).toBeUndefined();
+
+      writeFileSync(
+        configPath,
+        JSON.stringify({ knowledge: { includeDocs: true } }),
+      );
+      const withDocs = getCoreTask(fixtureWorkspace, 'generate:test');
+      expect(withDocs.hash).not.toBe(withoutDocs.hash);
+      runCommand(
+        turbo,
+        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
+        fixtureWorkspace,
+      );
+
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
+      ).toContain('# @happyvertical/smrt-core');
+
+      appendFileSync(
+        resolve(fixtureDir, 'AGENTS.md'),
+        '\nfixture cache sentinel\n',
+      );
+      const withChangedInstructions = getCoreTask(
+        fixtureWorkspace,
+        'generate:test',
+      );
+      expect(withChangedInstructions.hash).not.toBe(withDocs.hash);
+      runCommand(
+        turbo,
+        ['run', 'generate:test', '--filter=@happyvertical/smrt-core'],
+        fixtureWorkspace,
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).agentDoc,
+      ).toContain('fixture cache sentinel');
+    });
+  }, 180_000);
+
+  it('does not restore a nonproducer package manifest over test knowledge', () => {
+    withIsolatedCoreFixture((fixtureDir) => {
+      const workspace = resolve(fixtureDir, '../..');
+      const turboPath = resolve(workspace, 'turbo.json');
+      const packagePath = resolve(fixtureDir, 'package.json');
+      const smrtDir = resolve(fixtureDir, '.smrt');
+      const manifestPath = resolve(smrtDir, 'manifest.json');
+      const knowledgePath = resolve(smrtDir, 'smrt-knowledge.json');
+      const turbo = JSON.parse(readFileSync(turboPath, 'utf8'));
+      const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'));
+      turbo.tasks.build.dependsOn = [];
+      turbo.tasks.build.inputs = ['package.json'];
+      packageJson.scripts.build = 'node -e ""';
+      writeFileSync(turboPath, JSON.stringify(turbo));
+      writeFileSync(packagePath, JSON.stringify(packageJson));
+      mkdirSync(smrtDir, { recursive: true });
+      writeFileSync(manifestPath, JSON.stringify({ version: 'old' }));
+      runCommand(
+        resolve(workspaceDir, 'node_modules/.bin/turbo'),
+        ['run', 'build', '--filter=@happyvertical/smrt-core'],
+        workspace,
+      );
+      writeFileSync(manifestPath, JSON.stringify({ version: 'test-current' }));
+      writeFileSync(
+        knowledgePath,
+        JSON.stringify({ sourceHashes: { manifest: 'current' } }),
+      );
+      runCommand(
+        resolve(workspaceDir, 'node_modules/.bin/turbo'),
+        ['run', 'build', '--filter=@happyvertical/smrt-core'],
+        workspace,
+      );
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8')).version).toBe(
+        'test-current',
+      );
+      expect(
+        JSON.parse(readFileSync(knowledgePath, 'utf8')).sourceHashes.manifest,
+      ).toBe('current');
+    });
   }, 180_000);
 
   it('cleans up an isolated fixture when an assertion fails', () => {
