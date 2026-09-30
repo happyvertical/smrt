@@ -127,7 +127,7 @@ function validateAssets(html: string, csp: Required<McpAppResourceCsp>): void {
         );
       for (const attribute of node.attrs) {
         const name = attribute.name.toLowerCase();
-        if (['srcdoc', 'srcset'].includes(name))
+        if (['srcdoc', 'srcset', 'imagesrcset'].includes(name))
           throw new TypeError(
             'Resource contains an unsupported asset construct; bundle assets inline.',
           );
