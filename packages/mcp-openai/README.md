@@ -1,6 +1,6 @@
 # @happyvertical/smrt-mcp-openai
 
-Optional navigation and settings for SMRT MCP Apps. Ordinary SMRT apps do not
+Optional navigation and settings for s-m-r-t MCP Apps. Ordinary s-m-r-t apps do not
 import this package. The `./client` entry is browser-only and depends on the
 portable `@happyvertical/smrt-mcp-apps` bridge; the root entry composes existing
 app-MCP workflows without creating another server or authorization policy.
