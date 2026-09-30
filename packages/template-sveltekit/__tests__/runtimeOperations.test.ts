@@ -473,6 +473,27 @@ describe('profile-aware application operations', () => {
         PORT: '3000',
       }),
     ).not.toBe(initial);
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL: 'postgresql://user:first@db.example/app',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+        SMRT_MCP_RESOURCE: 'https://mcp.example/api/mcp',
+        SMRT_MCP_ISSUER: 'https://issuer.example/',
+        SMRT_MCP_JWKS_URI: 'https://issuer.example/keys-a.json',
+        SMRT_MCP_SCOPES: 'items.read',
+      }),
+    ).not.toBe(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL: 'postgresql://user:first@db.example/app',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+        SMRT_MCP_RESOURCE: 'https://mcp.example/api/mcp',
+        SMRT_MCP_ISSUER: 'https://issuer.example/',
+        SMRT_MCP_JWKS_URI: 'https://issuer.example/keys-b.json',
+        SMRT_MCP_SCOPES: 'items.read',
+      }),
+    );
     expect(runtimeConfigurationFingerprint(runtime, { DATABASE_URL: 'postgresql://user:first@db.example/app', HOST: '0.0.0.0', PORT: '3000', ORIGIN: 'https://trusted.example' })).not.toBe(initial);
     const sslRequired = runtimeConfigurationFingerprint(runtime, {
       DATABASE_URL:
