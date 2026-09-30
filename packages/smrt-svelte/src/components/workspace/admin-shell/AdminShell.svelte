@@ -654,6 +654,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-presentation={shell.config.panels.left.presentation}
       role="navigation"
       aria-label={labelFor('left')}
+      inert={isPhone && !edgeExpanded('left')}
       bind:this={sideElements.left}
       use:swipeDismiss={{
         direction: 'left',
@@ -732,6 +733,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       data-presentation={shell.config.panels.right.presentation}
       data-phone={rightPhone}
       aria-label={labelFor('right')}
+      inert={isPhone && !edgeExpanded('right')}
       bind:this={sideElements.right}
       use:swipeDismiss={{
         direction: 'right',

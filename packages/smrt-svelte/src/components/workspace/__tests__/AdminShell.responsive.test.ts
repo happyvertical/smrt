@@ -186,6 +186,19 @@ describe('AdminShell on a phone', () => {
     expect(shell.panels.left).toBe('collapsed');
   });
 
+  it('keeps a closed phone drawer out of the tab order and away from screen readers', async () => {
+    const { shell } = renderPhone();
+    await settle();
+    const left = document.getElementById('smrt-admin-shell-left-panel')!;
+    expect(left.inert).toBe(true);
+    shell.expandPanel('left');
+    flushSync();
+    expect(left.inert).toBe(false);
+    setWidth(1280);
+    await settle();
+    expect(left.inert).toBe(false);
+  });
+
   it('closes an open drawer when the path changes', async () => {
     const { shell, rerender } = renderPhone();
     await settle();
