@@ -75,12 +75,14 @@ export {
   classifyDictationError,
   Dictation,
   type DictationErrorKind,
+  type DictationLogEvent,
   type DictationOptions,
   type DictationSourceProvider,
   type DictationSpeechResult,
   type DictationSpeechSource,
   type DictationStartOptions,
   type DictationState,
+  dictationErrorCode,
 } from './dictation.svelte.js';
 export { default as ErrorSummary } from './ErrorSummary.svelte';
 export { default as Fieldset } from './Fieldset.svelte';

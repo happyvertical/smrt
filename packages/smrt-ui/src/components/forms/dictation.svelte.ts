@@ -19,6 +19,15 @@
  * form, press Escape, or pause talking (the browser ends it). A long press
  * starts listening and it keeps listening after the finger comes up, so the
  * person can press, hear the beep, let go, and talk.
+ *
+ * On first use it asks for the microphone (`getUserMedia`) and waits for the
+ * answer before it starts recognising, so the permission prompt cannot cut
+ * the recogniser off and a "no" shows as "the microphone is blocked".
+ *
+ * It never stops silently. Every recogniser error becomes an `error` state
+ * with a plain `errorKind` (and the raw `errorCode`, and a console warning);
+ * a recogniser that ends on its own within `earlyEndMs` of starting without
+ * hearing anything (Brave's speech recognition does this) is an error too.
  */
 import { playReadyBeep } from './ready-beep.js';
 
@@ -31,15 +40,21 @@ export type DictationState =
 
 /**
  * Why dictation stopped with an error:
- * - `unsupported`: this browser cannot recognise speech;
+ * - `unsupported`: this browser cannot recognise speech, or has no speech
+ *   service behind it (Web Speech `network` / `service-not-allowed`: Brave);
  * - `denied`: the microphone is blocked;
  * - `no-speech`: nothing was heard;
- * - `failed`: anything else (network, audio capture…).
+ * - `microphone`: no microphone, or it could not be opened (`audio-capture`);
+ * - `interrupted`: it stopped straight away without hearing anything
+ *   (`aborted`, or an early end with no error);
+ * - `failed`: anything else.
  */
 export type DictationErrorKind =
   | 'unsupported'
   | 'denied'
   | 'no-speech'
+  | 'microphone'
+  | 'interrupted'
   | 'failed';
 
 export interface DictationSpeechResult {
@@ -89,6 +104,59 @@ export interface DictationOptions {
   beep?: boolean | (() => Promise<boolean> | boolean);
   /** How long to wait for the source to confirm it stopped. Default 1500ms. */
   stopTimeoutMs?: number;
+  /**
+   * Ask for the microphone (`getUserMedia`) and wait for the answer before
+   * starting the source, once per `Dictation`. Default `true`; skipped where
+   * the browser has no `navigator.mediaDevices`.
+   */
+  requestMicrophone?: boolean;
+  /**
+   * A source that ends by itself this soon after it started listening,
+   * without a result and without being asked to stop, failed
+   * (`interrupted`). Default 1000ms; `0` turns the check off.
+   */
+  earlyEndMs?: number;
+  /**
+   * Where problems are reported (default: `console.warn`). Never given the
+   * audio or the words heard.
+   */
+  log?: (event: DictationLogEvent) => void;
+}
+
+/** A dictation problem, for logs. */
+export interface DictationLogEvent {
+  kind: DictationErrorKind;
+  /** Raw code: the Web Speech error (`network`, …) or the error's name. */
+  code: string | null;
+  message: string;
+  /** Where it happened: `microphone`, `source`, `start`, `error`, `end`. */
+  stage: 'microphone' | 'source' | 'start' | 'error' | 'end';
+}
+
+const SPEECH_ERROR_KINDS: Record<string, DictationErrorKind> = {
+  network: 'unsupported',
+  'service-not-allowed': 'unsupported',
+  'language-not-supported': 'unsupported',
+  'not-allowed': 'denied',
+  'no-speech': 'no-speech',
+  'audio-capture': 'microphone',
+  aborted: 'interrupted',
+};
+
+/** The raw code of a speech or media error, when it has one. */
+export function dictationErrorCode(error: unknown): string | null {
+  const e = (error ?? {}) as {
+    speechError?: unknown;
+    error?: unknown;
+    name?: unknown;
+    code?: unknown;
+  };
+  if (typeof e.speechError === 'string') return e.speechError;
+  // A raw SpeechRecognitionErrorEvent carries the code as `error`.
+  if (typeof e.error === 'string') return e.error;
+  if (typeof e.code === 'string') return e.code;
+  if (typeof e.name === 'string' && e.name !== 'Error') return e.name;
+  return null;
 }
 
 /**
@@ -101,7 +169,18 @@ export function classifyDictationError(error: unknown): DictationErrorKind {
     code?: unknown;
     name?: unknown;
     message?: unknown;
+    speechError?: unknown;
+    error?: unknown;
   };
+  const speechCode =
+    typeof e.speechError === 'string'
+      ? e.speechError
+      : typeof e.error === 'string'
+        ? e.error
+        : '';
+  if (speechCode && SPEECH_ERROR_KINDS[speechCode]) {
+    return SPEECH_ERROR_KINDS[speechCode];
+  }
   const code = typeof e.code === 'string' ? e.code : '';
   const name = typeof e.name === 'string' ? e.name : '';
   const message =
@@ -125,7 +204,17 @@ export function classifyDictationError(error: unknown): DictationErrorKind {
   ) {
     return 'unsupported';
   }
+  if (
+    name === 'NotFoundError' ||
+    name === 'NotReadableError' ||
+    name === 'OverconstrainedError' ||
+    /audio capture|audio-capture/.test(message)
+  ) {
+    return 'microphone';
+  }
   if (/no speech|no-speech/.test(message)) return 'no-speech';
+  if (/network/.test(message)) return 'unsupported';
+  if (/aborted/.test(message)) return 'interrupted';
   return 'failed';
 }
 
@@ -137,11 +226,22 @@ function pageLanguage(): string {
   return 'en-US';
 }
 
+function defaultLog(event: DictationLogEvent): void {
+  // biome-ignore lint/suspicious/noConsole: dictation must never fail silently; this is the diagnostic trail.
+  console.warn(
+    `[dictation] stopped (${event.kind}) at ${event.stage}` +
+      (event.code ? ` [${event.code}]` : '') +
+      `: ${event.message}`,
+  );
+}
+
 export class Dictation {
   /** Where dictation is (see the module comment). */
   state = $state<DictationState>('idle');
   /** Why it stopped, while `state` is `error`. */
   errorKind = $state<DictationErrorKind | null>(null);
+  /** The raw error code behind `errorKind` (`network`, `NotAllowedError`…). */
+  errorCode = $state<string | null>(null);
   /** The phrase being spoken right now. */
   interim = $state('');
   /** The ready beep could not play yet (no user gesture); `unlock` plays it. */
@@ -154,6 +254,11 @@ export class Dictation {
   #session = 0;
   #stopTimer: ReturnType<typeof setTimeout> | null = null;
   #disposed = false;
+  #microphoneReady = false;
+  /** When the source said it is listening (for the early-end check). */
+  #listeningAt = 0;
+  /** A result arrived in this session. */
+  #heard = false;
 
   constructor(options: DictationOptions) {
     this.#options = options;
@@ -178,22 +283,39 @@ export class Dictation {
   async start(): Promise<void> {
     if (this.#disposed || this.active || this.state === 'stopping') return;
     this.errorKind = null;
+    this.errorCode = null;
     this.interim = '';
+    this.#heard = false;
+    this.#listeningAt = 0;
     this.state = 'starting';
     const session = ++this.#session;
     const provider = this.#options.source;
     if (!provider) {
-      this.#fail('unsupported');
+      this.#fail('unsupported', null, 'No speech source', 'source');
       return;
     }
     let source: DictationSpeechSource;
     try {
       source = await this.#resolveSource(provider);
     } catch (error) {
-      if (session === this.#session) this.#fail(classifyDictationError(error));
+      if (session === this.#session) this.#failWith(error, 'source');
       return;
     }
     if (session !== this.#session || this.#disposed) return;
+    // Ask for the microphone first and wait for the answer: the recogniser
+    // then starts with the permission settled instead of racing the prompt.
+    try {
+      await this.#ensureMicrophone();
+    } catch (error) {
+      if (session === this.#session) this.#failWith(error, 'microphone');
+      return;
+    }
+    if (
+      session !== this.#session ||
+      this.#disposed ||
+      this.state !== 'starting'
+    )
+      return;
     try {
       await source.start({
         language: this.#options.language ?? pageLanguage(),
@@ -201,7 +323,7 @@ export class Dictation {
         interimResults: true,
       });
     } catch (error) {
-      if (session === this.#session) this.#fail(classifyDictationError(error));
+      if (session === this.#session) this.#failWith(error, 'start');
       return;
     }
     if (session !== this.#session) return;
@@ -235,6 +357,7 @@ export class Dictation {
     if (this.state === 'error') {
       this.state = 'idle';
       this.errorKind = null;
+      this.errorCode = null;
     }
   }
 
@@ -256,6 +379,18 @@ export class Dictation {
     for (const off of this.#unsubscribe) off();
     this.#unsubscribe = [];
     this.state = 'idle';
+  }
+
+  async #ensureMicrophone(): Promise<void> {
+    if (this.#microphoneReady || this.#options.requestMicrophone === false)
+      return;
+    const media =
+      typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
+    if (!media || typeof media.getUserMedia !== 'function') return;
+    const stream = await media.getUserMedia({ audio: true });
+    // Only the permission was wanted; the recogniser opens its own stream.
+    for (const track of stream.getTracks()) track.stop();
+    this.#microphoneReady = true;
   }
 
   async #resolveSource(
@@ -281,6 +416,7 @@ export class Dictation {
       source.onResult((result) => {
         if (this.#disposed || !(this.active || this.state === 'stopping'))
           return;
+        this.#heard = true;
         if (result.isFinal) {
           this.interim = '';
           this.#options.onInterim?.('');
@@ -294,12 +430,38 @@ export class Dictation {
       source.onError((error) => {
         if (this.#disposed || this.state === 'idle' || this.state === 'error')
           return;
-        this.#fail(classifyDictationError(error));
+        // Cut off after the person asked it to stop: that is the stop.
+        if (
+          this.state === 'stopping' &&
+          classifyDictationError(error) === 'interrupted'
+        )
+          return;
+        this.#failWith(error, 'error');
       }),
       source.onEnd(() => {
         if (this.#disposed) return;
-        if (this.state === 'error') return;
-        if (this.state !== 'idle') this.#idle();
+        if (this.state === 'error' || this.state === 'idle') return;
+        if (this.state === 'stopping') {
+          this.#idle();
+          return;
+        }
+        // Ended by itself, with no error. Before it ever listened, or within
+        // `earlyEndMs` without hearing anything, it did not really work
+        // (Brave ends like this): say so rather than going quiet.
+        const early = this.#options.earlyEndMs ?? 1000;
+        if (
+          this.state === 'starting' ||
+          (early > 0 && !this.#heard && Date.now() - this.#listeningAt < early)
+        ) {
+          this.#fail(
+            'interrupted',
+            null,
+            'Speech recognition ended straight away',
+            'end',
+          );
+          return;
+        }
+        this.#idle();
       }),
     );
     if (source.onStart) {
@@ -319,6 +481,7 @@ export class Dictation {
 
   #listening(): void {
     this.state = 'listening';
+    this.#listeningAt = Date.now();
     void this.#playBeep().then((played) => {
       this.beepPending = !played && this.state === 'listening';
     });
@@ -341,9 +504,32 @@ export class Dictation {
     this.beepPending = false;
   }
 
-  #fail(kind: DictationErrorKind): void {
+  #failWith(error: unknown, stage: DictationLogEvent['stage']): void {
+    const message =
+      error instanceof Error ? error.message : String(error ?? 'unknown');
+    this.#fail(
+      classifyDictationError(error),
+      dictationErrorCode(error),
+      message,
+      stage,
+    );
+  }
+
+  #fail(
+    kind: DictationErrorKind,
+    code: string | null,
+    message: string,
+    stage: DictationLogEvent['stage'],
+  ): void {
     this.#clearStopTimer();
+    const log = this.#options.log ?? defaultLog;
+    try {
+      log({ kind, code, message, stage });
+    } catch {
+      // A broken logger must not hide the error from the person.
+    }
     this.errorKind = kind;
+    this.errorCode = code;
     this.state = 'error';
     this.interim = '';
     this.beepPending = false;

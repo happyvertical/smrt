@@ -49,7 +49,84 @@ describe('DictationButton', () => {
   });
 });
 
+describe('DictationButton — one click, one toggle', () => {
+  it('a single click starts once and does not stop again', async () => {
+    const start = vi.fn(async () => {});
+    const stop = vi.fn(async () => {});
+    const source: DictationSpeechSource = {
+      start,
+      stop,
+      onResult: () => () => {},
+      onError: () => () => {},
+      onEnd: () => () => {},
+    };
+    const dictation = new Dictation({
+      source: () => source,
+      onText: () => {},
+      beep: false,
+    });
+    render(DictationButton, { props: { dictation } });
+    // userEvent.click sends pointerdown, pointerup and click.
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Speak instead of typing' }),
+    );
+    await vi.waitFor(() => expect(dictation.state).toBe('listening'));
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+  });
+});
+
 describe('DictationStatus', () => {
+  function erroringSource(code: string): DictationSpeechSource {
+    const errors = new Set<(e: Error) => void>();
+    return {
+      start: async () => {
+        queueMicrotask(() => {
+          for (const cb of errors)
+            cb(Object.assign(new Error(code), { speechError: code }));
+        });
+      },
+      stop: async () => {},
+      onResult: () => () => {},
+      onError: (cb) => (errors.add(cb), () => errors.delete(cb)),
+      onEnd: () => () => {},
+    };
+  }
+
+  it.each([
+    [
+      'network',
+      "Speech recognition isn't available in this browser. Brave blocks it",
+    ],
+    [
+      'service-not-allowed',
+      "Speech recognition isn't available in this browser",
+    ],
+    ['not-allowed', 'The microphone is blocked'],
+    ['no-speech', "Didn't hear anything. Tap the mic and try again."],
+    ['audio-capture', "Couldn't use the microphone"],
+    ['aborted', 'Listening stopped straight away'],
+  ])('shows a plain message for %s instead of "Listening"', async (code, text) => {
+    const source = erroringSource(code);
+    const dictation = new Dictation({
+      source: () => source,
+      onText: () => {},
+      beep: false,
+      log: () => {},
+    });
+    const { container } = render(DictationStatus, { props: { dictation } });
+    await dictation.start();
+    await vi.waitFor(() => expect(dictation.state).toBe('error'));
+    flushSync();
+    expect(screen.getByRole('alert')).toHaveTextContent(text);
+    expect(screen.getByRole('alert')).toHaveAttribute(
+      'data-dictation-error',
+      code,
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent('Listening');
+    expect(container.querySelector('[data-dictation-error]')).not.toBeNull();
+  });
+
   it('says it is listening, then explains a blocked microphone', async () => {
     const dictation = new Dictation({
       source: quietSource,
@@ -68,7 +145,7 @@ describe('DictationStatus', () => {
     await blocked.start();
     flushSync();
     expect(screen.getAllByRole('alert').at(-1)).toHaveTextContent(
-      "This browser can't turn speech into text",
+      "Speech recognition isn't available in this browser",
     );
   });
 });

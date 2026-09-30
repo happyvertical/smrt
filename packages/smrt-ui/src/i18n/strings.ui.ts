@@ -64,11 +64,14 @@ export const M = defineMessages({
   'ui.dictation.starting': 'Getting the microphone ready…',
   'ui.dictation.listening': 'Listening. Tap the microphone when you are done.',
   'ui.dictation.unsupported':
-    "This browser can't turn speech into text. Please type instead.",
+    "Speech recognition isn't available in this browser. Brave blocks it; try Chrome, Edge or Safari, or type instead.",
   'ui.dictation.denied':
     'The microphone is blocked. Allow it for this site in your browser settings, then try again.',
-  'ui.dictation.no_speech':
-    "Didn't hear anything. Tap the microphone and try again.",
+  'ui.dictation.no_speech': "Didn't hear anything. Tap the mic and try again.",
+  'ui.dictation.microphone':
+    "Couldn't use the microphone. Check that one is connected and no other app is using it, then try again.",
+  'ui.dictation.interrupted':
+    'Listening stopped straight away. This browser may not support speaking into text; try Chrome, Edge or Safari, or type instead.',
   'ui.dictation.failed': 'Listening stopped. Tap the microphone to try again.',
 
   // feedback/ProgressBar.svelte

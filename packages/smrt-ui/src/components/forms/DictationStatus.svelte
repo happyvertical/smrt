@@ -34,6 +34,10 @@ function errorText(kind: DictationErrorKind | null): string {
       return t(M['ui.dictation.denied']);
     case 'no-speech':
       return t(M['ui.dictation.no_speech']);
+    case 'microphone':
+      return t(M['ui.dictation.microphone']);
+    case 'interrupted':
+      return t(M['ui.dictation.interrupted']);
     default:
       return t(M['ui.dictation.failed']);
   }
@@ -61,6 +65,9 @@ function errorText(kind: DictationErrorKind | null): string {
     class="smrt-dictation-status-error"
     class:smrt-dictation-status--empty={dictation.state !== 'error'}
     role="alert"
+    data-dictation-error={dictation.state === 'error'
+      ? (dictation.errorCode ?? dictation.errorKind)
+      : undefined}
   >
     {#if dictation.state === 'error'}
       {errorText(dictation.errorKind)}
