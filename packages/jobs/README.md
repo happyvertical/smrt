@@ -240,7 +240,7 @@ that active tenant. The application adapter must derive these values from its
 verified principal, never tool arguments.
 
 Configure `TaskRunner.authorizeMcpTask` to resolve live grants and validate the
-bound actor/tenant against the owning record. It is mandatory for this new path
+bound actor/tenant against the owning record. It is mandatory for continuation tasks and for every remote app-created task,
 and fails closed if absent or unavailable. It runs before each invocation;
 `context.task.assertAuthorized()` repeats it and checks worker ownership before
 apply. A permission snapshot must not be persisted in the job.
@@ -263,7 +263,7 @@ review URL/form. OpenAI MRTR is an optional protocol adapter responsibility and
 is not implemented by this job API. The legacy `requestInput()` remains a
 running-handler wait bounded by the job timeout and is not restartable.
 
-Resumed tasks do not automatically retry errors or unknown external outcomes.
+Continuation tasks and remote app-created tasks do not automatically retry errors or unknown external outcomes.
 Reconcile those through the owning action state's durable reservation/evidence
 API; never blindly resubmit. Cancellation guards subsequent cooperative work
 and terminal writes, but cannot retract an external side effect already sent.
@@ -299,3 +299,14 @@ owner namespace and tenant used for task creation, and a live `authorize`
 callback. It returns text and structured form/review URL data; no iframe,
 subscription, or host-specific form implementation is required. Review URLs
 must use HTTPS, or HTTP on loopback for a local deployment, without credentials.
+
+
+Remote `createMcpAppServer` task stores always set `requireAuthorization: true`.
+This server-owned requirement is persisted separately from user invocation
+arguments; tool arguments cannot disable it. An ordinary remote task without
+continuation metadata must therefore configure the same live worker callback.
+The legacy input seam also checks current authority before waiting and after
+input returns. Applications must call `context.task.assertAuthorized()` again
+immediately before later side effects. Direct `McpTaskStore` callers default to
+trusted-local compatibility; set `requireAuthorization: true` for any remote
+or multi-user application. This default does not confer human identity.

@@ -35,7 +35,7 @@ export interface McpTaskContinuation {
 
 /** Live runner authority: implementations resolve current grants, never snapshots. */
 export interface McpTaskAuthority {
-  continuation: Readonly<McpTaskContinuation>;
+  continuation?: Readonly<McpTaskContinuation>;
   ownerId: string;
   tenantId: string | null;
   taskId: string;
@@ -65,6 +65,8 @@ export interface CreateMcpTaskInput {
 
 /** Internal persisted marker distinguishing task invocations from normal jobs. */
 export interface McpTaskJobMarker {
+  /** Set by the trusted app task store, never by tool arguments. */
+  authorizationRequired?: boolean;
   continuation?: McpTaskContinuation;
   invocationArgs: unknown[];
   pollIntervalMs: number;
@@ -109,11 +111,14 @@ export class McpTaskCancelledError extends Error {
  */
 export class McpTaskStore {
   private readonly ownerId: string | null;
+  private readonly requireAuthorization: boolean;
   private readonly tenantId: string | null;
 
   private constructor(
     private readonly collection: SmrtJobCollection,
     options: {
+      /** Require live worker authorization for every task from this store. */
+      requireAuthorization?: boolean;
       ownerId?: string | null;
       tenantId?: string | null;
       pollIntervalMs?: number;
@@ -121,6 +126,7 @@ export class McpTaskStore {
     },
   ) {
     this.ownerId = options.ownerId ?? null;
+    this.requireAuthorization = options.requireAuthorization ?? false;
     this.tenantId = options.tenantId ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? 250;
     this.ttlMs = options.ttlMs ?? 86_400_000;
@@ -132,6 +138,8 @@ export class McpTaskStore {
   static async create(
     db: DatabaseInterface,
     options: {
+      /** Require live worker authorization for every task from this store. */
+      requireAuthorization?: boolean;
       ownerId?: string | null;
       tenantId?: string | null;
       pollIntervalMs?: number;
@@ -147,6 +155,8 @@ export class McpTaskStore {
     if ((input.tenantId ?? null) !== this.tenantId) {
       throw new Error('MCP task tenant does not match active tenant');
     }
+    if (this.requireAuthorization && !this.ownerId)
+      throw new Error('Authorized tasks require an owner');
     if (input.continuation) {
       validateContinuation(input.continuation);
       if (!this.ownerId)
@@ -157,6 +167,7 @@ export class McpTaskStore {
     const ttlMs = input.ttlMs ?? this.ttlMs;
     const marker: McpTaskJobMarker = {
       invocationArgs: input.invocationArgs,
+      ...(this.requireAuthorization ? { authorizationRequired: true } : {}),
       ...(input.continuation ? { continuation: input.continuation } : {}),
       pollIntervalMs,
       ttlMs,
@@ -174,7 +185,9 @@ export class McpTaskStore {
       method: input.method,
       args,
       timeout: input.timeout,
-      ...(input.continuation ? { maxAttempts: 1 } : {}),
+      ...(input.continuation || this.requireAuthorization
+        ? { maxAttempts: 1 }
+        : {}),
       taskId,
       taskOwnerId: this.ownerId,
       taskInputRequests: null,
@@ -319,6 +332,9 @@ export function getMcpTaskMarker(
   if (!Array.isArray(marker.invocationArgs)) return null;
   return {
     invocationArgs: marker.invocationArgs,
+    ...(marker.authorizationRequired === true
+      ? { authorizationRequired: true }
+      : {}),
     ...(marker.continuation
       ? { continuation: validateContinuation(marker.continuation) }
       : {}),

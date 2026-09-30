@@ -1005,8 +1005,9 @@ export class TaskRunner extends EventEmitter {
   }
 
   private async assertMcpTaskAuthority(job: SmrtJob): Promise<void> {
-    const continuation = getMcpTaskMarker(job)?.continuation;
-    if (!continuation) return;
+    const marker = getMcpTaskMarker(job);
+    const continuation = marker?.continuation;
+    if (!continuation && !marker?.authorizationRequired) return;
     if (
       !job.taskOwnerId ||
       !(await this.config.authorizeMcpTask(
@@ -1017,7 +1018,9 @@ export class TaskRunner extends EventEmitter {
           objectType: job.objectType,
           objectId: job.objectId ?? '',
           method: job.method,
-          continuation: Object.freeze({ ...continuation }),
+          ...(continuation
+            ? { continuation: Object.freeze({ ...continuation }) }
+            : {}),
         }),
       ))
     )
@@ -1093,12 +1096,16 @@ export class TaskRunner extends EventEmitter {
                   binding,
                   inputRequest,
                 ),
-              requestInput: (inputRequests: Record<string, unknown>) =>
-                requestMcpTaskInput(
+              requestInput: async (inputRequests: Record<string, unknown>) => {
+                await this.assertMcpTaskAuthority(job);
+                const answers = await requestMcpTaskInput(
                   this.db as DatabaseInterface,
                   job,
                   inputRequests,
-                ),
+                );
+                await this.assertMcpTaskAuthority(job);
+                return answers;
+              },
             },
           }
         : {}),
