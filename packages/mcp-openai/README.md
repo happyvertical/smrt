@@ -111,7 +111,8 @@ pnpm --filter @happyvertical/smrt-mcp-openai verify:pack
 ```
 
 The behavior/threat matrix is in [TEST-DESIGN.md](TEST-DESIGN.md). Protocol tests
-use the actual SDK client and HTTP mount; the browser suite uses a real Chromium
+use the actual SDK client and HTTP mount, including real loopback JWKS/MCP sockets
+through the public M2 auth gateway with token, actor, tenant and revocation denials; the browser suite uses a real Chromium
 sandboxed iframe with no-network CSP and built browser output. Packed exports
 are checked for declaration and browser/server boundaries. Existing app-MCP full
 suite/typecheck/pack and portable bridge gates also apply to integration changes.
