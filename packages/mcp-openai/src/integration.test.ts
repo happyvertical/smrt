@@ -21,6 +21,10 @@ import {
   resolveOpenAiNavigationTarget,
   withOpenAiEntrypoints,
 } from './index.js';
+import {
+  resolveOpenAiMentionSelection,
+  withOpenAiMentionSearch,
+} from './mentions.js';
 
 const schema = {
   type: 'object' as const,
@@ -144,6 +148,29 @@ function fixture() {
     { ...base, ui: { resourceUri: 'ui://synthetic/v1/view' } },
     ['global', 'thread'],
   );
+  const mentions = withOpenAiMentionSearch({
+    ...base,
+    name: 'mention_search',
+    execute: ({ arguments: args, principal }) => {
+      if (principal?.id !== owner.id || principal.tenantId !== owner.tenantId)
+        throw new Error('Mention search denied');
+      return {
+        content: [],
+        structuredContent: {
+          items:
+            args.query === 'owned'
+              ? [
+                  {
+                    type: 'resource',
+                    resourceUri: 'smrt://items/opaque-owned',
+                    title: 'Owned item',
+                  },
+                ]
+              : [],
+        },
+      };
+    },
+  });
   server = createMcpAppServer({
     serverInfo: { name: 'synthetic-navigation', version: '1' },
     smrtOptions: () => ({}),
@@ -162,6 +189,7 @@ function fixture() {
     ],
     workflowTools: [
       view,
+      mentions,
       ...settings.workflows,
       {
         ...base,
@@ -232,6 +260,7 @@ describe('existing principal workflow authority', () => {
           'settings_update',
           'view',
           'resolve_target',
+          'mention_search',
         ])
           await expect(
             f.server.callTool({
@@ -241,6 +270,32 @@ describe('existing principal workflow authority', () => {
             }),
           ).rejects.toThrow();
       }
+      expect(
+        await f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
+      await expect(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/guessed' },
+          principal: owner,
+        }),
+      ).rejects.toThrow();
+      await expect(
+        resolveOpenAiMentionSelection({
+          server: f.server,
+          tool: 'resolve_target',
+          arguments: { url: '/items/owned' },
+          principal: { ...owner, tenantId: 'tenant-b' },
+        }),
+      ).rejects.toThrow();
       await expect(
         f.server.callTool({
           name: 'settings_read',
@@ -256,6 +311,13 @@ describe('existing principal workflow authority', () => {
         }),
       ).rejects.toThrow();
       f.revoke();
+      await expect(
+        f.server.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+          principal: owner,
+        }),
+      ).rejects.toThrow();
       expect(
         f.settings.extensions(await f.server.listTools({ principal: owner })),
       ).toEqual({});
@@ -389,6 +451,21 @@ describe('existing principal workflow authority', () => {
           'openai/ui'
         ],
       ).toEqual({ entrypoints: [{ type: 'global' }, { type: 'thread' }] });
+      expect(
+        catalog.tools.find((tool) => tool.name === 'mention_search')?._meta,
+      ).toMatchObject({
+        'openai/extensions': { 'mentions/search': {} },
+        ui: { visibility: ['app'] },
+      });
+      expect(
+        await client.callTool({
+          name: 'mention_search',
+          arguments: { query: 'owned' },
+        }),
+      ).toHaveProperty(
+        'structuredContent.items.0.resourceUri',
+        'smrt://items/opaque-owned',
+      );
       const initial = await client.callTool({ name: 'view', arguments: {} });
       expect(initial.content).toEqual([
         { type: 'text', text: 'Complete synthetic headless view' },
